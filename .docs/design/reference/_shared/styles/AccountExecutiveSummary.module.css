@@ -1,0 +1,38 @@
+
+/* Executive summary — italic serif narrative
+ * Full container width (no max-width cap — matches vitals strip).
+ * Used in Context view.
+ */
+.AccountExecutiveSummary_summary {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  padding-top: var(--space-xl);
+  padding-bottom: var(--space-xl);
+}
+
+.AccountExecutiveSummary_paragraph {
+  margin: 0;
+}
+
+.AccountExecutiveSummary_paragraphSpaced {
+  margin: 12px 0 0;
+}
+
+.AccountExecutiveSummary_readMore {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  font-style: normal;
+}
+
+.AccountExecutiveSummary_readMore:hover {
+  color: var(--color-text-secondary);
+}

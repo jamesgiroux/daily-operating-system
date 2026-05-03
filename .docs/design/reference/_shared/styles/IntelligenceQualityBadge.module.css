@@ -1,0 +1,44 @@
+@import '../../styles/design-tokens.css';
+
+.IntelligenceQualityBadge_root {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.IntelligenceQualityBadge_structuredDotShell {
+  position: relative;
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+}
+
+.IntelligenceQualityBadge_dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: block;
+  flex-shrink: 0;
+}
+
+.IntelligenceQualityBadge_mutedDot {
+  opacity: 0.5;
+}
+
+.IntelligenceQualityBadge_newSignalDot {
+  position: absolute;
+  top: -2px;
+  right: -2px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--color-garden-larkspur);
+}
+
+.IntelligenceQualityBadge_label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}

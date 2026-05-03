@@ -1,0 +1,81 @@
+/* =============================================================================
+   PROJECT DETAIL — Page-specific styles
+   ============================================================================= */
+
+/* ── Breadcrumb ancestor link (olive) ── */
+
+.ProjectDetailEditorial_breadcrumbAncestorLink {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--color-garden-olive);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+/* ── Folio action: + Sub-Project button ── */
+
+.ProjectDetailEditorial_addChildButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-garden-olive);
+  background: none;
+  border: 1px solid var(--color-garden-olive);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+/* ── Portfolio: hotspot link (olive) ── */
+
+.ProjectDetailEditorial_hotspotLinkOlive {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-garden-olive);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+/* ── Status color variants ── */
+
+.ProjectDetailEditorial_statusActive {
+  color: var(--color-garden-sage);
+}
+
+.ProjectDetailEditorial_statusOnHold {
+  color: var(--color-spice-turmeric);
+}
+
+.ProjectDetailEditorial_statusCompleted {
+  color: var(--color-garden-larkspur);
+}
+
+.ProjectDetailEditorial_statusDotActive {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+
+.ProjectDetailEditorial_statusDotOnHold {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-turmeric);
+}
+
+.ProjectDetailEditorial_statusDotCompleted {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-garden-larkspur);
+}

@@ -1,0 +1,332 @@
+@import '../../styles/design-tokens.css';
+
+/* Sentiment journal hero — editorial treatment per
+   .docs/mockups/account-health-outlook-globex.html lines 599-635. */
+
+.SentimentHero_hero {
+  padding-top: var(--space-md, 16px);
+  padding-bottom: var(--space-2xl, 48px);
+}
+
+.SentimentHero_label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md, 16px);
+}
+
+/* ── Unset state ─────────────────────────────────────────────────────── */
+
+.SentimentHero_unsetRow {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.SentimentHero_unsetButton {
+  background: none;
+  border: none;
+  font-family: var(--font-serif);
+  font-size: inherit;
+  font-weight: 500;
+  color: var(--color-spice-turmeric);
+  cursor: pointer;
+  border-bottom: 1px solid var(--color-spice-turmeric);
+  padding: 0 2px;
+  font-style: italic;
+}
+
+/* ── Headline row: pill + sparkline + "Update" ──────────────────────── */
+
+.SentimentHero_setRow {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-lg, 24px);
+  margin-bottom: var(--space-sm, 8px);
+}
+
+.SentimentHero_value {
+  font-family: var(--font-serif);
+  font-size: 44px;
+  font-weight: 400;
+  line-height: 1;
+  letter-spacing: -0.015em;
+}
+
+.SentimentHero_valueStrong,
+.SentimentHero_valueOnTrack {
+  color: var(--color-garden-sage);
+}
+.SentimentHero_valueConcerning {
+  color: var(--color-spice-saffron);
+}
+.SentimentHero_valueAtRisk {
+  color: var(--color-spice-terracotta);
+}
+.SentimentHero_valueCritical {
+  color: var(--color-spice-chili);
+}
+
+/* ── Sparkline ──────────────────────────────────────────────────────── */
+
+.SentimentHero_sparkline {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 3px;
+  height: 20px;
+  padding-left: var(--space-sm, 8px);
+}
+
+.SentimentHero_sparkBar {
+  width: 4px;
+  border-radius: 2px;
+}
+
+.SentimentHero_sparkGood {
+  background: var(--color-garden-sage);
+}
+.SentimentHero_sparkMid {
+  background: var(--color-spice-saffron);
+}
+.SentimentHero_sparkWarn {
+  background: var(--color-spice-terracotta);
+}
+
+.SentimentHero_sparkBarH4 {
+  height: 5px;
+}
+.SentimentHero_sparkBarH8 {
+  height: 9px;
+}
+.SentimentHero_sparkBarH12 {
+  height: 13px;
+}
+.SentimentHero_sparkBarH16 {
+  height: 17px;
+}
+.SentimentHero_sparkBarH20 {
+  height: 20px;
+}
+
+/* Placeholder sparkline bars rendered when no computed history exists.
+ * Reserves the layout slot so the row geometry doesn't collapse, and reassures
+ * the user the graph slot isn't broken — it just has no data yet. */
+.SentimentHero_sparklineEmpty {
+  display: inline-flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 20px;
+  opacity: 0.2;
+}
+
+.SentimentHero_sparklineEmptyBar {
+  width: 4px;
+  border-radius: 1px 1px 0 0;
+  background: var(--color-text-tertiary, #8b95a2);
+}
+
+.SentimentHero_sparklineEmptyBarH7 {
+  height: 7px;
+}
+
+.SentimentHero_sparklineEmptyBarH9 {
+  height: 9px;
+}
+
+.SentimentHero_sparklineEmptyBarH11 {
+  height: 11px;
+}
+
+.SentimentHero_sparklineEmptyBarH13 {
+  height: 13px;
+}
+
+.SentimentHero_sparklineEmptyBarH17 {
+  height: 17px;
+}
+
+.SentimentHero_sparklineLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  padding-left: var(--space-sm, 8px);
+}
+
+.SentimentHero_updateButton {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary);
+  padding: 6px 12px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+  margin-left: auto;
+}
+
+.SentimentHero_updateButton:hover {
+  background: var(--color-desk-charcoal-4);
+}
+
+/* ── Meta line ──────────────────────────────────────────────────────── */
+
+.SentimentHero_meta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-md, 16px);
+}
+
+/* ── Pull quote (latest journal note) ───────────────────────────────── */
+
+.SentimentHero_pullquote {
+  margin: var(--space-xl, 32px) 0 0;
+  padding: var(--space-lg, 24px) var(--space-xl, 32px);
+  background: var(--color-spice-turmeric-8);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: 0 var(--radius-md, 10px) var(--radius-md, 10px) 0;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  max-width: 680px;
+}
+
+.SentimentHero_pullquoteAttr {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-style: normal;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-sm, 8px);
+  display: block;
+}
+
+/* ── Divergence flag ────────────────────────────────────────────────── */
+
+.SentimentHero_divergenceFlag {
+  margin-top: var(--space-lg, 24px);
+  padding: var(--space-md, 16px) var(--space-lg, 24px);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-md, 10px) var(--radius-md, 10px) 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  max-width: 620px;
+}
+
+.SentimentHero_divergenceFlag strong {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-spice-saffron);
+  font-weight: 600;
+  display: block;
+  margin-bottom: var(--space-xs, 4px);
+}
+
+.SentimentHero_divergenceComputed {
+  color: var(--color-garden-sage);
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.SentimentHero_divergenceAction {
+  background: none;
+  border: none;
+  color: var(--color-spice-saffron);
+  border-bottom: 1px dotted var(--color-spice-saffron);
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ── Inline editor ──────────────────────────────────────────────────── */
+
+.SentimentHero_editor {
+  margin-top: var(--space-md, 16px);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm, 8px);
+}
+
+.SentimentHero_editorOptions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-sm, 8px);
+}
+
+.SentimentHero_editorOption {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 6px 12px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 100px;
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.SentimentHero_editorOptionActive {
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+
+.SentimentHero_editorTextarea {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  line-height: 1.6;
+  padding: var(--space-md, 16px);
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-md, 10px);
+  resize: vertical;
+  min-height: 80px;
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-primary);
+}
+
+.SentimentHero_editorActions {
+  display: flex;
+  gap: var(--space-sm, 8px);
+  justify-content: flex-end;
+}
+
+.SentimentHero_editorBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 8px 14px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 100px;
+  background: none;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+}
+
+.SentimentHero_editorBtnPrimary {
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}

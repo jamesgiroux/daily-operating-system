@@ -1,0 +1,281 @@
+/* =============================================================================
+   FolioBar.module.css
+
+   Styles for editorial masthead — fixed top bar with brand, publication label,
+   date, readiness stats, and search trigger.
+   ============================================================================= */
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   FOLIO — Main Container
+   ───────────────────────────────────────────────────────────────────────── */
+.FolioBar_folio {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  z-index: var(--z-app-shell);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: var(--folio-padding-top) var(--folio-padding-right) var(--folio-padding-bottom)
+    var(--folio-padding-left);
+  height: var(--folio-height);
+  background: var(--frosted-glass-background);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  -webkit-app-region: drag; /* macOS: make draggable */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   LEFT SECTION — Brand mark + Publication label
+   ───────────────────────────────────────────────────────────────────────── */
+.FolioBar_folioLeft {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  -webkit-app-region: no-drag; /* macOS: clickable elements inside drag region */
+}
+
+.FolioBar_folioMark {
+  color: var(--color-spice-turmeric);
+  cursor: pointer;
+  user-select: none;
+  transition: color 0.4s ease;
+}
+
+.FolioBar_folioMarkPulsing {
+  color: var(--color-spice-saffron);
+  animation: pulse-mark 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-mark {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.3;
+  }
+}
+
+.FolioBar_folioHomeLink {
+  display: flex;
+  align-items: center;
+  text-decoration: none;
+  -webkit-app-region: no-drag;
+}
+
+.FolioBar_folioPub {
+  font-family: var(--font-sans);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.FolioBar_folioBreadcrumbs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  max-width: min(42vw, 560px);
+  overflow: hidden;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.FolioBar_folioBreadcrumbButton {
+  min-width: 0;
+  max-width: 180px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  padding: 0;
+  border: 0;
+  background: none;
+  font: inherit;
+  letter-spacing: inherit;
+  text-transform: inherit;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-normal);
+}
+
+.FolioBar_folioBreadcrumbButton:hover {
+  color: var(--color-text-primary);
+}
+
+.FolioBar_folioBreadcrumbLabel,
+.FolioBar_folioBreadcrumbCurrent {
+  min-width: 0;
+  max-width: 220px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.FolioBar_folioBreadcrumbCurrent {
+  color: var(--color-text-secondary);
+}
+
+.FolioBar_folioBreadcrumbSeparator {
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  opacity: 0.45;
+}
+
+.FolioBar_folioActions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  -webkit-app-region: no-drag;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CENTER SECTION — Date (absolutely positioned)
+   ───────────────────────────────────────────────────────────────────────── */
+.FolioBar_folioCenter {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  -webkit-app-region: no-drag;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   RIGHT SECTION — Readiness stats, status, search
+   ───────────────────────────────────────────────────────────────────────── */
+.FolioBar_folioRight {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  -webkit-app-region: no-drag;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   READINESS STATS — Flex row with colored dots
+   ───────────────────────────────────────────────────────────────────────── */
+.FolioBar_folioReadiness {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  font-weight: 500;
+}
+
+.FolioBar_folioStat {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.FolioBar_folioDot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.FolioBar_folioDotSage {
+  background: var(--color-garden-sage);
+}
+
+.FolioBar_folioDotTerracotta {
+  background: var(--color-spice-terracotta);
+}
+
+.FolioBar_folioStatSage {
+  color: var(--color-garden-rosemary);
+}
+
+.FolioBar_folioStatTerracotta {
+  color: var(--color-spice-terracotta);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   STATUS TEXT — Mono font
+   ───────────────────────────────────────────────────────────────────────── */
+.FolioBar_folioStatus {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-garden-sage);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   SEARCH BUTTON — Clickable, bordered
+   ───────────────────────────────────────────────────────────────────────── */
+.FolioBar_folioSearch {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 2px 8px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  transition: border-color var(--transition-normal);
+  -webkit-app-region: no-drag;
+}
+
+.FolioBar_folioSearch:hover {
+  border-color: var(--color-desk-charcoal-25);
+}
+
+.FolioBar_folioSearch:active {
+  opacity: 0.9;
+}
+
+/* Remove default button outline on focus */
+.FolioBar_folioSearch:focus {
+  outline: none;
+  border-color: var(--color-spice-turmeric);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   MODE BADGE — Dev/Live/Split indicator
+   ───────────────────────────────────────────────────────────────────────── */
+.FolioBar_folioModeBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  padding: 1px 6px;
+  border-radius: var(--radius-editorial-sm);
+  border: none;
+  cursor: pointer;
+  -webkit-app-region: no-drag;
+  transition: opacity var(--transition-normal);
+}
+
+.FolioBar_folioModeBadgeDev {
+  color: var(--color-spice-saffron, #d97706);
+  background: color-mix(in srgb, var(--color-spice-saffron, #d97706) 12%, transparent);
+  opacity: 1;
+}
+
+.FolioBar_folioModeBadgeWarning {
+  color: var(--color-alert-red, #dc2626);
+  background: color-mix(in srgb, var(--color-alert-red, #dc2626) 12%, transparent);
+  opacity: 1;
+  animation: pulse-mark 1.5s ease-in-out infinite;
+}
+
+.FolioBar_folioModeBadgeLive {
+  color: var(--color-garden-sage, #16a34a);
+  background: color-mix(in srgb, var(--color-garden-sage, #16a34a) 12%, transparent);
+  opacity: 0.6;
+}

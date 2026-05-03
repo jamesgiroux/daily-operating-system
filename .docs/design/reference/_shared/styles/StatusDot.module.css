@@ -1,0 +1,57 @@
+/* StatusDot — Reusable status indicator  */
+
+.StatusDot_dot {
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Sizes */
+.StatusDot_sm {
+  width: 6px;
+  height: 6px;
+}
+
+.StatusDot_md {
+  width: 8px;
+  height: 8px;
+}
+
+/* Status colors */
+.StatusDot_connected {
+  background: var(--color-garden-sage);
+}
+
+.StatusDot_disconnected {
+  background: var(--color-spice-terracotta);
+}
+
+.StatusDot_loading {
+  background: var(--color-spice-saffron);
+  animation: pulse-dot 1.5s ease-in-out infinite;
+}
+
+.StatusDot_error {
+  background: var(--color-spice-chili);
+}
+
+/* Container with label */
+.StatusDot_wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.StatusDot_label {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+@keyframes pulse-dot {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.4;
+  }
+}

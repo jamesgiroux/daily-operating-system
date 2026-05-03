@@ -1,0 +1,629 @@
+/* =============================================================================
+   ACCOUNT DETAIL — Page-specific styles
+   ============================================================================= */
+
+/* ── Breadcrumb ancestor link (turmeric) ── */
+
+.AccountDetailEditorial_breadcrumbAncestorLink {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--color-spice-turmeric);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+/* ── Refresh button ── */
+
+.AccountDetailEditorial_refreshButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.AccountDetailEditorial_refreshButton:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--color-text-tertiary);
+}
+
+.AccountDetailEditorial_refreshButton:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+/* Reports/Tools dropdown styles moved to src/components/folio/ */
+
+/* ── Rollover Prompt ── */
+
+.AccountDetailEditorial_rolloverPrompt {
+  margin: var(--space-lg) 0;
+  padding: var(--space-md) 20px;
+  background: var(--color-spice-saffron-8);
+  border-left: 3px solid var(--color-spice-saffron);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+}
+
+.AccountDetailEditorial_rolloverActions {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.AccountDetailEditorial_rolloverButton {
+  font-family: var(--font-sans);
+  font-size: 12px;
+}
+
+.AccountDetailEditorial_rolloverDismiss {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Portfolio: hotspot link (turmeric) ── */
+
+.AccountDetailEditorial_hotspotLinkTurmeric {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+/* ── Health color variants ── */
+
+.AccountDetailEditorial_healthGreen {
+  color: var(--color-garden-sage);
+}
+
+.AccountDetailEditorial_healthRed {
+  color: var(--color-spice-terracotta);
+}
+
+.AccountDetailEditorial_healthYellow {
+  color: var(--color-spice-saffron);
+}
+
+.AccountDetailEditorial_healthDotGreen {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+
+.AccountDetailEditorial_healthDotRed {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-terracotta);
+}
+
+.AccountDetailEditorial_healthDotYellow {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-saffron);
+}
+
+/* ── Reports Chapter ── */
+
+.AccountDetailEditorial_reportsChapter {
+  display: flex;
+  flex-direction: column;
+}
+
+.AccountDetailEditorial_reportRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 14px 0;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.AccountDetailEditorial_reportRow:last-child {
+  border-bottom: none;
+}
+
+.AccountDetailEditorial_reportRow:hover .AccountDetailEditorial_reportAction {
+  color: var(--color-spice-turmeric);
+}
+
+.AccountDetailEditorial_reportIcon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.AccountDetailEditorial_reportName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.AccountDetailEditorial_reportAction {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease;
+}
+
+/* ── Pull Quote  ── */
+
+/*
+ * Thesis chapter — Context-tab Chapter 1 ("The thesis").
+ * Spec: .docs/mockups/account-context-globex.html lines 183-211.
+ * Top padding reduced from var(--space-4xl) (72px) to var(--space-md)
+ * (16px) to match the SentimentHero top-padding treatment on the
+ * Health tab — same tightening pattern, same rationale (vitals strip
+ * already carries its own bottom margin; anything more reads as orphan
+ * whitespace).
+ */
+.AccountDetailEditorial_thesisSection {
+  padding: var(--space-md) 0 var(--space-3xl);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailEditorial_thesisLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xl);
+}
+
+.AccountDetailEditorial_thesisQuote {
+  font-family: var(--font-serif);
+  font-size: 40px;
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1.25;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  max-width: 820px;
+  margin: 0;
+}
+
+.AccountDetailEditorial_thesisMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-2xl);
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  flex-wrap: wrap;
+}
+
+/*
+ * Thesis quotation marks — 48px decorative glyph in turmeric per
+ * account-context mockup .thesis-quote .mark. line-height: 0 keeps the
+ * surrounding serif line from inheriting the oversized mark height.
+ */
+.AccountDetailEditorial_pullquoteMark {
+  color: var(--color-spice-turmeric);
+  font-style: normal;
+  font-weight: 500;
+  font-size: 48px;
+  line-height: 0;
+}
+
+/*
+ * Thesis meta row refresh link — turmeric anchor aligned right per mockup.
+ * Shared between sources and "Refresh" affordance.
+ */
+.AccountDetailEditorial_thesisRefresh {
+  margin-left: auto;
+  color: var(--color-spice-turmeric);
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid var(--color-spice-turmeric);
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  cursor: pointer;
+}
+
+.AccountDetailEditorial_pullQuote {
+  padding: 100px 0;
+  text-align: center;
+  max-width: 700px;
+  margin: 0 auto;
+}
+
+.AccountDetailEditorial_pullQuoteText {
+  font-family: var(--font-serif);
+  font-size: 38px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  margin: 0 0 24px;
+}
+
+.AccountDetailEditorial_pullQuoteAttribution {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  font-style: normal;
+}
+
+/* ── Relationship Health Hero  ── */
+
+.AccountDetailEditorial_healthHero {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 32px;
+  align-items: start;
+  margin-bottom: 48px;
+}
+
+/* ── Products Section (Editorial Redesign) ── */
+
+.AccountDetailEditorial_sectionEmpty {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+}
+
+.AccountDetailEditorial_productList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.AccountDetailEditorial_productRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailEditorial_productRow:last-child {
+  border-bottom: none;
+}
+
+/* Hover reveals feedback thumbs + dismiss */
+.AccountDetailEditorial_productRow:hover .AccountDetailEditorial_productFeedback,
+.AccountDetailEditorial_productRow:hover .AccountDetailEditorial_productDismiss {
+  opacity: 1;
+}
+
+/* Left column: name + provenance */
+.AccountDetailEditorial_productInfo {
+  flex: 1;
+  min-width: 0;
+  cursor: pointer;
+}
+
+.AccountDetailEditorial_productInfo:hover .AccountDetailEditorial_productName {
+  color: var(--color-spice-turmeric);
+}
+
+.AccountDetailEditorial_productName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  transition: color var(--transition-fast);
+}
+
+/* Center: status badge with dropdown */
+.AccountDetailEditorial_productStatusWrapper {
+  position: relative;
+  flex-shrink: 0;
+}
+
+.AccountDetailEditorial_productStatusBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 100px;
+  cursor: pointer;
+  border: none;
+  background: var(--color-garden-sage-8);
+  color: var(--color-garden-sage);
+  transition: background var(--transition-fast);
+  flex-shrink: 0;
+}
+
+.AccountDetailEditorial_productStatusBadge:hover {
+  background: var(--color-garden-sage-12);
+}
+
+.AccountDetailEditorial_productStatusBadge[data-status="trial"] {
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8);
+}
+
+.AccountDetailEditorial_productStatusBadge[data-status="trial"]:hover {
+  background: var(--color-spice-turmeric-12);
+}
+
+.AccountDetailEditorial_productStatusBadge[data-status="churned"] {
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8);
+}
+
+.AccountDetailEditorial_productStatusBadge[data-status="churned"]:hover {
+  background: var(--color-spice-terracotta-12);
+}
+
+.AccountDetailEditorial_productStatusDropdown {
+  position: absolute;
+  top: 100%;
+  left: 0;
+  margin-top: 4px;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  padding: 4px;
+  z-index: 50;
+  min-width: 100px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+.AccountDetailEditorial_productStatusOption {
+  display: block;
+  width: 100%;
+  padding: 6px 10px;
+  border: none;
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  border-radius: 4px;
+  text-align: left;
+}
+
+.AccountDetailEditorial_productStatusOption:hover {
+  background: var(--color-black-4);
+}
+
+.AccountDetailEditorial_productStatusOptionActive {
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8);
+}
+
+.AccountDetailEditorial_productStatusOption[data-status="trial"] {
+  color: var(--color-spice-turmeric);
+}
+
+.AccountDetailEditorial_productStatusOption[data-status="churned"] {
+  color: var(--color-spice-terracotta);
+}
+
+/* Right: feedback + dismiss */
+.AccountDetailEditorial_productRight {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs, 4px);
+  flex-shrink: 0;
+}
+
+.AccountDetailEditorial_productFeedback {
+  opacity: 0;
+  transition: opacity var(--transition-fast);
+}
+
+.AccountDetailEditorial_productDismiss {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-quaternary);
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  opacity: 0;
+  transition: opacity var(--transition-fast), color var(--transition-fast), background var(--transition-fast);
+}
+
+.AccountDetailEditorial_productDismiss:hover {
+  background: var(--color-spice-terracotta-8);
+  color: var(--color-spice-terracotta);
+}
+
+/* Product inline edit — EditableText-style */
+.AccountDetailEditorial_productEditInput {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--color-spice-terracotta);
+  outline: none;
+  width: 100%;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+/* ── Renewal Date (Inline Editable) ── */
+
+.AccountDetailEditorial_renewalDateRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.AccountDetailEditorial_renewalDateLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.AccountDetailEditorial_healthScoreNumber {
+  font-family: var(--font-serif);
+  font-size: 100px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--color-text-primary);
+}
+
+.AccountDetailEditorial_healthMeta {
+  padding-top: 20px;
+}
+
+.AccountDetailEditorial_healthBand {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-bottom: 8px;
+}
+
+.AccountDetailEditorial_healthBandGreen {
+  composes: healthBand;
+  color: var(--color-garden-sage);
+}
+
+.AccountDetailEditorial_healthBandYellow {
+  composes: healthBand;
+  color: var(--color-spice-saffron);
+}
+
+.AccountDetailEditorial_healthBandRed {
+  composes: healthBand;
+  color: var(--color-spice-terracotta);
+}
+
+.AccountDetailEditorial_healthNarrative {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
+  max-width: 480px;
+}
+
+.AccountDetailEditorial_healthTrendLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Technical Footprint  ── */
+
+.AccountDetailEditorial_technicalFootprint {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.AccountDetailEditorial_technicalFootprintLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-sm);
+}
+
+.AccountDetailEditorial_technicalFootprintGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(140px, 1fr));
+  gap: var(--space-sm) var(--space-md);
+}
+
+.AccountDetailEditorial_technicalFootprintItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.AccountDetailEditorial_technicalFootprintItemLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.AccountDetailEditorial_technicalFootprintItemValue {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.AccountDetailEditorial_technicalFootprintSource {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-xs);
+}
+
+/* ── Engagement Cadence  ── */

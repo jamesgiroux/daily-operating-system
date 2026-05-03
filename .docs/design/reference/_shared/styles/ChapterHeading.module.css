@@ -1,0 +1,42 @@
+
+.ChapterHeading_heading {
+  margin-bottom: var(--space-xl);
+}
+
+.ChapterHeading_rule {
+  border: none;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin: 0 0 var(--space-md);
+}
+
+.ChapterHeading_titleRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.ChapterHeading_title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+}
+
+.ChapterHeading_feedback {
+  display: inline-flex;
+  align-items: center;
+}
+
+.ChapterHeading_epigraph {
+  max-width: 540px;
+  margin: var(--space-md) 0 0;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+}

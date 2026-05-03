@@ -1,0 +1,356 @@
+/* =============================================================================
+   FloatingNavIsland.module.css
+
+   Dual-pill "Dynamic Island" floating navigation — right margin.
+   Two merged pills: global (app nav, right) + local (chapters, left).
+   Fixed position, centered vertically at 28px from right.
+   ============================================================================= */
+
+
+/* ─────────────────────────────────────────────────────────────────────────
+   CONTAINER — Position context for both pills
+   ───────────────────────────────────────────────────────────────────────── */
+.FloatingNavIsland_navIslandContainer {
+  position: fixed;
+  right: var(--nav-island-right);
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: var(--z-app-shell);
+  display: flex;
+  flex-direction: row;
+  align-items: flex-start;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   GLOBAL PILL — Right side, always visible app navigation
+   ───────────────────────────────────────────────────────────────────────── */
+.FloatingNavIsland_navIslandGlobal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: var(--frosted-glass-nav);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border-radius: var(--radius-editorial-xl);
+  box-shadow: var(--shadow-md);
+  transition: border-radius 0.2s ease-out;
+}
+
+/* When local pill is attached — flatten left side border-radius */
+.FloatingNavIsland_navIslandGlobalMerged {
+  border-top-left-radius: 0;
+  border-bottom-left-radius: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   LOCAL PILL — Left side, chapter/section navigation
+   ───────────────────────────────────────────────────────────────────────── */
+.FloatingNavIsland_navIslandLocal {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  padding: 8px;
+  background: var(--frosted-glass-nav);
+  backdrop-filter: var(--backdrop-blur);
+  -webkit-backdrop-filter: var(--backdrop-blur);
+  border-radius: var(--radius-editorial-xl);
+  border-top-right-radius: 0;
+  border-bottom-right-radius: 0;
+  box-shadow: var(--shadow-md);
+
+  /* Align to the active icon's Y position in the global pill */
+  margin-top: var(--local-pill-top, 0px);
+
+  /* Animation: scale in from the right edge */
+  transform-origin: right center;
+  transition: transform 0.2s ease-out, opacity 0.2s ease-out;
+
+  /* Overflow scroll for 10+ chapters */
+  max-height: 80vh;
+  overflow-y: auto;
+  overflow-x: hidden;
+}
+
+/* Hide local pill with scaleX animation */
+.FloatingNavIsland_navIslandLocalHidden {
+  transform: scaleX(0);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   HOME BUTTON — Brand mark asterisk
+   ───────────────────────────────────────────────────────────────────────── */
+.FloatingNavIsland_navIslandMark {
+  position: relative;
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-editorial-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--color-spice-turmeric);
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  margin-bottom: 4px;
+  padding: 0;
+  transition: all var(--transition-normal);
+  user-select: none;
+}
+
+.FloatingNavIsland_navIslandMark::after {
+  content: attr(data-label);
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.FloatingNavIsland_navIslandMark:hover::after {
+  opacity: 1;
+}
+
+.FloatingNavIsland_navIslandMark:hover {
+  background: var(--color-desk-charcoal-4);
+}
+
+.FloatingNavIsland_navIslandMark:focus {
+  outline: none;
+  background: var(--color-desk-charcoal-8);
+}
+
+.FloatingNavIsland_navIslandMarkActive {
+  background: var(--color-spice-turmeric-10);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   NAV ITEMS — Icon buttons (global pill)
+   ───────────────────────────────────────────────────────────────────────── */
+.FloatingNavIsland_navIslandItem {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-editorial-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  transition: all var(--transition-normal);
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.FloatingNavIsland_navIslandItem:hover {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-secondary);
+}
+
+.FloatingNavIsland_navIslandItem:focus {
+  outline: none;
+  background: var(--color-desk-charcoal-8);
+}
+
+.FloatingNavIsland_navIslandItem svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Tooltip — appears to the LEFT, must clear the local pill when present */
+.FloatingNavIsland_navIslandItem::after {
+  content: attr(data-label);
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.FloatingNavIsland_navIslandItem:hover::after {
+  opacity: 1;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   LOCAL NAV ITEMS — Icon buttons (local/chapter pill)
+   Same base style as global items but tooltip goes LEFT of the local pill
+   ───────────────────────────────────────────────────────────────────────── */
+.FloatingNavIsland_navIslandLocalItem {
+  width: 36px;
+  height: 36px;
+  border-radius: var(--radius-editorial-md);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  background: transparent;
+  border: none;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  transition: all var(--transition-normal);
+  position: relative;
+  -webkit-app-region: no-drag;
+}
+
+.FloatingNavIsland_navIslandLocalItem:hover {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-secondary);
+}
+
+.FloatingNavIsland_navIslandLocalItem:focus {
+  outline: none;
+  background: var(--color-desk-charcoal-8);
+}
+
+.FloatingNavIsland_navIslandLocalItem svg {
+  width: 18px;
+  height: 18px;
+}
+
+/* Tooltip — LEFT of the local pill */
+.FloatingNavIsland_navIslandLocalItem::after {
+  content: attr(data-label);
+  position: absolute;
+  right: calc(100% + 10px);
+  top: 50%;
+  transform: translateY(-50%);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  padding: 4px 10px;
+  border-radius: 6px;
+  box-shadow: var(--shadow-sm);
+  white-space: nowrap;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.FloatingNavIsland_navIslandLocalItem:hover::after {
+  opacity: 1;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ACTIVE STATE — Color-based variants
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* Turmeric active state */
+.FloatingNavIsland_activeTurmeric {
+  background: var(--color-spice-turmeric-10);
+  color: var(--color-spice-turmeric);
+}
+
+/* Terracotta active state */
+.FloatingNavIsland_activeTerracotta {
+  background: var(--color-spice-terracotta-10);
+  color: var(--color-spice-terracotta);
+}
+
+/* Larkspur active state */
+.FloatingNavIsland_activeLarkspur {
+  background: var(--color-garden-larkspur-10);
+  color: var(--color-garden-larkspur);
+}
+
+/* Olive active state */
+.FloatingNavIsland_activeOlive {
+  background: var(--color-garden-olive-10);
+  color: var(--color-garden-olive);
+}
+
+/* Eucalyptus active state — user entity (/me) */
+.FloatingNavIsland_activeEucalyptus {
+  background: var(--color-garden-eucalyptus-10);
+  color: var(--color-garden-eucalyptus);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   DIVIDER — Thin separator lines between nav groups
+   ───────────────────────────────────────────────────────────────────────── */
+.FloatingNavIsland_navIslandDivider {
+  width: 20px;
+  height: 1px;
+  background: var(--color-rule-light);
+  margin: 4px 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   COLOR SCHEME VARIANTS
+
+   The parent NavIsland can have a color class that affects active state styling
+   throughout the component tree. This is applied via className in the component.
+   ───────────────────────────────────────────────────────────────────────── */
+
+/* These classes are applied to the nav island container itself
+   to change the active color scheme for all child items */
+
+.FloatingNavIsland_colorTurmeric .FloatingNavIsland_activeTurmeric {
+  background: var(--color-spice-turmeric-10);
+  color: var(--color-spice-turmeric);
+}
+
+.FloatingNavIsland_colorTerracotta .FloatingNavIsland_activeTerracotta {
+  background: var(--color-spice-terracotta-10);
+  color: var(--color-spice-terracotta);
+}
+
+.FloatingNavIsland_colorLarkspur .FloatingNavIsland_activeLarkspur {
+  background: var(--color-garden-larkspur-10);
+  color: var(--color-garden-larkspur);
+}
+
+.FloatingNavIsland_colorOlive .FloatingNavIsland_activeOlive {
+  background: var(--color-garden-olive-10);
+  color: var(--color-garden-olive);
+}
+
+.FloatingNavIsland_colorEucalyptus .FloatingNavIsland_activeEucalyptus {
+  background: var(--color-garden-eucalyptus-10);
+  color: var(--color-garden-eucalyptus);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   ME CONTENT DOT — Indicator that user entity has content
+   ───────────────────────────────────────────────────────────────────────── */
+.FloatingNavIsland_meContentDot {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  /* Eucalyptus — from --color-garden-eucalyptus #6ba8a4 */
+  background: var(--color-garden-eucalyptus);
+}

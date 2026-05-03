@@ -1,0 +1,223 @@
+/* =============================================================================
+   VALUE COMMITMENTS — Chapter 4 "What we've built together"
+   Ref: .docs/mockups/account-context-globex.html (Chapter 4)
+   ============================================================================= */
+
+.ValueCommitments_section {
+  scroll-margin-top: 60px;
+}
+
+.ValueCommitments_subsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-3xl);
+  margin-bottom: var(--space-lg);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px dashed var(--color-rule-light);
+}
+
+.ValueCommitments_subsectionLabel:first-child {
+  margin-top: 0;
+}
+
+/* -- Value delivered — 3-col card grid ------------------------------------ */
+
+.ValueCommitments_valueGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: var(--space-lg);
+}
+
+.ValueCommitments_valueCard {
+  position: relative;
+  padding: var(--space-xl);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.ValueCommitments_impactTag {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 600;
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.ValueCommitments_impactTagRevenue {
+  background: var(--color-garden-sage-15, rgba(136, 159, 120, 0.15));
+  color: var(--color-garden-rosemary, #4f6a3f);
+}
+
+.ValueCommitments_impactTagCost {
+  background: var(--color-spice-turmeric-15, rgba(224, 175, 65, 0.15));
+  color: var(--color-spice-turmeric);
+}
+
+.ValueCommitments_impactTagRisk {
+  background: var(--color-spice-terracotta-12, rgba(192, 108, 84, 0.12));
+  color: var(--color-spice-terracotta);
+}
+
+.ValueCommitments_impactTagSpeed {
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: #4a6186;
+}
+
+.ValueCommitments_impactTagDefault {
+  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
+  color: var(--color-text-tertiary);
+}
+
+.ValueCommitments_valueHeadline {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+}
+
+.ValueCommitments_valueSource {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: auto;
+}
+
+/* -- Success metrics — 3-col card grid ------------------------------------ */
+
+.ValueCommitments_metricRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: var(--space-lg);
+}
+
+.ValueCommitments_metricCard {
+  position: relative;
+  padding: var(--space-lg);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-md);
+}
+
+.ValueCommitments_metricName {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+
+.ValueCommitments_metricValues {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin-top: var(--space-xs);
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.ValueCommitments_metricCurrent {
+  color: var(--color-garden-rosemary, #4f6a3f);
+  font-weight: 500;
+}
+
+.ValueCommitments_metricTarget {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+}
+
+.ValueCommitments_metricFooter {
+  margin-top: var(--space-sm);
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.ValueCommitments_metricOwner {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.ValueCommitments_metricStatus {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+
+.ValueCommitments_statusAchieved {
+  color: var(--color-garden-rosemary, #4f6a3f);
+}
+
+.ValueCommitments_statusOnTrack {
+  color: var(--color-spice-turmeric);
+}
+
+.ValueCommitments_statusAtRisk {
+  color: var(--color-spice-terracotta);
+}
+
+.ValueCommitments_statusBehind {
+  color: var(--color-spice-terracotta);
+}
+
+.ValueCommitments_statusNeutral {
+  color: var(--color-text-tertiary);
+}
+
+/* -- Dismiss (hover-reveal, feeds negative feedback) ---------------------- */
+
+.ValueCommitments_dismissButton {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.ValueCommitments_valueCard:hover .ValueCommitments_dismissButton,
+.ValueCommitments_metricCard:hover .ValueCommitments_dismissButton,
+.ValueCommitments_dismissButton:focus-visible {
+  opacity: 1;
+}
+
+.ValueCommitments_dismissButton:hover {
+  color: var(--color-spice-terracotta);
+  background: var(--color-desk-charcoal-4, rgba(60, 55, 48, 0.04));
+}

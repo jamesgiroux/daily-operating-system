@@ -1,0 +1,383 @@
+/* =============================================================================
+   WeekPage — CSS Module for week header + shape sections
+   Design spec: .docs/design/WEEK-PAGE-REDESIGN.md
+   ============================================================================= */
+
+/* ── Week Header ─────────────────────────────────────────────────────────── */
+
+.WeekPage_weekHeader {
+  padding-top: var(--space-5xl);
+}
+
+.WeekPage_weekLabel {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-garden-larkspur);
+  margin: 0 0 var(--space-sm);
+}
+
+.WeekPage_weekDate {
+  font-family: var(--font-serif);
+  font-size: 76px;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.06;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.WeekPage_weekVitals {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: var(--space-lg) 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 0;
+}
+
+.WeekPage_weekVitals span + span::before {
+  content: " · ";
+}
+
+.WeekPage_vitalsReady {
+  color: var(--color-garden-sage);
+}
+
+.WeekPage_vitalsAlert {
+  color: var(--color-spice-terracotta);
+}
+
+/* ── This Week — The Shape ───────────────────────────────────────────────── */
+
+.WeekPage_shapeSection {
+  padding-top: var(--space-3xl);
+}
+
+.WeekPage_shapeLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 var(--space-md);
+  padding-bottom: var(--space-sm);
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.WeekPage_shapeRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.WeekPage_shapeRowPast {
+  opacity: 0.4;
+}
+
+.WeekPage_shapeDayLabel {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  width: 36px;
+  flex-shrink: 0;
+}
+
+.WeekPage_shapeDayLabelToday {
+  color: var(--color-garden-larkspur);
+}
+
+.WeekPage_shapeBar {
+  flex: 1;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--color-paper-linen);
+  overflow: hidden;
+}
+
+.WeekPage_shapeBarFill {
+  height: 100%;
+  border-radius: 4px;
+  background: var(--color-garden-larkspur);
+}
+
+.WeekPage_shapeBarFillHeavy {
+  background: var(--color-spice-terracotta);
+}
+
+.WeekPage_shapeBarFillToday {
+  background: var(--color-garden-larkspur);
+}
+
+.WeekPage_shapeCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  width: 88px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.WeekPage_shapeAchievability {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  width: 40px;
+  flex-shrink: 0;
+  text-align: right;
+}
+
+.WeekPage_shapeAchievabilityGood {
+  color: var(--color-garden-sage);
+}
+
+.WeekPage_shapeAchievabilityAlert {
+  color: var(--color-spice-terracotta);
+}
+
+.WeekPage_shapeEpigraph {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin: var(--space-md) 0 0;
+}
+
+/* ── Shape Days Column ──────────────────────────────────────────────────── */
+
+.WeekPage_shapeDaysColumn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+/* ── Page Layout ────────────────────────────────────────────────────────── */
+
+.WeekPage_pageContainer {
+  max-width: 760px;
+  margin: 0 auto;
+  padding: 0 40px;
+}
+
+/* ── Loading Skeleton ───────────────────────────────────────────────────── */
+
+.WeekPage_skeletonBg {
+  background: var(--color-rule-light);
+}
+
+.WeekPage_skeletonHeader {
+  padding-top: var(--space-5xl);
+}
+
+.WeekPage_skeletonShape {
+  padding-top: var(--space-3xl);
+}
+
+.WeekPage_skeletonShapeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-lg);
+}
+
+.WeekPage_skeletonTimeline {
+  padding-top: 64px;
+}
+
+.WeekPage_skeletonTimelineRule {
+  border-top: 2px solid var(--color-rule-light);
+  margin-bottom: var(--space-md);
+}
+
+.WeekPage_skeletonDayGroup {
+  margin-bottom: 20px;
+}
+
+.WeekPage_skeletonDayRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  margin-bottom: var(--space-sm);
+  margin-left: var(--space-md);
+}
+
+.WeekPage_skeletonFinis {
+  text-align: center;
+  padding: var(--space-4xl) 0 var(--space-2xl);
+}
+
+/* ── Timeline Section ───────────────────────────────────────────────────── */
+
+.WeekPage_timelineSection {
+  padding-top: 64px;
+}
+
+.WeekPage_timelineGroupSpacing {
+  margin-bottom: var(--space-lg);
+}
+
+.WeekPage_timelineGroupSpacingTop {
+  margin-top: var(--space-lg);
+}
+
+/* ── Timeline Section Headers (Earlier / Today / Ahead) ─────────────────── */
+
+.WeekPage_timelineSectionHeader {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-rule-heavy);
+  padding-bottom: 6px;
+}
+
+.WeekPage_timelineSectionHeaderToday {
+  color: var(--color-garden-larkspur);
+  border-bottom: 2px solid var(--color-garden-larkspur);
+}
+
+/* ── Earlier Toggle ─────────────────────────────────────────────────────── */
+
+.WeekPage_earlierToggle {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  border-bottom: 1px solid var(--color-rule-heavy);
+  padding-bottom: 6px;
+  cursor: pointer;
+}
+
+.WeekPage_earlierToggleExpanded {
+  margin-bottom: var(--space-md);
+}
+
+.WeekPage_earlierToggleLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.WeekPage_earlierToggleCount {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Timeline Day Group ─────────────────────────────────────────────────── */
+
+.WeekPage_dayGroupContainer {
+  margin-bottom: 20px;
+}
+
+.WeekPage_dayGroupLabel {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  margin: 0 0 var(--space-sm);
+}
+
+.WeekPage_dayGroupLabelToday {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  border-left: 3px solid var(--color-garden-larkspur);
+  padding-left: var(--space-md);
+}
+
+.WeekPage_dayGroupMeetings {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.WeekPage_dayGroupMeetingsToday {
+  padding-left: 15px;
+}
+
+/* ── Meeting Subtitle Extras ────────────────────────────────────────────── */
+
+.WeekPage_noPrepBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8);
+  border-radius: var(--radius-editorial-sm);
+  padding: 1px 6px;
+}
+
+.WeekPage_daysUntilLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Past Meeting Outcomes ──────────────────────────────────────────────── */
+
+.WeekPage_outcomeRow {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-garden-sage);
+  margin-top: var(--space-xs);
+}
+
+.WeekPage_outcomeSummaryText {
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.WeekPage_followUpBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-10);
+  border-radius: var(--radius-editorial-sm);
+  padding: 1px 6px;
+  margin-left: var(--space-xs);
+}
+
+.WeekPage_followUpBadgeStandalone {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-10);
+  border-radius: var(--radius-editorial-sm);
+  padding: 1px 6px;
+  margin-top: var(--space-xs);
+}
+
+/* ── Error + Finis ──────────────────────────────────────────────────────── */
+
+.WeekPage_errorSpacing {
+  margin-top: var(--space-2xl);
+}
+
+.WeekPage_finisCaption {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding-bottom: var(--space-2xl);
+}

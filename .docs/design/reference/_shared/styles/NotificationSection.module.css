@@ -1,0 +1,133 @@
+/* NotificationSection — Notification preferences */
+
+.NotificationSection_container {
+  margin-top: var(--space-sm);
+}
+
+.NotificationSection_description {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0 0 var(--space-lg) 0;
+}
+
+/* ── Toggle rows ── */
+
+.NotificationSection_toggleRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.NotificationSection_toggleInfo {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.NotificationSection_toggleLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.NotificationSection_toggleDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+/* ── Toggle switch ── */
+
+.NotificationSection_switch {
+  position: relative;
+  width: 36px;
+  height: 20px;
+  background: var(--color-rule-heavy);
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+  transition: background 0.2s ease;
+  flex-shrink: 0;
+  padding: 0;
+}
+
+.NotificationSection_switch[data-checked="true"] {
+  background: var(--color-garden-olive);
+}
+
+.NotificationSection_switchThumb {
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: white;
+  border-radius: 50%;
+  transition: transform 0.2s ease;
+}
+
+.NotificationSection_switch[data-checked="true"] .NotificationSection_switchThumb {
+  transform: translateX(16px);
+}
+
+/* ── Quiet hours ── */
+
+.NotificationSection_quietHoursSection {
+  margin-top: var(--space-lg);
+  padding-top: var(--space-md);
+}
+
+.NotificationSection_quietHoursToggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.NotificationSection_quietHoursRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+  padding: 12px 0;
+}
+
+.NotificationSection_hourSelect {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 6px 8px;
+  cursor: pointer;
+  appearance: auto;
+}
+
+.NotificationSection_hourSelect:focus {
+  border-color: var(--color-garden-olive);
+  outline: none;
+}
+
+.NotificationSection_hourLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* ── Save indicator ── */
+
+.NotificationSection_saveStatus {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-garden-sage);
+  margin-top: var(--space-sm);
+  min-height: 16px;
+}

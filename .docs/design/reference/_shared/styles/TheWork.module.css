@@ -1,0 +1,274 @@
+.TheWork_section {
+  display: block;
+}
+
+.TheWork_headerRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.TheWork_headerActions,
+.TheWork_objectiveActions,
+.TheWork_milestoneActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.TheWork_headerButton,
+.TheWork_templateApply,
+.TheWork_smallAction,
+.TheWork_smallActionMuted,
+.TheWork_inlineAdder {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0;
+}
+
+.TheWork_headerButton,
+.TheWork_templateApply,
+.TheWork_smallAction,
+.TheWork_inlineAdder {
+  color: var(--color-spice-turmeric);
+}
+
+.TheWork_smallActionMuted {
+  color: var(--color-text-tertiary);
+}
+
+.TheWork_panelTitle,
+.TheWork_subheading,
+.TheWork_suggestionTitle {
+  font-family: var(--font-serif);
+  color: var(--color-text-primary);
+}
+
+.TheWork_panelTitle {
+  font-size: 20px;
+  font-weight: 400;
+  margin-bottom: 4px;
+}
+
+.TheWork_suggestionDescription,
+.TheWork_suggestionMeta,
+.TheWork_objectiveMeta,
+.TheWork_milestoneMeta {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.TheWork_panel {
+  margin-bottom: 28px;
+  padding: 18px;
+  border: 1px solid var(--color-rule-light);
+}
+
+.TheWork_suggestionCard,
+.TheWork_objectiveCard {
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: 18px;
+  margin-top: 18px;
+}
+
+.TheWork_suggestionCard:first-of-type {
+  border-top: none;
+  padding-top: 0;
+  margin-top: 0;
+}
+
+.TheWork_suggestionTop,
+.TheWork_objectiveTop,
+.TheWork_linkedActionRow,
+.TheWork_linkableActionRow,
+.TheWork_newObjectiveRow,
+.TheWork_newMilestoneRow,
+.TheWork_actionComposer {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.TheWork_suggestionTitle,
+.TheWork_objectiveTitle {
+  font-size: 22px;
+  font-weight: 400;
+  margin: 0;
+}
+
+.TheWork_suggestionMilestones,
+.TheWork_milestoneList {
+  margin: 12px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.TheWork_suggestionMilestones li {
+  padding: 6px 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.TheWork_objectiveInput,
+.TheWork_linkSelect {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: none;
+  padding: 6px 0;
+  outline: none;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.TheWork_objectiveCard {
+  padding-bottom: 24px;
+}
+
+.TheWork_objectiveMain,
+.TheWork_milestoneContent,
+.TheWork_linkedActionMain,
+.TheWork_linkableActionMain {
+  flex: 1;
+  min-width: 0;
+}
+
+.TheWork_objectiveDescription {
+  display: block;
+  margin-top: 8px;
+  color: var(--color-text-secondary);
+  line-height: 1.6;
+}
+
+.TheWork_milestoneRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.TheWork_milestoneToggle {
+  width: 16px;
+  height: 16px;
+  margin-top: 4px;
+  border-radius: 999px;
+  border: 1px solid var(--color-rule-heavy);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.TheWork_milestoneToggleDone {
+  background: var(--color-garden-sage);
+  border-color: var(--color-garden-sage);
+}
+
+.TheWork_milestoneTitle {
+  color: var(--color-text-primary);
+}
+
+.TheWork_linkedActions,
+.TheWork_actionSection,
+.TheWork_meetingSection {
+  margin-top: 28px;
+}
+
+.TheWork_sectionLabel,
+.TheWork_groupLabel,
+.TheWork_subheading {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.TheWork_sectionLabel,
+.TheWork_subheading {
+  margin-bottom: 12px;
+}
+
+.TheWork_groupLabel {
+  padding-bottom: 6px;
+  border-bottom: 1px solid var(--color-rule-light);
+  margin-bottom: 12px;
+  color: var(--label-color, var(--color-text-tertiary));
+}
+
+.TheWork_actionGroup {
+  margin-bottom: 24px;
+}
+
+.TheWork_linkBox {
+  min-width: 120px;
+  padding-top: 14px;
+}
+
+.TheWork_emptyMessage {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* Progress bar */
+.TheWork_progressBar {
+  height: 3px;
+  border-radius: 2px;
+  background: var(--color-border-subtle);
+  margin-top: 8px;
+  overflow: hidden;
+}
+.TheWork_progressFill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  width: var(--progress-width, 0%);
+}
+
+.TheWork_autoDetectIcon {
+  display: inline;
+  vertical-align: middle;
+}
+.TheWork_progressOnTrack .TheWork_progressFill { background: var(--color-garden-sage); }
+.TheWork_progressWarning .TheWork_progressFill { background: var(--color-spice-turmeric); }
+.TheWork_progressOverdue .TheWork_progressFill { background: var(--color-spice-terracotta); }
+
+/* Objective target date */
+.TheWork_objectiveTargetDate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* Objective status states */
+.TheWork_objectiveDraft { opacity: 0.6; }
+.TheWork_objectiveCompleted { border-left: 3px solid var(--color-garden-sage); padding-left: 12px; }
+.TheWork_objectiveAbandoned { opacity: 0.5; }
+.TheWork_objectiveAbandoned .TheWork_objectiveTitle { text-decoration: line-through; }
+
+/* Empty state */
+.TheWork_emptyObjectives {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  padding: 16px 0;
+}
+
+/* Scroll target */
+.TheWork_scrollTarget { scroll-margin-top: 60px; }

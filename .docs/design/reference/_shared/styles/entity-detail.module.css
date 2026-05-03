@@ -1,0 +1,398 @@
+/* =============================================================================
+   SHARED ENTITY DETAIL STYLES — Account / Project / Person detail pages
+   Common patterns extracted from inline styles across all 3 entity detail pages.
+   ============================================================================= */
+
+/* ── Chapter & Section Layout ── */
+
+.entity-detail_chapterSection {
+  scroll-margin-top: 60px;
+  padding-top: var(--space-5xl);
+}
+
+.entity-detail_chapterSectionWithPadding {
+  scroll-margin-top: 60px;
+  padding-top: var(--space-5xl);
+}
+
+/* Hero section wrapper — the top-of-page headline. Unlike mid-page chapters,
+   the hero does NOT need --space-5xl top padding (the pageContainer already
+   provides page-margin-top folio clearance, and the hero-date row brings its
+   own --space-xl padding matching the mockup). Using chapterSection here
+   pushes the name ~80px further down than the design calls for. */
+.entity-detail_chapterHeadline {
+  scroll-margin-top: 60px;
+}
+
+/* ── Breadcrumb Navigation ── */
+
+.entity-detail_breadcrumbNav {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  padding: var(--space-sm) 0 var(--space-xs);
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  flex-wrap: wrap;
+}
+
+.entity-detail_breadcrumbButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  font-family: inherit;
+  font-size: inherit;
+  letter-spacing: inherit;
+}
+
+.entity-detail_breadcrumbSeparator {
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+}
+
+.entity-detail_breadcrumbCurrent {
+  color: var(--color-text-primary);
+}
+
+/* ── Folio Action Buttons ── */
+
+.entity-detail_folioActions {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.entity-detail_folioActionButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+/* ── Portfolio Chapter ── */
+
+.entity-detail_portfolioHealthSummary {
+  margin-bottom: var(--space-xl);
+}
+
+.entity-detail_portfolioHealthSummaryText {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 600;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  max-width: 640px;
+  margin: 0;
+}
+
+.entity-detail_portfolioNarrative {
+  margin-bottom: var(--space-2xl);
+}
+
+.entity-detail_portfolioNarrativeText {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  max-width: 640px;
+  margin: 0;
+}
+
+.entity-detail_portfolioHotspotsSection {
+  margin-bottom: var(--space-2xl);
+}
+
+.entity-detail_portfolioSectionLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 20px;
+}
+
+.entity-detail_portfolioSectionLabelTerracotta {
+  composes: portfolioSectionLabel;
+  color: var(--color-spice-terracotta);
+}
+
+.entity-detail_portfolioSectionLabelLarkspur {
+  composes: portfolioSectionLabel;
+  color: var(--color-garden-larkspur);
+}
+
+.entity-detail_portfolioSectionLabelTertiary {
+  composes: portfolioSectionLabel;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md);
+}
+
+.entity-detail_hotspotRow {
+  display: flex;
+  gap: 14px;
+  padding: var(--space-md) 0;
+  align-items: flex-start;
+}
+
+.entity-detail_hotspotRowBorder {
+  composes: hotspotRow;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.entity-detail_hotspotDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--color-spice-terracotta);
+  flex-shrink: 0;
+  margin-top: 6px;
+}
+
+.entity-detail_hotspotContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.entity-detail_hotspotLinkButton {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
+
+.entity-detail_hotspotReason {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: var(--space-xs) 0 0;
+}
+
+/* ── Cross-BU / Cross-Project Patterns ── */
+
+.entity-detail_crossPatternsBlock {
+  background: var(--color-desk-charcoal-4);
+  border-left: 3px solid var(--color-garden-larkspur);
+  border-radius: 0 6px 6px 0;
+  padding: var(--space-md) 20px;
+  margin-bottom: var(--space-2xl);
+}
+
+.entity-detail_crossPatternText {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+
+.entity-detail_crossPatternTextFirst {
+  composes: crossPatternText;
+  margin: 0;
+}
+
+.entity-detail_crossPatternTextSubsequent {
+  composes: crossPatternText;
+  margin: var(--space-sm) 0 0;
+}
+
+/* ── Child Entity List ── */
+
+.entity-detail_childListSection {
+  margin-bottom: var(--space-lg);
+}
+
+.entity-detail_childRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.entity-detail_childRowBorder {
+  composes: childRow;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.entity-detail_childNameButton {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+  flex: 1;
+  min-width: 0;
+}
+
+.entity-detail_childTypeBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-left: var(--space-xs);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.entity-detail_statusIndicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+.entity-detail_secondaryMetric {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Dialog Form Layout ── */
+
+.entity-detail_dialogForm {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: var(--space-sm);
+}
+
+.entity-detail_dialogActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+}
+
+.entity-detail_dialogButton {
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+/* ── Merge Search Dialog (Person) ── */
+
+.entity-detail_mergeSearchResults {
+  max-height: 240px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.entity-detail_mergeSearchButton {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: var(--space-sm) var(--space-md);
+  border-radius: 6px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  text-align: left;
+  width: 100%;
+}
+
+.entity-detail_mergeAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  background: var(--color-garden-larkspur-15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-garden-larkspur);
+  flex-shrink: 0;
+}
+
+.entity-detail_mergePersonInfo {
+  min-width: 0;
+  flex: 1;
+}
+
+.entity-detail_mergePersonName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-detail_mergePersonEmail {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.entity-detail_mergeEmptyState {
+  text-align: center;
+  padding: var(--space-md) 0;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Margin Label Layout  ── */
+
+.entity-detail_marginLabelSection {
+  display: grid;
+  grid-template-columns: 88px 1fr;
+  gap: 0 var(--space-xl, 32px);
+  padding-top: var(--space-4xl, 72px);
+  scroll-margin-top: 60px;
+}
+
+.entity-detail_marginLabel {
+  position: sticky;
+  top: 72px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+  padding-top: 6px;
+}
+
+.entity-detail_marginContent {
+  min-width: 0;
+}
+
+@media (max-width: 860px) {
+  .entity-detail_marginLabelSection {
+    grid-template-columns: 1fr;
+  }
+  .entity-detail_marginLabel {
+    position: static;
+    margin-bottom: 8px;
+  }
+}

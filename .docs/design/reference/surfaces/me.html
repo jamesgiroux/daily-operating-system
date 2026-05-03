@@ -1,127 +1,226 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Me · DailyOS Reference</title>
-  <link rel="stylesheet" href="../_shared/tokens.css">
-  <link rel="stylesheet" href="../_shared/primitives.css">
+
+  <!-- Fonts FIRST so the rest of the cascade has them -->
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — injected by chrome.js from body data attributes -->
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Surface-specific modules used by MePage.tsx -->
+  <link rel="stylesheet" href="../_shared/styles/MePage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditorialPageHeader.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ContextEntryList.module.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
   <link rel="stylesheet" href="../_shared/chrome.css">
   <link rel="stylesheet" href="../_shared/inspector.css">
-  <style>
-    .profile-hero { padding-top: var(--space-5xl); padding-bottom: var(--space-xl); }
-    .profile-kicker, .chapter-meta, .profile-label, .playbook-meta {
-      font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase;
-      color: var(--color-text-tertiary);
-    }
-    .profile-title { font-family: var(--font-serif); font-size: 76px; font-weight: 400; line-height: 1.04; letter-spacing: -0.02em; }
-    .profile-role { margin-top: var(--space-sm); font-family: var(--font-serif); font-size: 26px; font-style: italic; font-weight: 300; color: var(--color-text-secondary); }
-    .profile-lede { max-width: 680px; margin-top: var(--space-lg); font-size: 16px; line-height: 1.7; color: var(--color-text-secondary); }
-    .profile-strip { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1px; margin-top: var(--space-xl); border-top: 1px solid var(--color-rule-heavy); border-bottom: 1px solid var(--color-rule-heavy); }
-    .profile-cell { min-height: 86px; padding: 17px 20px; background: rgba(250, 248, 246, 0.42); }
-    .profile-cell strong { display: block; margin-top: 8px; font-family: var(--font-serif); font-size: 22px; font-weight: 400; }
-    .profile-chapter { margin-top: var(--space-2xl); scroll-margin-top: 72px; }
-    .chapter { margin-bottom: var(--space-lg); }
-    .preference-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-lg); }
-    .preference-card { padding: 18px 0; border-top: 1px solid var(--color-rule-heavy); }
-    .preference-card h3, .kpi-title, .playbook-title { font-family: var(--font-serif); font-size: 21px; font-weight: 400; line-height: 1.25; }
-    .preference-card p, .kpi-copy, .playbook-copy, .preset-copy { margin-top: 8px; font-size: 14px; line-height: 1.58; color: var(--color-text-secondary); }
-    .kpi-list, .playbook-list { border-top: 1px solid var(--color-rule-light); }
-    .kpi-row, .playbook-row { display: grid; grid-template-columns: 1fr auto; gap: var(--space-lg); align-items: center; padding: 18px 0; border-bottom: 1px solid var(--color-rule-light); }
-    .kpi-value { font-family: var(--font-serif); font-size: 24px; color: var(--color-garden-eucalyptus); white-space: nowrap; }
-    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: var(--space-md); }
-    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--color-rule-light); border-radius: 100px; background: var(--color-paper-warm-white); font-size: 12px; color: var(--color-text-secondary); }
-    .preset-panel { border-top: 1px solid var(--color-rule-heavy); padding-top: var(--space-lg); }
-    .bias-meter { display: grid; grid-template-columns: 1.2fr 1fr 0.8fr; gap: 4px; margin-top: var(--space-lg); height: 34px; }
-    .bias-segment { display: flex; align-items: center; justify-content: center; border-radius: 4px; background: var(--color-garden-eucalyptus-15); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.07em; text-transform: uppercase; color: var(--color-text-secondary); }
-    .bias-segment.primary { background: var(--color-garden-eucalyptus); color: var(--color-paper-warm-white); }
-    @media (max-width: 780px) { .profile-strip, .preference-grid, .kpi-row, .playbook-row { grid-template-columns: 1fr; } .profile-title { font-size: 56px; } }
-  </style>
 </head>
 <body
-  data-ds-name="Me"
-  data-ds-tier="surface"
-  data-ds-spec="surfaces/Me.md"
   data-folio-label="Me"
-  crumbs="Me"
-  data-crumbs="Me"
   data-tint="eucalyptus"
   data-active-page="me"
   data-nav-base="."
->
-  <div class="atmosphere" data-tint="eucalyptus" data-ds-name="AtmosphereLayer" data-ds-tier="chrome" data-ds-spec="chrome/AtmosphereLayer.md"></div>
-  <header class="folio" data-ds-name="FolioBar" data-ds-tier="chrome" data-ds-spec="chrome/FolioBar.md">
-    <div class="folio-left"><span class="folio-mark">*</span><span class="folio-label">Me</span><span class="folio-crumbs"><a href=".">Me</a></span></div>
-    <div class="folio-right"><span class="folio-status-dot" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span><span class="folio-status-text">Profile updated 2026-04-30</span></div>
-  </header>
-  <nav class="nav-island" aria-label="Me chapters" data-ds-name="FloatingNavIsland" data-ds-tier="chrome" data-ds-spec="chrome/FloatingNavIsland.md">
-    <a class="nav-island-item" href="#how-i-work" aria-label="How I work" aria-current="page" data-tint="eucalyptus" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">01</a>
-    <a class="nav-island-item" href="#measured" aria-label="What I am measured on" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">02</a>
-    <a class="nav-island-item" href="#playbooks" aria-label="My playbooks" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">03</a>
-    <a class="nav-island-item" href="#preset" aria-label="Account preset" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">04</a>
-  </nav>
-  <main class="page" data-ds-name="PageContainer" data-ds-tier="chrome" data-ds-spec="chrome/PageContainer.md">
-    <section class="profile-hero hero-watermark-wrap" data-ds-name="Hero" data-ds-tier="pattern" data-ds-spec="patterns/Hero.md">
-      <div class="hero-watermark" data-tint="eucalyptus">*</div>
-      <p class="profile-kicker">Me · Customer profile · 2026-04-30</p>
-      <h1 class="profile-title">Sam Chen</h1>
-      <p class="profile-role">Customer Success Manager at Automattic</p>
-      <p class="profile-lede">Sam keeps strategic WordPress VIP accounts healthy by turning signals from email, meetings, support, and product work into timely customer actions.</p>
-      <div class="profile-strip" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
-        <div class="profile-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><span class="profile-label">Company alignment</span><strong>Retention and expansion</strong></div>
-        <div class="profile-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><span class="profile-label">Primary motion</span><strong>Executive readiness</strong></div>
-        <div class="profile-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><span class="profile-label">Updated</span><strong>2026-04-30</strong></div>
+  data-folio-actions="reports"
+  data-chapters="about-me:user:About Me|my-priorities:target:My Priorities|context-entries:filetext:Context|attachments:paperclip:Attachments">
+
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div class="MePage_page" data-ds-name="MePage" data-ds-tier="surface" data-ds-spec="surfaces/MePage.md">
+
+  <!-- EditorialPageHeader: title is the user entity name; folio identity stays in data-folio-label. -->
+  <section class="EditorialPageHeader_header EditorialPageHeader_scaleProfile EditorialPageHeader_widthStandard EditorialPageHeader_ruleStandard" style="--editorial-header-rule-color: var(--color-garden-eucalyptus);">
+    <div class="EditorialPageHeader_topRow">
+      <div class="EditorialPageHeader_titleBlock">
+        <div class="EditorialPageHeader_title">Sam Chen</div>
+        <p class="EditorialPageHeader_subtitle">Senior CSM</p>
       </div>
-    </section>
-    <section id="how-i-work" class="profile-chapter" data-ds-name="ProfileChapter" data-ds-tier="pattern" data-ds-spec="patterns/ProfileChapter.md">
-      <header class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md"><hr class="chapter-rule"><p class="chapter-meta">Chapter 01</p><h2 class="chapter-title">How I work</h2><p class="chapter-epigraph">Preferences that shape briefing language, timing, and recommended next steps.</p></header>
-      <div class="preference-grid">
-        <article class="preference-card" data-ds-name="PreferenceCard" data-ds-tier="pattern" data-ds-spec="patterns/PreferenceCard.md"><h3>Morning operating rhythm</h3><p>Prefers a 7:15 AM brief ordered by urgent customer risk, upcoming executive meetings, and renewal blockers.</p><div class="chip-row"><span class="chip" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Early brief</span><span class="chip" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Risk first</span></div></article>
-        <article class="preference-card" data-ds-name="PreferenceCard" data-ds-tier="pattern" data-ds-spec="patterns/PreferenceCard.md"><h3>Decision style</h3><p>Wants account recommendations to include the evidence trail and the smallest useful next action.</p><div class="chip-row"><span class="chip" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Evidence</span><span class="chip" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Next action</span></div></article>
+    </div>
+    <div class="EditorialPageHeader_rule"></div>
+  </section>
+
+  <div class="MePage_activityLine">
+    Your profile shapes every briefing, insight, and recommendation.
+  </div>
+
+  <!-- Section 1: About Me -->
+  <section id="about-me" class="MePage_section" style="scroll-margin-top: 60px;">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">About Me</h2>
       </div>
-    </section>
-    <section id="measured" class="profile-chapter" data-ds-name="ProfileChapter" data-ds-tier="pattern" data-ds-spec="patterns/ProfileChapter.md">
-      <header class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md"><hr class="chapter-rule"><p class="chapter-meta">Chapter 02</p><h2 class="chapter-title">What I'm measured on</h2><p class="chapter-epigraph">KPIs that should influence priority, summary tone, and account surfacing.</p></header>
-      <div class="kpi-list" data-ds-name="KpiList" data-ds-tier="pattern" data-ds-spec="patterns/KpiList.md">
-        <article class="kpi-row" data-ds-name="KpiRow" data-ds-tier="pattern" data-ds-spec="patterns/KpiRow.md"><div><h3 class="kpi-title">Logo retention</h3><p class="kpi-copy">Protect strategic WordPress VIP renewals by spotting risk before QBRs.</p></div><span class="kpi-value">96%</span></article>
-        <article class="kpi-row" data-ds-name="KpiRow" data-ds-tier="pattern" data-ds-spec="patterns/KpiRow.md"><div><h3 class="kpi-title">Expansion qualified pipeline</h3><p class="kpi-copy">Surface credible expansion paths only when customer usage and stakeholder intent agree.</p></div><span class="kpi-value">$1.8M</span></article>
-        <article class="kpi-row" data-ds-name="KpiRow" data-ds-tier="pattern" data-ds-spec="patterns/KpiRow.md"><div><h3 class="kpi-title">Executive meeting readiness</h3><p class="kpi-copy">Keep EBR packs ready 48 hours before stakeholder conversations.</p></div><span class="kpi-value">48h</span></article>
+      <p class="ChapterHeading_epigraph">Who you are and what you do.</p>
+    </div>
+
+    <div class="MePage_fieldGrid">
+      <div class="MePage_fieldRow">
+        <div class="MePage_fieldLabel">Name</div>
+        <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 15px; font-weight: 400; color: var(--color-text-primary);" title="Click to edit" data-editable-text="">Sam Chen</span>
       </div>
-    </section>
-    <section id="playbooks" class="profile-chapter" data-ds-name="ProfileChapter" data-ds-tier="pattern" data-ds-spec="patterns/ProfileChapter.md">
-      <header class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md"><hr class="chapter-rule"><p class="chapter-meta">Chapter 03</p><h2 class="chapter-title">My playbooks</h2><p class="chapter-epigraph">Saved rituals that turn account context into repeatable CSM behavior.</p></header>
-      <div class="playbook-list" data-ds-name="PlaybookList" data-ds-tier="pattern" data-ds-spec="patterns/PlaybookList.md">
-        <article class="playbook-row" data-ds-name="PlaybookRow" data-ds-tier="pattern" data-ds-spec="patterns/PlaybookRow.md"><div><h3 class="playbook-title">Renewal risk review</h3><p class="playbook-copy">Check stakeholder silence, support heat, product blockers, and invoice timing every Monday.</p></div><span class="playbook-meta">Saved 2026-04-22</span></article>
-        <article class="playbook-row" data-ds-name="PlaybookRow" data-ds-tier="pattern" data-ds-spec="patterns/PlaybookRow.md"><div><h3 class="playbook-title">EBR preparation</h3><p class="playbook-copy">Build a narrative from outcomes, open asks, roadmap dependencies, and executive priorities.</p></div><span class="playbook-meta">Saved 2026-04-18</span></article>
-        <article class="playbook-row" data-ds-name="PlaybookRow" data-ds-tier="pattern" data-ds-spec="patterns/PlaybookRow.md"><div><h3 class="playbook-title">Expansion signal triage</h3><p class="playbook-copy">Separate curiosity from budget-backed expansion using usage trend, buyer language, and urgency.</p></div><span class="playbook-meta">Saved 2026-04-12</span></article>
+      <div class="MePage_fieldRow">
+        <div class="MePage_fieldLabel">Title</div>
+        <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 15px; font-weight: 400; color: var(--color-text-primary);" title="Click to edit" data-editable-text="">Senior CSM</span>
       </div>
-    </section>
-    <section id="preset" class="profile-chapter" data-ds-name="ProfileChapter" data-ds-tier="pattern" data-ds-spec="patterns/ProfileChapter.md">
-      <header class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md"><hr class="chapter-rule"><p class="chapter-meta">Chapter 04</p><h2 class="chapter-title">Account preset</h2><p class="chapter-epigraph">The view bias DailyOS applies when account context competes for attention.</p></header>
-      <article class="preset-panel" data-ds-name="AccountPreset" data-ds-tier="pattern" data-ds-spec="patterns/AccountPreset.md">
-        <p class="profile-label">Active preset</p>
-        <h3 class="playbook-title">CSM retention and expansion</h3>
-        <p class="preset-copy">DailyOS weights risk, customer sentiment, upcoming meetings, renewal timing, and expansion evidence before general activity volume.</p>
-        <div class="bias-meter" data-ds-name="BiasMeter" data-ds-tier="primitive" data-ds-spec="primitives/BiasMeter.md">
-          <div class="bias-segment primary" data-ds-name="BiasSegment" data-ds-tier="primitive" data-ds-spec="primitives/BiasSegment.md">Retention</div>
-          <div class="bias-segment" data-ds-name="BiasSegment" data-ds-tier="primitive" data-ds-spec="primitives/BiasSegment.md">Expansion</div>
-          <div class="bias-segment" data-ds-name="BiasSegment" data-ds-tier="primitive" data-ds-spec="primitives/BiasSegment.md">Ops</div>
+      <div class="MePage_fieldRow">
+        <div class="MePage_fieldLabel">Company</div>
+        <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 15px; font-weight: 400; color: var(--color-text-primary);" title="Click to edit" data-editable-text="">Your company</span>
+      </div>
+      <div class="MePage_fieldRow">
+        <div class="MePage_fieldLabel">Current Focus</div>
+        <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 15px; font-weight: 400; color: var(--color-text-primary);" title="Click to edit" data-editable-text="">Q2 renewal clarity for Acme Corp, Northwind Traders launch readiness, and turning Helpline Rollout lessons into a repeatable onboarding playbook.</span>
+      </div>
+    </div>
+
+    <hr class="MePage_thinRule" />
+
+    <div class="MePage_fieldRow">
+      <div class="MePage_fieldLabel">Company Bio</div>
+      <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 15px; font-weight: 300; color: var(--color-text-primary); line-height: 1.65;" title="Click to edit" data-editable-text="">I work with mid-market and enterprise customers who are consolidating support, implementation, and customer intelligence workflows. The team wins when customer operators can see risk early and move faster without another reporting layer.</span>
+    </div>
+
+    <div class="MePage_fieldRow">
+      <div class="MePage_fieldLabel">Role Description</div>
+      <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 15px; font-weight: 300; color: var(--color-text-primary); line-height: 1.65;" title="Click to edit" data-editable-text="">I own a focused book of strategic accounts from onboarding through renewal. Most weeks are split between executive alignment, adoption planning, risk triage, and making sure product feedback from customers reaches the right internal owner.</span>
+    </div>
+
+    <div class="MePage_fieldRow">
+      <div class="MePage_fieldLabel">How I'm Measured</div>
+      <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 15px; font-weight: 300; color: var(--color-text-primary); line-height: 1.65;" title="Click to edit" data-editable-text="">Net revenue retention, renewal forecast accuracy, time-to-first-value for new teams, executive sponsor coverage, and the number of customers ready to serve as credible references each quarter.</span>
+    </div>
+  </section>
+
+  <!-- Section 2: My Priorities -->
+  <section id="my-priorities" class="MePage_section" style="scroll-margin-top: 60px;">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">My Priorities</h2>
+      </div>
+      <p class="ChapterHeading_epigraph">Annual bets and quarterly focus areas. They persist until you remove them.</p>
+    </div>
+
+    <div>
+      <h3 class="MePage_subsectionLabel">This Year</h3>
+      <div class="MePage_priorityList"></div>
+      <button class="MePage_priorityAdd">+ Add priority</button>
+    </div>
+
+    <hr class="MePage_thinRule" />
+
+    <div>
+      <h3 class="MePage_subsectionLabel">This Quarter</h3>
+      <div class="MePage_priorityList"></div>
+      <button class="MePage_priorityAdd">+ Add priority</button>
+    </div>
+  </section>
+
+  <!-- Section 3: Context & Knowledge -->
+  <section id="context-entries" class="MePage_section" style="scroll-margin-top: 60px;">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">Context</h2>
+      </div>
+      <p class="ChapterHeading_epigraph">Professional knowledge that shapes your briefings. Embedding happens in the background.</p>
+    </div>
+
+    <div>
+      <div class="ContextEntryList_entryList">
+        <div class="ContextEntryList_entryItem">
+          <div class="ContextEntryList_entryHeader">
+            <span class="ContextEntryList_entryTitle">Acme Corp renewal motion</span>
+            <span class="ContextEntryList_entryDate">Apr 22</span>
+          </div>
+          <div class="ContextEntryList_entryContent">Jen Park is the executive sponsor, but Dan Mitchell needs the commercial story first or the MSA Renewal thread stalls in legal review. Anchor the next update around risk reduction, not feature coverage.</div>
+          <div class="ContextEntryList_entryActions">
+            <button class="ContextEntryList_entryActionBtn">Edit</button>
+            <button class="ContextEntryList_entryActionBtn">Delete</button>
+          </div>
         </div>
-      </article>
-    </section>
-    <footer class="finis" data-ds-name="FinisMarker" data-ds-tier="chrome" data-ds-spec="chrome/FinisMarker.md">
-      <div class="finis-mark">*</div>
-      <div class="finis-date">Profile reference · 2026-04-30</div>
-      <p class="finis-caption">This profile shapes every briefing, insight, and recommendation.</p>
-    </footer>
-  </main>
-  <script>
-    document.querySelectorAll(".nav-island-item").forEach((item) => {
-      item.addEventListener("click", () => {
-        document.querySelectorAll(".nav-island-item").forEach((el) => el.removeAttribute("aria-current"));
-        item.setAttribute("aria-current", "page");
-      });
-    });
-  </script>
+
+        <div class="ContextEntryList_entryItem">
+          <div class="ContextEntryList_entryHeader">
+            <span class="ContextEntryList_entryTitle">Northwind Q2 Launch pattern</span>
+            <span class="ContextEntryList_entryDate">Apr 21</span>
+          </div>
+          <div class="ContextEntryList_entryContent">Sara Wu responds best to launch plans with explicit owner handoffs. Priya Raman can unblock implementation sequencing if the plan separates customer-facing milestones from internal dependency cleanup.</div>
+          <div class="ContextEntryList_entryActions">
+            <button class="ContextEntryList_entryActionBtn">Edit</button>
+            <button class="ContextEntryList_entryActionBtn">Delete</button>
+          </div>
+        </div>
+
+        <div class="ContextEntryList_entryItem">
+          <div class="ContextEntryList_entryHeader">
+            <span class="ContextEntryList_entryTitle">Helpline Rollout briefing preference</span>
+            <span class="ContextEntryList_entryDate">Apr 18</span>
+          </div>
+          <div class="ContextEntryList_entryContent">For Globex Inc, keep Liu Kang focused on adoption telemetry and bring Kevin Otieno in only after the migration plan has a clean support-owner map. The rollout narrative should stay operational, not aspirational.</div>
+          <div class="ContextEntryList_entryActions">
+            <button class="ContextEntryList_entryActionBtn">Edit</button>
+            <button class="ContextEntryList_entryActionBtn">Delete</button>
+          </div>
+        </div>
+      </div>
+
+      <button class="ContextEntryList_addBtn">+ Add context entry</button>
+    </div>
+  </section>
+
+  <!-- Section 4: Attachments -->
+  <section id="attachments" class="MePage_section" style="scroll-margin-top: 60px;">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">Attachments</h2>
+      </div>
+      <p class="ChapterHeading_epigraph">Documents that provide deeper context.</p>
+    </div>
+
+    <div>
+      <div class="MePage_dropzone">
+        <svg class="MePage_dropzoneIcon" xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
+        <span class="MePage_dropzoneText">
+          Drop files here or
+          <button class="MePage_dropzoneBrowse" type="button">browse</button>
+        </span>
+        <span class="MePage_dropzoneHint">PDF, Markdown, TXT, CSV, DOCX, JSON</span>
+      </div>
+    </div>
+  </section>
+
+  <!-- FinisMarker — three BrandMarks centered. enrichedAt is undefined, so no timestamp renders. -->
+  <div>
+    <div style="text-align: center; padding: 72px 0 24px;">
+      <div style="display: flex; justify-content: center; gap: 0.4em; color: var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+    </div>
+  </div>
+  <div style="height: 80px;"></div>
+
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
 </body>
 </html>

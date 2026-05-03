@@ -1,0 +1,52 @@
+.TemplateSuggestionBanner_banner {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--space-lg, 16px);
+  margin-bottom: var(--space-xl, 28px);
+  padding: var(--space-lg, 16px) var(--space-lg, 18px);
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-warm-white);
+}
+
+.TemplateSuggestionBanner_bannerTitle {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin-bottom: 4px;
+}
+
+.TemplateSuggestionBanner_bannerText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+.TemplateSuggestionBanner_bannerActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.TemplateSuggestionBanner_bannerAction,
+.TemplateSuggestionBanner_bannerActionMuted {
+  border: none;
+  background: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 0;
+}
+
+.TemplateSuggestionBanner_bannerAction {
+  color: var(--color-spice-turmeric);
+}
+
+.TemplateSuggestionBanner_bannerActionMuted {
+  color: var(--color-text-tertiary);
+}

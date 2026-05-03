@@ -1,215 +1,641 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Q2 Launch · DailyOS Reference</title>
-<link rel="stylesheet" href="../_shared/tokens.css">
-<link rel="stylesheet" href="../_shared/chrome.css">
-<link rel="stylesheet" href="../_shared/primitives.css">
-<link rel="stylesheet" href="../_shared/inspector.css">
-<style>
-  .vitals-row .vital { padding: 0 14px; border-right: 1px solid var(--color-rule-light); }
-  .vitals-row .vital:last-child { border-right: none; }
-  .stake-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 32px; }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Q2 Launch · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../_shared/styles/entity-detail.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ProjectDetailEditorial.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ProjectHero.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
+  <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../_shared/styles/VitalsStrip.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+  <link rel="stylesheet" href="../_shared/styles/IntelligenceFeedback.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StateBlock.module.css">
+  <link rel="stylesheet" href="../_shared/styles/WatchList.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StakeholderGallery.module.css">
+  <link rel="stylesheet" href="../_shared/styles/UnifiedTimeline.module.css">
+  <link rel="stylesheet" href="../_shared/styles/TimelineEntry.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AddToRecord.module.css">
+  <link rel="stylesheet" href="../_shared/styles/RecommendedActions.module.css">
+  <link rel="stylesheet" href="../_shared/styles/TheWork.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MeetingRow.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FileListSection.module.css">
+
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
   data-folio-label="Project"
-  data-folio-crumbs="Projects > Q2 Launch"
+  data-folio-crumbs="Projects > Commercial Programs > Q2 Launch"
   data-tint="olive"
   data-active-page="projects"
-  data-nav-base=".">
+  data-nav-base="."
+  data-chapters="headline:alignleft:The Mission|trajectory:trendingup:Trajectory|the-horizon:compass:The Horizon|the-landscape:eye:The Landscape|the-room:users:The Team|the-record:activity:The Record|the-work:checksquare:The Work">
 
-<main class="page" data-ds-name="ProjectDetail" data-ds-tier="surface" data-ds-spec="surfaces/ProjectDetail.md">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
 
-<header class="hero" data-ds-name="ProjectHero" data-ds-tier="pattern" data-ds-spec="patterns/ProjectHero.md">
-  <a href="projects.html" class="hero-parent-link">← Projects</a>
-  <div class="hero-eyebrow">
-    <span class="quality-dot"></span>
-    Active · Owner: You · Parent: <a href="account.html" style="border-bottom:1px solid var(--color-rule-heavy);">Acme Corp</a>
+  <section id="headline" class="entity-detail_chapterSection">
+    <div class="ProjectHero_hero EntityHeroBase_hero">
+      <div class="ProjectHero_heroDate EntityHeroBase_heroDate">
+        <span class="IntelligenceQualityBadge_root" title="Fresh — Last updated: 4/22/2026, 8:00:00 AM">
+          <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage)"></span>
+        </span>
+        Last updated Today
+      </div>
+
+      <h1 class="ProjectHero_name EntityHeroBase_heroTitle">
+        <span class="EditableText_editable" title="Click to edit" data-editable-text="">Q2 Launch</span>
+      </h1>
+
+      <p class="ProjectHero_lede EntityHeroBase_heroLede">Q2 Launch is tracking toward the May customer-readiness target, with the technical path mostly clear and the remaining work concentrated around enablement, pricing language, and executive signoff.</p>
+
+      <div class="ProjectHero_badges EntityHeroBase_heroBadges ProjectHero_badgesWithTopMargin">
+        <span class="ProjectHero_badge EntityHeroBase_heroBadge ProjectHero_statusActive">Active</span>
+        <span class="ProjectHero_badge EntityHeroBase_heroBadge ProjectHero_ownerBadge">Sam Chen</span>
+      </div>
+
+      <div class="ProjectHero_meta EntityHeroBase_heroMeta ProjectHero_metaRow">
+        <button title="Refresh" style="font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-text-tertiary); background:none; border:1px solid var(--color-rule-heavy); border-radius:4px; padding:2px 10px; cursor:pointer; opacity:1; transition: color 150ms, border-color 150ms, opacity 150ms;">Refresh</button>
+        <button class="ProjectHero_metaButton EntityHeroBase_heroMetaButton">Archive</button>
+      </div>
+    </div>
+
+    <div>
+      <div class="VitalsStrip_strip">
+        <div class="VitalsStrip_items">
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-garden-olive)">Active</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">23d to target ↑</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">2 of 4 milestones</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">7 meetings / 30d ↑</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">5 open actions</span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <div id="trajectory" class="entity-detail_chapterSection">
+    <section id="trajectory" style="scroll-margin-top:60px; padding-top:80px;">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Trajectory</h2>
+          <span class="ChapterHeading_feedback">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
+
+      <blockquote style="margin:0; padding:72px 0; text-align:center; position:relative;">
+        <div aria-hidden="true" style="width:120px; height:1px; background:var(--color-rule-heavy); margin:0 auto 48px;"></div>
+        <p style="font-family:var(--font-serif); font-size:28px; font-weight:400; font-style:italic; line-height:1.45; color:var(--color-text-primary); max-width:580px; margin:0 auto;">The launch is no longer blocked by build work; it is blocked by clarity around who signs off and what customers hear first.</p>
+        <div aria-hidden="true" style="width:120px; height:1px; background:var(--color-rule-heavy); margin:48px auto 0;"></div>
+      </blockquote>
+
+      <div class="StateBlock_container" style="--state-block-color:var(--color-garden-olive)">
+        <div class="StateBlock_label">Momentum</div>
+        <div class="StateBlock_itemList">
+          <div class="StateBlock_itemRow">
+            <div class="StateBlock_itemContent">
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Engineering has completed the staging deployment and handed the production runbook to Dan Mitchell for final review.</p>
+            </div>
+          </div>
+          <div class="StateBlock_itemRow">
+            <div class="StateBlock_itemContent">
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Jen Park and Sara Wu are both engaged in the launch thread, which keeps customer approval close to the product work.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="StateBlock_container" style="--state-block-color:var(--color-spice-terracotta)">
+        <div class="StateBlock_label">Headwinds</div>
+        <div class="StateBlock_itemList">
+          <div class="StateBlock_itemRow">
+            <div class="StateBlock_itemContent">
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">The pricing memo is still the critical path for Acme Corp's executive sync, and procurement language is not yet final.</p>
+            </div>
+          </div>
+          <div class="StateBlock_itemRow">
+            <div class="StateBlock_itemContent">
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Northwind Traders needs rollout sequencing before the same enablement package can be reused across the broader launch.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); margin-top:32px; margin-bottom:32px;">
+        <span><span style="color:var(--color-garden-olive)">7 meetings / 30d ↑</span></span>
+        <span><span style="margin:0 10px; opacity:0.5;">·</span><span>5 open actions</span></span>
+        <span><span style="margin:0 10px; opacity:0.5;">·</span><span>23d to target</span></span>
+      </div>
+
+      <div style="margin-top:24px;">
+        <p style="font-family:var(--font-sans); font-size:15px; line-height:1.65; color:var(--color-text-primary); max-width:620px; margin:0 0 12px;">The critical path is narrower now: finalize the customer-facing language, confirm the cutover owner, and prevent the enablement work from splitting into separate Acme and Northwind versions.</p>
+        <p style="font-family:var(--font-sans); font-size:15px; line-height:1.65; color:var(--color-text-primary); max-width:620px; margin:0;">Internal cadence is healthy, but the remaining project risk sits in decision latency rather than delivery capacity.</p>
+      </div>
+    </section>
   </div>
-  <span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>On track</span>
-  <h1 class="hero-title">Q2 Launch</h1>
-  <p class="hero-lede">Launching the multi-tenant pricing tier 3 capability for Acme Corp. Engineering shipped two of three milestones; documentation + customer-facing rollout this week.</p>
 
-  <div class="vitals" data-ds-name="VitalsStrip" data-ds-tier="pattern" data-ds-spec="patterns/VitalsStrip.md">
-    <div class="vitals-row">
-      <div class="vital">
-        <span class="vital-text" data-highlight="olive">Stage Active</span>
-        <span class="vital-source">since Mar 1</span>
+  <div id="the-horizon" class="entity-detail_chapterSection">
+    <section id="the-horizon" style="scroll-margin-top:60px; padding-top:80px;">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">The Horizon</h2>
+          <span class="ChapterHeading_feedback">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
       </div>
-      <div class="vital">
-        <span class="vital-text">Due May 15</span>
-        <span class="vital-source">22 days</span>
+
+      <div style="background:var(--color-paper-linen); border-left:3px solid var(--color-garden-olive); border-radius:0 8px 8px 0; padding:24px 28px; margin-bottom:40px;">
+        <div style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-garden-olive); margin-bottom:10px;">Next Milestone</div>
+        <div style="font-family:var(--font-sans); font-size:15px; font-weight:500; color:var(--color-text-primary); margin-bottom:6px;">Production cutover</div>
+        <div style="display:flex; gap:16px; align-items:baseline;">
+          <span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">Apr 30</span>
+          <span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">8d away</span>
+        </div>
       </div>
-      <div class="vital">
-        <span class="vital-text" data-highlight="sage">2/3 milestones</span>
-        <span class="vital-source">last shipped 4d ago</span>
+
+      <div style="margin-bottom:40px;">
+        <div style="font-family:var(--font-mono); font-size:24px; font-weight:500; color:var(--color-garden-olive); margin-bottom:12px;">23 days to target</div>
+        <p style="font-family:var(--font-sans); font-size:15px; line-height:1.65; color:var(--color-text-primary); max-width:620px; margin:0;">Target date depends on clearing Acme Corp's pricing memo before Jen Park's executive sync; delay here would compress customer enablement into the final launch week.</p>
       </div>
-      <div class="vital">
-        <span class="vital-text">Owner You</span>
-        <span class="vital-source">PM</span>
+
+      <div class="StateBlock_container" style="--state-block-color:var(--color-garden-larkspur)">
+        <div class="StateBlock_label">Decisions Pending</div>
+        <div class="StateBlock_itemList">
+          <div class="StateBlock_itemRow">
+            <div class="StateBlock_itemContent">
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Whether the customer-facing enablement package should lead with Acme Corp proof points or a neutral cross-customer launch story.</p>
+            </div>
+          </div>
+          <div class="StateBlock_itemRow">
+            <div class="StateBlock_itemContent">
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Who owns go/no-go communication if the production cutover needs to move after the rollback review.</p>
+            </div>
+          </div>
+        </div>
       </div>
-      <div class="vital">
-        <span class="vital-text" data-highlight="larkspur">4 stakeholders</span>
-        <span class="vital-source">Acme + 1 internal</span>
+    </section>
+  </div>
+
+  <div id="the-landscape" class="entity-detail_chapterSection">
+    <section id="the-landscape" class="WatchList_section">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">The Landscape</h2>
+        </div>
       </div>
+
+      <div class="WatchList_sectionCard" data-type="risk">
+        <div class="WatchList_sectionLabel">Risks</div>
+        <div class="WatchList_itemRow">
+          <div class="WatchList_itemText">
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Target date depends on clearing Acme Corp's pricing memo before Jen Park's executive sync; delay here would compress customer enablement into the final launch week.</p>
+          </div>
+          <span class="WatchList_badge WatchList_badgeTerracotta">high</span>
+          <div class="WatchList_itemActions">
+            <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg></button></span></span>
+            <button type="button" title="Remove" class="WatchList_dismissButton"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </div>
+        </div>
+        <div class="WatchList_itemRow">
+          <div class="WatchList_itemText">
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Northwind Traders has not confirmed the helpline rollout sequence, so the shared launch plan could split into two customer-specific workstreams.</p>
+          </div>
+          <span class="WatchList_badge WatchList_badgeTerracotta">medium</span>
+          <div class="WatchList_itemActions">
+            <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg></button></span></span>
+            <button type="button" title="Remove" class="WatchList_dismissButton"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="WatchList_sectionCard" data-type="win">
+        <div class="WatchList_sectionLabel">Wins</div>
+        <div class="WatchList_itemRow">
+          <div class="WatchList_itemText">
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Backend staging passed load testing with Dan Mitchell's rollback notes folded into the production runbook.</p>
+          </div>
+          <div class="WatchList_itemActions">
+            <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg></button></span></span>
+            <button type="button" title="Remove" class="WatchList_dismissButton"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </div>
+        </div>
+        <div class="WatchList_itemRow">
+          <div class="WatchList_itemText">
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Sara Wu joined the customer review and agreed to sponsor the launch-readiness checklist with Jen Park.</p>
+          </div>
+          <div class="WatchList_itemActions">
+            <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg></button></span></span>
+            <button type="button" title="Remove" class="WatchList_dismissButton"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div class="WatchList_sectionCard" data-type="unknown">
+        <div class="WatchList_sectionLabel">Unknowns</div>
+        <div class="WatchList_itemRow">
+          <div class="WatchList_itemText">
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Whether the customer-facing enablement package should lead with Acme Corp proof points or a neutral cross-customer launch story.</p>
+          </div>
+          <div class="WatchList_itemActions">
+            <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg></button></span></span>
+            <button type="button" title="Remove" class="WatchList_dismissButton"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </div>
+        </div>
+        <div class="WatchList_itemRow">
+          <div class="WatchList_itemText">
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Who owns go/no-go communication if the production cutover needs to move after the rollback review.</p>
+          </div>
+          <div class="WatchList_itemActions">
+            <span class="IntelligenceFeedback_wrapper"><span class="IntelligenceFeedback_container"><button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg></button><button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg></button></span></span>
+            <button type="button" title="Remove" class="WatchList_dismissButton"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg></button>
+          </div>
+        </div>
+      </div>
+
+      <div style="margin-top:48px;">
+        <div style="font-family:var(--font-mono); font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-garden-olive); margin-bottom:20px;">Milestones</div>
+        <div style="display:flex; flex-direction:column;">
+          <div style="display:flex; align-items:baseline; gap:12px; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+            <span style="font-family:var(--font-sans); font-size:14px; font-weight:500; color:var(--color-text-primary); flex:1;">Production cutover</span>
+            <span style="font-family:var(--font-mono); font-size:9px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; padding:2px 7px; border-radius:3px; background:var(--color-garden-sage-14); color:var(--color-garden-rosemary);">active</span>
+            <span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); white-space:nowrap;">2026-04-30</span>
+          </div>
+          <div style="display:flex; align-items:baseline; gap:12px; padding:12px 0; border-bottom:none;">
+            <span style="font-family:var(--font-sans); font-size:14px; font-weight:500; color:var(--color-text-primary); flex:1;">Customer enablement pack</span>
+            <span style="font-family:var(--font-mono); font-size:9px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; padding:2px 7px; border-radius:3px; background:var(--color-garden-larkspur-14); color:var(--color-garden-larkspur);">planned</span>
+            <span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); white-space:nowrap;">2026-05-08</span>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="the-room" class="entity-detail_chapterSection">
+    <section id="the-room" class="StakeholderGallery_section">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">The Team</h2>
+        </div>
+      </div>
+
+      <div class="StakeholderGallery_grid">
+        <div class="StakeholderGallery_card">
+          <div class="StakeholderGallery_cardHeader">
+            <a href="person.html" class="StakeholderGallery_nameLink">Jen Park</a>
+          </div>
+          <p class="StakeholderGallery_titleLine">CTO · Acme Corp</p>
+          <div class="StakeholderGallery_lastSeen">Last seen Today</div>
+        </div>
+        <div class="StakeholderGallery_card">
+          <div class="StakeholderGallery_cardHeader">
+            <a href="person.html" class="StakeholderGallery_nameLink">Dan Mitchell</a>
+          </div>
+          <p class="StakeholderGallery_titleLine">Legal Operations · Acme Corp</p>
+          <div class="StakeholderGallery_lastSeen">Last seen Yesterday</div>
+        </div>
+        <div class="StakeholderGallery_card">
+          <div class="StakeholderGallery_cardHeader">
+            <a href="person.html" class="StakeholderGallery_nameLink">Sara Wu</a>
+          </div>
+          <p class="StakeholderGallery_titleLine">VP Engineering · Northwind Traders</p>
+          <div class="StakeholderGallery_lastSeen">Last seen 2d ago</div>
+        </div>
+        <div class="StakeholderGallery_card">
+          <div class="StakeholderGallery_cardHeader">
+            <a href="person.html" class="StakeholderGallery_nameLink">Priya Raman</a>
+          </div>
+          <p class="StakeholderGallery_titleLine">Program Lead · Globex Inc</p>
+          <div class="StakeholderGallery_lastSeen">Last seen 5d ago</div>
+        </div>
+      </div>
+
+      <div class="StakeholderGallery_addSectionCompact">
+        <button class="StakeholderGallery_addTrigger">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+          Add Stakeholder
+        </button>
+      </div>
+    </section>
+  </div>
+
+  <div id="the-record" class="entity-detail_chapterSection">
+    <section>
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">The Record</h2>
+        </div>
+      </div>
+
+      <button data-slot="button" data-variant="outline" data-size="sm" class="AddToRecord_addButton">+ Add note</button>
+
+      <div class="TimelineEntry_timeline">
+        <a href="meeting.html" class="TimelineEntry_entryLink">
+          <div class="TimelineEntry_entry">
+            <div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div>
+            <div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 22</span><span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span></div>
+            <div class="TimelineEntry_title">Acme Corp launch approval checkpoint</div>
+            <div class="TimelineEntry_detail">Customer</div>
+          </div>
+        </a>
+        <div class="TimelineEntry_entry">
+          <div class="TimelineEntry_dot TimelineEntry_dotEmail"></div>
+          <div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 21</span><span class="TimelineEntry_typeBadge TimelineEntry_typeEmail">Email</span></div>
+          <div class="TimelineEntry_title">Jen Park asked for final pricing language before executive sync.</div>
+          <div class="TimelineEntry_detail">jen.park@acme.example</div>
+        </div>
+        <a href="meeting.html" class="TimelineEntry_entryLink">
+          <div class="TimelineEntry_entry">
+            <div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div>
+            <div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 21</span><span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span></div>
+            <div class="TimelineEntry_title">Northwind Q2 Launch blockers</div>
+            <div class="TimelineEntry_detail">Customer</div>
+          </div>
+        </a>
+        <div class="TimelineEntry_entry">
+          <div class="TimelineEntry_dot TimelineEntry_dotContext"></div>
+          <div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 21</span><span class="TimelineEntry_typeBadge TimelineEntry_typeContext">Note</span></div>
+          <div class="TimelineEntry_title">Launch room decision log</div>
+          <div class="TimelineEntry_detail">Keep Acme and Northwind rollout language in one shared enablement pack until signoff diverges. · Added by you</div>
+        </div>
+        <div class="TimelineEntry_entry">
+          <div class="TimelineEntry_dot TimelineEntry_dotEmail"></div>
+          <div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 20</span><span class="TimelineEntry_typeBadge TimelineEntry_typeEmail">Email</span></div>
+          <div class="TimelineEntry_title">Dan Mitchell circulated rollback review notes.</div>
+          <div class="TimelineEntry_detail">dan.mitchell@acme.example</div>
+        </div>
+        <a href="meeting.html" class="TimelineEntry_entryLink">
+          <div class="TimelineEntry_entry">
+            <div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div>
+            <div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 18</span><span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span></div>
+            <div class="TimelineEntry_title">Globex Inc rollout office hours</div>
+            <div class="TimelineEntry_detail">Customer</div>
+          </div>
+        </a>
+        <div class="TimelineEntry_entry">
+          <div class="TimelineEntry_dot TimelineEntry_dotCapture"></div>
+          <div class="TimelineEntry_dateLine"><span class="TimelineEntry_date"></span><span class="TimelineEntry_typeBadge TimelineEntry_typeCapture">Capture</span></div>
+          <div class="TimelineEntry_title">Outcome captured: staging deploy accepted; production runbook needs rollback owner.</div>
+          <div class="TimelineEntry_detail">Acme Corp launch approval checkpoint</div>
+        </div>
+        <div class="TimelineEntry_entry">
+          <div class="TimelineEntry_dot TimelineEntry_dotCapture"></div>
+          <div class="TimelineEntry_dateLine"><span class="TimelineEntry_date"></span><span class="TimelineEntry_typeBadge TimelineEntry_typeCapture">Capture</span></div>
+          <div class="TimelineEntry_title">Risk captured: Northwind sequencing not confirmed for enablement package.</div>
+          <div class="TimelineEntry_detail">Northwind Q2 Launch blockers</div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div id="the-work" class="entity-detail_chapterSection">
+    <div class="RecommendedActions_root">
+      <div class="RecommendedActions_label">Recommended</div>
+      <div class="RecommendedActions_action">
+        <div class="RecommendedActions_content">
+          <div class="RecommendedActions_metaRow">
+            <span class="RecommendedActions_priority" style="color:var(--color-spice-turmeric)">High</span>
+            <span class="RecommendedActions_dueDate">Due 2026-04-23</span>
+          </div>
+          <div class="RecommendedActions_title">Send Acme Corp pricing memo revision</div>
+          <div class="RecommendedActions_rationale">Jen Park needs the adjusted tier language before the executive sync; this is the gating launch approval dependency.</div>
+          <div class="RecommendedActions_source">Based on account intelligence</div>
+        </div>
+        <div class="RecommendedActions_actions">
+          <button title="Track" class="RecommendedActions_iconButton RecommendedActions_trackButton"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button title="Dismiss" class="RecommendedActions_iconButton RecommendedActions_dismissButton"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
+      </div>
+      <div class="RecommendedActions_action">
+        <div class="RecommendedActions_content">
+          <div class="RecommendedActions_metaRow">
+            <span class="RecommendedActions_priority" style="color:var(--color-text-tertiary)">Medium</span>
+            <span class="RecommendedActions_dueDate">Due 2026-04-24</span>
+          </div>
+          <div class="RecommendedActions_title">Confirm Northwind rollout sequence</div>
+          <div class="RecommendedActions_rationale">The enablement plan can stay shared only if Northwind confirms the same launch order this week.</div>
+          <div class="RecommendedActions_source">Based on account intelligence</div>
+        </div>
+        <div class="RecommendedActions_actions">
+          <button title="Track" class="RecommendedActions_iconButton RecommendedActions_trackButton"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg></button>
+          <button title="Dismiss" class="RecommendedActions_iconButton RecommendedActions_dismissButton"><svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" stroke-width="2" stroke-linecap="round"/></svg></button>
+        </div>
+      </div>
+    </div>
+
+    <section id="the-work" class="TheWork_section TheWork_scrollTarget">
+      <div class="TheWork_headerRow">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule" />
+          <div class="ChapterHeading_titleRow">
+            <h2 class="ChapterHeading_title">The Work</h2>
+          </div>
+        </div>
+      </div>
+
+      <div class="TheWork_actionSection">
+        <div class="TheWork_sectionLabel">Actions</div>
+        <div class="TheWork_actionGroup">
+          <div class="TheWork_groupLabel" style="--label-color:var(--color-spice-terracotta)">Overdue</div>
+          <div class="TheWork_linkableActionRow">
+            <div class="TheWork_linkableActionMain">
+              <a href="actions.html" style="display:block; position:relative; padding:14px 0 14px 20px; border-bottom:1px solid var(--color-rule-light); text-decoration:none; color:inherit;">
+                <div style="position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:2px; background:var(--color-spice-terracotta);"></div>
+                <div style="font-family:var(--font-sans); font-size:14px; line-height:1.55; font-weight:500; color:var(--color-text-primary);">Resolve rollback owner in cutover runbook</div>
+                <div style="display:flex; gap:16px; margin-top:4px;"><span style="font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.04em; color:var(--color-spice-terracotta);">Apr 21</span><span style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary);">Dan Mitchell notes</span></div>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="TheWork_actionGroup">
+          <div class="TheWork_groupLabel" style="--label-color:var(--color-spice-turmeric)">This Week</div>
+          <div class="TheWork_linkableActionRow">
+            <div class="TheWork_linkableActionMain">
+              <a href="actions.html" style="display:block; position:relative; padding:14px 0 14px 20px; border-bottom:1px solid var(--color-rule-light); text-decoration:none; color:inherit;">
+                <div style="position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:2px; background:var(--color-spice-turmeric);"></div>
+                <div style="font-family:var(--font-sans); font-size:14px; line-height:1.55; font-weight:400; color:var(--color-text-primary);">Send Acme Corp pricing memo revision</div>
+                <div style="display:flex; gap:16px; margin-top:4px;"><span style="font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.04em; color:var(--color-text-tertiary);">Apr 23</span><span style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary);">Jen Park thread</span></div>
+              </a>
+            </div>
+          </div>
+          <div class="TheWork_linkableActionRow">
+            <div class="TheWork_linkableActionMain">
+              <a href="actions.html" style="display:block; position:relative; padding:14px 0 14px 20px; border-bottom:1px solid var(--color-rule-light); text-decoration:none; color:inherit;">
+                <div style="position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:2px; background:var(--color-spice-turmeric);"></div>
+                <div style="font-family:var(--font-sans); font-size:14px; line-height:1.55; font-weight:400; color:var(--color-text-primary);">Confirm Northwind rollout sequence</div>
+                <div style="display:flex; gap:16px; margin-top:4px;"><span style="font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.04em; color:var(--color-text-tertiary);">Apr 24</span><span style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary);">Northwind Traders thread</span></div>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="TheWork_actionGroup">
+          <div class="TheWork_groupLabel" style="--label-color:var(--color-text-tertiary)">Upcoming</div>
+          <div class="TheWork_linkableActionRow">
+            <div class="TheWork_linkableActionMain">
+              <a href="actions.html" style="display:block; position:relative; padding:14px 0 14px 20px; border-bottom:1px solid var(--color-rule-light); text-decoration:none; color:inherit;">
+                <div style="font-family:var(--font-sans); font-size:14px; line-height:1.55; font-weight:400; color:var(--color-text-primary);">Review customer enablement pack with Sara Wu</div>
+                <div style="display:flex; gap:16px; margin-top:4px;"><span style="font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.04em; color:var(--color-text-tertiary);">May 5</span><span style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary);">Launch readiness</span></div>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="TheWork_actionGroup">
+          <div class="TheWork_groupLabel" style="--label-color:var(--color-text-tertiary)">No Due Date</div>
+          <div class="TheWork_linkableActionRow">
+            <div class="TheWork_linkableActionMain">
+              <a href="actions.html" style="display:block; position:relative; padding:14px 0 14px 20px; border-bottom:1px solid var(--color-rule-light); text-decoration:none; color:inherit;">
+                <div style="font-family:var(--font-sans); font-size:14px; line-height:1.55; font-weight:400; color:var(--color-text-primary);">Capture Meridian Harbor launch objections for reuse</div>
+                <div style="display:flex; gap:16px; margin-top:4px;"><span style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary);">Meridian Harbor notes</span></div>
+              </a>
+            </div>
+          </div>
+        </div>
+
+        <div class="TheWork_actionComposer">
+          <button class="TheWork_inlineAdder">+ Add Action</button>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div>
+    <section id="appendix" style="scroll-margin-top:60px; padding-top:80px;">
+      <div style="border-top:3px double var(--color-rule-heavy); padding-top:32px;">
+        <div style="font-family:var(--font-mono); font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-text-tertiary); margin-bottom:16px;">Appendix</div>
+
+        <div style="border-top:2px solid var(--color-rule-heavy); padding-top:24px; margin-top:32px;">
+          <div style="font-family:var(--font-mono); font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-text-tertiary); margin-bottom:16px;">Milestones</div>
+          <div style="display:grid; grid-template-columns:1fr auto auto; gap:8px 24px;">
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary);">Tier 3 design approved</span>
+            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; color:var(--color-garden-larkspur);">completed</span>
+            <span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">2026-03-27</span>
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary);">Backend deployed to staging</span>
+            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; color:var(--color-garden-larkspur);">completed</span>
+            <span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">2026-04-19</span>
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary);">Production cutover</span>
+            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; color:var(--color-garden-sage);">active</span>
+            <span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">2026-04-30</span>
+            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary);">Customer enablement pack</span>
+            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; color:var(--color-text-tertiary);">planned</span>
+            <span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">2026-05-08</span>
+          </div>
+        </div>
+
+        <div style="border-top:2px solid var(--color-rule-heavy); padding-top:24px; margin-top:32px;">
+          <div style="font-family:var(--font-mono); font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-text-tertiary); margin-bottom:16px;">Description</div>
+          <p style="font-family:var(--font-sans); font-size:14px; line-height:1.65; color:var(--color-text-secondary); margin:0;">Q2 Launch coordinates customer-facing rollout for the new tier 3 capability across Acme Corp, Northwind Traders, and Globex Inc. The remaining work is cutover readiness, pricing language, and enablement sequencing.</p>
+        </div>
+
+        <div style="border-top:2px solid var(--color-rule-heavy); padding-top:24px; margin-top:32px;">
+          <div class="FileListSection_section">
+            <div class="FileListSection_header">
+              <div class="FileListSection_sectionTitle">Files · 3</div>
+              <div class="FileListSection_headerActions">
+                <button class="FileListSection_actionButton">Re-index</button>
+              </div>
+            </div>
+            <ul class="FileListSection_fileList">
+              <li class="FileListSection_fileRow">
+                <span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" class="FileListSection_fileIcon"><path d="M3 1.5h5l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1.5v3h3" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="FileListSection_filename">q2-launch-runbook.md</span>
+                <span class="FileListSection_fileMeta">52.0 KB</span>
+                <span class="FileListSection_fileMeta">Yesterday</span>
+              </li>
+              <li class="FileListSection_fileRow">
+                <span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" class="FileListSection_fileIcon"><path d="M3 1.5h5l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1.5v3h3" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="FileListSection_filename">acme-pricing-memo-draft.pdf</span>
+                <span class="FileListSection_fileMeta">188.0 KB</span>
+                <span class="FileListSection_fileMeta">2d ago</span>
+              </li>
+              <li class="FileListSection_fileRow">
+                <span><svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" class="FileListSection_fileIcon"><path d="M3 1.5h5l3 3v8a1 1 0 0 1-1 1H3a1 1 0 0 1-1-1v-10a1 1 0 0 1 1-1Z" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/><path d="M8 1.5v3h3" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round"/></svg></span>
+                <span class="FileListSection_filename">customer-enablement-outline.docx</span>
+                <span class="FileListSection_fileMeta">96.0 KB</span>
+                <span class="FileListSection_fileMeta">4d ago</span>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </section>
+  </div>
+
+  <div>
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); letter-spacing:0.06em; margin-top:16px;">Last updated: 2026-04-22T08:00:00Z</div>
     </div>
   </div>
-</header>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Status<span class="margin-label-count">on track</span></div>
-  <div class="margin-content">
-    <div class="chapter">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">What's happening</h2>
-      <p class="chapter-epigraph">Project state in one sentence per chapter.</p>
-    </div>
-
-    <div style="display:flex; flex-direction:column; gap:18px;">
-      <div data-ds-name="ChapterFreshness" data-ds-tier="pattern" data-ds-spec="patterns/ChapterFreshness.md" style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.04em; color:var(--color-text-tertiary); border-bottom:1px solid var(--color-rule-light); padding-bottom:14px;">
-        <strong style="color:var(--color-text-primary); font-family:var(--font-serif); font-size:16px; font-weight:400; display:block; margin-bottom:4px;">Engineering — 4d ago</strong>
-        Tier 3 backend deployed to staging Apr 19. Dan Mitchell + 2 confirmed; load tests green. Production cutover planned for Apr 30.
-      </div>
-      <div data-ds-name="ChapterFreshness" data-ds-tier="pattern" data-ds-spec="patterns/ChapterFreshness.md" style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.04em; color:var(--color-text-tertiary); border-bottom:1px solid var(--color-rule-light); padding-bottom:14px;">
-        <strong style="color:var(--color-text-primary); font-family:var(--font-serif); font-size:16px; font-weight:400; display:block; margin-bottom:4px;">Documentation — 2d ago</strong>
-        First draft of customer-facing pricing page in review with Sara Wu. Two open comments on tier 3 messaging.
-      </div>
-      <div data-ds-name="ChapterFreshness" data-ds-tier="pattern" data-ds-spec="patterns/ChapterFreshness.md" style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.04em; color:var(--color-text-tertiary); border-bottom:1px solid var(--color-rule-light); padding-bottom:14px;">
-        <strong style="color:var(--color-text-primary); font-family:var(--font-serif); font-size:16px; font-weight:400; display:block; margin-bottom:4px;">Customer rollout — today</strong>
-        Email sequence drafted. Pending Jen Park's pricing-memo blocker (see <a href="account.html" style="border-bottom:1px solid var(--color-rule-heavy);">Acme Corp</a>).
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Stakeholders<span class="margin-label-count">4 active</span></div>
-  <div class="margin-content">
-    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Stakeholders</h2></div>
-
-    <div class="stake-grid" data-ds-name="StakeholderGrid" data-ds-tier="pattern" data-ds-spec="patterns/StakeholderGrid.md">
-      <div class="stake-card" data-ds-name="StakeCard" data-ds-tier="pattern" data-ds-spec="patterns/StakeCard.md">
-        <div class="stake-avatar">JP</div>
-        <div>
-          <h3 class="stake-name"><a href="person.html">Jen Park</a></h3>
-          <p class="stake-title">CTO · Acme Corp</p>
-          <div class="stake-roles">
-            <span class="stake-role" data-role="champion">Champion</span>
-            <span class="stake-role" data-role="exec">Exec</span>
-          </div>
-          <p class="stake-assessment">Owner of the pricing decision; needs the adjusted memo before her exec sync.</p>
-        </div>
-      </div>
-
-      <div class="stake-card" data-ds-name="StakeCard" data-ds-tier="pattern" data-ds-spec="patterns/StakeCard.md">
-        <div class="stake-avatar">DM</div>
-        <div>
-          <h3 class="stake-name"><a href="person.html">Dan Mitchell</a></h3>
-          <p class="stake-title">Eng Lead · Acme Corp</p>
-          <div class="stake-roles">
-            <span class="stake-role" data-role="technical">Technical</span>
-          </div>
-          <p class="stake-assessment">Reviewing MSA redlines. Has historically resolved these in 2-3 days.</p>
-        </div>
-      </div>
-
-      <div class="stake-card" data-ds-name="StakeCard" data-ds-tier="pattern" data-ds-spec="patterns/StakeCard.md">
-        <div class="stake-avatar">SW</div>
-        <div>
-          <h3 class="stake-name"><a href="person.html">Sara Wu</a></h3>
-          <p class="stake-title">VP Engineering · Acme Corp</p>
-          <div class="stake-roles">
-            <span class="stake-role" data-role="exec">Exec</span>
-          </div>
-          <p class="stake-assessment">New on the renewal thread. Likely sponsoring architecture review.</p>
-        </div>
-      </div>
-
-      <div class="stake-card" data-ds-name="StakeCard" data-ds-tier="pattern" data-ds-spec="patterns/StakeCard.md">
-        <div class="stake-avatar">PR</div>
-        <div>
-          <h3 class="stake-name"><a href="person.html">Priya Raman</a></h3>
-          <p class="stake-title">CSM · Internal</p>
-          <div class="stake-roles">
-            <span class="stake-role" data-role="primary">Primary</span>
-          </div>
-          <p class="stake-assessment">Internal partner on rollout sequencing.</p>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Record<span class="margin-label-count">5 events</span></div>
-  <div class="margin-content">
-    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">The Record</h2></div>
-
-    <div class="timeline" data-ds-name="UnifiedTimeline" data-ds-tier="pattern" data-ds-spec="patterns/UnifiedTimeline.md">
-      <div class="timeline-entry" data-type="meeting" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
-        <div class="timeline-row">
-          <span class="timeline-date">Apr 22</span>
-          <div>
-            <h3 class="timeline-title">Acme renewal call (in progress)</h3>
-            <p class="timeline-subtitle">Jen Park, Dan Mitchell, Sara Wu, you</p>
-          </div>
-        </div>
-      </div>
-      <div class="timeline-entry" data-type="event" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
-        <div class="timeline-row">
-          <span class="timeline-date">Apr 19</span>
-          <div>
-            <h3 class="timeline-title">Backend deployed to staging</h3>
-            <p class="timeline-subtitle">Tier 3 capability + load tests green</p>
-          </div>
-        </div>
-      </div>
-      <div class="timeline-entry" data-type="email" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
-        <div class="timeline-row">
-          <span class="timeline-date">Apr 18</span>
-          <div>
-            <h3 class="timeline-title">Sara Wu added to thread</h3>
-            <p class="timeline-subtitle">First time on Acme renewal thread</p>
-          </div>
-        </div>
-      </div>
-      <div class="timeline-entry" data-type="meeting" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
-        <div class="timeline-row">
-          <span class="timeline-date">Apr 15</span>
-          <div>
-            <h3 class="timeline-title">Eng standup — tier 3 sign-off</h3>
-            <p class="timeline-subtitle">Dan Mitchell + 4 engineers</p>
-          </div>
-        </div>
-      </div>
-      <div class="timeline-entry" data-type="value" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
-        <div class="timeline-row">
-          <span class="timeline-date">Mar 28</span>
-          <div>
-            <h3 class="timeline-title">Tier 3 design approved</h3>
-            <p class="timeline-subtitle">Architecture review with Sara Wu</p>
-          </div>
-        </div>
-      </div>
-    </div>
-
-    <div class="add-row" data-ds-name="AddToRecord" data-ds-tier="pattern" data-ds-spec="patterns/AddToRecord.md">
-      <span>Add a note, event, or follow-up…</span>
-      <span class="add-cta">⌘ ⏎ to save</span>
-    </div>
-  </div>
-</section>
-
-<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
-  <div class="finis-mark">*&nbsp;&nbsp;*&nbsp;&nbsp;*</div>
-  <div class="finis-date">Apr 23, 2026 · enriched 2h ago</div>
-  <div class="finis-caption">Q2 Launch · Acme Corp · since Mar 2026</div>
-</div>
 
 </main>
+</div>
 
 <script src="../_shared/chrome.js"></script>
 <script src="../_shared/inspector.js"></script>

@@ -1,0 +1,467 @@
+/* =============================================================================
+   AccountsPage — CSS Module for the Accounts list surface
+   Uses design tokens from design-tokens.css. No hardcoded values.
+   ============================================================================= */
+
+/* ── Page Container ─────────────────────────────────────────────────────── */
+
+.AccountsPage_pageContainer {
+  max-width: var(--page-content-width-standard);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Empty State ────────────────────────────────────────────────────────── */
+
+.AccountsPage_emptyContainer {
+  max-width: var(--page-content-width-standard);
+  margin-left: auto;
+  margin-right: auto;
+  padding-top: 80px;
+}
+
+.AccountsPage_emptyTitle {
+  font-family: var(--font-serif);
+  font-size: 36px;
+  font-weight: 400;
+  letter-spacing: -0.02em;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-lg) 0;
+}
+
+.AccountsPage_emptyCreateForm {
+  max-width: 400px;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  text-align: left;
+}
+
+/* ── Folio Actions ──────────────────────────────────────────────────────── */
+
+.AccountsPage_folioButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.AccountsPage_folioButtonArchive {
+  composes: folioButton;
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_folioButtonArchiveActive {
+  composes: folioButton;
+  color: var(--color-spice-turmeric);
+}
+
+.AccountsPage_folioButtonDiscover {
+  composes: folioButton;
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_folioButtonNew {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+/* ── Discovery Panel ────────────────────────────────────────────────────── */
+
+.AccountsPage_discoveryPanel {
+  margin-bottom: var(--space-lg);
+}
+
+.AccountsPage_discoveryHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.AccountsPage_discoveryTitle {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.AccountsPage_discoveryCloseButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.AccountsPage_discoveryLoading {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.AccountsPage_discoveryEmpty {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_discoveryFilterInput {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px 10px;
+  margin-bottom: 12px;
+  box-sizing: border-box;
+  outline: none;
+}
+
+.AccountsPage_discoveryList {
+  display: flex;
+  flex-direction: column;
+}
+
+.AccountsPage_discoveryRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.AccountsPage_discoveryRowBorder {
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.AccountsPage_discoveryRowContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.AccountsPage_discoveryRowHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}
+
+.AccountsPage_discoveryAccountName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.AccountsPage_discoveryDomain {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_discoveryIndustry {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_discoveryContextPreview {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 4px 0 0 0;
+}
+
+.AccountsPage_discoveryRowActions {
+  margin-left: var(--space-md);
+  flex-shrink: 0;
+}
+
+.AccountsPage_discoveryAddedLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-garden-sage);
+}
+
+.AccountsPage_discoveryAddButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.AccountsPage_discoveryOverflowHint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin: 10px 0 0 0;
+}
+
+.AccountsPage_discoveryDivider {
+  border: none;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin: 20px 0;
+}
+
+/* ── Ephemeral Query ────────────────────────────────────────────────────── */
+
+.AccountsPage_ephemeralContainer {
+  margin-bottom: 20px;
+}
+
+.AccountsPage_ephemeralForm {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.AccountsPage_ephemeralInput {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px 10px;
+  outline: none;
+}
+
+.AccountsPage_ephemeralSubmitButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid;
+  border-radius: var(--radius-editorial-sm);
+  padding: 5px 12px;
+  white-space: nowrap;
+}
+
+.AccountsPage_ephemeralSubmitActive {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+  cursor: pointer;
+}
+
+.AccountsPage_ephemeralSubmitDisabled {
+  color: var(--color-text-tertiary);
+  border-color: var(--color-paper-linen);
+  cursor: default;
+}
+
+.AccountsPage_ephemeralDivider {
+  border: none;
+  border-top: 1px solid var(--color-rule-heavy);
+  margin: 0 0 var(--space-md) 0;
+}
+
+/* ── Create Form ────────────────────────────────────────────────────────── */
+
+.AccountsPage_createForm {
+  margin-bottom: var(--space-md);
+}
+
+.AccountsPage_createFormRow {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.AccountsPage_createFormInlineRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.AccountsPage_bulkButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+/* ── Section Spacing ────────────────────────────────────────────────────── */
+
+.AccountsPage_accountSection {
+  margin-bottom: var(--space-2xl);
+}
+
+.AccountsPage_accountSectionList {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Archived List ──────────────────────────────────────────────────────── */
+
+.AccountsPage_archivedList {
+  display: flex;
+  flex-direction: column;
+}
+
+.AccountsPage_archivedArrLabel {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* ── Account Type Selector ──────────────────────────────────────────────── */
+
+.AccountsPage_typeSelectorContainer {
+  display: flex;
+  gap: 0;
+  border-radius: var(--radius-editorial-sm);
+  overflow: hidden;
+  border: 1px solid var(--color-paper-linen);
+}
+
+.AccountsPage_typeSelectorButton {
+  flex: 1;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  transition: all var(--transition-normal);
+}
+
+.AccountsPage_typeSelectorButtonActive {
+  font-weight: 600;
+  background: var(--color-desk-charcoal-4);
+}
+
+.AccountsPage_typeSelectorButtonInactive {
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_typeSelectorDivider {
+  border-right: 1px solid var(--color-paper-linen);
+}
+
+/* ── Account Row ────────────────────────────────────────────────────────── */
+
+.AccountsPage_accountTypeBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.AccountsPage_accountTypeBadgePartner {
+  color: var(--color-garden-rosemary);
+}
+
+.AccountsPage_accountTypeBadgeInternal {
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_expandToggle {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ── Parent Selector ────────────────────────────────────────────────────── */
+
+.AccountsPage_parentSelectorRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.AccountsPage_parentSelectorLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.AccountsPage_parentSelectorTrigger {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: var(--radius-editorial-sm);
+  padding: 5px 8px;
+  height: auto;
+  box-shadow: none;
+}
+
+.AccountsPage_parentSelectorTriggerActive {
+  color: var(--color-text-primary);
+}
+
+.AccountsPage_parentSelectorTriggerPlaceholder {
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_parentSelectorContent {
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-paper-linen);
+  border-radius: 6px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  max-height: 240px;
+}
+
+.AccountsPage_parentSelectorItem {
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.AccountsPage_parentSelectorItemNone {
+  composes: parentSelectorItem;
+  color: var(--color-text-tertiary);
+}
+
+.AccountsPage_parentSelectorItemChild {
+  composes: parentSelectorItem;
+  color: var(--color-text-secondary);
+}

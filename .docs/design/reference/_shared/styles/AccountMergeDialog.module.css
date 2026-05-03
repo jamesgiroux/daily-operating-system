@@ -1,0 +1,86 @@
+@import '../../styles/design-tokens.css';
+
+.AccountMergeDialog_title {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+}
+
+.AccountMergeDialog_description,
+.AccountMergeDialog_buttonText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.AccountMergeDialog_body {
+  margin-top: var(--space-md);
+}
+
+.AccountMergeDialog_successMessage {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-garden-sage);
+  margin-bottom: 12px;
+}
+
+.AccountMergeDialog_resultStats {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.AccountMergeDialog_actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: var(--space-md);
+}
+
+.AccountMergeDialog_label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-xs);
+  display: block;
+}
+
+.AccountMergeDialog_select {
+  width: 100%;
+  padding: var(--space-sm) 12px;
+  border-radius: var(--radius-editorial-sm);
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-warm-white);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  outline: none;
+  height: 38px;
+}
+
+.AccountMergeDialog_previewText,
+.AccountMergeDialog_errorText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+}
+
+.AccountMergeDialog_previewText {
+  color: var(--color-text-secondary);
+  margin-top: 12px;
+}
+
+.AccountMergeDialog_errorText {
+  color: var(--color-spice-terracotta);
+  margin-top: var(--space-sm);
+}
+
+.AccountMergeDialog_formActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: var(--space-sm);
+  margin-top: 20px;
+}

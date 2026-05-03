@@ -1,175 +1,198 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Actions · DailyOS Reference</title>
-<link rel="stylesheet" href="../_shared/tokens.css">
-<link rel="stylesheet" href="../_shared/chrome.css">
-<link rel="stylesheet" href="../_shared/primitives.css">
-<link rel="stylesheet" href="../_shared/inspector.css">
-<style>
-  .glance-strip {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 24px;
-    margin-bottom: 32px;
-  }
-  .glance-cell {
-    border-left: 2px solid var(--color-rule-heavy);
-    padding-left: 14px;
-  }
-  .glance-cell .gk {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-text-tertiary);
-    margin-bottom: 4px;
-  }
-  .glance-cell .gv {
-    font-family: var(--font-serif);
-    font-size: 22px;
-    color: var(--color-text-primary);
-  }
-  .glance-cell.warn { border-left-color: var(--color-spice-terracotta); }
-  .glance-cell.warn .gv { color: var(--color-spice-terracotta); }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Actions · DailyOS Reference</title>
+
+  <!-- Fonts FIRST so the rest of the cascade has them -->
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — verbatim copies of src/components/layout/*.module.css,
+       scoped via _shared/scope-modules.py -->
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Surface-specific modules used by ActionsPage.tsx in this render path -->
+  <link rel="stylesheet" href="../_shared/styles/ActionsPage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditorialPageHeader.module.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
   data-folio-label="Actions"
-  data-folio-crumbs="Actions"
   data-tint="terracotta"
   data-active-page="actions"
-  data-nav-base=".">
+  data-nav-base="."
+  data-folio-readiness="3 to review,terracotta|5 active,sage|1 overdue,terracotta"
+  data-folio-actions="add">
 
-<main class="page" data-ds-name="Actions" data-ds-tier="surface" data-ds-spec="surfaces/Actions.md">
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
 
-<header class="hero" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
-  <div class="hero-eyebrow">
-    <span class="quality-dot"></span>
-    Actions · 4 due this week · 1 overdue
+<div class="ActionsPage_pageContainer" data-ds-name="ActionsPage" data-ds-tier="surface" data-ds-spec="surfaces/ActionsPage.md">
+
+  <!-- EditorialPageHeader: scale="standard" width="standard" rule="subtle".
+       Static reference keeps the folio bar as the page identity, so the styled title
+       is not emitted as h1. -->
+  <section class="EditorialPageHeader_header EditorialPageHeader_scaleStandard EditorialPageHeader_widthStandard EditorialPageHeader_ruleSubtle">
+    <div class="EditorialPageHeader_topRow">
+      <div class="EditorialPageHeader_titleBlock">
+        <div class="EditorialPageHeader_title">Actions</div>
+      </div>
+      <div class="EditorialPageHeader_meta">3 items</div>
+    </div>
+    <div class="EditorialPageHeader_rule"></div>
+    <div class="EditorialPageHeader_after">
+      <div class="ActionsPage_tabRow">
+        <button class="ActionsPage_tabButton ActionsPage_tabButtonActive">
+          <span class="ActionsPage_statusTabInner">
+            Suggested
+            <span class="ActionsPage_suggestedBadge">3</span>
+          </span>
+        </button>
+        <button class="ActionsPage_tabButton">
+          <span class="ActionsPage_statusTabInner">
+            Active
+            <span class="ActionsPage_countBadge">5</span>
+          </span>
+        </button>
+        <button class="ActionsPage_tabButton">
+          <span class="ActionsPage_statusTabInner">
+            Completed
+            <span class="ActionsPage_countBadge">2</span>
+          </span>
+        </button>
+      </div>
+
+      <div class="ActionsPage_tabRowPriority">
+        <button class="ActionsPage_tabButton ActionsPage_tabButtonActive">All</button>
+        <button class="ActionsPage_tabButton">Urgent</button>
+        <button class="ActionsPage_tabButton">High</button>
+        <button class="ActionsPage_tabButton">Medium</button>
+        <button class="ActionsPage_tabButton">Low</button>
+      </div>
+
+      <input type="text" value="" placeholder="⌘  Search actions..." class="ActionsPage_searchInput" />
+    </div>
+  </section>
+
+  <!-- ACTION ROWS: statusFilter === "backlog", so ActionsPage maps suggestedActions
+       through SharedSuggestedActionRow with compact=false. -->
+  <section>
+    <div class="ActionsPage_actionColumn">
+
+      <div style="display:flex; align-items:flex-start; gap:12px; padding:14px 0; border-bottom:1px solid var(--color-rule-light); border-left:2px dashed var(--color-spice-turmeric); padding-left:16px;">
+        <div style="flex:1; min-width:0;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+            <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-spice-turmeric);">Suggested</span>
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.04em; color:var(--color-spice-turmeric);">High</span>
+          </div>
+          <div style="font-family:var(--font-serif); font-size:17px; font-weight:400; color:var(--color-text-primary); line-height:1.4;">Draft expansion plan for Acme Corp</div>
+          <div style="font-family:var(--font-sans); font-size:14px; font-weight:400; color:var(--color-text-secondary); margin-top:4px; line-height:1.45;">Jen Park asked for the commercial case before Friday's renewal checkpoint.</div>
+          <div style="font-family:var(--font-sans); font-size:13px; font-weight:300; color:var(--color-text-tertiary); margin-top:6px;">Acme Corp renewal checkpoint &middot; Acme Corp</div>
+        </div>
+
+        <div style="display:flex; gap:6px; flex-shrink:0; margin-top:4px;">
+          <button title="Accept" style="width:28px; height:28px; border-radius:4px; border:1px solid var(--color-garden-sage); background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button title="Dismiss" style="width:28px; height:28px; border-radius:4px; border:1px solid var(--color-spice-terracotta); background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:flex-start; gap:12px; padding:14px 0; border-bottom:1px solid var(--color-rule-light); border-left:2px dashed var(--color-spice-turmeric); padding-left:16px;">
+        <div style="flex:1; min-width:0;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+            <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-spice-turmeric);">Suggested</span>
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.04em; color:var(--color-text-tertiary);">Medium</span>
+          </div>
+          <div style="font-family:var(--font-serif); font-size:17px; font-weight:400; color:var(--color-text-primary); line-height:1.4;">Capture Q2 Launch blocker owners</div>
+          <div style="font-family:var(--font-sans); font-size:14px; font-weight:400; color:var(--color-text-secondary); margin-top:4px; line-height:1.45;">Northwind prep surfaced two owners still missing dates.</div>
+          <div style="font-family:var(--font-sans); font-size:13px; font-weight:300; color:var(--color-text-tertiary); margin-top:6px;">Northwind Q2 Launch prep &middot; Northwind Traders</div>
+        </div>
+
+        <div style="display:flex; gap:6px; flex-shrink:0; margin-top:4px;">
+          <button title="Accept" style="width:28px; height:28px; border-radius:4px; border:1px solid var(--color-garden-sage); background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button title="Dismiss" style="width:28px; height:28px; border-radius:4px; border:1px solid var(--color-spice-terracotta); background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <div style="display:flex; align-items:flex-start; gap:12px; padding:14px 0; border-bottom:none; border-left:2px dashed var(--color-spice-turmeric); padding-left:16px;">
+        <div style="flex:1; min-width:0;">
+          <div style="display:flex; align-items:center; gap:8px; margin-bottom:2px;">
+            <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-spice-turmeric);">Suggested</span>
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.04em; color:var(--color-spice-turmeric);">High</span>
+          </div>
+          <div style="font-family:var(--font-serif); font-size:17px; font-weight:400; color:var(--color-text-primary); line-height:1.4;">Prepare procurement follow-up for Meridian Harbor</div>
+          <div style="font-family:var(--font-sans); font-size:14px; font-weight:400; color:var(--color-text-secondary); margin-top:4px; line-height:1.45;">Aoife Murphy needs the redline packet before legal review.</div>
+          <div style="font-family:var(--font-sans); font-size:13px; font-weight:300; color:var(--color-text-tertiary); margin-top:6px;">Meridian Harbor procurement review &middot; Meridian Harbor</div>
+        </div>
+
+        <div style="display:flex; gap:6px; flex-shrink:0; margin-top:4px;">
+          <button title="Accept" style="width:28px; height:28px; border-radius:4px; border:1px solid var(--color-garden-sage); background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+          <button title="Dismiss" style="width:28px; height:28px; border-radius:4px; border:1px solid var(--color-spice-terracotta); background:transparent; cursor:pointer; display:flex; align-items:center; justify-content:center; padding:0;">
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none">
+              <path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" stroke-width="2" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <!-- FinisMarker — three BrandMarks centered (mirrors src/components/editorial/FinisMarker.tsx).
+       enrichedAt is undefined for ActionsPage so no "Last updated:" timestamp. -->
+  <div style="text-align:center; padding:72px 0 24px;">
+    <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+    </div>
   </div>
-  <h1 class="hero-title">Actions</h1>
-  <p class="hero-lede">Commitments you've taken on across customers, projects, and internal work. Sorted by urgency.</p>
 
-  <div class="glance-strip" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
-    <div class="glance-cell warn" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
-      <div class="gk">Overdue</div>
-      <div class="gv">1</div>
-    </div>
-    <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
-      <div class="gk">Due this week</div>
-      <div class="gv">4</div>
-    </div>
-    <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
-      <div class="gk">Open total</div>
-      <div class="gv">11</div>
-    </div>
-    <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
-      <div class="gk">Completed (30d)</div>
-      <div class="gv">23</div>
-    </div>
-  </div>
-</header>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Overdue<span class="margin-label-count">1 item</span></div>
-  <div class="margin-content">
-    <div class="chapter">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Overdue</h2>
-    </div>
-
-    <div class="action-row overdue" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Send adjusted pricing memo to Jen Park <em>— Acme Corp · renewal blocker</em></span>
-      <span class="action-meta">Due 2d ago · P1</span>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">This week<span class="margin-label-count">4 items</span></div>
-  <div class="margin-content">
-    <div class="chapter">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Due this week</h2>
-    </div>
-
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Loop Dan Mitchell on Acme MSA redlines</span>
-      <span class="action-meta">Due Today · P2</span>
-    </div>
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Send three pricing scenarios for Apr 24 follow-up <em>— Meridian Harbor</em></span>
-      <span class="action-meta">Due Apr 22 · P1</span>
-    </div>
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Audit-log export to Marco Devine <em>— carried over from March</em></span>
-      <span class="action-meta">Due Apr 25 · P1</span>
-    </div>
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Loop Anika in on the discount-floor request <em>— Meridian Harbor</em></span>
-      <span class="action-meta">Due Apr 22 · P1</span>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Later<span class="margin-label-count">6 items</span></div>
-  <div class="margin-content">
-    <div class="chapter">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Later</h2>
-      <p class="chapter-epigraph">Tracked but not due this week.</p>
-    </div>
-
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Draft case-study quote for Marco Devine's review <em>— Meridian Harbor</em></span>
-      <span class="action-meta">Due Apr 30 · P2</span>
-    </div>
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">1:1 prep with Priya Raman — narrative for Q2</span>
-      <span class="action-meta">Due May 2 · P3</span>
-    </div>
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Re-intro to Kevin Otieno — Northwind</span>
-      <span class="action-meta">Due May 5 · P2</span>
-    </div>
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Schedule Stark Industries quarterly</span>
-      <span class="action-meta">Due May 8 · P3</span>
-    </div>
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Snooze Globex to Q3 budget review</span>
-      <span class="action-meta">Due Jul 1 · P3</span>
-    </div>
-    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
-      <span class="action-check"></span>
-      <span class="action-title">Internal — Q2 forecast review prep</span>
-      <span class="action-meta">Due Jun 1 · P3</span>
-    </div>
-  </div>
-</section>
-
-<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
-  <div class="finis-mark">*&nbsp;&nbsp;*&nbsp;&nbsp;*</div>
-  <div class="finis-date">Apr 23, 2026</div>
 </div>
 
 </main>
+</div>
 
 <script src="../_shared/chrome.js"></script>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var actions = document.querySelector('.FolioBar_folioActions');
+  if (!actions) return;
+  var button = document.createElement('button');
+  button.className = 'ActionsPage_folioAddButton';
+  button.textContent = '+ Add';
+  actions.append(button);
+});
+</script>
 <script src="../_shared/inspector.js"></script>
 </body>
 </html>

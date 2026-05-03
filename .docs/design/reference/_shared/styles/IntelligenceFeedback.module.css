@@ -1,0 +1,61 @@
+/* Intelligence quality feedback — hover-reveal thumbs up/down */
+
+.IntelligenceFeedback_wrapper {
+  display: inline-flex;
+  align-items: center;
+}
+
+.IntelligenceFeedback_container {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  vertical-align: middle;
+}
+
+/* When a vote is active, keep visible even outside hover */
+.IntelligenceFeedback_visible {
+  opacity: 1;
+}
+
+.IntelligenceFeedback_button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color var(--transition-fast), background var(--transition-fast);
+}
+
+.IntelligenceFeedback_button:hover {
+  background: var(--color-rule-light);
+  color: var(--color-text-secondary);
+}
+
+.IntelligenceFeedback_button:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 1px;
+}
+
+.IntelligenceFeedback_positive {
+  color: var(--color-garden-sage);
+}
+
+.IntelligenceFeedback_positive:hover {
+  background: var(--color-garden-sage-12);
+  color: var(--color-garden-sage);
+}
+
+.IntelligenceFeedback_negative {
+  color: var(--color-spice-terracotta);
+}
+
+.IntelligenceFeedback_negative:hover {
+  background: var(--color-spice-terracotta-8);
+  color: var(--color-spice-terracotta);
+}

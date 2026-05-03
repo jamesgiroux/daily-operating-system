@@ -1,0 +1,163 @@
+/* Context entry list styles — extracted from MePage.module.css */
+
+.ContextEntryList_entryList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.ContextEntryList_entryItem {
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.ContextEntryList_entryItem:last-child {
+  border-bottom: none;
+}
+
+.ContextEntryList_entryHeader {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+  margin-bottom: var(--space-xs);
+}
+
+.ContextEntryList_entryTitle {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.ContextEntryList_entryDate {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.ContextEntryList_entryContent {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+  line-height: 1.55;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.ContextEntryList_entryActions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-sm);
+}
+
+.ContextEntryList_entryActionBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.ContextEntryList_entryActionBtn:hover {
+  color: var(--color-text-primary);
+}
+
+.ContextEntryList_addEntryForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-md);
+  padding: var(--space-md);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+}
+
+.ContextEntryList_addEntryInput {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: var(--space-xs) 0;
+}
+
+.ContextEntryList_addEntryTextarea {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  outline: none;
+  padding: var(--space-xs) 0;
+  resize: vertical;
+  min-height: 60px;
+  line-height: 1.55;
+}
+
+.ContextEntryList_addEntryActions {
+  display: flex;
+  gap: var(--space-sm);
+  justify-content: flex-end;
+}
+
+.ContextEntryList_addEntrySave {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-secondary);
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+}
+
+.ContextEntryList_addEntrySave:hover {
+  background: var(--color-black-3);
+}
+
+.ContextEntryList_addEntryCancel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-sm);
+}
+
+.ContextEntryList_editEntryForm {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.ContextEntryList_addBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: var(--space-sm) 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  text-align: left;
+}
+
+.ContextEntryList_addBtn:hover {
+  color: var(--color-text-secondary);
+}

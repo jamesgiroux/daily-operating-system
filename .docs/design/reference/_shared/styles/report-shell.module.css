@@ -1,0 +1,61 @@
+/* ReportShell — stale banner, error banner, empty state, footer */
+
+.report-shell_staleBanner {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.5rem 1rem;
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-text-primary);
+  font-size: 0.85rem;
+  border-bottom: 1px solid var(--color-paper-linen);
+}
+
+.report-shell_staleBannerButton {
+  margin-left: auto;
+  color: var(--color-text-primary);
+}
+
+.report-shell_errorBanner {
+  padding: 1rem;
+  background: var(--color-spice-terracotta-8);
+  color: var(--color-spice-terracotta);
+  font-size: 0.875rem;
+  border-bottom: 1px solid var(--color-paper-linen);
+}
+
+.report-shell_emptyState {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4rem;
+  gap: 1rem;
+  color: var(--color-desk-charcoal);
+  opacity: 0.7;
+}
+
+.report-shell_emptyTitle {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+}
+
+.report-shell_footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  border-top: 1px solid var(--color-paper-linen);
+  font-size: 0.75rem;
+  color: var(--color-desk-charcoal);
+  opacity: 0.6;
+}
+
+.report-shell_footerActions {
+  display: flex;
+  gap: 0.5rem;
+}
+
+.report-shell_refreshIcon {
+  margin-right: 0.25rem;
+}

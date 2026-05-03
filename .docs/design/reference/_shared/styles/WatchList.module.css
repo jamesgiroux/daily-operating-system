@@ -1,0 +1,143 @@
+/* WatchList — section cards + item rows with hover-reveal actions */
+
+.WatchList_section { margin-bottom: 8px; }
+
+/* ── Section cards ── */
+.WatchList_sectionCard {
+  border-radius: 0 6px 6px 0;
+  padding: 24px 28px;
+  margin-bottom: 32px;
+}
+
+.WatchList_sectionCard[data-type="risk"] {
+  border-left: 3px solid var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8, rgba(194, 97, 72, 0.06));
+}
+
+.WatchList_sectionCard[data-type="win"] {
+  border-left: 3px solid var(--color-garden-sage);
+  background: var(--color-garden-sage-8, rgba(128, 147, 115, 0.06));
+}
+
+.WatchList_sectionCard[data-type="unknown"] {
+  border-left: 3px solid var(--color-garden-larkspur);
+  background: var(--color-garden-larkspur-8, rgba(110, 137, 168, 0.06));
+}
+
+.WatchList_sectionLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  margin-bottom: 16px;
+}
+
+.WatchList_sectionCard[data-type="risk"] .WatchList_sectionLabel { color: var(--color-spice-terracotta); }
+.WatchList_sectionCard[data-type="win"] .WatchList_sectionLabel { color: var(--color-garden-sage); }
+.WatchList_sectionCard[data-type="unknown"] .WatchList_sectionLabel { color: var(--color-garden-larkspur); }
+
+/* ── Item rows ── */
+.WatchList_itemRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.WatchList_itemRow:last-child { border-bottom: none; }
+
+.WatchList_itemText {
+  flex: 1;
+  min-width: 0;
+}
+
+.WatchList_itemTextContent {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* ── Badge ── */
+.WatchList_badge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  white-space: nowrap;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.WatchList_badgeTerracotta {
+  background: var(--color-spice-terracotta-8, rgba(194, 97, 72, 0.12));
+  color: var(--color-spice-terracotta);
+}
+
+.WatchList_badgeSage {
+  background: var(--color-garden-sage-8, rgba(128, 147, 115, 0.12));
+  color: var(--color-garden-sage);
+}
+
+.WatchList_badgeNeutral {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-secondary);
+}
+
+/* ── Hover-reveal actions — single hotspot on row ── */
+.WatchList_itemActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  margin-top: 2px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.WatchList_itemRow:hover .WatchList_itemActions,
+.WatchList_itemActions:focus-within {
+  opacity: 1;
+}
+
+.WatchList_dismissButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.WatchList_dismissButton:hover {
+  color: var(--color-spice-terracotta);
+}
+
+/* ── Expand toggle ── */
+.WatchList_expandToggle {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 8px 0 0;
+}
+
+.WatchList_expandToggle:hover {
+  color: var(--color-spice-turmeric);
+}

@@ -1,0 +1,89 @@
+
+.ProjectHero_hero {
+  composes: hero from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_heroDate {
+  composes: heroDate from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_name {
+  composes: heroTitle from "../entity/EntityHeroBase.module.css";
+  margin: 0 0 40px;
+}
+
+.ProjectHero_lede {
+  composes: heroLede from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_badges {
+  composes: heroBadges from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_badge {
+  composes: heroBadge from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_statusActive {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-sage);
+}
+
+.ProjectHero_statusOnHold {
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-spice-turmeric);
+}
+
+.ProjectHero_statusCompleted {
+  background: var(--color-garden-larkspur-15);
+  color: var(--color-garden-larkspur);
+}
+
+.ProjectHero_statusDefault {
+  background: var(--color-rule-light);
+  color: var(--color-text-secondary);
+}
+
+.ProjectHero_ownerBadge {
+  background: var(--color-rule-light);
+  color: var(--color-text-secondary);
+}
+
+.ProjectHero_archivedBanner {
+  composes: heroArchivedBanner from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_archivedText {
+  composes: heroArchivedText from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_meta {
+  composes: heroMeta from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_metaButton {
+  composes: heroMetaButton from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_metaButtonEnriching {
+  composes: metaButton;
+  color: var(--color-garden-olive);
+  text-decoration: none;
+  cursor: default;
+}
+
+.ProjectHero_readMore {
+  composes: heroReadMore from "../entity/EntityHeroBase.module.css";
+}
+
+.ProjectHero_badgesWithTopMargin {
+  margin-top: 24px;
+}
+
+.ProjectHero_metaRow {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}

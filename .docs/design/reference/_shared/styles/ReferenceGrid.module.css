@@ -1,0 +1,117 @@
+/* =============================================================================
+   REFERENCE GRID — Chapters 6 + 7 (Commercial shape, Technical shape)
+   Ref: .docs/mockups/account-context-globex.html (.ref-grid / .ref-row / .gap-*)
+   Shared between CommercialShape and AccountTechnicalFootprint (chapter variant).
+   ============================================================================= */
+
+.ReferenceGrid_grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-xs) var(--space-3xl);
+  padding-top: var(--space-md);
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.ReferenceGrid_row {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+.ReferenceGrid_label {
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.ReferenceGrid_value {
+  color: var(--color-text-primary);
+  font-weight: 500;
+  text-align: right;
+  min-width: 0;
+}
+
+.ReferenceGrid_valueGap {
+  color: var(--color-spice-saffron);
+  font-style: italic;
+  font-weight: 400;
+}
+
+.ReferenceGrid_valueAccent {
+  color: var(--color-spice-turmeric);
+  font-weight: 600;
+}
+
+/* -- Feature adoption list (Technical shape only) -------------------------- */
+
+.ReferenceGrid_featureHeading {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin: var(--space-2xl) 0 var(--space-md);
+}
+
+.ReferenceGrid_featureList {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 6px var(--space-md);
+}
+
+.ReferenceGrid_featureItem {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.ReferenceGrid_featureDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+.ReferenceGrid_featureDotTrial {
+  background: var(--color-spice-turmeric);
+}
+
+.ReferenceGrid_featureDotChurned {
+  background: var(--color-text-tertiary);
+  opacity: 0.5;
+}
+
+.ReferenceGrid_featureSource {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+}
+
+/* -- Caveat banner ("coming in next release") ----------------------------- */
+
+.ReferenceGrid_caveat {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-spice-saffron);
+  margin-top: var(--space-2xl);
+  padding: var(--space-sm) var(--space-md);
+  background: var(--color-spice-saffron-10, rgba(196, 147, 53, 0.1));
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-sm, 4px) var(--radius-sm, 4px) 0;
+}

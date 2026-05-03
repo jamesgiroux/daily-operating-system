@@ -1,0 +1,234 @@
+/* =============================================================================
+   DESIGN TOKENS — ADR-0076 Brand Identity + ADR-0073 Typography & Spacing
+
+   Single source of truth for all design values across the magazine-layout
+   editorial redesign. Use these CSS custom properties throughout all components.
+   ============================================================================= */
+
+:root {
+  /* ─────────────────────────────────────────────────────────────────────────
+     PAPER PALETTE — Grounds & Backgrounds
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-paper-cream: #f5f2ef;
+  --color-paper-linen: #e8e2d9;
+  --color-paper-warm-white: #faf8f6;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     DESK PALETTE — Frame & Primary Text
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SURFACE ALIASES — Semantic Backgrounds (DOS-62)
+     Ghost tokens consumed by ActionRow/Emails/DatabaseRecovery/ContextSource.
+     Map to paper palette so backgrounds render opaque instead of transparent.
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-surface: var(--color-paper-cream); /* Page ground, base surface */
+  --color-surface-primary: var(--color-paper-warm-white); /* Primary card surface */
+  --color-surface-secondary: var(--color-paper-linen); /* Recessed / secondary panels */
+  --color-surface-inset: var(--color-desk-charcoal-4); /* Inset config panels, subtle recess on cream */
+  --color-surface-subtle: var(--color-black-4); /* Subtle chip/badge tint */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SPICE PALETTE — Warm Accents (Accounts, Active States, Urgency)
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-spice-turmeric: #c9a227; /* Primary accent, accounts, warm emphasis */
+  --color-spice-saffron: #deb841; /* Secondary warm accent */
+  --color-spice-terracotta: #c4654a; /* Urgency, errors, overdue items */
+  --color-spice-chili: #9b3a2a; /* Deep red, critical states */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     GARDEN PALETTE — Cool Accents (People, Success, Forward-Looking)
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-garden-sage: #7eaa7b; /* Success, healthy, prepped */
+  --color-garden-olive: #6b7c52; /* Projects, muted secondary */
+  --color-garden-rosemary: #4a6741; /* Deep green, success variant */
+  --color-garden-larkspur: #8fa3c4; /* People, calm, expansive, forward-looking */
+  --color-garden-eucalyptus: #6ba8a4; /* User entity (/me), professional context, self-knowledge */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SEMANTIC TEXT COLORS
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-text-primary: var(--color-desk-charcoal); /* Primary text, headlines */
+  --color-text-secondary: #5a6370; /* Body text, secondary content */
+  --color-text-tertiary: #6b7280; /* Labels, hints, tertiary content (WCAG AA compliant) */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     RULE COLORS — Dividers, Borders, Grid Lines
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-rule-heavy: rgba(30, 37, 48, 0.12); /* Primary dividers, section rules */
+  --color-rule-light: rgba(30, 37, 48, 0.06); /* Secondary dividers, soft separators */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     ENTITY COLOR ALIASES — Semantic layer
+     ADR-0076 entity color semantics. These tokens provide one canonical
+     vocabulary for entity identity.
+
+     Use these when the rendered element represents an entity in context
+     (an account hero, a person card, the user's own surface, etc.).
+     Direct uses of underlying paint tokens (--color-spice-turmeric, etc.)
+     remain valid where the meaning is "the turmeric paint color" rather
+     than "the account entity color" — e.g., warm-emphasis prose styling,
+     prep-state indicators, status warnings.
+
+     Migration of existing direct entity-color references happens gradually
+     as surface specs land.
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-entity-account: var(--color-spice-turmeric);
+  --color-entity-project: var(--color-garden-olive);
+  --color-entity-person: var(--color-garden-larkspur);
+  --color-entity-action: var(--color-spice-terracotta);
+  --color-entity-user: var(--color-garden-eucalyptus);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     OPACITY VARIANTS — Tinted backgrounds, borders, hover states
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-turmeric-30: rgba(201, 162, 39, 0.30);
+  --color-spice-saffron-8: rgba(222, 184, 65, 0.08);
+  --color-spice-saffron-12: rgba(222, 184, 65, 0.12);
+  --color-spice-terracotta-8: rgba(196, 101, 74, 0.08);
+  --color-spice-terracotta-12: rgba(196, 101, 74, 0.12);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-larkspur-8: rgba(143, 163, 196, 0.08);
+  --color-garden-larkspur-12: rgba(143, 163, 196, 0.12);
+  --color-garden-larkspur-15: rgba(143, 163, 196, 0.15);
+  --color-garden-eucalyptus-6: rgba(107, 168, 164, 0.06);
+  --color-garden-eucalyptus-10: rgba(107, 168, 164, 0.10);
+  --color-garden-olive-6: rgba(107, 124, 82, 0.06);
+  --color-garden-olive-8: rgba(107, 124, 82, 0.08);
+  --color-garden-olive-10: rgba(107, 124, 82, 0.10);
+  --color-garden-sage-8: rgba(126, 170, 123, 0.08);
+  --color-garden-sage-10: rgba(126, 170, 123, 0.10);
+  --color-garden-sage-14: rgba(126, 170, 123, 0.14);
+  --color-garden-sage-15: rgba(126, 170, 123, 0.15);
+  --color-garden-sage-20: rgba(126, 170, 123, 0.20);
+  --color-garden-larkspur-10: rgba(143, 163, 196, 0.10);
+  --color-garden-larkspur-14: rgba(143, 163, 196, 0.14);
+  --color-garden-rosemary-12: rgba(74, 103, 65, 0.12);
+  --color-garden-rosemary-14: rgba(74, 103, 65, 0.14);
+  --color-spice-turmeric-4: rgba(201, 162, 39, 0.04);
+  --color-spice-turmeric-5: rgba(201, 162, 39, 0.05);
+  --color-spice-turmeric-6: rgba(201, 162, 39, 0.06);
+  --color-spice-turmeric-7: rgba(201, 162, 39, 0.07);
+  --color-spice-turmeric-10: rgba(201, 162, 39, 0.10);
+  --color-spice-turmeric-15: rgba(201, 162, 39, 0.15);
+  --color-spice-turmeric-18: rgba(201, 162, 39, 0.18);
+  --color-spice-turmeric-60: rgba(201, 162, 39, 0.60);
+  --color-spice-terracotta-10: rgba(196, 101, 74, 0.10);
+  --color-spice-terracotta-15: rgba(196, 101, 74, 0.15);
+  --color-spice-terracotta-20: rgba(196, 101, 74, 0.20);
+  --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-desk-charcoal-15: rgba(30, 37, 48, 0.015);
+  --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-5: rgba(30, 37, 48, 0.05);
+  --color-desk-charcoal-8: rgba(30, 37, 48, 0.08);
+  --color-desk-charcoal-25: rgba(30, 37, 48, 0.25);
+  --color-desk-charcoal-40: rgba(30, 37, 48, 0.40);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     OVERLAY COLORS — Modal backdrops, scrim layers
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-overlay-light: rgba(0, 0, 0, 0.4);
+  --color-overlay-medium: rgba(0, 0, 0, 0.5);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     BLACK OPACITY VARIANTS — Neutral shadows, subtle backgrounds
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-black-2: rgba(0, 0, 0, 0.02);
+  --color-black-3: rgba(0, 0, 0, 0.03);
+  --color-black-4: rgba(0, 0, 0, 0.04);
+  --color-black-8: rgba(0, 0, 0, 0.08);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TYPOGRAPHY — Font Families (ADR-0073)
+     ───────────────────────────────────────────────────────────────────────── */
+  --font-serif: 'Newsreader', Georgia, serif; /* Display, headlines, narrative */
+  --font-sans: 'DM Sans', -apple-system, sans-serif; /* Body, UI text, labels */
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace; /* Time, dates, code */
+  --font-mark: 'Montserrat', sans-serif; /* Brand mark asterisk (must be 800) */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SPACING SCALE (ADR-0073) — Base 4px grid
+     ───────────────────────────────────────────────────────────────────────── */
+  --space-xs: 4px;
+  --space-sm: 8px;
+  --space-md: 16px;
+  --space-lg: 24px;
+  --space-xl: 32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --space-5xl: 80px;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     LAYOUT — Fixed Dimensions for App Shell
+     ───────────────────────────────────────────────────────────────────────── */
+  --folio-height: 40px; /* FolioBar fixed height */
+  --folio-padding-top: 10px;
+  --folio-padding-bottom: 10px;
+  --folio-padding-left: 80px;
+  --folio-padding-right: 48px;
+  --page-padding-horizontal: 120px; /* Left/right padding for page container */
+  --page-padding-bottom: 160px; /* Bottom padding for page container */
+  --page-margin-top: 40px; /* Clearance for fixed folio bar */
+  --page-max-width: 1180px; /* Maximum content width */
+  --page-content-width-standard: 900px; /* Standard editorial page width */
+  --page-content-width-reading: 760px; /* Narrower prose/report width */
+  --nav-island-right: 28px; /* Distance from right edge */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     BORDER RADIUS
+     ───────────────────────────────────────────────────────────────────────── */
+  --radius-editorial-sm: 4px; /* Search button, small elements */
+  --radius-editorial-md: 10px; /* Nav island items */
+  --radius-editorial-lg: 12px; /* Featured actions box */
+  --radius-editorial-xl: 16px; /* Nav island container */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     SHADOWS
+     ───────────────────────────────────────────────────────────────────────── */
+  --shadow-sm: 0 2px 8px rgba(30, 37, 48, 0.1);
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 4px 16px rgba(0, 0, 0, 0.12);
+  --shadow-2xl: 0 8px 32px rgba(0, 0, 0, 0.12);
+  --shadow-modal: 0 20px 60px rgba(30, 37, 48, 0.15);
+  --shadow-dropdown: 0 4px 24px rgba(0, 0, 0, 0.08);
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     TRANSITIONS & ANIMATIONS
+     ───────────────────────────────────────────────────────────────────────── */
+  --transition-fast: 0.12s ease;
+  --transition-normal: 0.15s ease;
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     BACKDROP & GLASS EFFECTS (macOS Native)
+     ───────────────────────────────────────────────────────────────────────── */
+  --backdrop-blur: blur(12px);
+  --frosted-glass-background: rgba(245, 242, 239, 0.85); /* Folio bar background */
+  --frosted-glass-nav: rgba(250, 248, 246, 0.8); /* Nav island background */
+
+  /* ─────────────────────────────────────────────────────────────────────────
+     Z-INDEX STACK
+     ───────────────────────────────────────────────────────────────────────── */
+  --z-atmosphere: 0; /* Background layer */
+  --z-page-content: 1; /* Main content, above atmosphere */
+  --z-app-shell: 100; /* Folio bar, nav island, top-level UI */
+  --z-lock: 1000; /* App lock overlay — above everything */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────
+   KEYFRAME ANIMATIONS
+   (Global reset lives in index.css via Tailwind — not here)
+   ───────────────────────────────────────────────────────────────────────── */
+@keyframes atmosphere-breathe {
+  0% {
+    opacity: 0.8;
+  }
+  100% {
+    opacity: 1;
+  }
+}

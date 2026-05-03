@@ -1,0 +1,633 @@
+/* =============================================================================
+   InboxPage — CSS Module for the Dropbox / Inbox surface
+   Uses design tokens from design-tokens.css. No hardcoded values.
+   ============================================================================= */
+
+/* ── Page Container ─────────────────────────────────────────────────────── */
+
+.InboxPage_pageContainer {
+  max-width: var(--page-content-width-standard);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Folio Actions ──────────────────────────────────────────────────────── */
+
+.InboxPage_folioActions {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.InboxPage_folioButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.InboxPage_folioButton:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.InboxPage_folioButtonDefault {
+  composes: folioButton;
+  color: var(--color-text-secondary);
+}
+
+.InboxPage_folioButtonDisabled {
+  composes: folioButton;
+  color: var(--color-text-tertiary);
+}
+
+.InboxPage_folioButtonCancel {
+  composes: folioButton;
+  color: var(--color-spice-terracotta);
+  border-color: var(--color-spice-terracotta);
+}
+
+.InboxPage_folioButtonRefresh {
+  composes: folioButton;
+}
+
+/* ── Drop Zone ──────────────────────────────────────────────────────────── */
+
+.InboxPage_dropZoneLarge {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 80px 0;
+  border: 2px dashed var(--color-rule-heavy);
+  border-radius: var(--space-sm);
+  text-align: center;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.InboxPage_dropZoneLargeDragging {
+  border-color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-4);
+}
+
+.InboxPage_dropZoneCompact {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 20px 0;
+  margin-bottom: 20px;
+  border: 1px dashed var(--color-rule-heavy);
+  border-radius: 6px;
+  transition: border-color 0.2s ease, background 0.2s ease;
+}
+
+.InboxPage_dropZoneCompactDragging {
+  border-color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-4);
+}
+
+.InboxPage_dropZoneText {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.InboxPage_dropZoneTextDragging {
+  color: var(--color-spice-turmeric);
+}
+
+.InboxPage_dropZoneTextCompact {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+}
+
+.InboxPage_dropZoneTextCompactDragging {
+  color: var(--color-spice-turmeric);
+}
+
+.InboxPage_dropZoneHint {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-sm);
+}
+
+.InboxPage_driveImportButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  padding: 4px 14px;
+  cursor: pointer;
+  margin-top: var(--space-md);
+}
+
+/* ── Drop Result Toast ──────────────────────────────────────────────────── */
+
+.InboxPage_dropResultToast {
+  position: fixed;
+  top: var(--space-5xl);
+  left: 50%;
+  transform: translateX(-50%);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-garden-sage);
+  background: var(--color-text-primary);
+  border-radius: 6px;
+  padding: var(--space-sm) var(--space-md);
+  z-index: 50;
+}
+
+/* ── Result Banner ──────────────────────────────────────────────────────── */
+
+.InboxPage_resultBanner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+  margin-bottom: var(--space-md);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.InboxPage_resultBannerStats {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.InboxPage_resultStatProcessed {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-garden-sage);
+}
+
+.InboxPage_resultStatFailed {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-spice-terracotta);
+}
+
+.InboxPage_resultStatEmpty {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.InboxPage_resultDismiss {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ── Batch Processing Banner ────────────────────────────────────────────── */
+
+.InboxPage_batchBanner {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: var(--space-lg) 0;
+  margin-bottom: 20px;
+}
+
+.InboxPage_batchProgressTrack {
+  width: 160px;
+  height: 2px;
+  background: var(--color-rule-light);
+  border-radius: 1px;
+  overflow: hidden;
+  margin-bottom: 12px;
+}
+
+.InboxPage_batchProgressBar {
+  width: 100%;
+  height: 100%;
+  background: var(--color-spice-turmeric);
+  border-radius: 1px;
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+.InboxPage_batchQuote {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+/* ── File List ──────────────────────────────────────────────────────────── */
+
+.InboxPage_fileList {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Inbox Row ──────────────────────────────────────────────────────────── */
+
+.InboxPage_rowContainer {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 0;
+}
+
+.InboxPage_rowBorder {
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+/* Colored dot */
+.InboxPage_rowDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* Expand toggle + title button */
+.InboxPage_rowTitleButton {
+  display: flex;
+  flex: 1;
+  min-width: 0;
+  align-items: baseline;
+  gap: var(--space-sm);
+  text-align: left;
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+
+.InboxPage_rowTitleButton:disabled {
+  cursor: default;
+}
+
+.InboxPage_rowTitle {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.InboxPage_rowTitleProcessing {
+  color: var(--color-text-tertiary);
+}
+
+.InboxPage_rowClassificationLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  opacity: 0.6;
+}
+
+/* Right side container */
+.InboxPage_rowRight {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-shrink: 0;
+}
+
+/* Status: processing */
+.InboxPage_statusProcessing {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-turmeric);
+}
+
+/* Status: dot + label group */
+.InboxPage_statusGroup {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+}
+
+.InboxPage_statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.InboxPage_statusLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.InboxPage_statusLabelError {
+  color: var(--color-spice-terracotta);
+}
+
+/* Time */
+.InboxPage_rowTime {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+}
+
+/* Cancel button (processing state) */
+.InboxPage_rowCancelButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-normal);
+}
+
+.InboxPage_rowCancelButtonVisible {
+  opacity: 1;
+}
+
+/* Process button */
+.InboxPage_rowProcessButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px 8px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity var(--transition-normal), border-color var(--transition-normal), color var(--transition-normal);
+}
+
+.InboxPage_rowProcessButtonHovered {
+  color: var(--color-text-secondary);
+  border-color: var(--color-rule-heavy);
+  opacity: 1;
+}
+
+.InboxPage_rowProcessButton:disabled {
+  cursor: default;
+}
+
+/* Expand indicator */
+.InboxPage_expandIndicator {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  opacity: 0.4;
+  transition: transform var(--transition-normal);
+  display: inline-block;
+}
+
+.InboxPage_expandIndicatorOpen {
+  transform: rotate(180deg);
+}
+
+/* ── Error Inline ───────────────────────────────────────────────────────── */
+
+.InboxPage_errorInline {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-spice-terracotta);
+  padding: 4px 0 8px 20px;
+}
+
+/* ── Entity Picker ──────────────────────────────────────────────────────── */
+
+.InboxPage_entityPickerRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px 0 10px 20px;
+}
+
+.InboxPage_entityPickerSuggestion {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-turmeric);
+}
+
+.InboxPage_entityPickerSelect {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-rule-medium);
+  border-radius: var(--radius-editorial-sm);
+  padding: 3px 6px;
+  cursor: pointer;
+}
+
+/* ── Expanded Content ───────────────────────────────────────────────────── */
+
+.InboxPage_expandedContent {
+  padding: 12px 0 16px 20px;
+}
+
+.InboxPage_expandedLoadingSkeleton {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.InboxPage_skeletonLine {
+  height: 14px;
+  background: var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+.InboxPage_skeletonLine1 {
+  composes: skeletonLine;
+  width: 75%;
+}
+
+.InboxPage_skeletonLine2 {
+  composes: skeletonLine;
+  width: 50%;
+}
+
+.InboxPage_skeletonLine3 {
+  composes: skeletonLine;
+  width: 25%;
+}
+
+.InboxPage_fileMetaLine {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  opacity: 0.6;
+  margin-bottom: var(--space-sm);
+}
+
+.InboxPage_fileContentPre {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  max-height: 256px;
+  overflow: auto;
+  margin: 0;
+}
+
+/* ── Processing Progress Bar ────────────────────────────────────────────── */
+
+.InboxPage_progressTrack {
+  height: 2px;
+  width: 100%;
+  background: var(--color-rule-light);
+  overflow: hidden;
+}
+
+.InboxPage_progressBar {
+  width: 100%;
+  height: 100%;
+  background: var(--color-spice-turmeric);
+  border-radius: 1px;
+  animation: heartbeat 1.5s ease-in-out infinite;
+}
+
+/* ── Help Button & Modal ───────────────────────────────────────────────── */
+
+.InboxPage_helpButton {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-heavy);
+  background: transparent;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+}
+
+.InboxPage_helpButton:hover {
+  border-color: var(--color-text-secondary);
+  color: var(--color-text-secondary);
+}
+
+.InboxPage_helpOverlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.4);
+  z-index: 100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.InboxPage_helpCard {
+  background: var(--color-bg-primary);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-md);
+  padding: 32px;
+  max-width: 420px;
+  width: 90%;
+}
+
+.InboxPage_helpTitle {
+  font-family: var(--font-editorial);
+  font-size: 18px;
+  font-weight: 500;
+  margin: 0 0 24px;
+  color: var(--color-text-primary);
+}
+
+.InboxPage_helpSteps {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  margin-bottom: 24px;
+}
+
+.InboxPage_helpStep {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.InboxPage_helpStep strong {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--color-text-primary);
+}
+
+.InboxPage_helpStep p {
+  font-size: 13px;
+  color: var(--color-text-secondary);
+  margin: 2px 0 0;
+  line-height: 1.4;
+}
+
+.InboxPage_helpStepNumber {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.InboxPage_helpCloseButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  padding: 6px 16px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition: all 0.15s ease;
+  width: 100%;
+}
+
+.InboxPage_helpCloseButton:hover {
+  background: var(--color-text-primary);
+  color: var(--color-bg-primary);
+  border-color: var(--color-text-primary);
+}

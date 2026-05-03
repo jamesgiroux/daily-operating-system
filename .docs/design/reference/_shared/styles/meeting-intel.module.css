@@ -1,0 +1,1514 @@
+/* =============================================================================
+   MeetingDetailPage CSS Module
+   Phase 5: Design System Violations Remediation — inline style → CSS module migration
+   ============================================================================= */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EXISTING CLASSES (preserved)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_heroTitle {
+  font-size: 76px;
+  font-weight: 400;
+  font-family: var(--font-serif);
+  letter-spacing: -0.025em;
+  color: var(--color-text-primary);
+  margin: 8px 0 0;
+  line-height: 1.06;
+  max-width: 780px;
+}
+
+@media (max-width: 1000px) {
+  .meeting-intel_heroTitle {
+    font-size: 60px;
+  }
+}
+
+@media (max-width: 820px) {
+  .meeting-intel_heroTitle {
+    font-size: 48px;
+  }
+}
+
+/* Details chevron rotation for calendar notes toggle */
+.meeting-intel_detailsChevron {
+  transition: transform 0.2s ease;
+}
+
+details[open] .meeting-intel_detailsChevron {
+  transform: rotate(90deg);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SHARED / REUSABLE PATTERNS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_monoOverline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.2em;
+  color: var(--color-text-tertiary);
+}
+
+/* Meeting Record overline — turmeric accent for processed state */
+.meeting-intel_recordOverline {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  margin-bottom: 16px;
+}
+
+/* Meeting Record headline — 46px editorial (smaller than briefing hero) */
+.meeting-intel_recordHeadline {
+  font-family: var(--font-serif);
+  font-size: 46px;
+  font-weight: 400;
+  letter-spacing: -0.025em;
+  line-height: 1.08;
+  color: var(--color-text-primary);
+  margin: 0 0 24px;
+  max-width: 680px;
+}
+
+@media (max-width: 820px) {
+  .meeting-intel_recordHeadline {
+    font-size: 36px;
+  }
+}
+
+.meeting-intel_chapterHeading {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_folioBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.meeting-intel_folioBtnInline {
+  composes: folioBtn;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meeting-intel_folioBtnDisabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.meeting-intel_bulletDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 7px;
+}
+
+.meeting-intel_bulletDotInline {
+  composes: bulletDot;
+  margin-top: 0;
+}
+
+.meeting-intel_bulletDotTurmeric {
+  composes: bulletDotInline;
+  background: var(--color-spice-turmeric);
+}
+
+.meeting-intel_bulletDotTurmericMuted {
+  composes: bulletDot;
+  /* Turmeric at 60% opacity — from --color-spice-turmeric #c9a227 */
+  background: var(--color-spice-turmeric-60);
+}
+
+.meeting-intel_sectionRule {
+  height: 1px;
+  background: var(--color-rule-heavy);
+}
+
+.meeting-intel_iconSm {
+  width: 10px;
+  height: 10px;
+}
+
+.meeting-intel_iconMd {
+  width: 12px;
+  height: 12px;
+}
+
+.meeting-intel_iconLg {
+  width: 13px;
+  height: 13px;
+}
+
+.meeting-intel_iconXl {
+  width: 32px;
+  height: 32px;
+}
+
+/* Icon color variants for outcome section icons */
+.meeting-intel_iconSage {
+  composes: iconLg;
+  color: var(--color-garden-sage);
+}
+
+.meeting-intel_iconTerracotta {
+  composes: iconLg;
+  color: var(--color-spice-terracotta);
+}
+
+.meeting-intel_iconTurmeric {
+  composes: iconLg;
+  color: var(--color-spice-turmeric);
+}
+
+/* Spinner animation for loader icons */
+.meeting-intel_spinAnimation {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* Tooltip assessment text in attendee hover */
+.meeting-intel_tooltipAssessment {
+  display: block;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  line-height: 1.45;
+}
+
+/* Tooltip meta block display */
+.meeting-intel_tooltipMetaBlock {
+  display: block;
+}
+
+.meeting-intel_tooltipMetaBlockSpaced {
+  composes: tooltipMetaBlock;
+  margin-bottom: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PAGE LAYOUT
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_pageContainer {
+  max-width: 960px;
+  margin: 0 auto;
+  padding: 0 0 var(--space-5xl);
+}
+
+.meeting-intel_pageContainerPadded {
+  composes: pageContainer;
+  padding: var(--space-2xl) 0 var(--space-5xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EMPTY / NOT-READY STATES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_emptyState {
+  text-align: center;
+  padding: 60px 0;
+}
+
+.meeting-intel_emptyStateActionable {
+  text-align: left;
+  max-width: 700px;
+  margin: 0 auto;
+  padding: 40px 0;
+}
+
+.meeting-intel_emptyIcon {
+  width: 32px;
+  height: 32px;
+  color: var(--color-text-tertiary);
+  opacity: 0.5;
+  margin: 0 auto var(--space-md);
+  display: block;
+}
+
+.meeting-intel_emptyTitle {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-sm);
+}
+
+.meeting-intel_emptyText {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.meeting-intel_emptyGenerating {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0 0 var(--space-sm);
+}
+
+.meeting-intel_syncButton {
+  margin-top: var(--space-lg);
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px var(--space-md);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meeting-intel_syncButtonDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FOLIO BAR ACTIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_folioActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meeting-intel_folioCopied {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--color-garden-sage);
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   OUTCOMES SECTION
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_outcomesWrap {
+  padding-top: var(--space-5xl);
+}
+
+.meeting-intel_outcomesDivider {
+  height: 1px;
+  background: var(--color-rule-light);
+  margin: var(--space-2xl) 0;
+}
+
+.meeting-intel_outcomesContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.meeting-intel_outcomesTitle {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.meeting-intel_outcomesBody {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  font-size: 14px;
+}
+
+.meeting-intel_outcomesSummary {
+  color: var(--color-text-tertiary);
+  margin: 0;
+  line-height: 1.65;
+}
+
+.meeting-intel_outcomesGrid {
+  display: grid;
+  gap: 20px;
+  grid-template-columns: repeat(2, 1fr);
+}
+
+.meeting-intel_outcomeSectionWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meeting-intel_outcomeSectionTitle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.meeting-intel_outcomeSectionCount {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_outcomeSectionItems {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meeting-intel_outcomeSectionItem {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.55;
+}
+
+.meeting-intel_outcomeActionsWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.meeting-intel_outcomeActionsTitle {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.meeting-intel_outcomeActionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   HERO SECTION
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_heroSection {
+  padding-top: var(--space-5xl);
+  scroll-margin-top: 60px;
+}
+
+.meeting-intel_pastMeetingOpacity {
+  opacity: 0.7;
+}
+
+.meeting-intel_urgencyBanner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  margin-bottom: var(--space-md);
+}
+
+.meeting-intel_urgencyUrgent {
+  color: var(--color-spice-terracotta);
+}
+
+.meeting-intel_urgencySoon {
+  color: var(--color-spice-turmeric);
+}
+
+.meeting-intel_lifecycleBadge {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 12px;
+}
+
+.meeting-intel_lifecycleText {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  color: var(--color-spice-turmeric);
+}
+
+.meeting-intel_metadataLine {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  margin: 8px 0 0;
+}
+
+.meeting-intel_metadataText {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+.meeting-intel_entityChipsWrap {
+  margin-top: 10px;
+}
+
+.meeting-intel_entityChipsWrapCentered {
+  composes: entityChipsWrap;
+  display: flex;
+  justify-content: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   NEW SIGNALS BANNER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_newSignalsBanner {
+  padding: 10px var(--space-md);
+  background: var(--color-garden-larkspur-8);
+  border-left: 3px solid var(--color-garden-larkspur);
+  border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-garden-larkspur);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.meeting-intel_newSignalsRefreshBtn {
+  background: none;
+  border: 1px solid var(--color-garden-larkspur);
+  border-radius: var(--radius-editorial-sm);
+  padding: 4px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-garden-larkspur);
+  cursor: pointer;
+}
+
+.meeting-intel_newSignalsRefreshBtnDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.meeting-intel_consistencyBanner {
+  padding: 10px var(--space-md);
+  border-left: 3px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-sm);
+  margin-top: var(--space-sm);
+  margin-bottom: var(--space-md);
+}
+
+.meeting-intel_consistencyBannerCorrected {
+  background: var(--color-garden-sage-12);
+  color: var(--color-garden-sage);
+}
+
+.meeting-intel_consistencyBannerFlagged {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+}
+
+.meeting-intel_consistencyCount {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+  opacity: 0.9;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   KEY INSIGHT (pull quote)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_keyInsight {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  margin: 28px 0 0 0;
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding: var(--space-md) 0 var(--space-md) var(--space-lg);
+}
+
+.meeting-intel_keyInsightText {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  margin: 0;
+  max-width: 620px;
+}
+
+.meeting-intel_keyInsightEmpty {
+  margin-top: 28px;
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENTITY READINESS ("Before This Meeting")
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_readinessWrap {
+  margin-top: var(--space-xl);
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding: 12px 0 12px 20px;
+}
+
+.meeting-intel_readinessHeading {
+  composes: chapterHeading;
+  color: var(--color-spice-turmeric);
+  margin-bottom: 12px;
+}
+
+.meeting-intel_readinessList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+}
+
+.meeting-intel_readinessItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RISKS CHAPTER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_chapterSection {
+  padding-top: var(--space-5xl);
+  scroll-margin-top: 60px;
+}
+
+.meeting-intel_risksContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-lg);
+}
+
+.meeting-intel_featuredRisk {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding: var(--space-md) 0 var(--space-md) var(--space-lg);
+  margin: 0;
+}
+
+.meeting-intel_featuredRiskText {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.meeting-intel_subordinateRisk {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+  border-top: 1px solid var(--color-rule-light);
+  padding-top: var(--space-md);
+}
+
+.meeting-intel_subordinateRiskHighUrgency {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding-left: var(--space-md);
+}
+
+.meeting-intel_subordinateRiskText {
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROOM / ATTENDEES CHAPTER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_attendeeList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.meeting-intel_attendeeRowOuter {
+  display: flex;
+  align-items: flex-start;
+}
+
+.meeting-intel_attendeeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.meeting-intel_attendeeLink {
+  text-decoration: none;
+  color: inherit;
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-intel_attendeeNonLink {
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-intel_attendeeAvatar {
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 14px;
+  font-weight: 500;
+  flex-shrink: 0;
+}
+
+.meeting-intel_attendeeBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-intel_attendeeNameRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  flex-wrap: wrap;
+}
+
+.meeting-intel_attendeeName {
+  font-weight: 500;
+  color: var(--color-text-primary);
+  margin: 0;
+  font-size: 14px;
+  cursor: default;
+}
+
+.meeting-intel_attendeeRole {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_attendeeTempDot {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.meeting-intel_attendeeTempIndicator {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.meeting-intel_attendeeTempLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: capitalize;
+}
+
+.meeting-intel_attendeeEngagement {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: capitalize;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 3px;
+  padding: 1px 6px;
+}
+
+.meeting-intel_attendeeNewContact {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--color-garden-sage);
+}
+
+.meeting-intel_attendeeAssessment {
+  margin-top: 6px;
+  margin-bottom: 0;
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  font-weight: 400;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+}
+
+.meeting-intel_attendeeMeta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  margin-top: 4px;
+}
+
+.meeting-intel_attendeeOrg {
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_attendeeMetaMono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_attendeeMetaCold {
+  composes: attendeeMetaMono;
+  color: var(--color-spice-terracotta);
+}
+
+.meeting-intel_attendeeNotes {
+  margin-top: 4px;
+  margin-bottom: 0;
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.meeting-intel_attendeeHideBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  padding: 12px 4px 0;
+  opacity: 0.35;
+  flex-shrink: 0;
+}
+
+.meeting-intel_attendeeShowMore {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  text-align: left;
+}
+
+/* Tooltip styles (attendees) */
+.meeting-intel_attendeeTooltipWrap {
+  position: relative;
+}
+
+.meeting-intel_attendeeTooltip {
+  display: none;
+  position: absolute;
+  /* … keep existing tooltip CSS from index.css */
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   YOUR PLAN CHAPTER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_prefillNotice {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-spice-turmeric);
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding-left: 12px;
+  padding-top: 6px;
+  padding-bottom: 6px;
+  margin-bottom: var(--space-md);
+}
+
+.meeting-intel_planContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.meeting-intel_planList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.meeting-intel_planItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: 12px 0;
+}
+
+.meeting-intel_planNumber {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-spice-turmeric);
+  width: 24px;
+  text-align: right;
+  flex-shrink: 0;
+  padding-top: 1px;
+}
+
+.meeting-intel_planNumberGhost {
+  composes: planNumber;
+  color: var(--color-spice-turmeric-30);
+  padding-top: var(--space-xs);
+}
+
+.meeting-intel_planItemBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-intel_planEditWrap {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meeting-intel_planEditInput {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-spice-turmeric);
+  background: transparent;
+  padding: 2px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.meeting-intel_planEditInputWhy {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: transparent;
+  padding: 2px 0;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.meeting-intel_planTopic {
+  font-size: 14px;
+  font-weight: 500;
+  line-height: 1.4;
+  margin: 0;
+  color: var(--color-text-primary);
+}
+
+.meeting-intel_planTopicEditable {
+  composes: planTopic;
+  cursor: text;
+}
+
+.meeting-intel_planWhy {
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  margin-bottom: 0;
+  line-height: 1.5;
+}
+
+.meeting-intel_planWhyEditable {
+  composes: planWhy;
+  cursor: text;
+}
+
+.meeting-intel_planItemActions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.meeting-intel_planDismissBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--color-text-tertiary);
+  padding: 0 4px;
+  opacity: 0.5;
+}
+
+.meeting-intel_planEmptyText {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+/* Ghost input row */
+.meeting-intel_ghostInputRow {
+  display: flex;
+  gap: 12px;
+  padding-top: 12px;
+  align-items: flex-start;
+}
+
+.meeting-intel_ghostInputBody {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.meeting-intel_ghostInput {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: transparent;
+  padding: 4px 0;
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+.meeting-intel_ghostInputWhy {
+  width: 100%;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: transparent;
+  padding: 4px 0;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-sans);
+  outline: none;
+}
+
+/* Calendar description details */
+.meeting-intel_calendarDetails {
+  margin-top: var(--space-lg);
+}
+
+.meeting-intel_calendarSummary {
+  composes: chapterHeading;
+  cursor: pointer;
+  user-select: none;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meeting-intel_calendarBody {
+  margin-top: 12px;
+  margin-bottom: 0;
+  white-space: pre-wrap;
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.65;
+  padding-left: 18px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   FINIS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_finisWrap {
+  padding-top: var(--space-5xl);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PRE-MEETING CONTEXT LABEL (shown when outcomes present)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_preMeetingLabel {
+  composes: chapterHeading;
+  margin-bottom: 20px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PLAN SECONDARY ACTION — "Prefill from context" button in Your Plan chapter
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_planSecondaryAction {
+  margin-top: var(--space-md);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.meeting-intel_planSecondaryAction:hover {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   TRANSCRIPT CTA — "Attach Transcript" / "Sync Transcript" in page body
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_transcriptCta {
+  margin-top: var(--space-2xl);
+  padding: var(--space-md) var(--space-lg);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-lg);
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.meeting-intel_transcriptCtaBtn {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: var(--radius-editorial-sm);
+  padding: var(--space-xs) var(--space-md);
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  transition: opacity 0.15s ease;
+}
+
+.meeting-intel_transcriptCtaBtn:hover {
+  opacity: 0.75;
+}
+
+.meeting-intel_transcriptCtaBtnDisabled {
+  cursor: not-allowed;
+  opacity: 0.5;
+}
+
+.meeting-intel_transcriptCtaLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RECENT CORRESPONDENCE (email signals)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_emailSignalLink {
+  text-decoration: none;
+  display: block;
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-intel_emailSignalHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: var(--space-xs);
+}
+
+.meeting-intel_emailSignalSender {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_emailSignalDate {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_emailSignalMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0.03em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 4px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ATTENDEE COLOR VARIANTS — Avatar, temperature, engagement
+   ───────────────────────────────────────────────────────────────────────────── */
+
+/* Avatar background/foreground by relationship temperature */
+.meeting-intel_attendeeAvatarCold {
+  background: var(--color-spice-terracotta-10);
+  color: var(--color-spice-terracotta);
+}
+
+.meeting-intel_attendeeAvatarNew {
+  background: var(--color-garden-sage-10);
+  color: var(--color-garden-sage);
+}
+
+.meeting-intel_attendeeAvatarDefault {
+  background: var(--color-spice-turmeric-10);
+  color: var(--color-spice-turmeric);
+}
+
+/* Temperature indicator (dot) background variants */
+.meeting-intel_tempIndicatorHot {
+  background: var(--color-garden-sage);
+}
+
+.meeting-intel_tempIndicatorWarm {
+  background: var(--color-spice-turmeric);
+}
+
+.meeting-intel_tempIndicatorCool {
+  background: var(--color-text-tertiary);
+}
+
+.meeting-intel_tempIndicatorCold {
+  background: var(--color-spice-terracotta);
+}
+
+.meeting-intel_tempIndicatorDefault {
+  background: var(--color-text-tertiary);
+}
+
+/* Temperature label color variants */
+.meeting-intel_tempLabelHot {
+  color: var(--color-garden-sage);
+}
+
+.meeting-intel_tempLabelWarm {
+  color: var(--color-spice-turmeric);
+}
+
+.meeting-intel_tempLabelCool {
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_tempLabelCold {
+  color: var(--color-spice-terracotta);
+}
+
+.meeting-intel_tempLabelDefault {
+  color: var(--color-text-tertiary);
+}
+
+/* Engagement badge color variants */
+.meeting-intel_engagementChampion {
+  color: var(--color-garden-sage);
+}
+
+.meeting-intel_engagementDetractor {
+  color: var(--color-spice-terracotta);
+}
+
+.meeting-intel_engagementNeutral {
+  color: var(--color-text-tertiary);
+}
+
+.meeting-intel_engagementDefault {
+  color: var(--color-text-tertiary);
+}
+
+/* Briefing updating banner during entity mutation */
+.meeting-intel_updatingBanner {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-secondary);
+  padding: var(--space-xs) var(--space-md);
+  margin-bottom: var(--space-md);
+  border-left: 2px solid var(--color-turmeric, #d4a853);
+  background: var(--color-cream-wash, rgba(245, 240, 230, 0.3));
+}
+
+.meeting-intel_updatingBanner svg {
+  animation: spin 1s linear infinite;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ACCOUNT HEALTH STRIP — I502 / I542
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_healthStripContainer {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.meeting-intel_healthStripItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.meeting-intel_healthStripLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SINCE LAST MEETING — I558 compact timeline
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_sinceLastWrap {
+  margin-top: var(--space-xl);
+  border-left: 2px solid var(--color-rule-light);
+  padding-left: var(--space-lg);
+}
+
+.meeting-intel_sinceLastHeading {
+  composes: chapterHeading;
+  margin-bottom: 10px;
+}
+
+.meeting-intel_sinceLastList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.meeting-intel_sinceLastItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ACCOUNT PULSE — I558 current state (working / not working)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_currentStateWrap {
+  margin-top: var(--space-lg);
+}
+
+.meeting-intel_currentStateHeading {
+  composes: chapterHeading;
+  margin-bottom: 10px;
+}
+
+.meeting-intel_currentStateGrid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: var(--space-sm) var(--space-lg);
+}
+
+.meeting-intel_currentStateItem {
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   RECENT WINS — I558 positive context after risks
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_recentWinsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.meeting-intel_recentWinItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.meeting-intel_bulletDotSage {
+  composes: bulletDot;
+  background: var(--color-garden-sage);
+}
+
+.meeting-intel_recentWinText {
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   OPEN ITEMS — I558 follow-up tracking
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_openItemsContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.meeting-intel_openItemRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.meeting-intel_openItemRow:last-child {
+  border-bottom: none;
+}
+
+.meeting-intel_openItemOverdue {
+  border-left: 3px solid var(--color-spice-terracotta);
+  padding-left: var(--space-md);
+}
+
+.meeting-intel_openItemTitle {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-intel_openItemDue {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.meeting-intel_openItemDueOverdue {
+  color: var(--color-spice-terracotta);
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PER-ITEM FEEDBACK ACTIONS — hover-reveal pattern (matches entity sections)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.meeting-intel_intelRow {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-sm);
+}
+
+.meeting-intel_intelRowBody {
+  flex: 1;
+  min-width: 0;
+}
+
+.meeting-intel_itemActions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  flex-shrink: 0;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  padding-top: 2px;
+}
+
+.meeting-intel_featuredRisk:hover .meeting-intel_itemActions,
+.meeting-intel_subordinateRisk:hover .meeting-intel_itemActions,
+.meeting-intel_recentWinItem:hover .meeting-intel_itemActions,
+.meeting-intel_emailSignalLink:hover .meeting-intel_itemActions,
+.meeting-intel_intelRow:hover .meeting-intel_itemActions,
+.meeting-intel_itemActions:focus-within {
+  opacity: 1;
+}
+
+.meeting-intel_dismissButton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.meeting-intel_dismissButton:hover {
+  color: var(--color-spice-terracotta);
+}
