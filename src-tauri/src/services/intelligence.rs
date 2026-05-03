@@ -119,6 +119,21 @@ fn company_context_projection_text(
     )
 }
 
+fn stakeholder_engagement_projection_text(
+    insight: &crate::intelligence::io::StakeholderInsight,
+) -> Option<String> {
+    non_empty_join(
+        [
+            insight.engagement.clone(),
+            insight.assessment.clone(),
+            insight.role.clone().map(|role| format!("Role: {role}")),
+            (!insight.name.trim().is_empty()).then(|| format!("Stakeholder: {}", insight.name)),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
 struct ProjectionClaimInput<'a> {
     subject_ref: &'a str,
     actor: &'a str,
@@ -164,7 +179,7 @@ fn commit_projection_claim(
     .map_err(|e| format!("commit {} projection claim failed: {e}", input.claim_type))
 }
 
-fn commit_claim_shaped_intelligence_projection(
+pub(crate) fn commit_claim_shaped_intelligence_projection(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
@@ -261,6 +276,31 @@ fn commit_claim_shaped_intelligence_projection(
                 text: &value.statement,
                 legacy_value: serde_json::to_value(value)
                     .unwrap_or_else(|_| serde_json::json!({ "statement": &value.statement })),
+            },
+        )?;
+    }
+
+    for (idx, insight) in intel.stakeholder_insights.iter().enumerate() {
+        let Some(person_id) = insight.person_id.as_deref() else {
+            continue;
+        };
+        let Some(text) = stakeholder_engagement_projection_text(insight) else {
+            continue;
+        };
+        let person_subject_ref = subject_ref_for_entity("person", person_id)?;
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &person_subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "stakeholder_engagement",
+                field_path: &format!("stakeholderInsights[{idx}].engagement"),
+                text: &text,
+                legacy_value: serde_json::to_value(insight)
+                    .unwrap_or_else(|_| serde_json::json!({ "engagement": text.clone() })),
             },
         )?;
     }
@@ -883,34 +923,38 @@ pub fn upsert_assessment_snapshot(
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    commit_claim_shaped_intelligence_projection(
-        ctx,
-        db,
-        intel,
-        "agent:intel_queue",
-        "ai_enrichment_progressive",
-    )?;
-    crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(db, intel)
-        .map_err(|e| e.to_string())?;
+    db.with_transaction(|tx| {
+        commit_claim_shaped_intelligence_projection(
+            ctx,
+            tx,
+            intel,
+            "agent:intel_queue",
+            "ai_enrichment_progressive",
+        )?;
+        crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(tx, intel)
+            .map_err(|e| e.to_string())?;
 
-    // Path 2c: Store domains from Glean enrichment (if present).
-    // When Glean enrichment populates intel.domains (extracted from stakeholder emails),
-    // persist them to account_domains for entity resolution.
-    // Only applies to account entities.
-    if intel.entity_type == "account" && !intel.domains.is_empty() {
-        db.merge_account_domains_enrichment(&intel.entity_id, &intel.domains)
-            .map_err(|e| {
-                format!(
-                    "Failed to store domains for account {}: {}",
-                    intel.entity_id, e
-                )
-            })?;
-        log::debug!(
-            "Intelligence service: stored {} domains for account '{}'",
-            intel.domains.len(),
-            intel.entity_id
-        );
-    }
+        // Path 2c: Store domains from Glean enrichment (if present).
+        // When Glean enrichment populates intel.domains (extracted from stakeholder emails),
+        // persist them to account_domains for entity resolution.
+        // Only applies to account entities.
+        if intel.entity_type == "account" && !intel.domains.is_empty() {
+            tx.merge_account_domains_enrichment(&intel.entity_id, &intel.domains)
+                .map_err(|e| {
+                    format!(
+                        "Failed to store domains for account {}: {}",
+                        intel.entity_id, e
+                    )
+                })?;
+            log::debug!(
+                "Intelligence service: stored {} domains for account '{}'",
+                intel.domains.len(),
+                intel.entity_id
+            );
+        }
+
+        Ok(())
+    })?;
 
     Ok(())
 }

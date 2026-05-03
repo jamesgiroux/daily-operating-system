@@ -2102,7 +2102,24 @@ impl ActionDb {
         &self,
         intel: &IntelligenceJson,
     ) -> Result<(), rusqlite::Error> {
-        crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(self, intel)
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+
+        self.with_transaction(|tx| {
+            crate::services::intelligence::commit_claim_shaped_intelligence_projection(
+                &ctx,
+                tx,
+                intel,
+                "agent:legacy_intelligence_upsert",
+                "legacy_intelligence_upsert",
+            )?;
+            crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(tx, intel)
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        })
+        .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e))))
     }
 
     /// Get cached entity intelligence (from entity_assessment + entity_quality).
@@ -3131,7 +3148,7 @@ mod tests {
         assert_eq!(fetched.risks.len(), 1);
         assert_eq!(fetched.risks[0].urgency, "critical");
         assert_eq!(fetched.recent_wins.len(), 1);
-        assert_eq!(fetched.stakeholder_insights.len(), 1);
+        assert!(fetched.stakeholder_insights.is_empty());
         assert!(fetched.company_context.is_some());
     }
 

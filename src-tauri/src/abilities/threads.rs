@@ -11,7 +11,12 @@ pub struct ThreadMetadata {
     pub display_label: Option<String>,
 }
 
-pub fn create_thread(ctx: &ServiceContext<'_>, display_label: Option<&str>) -> ThreadMetadata {
+/// Dormant v1.4.0 construction helper. Stabilize as public API only
+/// when the v1.4.2 pilot locks thread creation semantics.
+pub(crate) fn create_thread(
+    ctx: &ServiceContext<'_>,
+    display_label: Option<&str>,
+) -> ThreadMetadata {
     ThreadMetadata {
         id: thread_id_from_rng(ctx.rng),
         created_at: ctx.clock.now(),

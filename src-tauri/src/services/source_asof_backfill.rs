@@ -3,7 +3,7 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use rusqlite::types::Type;
-use rusqlite::{params, OptionalExtension, Params, Statement};
+use rusqlite::{params, Params, Statement};
 use serde_json::Value;
 
 use crate::abilities::provenance::source_time::{
@@ -176,17 +176,28 @@ pub fn resolve_quarantine_row(
 
     with_backfill_transaction(db, |tx| {
         let quarantine = load_quarantine_row(tx, quarantine_id)?;
-        update_quarantine_status(tx, quarantine_id, QuarantineRemediationStatus::Resolved)?;
+        ensure_quarantine_pending(&quarantine)?;
 
         if let Some(source_asof) = replacement_source_asof.as_deref() {
-            let updated = update_matching_claim_source_asof(tx, &quarantine, source_asof)?;
-            if updated == 0 {
-                log::warn!(
-                    "source_asof quarantine remediation found no matching intelligence_claims row for quarantine_id={quarantine_id}"
-                );
+            let updated = update_matching_claim_source_asof(tx, &quarantine.id, source_asof)?;
+            match updated {
+                1 => {}
+                0 => {
+                    return Err(BackfillError::Mode(format!(
+                        "source_asof quarantine remediation found no intelligence_claims row for claim_id={}",
+                        quarantine.id
+                    )));
+                }
+                count => {
+                    return Err(BackfillError::Mode(format!(
+                        "source_asof quarantine remediation updated {count} intelligence_claims rows for claim_id={}",
+                        quarantine.id
+                    )));
+                }
             }
         }
 
+        update_quarantine_status(tx, quarantine_id, QuarantineRemediationStatus::Resolved)?;
         Ok(())
     })
 }
@@ -200,6 +211,8 @@ pub fn discard_quarantine_row(
         .map_err(|e| BackfillError::Mode(e.to_string()))?;
 
     with_backfill_transaction(db, |tx| {
+        let quarantine = load_quarantine_row(tx, quarantine_id)?;
+        ensure_quarantine_pending(&quarantine)?;
         update_quarantine_status(tx, quarantine_id, QuarantineRemediationStatus::Discarded)?;
         Ok(())
     })
@@ -290,68 +303,41 @@ fn update_quarantine_status(
     tx: &ActionDb,
     quarantine_id: &str,
     status: QuarantineRemediationStatus,
-) -> Result<usize, BackfillError> {
-    tx.conn_ref()
+) -> Result<(), BackfillError> {
+    let rows_updated = tx
+        .conn_ref()
         .execute(
             "UPDATE source_asof_backfill_quarantine
              SET remediation_status = ?1
-             WHERE id = ?2",
+             WHERE id = ?2 AND remediation_status = 'pending'",
             params![status.as_str(), quarantine_id],
         )
-        .map_err(BackfillError::from)
+        .map_err(BackfillError::from)?;
+
+    if rows_updated == 1 {
+        Ok(())
+    } else {
+        Err(BackfillError::Mode(
+            "quarantine row not pending; cannot resolve/discard".to_string(),
+        ))
+    }
+}
+
+fn ensure_quarantine_pending(quarantine: &QuarantinedSourceAsofRow) -> Result<(), BackfillError> {
+    if quarantine.remediation_status == QuarantineRemediationStatus::Pending {
+        Ok(())
+    } else {
+        Err(BackfillError::Mode(
+            "quarantine row not pending; cannot resolve/discard".to_string(),
+        ))
+    }
 }
 
 fn update_matching_claim_source_asof(
     tx: &ActionDb,
-    quarantine: &QuarantinedSourceAsofRow,
+    claim_id: &str,
     source_asof: &str,
 ) -> Result<usize, BackfillError> {
-    let claim_id = tx
-        .conn_ref()
-        .query_row(
-            "SELECT id
-             FROM intelligence_claims
-             WHERE data_source = 'legacy_dismissal'
-               AND COALESCE(
-                   NULLIF(trim(json_extract(CASE WHEN json_valid(subject_ref) THEN subject_ref ELSE '{}' END, '$.id')), ''),
-                   NULLIF(trim(json_extract(CASE WHEN json_valid(subject_ref) THEN subject_ref ELSE '{}' END, '$.entity_id')), ''),
-                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.entity_id')), ''),
-                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.owner_id')), ''),
-                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.account_id')), ''),
-                   '<unknown>'
-               ) = ?1
-               AND COALESCE(
-                   NULLIF(trim(field_path), ''),
-                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.field')), ''),
-                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.item_type')), ''),
-                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.entity_type')), ''),
-                   ''
-               ) = ?2
-               AND (
-                   (?3 IS NULL AND COALESCE(
-                       NULLIF(trim(item_hash), ''),
-                       NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.item_hash')), '')
-                   ) IS NULL)
-                   OR COALESCE(
-                       NULLIF(trim(item_hash), ''),
-                       NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.item_hash')), '')
-                   ) = ?3
-               )
-             ORDER BY id
-             LIMIT 1",
-            params![
-                &quarantine.legacy_entity_id,
-                &quarantine.legacy_field_path,
-                quarantine.legacy_item_hash.as_deref(),
-            ],
-            |row| row.get::<_, String>(0),
-        )
-        .optional()?;
-
-    let Some(claim_id) = claim_id else {
-        return Ok(0);
-    };
-
     tx.conn_ref()
         .execute(
             "UPDATE intelligence_claims /* dos7-allowed: source-asof quarantine remediation applies admin-approved timestamp */
@@ -1505,6 +1491,183 @@ mod tests {
         assert_eq!(
             claim_source_asof(db, "m1-discard").as_deref(),
             Some("2026-04-01T00:00:00+00:00")
+        );
+    }
+
+    #[test]
+    fn resolve_quarantine_row_rejects_already_resolved() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_claim(
+            db,
+            "m1-already-resolved",
+            "2026-04-15T00:00:00Z",
+            Some("suppression_tombstones"),
+            serde_json::json!({ "raw_sourced_at": "garbleZ" }),
+        );
+        seed_quarantine(
+            db,
+            "m1-already-resolved",
+            "unparseable",
+            QuarantineRemediationStatus::Resolved,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let err = resolve_quarantine_row(
+            &ctx,
+            db,
+            "m1-already-resolved",
+            Some("2026-04-12T10:00:00Z"),
+        )
+        .expect_err("resolved row must reject resolve");
+
+        assert!(matches!(
+            err,
+            BackfillError::Mode(message)
+                if message == "quarantine row not pending; cannot resolve/discard"
+        ));
+        assert_eq!(quarantine_status(db, "m1-already-resolved"), "resolved");
+        assert_eq!(claim_source_asof(db, "m1-already-resolved"), None);
+    }
+
+    #[test]
+    fn discard_quarantine_row_rejects_already_resolved() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_claim(
+            db,
+            "m1-discard-resolved",
+            "2026-04-15T00:00:00Z",
+            Some("suppression_tombstones"),
+            serde_json::json!({ "raw_sourced_at": "garbleZ" }),
+        );
+        seed_quarantine(
+            db,
+            "m1-discard-resolved",
+            "unparseable",
+            QuarantineRemediationStatus::Resolved,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let err = discard_quarantine_row(&ctx, db, "m1-discard-resolved")
+            .expect_err("resolved row must reject discard");
+
+        assert!(matches!(
+            err,
+            BackfillError::Mode(message)
+                if message == "quarantine row not pending; cannot resolve/discard"
+        ));
+        assert_eq!(quarantine_status(db, "m1-discard-resolved"), "resolved");
+    }
+
+    #[test]
+    fn resolve_quarantine_row_with_replacement_requires_exactly_one_claim_match() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_quarantine(
+            db,
+            "m1-missing-claim",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let err =
+            resolve_quarantine_row(&ctx, db, "m1-missing-claim", Some("2026-04-12T10:00:00Z"))
+                .expect_err("missing claim must reject resolve");
+
+        assert!(matches!(
+            err,
+            BackfillError::Mode(message)
+                if message.contains("found no intelligence_claims row")
+        ));
+        assert_eq!(quarantine_status(db, "m1-missing-claim"), "pending");
+    }
+
+    #[test]
+    fn resolve_quarantine_row_uses_claim_id_not_legacy_fields() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_claim_for_subject(
+            db,
+            "m1-target-claim",
+            r#"{"kind":"Account","id":"acct-target"}"#,
+            "2026-04-15T00:00:00Z",
+            Some("suppression_tombstones"),
+            serde_json::json!({ "raw_sourced_at": "garbleZ" }),
+        );
+        seed_claim_for_subject(
+            db,
+            "m1-decoy-claim",
+            r#"{"kind":"Account","id":"acct-decoy"}"#,
+            "2026-04-15T00:00:00Z",
+            Some("suppression_tombstones"),
+            serde_json::json!({ "raw_sourced_at": "garbleZ" }),
+        );
+        seed_quarantine_with_identity(
+            db,
+            "m1-target-claim",
+            "acct-decoy",
+            "risks",
+            Some("hash-1"),
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        resolve_quarantine_row(&ctx, db, "m1-target-claim", Some("2026-04-12T10:00:00Z")).unwrap();
+
+        assert_eq!(
+            claim_source_asof(db, "m1-target-claim").as_deref(),
+            Some("2026-04-12T10:00:00+00:00")
+        );
+        assert_eq!(claim_source_asof(db, "m1-decoy-claim"), None);
+        assert_eq!(quarantine_status(db, "m1-target-claim"), "resolved");
+    }
+
+    #[test]
+    fn resolve_quarantine_row_rolls_back_status_on_claim_update_failure() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_quarantine(
+            db,
+            "m1-missing-before-resolve",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let err = resolve_quarantine_row(
+            &ctx,
+            db,
+            "m1-missing-before-resolve",
+            Some("2026-04-12T10:00:00Z"),
+        )
+        .expect_err("claim update failure must reject resolve");
+
+        assert!(matches!(
+            err,
+            BackfillError::Mode(message)
+                if message.contains("found no intelligence_claims row")
+        ));
+        assert_eq!(
+            quarantine_status(db, "m1-missing-before-resolve"),
+            "pending"
         );
     }
 }

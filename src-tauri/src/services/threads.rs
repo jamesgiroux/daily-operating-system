@@ -15,7 +15,9 @@ pub enum ThreadError {
     Rusqlite(#[from] rusqlite::Error),
 }
 
-pub fn save_thread(
+/// Dormant v1.4.0 persistence substrate. Stabilize as public API only
+/// when the v1.4.2 pilot locks thread creation and retrieval semantics.
+pub(crate) fn save_thread(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     thread: &ThreadMetadata,
@@ -39,7 +41,12 @@ pub fn save_thread(
     })
 }
 
-pub fn get_thread(db: &ActionDb, id: &ThreadId) -> Result<Option<ThreadMetadata>, ThreadError> {
+/// Dormant v1.4.0 persistence substrate. Stabilize as public API only
+/// when the v1.4.2 pilot locks thread creation and retrieval semantics.
+pub(crate) fn get_thread(
+    db: &ActionDb,
+    id: &ThreadId,
+) -> Result<Option<ThreadMetadata>, ThreadError> {
     db.conn_ref()
         .query_row(
             "SELECT thread_id, created_at, created_by, display_label \
@@ -52,7 +59,9 @@ pub fn get_thread(db: &ActionDb, id: &ThreadId) -> Result<Option<ThreadMetadata>
         .map_err(ThreadError::from)
 }
 
-pub fn list_threads_for_claim(
+/// Dormant v1.4.0 persistence substrate. Stabilize as public API only
+/// when the v1.4.2 pilot locks thread creation and retrieval semantics.
+pub(crate) fn list_threads_for_claim(
     db: &ActionDb,
     claim_id: &str,
 ) -> Result<Vec<ThreadMetadata>, ThreadError> {
@@ -75,34 +84,16 @@ fn with_write_transaction<F>(db: &ActionDb, f: F) -> Result<(), ThreadError>
 where
     F: FnOnce(&ActionDb) -> Result<(), ThreadError>,
 {
-    let started = db.conn_ref().is_autocommit();
-    if started {
-        db.conn_ref().execute_batch("BEGIN IMMEDIATE")?;
-    }
-
-    match f(db) {
-        Ok(()) => {
-            if started {
-                if let Err(err) = db.conn_ref().execute_batch("COMMIT") {
-                    if let Err(rollback_err) = db.conn_ref().execute_batch("ROLLBACK") {
-                        log::warn!(
-                            "thread transaction rollback after commit failure also failed: {rollback_err}"
-                        );
-                    }
-                    return Err(ThreadError::Rusqlite(err));
-                }
-            }
-            Ok(())
-        }
+    let mut typed_error = None;
+    db.with_transaction(|tx| match f(tx) {
+        Ok(()) => Ok(()),
         Err(err) => {
-            if started {
-                if let Err(rollback_err) = db.conn_ref().execute_batch("ROLLBACK") {
-                    log::warn!("thread transaction rollback failed: {rollback_err}");
-                }
-            }
-            Err(err)
+            let message = err.to_string();
+            typed_error = Some(err);
+            Err(message)
         }
-    }
+    })
+    .map_err(|message| typed_error.unwrap_or(ThreadError::Mode(message)))
 }
 
 fn row_to_thread_metadata(row: &rusqlite::Row<'_>) -> rusqlite::Result<ThreadMetadata> {

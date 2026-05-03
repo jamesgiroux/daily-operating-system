@@ -946,8 +946,7 @@ fn feedback_metadata_for_claim(
         if let Some(corrected_text) =
             payload_string(input.payload_json.as_deref(), "corrected_text")?
         {
-            metadata.trust_effect =
-                compute_needs_nuance_trust_effect(&claim.text, &corrected_text);
+            metadata.trust_effect = compute_needs_nuance_trust_effect(&claim.text, &corrected_text);
         }
     }
     Ok(metadata)
@@ -1080,14 +1079,11 @@ pub fn commit_claim(
     let subject_value = serde_json::from_str::<serde_json::Value>(&proposal.subject_ref)
         .map_err(|e| ClaimError::SubjectRef(format!("not JSON: {e}")))?;
     let subject = subject_ref_from_json(&subject_value)?;
-    // L2 cycle-14 fix #2: reject Multi/Global at commit time per
-    // ADR-0125 v1.4.0 spine restriction. The default reader family
-    // (load_claims_active / _including_dormant / _dormant_only) and
-    // PRE-GATE / contradiction detection / is_suppressed_via_claims
-    // all require a single (kind, id) tuple — so accepting these
-    // subjects at write time would create rows that read-after-write
-    // can't see. v1.4.1+ work that justifies one of these variants
-    // via ADR amendment can lift this guard.
+    // The v1.4.0 commit spine only accepts single concrete subjects.
+    // The default reader family and PRE-GATE checks require a single
+    // (kind, id) tuple, so accepting Multi or Global here would create
+    // rows that read-after-write cannot see. A later ADR amendment can
+    // lift this guard.
     match subject {
         SubjectRef::Multi(_) => {
             return Err(ClaimError::SubjectRef(
@@ -1101,15 +1097,11 @@ pub fn commit_claim(
         }
         _ => {}
     }
-    // L2 cycle-15 fix #1: derive subject_ref_compact from the
-    // PARSED SubjectRef enum, not the caller's raw JSON bytes. The
-    // parser case-folds kind (cycle-14), but compact_subject_ref on
-    // the caller's value preserves the original casing — so the
-    // dedup_key + commit_lock keyed on it would differ across two
-    // semantically-identical commits with different kind casing.
-    // Both same-meaning merge AND the per-key lock then break:
-    // the second write would insert a duplicate active row instead
-    // of reinforcing.
+    // Derive subject_ref_compact from the parsed SubjectRef enum, not
+    // the caller's raw JSON bytes. The parser case-folds kind, but
+    // compact_subject_ref on the caller's value preserves original
+    // casing, which would split deduplication and per-key locking for
+    // semantically identical subjects.
     let subject_ref_compact = canonical_subject_ref(&subject)?;
     if proposal.claim_type.trim().is_empty() {
         return Err(ClaimError::UnknownClaimType("empty".to_string()));
@@ -1121,8 +1113,7 @@ pub fn commit_claim(
     // the registry pins it to Person only.
     let kind = crate::abilities::claims::ClaimType::try_from_db_str(&proposal.claim_type)
         .map_err(|e| ClaimError::UnknownClaimType(e.0))?;
-    // The upstream spine guard rejects Multi/Global; this lowers the
-    // remaining single-subject variants to the registry's canonical
+    // Lower single-subject variants to the registry's canonical
     // subject-kind labels.
     let subject_kind_lc = match &subject {
         SubjectRef::Account { .. } => "account",
@@ -1130,8 +1121,15 @@ pub fn commit_claim(
         SubjectRef::Person { .. } => "person",
         SubjectRef::Project { .. } => "project",
         SubjectRef::Email { .. } => "email",
-        SubjectRef::Multi(_) | SubjectRef::Global => {
-            unreachable!("Multi/Global rejected upstream")
+        SubjectRef::Multi(_) => {
+            return Err(ClaimError::SubjectRef(
+                "Multi subjects are reserved for v1.4.1+; v1.4.0 spine writers must commit a single (kind, id)".to_string(),
+            ));
+        }
+        SubjectRef::Global => {
+            return Err(ClaimError::SubjectRef(
+                "Global subjects are reserved for v1.4.1+ per ADR-0125; v1.4.0 spine writers must commit a single (kind, id)".to_string(),
+            ));
         }
     };
     if !crate::abilities::claims::subject_kind_is_canonical_for(kind, subject_kind_lc) {
