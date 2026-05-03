@@ -5,9 +5,7 @@ use dailyos_lib::abilities::provenance::{
     SubjectRef, ThreadId,
 };
 use dailyos_lib::abilities::{AbilityContext, AbilityRegistry, AbilityResult, Actor};
-use dailyos_lib::services::context::{
-    ExternalClients, FixedClock, SeedableRng, ServiceContext,
-};
+use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -64,7 +62,9 @@ async fn dos210_erased_envelope_fixture(
         ctx.services().clock.now(),
     ));
     builder.set_subject(subject.clone());
-    builder.add_thread_id(ThreadId::new("thread-fixture"));
+    builder.add_thread_id(ThreadId::new(
+        uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap(),
+    ));
     builder
         .attribute(
             FieldPath::new("/ok").unwrap(),
@@ -84,11 +84,7 @@ async fn dos210_erased_envelope_fixture(
 #[tokio::test]
 async fn invoke_by_name_json_returns_full_ability_output_envelope() {
     let registry = AbilityRegistry::from_inventory_checked().unwrap();
-    let clock = FixedClock::new(
-        chrono::Utc
-            .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-            .unwrap(),
-    );
+    let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(42);
     let external = ExternalClients::default();
     let services = ServiceContext::new_evaluate(&clock, &rng, &external);
@@ -113,5 +109,8 @@ async fn invoke_by_name_json_returns_full_ability_output_envelope() {
         "dos210_erased_envelope_fixture"
     );
     assert!(value["provenance"]["warnings"].is_array());
-    assert_eq!(value["provenance"]["thread_ids"][0], "thread-fixture");
+    assert_eq!(
+        value["provenance"]["thread_ids"][0],
+        "11111111-1111-4111-8111-111111111111"
+    );
 }

@@ -29,6 +29,7 @@ use crate::db::claim_invalidation::SubjectRef;
 use crate::db::claims::IntelligenceClaim;
 use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
+use rusqlite::OptionalExtension;
 
 const PROJECTION_TARGETS: [ProjectionTarget; 4] = [
     ProjectionTarget::EntityIntelligence,
@@ -390,25 +391,52 @@ fn run_rule_savepoint(
             .execute_batch(&format!("RELEASE SAVEPOINT {name}"))
             .map_err(classify_sql_error),
         Err(error_class) => {
-            let _ = tx
+            // Cleanup is best-effort: if the outer transaction is already
+            // unwinding, SQLite will release the savepoint there. Logging keeps
+            // cleanup failures visible without masking the projection failure.
+            if let Err(e) = tx
                 .conn_ref()
-                .execute_batch(&format!("ROLLBACK TO SAVEPOINT {name}"));
-            let _ = tx
+                .execute_batch(&format!("ROLLBACK TO SAVEPOINT {name}"))
+            {
+                log::warn!("savepoint rollback failed: {}", e);
+            }
+            if let Err(e) = tx
                 .conn_ref()
-                .execute_batch(&format!("RELEASE SAVEPOINT {name}"));
+                .execute_batch(&format!("RELEASE SAVEPOINT {name}"))
+            {
+                log::warn!("savepoint release failed: {}", e);
+            }
             Err(error_class)
         }
     }
 }
 
 fn classify_sql_error(error: rusqlite::Error) -> ProjectionErrorClass {
+    let message = error.to_string().to_ascii_lowercase();
+    if message.contains("fence") {
+        return ProjectionErrorClass::FenceAdvanced;
+    }
+    if message.contains("no such column") || message.contains("no such table") {
+        return ProjectionErrorClass::RegistryMismatch;
+    }
+
     match error {
         rusqlite::Error::SqliteFailure(ref sqlite_error, _) => match sqlite_error.code {
-            rusqlite::ErrorCode::DatabaseBusy | rusqlite::ErrorCode::DatabaseLocked => {
-                ProjectionErrorClass::TargetTableLocked
+            rusqlite::ErrorCode::DatabaseBusy
+            | rusqlite::ErrorCode::DatabaseLocked
+            | rusqlite::ErrorCode::ReadOnly => ProjectionErrorClass::TargetTableLocked,
+            rusqlite::ErrorCode::ConstraintViolation => ProjectionErrorClass::ValidationError,
+            rusqlite::ErrorCode::DiskFull | rusqlite::ErrorCode::SystemIoFailure => {
+                ProjectionErrorClass::IoError
             }
             _ => ProjectionErrorClass::Unknown,
         },
+        rusqlite::Error::ToSqlConversionFailure(error) if error.is::<std::io::Error>() => {
+            ProjectionErrorClass::IoError
+        }
+        rusqlite::Error::FromSqlConversionFailure(_, _, error) if error.is::<std::io::Error>() => {
+            ProjectionErrorClass::IoError
+        }
         _ => ProjectionErrorClass::Unknown,
     }
 }
@@ -422,6 +450,14 @@ fn rebuild_entity_assessment_from_claims(
     let claims = crate::services::claims::load_claims_active(tx, &claim.subject_ref, None)
         .map_err(|_| ProjectionErrorClass::ValidationError)?;
     let projected = EntityAssessmentProjection::from_claims(&claims);
+    if let Some((existing_entity_type, existing_projected)) =
+        existing_entity_assessment_projection(tx, &entity_id)?
+    {
+        if existing_entity_type == entity_type && existing_projected == projected {
+            return Ok(());
+        }
+    }
+
     let enriched_at = ctx.clock.now().to_rfc3339();
 
     tx.conn_ref()
@@ -460,6 +496,37 @@ fn rebuild_entity_assessment_from_claims(
     Ok(())
 }
 
+fn existing_entity_assessment_projection(
+    tx: &ActionDb,
+    entity_id: &str,
+) -> Result<Option<(String, EntityAssessmentProjection)>, ProjectionErrorClass> {
+    tx.conn_ref()
+        .query_row(
+            "SELECT entity_type, executive_assessment, risks_json, recent_wins_json,
+                    current_state_json, stakeholder_insights_json, company_context_json,
+                    value_delivered
+             FROM entity_assessment
+             WHERE entity_id = ?1",
+            rusqlite::params![entity_id],
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    EntityAssessmentProjection {
+                        executive_assessment: row.get(1)?,
+                        risks_json: row.get(2)?,
+                        recent_wins_json: row.get(3)?,
+                        current_state_json: row.get(4)?,
+                        stakeholder_insights_json: row.get(5)?,
+                        company_context_json: row.get(6)?,
+                        value_delivered_json: row.get(7)?,
+                    },
+                ))
+            },
+        )
+        .optional()
+        .map_err(classify_sql_error)
+}
+
 fn entity_identity_from_subject_ref(
     subject_ref: &str,
 ) -> Result<(String, &'static str), ProjectionErrorClass> {
@@ -478,7 +545,7 @@ fn entity_identity_from_subject_ref(
     }
 }
 
-#[derive(Default)]
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
 struct EntityAssessmentProjection {
     executive_assessment: Option<String>,
     risks_json: Option<String>,
@@ -871,25 +938,172 @@ mod tests {
     }
 
     #[test]
+    fn entity_intelligence_projection_skips_write_when_projected_content_is_unchanged() {
+        let db = test_db();
+        let subject = "{\"kind\":\"account\",\"id\":\"acct-1\"}";
+        seed_claim_with_type(
+            &db,
+            "claim-summary",
+            subject,
+            "entity_summary",
+            "Executive summary from claims",
+            "2026-05-03T12:00:01+00:00",
+        );
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        let claim = projection_claim("entity_summary", subject);
+
+        let first = project_claim_to_db_legacy_tx(&ctx, &db, &claim);
+        assert_eq!(
+            first
+                .iter()
+                .find(|o| o.target == ProjectionTarget::EntityIntelligence)
+                .map(|o| o.status),
+            Some(ProjectionStatus::Committed)
+        );
+        let first_enriched_at: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT enriched_at FROM entity_assessment WHERE entity_id = 'acct-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        clock.advance(chrono::Duration::hours(1));
+        let second = project_claim_to_db_legacy_tx(&ctx, &db, &claim);
+        assert_eq!(
+            second
+                .iter()
+                .find(|o| o.target == ProjectionTarget::EntityIntelligence)
+                .map(|o| o.status),
+            Some(ProjectionStatus::Committed)
+        );
+        let second_enriched_at: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT enriched_at FROM entity_assessment WHERE entity_id = 'acct-1'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(second_enriched_at, first_enriched_at);
+    }
+
+    #[test]
     fn failed_rule_does_not_abort_other_rules() {
         let db = test_db();
         let (clock, rng, ext) = ctx_parts();
         let ctx = live_ctx(&clock, &rng, &ext);
-        let claim = projection_claim("entity_summary", "not-json");
-
-        let outcomes = project_claim_to_db_legacy_tx(&ctx, &db, &claim);
-
-        assert_eq!(outcomes.len(), 4);
-        let entity = outcomes
-            .iter()
-            .find(|o| o.target == ProjectionTarget::EntityIntelligence)
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_entity_assessment_insert
+                 BEFORE INSERT ON entity_assessment
+                 BEGIN
+                   SELECT RAISE(ABORT, 'projection validation failure');
+                 END;
+                 CREATE TRIGGER fail_entity_assessment_update
+                 BEFORE UPDATE ON entity_assessment
+                 BEGIN
+                   SELECT RAISE(ABORT, 'projection validation failure');
+                 END;",
+            )
             .unwrap();
-        assert_eq!(entity.status, ProjectionStatus::Failed);
-        assert_eq!(entity.error_message.as_deref(), Some("validation_error"));
-        assert!(outcomes
-            .iter()
-            .filter(|o| o.target != ProjectionTarget::EntityIntelligence)
-            .all(|o| o.status == ProjectionStatus::Committed));
+
+        let committed = commit_claim(
+            &ctx,
+            &db,
+            claim_proposal("entity_summary", "Projection failure summary"),
+        )
+        .unwrap();
+        let claim_id = match committed {
+            CommittedClaim::Inserted { claim } => claim.id,
+            other => panic!("expected inserted claim, got {other:?}"),
+        };
+
+        let claim_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims WHERE id = ?1",
+                params![&claim_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(claim_count, 1);
+
+        let (entity_status, entity_error): (String, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT status, error_message
+                 FROM claim_projection_status
+                 WHERE claim_id = ?1 AND projection_target = 'entity_intelligence'",
+                params![&claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(entity_status, "failed");
+        assert_eq!(entity_error.as_deref(), Some("validation_error"));
+
+        let committed_targets: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                 FROM claim_projection_status
+                 WHERE claim_id = ?1
+                   AND projection_target IN ('success_plans', 'accounts_columns', 'intelligence_json')
+                   AND status = 'committed'",
+                params![&claim_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(committed_targets, 3);
+    }
+
+    fn sqlite_error(code: std::os::raw::c_int, message: &str) -> rusqlite::Error {
+        rusqlite::Error::SqliteFailure(rusqlite::ffi::Error::new(code), Some(message.to_string()))
+    }
+
+    #[test]
+    fn classify_sql_error_maps_actionable_projection_failures() {
+        assert_eq!(
+            classify_sql_error(sqlite_error(rusqlite::ffi::SQLITE_CONSTRAINT, "constraint")),
+            ProjectionErrorClass::ValidationError
+        );
+        assert_eq!(
+            classify_sql_error(sqlite_error(rusqlite::ffi::SQLITE_FULL, "database full")),
+            ProjectionErrorClass::IoError
+        );
+        assert_eq!(
+            classify_sql_error(sqlite_error(rusqlite::ffi::SQLITE_IOERR, "io error")),
+            ProjectionErrorClass::IoError
+        );
+        assert_eq!(
+            classify_sql_error(sqlite_error(rusqlite::ffi::SQLITE_READONLY, "readonly")),
+            ProjectionErrorClass::TargetTableLocked
+        );
+        assert_eq!(
+            classify_sql_error(sqlite_error(rusqlite::ffi::SQLITE_ERROR, "fence advanced")),
+            ProjectionErrorClass::FenceAdvanced
+        );
+        assert_eq!(
+            classify_sql_error(sqlite_error(
+                rusqlite::ffi::SQLITE_ERROR,
+                "no such column: x"
+            )),
+            ProjectionErrorClass::RegistryMismatch
+        );
+        assert_eq!(
+            classify_sql_error(sqlite_error(rusqlite::ffi::SQLITE_MISUSE, "unexpected")),
+            ProjectionErrorClass::Unknown
+        );
+        assert_eq!(
+            classify_sql_error(rusqlite::Error::ToSqlConversionFailure(Box::new(
+                std::io::Error::new(std::io::ErrorKind::Other, "disk"),
+            ))),
+            ProjectionErrorClass::IoError
+        );
     }
 
     #[test]

@@ -24,10 +24,10 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::abilities::claims::{metadata_for_claim_type, metadata_for_name, ClaimActorClass};
+use crate::abilities::claims::{metadata_for_claim_type, ClaimActorClass};
 use crate::abilities::feedback::{
-    feedback_semantics, transition_for_feedback, ClaimFeedbackMetadata, ClaimVerificationState,
-    FeedbackAction,
+    feedback_semantics, transition_for_feedback, ClaimFeedbackMetadata, ClaimRenderPolicy,
+    ClaimVerificationState, FeedbackAction,
 };
 use crate::db::claim_invalidation::SubjectRef;
 use crate::db::claims::{
@@ -127,8 +127,16 @@ pub enum ClaimError {
     UnknownClaimId(String),
     #[error("invalid claim feedback: {0}")]
     InvalidFeedback(String),
+    #[error("invalid actor: {0}")]
+    InvalidActor(String),
     #[error("actor class not allowed for claim_type {claim_type}: {actor}")]
     ActorClassNotAllowed { claim_type: String, actor: String },
+    #[error("actor {actor} ({actor_class}) is not permitted to write claim_type {claim_type}")]
+    ActorNotPermittedForClaimType {
+        claim_type: String,
+        actor: String,
+        actor_class: String,
+    },
     #[error("tombstone PRE-GATE: claim is tombstoned and cannot be re-committed")]
     TombstonedPreGate,
     #[error("transaction error: {0}")]
@@ -196,10 +204,7 @@ pub(crate) fn compute_dedup_key(
 /// repeats that legacy data and AI re-runs produce in practice.
 pub(crate) fn canonicalize_for_dos280(text: &str) -> String {
     let trimmed = text.trim();
-    let collapsed: String = trimmed
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ");
+    let collapsed: String = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
     collapsed.to_lowercase()
 }
 
@@ -225,7 +230,8 @@ pub(crate) fn canonical_subject_ref(subject: &SubjectRef) -> Result<String, Clai
         SubjectRef::Email { id } => ("email", id.as_str()),
         SubjectRef::Multi(_) | SubjectRef::Global => {
             return Err(ClaimError::SubjectRef(
-                "Multi/Global subjects are rejected at commit time per ADR-0125 v1.4.0 spine".to_string(),
+                "Multi/Global subjects are rejected at commit time per ADR-0125 v1.4.0 spine"
+                    .to_string(),
             ));
         }
     };
@@ -692,13 +698,7 @@ fn load_active_contradicting_claim(
          ORDER BY active.created_at DESC LIMIT 1"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt.query(params![
-        kind,
-        id,
-        claim_type,
-        field_path,
-        canonical_text
-    ])?;
+    let mut rows = stmt.query(params![kind, id, claim_type, field_path, canonical_text])?;
     if let Some(row) = rows.next()? {
         Ok(Some(read_claim_row(row)?))
     } else {
@@ -835,54 +835,87 @@ fn actor_class_for_actor(actor: &str) -> Option<ClaimActorClass> {
     }
 }
 
-fn validate_feedback_actor_for_claim(
-    claim: &IntelligenceClaim,
-    actor: &str,
-) -> Result<(), ClaimError> {
+fn validate_feedback_actor(actor: &str) -> Result<(), ClaimError> {
     let actor_class = actor_class_for_actor(actor).ok_or_else(|| {
         ClaimError::InvalidFeedback(format!(
             "actor '{}' does not map to a registered actor class",
             actor
         ))
     })?;
-    let metadata = metadata_for_name(&claim.claim_type)
-        .ok_or_else(|| ClaimError::UnknownClaimType(claim.claim_type.clone()))?;
-    if metadata.allowed_actor_classes.is_empty()
-        || metadata.allowed_actor_classes.contains(&actor_class)
-    {
-        return Ok(());
+    if matches!(actor_class, ClaimActorClass::User) {
+        Ok(())
+    } else {
+        Err(ClaimError::InvalidFeedback(format!(
+            "feedback actor '{}' maps to {}, but feedback is only accepted from user actors",
+            actor,
+            actor_class.as_str()
+        )))
     }
-
-    Err(ClaimError::ActorClassNotAllowed {
-        claim_type: claim.claim_type.clone(),
-        actor: actor.to_string(),
-    })
 }
 
 fn validate_feedback_payload(
     input: &ClaimFeedbackInput,
     metadata: &ClaimFeedbackMetadata,
 ) -> Result<(), ClaimError> {
-    let payload = input
+    let raw_payload = input
         .payload_json
         .as_deref()
         .map(str::trim)
         .filter(|s| !s.is_empty());
-    if let Some(payload) = payload {
-        serde_json::from_str::<serde_json::Value>(payload).map_err(|e| {
-            ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {e}"))
-        })?;
-        return Ok(());
-    }
+    let payload = raw_payload
+        .map(|payload| {
+            serde_json::from_str::<serde_json::Value>(payload).map_err(|e| {
+                ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {e}"))
+            })
+        })
+        .transpose()?;
 
-    if metadata.requires_action_metadata {
+    if metadata.requires_action_metadata && payload.is_none() {
         return Err(ClaimError::InvalidFeedback(format!(
             "{} feedback requires payload_json metadata",
             input.action.as_str()
         )));
     }
 
+    if let Some(payload) = payload.as_ref() {
+        validate_feedback_action_metadata(input.action, payload)?;
+    }
+
     Ok(())
+}
+
+fn validate_feedback_action_metadata(
+    action: FeedbackAction,
+    payload: &serde_json::Value,
+) -> Result<(), ClaimError> {
+    match action {
+        FeedbackAction::WrongSource => require_payload_string(action, payload, "source_ref"),
+        FeedbackAction::NeedsNuance => require_payload_string(action, payload, "corrected_text"),
+        FeedbackAction::SurfaceInappropriate => require_payload_string(action, payload, "surface"),
+        FeedbackAction::NotRelevantHere => require_payload_string(action, payload, "invocation_id"),
+        _ => Ok(()),
+    }
+}
+
+fn require_payload_string(
+    action: FeedbackAction,
+    payload: &serde_json::Value,
+    key: &str,
+) -> Result<(), ClaimError> {
+    let value = payload
+        .get(key)
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty());
+    if value.is_some() {
+        Ok(())
+    } else {
+        Err(ClaimError::InvalidFeedback(format!(
+            "{} feedback requires non-empty payload_json.{}",
+            action.as_str(),
+            key
+        )))
+    }
 }
 
 fn verification_update_for_feedback(
@@ -913,6 +946,45 @@ fn verification_update_for_feedback(
     };
 
     (next_state, reason, needs_user_decision_at)
+}
+
+fn lifecycle_update_for_feedback(
+    claim: &IntelligenceClaim,
+    action: FeedbackAction,
+    render: ClaimRenderPolicy,
+) -> (ClaimState, SurfacingState, Option<String>, Option<String>) {
+    match (action, render) {
+        (FeedbackAction::MarkOutdated, ClaimRenderPolicy::HiddenFromCurrent) => (
+            claim.claim_state.clone(),
+            SurfacingState::Dormant,
+            Some("outdated".to_string()),
+            claim.retraction_reason.clone(),
+        ),
+        (FeedbackAction::MarkFalse, ClaimRenderPolicy::SuppressedExceptAudit) => (
+            ClaimState::Withdrawn,
+            SurfacingState::Dormant,
+            claim.demotion_reason.clone(),
+            Some("user_marked_false".to_string()),
+        ),
+        (FeedbackAction::WrongSubject, ClaimRenderPolicy::SuppressedOnAssertedSubject) => (
+            ClaimState::Tombstoned,
+            SurfacingState::Dormant,
+            claim.demotion_reason.clone(),
+            Some("wrong_subject".to_string()),
+        ),
+        (FeedbackAction::NeedsNuance, ClaimRenderPolicy::RenderSuperseder) => (
+            claim.claim_state.clone(),
+            SurfacingState::Dormant,
+            Some("superseded".to_string()),
+            claim.retraction_reason.clone(),
+        ),
+        _ => (
+            claim.claim_state.clone(),
+            claim.surfacing_state.clone(),
+            claim.demotion_reason.clone(),
+            claim.retraction_reason.clone(),
+        ),
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -995,6 +1067,17 @@ pub fn commit_claim(
         )));
     }
     let metadata = metadata_for_claim_type(kind);
+    let actor_class = actor_class_for_actor(&proposal.actor)
+        .ok_or_else(|| ClaimError::InvalidActor(proposal.actor.clone()))?;
+    if !metadata.allowed_actor_classes.is_empty()
+        && !metadata.allowed_actor_classes.contains(&actor_class)
+    {
+        return Err(ClaimError::ActorNotPermittedForClaimType {
+            claim_type: proposal.claim_type.clone(),
+            actor: proposal.actor.clone(),
+            actor_class: actor_class.as_str().to_string(),
+        });
+    }
     let effective_temporal_scope = proposal
         .temporal_scope
         .clone()
@@ -1005,7 +1088,10 @@ pub fn commit_claim(
         .unwrap_or_else(|| metadata.default_sensitivity.clone());
 
     let canonical_text = canonicalize_for_dos280(&proposal.text);
-    let computed_hash = item_hash(item_kind_for_claim_type(&proposal.claim_type), &canonical_text);
+    let computed_hash = item_hash(
+        item_kind_for_claim_type(&proposal.claim_type),
+        &canonical_text,
+    );
     let dedup_key = compute_dedup_key(
         &computed_hash,
         &subject_ref_compact,
@@ -1048,9 +1134,7 @@ pub fn commit_claim(
         // Tombstone proposals always insert (they intentionally
         // shadow the active claim).
         if proposal.tombstone.is_none() {
-            if let Some(existing) =
-                load_active_claim_by_dedup_key(tx.conn_ref(), &dedup_key)?
-            {
+            if let Some(existing) = load_active_claim_by_dedup_key(tx.conn_ref(), &dedup_key)? {
                 let corroboration_id = corroborate_in_tx(
                     tx,
                     &existing.id,
@@ -1214,7 +1298,7 @@ pub fn record_claim_feedback(
         let now = ctx.clock.now().to_rfc3339();
         let claim = load_claim_by_id(tx.conn_ref(), &input.claim_id)?
             .ok_or_else(|| ClaimError::UnknownClaimId(input.claim_id.clone()))?;
-        validate_feedback_actor_for_claim(&claim, &input.actor)?;
+        validate_feedback_actor(&input.actor)?;
 
         let feedback_id = uuid::Uuid::new_v4().to_string();
         tx.conn_ref().execute(
@@ -1235,16 +1319,26 @@ pub fn record_claim_feedback(
 
         let (new_verification_state, verification_reason, needs_user_decision_at) =
             verification_update_for_feedback(&claim, input.action, &now);
+        let (new_claim_state, new_surfacing_state, demotion_reason, retraction_reason) =
+            lifecycle_update_for_feedback(&claim, input.action, metadata.render);
         tx.conn_ref().execute(
             "UPDATE intelligence_claims
              SET verification_state = ?1,
                  verification_reason = ?2,
-                 needs_user_decision_at = ?3
-             WHERE id = ?4",
+                 needs_user_decision_at = ?3,
+                 claim_state = ?4,
+                 surfacing_state = ?5,
+                 demotion_reason = ?6,
+                 retraction_reason = ?7
+             WHERE id = ?8",
             params![
                 enum_to_db(&new_verification_state)?,
                 verification_reason.as_deref(),
                 needs_user_decision_at.as_deref(),
+                enum_to_db(&new_claim_state)?,
+                enum_to_db(&new_surfacing_state)?,
+                demotion_reason.as_deref(),
+                retraction_reason.as_deref(),
                 &input.claim_id,
             ],
         )?;
@@ -1381,9 +1475,8 @@ pub fn reconcile_contradiction(
         // per-entity invalidation for the contradiction's primary AND
         // contradicting claim subjects so any reader keyed on per-entity
         // claim_version refreshes.
-        let (primary_claim_id, contradicting_claim_id): (String, String) = tx
-            .conn_ref()
-            .query_row(
+        let (primary_claim_id, contradicting_claim_id): (String, String) =
+            tx.conn_ref().query_row(
                 "SELECT primary_claim_id, contradicting_claim_id \
                  FROM claim_contradictions WHERE id = ?1",
                 params![contradiction_id],
@@ -1407,10 +1500,7 @@ pub fn reconcile_contradiction(
 /// into a [`SubjectRef`], and bump the per-entity invalidation counter.
 /// Used by `record_corroboration` so that trust/surfacing readers keyed
 /// on per-entity `claim_version` observe the corroboration effect.
-fn bump_invalidation_for_claim_id(
-    tx: &ActionDb,
-    claim_id: &str,
-) -> Result<(), ClaimError> {
+fn bump_invalidation_for_claim_id(tx: &ActionDb, claim_id: &str) -> Result<(), ClaimError> {
     let subject = subject_for_claim_id(tx, claim_id)?;
     tx.bump_for_subject(&subject)?;
     Ok(())
@@ -1419,10 +1509,7 @@ fn bump_invalidation_for_claim_id(
 /// Lookup a claim's `subject_ref` JSON column and parse it to
 /// [`SubjectRef`] without bumping. Used by `reconcile_contradiction`
 /// which needs to dedupe two subjects before bumping each unique one.
-fn subject_for_claim_id(
-    tx: &ActionDb,
-    claim_id: &str,
-) -> Result<SubjectRef, ClaimError> {
+fn subject_for_claim_id(tx: &ActionDb, claim_id: &str) -> Result<SubjectRef, ClaimError> {
     let subject_ref_json: String = tx
         .conn_ref()
         .query_row(
@@ -1612,9 +1699,7 @@ pub fn shadow_write_tombstone_claim(
         "id": subject_id,
     })
     .to_string();
-    let metadata_json = source_scope.map(|s| {
-        serde_json::json!({ "source_scope": s }).to_string()
-    });
+    let metadata_json = source_scope.map(|s| serde_json::json!({ "source_scope": s }).to_string());
 
     let proposal = ClaimProposal {
         subject_ref,
@@ -1644,7 +1729,10 @@ pub fn shadow_write_tombstone_claim(
             let msg = e.to_string();
             log::warn!(
                 "[dos7-shadow] tombstone claim write failed (subject={}:{} field={:?}): {}",
-                subject_kind, subject_id, field_path, msg
+                subject_kind,
+                subject_id,
+                field_path,
+                msg
             );
             ShadowTombstoneOutcome::Failed(msg)
         }
@@ -1938,7 +2026,7 @@ mod tests {
                 Some(serde_json::json!({ "surface": "briefing" }).to_string())
             }
             FeedbackAction::NotRelevantHere => {
-                Some(serde_json::json!({ "invocation": "meeting-prep" }).to_string())
+                Some(serde_json::json!({ "invocation_id": "invocation-fixture" }).to_string())
             }
             _ => None,
         }
@@ -1949,7 +2037,7 @@ mod tests {
             claim_id: claim_id.to_string(),
             action,
             actor: "user".to_string(),
-            actor_id: Some("user@example.com".to_string()),
+            actor_id: Some("user-fixture".to_string()),
             payload_json: feedback_payload_for(action),
         }
     }
@@ -1966,6 +2054,20 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
             )
             .expect("read verification columns")
+    }
+
+    fn read_lifecycle_columns(
+        db: &ActionDb,
+        claim_id: &str,
+    ) -> (String, String, Option<String>, Option<String>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT claim_state, surfacing_state, demotion_reason, retraction_reason \
+                 FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+            )
+            .expect("read lifecycle columns")
     }
 
     #[test]
@@ -2046,7 +2148,10 @@ mod tests {
         assert_eq!(claim.claim_state, ClaimState::Active);
         assert_eq!(claim.surfacing_state, SurfacingState::Active);
         assert_eq!(claim.trust_score, None);
-        assert_eq!(claim.item_hash, Some(item_hash(ItemKind::Risk, &claim.text)));
+        assert_eq!(
+            claim.item_hash,
+            Some(item_hash(ItemKind::Risk, &claim.text))
+        );
     }
 
     #[test]
@@ -2101,6 +2206,70 @@ mod tests {
     }
 
     #[test]
+    fn commit_claim_preserves_explicit_sensitivity_when_provided() {
+        let db = test_db();
+        seed_person(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut p = proposal("Stakeholder assessment stays internal");
+        p.subject_ref = r#"{"kind":"person","id":"person-1"}"#.to_string();
+        p.claim_type = "stakeholder_assessment".to_string();
+        p.field_path = None;
+        p.sensitivity = Some(ClaimSensitivity::Internal);
+
+        let id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+        assert_eq!(read_claim_sensitivity(&db, &id), "internal");
+    }
+
+    #[test]
+    fn commit_claim_rejects_user_actor_for_system_only_claim_type() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut p = proposal("Dismissed item must come from system backfill");
+        p.claim_type = "dismissed_item".to_string();
+        p.field_path = Some("risks".to_string());
+        p.actor = "user".to_string();
+
+        let err = commit_claim(&ctx, &db, p).expect_err("user actor must be rejected");
+        assert!(matches!(
+            err,
+            ClaimError::ActorNotPermittedForClaimType {
+                claim_type,
+                actor_class,
+                ..
+            } if claim_type == "dismissed_item" && actor_class == "user"
+        ));
+    }
+
+    #[test]
+    fn commit_claim_rejects_agent_actor_for_user_claim_type() {
+        let db = test_db();
+        seed_person(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut p = proposal("Primary contact");
+        p.subject_ref = r#"{"kind":"person","id":"person-1"}"#.to_string();
+        p.claim_type = "stakeholder_role".to_string();
+        p.field_path = None;
+        p.actor = "agent:test".to_string();
+
+        let err = commit_claim(&ctx, &db, p).expect_err("agent actor must be rejected");
+        assert!(matches!(
+            err,
+            ClaimError::ActorNotPermittedForClaimType {
+                claim_type,
+                actor_class,
+                ..
+            } if claim_type == "stakeholder_role" && actor_class == "agent"
+        ));
+    }
+
+    #[test]
     fn commit_claim_rejects_when_dedup_key_is_tombstoned() {
         let db = test_db();
         seed_account(&db);
@@ -2130,8 +2299,9 @@ mod tests {
         // the migration's idiosyncratic per-mechanism formula. The
         // PRE-GATE must NOT key off this dedup_key.
         // dos7-allowed: regression test seed for L2 cycle-1 finding #2
-        db.conn_ref().execute(
-            "INSERT INTO intelligence_claims \
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims \
              (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
               actor, data_source, observed_at, created_at, provenance_json, \
               claim_state, surfacing_state, retraction_reason, \
@@ -2140,21 +2310,25 @@ mod tests {
                      'system_backfill', 'legacy_dismissal', ?6, ?6, '{}', \
                      'tombstoned', 'active', 'user_removal', \
                      'state', 'internal')",
-            params![
-                "m1-fixture-1",
-                // Backfill shape: kind first, NOT alphabetical
-                r#"{"kind":"Account","id":"acct-1"}"#,
-                text,
-                // Mechanism-1 dedup_key shape (DIFFERENT from runtime).
-                format!(
-                    "{}:acct-1:risk:health.risk",
-                    if item_hash_value.is_empty() { text } else { item_hash_value }
-                ),
-                item_hash_value,
-                TS,
-            ],
-        )
-        .expect("seed backfill-shaped tombstone");
+                params![
+                    "m1-fixture-1",
+                    // Backfill shape: kind first, NOT alphabetical
+                    r#"{"kind":"Account","id":"acct-1"}"#,
+                    text,
+                    // Mechanism-1 dedup_key shape (DIFFERENT from runtime).
+                    format!(
+                        "{}:acct-1:risk:health.risk",
+                        if item_hash_value.is_empty() {
+                            text
+                        } else {
+                            item_hash_value
+                        }
+                    ),
+                    item_hash_value,
+                    TS,
+                ],
+            )
+            .expect("seed backfill-shaped tombstone");
     }
 
     #[test]
@@ -2229,8 +2403,7 @@ mod tests {
         let (clock, rng, external) = ctx_parts();
         let ctx = live_ctx(&clock, &rng, &external);
         let mut other_subject = proposal("Procurement blocked renewal");
-        other_subject.subject_ref =
-            r#"{"kind":"account","id":"acct-2"}"#.to_string();
+        other_subject.subject_ref = r#"{"kind":"account","id":"acct-2"}"#.to_string();
         let result = commit_claim(&ctx, &db, other_subject);
         assert!(
             matches!(result, Ok(CommittedClaim::Inserted { .. })),
@@ -2454,6 +2627,168 @@ mod tests {
     }
 
     #[test]
+    fn record_claim_feedback_applies_lifecycle_transitions() {
+        let cases = [
+            (
+                FeedbackAction::MarkOutdated,
+                "active",
+                "dormant",
+                Some("outdated"),
+                None,
+            ),
+            (
+                FeedbackAction::MarkFalse,
+                "withdrawn",
+                "dormant",
+                None,
+                Some("user_marked_false"),
+            ),
+            (
+                FeedbackAction::WrongSubject,
+                "tombstoned",
+                "dormant",
+                None,
+                Some("wrong_subject"),
+            ),
+            (
+                FeedbackAction::NeedsNuance,
+                "active",
+                "dormant",
+                Some("superseded"),
+                None,
+            ),
+        ];
+
+        for (
+            action,
+            expected_claim_state,
+            expected_surfacing,
+            expected_demotion,
+            expected_retraction,
+        ) in cases
+        {
+            let db = test_db();
+            seed_account(&db);
+            let (clock, rng, external) = ctx_parts();
+            let ctx = live_ctx(&clock, &rng, &external);
+            let claim_id = inserted_claim_id(
+                commit_claim(&ctx, &db, proposal(&format!("Lifecycle {:?}", action))).unwrap(),
+            );
+
+            record_claim_feedback(&ctx, &db, feedback_input(&claim_id, action)).unwrap();
+
+            let (claim_state, surfacing_state, demotion_reason, retraction_reason) =
+                read_lifecycle_columns(&db, &claim_id);
+            assert_eq!(claim_state, expected_claim_state, "{action:?}");
+            assert_eq!(surfacing_state, expected_surfacing, "{action:?}");
+            assert_eq!(demotion_reason.as_deref(), expected_demotion, "{action:?}");
+            assert_eq!(
+                retraction_reason.as_deref(),
+                expected_retraction,
+                "{action:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn record_claim_feedback_mark_false_removes_claim_from_active_reader() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk marked false")).unwrap());
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::MarkFalse),
+        )
+        .unwrap();
+
+        let active_ids = load_claims_active(&db, SUBJECT, Some("risk"))
+            .unwrap()
+            .into_iter()
+            .map(|claim| claim.id)
+            .collect::<Vec<_>>();
+        assert!(!active_ids.contains(&claim_id));
+    }
+
+    #[test]
+    fn record_claim_feedback_accepts_user_feedback_on_agent_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut p = proposal("Agent-authored entity risk");
+        p.claim_type = "entity_risk".to_string();
+        p.field_path = None;
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::ConfirmCurrent),
+        )
+        .unwrap();
+
+        assert_eq!(outcome.claim_id, claim_id);
+    }
+
+    #[test]
+    fn record_claim_feedback_rejects_non_user_actor() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk for actor check")).unwrap());
+        let mut input = feedback_input(&claim_id, FeedbackAction::CannotVerify);
+        input.actor = "system_backfill".to_string();
+
+        let err = record_claim_feedback(&ctx, &db, input)
+            .expect_err("system feedback actor must be rejected");
+
+        assert!(
+            matches!(err, ClaimError::InvalidFeedback(message) if message.contains("only accepted from user"))
+        );
+    }
+
+    #[test]
+    fn record_claim_feedback_rejects_missing_required_action_metadata() {
+        let actions = [
+            (FeedbackAction::WrongSource, "source_ref"),
+            (FeedbackAction::NeedsNuance, "corrected_text"),
+            (FeedbackAction::SurfaceInappropriate, "surface"),
+            (FeedbackAction::NotRelevantHere, "invocation_id"),
+        ];
+
+        for (action, key) in actions {
+            let empty_value_payload = serde_json::Value::Object(serde_json::Map::from_iter([(
+                key.to_string(),
+                serde_json::Value::String(String::new()),
+            )]))
+            .to_string();
+            for payload in [
+                serde_json::json!({}).to_string(),
+                empty_value_payload.clone(),
+            ] {
+                let db = test_db();
+                let (clock, rng, external) = ctx_parts();
+                let ctx = live_ctx(&clock, &rng, &external);
+                let mut input = feedback_input("claim-not-needed", action);
+                input.payload_json = Some(payload);
+
+                let err = record_claim_feedback(&ctx, &db, input)
+                    .expect_err("invalid metadata should be rejected before claim lookup");
+                assert!(
+                    matches!(err, ClaimError::InvalidFeedback(message) if message.contains(key))
+                );
+            }
+        }
+    }
+
+    #[test]
     fn record_claim_feedback_idempotent_replay_does_not_dup_state_change() {
         let db = test_db();
         seed_account(&db);
@@ -2612,7 +2947,7 @@ mod tests {
             other => panic!("expected fork from contradiction detection, got {other:?}"),
         };
         let _ = (primary_id, contradicting_id); // referenced via the
-                                                  // contradiction_id
+                                                // contradiction_id
 
         let before = read_account_claim_version(&db);
 
@@ -2636,12 +2971,18 @@ mod tests {
     /// and collapses internal whitespace runs.
     #[test]
     fn canonicalize_for_dos280_lowercases_trims_collapses_whitespace() {
-        assert_eq!(canonicalize_for_dos280("  ARR Risk\trenewal "), "arr risk renewal");
+        assert_eq!(
+            canonicalize_for_dos280("  ARR Risk\trenewal "),
+            "arr risk renewal"
+        );
         assert_eq!(
             canonicalize_for_dos280("Procurement   Blocked\n\nRenewal"),
             "procurement blocked renewal"
         );
-        assert_eq!(canonicalize_for_dos280("already canonical"), "already canonical");
+        assert_eq!(
+            canonicalize_for_dos280("already canonical"),
+            "already canonical"
+        );
     }
 
     /// L2 cycle-1 fix #6: re-committing the same active claim's
@@ -2666,8 +3007,14 @@ mod tests {
         p2.data_source = "second_source".to_string();
         let result = commit_claim(&ctx, &db, p2).unwrap();
         match result {
-            CommittedClaim::Reinforced { claim, corroboration_id: _ } => {
-                assert_eq!(claim.id, first_id, "must reinforce existing claim, not insert new");
+            CommittedClaim::Reinforced {
+                claim,
+                corroboration_id: _,
+            } => {
+                assert_eq!(
+                    claim.id, first_id,
+                    "must reinforce existing claim, not insert new"
+                );
             }
             other => panic!("expected Reinforced, got {other:?}"),
         }
@@ -2692,9 +3039,8 @@ mod tests {
         let (clock, rng, external) = ctx_parts();
         let ctx = live_ctx(&clock, &rng, &external);
 
-        let primary_id = inserted_claim_id(
-            commit_claim(&ctx, &db, proposal("Renewal looks healthy")).unwrap(),
-        );
+        let primary_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Renewal looks healthy")).unwrap());
         let result =
             commit_claim(&ctx, &db, proposal("Renewal at risk due to procurement")).unwrap();
         match result {
@@ -2844,7 +3190,6 @@ mod tests {
     /// (insertion order, PascalCase kind) would be invisible to a
     /// reader called with serde_json-canonical (alphabetical order,
     /// lowercase kind) input.
-    #[test]
     /// L2 cycle-14 fix #1: subject_ref_from_json must accept
     /// PascalCase kinds (the shape SQLite json_object writes).
     /// Cycle-13 fix #2 made the reader DB-side casing-tolerant
@@ -2874,8 +3219,8 @@ mod tests {
         // PascalCase reader input — this is what backfill SQL also
         // produces. Must NOT error in subject_ref_from_json.
         let pascal_input = r#"{"kind":"Account","id":"acct-1"}"#;
-        let claims =
-            load_claims_active(&db, pascal_input, Some("risk")).expect("PascalCase reader input must parse");
+        let claims = load_claims_active(&db, pascal_input, Some("risk"))
+            .expect("PascalCase reader input must parse");
         assert_eq!(claims.len(), 1);
         assert_eq!(claims[0].id, "pascal-active");
     }
@@ -2988,9 +3333,12 @@ mod tests {
         // (alphabetical, lowercase). The fix's json_extract match
         // should find it regardless.
         let reader_input = r#"{"id":"acct-1","kind":"account"}"#;
-        let claims =
-            load_claims_active(&db, reader_input, Some("risk")).expect("reader query");
-        assert_eq!(claims.len(), 1, "reader must find the row across key/case differences");
+        let claims = load_claims_active(&db, reader_input, Some("risk")).expect("reader query");
+        assert_eq!(
+            claims.len(),
+            1,
+            "reader must find the row across key/case differences"
+        );
         assert_eq!(claims[0].id, "insertion-order-active");
     }
 
@@ -3159,7 +3507,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 3, "all three PascalCase variants must produce claim rows");
+        assert_eq!(
+            count, 3,
+            "all three PascalCase variants must produce claim rows"
+        );
     }
 
     #[test]
@@ -3297,7 +3648,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(count, 1, "Email shadow-write must persist a tombstone claim");
+        assert_eq!(
+            count, 1,
+            "Email shadow-write must persist a tombstone claim"
+        );
 
         // emails.claim_version was bumped.
         let claim_version: i64 = db
@@ -3380,7 +3734,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(null_count, 1, "permanent dismissals must leave expires_at NULL");
+        assert_eq!(
+            null_count, 1,
+            "permanent dismissals must leave expires_at NULL"
+        );
     }
 
     /// L2 cycle-26 fix #3: `withdraw_tombstones_for` flips matching
@@ -3530,7 +3887,10 @@ mod tests {
 
         let withdrawn =
             withdraw_all_tombstones_of_type(&db, "email_dismissed", "reset_by_user").unwrap();
-        assert_eq!(withdrawn, 2, "both email_dismissed tombstones must be withdrawn");
+        assert_eq!(
+            withdrawn, 2,
+            "both email_dismissed tombstones must be withdrawn"
+        );
 
         let (e_count, off_type_active): (i64, i64) = db
             .conn_ref()

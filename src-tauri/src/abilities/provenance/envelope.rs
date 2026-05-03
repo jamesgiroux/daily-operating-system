@@ -3,7 +3,7 @@ use std::collections::BTreeMap;
 use std::hash::{Hash, Hasher};
 
 use chrono::{DateTime, Utc};
-use schemars::schema::{Schema, SchemaObject};
+use schemars::schema::{InstanceType, Schema, SchemaObject, SingleOrVec};
 use schemars::{gen::SchemaGenerator, JsonSchema};
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
@@ -135,14 +135,9 @@ impl JsonSchema for CompositionId {
 /// cannot be confused with user-authored theme labels, and the
 /// v1.4.2 retrieval / assignment work has a single canonical
 /// shape to compile against.
-#[derive(
-    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct ThreadId(
-    #[schemars(with = "String")]
-    pub uuid::Uuid,
-);
+pub struct ThreadId(pub uuid::Uuid);
 
 impl ThreadId {
     /// Build a `ThreadId` from a `Uuid`. Tests typically construct
@@ -155,6 +150,21 @@ impl ThreadId {
     /// callers route the error rather than silently coercing.
     pub fn parse(s: &str) -> Result<Self, uuid::Error> {
         Ok(Self(uuid::Uuid::parse_str(s)?))
+    }
+}
+
+impl JsonSchema for ThreadId {
+    fn schema_name() -> String {
+        "ThreadId".into()
+    }
+
+    fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
+        let mut schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+            ..Default::default()
+        };
+        schema.format = Some("uuid".to_string());
+        Schema::Object(schema)
     }
 }
 
@@ -530,6 +540,15 @@ mod tests {
     }
 
     #[test]
+    fn schemars_schema_for_thread_id_is_uuid_string() {
+        let schema = schemars::schema_for!(Provenance);
+        let rendered = serde_json::to_value(schema).unwrap().to_string();
+
+        assert!(rendered.contains("\"ThreadId\""));
+        assert!(rendered.contains("\"format\":\"uuid\""));
+    }
+
+    #[test]
     fn composition_a_b_c_preserves_child_grandchild_tree() {
         let produced_at = Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
         let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-1".into()));
@@ -565,7 +584,10 @@ mod tests {
         );
 
         assert_eq!(a.children[0].composition_id, CompositionId::new("b"));
-        assert_eq!(a.children[0].provenance.children[0].composition_id, CompositionId::new("c"));
+        assert_eq!(
+            a.children[0].provenance.children[0].composition_id,
+            CompositionId::new("c")
+        );
     }
 
     #[test]
