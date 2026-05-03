@@ -34,7 +34,7 @@
 //!   - more than 30 days in the future (mild skew is OK; a
 //!     month is not)
 
-use chrono::{DateTime, NaiveDate, TimeZone, Utc};
+use chrono::{DateTime, Months, NaiveDate, TimeZone, Utc};
 
 /// Result of parsing a candidate `source_asof` string.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -90,10 +90,11 @@ fn minimum_plausible_date() -> DateTime<Utc> {
     Utc.from_utc_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
 }
 
-/// Upper bound for malformed: 5 years past `now`. Beyond this is
+/// Upper bound for malformed: 5 calendar years past `now`. Beyond this is
 /// almost certainly clock skew or LLM fabrication.
 fn far_future_after(now: DateTime<Utc>) -> DateTime<Utc> {
-    now + chrono::Duration::days(365 * 5)
+    now.checked_add_months(Months::new(60))
+        .unwrap_or(DateTime::<Utc>::MAX_UTC)
 }
 
 /// Upper bound for implausible (vs malformed): 30 days past `now`.
@@ -230,11 +231,10 @@ mod tests {
     fn parse_source_timestamp_rejects_unparseable() {
         let now = now_2026_05_01();
         let res = parse_source_timestamp(Some("yesterday"), now, None);
-        assert!(matches!(
+        assert_eq!(
             res,
             SourceTimestampStatus::Malformed(SourceTimestampMalformedReason::MissingTimezone)
-                | SourceTimestampStatus::Malformed(SourceTimestampMalformedReason::Unparseable)
-        ));
+        );
         // `garbleZ` ends in Z so passes timezone check; should
         // still be unparseable.
         let res = parse_source_timestamp(Some("garbleZ"), now, None);
@@ -352,19 +352,29 @@ mod tests {
     }
 
     #[test]
-    fn parse_source_timestamp_boundary_at_5_year_cutoff() {
+    fn parse_source_timestamp_allows_just_before_5_calendar_year_cutoff() {
         let now = now_2026_05_01();
-        // Exactly 5 years past now. At-or-just-before is acceptable;
-        // beyond is FarFuture. The boundary test catches off-by-one
-        // drift in the bounds helper.
-        let exactly_5y = "2031-04-30T12:00:00Z"; // ~5y minus a day
-        let res = parse_source_timestamp(Some(exactly_5y), now, None);
+        let just_before = far_future_after(now) - chrono::Duration::nanoseconds(1);
+        let raw = just_before.to_rfc3339();
+        let res = parse_source_timestamp(Some(&raw), now, None);
         assert!(
             matches!(
                 res,
                 SourceTimestampStatus::Accepted(_) | SourceTimestampStatus::Implausible { .. }
             ),
-            "5y minus one day must not be FarFuture, got {res:?}"
+            "5 calendar years minus 1ns must not be FarFuture, got {res:?}"
+        );
+    }
+
+    #[test]
+    fn parse_source_timestamp_rejects_after_5_calendar_year_cutoff() {
+        let now = now_2026_05_01();
+        let beyond = far_future_after(now) + chrono::Duration::days(1);
+        let raw = beyond.to_rfc3339();
+        let res = parse_source_timestamp(Some(&raw), now, None);
+        assert_eq!(
+            res,
+            SourceTimestampStatus::Malformed(SourceTimestampMalformedReason::FarFuture)
         );
     }
 }

@@ -16,6 +16,8 @@
 //! (which evolves with schema/repair worker changes). Reviewers can
 //! audit the matrix here without grepping the writer.
 
+use std::collections::HashSet;
+
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -154,6 +156,43 @@ impl TrustEffect {
     };
 }
 
+pub fn compute_needs_nuance_trust_effect(
+    original_text: &str,
+    corrected_text: &str,
+) -> TrustEffect {
+    let original = word_tokens(original_text);
+    let corrected = word_tokens(corrected_text);
+    let overlap = jaccard_similarity(&original, &corrected);
+    let (claim_alpha_delta, claim_beta_delta) = if overlap >= 0.5 {
+        (0.3, 0.0)
+    } else {
+        (0.0, 0.3)
+    };
+
+    TrustEffect {
+        claim_alpha_delta,
+        claim_beta_delta,
+        source_reliability_delta: 0.0,
+        linker_reliability_delta: 0.0,
+    }
+}
+
+fn word_tokens(text: &str) -> HashSet<String> {
+    text.split(|ch: char| !ch.is_alphanumeric())
+        .map(str::trim)
+        .filter(|token| !token.is_empty())
+        .map(str::to_ascii_lowercase)
+        .collect()
+}
+
+fn jaccard_similarity(left: &HashSet<String>, right: &HashSet<String>) -> f32 {
+    let union = left.union(right).count();
+    if union == 0 {
+        return 0.0;
+    }
+    left.intersection(right).count() as f32 / union as f32
+}
+
 /// What the repair queue should do for this action.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RepairAction {
@@ -290,9 +329,9 @@ pub const fn feedback_semantics(action: FeedbackAction) -> ClaimFeedbackMetadata
             action,
             verification_state: ClaimVerificationState::Active,
             trust_effect: TrustEffect {
-                // Sign only; the writer chooses alpha vs beta based
-                // on text-overlap heuristic between original and
-                // corrected per ADR-0123.
+                // Default when no corrected text is available; the
+                // writer overrides this with text-overlap trust when
+                // the feedback payload carries the user correction.
                 claim_alpha_delta: 0.3,
                 claim_beta_delta: 0.0,
                 source_reliability_delta: 0.0,
@@ -469,10 +508,27 @@ mod tests {
         assert!(meta.trust_effect.claim_alpha_delta > 0.0);
         assert!(meta.trust_effect.source_reliability_delta > 0.0);
         assert_eq!(meta.repair, RepairAction::None);
-        assert_eq!(
-            meta.render,
-            ClaimRenderPolicy::DefaultWithUserCorroboration
+        assert_eq!(meta.render, ClaimRenderPolicy::DefaultWithUserCorroboration);
+    }
+
+    #[test]
+    fn needs_nuance_trust_effect_rewards_high_overlap_corrections() {
+        let effect = compute_needs_nuance_trust_effect(
+            "Renewal risk remains elevated after procurement delay",
+            "Renewal risk remains elevated after procurement delay with legal caveat",
         );
+        assert_eq!(effect.claim_alpha_delta, 0.3);
+        assert_eq!(effect.claim_beta_delta, 0.0);
+    }
+
+    #[test]
+    fn needs_nuance_trust_effect_penalizes_low_overlap_rewrites() {
+        let effect = compute_needs_nuance_trust_effect(
+            "Renewal risk remains elevated after procurement delay",
+            "Customer expanded product usage across the support organization",
+        );
+        assert_eq!(effect.claim_alpha_delta, 0.0);
+        assert_eq!(effect.claim_beta_delta, 0.3);
     }
 
     #[test]
@@ -540,9 +596,6 @@ mod tests {
             // not a fallback.
             seen.entry(render).or_insert_with(Vec::new).push(action);
         }
-        // Sanity: at least 7 distinct render policies covering 9
-        // actions (some intentionally share — e.g. multiple suppress
-        // variants).
-        assert!(seen.len() >= 7, "render policies should cover most cases distinctly");
+        assert_eq!(seen.len(), 9, "each feedback action has a distinct render policy");
     }
 }

@@ -18,6 +18,7 @@ struct Migration {
     sql: &'static str,
 }
 
+// Historical drift: some filenames are one less than registered version; `version` is authoritative.
 const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 1,
@@ -672,6 +673,13 @@ const MIGRATIONS: &[Migration] = &[
     Migration {
         version: 138,
         sql: include_str!("migrations/138_thread_metadata.sql"),
+    },
+    // Failed-projection repair scans filter by target and order by
+    // attempted_at; the status value is constant inside the partial
+    // index predicate.
+    Migration {
+        version: 139,
+        sql: include_str!("migrations/139_dos_301_projection_failed_index_v2.sql"),
     },
 ];
 
@@ -2393,10 +2401,10 @@ mod tests {
         let conn = mem_db();
         run_migrations(&conn).expect("apply all migrations");
         conn.execute(
-            "DELETE FROM schema_version WHERE version IN (128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138)",
+            "DELETE FROM schema_version WHERE version >= 128",
             [],
         )
-        .expect("make v128 through v138 pending");
+        .expect("make v128+ pending");
         conn.execute(
             "INSERT INTO suppression_tombstones_quarantine \
              (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason, resolved_at) \
@@ -2407,8 +2415,12 @@ mod tests {
 
         let applied = run_migrations(&conn).expect("post-126 migration should not be gated");
 
-        assert_eq!(applied, 11);
-        assert_eq!(current_version(&conn).expect("version query"), 138);
+        let expected = MIGRATIONS.iter().filter(|m| m.version >= 128).count();
+        assert_eq!(applied, expected);
+        assert_eq!(
+            current_version(&conn).expect("version query"),
+            MIGRATIONS.last().unwrap().version
+        );
     }
 
     #[test]
@@ -2416,10 +2428,10 @@ mod tests {
         let conn = mem_db();
         run_migrations(&conn).expect("apply all migrations");
         conn.execute(
-            "DELETE FROM schema_version WHERE version IN (126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138)",
+            "DELETE FROM schema_version WHERE version >= 126",
             [],
         )
-        .expect("make v126 through v138 pending");
+        .expect("make v126+ pending");
         conn.execute(
             "INSERT INTO suppression_tombstones_quarantine \
              (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason) \
