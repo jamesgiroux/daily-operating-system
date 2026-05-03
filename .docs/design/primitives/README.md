@@ -6,16 +6,26 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 
 ## Index
 
-_(populated as primitives are promoted)_
-
 | Name | Status | Job (one line) | Source |
 |---|---|---|---|
-| _(awaiting Audit 01 + Audit 03 findings)_ | | | |
+| [`Pill`](./Pill.md) | canonical | Visual primitive for inline status / label / category badges | `_shared/.pill` |
+| [`TrustBandBadge`](./TrustBandBadge.md) | proposed | v1.4.0 surface trust band (`likely_current` / `use_with_caution` / `needs_verification`) | new (DOS-320 contract) |
+| [`IntelligenceQualityBadge`](./IntelligenceQualityBadge.md) | canonical | Intelligence completeness (`sparse` / `developing` / `ready` / `fresh`) | `src/components/entity/` |
+| [`FreshnessIndicator`](./FreshnessIndicator.md) | proposed | Raw recency timestamp + relative age | new (`source_asof` contract) |
+| [`ProvenanceTag`](./ProvenanceTag.md) | canonical | Source attribution label, suppresses synthesized | `src/components/ui/` |
+| [`EntityChip`](./EntityChip.md) | canonical | Entity reference with entity-type color | `src/components/ui/{meeting,email}-entity-chip.tsx` |
+| [`TypeBadge`](./TypeBadge.md) | canonical | Account-type categorical (Customer / Internal / Partner) | `_shared/.type-badge` + AccountHero |
+
+_Wave 2 will add: FreshnessChip (consolidate with FreshnessIndicator), SourceCoverageLine, ConfidenceScoreChip, VerificationStatusFlag, DataGapNotice, AsOfTimestamp._
+
+_Wave 3 will add: InlineInput, Switch, Segmented, RemovableChip, GlanceCell._
+
+_Wave 4 will add: MeetingStatusPill._
 
 ## Conventions
 
 - **Names are short and generic.** `Button`, not `BaseButton` or `PrimaryActionButton`.
-- **Variants are documented.** Every visible variation (size, intent, density) is in the spec, with a screenshot or reference render.
+- **Variants are documented.** Every visible variation (size, intent, density) is in the spec.
 - **Tokens only.** Primitives consume tokens. They never hardcode values.
 - **Composition aware.** A primitive should compose cleanly inside any pattern. Avoid layout opinions; let patterns set spacing.
 - **One file per primitive.** `Button.md`, not `Buttons.md`. Granularity makes it greppable.
@@ -30,4 +40,4 @@ _(populated as primitives are promoted)_
 
 ## Adding a primitive that already exists in `src/`
 
-The audit will surface these. Promotion is a markdown PR that documents what's already there — no code change required to *promote*. Code changes to consolidate variants come after.
+Promotion is a markdown PR that documents what's already there — no code change required to *promote*. Code changes to consolidate variants come after.

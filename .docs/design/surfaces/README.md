@@ -4,16 +4,14 @@ Full screens. The user-visible products built on top of patterns and primitives.
 
 ## Index
 
-_(populated as surfaces are documented)_
-
 | Canonical name | Current src name | Status | Spec |
 |---|---|---|---|
-| DailyBriefing | `Dashboard.tsx` | Redesigning (v1.4.3) | _to be added_ |
-| AccountDetail | `AccountDetail.tsx` (?) | Canonical (recent v1.4.2 redesign) | _to be added_ |
-| MeetingDetail | _(verify)_ | Redesigning | _to be added_ |
-| ProjectDetail | _(verify)_ | In v1.4.2 scope | _to be added_ |
-| PersonDetail | _(verify)_ | In v1.4.2 scope | _to be added_ |
-| Settings | _(verify)_ | Redesigning (separate project) | _to be added_ |
+| [`DailyBriefing`](./DailyBriefing.md) | `Dashboard.tsx` | Redesigning (v1.4.3) | ✓ |
+| `AccountDetail` | `AccountDetailPage.tsx` | Canonical (recent v1.4.2 redesign) | _Wave 5 / surface pass_ |
+| `ProjectDetail` | `ProjectDetailEditorial.tsx` | In v1.4.2 scope | _Wave 5 / surface pass_ |
+| `PersonDetail` | `PersonDetailEditorial.tsx` | In v1.4.2 scope | _Wave 5 / surface pass_ |
+| `MeetingDetail` | _verify_ | Redesigning | _Wave 4_ |
+| `Settings` | _verify_ | Redesigning (separate project) | _Wave 3_ |
 
 ## What a surface spec captures
 
@@ -22,10 +20,11 @@ Each surface gets one `.md` file with:
 - **Job** — what the user accomplishes here
 - **Canonical name** vs current `src/` name (rename status if mismatched — see `../NAMING.md`)
 - **Source files** — every file under `src/` that implements this surface
+- **Layout regions** — header, spine, sidebar, dock, etc.
+- **Local nav approach** — chapter inventory provided to `FloatingNavIsland` (per D2)
 - **Patterns consumed** — in reading order, with links
 - **Primitives consumed**
-- **Local nav approach** — which local-nav pattern this surface uses (and why, if it differs from a peer)
-- **Layout regions** — header, spine, sidebar, dock, etc.
+- **Notable interactions**
 - **Empty / loading / error states**
 - **Naming notes** — rename history, candidate renames, decisions deferred
 
@@ -33,6 +32,7 @@ Each surface gets one `.md` file with:
 
 - **Surface specs are the contract for what the surface is.** Implementation in `src/` should match. If they disagree, the spec wins (or the spec gets updated, deliberately).
 - **A surface re-implementing a pattern is a smell.** Either the pattern is missing a variant, or the surface is wrong, or the pattern is wrong. Resolve, don't paper over.
+- **Surfaces provide chapters to `FloatingNavIsland`.** Per D2, surfaces do not invent local nav patterns. Their chapter inventory lives in their surface spec.
 - **Don't duplicate the figma/mockup here.** Link to it. The spec is the contract; the mockup is a reference.
 
 ## Surface-internal components

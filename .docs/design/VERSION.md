@@ -1,6 +1,6 @@
 # Design System Version
 
-**Current:** `0.0.0` — scaffolding only
+**Current:** `0.1.0` — Wave 1 (v1.4.3 substrate)
 
 **Stability statement:** Pre-stable. Expect breaking changes until 1.0.0. Pre-1.0, treat any minor bump as potentially breaking (standard semver-zero convention).
 
