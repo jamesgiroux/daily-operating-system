@@ -1361,7 +1361,11 @@ pub async fn update_stakeholders(
                         let person_id = s.person_id.as_deref()?;
                         // Check BOTH role and engagement — user may set champion
                         // via either the Team panel (role) or EngagementSelector (engagement)
-                        let effective = if !engagement.is_empty() { &engagement } else { &role };
+                        let effective = if !engagement.is_empty() {
+                            &engagement
+                        } else {
+                            &role
+                        };
                         if effective.contains("champion")
                             || effective.contains("executive")
                             || effective.contains("technical")
@@ -1394,15 +1398,21 @@ pub async fn update_stakeholders(
                 tx.upsert_entity_intelligence(&intel)
                     .map_err(|e| e.to_string())?;
 
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+
                 // Sync scoring-relevant stakeholder roles to account_stakeholders
                 // so health scoring (champion health, stakeholder coverage) picks them up.
                 for (person_id, role) in &scoring_roles {
-                    tx.add_account_team_member(&entity_id, person_id, role)
-                        .map_err(|e| {
-                            log::warn!("Stakeholder sync to account_stakeholders failed for {person_id}: {e}");
-                            e.to_string()
-                        })
-                        .ok(); // Non-fatal — don't fail the whole update
+                    if let Err(e) = crate::services::accounts::add_team_member_with_cache_rebuild(
+                        &ctx, tx, &entity_id, person_id, role,
+                    ) {
+                        log::warn!(
+                            "Stakeholder sync to account_stakeholders failed for {person_id}: {e}"
+                        );
+                    }
                 }
 
                 // Recompute health immediately so stakeholder changes reflect
@@ -1410,26 +1420,20 @@ pub async fn update_stakeholders(
                 // waiting for a full enrichment cycle.
                 if entity_type == "account" && !scoring_roles.is_empty() {
                     if let Some(acct) = account.as_ref() {
-                        let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
-                            tx,
-                            acct,
-                            intel.org_health.as_ref(),
-                            active_preset.as_ref(),
-                        );
+                        let health =
+                            crate::intelligence::health_scoring::compute_account_health_with_preset(
+                                tx,
+                                acct,
+                                intel.org_health.as_ref(),
+                                active_preset.as_ref(),
+                            );
                         crate::services::derived_state::upsert_entity_health_legacy_projection(
-                            tx,
-                            &entity_id,
-                            "account",
-                            &health,
+                            tx, &entity_id, "account", &health,
                         )
                         .ok();
                     }
                 }
 
-                let clock = crate::services::context::SystemClock;
-                let rng = crate::services::context::SystemRng;
-                let ext = crate::services::context::ExternalClients::default();
-                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 crate::services::signals::emit_and_propagate(
                     &ctx,
                     tx,

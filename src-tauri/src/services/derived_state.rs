@@ -625,7 +625,7 @@ fn stakeholder_cache_memberships(
     let mut stmt = tx
         .conn_ref()
         .prepare(
-             "SELECT account_id, 'account' AS entity_type
+            "SELECT account_id, 'account' AS entity_type
              FROM account_stakeholders
              WHERE person_id = ?1
                AND status = 'active'
@@ -653,6 +653,17 @@ fn stakeholder_cache_memberships(
     Ok(memberships)
 }
 
+/// Rebuilds the stakeholder_insights_cache for an entity from active stakeholders' engagement claims.
+///
+/// **Caller contract:**
+/// - From projection rules (commit_claim path): wrap in `run_rule_savepoint` so
+///   transient SQL errors are classified and recorded without rolling back the
+///   parent claim insert.
+/// - From service mutators (post-mutation invalidation): do not wrap in a
+///   savepoint. Let errors propagate to the outer transaction and roll back the
+///   user's mutation. Use
+///   `.map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?`
+///   at the call site.
 pub(crate) fn rebuild_stakeholder_insights_cache_for_entity(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
@@ -725,7 +736,7 @@ fn stakeholder_person_ids_for_entity(
     let mut stmt = tx
         .conn_ref()
         .prepare(
-             "SELECT person_id
+            "SELECT person_id
              FROM account_stakeholders
              WHERE account_id = ?1
                AND status = 'active'
@@ -1813,6 +1824,149 @@ mod tests {
         .unwrap();
 
         assert_cache_contains(&db, account_id, "confirmed engagement visible");
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuilds_on_link_person_entity() {
+        let db = test_db();
+        let account_id = "acct-link-person-entity";
+        let person_id = "person-link-entity";
+        seed_account_person(&db, account_id, person_id, "Linked Stakeholder");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, person_id, "linked engagement visible");
+        assert_cache_excludes(&db, account_id, "linked engagement visible");
+
+        let state = crate::state::AppState::new();
+        crate::services::people::link_person_entity(
+            &ctx,
+            &db,
+            &state,
+            person_id,
+            account_id,
+            "associated",
+        )
+        .unwrap();
+
+        assert_cache_contains(&db, account_id, "linked engagement visible");
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuilds_on_unlink_person_entity() {
+        let db = test_db();
+        let account_id = "acct-unlink-person-entity";
+        let person_id = "person-unlink-entity";
+        seed_account_person(&db, account_id, person_id, "Unlinked Stakeholder");
+        seed_account_stakeholder(&db, account_id, person_id, "active");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, person_id, "unlinked engagement removed");
+        assert_cache_contains(&db, account_id, "unlinked engagement removed");
+
+        let state = crate::state::AppState::new();
+        crate::services::people::unlink_person_entity(&ctx, &db, &state, person_id, account_id)
+            .unwrap();
+
+        assert_cache_excludes(&db, account_id, "unlinked engagement removed");
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuilds_on_merge_people() {
+        let db = test_db();
+        let account_id = "acct-merge-people-cache";
+        let keep_id = "person-merge-keep";
+        let remove_id = "person-merge-remove";
+        seed_account_person(&db, account_id, keep_id, "Kept Stakeholder");
+        seed_account_person(&db, account_id, remove_id, "Removed Stakeholder");
+        seed_account_stakeholder(&db, account_id, keep_id, "active");
+        seed_account_stakeholder(&db, account_id, remove_id, "active");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, keep_id, "kept engagement survives");
+        commit_stakeholder_engagement(&ctx, &db, remove_id, "removed engagement drops");
+        assert_cache_contains(&db, account_id, "kept engagement survives");
+        assert_cache_contains(&db, account_id, "removed engagement drops");
+
+        let state = crate::state::AppState::new();
+        crate::services::people::merge_people(&ctx, &db, &state, keep_id, remove_id).unwrap();
+
+        assert_cache_contains(&db, account_id, "kept engagement survives");
+        assert_cache_excludes(&db, account_id, "removed engagement drops");
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuilds_on_accept_stakeholder_suggestion() {
+        let db = test_db();
+        let account_id = "acct-accept-suggestion-cache";
+        let person_id = "person-accept-suggestion";
+        seed_account_person(&db, account_id, person_id, "Accepted Stakeholder");
+        seed_account_stakeholder(&db, account_id, person_id, "dismissed");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, person_id, "accepted engagement visible");
+        assert_cache_excludes(&db, account_id, "accepted engagement visible");
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO stakeholder_suggestions (
+                    account_id, person_id, suggested_role, source, status, created_at
+                 ) VALUES (?1, ?2, 'champion', 'glean', 'pending', ?3)",
+                params![account_id, person_id, TS],
+            )
+            .unwrap();
+        let suggestion_id = db.conn_ref().last_insert_rowid();
+
+        let state = std::sync::Arc::new(crate::state::AppState::new());
+        crate::services::accounts::accept_stakeholder_suggestion(&ctx, &db, &state, suggestion_id)
+            .unwrap();
+
+        let status: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT status FROM account_stakeholders
+                 WHERE account_id = ?1 AND person_id = ?2",
+                params![account_id, person_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(status, "active");
+        assert_cache_contains(&db, account_id, "accepted engagement visible");
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuilds_on_merge_accounts() {
+        let db = test_db();
+        let from_id = "acct-merge-from-cache";
+        let into_id = "acct-merge-into-cache";
+        seed_account_person(&db, from_id, "person-from-account", "From Stakeholder");
+        seed_account_person(&db, into_id, "person-into-account", "Into Stakeholder");
+        seed_account_stakeholder(&db, from_id, "person-from-account", "active");
+        seed_account_stakeholder(&db, into_id, "person-into-account", "active");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(
+            &ctx,
+            &db,
+            "person-from-account",
+            "from-account engagement visible",
+        );
+        commit_stakeholder_engagement(
+            &ctx,
+            &db,
+            "person-into-account",
+            "into-account engagement visible",
+        );
+
+        let state = crate::state::AppState::new();
+        crate::services::accounts::merge_accounts(&ctx, &db, &state, from_id, into_id).unwrap();
+
+        assert_cache_contains(&db, into_id, "from-account engagement visible");
+        assert_cache_contains(&db, into_id, "into-account engagement visible");
     }
 
     #[test]

@@ -78,7 +78,10 @@ impl RepairReport {
         lines.push(format!("touched_people={}", self.touched_people));
         lines.push(format!("max_batch_size={}", self.max_batch_size));
         lines.push(format!("max_coattendees={}", self.max_coattendees));
-        lines.push(format!("multi_account_people={}", self.multi_account_people));
+        lines.push(format!(
+            "multi_account_people={}",
+            self.multi_account_people
+        ));
         lines.push(format!("roles_to_dismiss={}", self.roles_to_dismiss));
         lines.push(format!(
             "unsupported_inferred_domains={}",
@@ -130,6 +133,21 @@ pub fn apply_repair(db: &ActionDb, opts: &RepairOptions) -> Result<RepairReport,
             )
             .map_err(|e| format!("quarantine stakeholders: {e}"))?;
 
+        let affected_accounts = repair_candidate_account_ids(tx)?;
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+        for account_id in affected_accounts {
+            crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+                &ctx,
+                tx,
+                &account_id,
+                "account",
+            )
+            .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        }
+
         // L2 cycle-22 fix: snapshot the (person_id, role) tuples
         // we're about to dismiss BEFORE the UPDATE so we can write
         // matching shadow tombstone claims after. The repair sets
@@ -154,7 +172,9 @@ pub fn apply_repair(db: &ActionDb, opts: &RepairOptions) -> Result<RepairReport,
                 )
                 .map_err(|e| format!("snapshot dismissed roles prepare: {e}"))?;
             let rows = stmt
-                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+                .query_map([], |row| {
+                    Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                })
                 .map_err(|e| format!("snapshot dismissed roles query: {e}"))?;
             rows.filter_map(|r| r.ok()).collect()
         };
@@ -232,6 +252,22 @@ pub fn apply_repair(db: &ActionDb, opts: &RepairOptions) -> Result<RepairReport,
             ..preview
         })
     })
+}
+
+fn repair_candidate_account_ids(db: &ActionDb) -> Result<Vec<String>, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT DISTINCT account_id
+             FROM dos345_candidates
+             ORDER BY account_id",
+        )
+        .map_err(|e| format!("prepare repair affected accounts: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("query repair affected accounts: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("read repair affected account: {e}"))
 }
 
 fn prepare_temp_tables(db: &ActionDb, opts: &RepairOptions) -> Result<(), String> {
@@ -554,7 +590,14 @@ fn write_stakeholder_ledger(db: &ActionDb, repair_id: &str, now: &str) -> Result
     let mut count = 0;
     for row in rows {
         let (key, before_json) = row.map_err(|e| format!("stakeholder ledger row: {e}"))?;
-        insert_ledger_item(db, repair_id, "account_stakeholder", &key, &before_json, now)?;
+        insert_ledger_item(
+            db,
+            repair_id,
+            "account_stakeholder",
+            &key,
+            &before_json,
+            now,
+        )?;
         count += 1;
     }
     Ok(count)
@@ -591,7 +634,10 @@ fn write_role_ledger(db: &ActionDb, repair_id: &str, now: &str) -> Result<i64, S
                 "created_at": created_at,
                 "dismissed_at": dismissed_at,
             });
-            Ok((format!("{account_id}:{person_id}:{role}"), before.to_string()))
+            Ok((
+                format!("{account_id}:{person_id}:{role}"),
+                before.to_string(),
+            ))
         })
         .map_err(|e| format!("query role ledger: {e}"))?;
 
@@ -833,7 +879,9 @@ mod tests {
 
         let link_count: i64 = db
             .conn_ref()
-            .query_row("SELECT COUNT(*) FROM linked_entities_raw", [], |row| row.get(0))
+            .query_row("SELECT COUNT(*) FROM linked_entities_raw", [], |row| {
+                row.get(0)
+            })
             .expect("link count");
         assert_eq!(link_count, 0);
 

@@ -1346,9 +1346,16 @@ fn process_glean_contacts(
         };
 
         // Link to account with source tracking
-        if let Err(e) =
-            db.link_person_to_account_with_source(entity_id, &person_id, &role_for_link, "glean")
-        {
+        if let Err(e) = db.with_transaction(|tx| {
+            crate::services::accounts::link_person_to_account_with_source_with_cache_rebuild(
+                &ctx,
+                tx,
+                entity_id,
+                &person_id,
+                &role_for_link,
+                "glean",
+            )
+        }) {
             log::warn!(
                 "I505: Failed linking person {} to account {}: {}",
                 person_id,

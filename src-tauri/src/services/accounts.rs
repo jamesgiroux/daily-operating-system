@@ -2524,6 +2524,10 @@ pub fn merge_accounts(
         let result = tx
             .merge_accounts(from_id, into_id)
             .map_err(|e| e.to_string())?;
+        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            ctx, tx, into_id, "account",
+        )
+        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -2567,12 +2571,7 @@ pub fn add_account_team_member(
         return Err("Role is required".to_string());
     }
     db.with_transaction(|tx| {
-        tx.add_account_team_member(account_id, person_id, &role)
-            .map_err(|e| e.to_string())?;
-        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
-            ctx, tx, account_id, "account",
-        )
-        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        add_team_member_with_cache_rebuild(ctx, tx, account_id, person_id, &role)?;
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -2590,6 +2589,39 @@ pub fn add_account_team_member(
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(())
     })
+}
+
+pub(crate) fn add_team_member_with_cache_rebuild(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+) -> Result<(), String> {
+    tx.add_account_team_member(account_id, person_id, role)
+        .map_err(|e| e.to_string())?;
+    crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+        ctx, tx, account_id, "account",
+    )
+    .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+    Ok(())
+}
+
+pub(crate) fn link_person_to_account_with_source_with_cache_rebuild(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    account_id: &str,
+    person_id: &str,
+    role: &str,
+    data_source: &str,
+) -> Result<(), String> {
+    tx.link_person_to_account_with_source(account_id, person_id, role, data_source)
+        .map_err(|e| e.to_string())?;
+    crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+        ctx, tx, account_id, "account",
+    )
+    .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+    Ok(())
 }
 
 /// Replace all roles for a team member (single-select role change).
@@ -3612,9 +3644,11 @@ pub fn accept_stakeholder_suggestion(
         let now = ctx.clock.now().to_rfc3339();
         tx.conn_ref()
             .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source, created_at)
-                 VALUES (?1, ?2, 'user', ?3)
-                 ON CONFLICT(account_id, person_id) DO UPDATE SET data_source = 'user'",
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, created_at)
+                 VALUES (?1, ?2, 'user', 'active', ?3)
+                 ON CONFLICT(account_id, person_id) DO UPDATE SET
+                    data_source = 'user',
+                    status = 'active'",
                 rusqlite::params![suggestion.account_id, person_id, now],
             )
             .map_err(|e| e.to_string())?;
@@ -3655,6 +3689,14 @@ pub fn accept_stakeholder_suggestion(
                 rusqlite::params![suggestion_id],
             )
             .map_err(|e| e.to_string())?;
+
+        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            ctx,
+            tx,
+            &suggestion.account_id,
+            "account",
+        )
+        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
 
         crate::services::signals::emit_and_propagate(
             ctx,
