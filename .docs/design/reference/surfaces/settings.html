@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Settings · DailyOS Reference</title>
+  <link rel="stylesheet" href="../_shared/tokens.css">
+  <link rel="stylesheet" href="../_shared/primitives.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+  <style>
+    .surface-masthead { padding-top: var(--space-5xl); padding-bottom: var(--space-xl); }
+    .surface-eyebrow, .section-eyebrow, .field-label, .row-meta, .connector-meta, .system-key {
+      font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase;
+      color: var(--color-text-tertiary);
+    }
+    .surface-title { font-family: var(--font-serif); font-size: 76px; font-weight: 400; line-height: 1.04; letter-spacing: -0.02em; }
+    .surface-lede { max-width: 670px; margin-top: var(--space-lg); font-family: var(--font-serif); font-size: 21px; font-style: italic; font-weight: 300; line-height: 1.58; color: var(--color-text-secondary); }
+    .glance-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: var(--space-xl); border-top: 1px solid var(--color-rule-heavy); border-bottom: 1px solid var(--color-rule-heavy); }
+    .glance-cell { min-height: 96px; padding: 18px 20px; background: rgba(250, 248, 246, 0.48); }
+    .glance-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); }
+    .glance-value { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-family: var(--font-serif); font-size: 25px; line-height: 1.15; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-garden-sage); flex: 0 0 auto; }
+    .status-dot.warn { background: var(--color-spice-saffron); }
+    .settings-section { margin-top: var(--space-2xl); scroll-margin-top: 72px; }
+    .section-head { padding-top: var(--space-sm); border-top: 1px solid var(--color-rule-heavy); margin-bottom: var(--space-lg); }
+    .section-head h2 { margin-top: 10px; font-family: var(--font-serif); font-size: 32px; font-weight: 400; line-height: 1.18; }
+    .section-epi { max-width: 620px; margin-top: 6px; font-family: var(--font-serif); font-size: 16px; font-style: italic; font-weight: 300; line-height: 1.45; color: var(--color-text-tertiary); }
+    .rows { border-top: 1px solid var(--color-rule-light); }
+    .form-row { display: grid; grid-template-columns: minmax(190px, 0.9fr) minmax(0, 1.3fr) auto; gap: var(--space-lg); align-items: center; padding: 18px 0; border-bottom: 1px solid var(--color-rule-light); }
+    .row-copy p, .connector-copy p, .log-copy p { margin-top: 4px; font-size: 13px; line-height: 1.5; color: var(--color-text-tertiary); }
+    .inline-input { display: inline-flex; min-height: 36px; align-items: center; padding: 7px 10px; border: 1px solid var(--color-rule-light); border-radius: var(--radius-sm); background: var(--color-paper-warm-white); font-size: 14px; color: var(--color-text-primary); }
+    .segmented { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--color-rule-light); border-radius: var(--radius-sm); background: var(--color-paper-warm-white); }
+    .segment { border: 0; border-radius: 3px; padding: 6px 10px; background: transparent; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); }
+    .segment.active { background: var(--color-spice-turmeric-12); color: var(--color-spice-turmeric); }
+    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--color-rule-light); border-radius: 100px; background: var(--color-paper-warm-white); font-size: 12px; color: var(--color-text-secondary); }
+    .connector-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 28px; border-top: 1px solid var(--color-rule-light); }
+    .connector-surface { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); padding: 18px 0; border-bottom: 1px solid var(--color-rule-light); }
+    .connector-name, .log-title, .system-value { font-family: var(--font-serif); font-size: 18px; line-height: 1.3; }
+    .switch { width: 44px; height: 24px; border: 0; border-radius: 999px; background: var(--color-rule-heavy); padding: 3px; display: inline-flex; justify-content: flex-start; }
+    .switch::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--color-paper-warm-white); box-shadow: var(--shadow-sm); }
+    .switch.is-on { justify-content: flex-end; background: var(--color-garden-sage); }
+    .privacy-grid, .health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); }
+    .control-card { padding: 18px; border-top: 1px solid var(--color-rule-heavy); background: rgba(250, 248, 246, 0.36); }
+    .control-card h3 { font-family: var(--font-serif); font-size: 20px; font-weight: 400; line-height: 1.25; }
+    .control-card p { margin-top: 8px; font-size: 13px; line-height: 1.5; color: var(--color-text-tertiary); }
+    .system-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-lg); }
+    .system-row { display: grid; grid-template-columns: 120px 1fr; gap: var(--space-lg); padding: 16px 0; border-bottom: 1px solid var(--color-rule-light); }
+    .folio-action svg { width: 12px; height: 12px; }
+    @media (max-width: 860px) { .glance-row, .privacy-grid, .health-grid, .system-grid, .connector-list { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } .surface-title { font-size: 56px; } }
+  </style>
+</head>
+<body
+  data-ds-name="Settings"
+  data-ds-tier="surface"
+  data-ds-spec="surfaces/Settings.md"
+  data-folio-label="Settings"
+  crumbs="Settings"
+  data-crumbs="Settings"
+  data-tint="turmeric"
+  data-active-page="settings"
+  data-folio-status="Auto-saved · just now"
+  data-folio-actions="search"
+  data-nav-base="."
+>
+  <div class="atmosphere" data-tint="turmeric" data-ds-name="AtmosphereLayer" data-ds-tier="chrome" data-ds-spec="chrome/AtmosphereLayer.md"></div>
+  <header class="folio" data-ds-name="FolioBar" data-ds-tier="chrome" data-ds-spec="chrome/FolioBar.md">
+    <div class="folio-left"><span class="folio-mark">*</span><span class="folio-label">Settings</span><span class="folio-crumbs"><a href=".">Settings</a></span></div>
+    <div class="folio-right"><span class="folio-search" data-ds-name="SearchAction" data-ds-tier="primitive" data-ds-spec="primitives/SearchAction.md">Search</span><span class="folio-status-dot" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span><span class="folio-status-text">Auto-saved · just now</span></div>
+  </header>
+  <nav class="nav-island" aria-label="Settings chapters" data-ds-name="FloatingNavIsland" data-ds-tier="chrome" data-ds-spec="chrome/FloatingNavIsland.md">
+    <a class="nav-island-item" href="#identity" aria-label="01 You" aria-current="page" data-tint="turmeric" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">01</a>
+    <a class="nav-island-item" href="#connectors" aria-label="02 Connectors" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">02</a>
+    <a class="nav-island-item" href="#briefing" aria-label="03 Briefing and AI" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">03</a>
+    <a class="nav-island-item" href="#data" aria-label="04 Data" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">04</a>
+    <a class="nav-island-item" href="#activity" aria-label="05 Activity" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">05</a>
+    <a class="nav-island-item" href="#system" aria-label="06 System" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">06</a>
+    <a class="nav-island-item" href="#diagnostics" aria-label="07 Diagnostics" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">07</a>
+  </nav>
+  <main class="page" data-ds-name="PageContainer" data-ds-tier="chrome" data-ds-spec="chrome/PageContainer.md">
+    <article class="surface-masthead hero-watermark-wrap" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
+      <div class="hero-watermark" data-tint="turmeric">*</div>
+      <p class="surface-eyebrow">Settings · Last edited 4 minutes ago</p>
+      <h1 class="surface-title">Settings</h1>
+      <p class="surface-lede">Your workspace is healthy, synchronized, and tuned for a customer success day at Automattic.</p>
+      <div class="glance-row" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
+        <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div class="glance-label">Connectors</div><div class="glance-value"><span class="status-dot" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span>6 healthy</div></div>
+        <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div class="glance-label">Database</div><div class="glance-value"><span class="status-dot" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span>220.8 MB</div></div>
+        <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div class="glance-label">AI today</div><div class="glance-value"><span class="status-dot warn" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span>82%</div></div>
+        <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div class="glance-label">Anomalies 24h</div><div class="glance-value"><span class="status-dot warn" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span>2 recovered</div></div>
+      </div>
+    </article>
+    <section id="identity" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
+      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">01 You</p><h2>Identity</h2><p class="section-epi">The profile that shapes briefings, saved context, and account summaries.</p></header>
+      <div class="rows">
+        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Name</div><p>Shown across Me, reports, and briefing notes.</p></div><span class="inline-input" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md">Sam Chen</span><span class="row-meta">Synced 2026-04-30</span></div>
+        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Role</div><p>Used to prioritize CSM workflows and account context.</p></div><span class="inline-input" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md">Customer Success Manager</span><span class="row-meta">Automattic</span></div>
+        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Presets</div><p>Role presets change vocabulary, reports, and default filters.</p></div><div class="segmented" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md"><button class="segment active" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">CSM</button><button class="segment" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Sales</button><button class="segment" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Lead</button></div><div class="chip-row"><span class="chip" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Retention</span><span class="chip" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Expansion</span></div></div>
+      </div>
+    </section>
+    <section id="connectors" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
+      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">02 Connectors</p><h2>Connectors</h2><p class="section-epi">External services that feed the morning briefing and account timeline.</p></header>
+      <div class="connector-list">
+        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Gmail</div><p>Last mail sync 2026-04-30 08:44.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
+        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Calendar</div><p>Events indexed through 2026-04-30.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
+        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Drive</div><p>24 account docs refreshed 2026-04-29.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
+        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Granola</div><p>12 notes imported this week.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
+        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Linear</div><p>Customer-linked issues updated 2026-04-28.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
+        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Quill</div><p>Draft notes ready for review.</p></div><span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Recovering</span></article>
+      </div>
+    </section>
+    <section id="briefing" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
+      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">03 Briefing &amp; AI</p><h2>Briefing &amp; AI</h2><p class="section-epi">Defaults for briefings, recommendations, and voice.</p></header>
+      <div class="rows">
+        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Auto-refresh</div><p>Refresh the daily briefing when account context changes.</p></div><button class="switch is-on" aria-pressed="true" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"></button><span class="row-meta">Every 20 min</span></div>
+        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Voice</div><p>Keep recommendations calm, explicit, and account-grounded.</p></div><div class="segmented" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md"><button class="segment" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Concise</button><button class="segment active" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Direct</button><button class="segment" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Warm</button></div><span class="row-meta">Default</span></div>
+        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">AI budget guardrail</div><p>Warn when daily model usage crosses the team limit.</p></div><button class="switch is-on" aria-pressed="true" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"></button><span class="row-meta">82% today</span></div>
+        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Account-first summaries</div><p>Bias briefs toward open risks and customer outcomes.</p></div><button class="switch is-on" aria-pressed="true" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"></button><span class="row-meta">CSM preset</span></div>
+      </div>
+    </section>
+    <section id="data" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
+      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">04 Data</p><h2>Data</h2><p class="section-epi">Privacy controls for retention, export, and sensitive sources.</p></header>
+      <div class="privacy-grid">
+        <article class="control-card" data-ds-name="PrivacyControl" data-ds-tier="pattern" data-ds-spec="patterns/PrivacyControl.md"><h3>Local-first index</h3><p>Keep embeddings and summaries on this device unless explicitly exported.</p><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Enabled</span></article>
+        <article class="control-card" data-ds-name="PrivacyControl" data-ds-tier="pattern" data-ds-spec="patterns/PrivacyControl.md"><h3>Retention window</h3><p>Prune raw connector events after 180 days while keeping derived account memory.</p><span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>180 days</span></article>
+        <article class="control-card" data-ds-name="PrivacyControl" data-ds-tier="pattern" data-ds-spec="patterns/PrivacyControl.md"><h3>Export package</h3><p>Last export completed 2026-04-26 with profile, account, and activity JSON.</p><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Ready</span></article>
+      </div>
+    </section>
+    <section id="activity" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
+      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">05 Activity</p><h2>Activity</h2><p class="section-epi">The last five system events affecting settings and context.</p></header>
+      <div class="timeline" data-ds-name="Timeline" data-ds-tier="pattern" data-ds-spec="patterns/Timeline.md">
+        <article class="timeline-entry" data-type="event" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 30</span><div class="log-copy"><h3 class="timeline-title">Quill connector recovered after retry.</h3><p>Backfill finished in 38 seconds.</p></div></div></article>
+        <article class="timeline-entry" data-type="context" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 29</span><div class="log-copy"><h3 class="timeline-title">CSM preset tuned account summary bias.</h3><p>Retention risks now lead briefings.</p></div></div></article>
+        <article class="timeline-entry" data-type="email" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 28</span><div class="log-copy"><h3 class="timeline-title">Gmail scope refreshed.</h3><p>Read-only mail scope verified.</p></div></div></article>
+        <article class="timeline-entry" data-type="capture" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 25</span><div class="log-copy"><h3 class="timeline-title">Automattic playbook chips updated.</h3><p>Saved expansion and renewal rituals.</p></div></div></article>
+        <article class="timeline-entry" data-type="value" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 24</span><div class="log-copy"><h3 class="timeline-title">Database compaction completed.</h3><p>Recovered 18.4 MB without data loss.</p></div></div></article>
+      </div>
+    </section>
+    <section id="system" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
+      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">06 System</p><h2>System</h2><p class="section-epi">Version, runtime, and integration status for the local workspace.</p></header>
+      <div class="system-grid">
+        <div class="system-row" data-ds-name="SystemStatusRow" data-ds-tier="pattern" data-ds-spec="patterns/SystemStatusRow.md"><div class="system-key">App</div><div class="system-value">DailyOS 1.4.4 reference</div></div>
+        <div class="system-row" data-ds-name="SystemStatusRow" data-ds-tier="pattern" data-ds-spec="patterns/SystemStatusRow.md"><div class="system-key">Runtime</div><div class="system-value">Tauri shell ready</div></div>
+        <div class="system-row" data-ds-name="SystemStatusRow" data-ds-tier="pattern" data-ds-spec="patterns/SystemStatusRow.md"><div class="system-key">Index</div><div class="system-value">4,218 context chunks</div></div>
+        <div class="system-row" data-ds-name="SystemStatusRow" data-ds-tier="pattern" data-ds-spec="patterns/SystemStatusRow.md"><div class="system-key">Sync</div><div class="system-value">Last pass 2026-04-30</div></div>
+      </div>
+    </section>
+    <section id="diagnostics" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
+      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">07 Diagnostics</p><h2>Diagnostics</h2><p class="section-epi">Health checks for sync, storage, retrieval, and briefing generation.</p></header>
+      <div class="health-grid">
+        <article class="control-card" data-ds-name="HealthCheck" data-ds-tier="pattern" data-ds-spec="patterns/HealthCheck.md"><h3>Connector sweep</h3><p>6 passed, 0 failed after one recovered retry.</p><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Passed</span></article>
+        <article class="control-card" data-ds-name="HealthCheck" data-ds-tier="pattern" data-ds-spec="patterns/HealthCheck.md"><h3>Vector recall</h3><p>Recall fixture returned the expected Automattic account memory.</p><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Passed</span></article>
+        <article class="control-card" data-ds-name="HealthCheck" data-ds-tier="pattern" data-ds-spec="patterns/HealthCheck.md"><h3>Briefing render</h3><p>Next briefing dry-run completed with 82% daily AI budget used.</p><span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Watch</span></article>
+      </div>
+    </section>
+    <footer class="finis" data-ds-name="FinisMarker" data-ds-tier="chrome" data-ds-spec="chrome/FinisMarker.md">
+      <div class="finis-mark">*</div>
+      <div class="finis-date">Auto-saved just now</div>
+      <p class="finis-caption">Settings changes persist as they happen.</p>
+    </footer>
+  </main>
+  <script>
+    document.querySelectorAll(".switch").forEach((control) => {
+      control.addEventListener("click", () => {
+        const active = control.classList.toggle("is-on");
+        control.setAttribute("aria-pressed", active ? "true" : "false");
+      });
+    });
+  </script>
+</body>
+</html>

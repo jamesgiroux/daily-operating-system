@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>People | DailyOS Reference</title>
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/tokens.css">
+  <link rel="stylesheet" href="../_shared/primitives.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+  <style>
+    .index-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); margin-top: var(--space-lg); }
+    .stat-card { border-top: 1px solid var(--color-rule-heavy); padding-top: 12px; }
+    .stat-value { font-family: var(--font-serif); font-size: 32px; line-height: 1; color: var(--color-text-primary); }
+    .stat-label { margin-top: 6px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); }
+    .index-toolbar { display: flex; align-items: end; justify-content: space-between; gap: var(--space-lg); margin: var(--space-xl) 0 var(--space-lg); }
+    .list-shell { border-top: 1px solid var(--color-rule-heavy); border-bottom: 1px solid var(--color-rule-heavy); }
+    .list-head, .person-row { display: grid; grid-template-columns: minmax(220px, 1.3fr) minmax(180px, 1fr) 170px 128px 108px; gap: var(--space-md); align-items: center; }
+    .list-head { padding: 12px 0; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); border-bottom: 1px solid var(--color-rule-light); }
+    .person-row { min-height: 76px; padding: 14px 0; border-bottom: 1px solid var(--color-rule-light); }
+    .person-row:last-child { border-bottom: none; }
+    .person-main { display: grid; grid-template-columns: 44px 1fr; gap: 12px; align-items: center; }
+    .avatar { width: 44px; height: 44px; border-radius: 50%; display: flex; align-items: center; justify-content: center; background: var(--color-garden-larkspur-15); color: #3a4d6b; font-family: var(--font-serif); font-size: 18px; }
+    .entity-title { font-family: var(--font-serif); font-size: 22px; line-height: 1.15; color: var(--color-text-primary); }
+    .entity-sub, .date-cell { margin-top: 5px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--color-text-tertiary); }
+    .title-cell { font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); }
+    .entity-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 4px; background: var(--color-garden-larkspur-10); color: #3a4d6b; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+    .entity-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-entity-person); }
+    @media (max-width: 900px) {
+      .index-stats { grid-template-columns: 1fr; }
+      .list-head { display: none; }
+      .person-row { grid-template-columns: 1fr; gap: 10px; }
+    }
+  </style>
+</head>
+<body data-folio-label="People" data-folio-crumbs="People" data-tint="larkspur" data-active-page="people" data-nav-base=".">
+  <main class="page" data-ds-name="PeopleIndexSurface" data-ds-tier="surface" data-ds-spec="surface.people.index">
+    <section class="hero" data-ds-name="Hero" data-ds-tier="pattern" data-ds-spec="pattern.index.hero">
+      <div class="hero-eyebrow"><span class="quality-dot"></span>People index</div>
+      <h1 class="hero-title">People</h1>
+      <p class="hero-lede">Stakeholders and teammates organized for fast recall: role, account, relationship signal, and the latest touch.</p>
+      <div class="index-stats" data-ds-name="SummaryStats" data-ds-tier="pattern" data-ds-spec="pattern.index.summary-stats">
+        <div class="stat-card"><div class="stat-value">10</div><div class="stat-label">Tracked people</div></div>
+        <div class="stat-card"><div class="stat-value">7</div><div class="stat-label">External stakeholders</div></div>
+        <div class="stat-card"><div class="stat-value">5</div><div class="stat-label">Touched in April</div></div>
+      </div>
+    </section>
+
+    <section class="index-toolbar" data-ds-name="IndexToolbar" data-ds-tier="pattern" data-ds-spec="pattern.index.toolbar">
+      <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="pattern.chapter-heading">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Relationship map</h2>
+        <p class="chapter-epigraph">External and internal contacts sorted by temperature and recent activity.</p>
+      </div>
+      <span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.filter"><span class="pill-dot"></span>All people</span>
+    </section>
+
+    <section class="list-shell" aria-label="People list" data-ds-name="PeopleList" data-ds-tier="pattern" data-ds-spec="pattern.people.list">
+      <div class="list-head" data-ds-name="ListHeader" data-ds-tier="pattern" data-ds-spec="pattern.index.list-header">
+        <span>Name</span><span>Title</span><span>Account</span><span>Signal</span><span>Last touch</span>
+      </div>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row">
+        <div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">JP</span><div><div class="entity-title">Jen Park</div><div class="entity-sub">jen.park@example.com</div></div></div>
+        <span class="title-cell">CTO @ Acme</span>
+        <span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Acme Corp</span>
+        <span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Champion</span>
+        <span class="date-cell">2026-04-28</span>
+      </article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">DM</span><div><div class="entity-title">Dan Mitchell</div><div class="entity-sub">dan.mitchell@example.com</div></div></div><span class="title-cell">Eng Lead @ Acme</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Acme Corp</span><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Technical</span><span class="date-cell">2026-04-27</span></article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">PR</span><div><div class="entity-title">Priya Raman</div><div class="entity-sub">priya.raman@example.com</div></div></div><span class="title-cell">CSM internal</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">DailyOS Platform</span><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Internal</span><span class="date-cell">2026-04-26</span></article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">MD</span><div><div class="entity-title">Marco Devine</div><div class="entity-sub">marco.devine@example.com</div></div></div><span class="title-cell">Champion @ Meridian Harbor</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Meridian Harbor</span><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Champion</span><span class="date-cell">2026-04-24</span></article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">AM</span><div><div class="entity-title">Aoife Murphy</div><div class="entity-sub">aoife.murphy@example.com</div></div></div><span class="title-cell">Procurement @ Meridian</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Meridian Harbor</span><span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Buyer</span><span class="date-cell">2026-04-23</span></article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">LK</span><div><div class="entity-title">Liu Kang</div><div class="entity-sub">liu.kang@example.com</div></div></div><span class="title-cell">Architect @ Meridian</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Meridian Harbor</span><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Architect</span><span class="date-cell">2026-04-22</span></article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">SW</span><div><div class="entity-title">Sara Wu</div><div class="entity-sub">sara.wu@example.com</div></div></div><span class="title-cell">VP Eng @ Acme</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Acme Corp</span><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Exec</span><span class="date-cell">2026-04-20</span></article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">KO</span><div><div class="entity-title">Kevin Otieno</div><div class="entity-sub">kevin.otieno@example.com</div></div></div><span class="title-cell">CSM @ Northwind</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Northwind Traders</span><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>CSM</span><span class="date-cell">2026-04-19</span></article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">GH</span><div><div class="entity-title">Gina Holt</div><div class="entity-sub">gina.holt@example.com</div></div></div><span class="title-cell">Procurement @ Globex</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Globex Inc</span><span class="pill" data-tone="terracotta" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Skeptic</span><span class="date-cell">2026-04-17</span></article>
+      <article class="person-row" data-ds-name="PersonRow" data-ds-tier="pattern" data-ds-spec="pattern.people.row"><div class="person-main"><span class="avatar" data-ds-name="Avatar" data-ds-tier="primitive" data-ds-spec="primitive.avatar.initials">AR</span><div><div class="entity-title">Ari Reyes</div><div class="entity-sub">ari.reyes@example.com</div></div></div><span class="title-cell">Partner Lead @ Umbrella</span><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Umbrella Health</span><span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.relationship"><span class="pill-dot"></span>Partner</span><span class="date-cell">2026-04-15</span></article>
+    </section>
+  </main>
+  <script src="../_shared/chrome.js"></script>
+  <script src="../_shared/inspector.js"></script>
+</body>
+</html>

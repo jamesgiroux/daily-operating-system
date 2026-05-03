@@ -22,6 +22,33 @@ Format:
 
 ---
 
+## [0.5.0] — 2026-05-03
+
+### Added
+
+**Substrate promotion (DOS-358):**
+- `_shared/{tokens,primitives,chrome,fonts}.css + chrome.js` moved from `.docs/mockups/claude-design-project/mockups/surfaces/_shared/` to canonical `.docs/design/reference/_shared/`. Mockup `<link>` and `<script>` paths updated.
+- `chrome.js` enhanced with `data-nav-base` support: when set on body, `FloatingNavIsland` renders nav items as anchor tags linking to peer surface files (`<base>/<id>.html`). When unset, items render as buttons (mockup default — backward compatible).
+
+**Reference renders (17 HTML files):**
+- `reference/index.html` — hub linking every surface + system showcase, with surface-card grid grouped by area.
+- `reference/surfaces/` — 13 surface clones with mock data, all interlinked via `data-nav-base="."`:
+  - `briefing.html`, `week.html`, `accounts.html`, `projects.html`, `people.html`, `settings.html`, `me.html` (codex-written)
+  - `account.html`, `project.html`, `person.html`, `meeting.html`, `inbox.html`, `actions.html` (hand-written after codex agents hung)
+- `reference/system/` — 3 design-system showcase pages:
+  - `tokens.html` — color swatches by family, type ramps, spacing scale, shadows, z-index
+  - `primitives.html` — gallery of all 18 primitives with variants, grouped by wave
+  - `patterns.html` — gallery of all 31 patterns with representative renders, grouped by wave (jump-nav)
+- All reference renders carry `data-ds-name` + `data-ds-tier` + `data-ds-spec` attributes per the inspector convention; press `?` on any page to toggle inspect mode.
+
+### Notes
+
+- Mock-data palette: Acme Corp / Globex Inc / Northwind Traders / Meridian Harbor / Stark Industries; Jen Park / Dan Mitchell / Priya Raman / Marco Devine / Aoife Murphy / Liu Kang / Sara Wu / Kevin Otieno; subsidiary.com / parent.com / example.com domains. No real customer data anywhere.
+- Codex spec writing for waves 2-4 worked reliably with bounded prompts; reference render generation hit hangs again on 5 of 8 agents — fell back to hand-writing the missing surfaces (account, project, person, meeting, inbox, actions, system pages). Pattern: HTML generation at this size is at the edge of bounded-codex reliability.
+- v1.4.3 / v1.4.4 / Settings redesign / Meeting Detail redesign now have working visual references designers + reviewers can open in browser and navigate as if they were the app.
+
+---
+
 ## [0.4.0] — 2026-05-03
 
 ### Added

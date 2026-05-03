@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Actions · DailyOS Reference</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/primitives.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+<style>
+  .glance-strip {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 24px;
+    margin-bottom: 32px;
+  }
+  .glance-cell {
+    border-left: 2px solid var(--color-rule-heavy);
+    padding-left: 14px;
+  }
+  .glance-cell .gk {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-text-tertiary);
+    margin-bottom: 4px;
+  }
+  .glance-cell .gv {
+    font-family: var(--font-serif);
+    font-size: 22px;
+    color: var(--color-text-primary);
+  }
+  .glance-cell.warn { border-left-color: var(--color-spice-terracotta); }
+  .glance-cell.warn .gv { color: var(--color-spice-terracotta); }
+</style>
+</head>
+<body
+  data-folio-label="Actions"
+  data-folio-crumbs="Actions"
+  data-tint="terracotta"
+  data-active-page="actions"
+  data-nav-base=".">
+
+<main class="page" data-ds-name="Actions" data-ds-tier="surface" data-ds-spec="surfaces/Actions.md">
+
+<header class="hero" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
+  <div class="hero-eyebrow">
+    <span class="quality-dot"></span>
+    Actions · 4 due this week · 1 overdue
+  </div>
+  <h1 class="hero-title">Actions</h1>
+  <p class="hero-lede">Commitments you've taken on across customers, projects, and internal work. Sorted by urgency.</p>
+
+  <div class="glance-strip" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
+    <div class="glance-cell warn" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
+      <div class="gk">Overdue</div>
+      <div class="gv">1</div>
+    </div>
+    <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
+      <div class="gk">Due this week</div>
+      <div class="gv">4</div>
+    </div>
+    <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
+      <div class="gk">Open total</div>
+      <div class="gv">11</div>
+    </div>
+    <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
+      <div class="gk">Completed (30d)</div>
+      <div class="gv">23</div>
+    </div>
+  </div>
+</header>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Overdue<span class="margin-label-count">1 item</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Overdue</h2>
+    </div>
+
+    <div class="action-row overdue" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Send adjusted pricing memo to Jen Park <em>— Acme Corp · renewal blocker</em></span>
+      <span class="action-meta">Due 2d ago · P1</span>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">This week<span class="margin-label-count">4 items</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Due this week</h2>
+    </div>
+
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Loop Dan Mitchell on Acme MSA redlines</span>
+      <span class="action-meta">Due Today · P2</span>
+    </div>
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Send three pricing scenarios for Apr 24 follow-up <em>— Meridian Harbor</em></span>
+      <span class="action-meta">Due Apr 22 · P1</span>
+    </div>
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Audit-log export to Marco Devine <em>— carried over from March</em></span>
+      <span class="action-meta">Due Apr 25 · P1</span>
+    </div>
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Loop Anika in on the discount-floor request <em>— Meridian Harbor</em></span>
+      <span class="action-meta">Due Apr 22 · P1</span>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Later<span class="margin-label-count">6 items</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Later</h2>
+      <p class="chapter-epigraph">Tracked but not due this week.</p>
+    </div>
+
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Draft case-study quote for Marco Devine's review <em>— Meridian Harbor</em></span>
+      <span class="action-meta">Due Apr 30 · P2</span>
+    </div>
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">1:1 prep with Priya Raman — narrative for Q2</span>
+      <span class="action-meta">Due May 2 · P3</span>
+    </div>
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Re-intro to Kevin Otieno — Northwind</span>
+      <span class="action-meta">Due May 5 · P2</span>
+    </div>
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Schedule Stark Industries quarterly</span>
+      <span class="action-meta">Due May 8 · P3</span>
+    </div>
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Snooze Globex to Q3 budget review</span>
+      <span class="action-meta">Due Jul 1 · P3</span>
+    </div>
+    <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md">
+      <span class="action-check"></span>
+      <span class="action-title">Internal — Q2 forecast review prep</span>
+      <span class="action-meta">Due Jun 1 · P3</span>
+    </div>
+  </div>
+</section>
+
+<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
+  <div class="finis-mark">*&nbsp;&nbsp;*&nbsp;&nbsp;*</div>
+  <div class="finis-date">Apr 23, 2026</div>
+</div>
+
+</main>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

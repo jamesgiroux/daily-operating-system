@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Q2 Launch · DailyOS Reference</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/primitives.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+<style>
+  .vitals-row .vital { padding: 0 14px; border-right: 1px solid var(--color-rule-light); }
+  .vitals-row .vital:last-child { border-right: none; }
+  .stake-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px 32px; }
+</style>
+</head>
+<body
+  data-folio-label="Project"
+  data-folio-crumbs="Projects > Q2 Launch"
+  data-tint="olive"
+  data-active-page="projects"
+  data-nav-base=".">
+
+<main class="page" data-ds-name="ProjectDetail" data-ds-tier="surface" data-ds-spec="surfaces/ProjectDetail.md">
+
+<header class="hero" data-ds-name="ProjectHero" data-ds-tier="pattern" data-ds-spec="patterns/ProjectHero.md">
+  <a href="projects.html" class="hero-parent-link">← Projects</a>
+  <div class="hero-eyebrow">
+    <span class="quality-dot"></span>
+    Active · Owner: You · Parent: <a href="account.html" style="border-bottom:1px solid var(--color-rule-heavy);">Acme Corp</a>
+  </div>
+  <span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>On track</span>
+  <h1 class="hero-title">Q2 Launch</h1>
+  <p class="hero-lede">Launching the multi-tenant pricing tier 3 capability for Acme Corp. Engineering shipped two of three milestones; documentation + customer-facing rollout this week.</p>
+
+  <div class="vitals" data-ds-name="VitalsStrip" data-ds-tier="pattern" data-ds-spec="patterns/VitalsStrip.md">
+    <div class="vitals-row">
+      <div class="vital">
+        <span class="vital-text" data-highlight="olive">Stage Active</span>
+        <span class="vital-source">since Mar 1</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text">Due May 15</span>
+        <span class="vital-source">22 days</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text" data-highlight="sage">2/3 milestones</span>
+        <span class="vital-source">last shipped 4d ago</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text">Owner You</span>
+        <span class="vital-source">PM</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text" data-highlight="larkspur">4 stakeholders</span>
+        <span class="vital-source">Acme + 1 internal</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Status<span class="margin-label-count">on track</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">What's happening</h2>
+      <p class="chapter-epigraph">Project state in one sentence per chapter.</p>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:18px;">
+      <div data-ds-name="ChapterFreshness" data-ds-tier="pattern" data-ds-spec="patterns/ChapterFreshness.md" style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.04em; color:var(--color-text-tertiary); border-bottom:1px solid var(--color-rule-light); padding-bottom:14px;">
+        <strong style="color:var(--color-text-primary); font-family:var(--font-serif); font-size:16px; font-weight:400; display:block; margin-bottom:4px;">Engineering — 4d ago</strong>
+        Tier 3 backend deployed to staging Apr 19. Dan Mitchell + 2 confirmed; load tests green. Production cutover planned for Apr 30.
+      </div>
+      <div data-ds-name="ChapterFreshness" data-ds-tier="pattern" data-ds-spec="patterns/ChapterFreshness.md" style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.04em; color:var(--color-text-tertiary); border-bottom:1px solid var(--color-rule-light); padding-bottom:14px;">
+        <strong style="color:var(--color-text-primary); font-family:var(--font-serif); font-size:16px; font-weight:400; display:block; margin-bottom:4px;">Documentation — 2d ago</strong>
+        First draft of customer-facing pricing page in review with Sara Wu. Two open comments on tier 3 messaging.
+      </div>
+      <div data-ds-name="ChapterFreshness" data-ds-tier="pattern" data-ds-spec="patterns/ChapterFreshness.md" style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.04em; color:var(--color-text-tertiary); border-bottom:1px solid var(--color-rule-light); padding-bottom:14px;">
+        <strong style="color:var(--color-text-primary); font-family:var(--font-serif); font-size:16px; font-weight:400; display:block; margin-bottom:4px;">Customer rollout — today</strong>
+        Email sequence drafted. Pending Jen Park's pricing-memo blocker (see <a href="account.html" style="border-bottom:1px solid var(--color-rule-heavy);">Acme Corp</a>).
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Stakeholders<span class="margin-label-count">4 active</span></div>
+  <div class="margin-content">
+    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Stakeholders</h2></div>
+
+    <div class="stake-grid" data-ds-name="StakeholderGrid" data-ds-tier="pattern" data-ds-spec="patterns/StakeholderGrid.md">
+      <div class="stake-card" data-ds-name="StakeCard" data-ds-tier="pattern" data-ds-spec="patterns/StakeCard.md">
+        <div class="stake-avatar">JP</div>
+        <div>
+          <h3 class="stake-name"><a href="person.html">Jen Park</a></h3>
+          <p class="stake-title">CTO · Acme Corp</p>
+          <div class="stake-roles">
+            <span class="stake-role" data-role="champion">Champion</span>
+            <span class="stake-role" data-role="exec">Exec</span>
+          </div>
+          <p class="stake-assessment">Owner of the pricing decision; needs the adjusted memo before her exec sync.</p>
+        </div>
+      </div>
+
+      <div class="stake-card" data-ds-name="StakeCard" data-ds-tier="pattern" data-ds-spec="patterns/StakeCard.md">
+        <div class="stake-avatar">DM</div>
+        <div>
+          <h3 class="stake-name"><a href="person.html">Dan Mitchell</a></h3>
+          <p class="stake-title">Eng Lead · Acme Corp</p>
+          <div class="stake-roles">
+            <span class="stake-role" data-role="technical">Technical</span>
+          </div>
+          <p class="stake-assessment">Reviewing MSA redlines. Has historically resolved these in 2-3 days.</p>
+        </div>
+      </div>
+
+      <div class="stake-card" data-ds-name="StakeCard" data-ds-tier="pattern" data-ds-spec="patterns/StakeCard.md">
+        <div class="stake-avatar">SW</div>
+        <div>
+          <h3 class="stake-name"><a href="person.html">Sara Wu</a></h3>
+          <p class="stake-title">VP Engineering · Acme Corp</p>
+          <div class="stake-roles">
+            <span class="stake-role" data-role="exec">Exec</span>
+          </div>
+          <p class="stake-assessment">New on the renewal thread. Likely sponsoring architecture review.</p>
+        </div>
+      </div>
+
+      <div class="stake-card" data-ds-name="StakeCard" data-ds-tier="pattern" data-ds-spec="patterns/StakeCard.md">
+        <div class="stake-avatar">PR</div>
+        <div>
+          <h3 class="stake-name"><a href="person.html">Priya Raman</a></h3>
+          <p class="stake-title">CSM · Internal</p>
+          <div class="stake-roles">
+            <span class="stake-role" data-role="primary">Primary</span>
+          </div>
+          <p class="stake-assessment">Internal partner on rollout sequencing.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Record<span class="margin-label-count">5 events</span></div>
+  <div class="margin-content">
+    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">The Record</h2></div>
+
+    <div class="timeline" data-ds-name="UnifiedTimeline" data-ds-tier="pattern" data-ds-spec="patterns/UnifiedTimeline.md">
+      <div class="timeline-entry" data-type="meeting" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Apr 22</span>
+          <div>
+            <h3 class="timeline-title">Acme renewal call (in progress)</h3>
+            <p class="timeline-subtitle">Jen Park, Dan Mitchell, Sara Wu, you</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-entry" data-type="event" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Apr 19</span>
+          <div>
+            <h3 class="timeline-title">Backend deployed to staging</h3>
+            <p class="timeline-subtitle">Tier 3 capability + load tests green</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-entry" data-type="email" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Apr 18</span>
+          <div>
+            <h3 class="timeline-title">Sara Wu added to thread</h3>
+            <p class="timeline-subtitle">First time on Acme renewal thread</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-entry" data-type="meeting" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Apr 15</span>
+          <div>
+            <h3 class="timeline-title">Eng standup — tier 3 sign-off</h3>
+            <p class="timeline-subtitle">Dan Mitchell + 4 engineers</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-entry" data-type="value" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Mar 28</span>
+          <div>
+            <h3 class="timeline-title">Tier 3 design approved</h3>
+            <p class="timeline-subtitle">Architecture review with Sara Wu</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="add-row" data-ds-name="AddToRecord" data-ds-tier="pattern" data-ds-spec="patterns/AddToRecord.md">
+      <span>Add a note, event, or follow-up…</span>
+      <span class="add-cta">⌘ ⏎ to save</span>
+    </div>
+  </div>
+</section>
+
+<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
+  <div class="finis-mark">*&nbsp;&nbsp;*&nbsp;&nbsp;*</div>
+  <div class="finis-date">Apr 23, 2026 · enriched 2h ago</div>
+  <div class="finis-caption">Q2 Launch · Acme Corp · since Mar 2026</div>
+</div>
+
+</main>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

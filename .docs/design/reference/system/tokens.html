@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Tokens · DailyOS Design System</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/primitives.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+<style>
+  body {
+    background: var(--color-paper-cream);
+    padding: 48px 80px 96px;
+    font-family: var(--font-sans);
+    color: var(--color-text-primary);
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  header {
+    border-bottom: 1px solid var(--color-rule-heavy);
+    padding-bottom: 24px;
+    margin-bottom: 48px;
+  }
+  header .eyebrow {
+    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em;
+    text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 10px;
+  }
+  header h1 { font-family: var(--font-serif); font-size: 56px; font-weight: 400; letter-spacing: -0.02em; }
+  header p { font-family: var(--font-serif); font-style: italic; font-size: 18px; color: var(--color-text-secondary); margin-top: 12px; max-width: 720px; line-height: 1.55; }
+  nav.tier-nav { display: flex; gap: 24px; margin: 24px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  nav.tier-nav a { color: var(--color-text-tertiary); text-decoration: none; padding-bottom: 4px; border-bottom: 1px solid transparent; }
+  nav.tier-nav a:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+  nav.tier-nav a.active { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+  section { margin-bottom: 64px; }
+  section > h2 { font-family: var(--font-serif); font-size: 28px; font-weight: 400; margin-bottom: 6px; padding-top: 14px; border-top: 1px solid var(--color-rule-heavy); }
+  section > p.lede { font-family: var(--font-serif); font-style: italic; font-size: 15px; color: var(--color-text-tertiary); margin-bottom: 24px; }
+  h3 { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); margin: 24px 0 12px; }
+  .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
+  .swatch {
+    display: flex; gap: 12px; align-items: center;
+    padding: 10px; border: 1px solid var(--color-rule-light); border-radius: 6px;
+  }
+  .swatch .chip { width: 40px; height: 40px; border-radius: 4px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05); }
+  .swatch .meta { min-width: 0; }
+  .swatch .name { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-primary); }
+  .swatch .value { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); }
+  .type-row { padding: 14px 0; border-bottom: 1px solid var(--color-rule-light); display: grid; grid-template-columns: 200px 1fr; gap: 24px; align-items: baseline; }
+  .type-row .label { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); }
+  .space-row { display: grid; grid-template-columns: 80px 1fr 80px; gap: 16px; align-items: center; padding: 6px 0; }
+  .space-row .label { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); }
+  .space-row .bar { background: var(--color-spice-turmeric); height: 16px; border-radius: 2px; }
+  .space-row .px { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); text-align: right; }
+  .shadow-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 24px; }
+  .shadow-cell { background: var(--color-paper-warm-white); padding: 24px; border-radius: 8px; text-align: center; }
+  .shadow-cell .name { font-family: var(--font-mono); font-size: 11px; margin-top: 12px; color: var(--color-text-secondary); }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">DailyOS Design System · Reference</div>
+  <h1>Tokens</h1>
+  <p>Color, typography, spacing, motion. The lowest-level decisions every primitive and pattern consumes. Press <code>?</code> to inspect any element.</p>
+  <nav class="tier-nav">
+    <a href="../index.html">← Reference home</a>
+    <a href="tokens.html" class="active">Tokens</a>
+    <a href="primitives.html">Primitives</a>
+    <a href="patterns.html">Patterns</a>
+  </nav>
+</header>
+
+<section data-ds-name="ColorTokens" data-ds-tier="token" data-ds-spec="tokens/color.md">
+  <h2>Color</h2>
+  <p class="lede">Four-family palette per ADR-0076: Paper (grounds), Desk (frame + ink), Spice (warm accents), Garden (cool accents). Plus semantic + entity layers.</p>
+
+  <h3>Paper · grounds + backgrounds</h3>
+  <div class="swatch-grid">
+    <div class="swatch"><span class="chip" style="background:var(--color-paper-cream)"></span><div class="meta"><div class="name">--color-paper-cream</div><div class="value">#f5f2ef · page ground</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-paper-linen)"></span><div class="meta"><div class="name">--color-paper-linen</div><div class="value">#e8e2d9 · secondary surface</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-paper-warm-white)"></span><div class="meta"><div class="name">--color-paper-warm-white</div><div class="value">#faf8f6 · primary card</div></div></div>
+  </div>
+
+  <h3>Desk · ink + frame</h3>
+  <div class="swatch-grid">
+    <div class="swatch"><span class="chip" style="background:var(--color-desk-charcoal)"></span><div class="meta"><div class="name">--color-desk-charcoal</div><div class="value">#1e2530 · primary ink</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-desk-ink)"></span><div class="meta"><div class="name">--color-desk-ink</div><div class="value">#2a2b3d · alternate ink</div></div></div>
+  </div>
+
+  <h3>Spice · warm accents</h3>
+  <div class="swatch-grid">
+    <div class="swatch"><span class="chip" style="background:var(--color-spice-turmeric)"></span><div class="meta"><div class="name">--color-spice-turmeric</div><div class="value">#c9a227 · accounts, active</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-spice-saffron)"></span><div class="meta"><div class="name">--color-spice-saffron</div><div class="value">#deb841 · secondary warm</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-spice-terracotta)"></span><div class="meta"><div class="name">--color-spice-terracotta</div><div class="value">#c4654a · urgency, errors</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-spice-chili)"></span><div class="meta"><div class="name">--color-spice-chili</div><div class="value">#9b3a2a · critical</div></div></div>
+  </div>
+
+  <h3>Garden · cool accents</h3>
+  <div class="swatch-grid">
+    <div class="swatch"><span class="chip" style="background:var(--color-garden-sage)"></span><div class="meta"><div class="name">--color-garden-sage</div><div class="value">#7eaa7b · success, healthy</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-garden-olive)"></span><div class="meta"><div class="name">--color-garden-olive</div><div class="value">#6b7c52 · projects</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-garden-rosemary)"></span><div class="meta"><div class="name">--color-garden-rosemary</div><div class="value">#4a6741 · deep success</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-garden-larkspur)"></span><div class="meta"><div class="name">--color-garden-larkspur</div><div class="value">#8fa3c4 · people, forward</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-garden-eucalyptus)"></span><div class="meta"><div class="name">--color-garden-eucalyptus</div><div class="value">#6ba8a4 · user (/me), self</div></div></div>
+  </div>
+
+  <h3>Entity aliases · semantic identity (DOS-357)</h3>
+  <div class="swatch-grid">
+    <div class="swatch"><span class="chip" style="background:var(--color-entity-account)"></span><div class="meta"><div class="name">--color-entity-account</div><div class="value">→ turmeric</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-entity-project)"></span><div class="meta"><div class="name">--color-entity-project</div><div class="value">→ olive</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-entity-person)"></span><div class="meta"><div class="name">--color-entity-person</div><div class="value">→ larkspur</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-entity-action)"></span><div class="meta"><div class="name">--color-entity-action</div><div class="value">→ terracotta</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-entity-user)"></span><div class="meta"><div class="name">--color-entity-user</div><div class="value">→ eucalyptus</div></div></div>
+  </div>
+
+  <h3>Semantic text + rules</h3>
+  <div class="swatch-grid">
+    <div class="swatch"><span class="chip" style="background:var(--color-text-primary)"></span><div class="meta"><div class="name">--color-text-primary</div><div class="value">→ desk-charcoal</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-text-secondary)"></span><div class="meta"><div class="name">--color-text-secondary</div><div class="value">#5a6370 · body</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary)"></span><div class="meta"><div class="name">--color-text-tertiary</div><div class="value">#6b7280 · labels</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-rule-heavy)"></span><div class="meta"><div class="name">--color-rule-heavy</div><div class="value">12% charcoal · primary divider</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-rule-light)"></span><div class="meta"><div class="name">--color-rule-light</div><div class="value">6% charcoal · soft separator</div></div></div>
+  </div>
+</section>
+
+<section data-ds-name="TypographyTokens" data-ds-tier="token" data-ds-spec="tokens/typography.md">
+  <h2>Typography</h2>
+  <p class="lede">Four families per ADR-0073: Newsreader (display/serif), DM Sans (UI), JetBrains Mono (time/code), Montserrat (brand mark).</p>
+
+  <div class="type-row">
+    <span class="label">--font-serif · 76px · weight 400</span>
+    <div style="font-family:var(--font-serif); font-size:76px; font-weight:400; letter-spacing:-0.025em; line-height:1.06;">Hero title</div>
+  </div>
+  <div class="type-row">
+    <span class="label">--font-serif · 28px · weight 400</span>
+    <div style="font-family:var(--font-serif); font-size:28px; font-weight:400; letter-spacing:-0.005em;">Chapter heading</div>
+  </div>
+  <div class="type-row">
+    <span class="label">--font-serif italic · 21px · weight 300</span>
+    <div style="font-family:var(--font-serif); font-style:italic; font-size:21px; font-weight:300; line-height:1.65;">Italic lede or epigraph rendering across two lines for context.</div>
+  </div>
+  <div class="type-row">
+    <span class="label">--font-sans · 15px · weight 400</span>
+    <div style="font-family:var(--font-sans); font-size:15px; line-height:1.55;">Body text in DM Sans. Comfortable reading at this size for UI content.</div>
+  </div>
+  <div class="type-row">
+    <span class="label">--font-mono · 11px uppercase · 0.08em</span>
+    <div style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary);">EYEBROW LABEL · MONO UPPERCASE</div>
+  </div>
+  <div class="type-row">
+    <span class="label">--font-mono · 18px · time</span>
+    <div style="font-family:var(--font-mono); font-size:18px; font-weight:500;">10:00 · 45M</div>
+  </div>
+  <div class="type-row">
+    <span class="label">--font-mark · 18px · weight 800</span>
+    <div style="font-family:var(--font-mark); font-weight:800; font-size:18px; color:var(--color-spice-turmeric);">*</div>
+  </div>
+</section>
+
+<section data-ds-name="SpacingTokens" data-ds-tier="token" data-ds-spec="tokens/spacing.md">
+  <h2>Spacing</h2>
+  <p class="lede">Base 4px grid per ADR-0073. xs through 5xl.</p>
+
+  <div class="space-row"><span class="label">--space-xs</span><div class="bar" style="width:4px"></div><span class="px">4px</span></div>
+  <div class="space-row"><span class="label">--space-sm</span><div class="bar" style="width:8px"></div><span class="px">8px</span></div>
+  <div class="space-row"><span class="label">--space-md</span><div class="bar" style="width:16px"></div><span class="px">16px</span></div>
+  <div class="space-row"><span class="label">--space-lg</span><div class="bar" style="width:24px"></div><span class="px">24px</span></div>
+  <div class="space-row"><span class="label">--space-xl</span><div class="bar" style="width:32px"></div><span class="px">32px</span></div>
+  <div class="space-row"><span class="label">--space-2xl</span><div class="bar" style="width:48px"></div><span class="px">48px</span></div>
+  <div class="space-row"><span class="label">--space-3xl</span><div class="bar" style="width:56px"></div><span class="px">56px</span></div>
+  <div class="space-row"><span class="label">--space-4xl</span><div class="bar" style="width:72px"></div><span class="px">72px</span></div>
+  <div class="space-row"><span class="label">--space-5xl</span><div class="bar" style="width:80px"></div><span class="px">80px</span></div>
+</section>
+
+<section data-ds-name="MotionTokens" data-ds-tier="token" data-ds-spec="tokens/motion.md">
+  <h2>Motion + shadows</h2>
+  <p class="lede">Restrained motion. Editorial surfaces don't dance.</p>
+
+  <h3>Transitions</h3>
+  <div class="swatch-grid">
+    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary)"></span><div class="meta"><div class="name">--transition-fast</div><div class="value">0.12s ease · hover</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary)"></span><div class="meta"><div class="name">--transition-normal</div><div class="value">0.15s ease · color/bg</div></div></div>
+  </div>
+
+  <h3>Shadows · elevation</h3>
+  <div class="shadow-grid">
+    <div class="shadow-cell" style="box-shadow:var(--shadow-sm)"><div class="name">--shadow-sm</div></div>
+    <div class="shadow-cell" style="box-shadow:var(--shadow-md)"><div class="name">--shadow-md</div></div>
+    <div class="shadow-cell" style="box-shadow:var(--shadow-lg)"><div class="name">--shadow-lg</div></div>
+    <div class="shadow-cell" style="box-shadow:var(--shadow-xl)"><div class="name">--shadow-xl</div></div>
+    <div class="shadow-cell" style="box-shadow:var(--shadow-modal)"><div class="name">--shadow-modal</div></div>
+    <div class="shadow-cell" style="box-shadow:var(--shadow-dropdown)"><div class="name">--shadow-dropdown</div></div>
+  </div>
+
+  <h3>Z-index stack</h3>
+  <div class="swatch-grid">
+    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary); width:18px; height:18px; border-radius:50%; align-self:center;"></span><div class="meta"><div class="name">--z-atmosphere · 0</div><div class="value">background layer</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary); width:18px; height:18px; border-radius:50%; align-self:center;"></span><div class="meta"><div class="name">--z-page-content · 1</div><div class="value">main content</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary); width:18px; height:18px; border-radius:50%; align-self:center;"></span><div class="meta"><div class="name">--z-app-shell · 100</div><div class="value">folio + nav</div></div></div>
+    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary); width:18px; height:18px; border-radius:50%; align-self:center;"></span><div class="meta"><div class="name">--z-lock · 1000</div><div class="value">lock overlay</div></div></div>
+  </div>
+</section>
+
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

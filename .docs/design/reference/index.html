@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>DailyOS Design System · Reference</title>
+<link rel="stylesheet" href="_shared/tokens.css">
+<link rel="stylesheet" href="_shared/primitives.css">
+<link rel="stylesheet" href="_shared/inspector.css">
+<style>
+  body {
+    background: var(--color-paper-cream);
+    padding: 56px 80px 96px;
+    font-family: var(--font-sans);
+    color: var(--color-text-primary);
+    max-width: 1100px;
+    margin: 0 auto;
+  }
+  header {
+    border-bottom: 1px solid var(--color-rule-heavy);
+    padding-bottom: 32px;
+    margin-bottom: 48px;
+  }
+  header .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 12px; }
+  header h1 { font-family: var(--font-serif); font-size: 64px; font-weight: 400; letter-spacing: -0.025em; line-height: 1.06; max-width: 800px; }
+  header .lede { font-family: var(--font-serif); font-style: italic; font-size: 21px; color: var(--color-text-secondary); margin-top: 16px; max-width: 720px; line-height: 1.55; }
+  section { margin-bottom: 64px; }
+  section > h2 { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-tertiary); padding-bottom: 8px; border-bottom: 1px solid var(--color-rule-heavy); margin-bottom: 18px; }
+  .surface-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+    gap: 14px;
+  }
+  .surface-card {
+    display: block;
+    padding: 20px;
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    border-radius: 8px;
+    color: inherit;
+    text-decoration: none;
+    transition: border-color 0.15s, transform 0.15s;
+  }
+  .surface-card:hover {
+    border-color: var(--color-spice-turmeric);
+    transform: translateY(-1px);
+  }
+  .surface-card .surface-tint {
+    width: 6px; height: 24px; border-radius: 3px; margin-bottom: 12px;
+  }
+  .surface-card h3 { font-family: var(--font-serif); font-size: 18px; font-weight: 400; margin-bottom: 4px; }
+  .surface-card .meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 8px; }
+  .surface-card .desc { font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); line-height: 1.45; }
+  .system-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }
+  .footer { margin-top: 64px; padding-top: 24px; border-top: 1px solid var(--color-rule-light); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--color-text-tertiary); display: flex; justify-content: space-between; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">DailyOS Design System · Reference</div>
+  <h1>Reference</h1>
+  <p class="lede">Working static-HTML clones of every app surface, with mock data, linked together to mimic in-app navigation. Plus system showcases for tokens, primitives, and patterns. Press <code>?</code> on any page to inspect.</p>
+</header>
+
+<section>
+  <h2>Surfaces</h2>
+  <div class="surface-grid">
+    <a class="surface-card" href="surfaces/briefing.html">
+      <div class="surface-tint" style="background:var(--color-spice-turmeric)"></div>
+      <h3>Daily Briefing</h3>
+      <div class="meta">briefing.html · turmeric</div>
+      <p class="desc">Morning chief-of-staff briefing — meetings, signals, the day's shape.</p>
+    </a>
+    <a class="surface-card" href="surfaces/week.html">
+      <div class="surface-tint" style="background:var(--color-garden-larkspur)"></div>
+      <h3>Week</h3>
+      <div class="meta">week.html · larkspur</div>
+      <p class="desc">Five-day forward calendar view with intelligence overlay.</p>
+    </a>
+    <a class="surface-card" href="surfaces/inbox.html">
+      <div class="surface-tint" style="background:var(--color-garden-larkspur)"></div>
+      <h3>Inbox</h3>
+      <div class="meta">inbox.html · larkspur</div>
+      <p class="desc">Captures awaiting routing — emails, calendar, drive, notes.</p>
+    </a>
+    <a class="surface-card" href="surfaces/actions.html">
+      <div class="surface-tint" style="background:var(--color-spice-terracotta)"></div>
+      <h3>Actions</h3>
+      <div class="meta">actions.html · terracotta</div>
+      <p class="desc">Commitments across customers, projects, internal — sorted by urgency.</p>
+    </a>
+    <a class="surface-card" href="surfaces/accounts.html">
+      <div class="surface-tint" style="background:var(--color-spice-turmeric)"></div>
+      <h3>Accounts</h3>
+      <div class="meta">accounts.html · turmeric</div>
+      <p class="desc">Account list with health, stage, and stakeholder metadata.</p>
+    </a>
+    <a class="surface-card" href="surfaces/account.html">
+      <div class="surface-tint" style="background:var(--color-spice-turmeric)"></div>
+      <h3>Account Detail</h3>
+      <div class="meta">account.html · turmeric</div>
+      <p class="desc">Acme Corp · three-lens detail (Health & Outlook · Context · Work).</p>
+    </a>
+    <a class="surface-card" href="surfaces/projects.html">
+      <div class="surface-tint" style="background:var(--color-garden-olive)"></div>
+      <h3>Projects</h3>
+      <div class="meta">projects.html · olive</div>
+      <p class="desc">Project list with status pills, owners, due dates.</p>
+    </a>
+    <a class="surface-card" href="surfaces/project.html">
+      <div class="surface-tint" style="background:var(--color-garden-olive)"></div>
+      <h3>Project Detail</h3>
+      <div class="meta">project.html · olive</div>
+      <p class="desc">Q2 Launch · status, stakeholders, the record.</p>
+    </a>
+    <a class="surface-card" href="surfaces/people.html">
+      <div class="surface-tint" style="background:var(--color-garden-larkspur)"></div>
+      <h3>People</h3>
+      <div class="meta">people.html · larkspur</div>
+      <p class="desc">Stakeholder list across accounts.</p>
+    </a>
+    <a class="surface-card" href="surfaces/person.html">
+      <div class="surface-tint" style="background:var(--color-garden-larkspur)"></div>
+      <h3>Person Detail</h3>
+      <div class="meta">person.html · larkspur</div>
+      <p class="desc">Marco Devine · relationship arc, network, record.</p>
+    </a>
+    <a class="surface-card" href="surfaces/meeting.html">
+      <div class="surface-tint" style="background:var(--color-spice-turmeric)"></div>
+      <h3>Meeting Detail</h3>
+      <div class="meta">meeting.html · turmeric</div>
+      <p class="desc">Meridian Harbor QBR recap · plan · predictions · findings · commitments.</p>
+    </a>
+    <a class="surface-card" href="surfaces/me.html">
+      <div class="surface-tint" style="background:var(--color-garden-eucalyptus)"></div>
+      <h3>Me</h3>
+      <div class="meta">me.html · eucalyptus</div>
+      <p class="desc">Your profile, role, presets, playbooks.</p>
+    </a>
+    <a class="surface-card" href="surfaces/settings.html">
+      <div class="surface-tint" style="background:var(--color-spice-turmeric)"></div>
+      <h3>Settings</h3>
+      <div class="meta">settings.html · turmeric</div>
+      <p class="desc">Identity, connectors, briefing, data, activity, system, diagnostics.</p>
+    </a>
+  </div>
+</section>
+
+<section>
+  <h2>System showcases</h2>
+  <div class="system-grid">
+    <a class="surface-card" href="system/tokens.html">
+      <div class="surface-tint" style="background:#5b6cff"></div>
+      <h3>Tokens</h3>
+      <div class="meta">system/tokens.html</div>
+      <p class="desc">Color, typography, spacing, motion. The lowest-level decisions.</p>
+    </a>
+    <a class="surface-card" href="system/primitives.html">
+      <div class="surface-tint" style="background:#1ea672"></div>
+      <h3>Primitives</h3>
+      <div class="meta">system/primitives.html</div>
+      <p class="desc">All 18 primitives with variants. Generic, unopinionated.</p>
+    </a>
+    <a class="surface-card" href="system/patterns.html">
+      <div class="surface-tint" style="background:#d97a1a"></div>
+      <h3>Patterns</h3>
+      <div class="meta">system/patterns.html</div>
+      <p class="desc">All 31 patterns by wave. Composed, opinionated, named for the job.</p>
+    </a>
+  </div>
+</section>
+
+<div class="footer">
+  <span>Design System v0.4.0</span>
+  <span>Press <code>?</code> on any page to toggle inspector</span>
+</div>
+
+<script src="_shared/inspector.js"></script>
+</body>
+</html>
