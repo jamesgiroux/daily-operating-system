@@ -51,7 +51,7 @@ allowed_basename_regex='services/claims_backfill\.rs|services/claims\.rs|migrati
 # identifier shapes ("dismissed_at", `dismissed_at`,
 # [dismissed_at]) are also matched per the cycle-20 fix #1 pattern
 # from the immutability lint.
-write_pattern='INSERT[[:space:]]+INTO[[:space:]]+(email_dismissals|meeting_entity_dismissals|linking_dismissals|nudge_dismissals|triage_snoozes)|UPDATE[[:space:]]+briefing_callouts[[:space:]]+SET[[:space:]][^;]*("|`|\[)?\bdismissed_at\b("|`|\])?|INSERT[[:space:]]+OR[[:space:]]+IGNORE[[:space:]]+INTO[[:space:]]+linking_dismissals'
+write_pattern='INSERT[[:space:]]+INTO[[:space:]]+(email_dismissals|meeting_entity_dismissals|linking_dismissals|nudge_dismissals|triage_snoozes)|UPDATE[[:space:]]+(briefing_callouts|account_stakeholder_roles)[[:space:]]+SET[[:space:]][^;]*("|`|\[)?\bdismissed_at\b("|`|\])?|INSERT[[:space:]]+OR[[:space:]]+IGNORE[[:space:]]+INTO[[:space:]]+linking_dismissals'
 
 # Files containing matches, after allowlist exclusion.
 candidate_files="$(

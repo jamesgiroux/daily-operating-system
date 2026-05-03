@@ -187,6 +187,43 @@ fn lint_legacy_dismissal_pairing_catches_non_leading_dismissed_at_set() {
     );
 }
 
+/// L2 cycle-21 regression: prove the legacy dismissal pairing lint
+/// catches `UPDATE account_stakeholder_roles SET dismissed_at = ...`
+/// without a shadow-write nearby. Cycle-1 audit missed this site
+/// (remove_stakeholder_role_inner) AND the lint's UPDATE branch
+/// only matched briefing_callouts, so the bug was double-shielded.
+#[test]
+fn lint_legacy_dismissal_pairing_catches_account_stakeholder_role_dismissal() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let dismissed_field = "dismissed".to_string() + "_at";
+    let bad_sql = format!(
+        "fn evil() {{\n\
+         let _ = conn.execute(\n\
+         \"UPDATE account_stakeholder_roles SET {dismissed_field} = datetime('now') WHERE id = ?1\",\n\
+         params,\n\
+         );\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_role_dismiss.rs"), bad_sql)
+        .expect("write fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_legacy_dismissal_shadow_write_pairing.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on UPDATE account_stakeholder_roles SET dismissed_at without shadow-write. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 #[test]
 fn lint_legacy_dismissal_shadow_write_pairing_passes_against_current_tree() {
     let (ok, stdout, stderr) =
