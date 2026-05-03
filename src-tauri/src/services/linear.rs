@@ -172,7 +172,7 @@ pub async fn push_action_to_linear(
         .is_some_and(|s| s.starts_with("ai") || s == "intelligence");
 
     state.with_db_write(|db| {
-        let _ = crate::services::signals::emit_and_propagate(
+        if let Err(e) = crate::services::signals::emit_and_propagate(
             ctx,
             db,
             &state.signals.engine,
@@ -182,13 +182,15 @@ pub async fn push_action_to_linear(
             "user_action",
             Some(&signal_value),
             0.9,
-        );
+        ) {
+            log::warn!("emit Linear push signal failed for {entity_type}:{entity_id}: {e}");
+        }
 
         // Positive Bayesian feedback when an AI-suggested action is
         // pushed to Linear — validates the suggestion quality.
         if is_ai_suggested {
-            let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+            if let Err(e) = crate::services::signals::emit_and_propagate(
+                ctx,
                 db,
                 &state.signals.engine,
                 entity_type,
@@ -197,7 +199,11 @@ pub async fn push_action_to_linear(
                 "user_action",
                 Some(&format!("{{\"action_id\":\"{}\"}}", action_id)),
                 0.9,
-            );
+            ) {
+                log::warn!(
+                    "emit AI suggestion validation signal failed for {entity_type}:{entity_id}: {e}"
+                );
+            }
         }
 
         Ok(())

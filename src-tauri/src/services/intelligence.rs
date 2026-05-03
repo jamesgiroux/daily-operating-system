@@ -91,10 +91,36 @@ fn emit_manual_refresh_failed(
             "stage": stage,
             "error": error,
         });
-        let _ = app.emit("background-work-status", payload.clone());
-        let _ = app.emit("intelligence-refresh-failed", payload);
+        if let Err(e) = app.emit("background-work-status", payload.clone()) {
+            log::warn!("emit manual refresh background failure status failed: {e}");
+        }
+        if let Err(e) = app.emit("intelligence-refresh-failed", payload) {
+            log::warn!("emit manual refresh failure event failed: {e}");
+        }
     }
     Ok(())
+}
+
+fn emit_manual_refresh_failed_best_effort(
+    ctx: &ServiceContext<'_>,
+    app_handle: Option<&tauri::AppHandle>,
+    entity_id: &str,
+    entity_type: &str,
+    entity_label: &str,
+    stage: &str,
+    error: &str,
+) {
+    if let Err(e) = emit_manual_refresh_failed(
+        ctx,
+        app_handle,
+        entity_id,
+        entity_type,
+        entity_label,
+        stage,
+        error,
+    ) {
+        log::warn!("emit manual refresh failure notification failed: {e}");
+    }
 }
 
 fn manual_refresh_error(stage: &str, error: &str) -> String {
@@ -126,7 +152,7 @@ pub async fn enrich_entity(
     let manual_entity_id = request.entity_id.clone();
 
     if let Some(app) = app_handle {
-        let _ = app.emit(
+        if let Err(e) = app.emit(
             "background-work-status",
             serde_json::json!({
                 "phase": "started",
@@ -134,17 +160,22 @@ pub async fn enrich_entity(
                 "count": 1,
                 "manual": true,
             }),
-        );
+        ) {
+            log::warn!("emit manual refresh start status failed for {manual_entity_id}: {e}");
+        }
     }
 
     // Manual refresh: clear circuit breaker so enrichment proceeds
     let entity_id_for_reset = request.entity_id.clone();
-    let _ = state
+    if let Err(e) = state
         .db_write(move |db| {
             crate::self_healing::scheduler::reset_circuit_breaker(db, &entity_id_for_reset);
             Ok(())
         })
-        .await;
+        .await
+    {
+        log::warn!("reset circuit breaker before manual refresh failed: {e}");
+    }
 
     let input = match gather_enrichment_input(state, &request) {
         Ok(input) => input,
@@ -154,7 +185,7 @@ pub async fn enrich_entity(
                 request.entity_id,
                 e
             );
-            let _ = emit_manual_refresh_failed(
+            emit_manual_refresh_failed_best_effort(
                 ctx,
                 app_handle,
                 &request.entity_id,
@@ -187,7 +218,7 @@ pub async fn enrich_entity(
         Ok(Ok(permit)) => permit,
         Ok(Err(_)) => {
             let error = "PTY permit closed";
-            let _ = emit_manual_refresh_failed(
+            emit_manual_refresh_failed_best_effort(
                 ctx,
                 app_handle,
                 &input.entity_id,
@@ -200,7 +231,7 @@ pub async fn enrich_entity(
         }
         Err(_) => {
             let error = "Background work in progress — your refresh is queued and will run shortly";
-            let _ = emit_manual_refresh_failed(
+            emit_manual_refresh_failed_best_effort(
                 ctx,
                 app_handle,
                 &input.entity_id,
@@ -255,68 +286,74 @@ pub async fn enrich_entity(
             // gets degraded/fallback toasts.
             if let Some(provider) = provider {
                 match provider
-                .enrich_entity(
-                    &input.entity_id,
-                    &input.entity_type,
-                    &input.entity_name,
-                    ctx,
-                    input.relationship.as_deref(),
-                    app_handle,
-                    false,
-                    input.active_preset.as_ref(),
-                )
-                .await
-            {
-                Ok(intel) => {
-                    log::info!(
-                        "[I535] Manual Glean enrichment succeeded for {}",
-                        input.entity_name
-                    );
-                    let inferred = if let Ok(raw) = serde_json::to_string(&intel) {
-                        crate::intelligence::extract_inferred_relationships(&raw)
-                    } else {
-                        Vec::new()
-                    };
-                    glean_result = Some(crate::intel_queue::EnrichmentParseResult {
-                        intel,
-                        inferred_relationships: inferred,
-                    });
-                }
-                Err(e) => {
-                    log::warn!(
-                        "[I535] Manual Glean enrichment failed for {}, falling back to PTY: {}",
-                        input.entity_name,
-                        e
-                    );
-                    // Surface the fallback loudly — otherwise users see
-                    // local-sourced items on a Glean-mode account with no
-                    // signal that Glean enrichment couldn't complete.
-                    {
-                        let mut audit = state.audit_log.lock();
-                        let _ = audit.append(
-                            "data_access",
-                            "glean_enrichment_fellback_to_pty",
-                            serde_json::json!({
-                                "entity_id": input.entity_id,
-                                "entity_type": input.entity_type,
-                                "entity_name": input.entity_name,
-                                "reason": e.to_string(),
-                            }),
+                    .enrich_entity(
+                        &input.entity_id,
+                        &input.entity_type,
+                        &input.entity_name,
+                        ctx,
+                        input.relationship.as_deref(),
+                        app_handle,
+                        false,
+                        input.active_preset.as_ref(),
+                    )
+                    .await
+                {
+                    Ok(intel) => {
+                        log::info!(
+                            "[I535] Manual Glean enrichment succeeded for {}",
+                            input.entity_name
                         );
+                        let inferred = if let Ok(raw) = serde_json::to_string(&intel) {
+                            crate::intelligence::extract_inferred_relationships(&raw)
+                        } else {
+                            Vec::new()
+                        };
+                        glean_result = Some(crate::intel_queue::EnrichmentParseResult {
+                            intel,
+                            inferred_relationships: inferred,
+                        });
                     }
-                    if let Some(handle) = app_handle {
-                        let _ = handle.emit(
-                            "enrichment-glean-fallback",
-                            serde_json::json!({
-                                "entity_id": input.entity_id,
-                                "entity_type": input.entity_type,
-                                "entity_name": input.entity_name,
-                                "reason": e.to_string(),
-                            }),
+                    Err(e) => {
+                        log::warn!(
+                            "[I535] Manual Glean enrichment failed for {}, falling back to PTY: {}",
+                            input.entity_name,
+                            e
                         );
+                        // Surface the fallback loudly — otherwise users see
+                        // local-sourced items on a Glean-mode account with no
+                        // signal that Glean enrichment couldn't complete.
+                        {
+                            let mut audit = state.audit_log.lock();
+                            if let Err(audit_error) = audit.append(
+                                "data_access",
+                                "glean_enrichment_fellback_to_pty",
+                                serde_json::json!({
+                                    "entity_id": input.entity_id,
+                                    "entity_type": input.entity_type,
+                                    "entity_name": input.entity_name,
+                                    "reason": e.to_string(),
+                                }),
+                            ) {
+                                log::warn!(
+                                    "append Glean fallback audit entry failed: {audit_error}"
+                                );
+                            }
+                        }
+                        if let Some(handle) = app_handle {
+                            if let Err(emit_error) = handle.emit(
+                                "enrichment-glean-fallback",
+                                serde_json::json!({
+                                    "entity_id": input.entity_id,
+                                    "entity_type": input.entity_type,
+                                    "entity_name": input.entity_name,
+                                    "reason": e.to_string(),
+                                }),
+                            ) {
+                                log::warn!("emit Glean fallback event failed: {emit_error}");
+                            }
+                        }
                     }
                 }
-            }
             } // end if let Some(provider) — bridge-empty case skipped Glean and
               // falls through to the PTY path below via glean_result == None.
         }
@@ -343,7 +380,7 @@ pub async fn enrich_entity(
                 match pty_result {
                     Ok(Ok(parsed)) => parsed,
                     Ok(Err(e)) => {
-                        let _ = emit_manual_refresh_failed(
+                        emit_manual_refresh_failed_best_effort(
                             ctx,
                             app_handle,
                             &input.entity_id,
@@ -356,7 +393,7 @@ pub async fn enrich_entity(
                     }
                     Err(e) => {
                         let error = format!("Enrichment task panicked: {}", e);
-                        let _ = emit_manual_refresh_failed(
+                        emit_manual_refresh_failed_best_effort(
                             ctx,
                             app_handle,
                             &input.entity_id,
@@ -389,7 +426,7 @@ pub async fn enrich_entity(
         match pty_result {
             Ok(Ok(parsed)) => parsed,
             Ok(Err(e)) => {
-                let _ = emit_manual_refresh_failed(
+                emit_manual_refresh_failed_best_effort(
                     ctx,
                     app_handle,
                     &input.entity_id,
@@ -402,7 +439,7 @@ pub async fn enrich_entity(
             }
             Err(e) => {
                 let error = format!("Enrichment task panicked: {}", e);
-                let _ = emit_manual_refresh_failed(
+                emit_manual_refresh_failed_best_effort(
                     ctx,
                     app_handle,
                     &input.entity_id,
@@ -420,7 +457,7 @@ pub async fn enrich_entity(
     {
         Ok(intel) => intel,
         Err(e) => {
-            let _ = emit_manual_refresh_failed(
+            emit_manual_refresh_failed_best_effort(
                 ctx,
                 app_handle,
                 &input.entity_id,
@@ -453,7 +490,7 @@ pub async fn enrich_entity(
             })
             .await
             .map_err(|e| {
-                let _ = emit_manual_refresh_failed(
+                emit_manual_refresh_failed_best_effort(
                     ctx,
                     app_handle,
                     &input.entity_id,
@@ -467,7 +504,7 @@ pub async fn enrich_entity(
     }
 
     if let Some(app) = app_handle {
-        let _ = app.emit(
+        if let Err(e) = app.emit(
             "background-work-status",
             serde_json::json!({
                 "phase": "completed",
@@ -475,7 +512,12 @@ pub async fn enrich_entity(
                 "count": 1,
                 "manual": true,
             }),
-        );
+        ) {
+            log::warn!(
+                "emit manual refresh completion status failed for {}: {e}",
+                input.entity_id
+            );
+        }
     }
 
     Ok(final_intel)
@@ -817,7 +859,7 @@ pub fn upsert_inferred_relationships_from_enrichment(
                     rel.relationship_type
                 );
                 crate::services::signals::emit_and_propagate(
-            ctx,
+                    ctx,
                     tx,
                     engine,
                     entity_type,
@@ -1630,7 +1672,8 @@ pub async fn track_recommendation(
             let mut updated_intel = intel.clone();
             if index < updated_intel.recommended_actions.len() {
                 updated_intel.recommended_actions.remove(index);
-                let _ = db.upsert_entity_intelligence(&updated_intel);
+                db.upsert_entity_intelligence(&updated_intel)
+                    .map_err(|e| e.to_string())?;
             }
 
             // Emit recommendation_accepted signal
@@ -1638,7 +1681,7 @@ pub async fn track_recommendation(
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            let _ = crate::services::signals::emit_and_propagate(
+            if let Err(e) = crate::services::signals::emit_and_propagate(
                 &ctx,
                 db,
                 &engine,
@@ -1652,7 +1695,11 @@ pub async fn track_recommendation(
                     rec.title.replace('"', "\\\"")
                 )),
                 0.8,
-            );
+            ) {
+                log::warn!(
+                    "emit recommendation accepted signal failed for {entity_type}:{entity_id}: {e}"
+                );
+            }
 
             Ok(id)
         })
@@ -2041,8 +2088,15 @@ mod mutation_smoke_tests {
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
 
-        super::upsert_assessment_from_enrichment(&ctx, &db, &engine, "account", "acc-intel", &intel)
-            .expect("upsert_assessment_from_enrichment");
+        super::upsert_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &engine,
+            "account",
+            "acc-intel",
+            &intel,
+        )
+        .expect("upsert_assessment_from_enrichment");
 
         // Verify entity_assessment row exists
         let exists: bool = db
@@ -2228,7 +2282,8 @@ mod dos15_leading_signals_db_tests {
         }"#;
 
         // Step 1: parse Glean's snake_case output into the normalized struct.
-        let parsed = parse_leading_signals(glean_output).expect("parse_leading_signals should succeed");
+        let parsed =
+            parse_leading_signals(glean_output).expect("parse_leading_signals should succeed");
 
         // Verify bucket dispatch before persistence.
         {
@@ -2238,10 +2293,16 @@ mod dos15_leading_signals_db_tests {
             assert_eq!(cr.risk_evidence.len(), 2, "2 evidence items");
             assert_eq!(cr.backup_champion_candidates.len(), 1);
 
-            let cs = parsed.channel_sentiment.as_ref().expect("channel_sentiment bucket");
+            let cs = parsed
+                .channel_sentiment
+                .as_ref()
+                .expect("channel_sentiment bucket");
             assert!(cs.divergence_detected, "divergence_detected should be true");
 
-            let comm = parsed.commercial_signals.as_ref().expect("commercial_signals bucket");
+            let comm = parsed
+                .commercial_signals
+                .as_ref()
+                .expect("commercial_signals bucket");
             assert_eq!(comm.arr_direction.as_deref(), Some("flat"));
 
             assert_eq!(parsed.quote_wall.len(), 1, "quote_wall should have 1 entry");
@@ -2266,7 +2327,10 @@ mod dos15_leading_signals_db_tests {
             serde_json::from_str(&stored_json).expect("DB JSON should deserialize");
 
         // Step 4: verify every populated field survived the roundtrip.
-        let cr = reread.champion_risk.as_ref().expect("champion_risk after roundtrip");
+        let cr = reread
+            .champion_risk
+            .as_ref()
+            .expect("champion_risk after roundtrip");
         assert_eq!(cr.champion_name.as_deref(), Some("Robin Taylor"));
         assert!(cr.at_risk);
         assert_eq!(cr.risk_level.as_deref(), Some("high"));
@@ -2274,7 +2338,10 @@ mod dos15_leading_signals_db_tests {
         assert_eq!(cr.backup_champion_candidates.len(), 1);
         assert_eq!(cr.backup_champion_candidates[0].name, "Jamie Lee");
 
-        let cs = reread.channel_sentiment.as_ref().expect("channel_sentiment after roundtrip");
+        let cs = reread
+            .channel_sentiment
+            .as_ref()
+            .expect("channel_sentiment after roundtrip");
         assert!(cs.divergence_detected);
         assert_eq!(
             cs.divergence_summary.as_deref(),
@@ -2282,7 +2349,10 @@ mod dos15_leading_signals_db_tests {
         );
 
         assert_eq!(reread.quote_wall.len(), 1);
-        assert_eq!(reread.quote_wall[0].quote, "We need better integration support.");
+        assert_eq!(
+            reread.quote_wall[0].quote,
+            "We need better integration support."
+        );
 
         // Step 5: verify derived signals were emitted correctly.
         assert!(
@@ -3603,9 +3673,15 @@ mod live_acceptance_tests {
             .expect("read i504 pre-state failed");
 
         let ctx = state.live_service_context();
-        let _ = enrich_entity(&ctx, account_id.clone(), "account".to_string(), &state, None)
-            .await
-            .expect("manual enrich_entity for i504 validation failed");
+        let _ = enrich_entity(
+            &ctx,
+            account_id.clone(),
+            "account".to_string(),
+            &state,
+            None,
+        )
+        .await
+        .expect("manual enrich_entity for i504 validation failed");
 
         let (rows_after_first, ids_after_first, manager_bad, peer_bad, signals_after_first): (
             Vec<(String, f64, String, String, Option<String>)>,
@@ -3734,9 +3810,15 @@ mod live_acceptance_tests {
             );
         }
 
-        let _ = enrich_entity(&ctx, account_id.clone(), "account".to_string(), &state, None)
-            .await
-            .expect("second enrich_entity for i504 validation failed");
+        let _ = enrich_entity(
+            &ctx,
+            account_id.clone(),
+            "account".to_string(),
+            &state,
+            None,
+        )
+        .await
+        .expect("second enrich_entity for i504 validation failed");
 
         let (rows_after_second, ids_after_second, reinforced_after_second): (i64, i64, i64) = state
             .db_read({

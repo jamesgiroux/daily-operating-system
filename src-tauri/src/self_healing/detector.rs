@@ -105,16 +105,20 @@ pub fn run_coherence_check(
     let passed = score >= COHERENCE_THRESHOLD;
 
     // Update entity_quality with coherence results
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "INSERT OR IGNORE INTO entity_quality (entity_id, entity_type)
          SELECT entity_id, entity_type FROM entity_assessment WHERE entity_id = ?1",
         rusqlite::params![entity_id],
-    );
-    let _ = db.conn_ref().execute(
+    ) {
+        log::warn!("ensure coherence quality row failed for {entity_id}: {e}");
+    }
+    if let Err(e) = db.conn_ref().execute(
         "UPDATE entity_quality SET coherence_score = ?1, coherence_flagged = ?2
          WHERE entity_id = ?3",
         rusqlite::params![score, if passed { 0 } else { 1 }, entity_id],
-    );
+    ) {
+        log::warn!("persist coherence check result failed for {entity_id}: {e}");
+    }
 
     Ok(CoherenceResult {
         entity_id: entity_id.to_string(),

@@ -214,10 +214,8 @@ fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String, String)
     // than the parser, falsely rejecting subjects with the
     // alternate alias shape that runtime writes accept. Removing
     // that precheck keeps rekey and commit_claim in lockstep.
-    let subject =
-        crate::services::claims::subject_ref_from_json(&subject_value).map_err(|e| {
-            format!("subject_ref kind not a supported SubjectRef variant: {e}")
-        })?;
+    let subject = crate::services::claims::subject_ref_from_json(&subject_value)
+        .map_err(|e| format!("subject_ref kind not a supported SubjectRef variant: {e}"))?;
     let compact_subject_ref =
         crate::services::claims::canonical_subject_ref(&subject).map_err(|e| {
             format!(
@@ -410,6 +408,9 @@ pub fn backfill_dismissed_items_from_workspace(
                 // execute. Either way, the report tracks 0 vs 1
                 // honestly so a partial-cutover retry doesn't make
                 // the cutover report claim phantom inserts.
+                // dos7-allowed: JSON-blob cutover backfill writes legacy
+                // dismissal rows before runtime registry validation can
+                // derive typed proposals from archived intelligence files.
                 let inserted = db
                     .conn_ref()
                     .execute(
@@ -451,7 +452,13 @@ pub fn backfill_dismissed_items_from_workspace(
 
 fn sanitize_id_segment(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '-' || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '-' || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -596,19 +603,11 @@ pub fn reconcile_dos7_post_migration(
     for (mechanism, label, legacy_sql, claim_id_prefix) in checks {
         let legacy_expected: Option<i64> = match conn.query_row(legacy_sql, [], |r| r.get(0)) {
             Ok(n) => Some(n),
-            Err(rusqlite::Error::SqliteFailure(_, Some(msg))) if msg.contains("no such table") => {
-                None
-            }
-            Err(rusqlite::Error::SqliteFailure(_, None)) => None,
+            Err(e) if is_missing_legacy_table_error(&e) => None,
             Err(e) => {
-                let s = format!("{e}");
-                if s.contains("no such table") {
-                    None
-                } else {
-                    return Err(format!(
-                        "DOS-7 reconcile: legacy count for mechanism {mechanism} ({label}) failed: {e}"
-                    ));
-                }
+                return Err(format!(
+                    "DOS-7 reconcile: legacy count for mechanism {mechanism} ({label}) failed: {e}"
+                ));
             }
         };
 
@@ -619,7 +618,9 @@ pub fn reconcile_dos7_post_migration(
                 |r| r.get(0),
             )
             .map_err(|e| {
-                format!("DOS-7 reconcile: claim count for mechanism {mechanism} ({label}) failed: {e}")
+                format!(
+                    "DOS-7 reconcile: claim count for mechanism {mechanism} ({label}) failed: {e}"
+                )
             })?;
 
         if let Some(expected) = legacy_expected {
@@ -647,6 +648,29 @@ pub fn reconcile_dos7_post_migration(
     }
 
     Ok(report)
+}
+
+fn is_missing_legacy_table_error(error: &rusqlite::Error) -> bool {
+    let message = match error {
+        rusqlite::Error::SqliteFailure(sqlite_error, Some(message))
+            if sqlite_error.code == rusqlite::ErrorCode::Unknown =>
+        {
+            message
+        }
+        rusqlite::Error::SqlInputError {
+            error,
+            msg,
+            sql: _,
+            offset: _,
+        } if error.code == rusqlite::ErrorCode::Unknown => msg,
+        _ => return false,
+    };
+    // rusqlite 0.31 does not expose the newer missing-table extended code.
+    // Keep the SQLite wording fallback constrained to this schema-probe helper.
+    message
+        .trim()
+        .to_ascii_lowercase()
+        .starts_with("no such table:")
 }
 
 fn read_schema_epoch(db: &ActionDb) -> Result<i64, String> {
@@ -796,16 +820,20 @@ pub fn run_dos7_cutover(
             ctx.clock.now(),
         ) {
             Ok(summary) => summary,
-            Err(crate::services::source_asof_backfill::BackfillError::MigrationGate(
-                message,
-            )) => {
-                return Err(format!("DOS-7 cutover: source_asof backfill gate: {message}"));
+            Err(crate::services::source_asof_backfill::BackfillError::MigrationGate(message)) => {
+                return Err(format!(
+                    "DOS-7 cutover: source_asof backfill gate: {message}"
+                ));
             }
             Err(crate::services::source_asof_backfill::BackfillError::Rusqlite(error)) => {
-                return Err(format!("DOS-7 cutover: source_asof backfill database error: {error}"));
+                return Err(format!(
+                    "DOS-7 cutover: source_asof backfill database error: {error}"
+                ));
             }
             Err(crate::services::source_asof_backfill::BackfillError::Mode(message)) => {
-                return Err(format!("DOS-7 cutover: source_asof backfill mode error: {message}"));
+                return Err(format!(
+                    "DOS-7 cutover: source_asof backfill mode error: {message}"
+                ));
             }
         };
     log::info!(
@@ -911,9 +939,7 @@ pub fn run_dos7_cutover_if_pending(
             .ok();
         if let Some(started_ts) = in_flight {
             if now_ts - started_ts < DOS7_CUTOVER_STALE_AFTER_SECS {
-                return Ok(CutoverClaimDecision::InFlightElsewhere {
-                    started_ts,
-                });
+                return Ok(CutoverClaimDecision::InFlightElsewhere { started_ts });
             }
             // Stale marker — reclaim by overwriting.
             conn.execute(
@@ -978,7 +1004,10 @@ pub fn run_dos7_cutover_if_pending(
     db.conn_ref()
         .execute(
             "INSERT OR REPLACE INTO migration_state (key, value) VALUES (?1, ?2)",
-            rusqlite::params![DOS7_CUTOVER_COMPLETED_AT_KEY, chrono::Utc::now().timestamp()],
+            rusqlite::params![
+                DOS7_CUTOVER_COMPLETED_AT_KEY,
+                chrono::Utc::now().timestamp()
+            ],
         )
         .map_err(|e| format!("DOS-7 cutover record completion: {e}"))?;
 
@@ -1075,8 +1104,7 @@ mod tests {
         // kind), not whatever shape the test seed happened to use.
         let subject_value = serde_json::from_str::<serde_json::Value>(subject_ref).unwrap();
         let subject = crate::services::claims::subject_ref_from_json(&subject_value).unwrap();
-        let compact_subject_ref =
-            crate::services::claims::canonical_subject_ref(&subject).unwrap();
+        let compact_subject_ref = crate::services::claims::canonical_subject_ref(&subject).unwrap();
         let canonical_text = crate::services::claims::canonicalize_for_dos280(text);
         let hash = crate::intelligence::canonicalization::item_hash(
             crate::services::claims::item_kind_for_claim_type(claim_type),
@@ -1096,8 +1124,7 @@ mod tests {
     fn rekey_rewrites_m1_dedup_key_to_runtime_shape() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1145,8 +1172,7 @@ mod tests {
     fn rekey_is_idempotent() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1193,8 +1219,7 @@ mod tests {
     fn rekey_canonicalizes_whitespace_anomaly_legacy_text_for_pre_gate_hash_tier() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1256,8 +1281,7 @@ mod tests {
     fn rekey_includes_m9_json_blob_backfill_rows() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1305,8 +1329,7 @@ mod tests {
     fn rekey_skips_non_backfilled_claims() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1347,14 +1370,12 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
-        let report =
-            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
+        let report = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
         assert_eq!(report.entities_scanned, 0);
         assert_eq!(report.items_observed, 0);
         assert_eq!(report.claims_inserted, 0);
@@ -1391,14 +1412,12 @@ mod tests {
 
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
-        let report =
-            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
+        let report = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
 
         assert_eq!(report.entities_scanned, 1);
         assert_eq!(report.items_observed, 2);
@@ -1477,15 +1496,13 @@ mod tests {
 
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
-        let report =
-            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path())
-                .expect("3 items in same field must not PK-collide");
+        let report = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path())
+            .expect("3 items in same field must not PK-collide");
         assert_eq!(report.items_observed, 3);
         assert_eq!(
             report.claims_inserted, 3,
@@ -1521,8 +1538,7 @@ mod tests {
         for blank in ["", "   ", "\t\n"] {
             let conn = fresh_conn();
             let db = ActionDb::from_conn(&conn);
-            let clock =
-                FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+            let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
             let rng = SeedableRng::new(42);
             let ext = ExternalClients::default();
             let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1549,9 +1565,13 @@ mod tests {
 
             let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
             assert!(
-                report.errors.iter().any(|e| e.contains("metadata_json is not valid JSON")),
+                report
+                    .errors
+                    .iter()
+                    .any(|e| e.contains("metadata_json is not valid JSON")),
                 "blank metadata_json {:?} must fail validation, got {:?}",
-                blank, report.errors,
+                blank,
+                report.errors,
             );
         }
     }
@@ -1560,8 +1580,7 @@ mod tests {
     fn rekey_fails_on_malformed_metadata_json_with_valid_subject_ref() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1594,7 +1613,10 @@ mod tests {
         let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
         assert_eq!(report.rows_examined, 1);
         assert!(
-            report.errors.iter().any(|e| e.contains("metadata_json is not valid JSON")),
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("metadata_json is not valid JSON")),
             "rekey must surface malformed metadata_json error, got {:?}",
             report.errors,
         );
@@ -1633,8 +1655,7 @@ mod tests {
 
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1659,9 +1680,8 @@ mod tests {
             ("provenance_json", &provenance_json),
             ("metadata_json", &metadata_json),
         ] {
-            serde_json::from_str::<serde_json::Value>(raw).unwrap_or_else(|e| {
-                panic!("{label} must be valid JSON, got {raw:?}: {e}")
-            });
+            serde_json::from_str::<serde_json::Value>(raw)
+                .unwrap_or_else(|e| panic!("{label} must be valid JSON, got {raw:?}: {e}"));
         }
 
         // Verify the rekey pass — which parses subject_ref and would
@@ -1724,8 +1744,7 @@ mod tests {
 
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1795,15 +1814,13 @@ mod tests {
 
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
         // First pass: m9 row inserts with backfill-shape dedup_key.
-        let first =
-            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
+        let first = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
         assert_eq!(first.claims_inserted, 1);
 
         // Simulate rekey rewriting the dedup_key + item_hash to the
@@ -1851,8 +1868,7 @@ mod tests {
     fn rekey_canonicalizes_subject_ref_so_readers_can_find_alias_rows() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1917,8 +1933,7 @@ mod tests {
     fn rekey_accepts_alias_shaped_subject_keys() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -1981,8 +1996,7 @@ mod tests {
     fn rekey_dedup_key_matches_runtime_commit_for_same_subject() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -2039,8 +2053,7 @@ mod tests {
     fn rekey_skips_withdrawn_rows() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -2071,7 +2084,11 @@ mod tests {
             report.rows_examined, 0,
             "withdrawn row must be skipped by rekey scan"
         );
-        assert!(report.errors.is_empty(), "rekey must not error: {:?}", report.errors);
+        assert!(
+            report.errors.is_empty(),
+            "rekey must not error: {:?}",
+            report.errors
+        );
     }
 
     /// L2 cycle-12 fix #2: rekey must reject m5 rows whose
@@ -2083,8 +2100,7 @@ mod tests {
     fn rekey_rejects_unsupported_subject_kind() {
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -2106,7 +2122,10 @@ mod tests {
         let report = rekey_backfilled_claims_via_runtime_helpers(&ctx, &db).unwrap();
         assert_eq!(report.rows_examined, 1);
         assert!(
-            report.errors.iter().any(|e| e.contains("not a supported SubjectRef variant")),
+            report
+                .errors
+                .iter()
+                .any(|e| e.contains("not a supported SubjectRef variant")),
             "rekey must surface unsupported-kind error, got {:?}",
             report.errors,
         );
@@ -2150,10 +2169,7 @@ mod tests {
                   '2026-04-01T00:00:00Z', '2026-04-01T00:00:00Z', '{}', \
                   'tombstoned', 'active', 'user_removal', NULL, \
                   'state', 'internal')",
-                rusqlite::params![
-                    id,
-                    format!(r#"{{"kind":"{}","id":"e-1"}}"#, kind),
-                ],
+                rusqlite::params![id, format!(r#"{{"kind":"{}","id":"e-1"}}"#, kind),],
             )
             .unwrap();
         }
@@ -2251,7 +2267,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(ok_state, "tombstoned", "supported-kind row must be untouched");
+        assert_eq!(
+            ok_state, "tombstoned",
+            "supported-kind row must be untouched"
+        );
     }
 
     #[test]
@@ -2278,8 +2297,7 @@ mod tests {
 
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -2287,8 +2305,7 @@ mod tests {
         let first = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
         assert_eq!(first.claims_inserted, 1);
 
-        let second =
-            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
+        let second = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
         assert_eq!(
             second.claims_inserted, 0,
             "second pass must be idempotent — dedup_key already exists"
@@ -2306,14 +2323,12 @@ mod tests {
 
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
-        let report =
-            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
+        let report = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
         assert_eq!(report.entities_scanned, 0);
         assert_eq!(report.claims_inserted, 0);
     }
@@ -2342,14 +2357,12 @@ mod tests {
 
         let conn = fresh_conn();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
-        let report =
-            backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
+        let report = backfill_dismissed_items_from_workspace(&ctx, &db, workspace.path()).unwrap();
         assert_eq!(report.claims_inserted, 1);
 
         let subject_ref: String = db
@@ -2403,7 +2416,11 @@ mod tests {
         .unwrap();
         let db = ActionDb::from_conn(&conn);
         let report = reconcile_dos7_post_migration(db).unwrap();
-        assert!(report.findings >= 1, "expected at least one finding, got {}", report.findings);
+        assert!(
+            report.findings >= 1,
+            "expected at least one finding, got {}",
+            report.findings
+        );
         assert!(
             report
                 .finding_summary
@@ -2457,15 +2474,13 @@ mod tests {
         let conn = fresh_full_db();
         let db = ActionDb::from_conn(&conn);
 
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
         // First call: runs the cutover.
-        let first =
-            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("first cutover");
+        let first = run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("first cutover");
         assert!(first.is_some(), "first call must run the cutover");
 
         // Second call: idempotent no-op. The migration_state guard short-circuits.
@@ -2495,14 +2510,12 @@ mod tests {
         )
         .expect("plant stale marker");
 
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
-        let result =
-            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("reclaim");
+        let result = run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("reclaim");
         assert!(
             result.is_some(),
             "stale marker must be reclaimable — got no-op instead"
@@ -2537,14 +2550,12 @@ mod tests {
         )
         .expect("plant in-flight marker");
 
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
 
-        let result =
-            run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("defer");
+        let result = run_dos7_cutover_if_pending(&ctx, db, workspace.path()).expect("defer");
         assert!(
             result.is_none(),
             "in-flight marker must cause this process to defer"
@@ -2587,8 +2598,7 @@ mod tests {
         )
         .expect("seed malformed claim");
 
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -2625,8 +2635,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         let db = ActionDb::from_conn(&conn);
 
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -2661,8 +2670,7 @@ mod tests {
         let conn = fresh_full_db();
         let db = ActionDb::from_conn(&conn);
 
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -2722,8 +2730,7 @@ mod tests {
 
         let conn = fresh_full_db();
         let db = ActionDb::from_conn(&conn);
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
@@ -2733,8 +2740,14 @@ mod tests {
         assert_eq!(report.json_blob_report.entities_scanned, 2);
         assert_eq!(report.json_blob_report.items_observed, 3);
         assert_eq!(report.json_blob_report.claims_inserted, 3);
-        assert_eq!(report.json_blob_report.items_by_kind.get("Account"), Some(&2));
-        assert_eq!(report.json_blob_report.items_by_kind.get("Person"), Some(&1));
+        assert_eq!(
+            report.json_blob_report.items_by_kind.get("Account"),
+            Some(&2)
+        );
+        assert_eq!(
+            report.json_blob_report.items_by_kind.get("Person"),
+            Some(&1)
+        );
     }
 
     #[test]

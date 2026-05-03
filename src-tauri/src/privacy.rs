@@ -83,10 +83,11 @@ pub fn clear_intelligence(db: &ActionDb) -> Result<ClearReport, String> {
         .map_err(|e| e.to_string())?;
 
     // NULL out entity_quality health columns
-    let _ = conn.execute(
+    let _quality_rows_cleared: usize = conn.execute(
         "UPDATE entity_quality SET health_score = NULL, health_trend = NULL WHERE health_score IS NOT NULL",
         [],
-    );
+    )
+    .map_err(|e| e.to_string())?;
 
     Ok(ClearReport {
         assessments_deleted,

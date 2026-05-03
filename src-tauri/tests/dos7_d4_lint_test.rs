@@ -66,6 +66,17 @@ fn lint_claim_immutability_passes_against_current_tree() {
 }
 
 #[test]
+fn lint_no_let_underscore_writer_paths_passes_against_current_tree() {
+    let (ok, stdout, stderr) =
+        run_lint("src-tauri/scripts/check_no_let_underscore_in_writer_paths.sh");
+    assert!(
+        ok,
+        "let-underscore writer-path lint failed:\nstdout: {}\nstderr: {}",
+        stdout, stderr
+    );
+}
+
+#[test]
 fn lint_legacy_unattributed_writer_allowlist_passes_against_current_tree() {
     let (ok, stdout, stderr) =
         run_lint("src-tauri/scripts/check_legacy_unattributed_writer_allowlist.sh");
@@ -73,6 +84,63 @@ fn lint_legacy_unattributed_writer_allowlist_passes_against_current_tree() {
         ok,
         "legacy-unattributed-writer-allowlist lint failed:\nstdout: {}\nstderr: {}",
         stdout, stderr
+    );
+}
+
+#[test]
+fn lint_no_let_underscore_writer_paths_catches_silent_execute() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file_dir = tmp.path().join("src/self_healing");
+    std::fs::create_dir_all(&file_dir).expect("mkdir writer path");
+    let execute_call = "execute";
+    let bad_rs = format!(
+        "fn bad(db: &ActionDb) {{\n\
+         let _ = db.conn_ref().{execute_call}(\n\
+         \"UPDATE entity_quality SET quality_score = 1 WHERE entity_id = ?1\",\n\
+         params,\n\
+         );\n\
+         }}\n"
+    );
+    std::fs::write(file_dir.join("quality.rs"), bad_rs).expect("write bad fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_no_let_underscore_in_writer_paths.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on silent let-underscore SQL execute. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_claim_writer_allowlist_catches_insert_or_ignore_claim_writer() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/services")).expect("mkdir src");
+    let table = "intelligence".to_string() + "_" + "claims";
+    let bad_sql = format!(
+        "fn bad(conn: &Connection) {{\n\
+         conn.execute(\"INSERT OR IGNORE INTO {table} (id) VALUES (?1)\", params).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/services/bad.rs"), bad_sql).expect("write bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_writer_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on INSERT OR IGNORE claim writer outside allowlist. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
     );
 }
 
@@ -93,6 +161,108 @@ fn lint_legacy_projection_writers_fails_until_legacy_writers_are_routed() {
         "legacy-projection-writer lint should explain the routed-writer invariant:\nstdout: {}\nstderr: {}",
         stdout,
         stderr
+    );
+}
+
+#[test]
+fn lint_legacy_projection_writers_catches_multiline_account_ai_update() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/services")).expect("mkdir src");
+    let forbidden = "company".to_string() + "_" + "overview";
+    let bad_sql = format!(
+        "fn bad(conn: &Connection) {{\n\
+         conn.execute(\n\
+         \"UPDATE accounts \\\n\
+          SET {forbidden} = ?1 \\\n\
+          WHERE id = ?2\",\n\
+         params,\n\
+         ).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/services/bad_projection.rs"), bad_sql)
+        .expect("write bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_dos301_legacy_projection_writers.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on multiline UPDATE accounts AI projection write. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_legacy_projection_writers_catches_dynamic_account_ai_update() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/services")).expect("mkdir src");
+    let forbidden = "strategic".to_string() + "_" + "programs";
+    let bad_rs = format!(
+        "fn bad(conn: &Connection) {{\n\
+         let sql = \"UPDATE accounts \".to_string()\n\
+             + \"SET {forbidden} = ?1 \"\n\
+             + \"WHERE id = ?2\";\n\
+         conn.execute(&sql, params).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(
+        tmp.path().join("src/services/bad_dynamic_projection.rs"),
+        bad_rs,
+    )
+    .expect("write bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_dos301_legacy_projection_writers.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on dynamic SQL account AI projection write. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_legacy_unattributed_writer_catches_multiline_data_source_assignment() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/services")).expect("mkdir src");
+    let value = "legacy".to_string() + "_" + "unattributed";
+    let bad_sql = format!(
+        "fn bad(conn: &Connection) {{\n\
+         conn.execute(\n\
+         \"UPDATE intelligence_claims \\\n\
+          SET data_source = \\\n\
+          '{value}' \\\n\
+          WHERE id = ?1\",\n\
+         params,\n\
+         ).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(
+        tmp.path().join("src/services/bad_legacy_unattributed.rs"),
+        bad_sql,
+    )
+    .expect("write bad fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_legacy_unattributed_writer_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on multiline legacy_unattributed writer. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
     );
 }
 

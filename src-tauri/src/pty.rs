@@ -177,9 +177,12 @@ pub fn check_daily_budget(estimated_call_tokens: u32) -> Result<(), crate::error
     if usage.would_exceed(budget, estimated_call_tokens) {
         let reset_at = {
             // Next local midnight as a human-readable time.
-            let tomorrow = chrono::Local::now().date_naive().succ_opt()
+            let tomorrow = chrono::Local::now()
+                .date_naive()
+                .succ_opt()
                 .unwrap_or_else(|| chrono::Local::now().date_naive());
-            let midnight = tomorrow.and_hms_opt(0, 0, 0)
+            let midnight = tomorrow
+                .and_hms_opt(0, 0, 0)
                 .map(|dt| chrono::Local.from_local_datetime(&dt).single())
                 .and_then(|maybe| maybe)
                 .map(|dt| dt.format("%-I:%M %p").to_string())
@@ -378,11 +381,13 @@ where
     T: Serialize,
 {
     if let Ok(value_json) = serde_json::to_string(value) {
-        let _ = db.conn_ref().execute(
+        if let Err(e) = db.conn_ref().execute(
             "INSERT OR REPLACE INTO app_state_kv (key, value_json, updated_at)
              VALUES (?1, ?2, ?3)",
             params![key, value_json, Utc::now().to_rfc3339()],
-        );
+        ) {
+            log::warn!("persist app_state_kv value failed for key {key}: {e}");
+        }
     }
 }
 
@@ -554,7 +559,7 @@ fn record_ai_usage(
     let model_name = model.unwrap_or("default").to_string();
 
     let mut audit = crate::audit_log::AuditLogger::new(crate::audit_log::default_audit_log_path());
-    let _ = audit.append(
+    if let Err(e) = audit.append(
         "ai",
         "ai_call_completed",
         serde_json::json!({
@@ -572,7 +577,9 @@ fn record_ai_usage(
             "estimatedTotalTokens": total_tokens,
             "error": error,
         }),
-    );
+    ) {
+        log::warn!("append AI usage audit entry failed: {e}");
+    }
 
     let Ok(db) = crate::db::ActionDb::open() else {
         return;
@@ -624,7 +631,7 @@ fn record_ai_usage(
     }
     write_json_kv(&db, AI_USAGE_RECENT_KEY, &recent);
 
-    let _ = maybe_refresh_background_ai_guard(&db);
+    let _guard_status = maybe_refresh_background_ai_guard(&db);
 }
 
 fn parse_usage_day(value: &str) -> Option<chrono::NaiveDate> {
@@ -950,6 +957,8 @@ impl PtyManager {
                 }
             }
 
+            // best-effort: the receiver may time out and drop interest in
+            // this PTY output before the reader thread exits.
             let _ = tx.send(output);
         });
 
@@ -1082,7 +1091,8 @@ mod tests {
     use super::{
         background_pause_reason_with_threshold, build_background_pause_status,
         is_auth_failure_output, is_model_unavailable_output, strip_ansi, AiRecentUsageCall,
-        AiRecentUsageLedger, BackgroundAiGuardState, DailyTokenUsage, DEFAULT_DAILY_AI_TOKEN_BUDGET,
+        AiRecentUsageLedger, BackgroundAiGuardState, DailyTokenUsage,
+        DEFAULT_DAILY_AI_TOKEN_BUDGET,
     };
     use chrono::{Duration as ChronoDuration, Utc};
 
@@ -1287,7 +1297,10 @@ mod tests {
             date: DailyTokenUsage::today_key(),
             tokens_used: 0,
         };
-        assert_eq!(fresh.remaining(DEFAULT_DAILY_AI_TOKEN_BUDGET), DEFAULT_DAILY_AI_TOKEN_BUDGET);
+        assert_eq!(
+            fresh.remaining(DEFAULT_DAILY_AI_TOKEN_BUDGET),
+            DEFAULT_DAILY_AI_TOKEN_BUDGET
+        );
         assert!(!fresh.would_exceed(DEFAULT_DAILY_AI_TOKEN_BUDGET, 1000));
     }
 
@@ -1301,7 +1314,7 @@ mod tests {
             tokens_used: used,
         };
         assert_eq!(usage.remaining(budget), budget - used);
-        assert!(!usage.would_exceed(budget, budget - used));       // Exactly at limit
-        assert!(usage.would_exceed(budget, budget - used + 1));    // One over
+        assert!(!usage.would_exceed(budget, budget - used)); // Exactly at limit
+        assert!(usage.would_exceed(budget, budget - used + 1)); // One over
     }
 }

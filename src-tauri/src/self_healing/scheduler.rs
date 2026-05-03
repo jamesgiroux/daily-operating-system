@@ -30,12 +30,14 @@ pub fn check_circuit_breaker(db: &ActionDb, entity_id: &str) -> bool {
 
 /// Reset circuit breaker for an entity (manual refresh override).
 pub fn reset_circuit_breaker(db: &ActionDb, entity_id: &str) {
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "UPDATE entity_quality SET coherence_blocked = 0, coherence_retry_count = 0,
          coherence_window_start = NULL, updated_at = datetime('now')
          WHERE entity_id = ?1",
         rusqlite::params![entity_id],
-    );
+    ) {
+        log::warn!("reset coherence circuit breaker failed for {entity_id}: {e}");
+    }
 }
 
 /// Evaluate whether a signal-triggered entity should be re-enriched.
@@ -49,7 +51,10 @@ pub fn evaluate_on_signal(
     let score = super::remediation::compute_enrichment_trigger_score(db, entity_id, entity_type);
 
     if score > 0.7 && !check_circuit_breaker(db, entity_id) {
-        let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(            entity_id.to_string(),
+        // best-effort: signal-triggered enrichments are advisory and the
+        // underlying signal will be observed again after transient pauses.
+        let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(
+            entity_id.to_string(),
             entity_type.to_string(),
             crate::intel_queue::IntelPriority::ContentChange,
         ));
@@ -94,7 +99,7 @@ pub fn on_enrichment_complete(
         let rng = crate::services::context::SystemRng;
         let ext = crate::services::context::ExternalClients::default();
         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-        let _ = crate::services::signals::emit_and_propagate(
+        if let Err(e) = crate::services::signals::emit_and_propagate(
             &ctx,
             db,
             engine,
@@ -104,7 +109,9 @@ pub fn on_enrichment_complete(
             "self_healing",
             Some(&format!("{{\"coherence_score\":{:.3}}}", result.score)),
             0.3,
-        );
+        ) {
+            log::warn!("emit coherence flagged signal failed for {entity_type}:{entity_id}: {e}");
+        }
     }
 
     // Coherence failed — manage circuit breaker
@@ -159,11 +166,13 @@ fn manage_circuit_breaker(
 
             if hours < 24.0 && retry_count + 1 >= MAX_RETRIES_PER_WINDOW {
                 // 3 retries in <24h → trip circuit breaker
-                let _ = db.conn_ref().execute(
+                if let Err(e) = db.conn_ref().execute(
                     "UPDATE entity_quality SET coherence_blocked = 1, updated_at = datetime('now')
                      WHERE entity_id = ?1",
                     rusqlite::params![entity_id],
-                );
+                ) {
+                    log::warn!("trip coherence circuit breaker failed for {entity_id}: {e}");
+                }
                 log::warn!(
                     "SelfHealing: circuit breaker tripped for entity {}",
                     entity_id
@@ -174,12 +183,14 @@ fn manage_circuit_breaker(
                 enqueue_retry(queue, entity_id, entity_type);
             } else {
                 // Within window, haven't hit limit: increment and retry
-                let _ = db.conn_ref().execute(
+                if let Err(e) = db.conn_ref().execute(
                     "UPDATE entity_quality SET coherence_retry_count = coherence_retry_count + 1,
                      updated_at = datetime('now')
                      WHERE entity_id = ?1",
                     rusqlite::params![entity_id],
-                );
+                ) {
+                    log::warn!("increment coherence retry count failed for {entity_id}: {e}");
+                }
                 enqueue_retry(queue, entity_id, entity_type);
             }
         }
@@ -190,12 +201,14 @@ fn manage_circuit_breaker(
 
 /// Start a new circuit breaker window.
 fn start_new_window(db: &ActionDb, entity_id: &str) {
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "UPDATE entity_quality SET coherence_window_start = datetime('now'),
          coherence_retry_count = 1, updated_at = datetime('now')
          WHERE entity_id = ?1",
         rusqlite::params![entity_id],
-    );
+    ) {
+        log::warn!("start coherence retry window failed for {entity_id}: {e}");
+    }
 }
 
 /// Calculate hours since a window started.
@@ -211,7 +224,10 @@ fn window_hours_ago(db: &ActionDb, window_start: &str) -> f64 {
 
 /// Enqueue an entity for re-enrichment at ProactiveHygiene priority.
 fn enqueue_retry(queue: &IntelligenceQueue, entity_id: &str, entity_type: &str) {
-    let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(        entity_id.to_string(),
+    // best-effort: coherence retries are background repair work and can be
+    // retriggered by later enrichment or signal activity.
+    let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(
+        entity_id.to_string(),
         entity_type.to_string(),
         crate::intel_queue::IntelPriority::ProactiveHygiene,
     ));

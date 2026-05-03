@@ -159,10 +159,7 @@ pub type EnqueueResult = Result<EnqueueOutcome, EnqueueError>;
 ///
 /// Use from manual-priority paths (Manual / Onboarding). Background
 /// callers should use `let _ = queue.enqueue(...)` directly.
-pub fn enqueue_user_facing(
-    queue: &IntelligenceQueue,
-    request: IntelRequest,
-) -> Result<(), String> {
+pub fn enqueue_user_facing(queue: &IntelligenceQueue, request: IntelRequest) -> Result<(), String> {
     match queue.enqueue(request) {
         Ok(_) => Ok(()),
         Err(EnqueueError::Paused) => Err(EnqueueError::Paused.to_string()),
@@ -182,8 +179,7 @@ impl IntelligenceQueue {
     /// pause new enqueues + dequeues. Used by the schema-epoch
     /// migration to drain in-flight work before bumping the epoch.
     pub fn pause(&self) {
-        self.paused
-            .store(true, std::sync::atomic::Ordering::SeqCst);
+        self.paused.store(true, std::sync::atomic::Ordering::SeqCst);
         log::info!("IntelQueue: paused (DOS-311 schema-epoch migration)");
     }
 
@@ -787,9 +783,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     // schema-epoch migration starts mid-batch.
                     if state.intel_queue.is_paused() {
                         log::info!(
-                            "IntelProcessor: pause detected mid-PTY-batch; aborting after {} entities",
-                            entity_results.len()
-                        );
+                        "IntelProcessor: pause detected mid-PTY-batch; aborting after {} entities",
+                        entity_results.len()
+                    );
                         break;
                     }
                     let ai_cfg = ai_config.clone();
@@ -842,7 +838,8 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         original.retry_count + 1,
                         MAX_VALIDATION_RETRIES,
                     );
-                    let _ = state.intel_queue.enqueue(IntelRequest {                        entity_id: original.entity_id.clone(),
+                    let _ = state.intel_queue.enqueue(IntelRequest {
+                        entity_id: original.entity_id.clone(),
                         entity_type: original.entity_type.clone(),
                         priority: original.priority,
                         requested_at: Instant::now(),
@@ -1835,9 +1832,8 @@ fn run_parallel_enrichment(
                 workspace.clone(),
                 dimension_usage_context,
             );
-            let prompt_input =
-                crate::intelligence::provider::PromptInput::new(dim_prompt.clone())
-                    .with_workspace(workspace.clone());
+            let prompt_input = crate::intelligence::provider::PromptInput::new(dim_prompt.clone())
+                .with_workspace(workspace.clone());
 
             let result = pty_provider
                 .complete_blocking(prompt_input, ModelTier::Extraction)
@@ -2251,10 +2247,16 @@ pub fn write_enrichment_results(
                                 )
                                 .unwrap_or_else(|_| "ai".to_string());
                             if ds == "ai" {
-                                let _ = db_sh.conn_ref().execute(
+                                if let Err(e) = db_sh.conn_ref().execute(
                                     "UPDATE account_stakeholders SET engagement = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_engagement = 'ai'",
                                     rusqlite::params![engagement, &input.entity_id, pid],
-                                );
+                                ) {
+                                    log::warn!(
+                                        "update AI-owned stakeholder engagement failed for {}:{}: {e}",
+                                        input.entity_id,
+                                        pid
+                                    );
+                                }
                             } else {
                                 // AI disagrees with user-owned engagement — write suggestion
                                 write_stakeholder_suggestion(&StakeholderSuggestionParams {
@@ -2278,10 +2280,16 @@ pub fn write_enrichment_results(
                                 )
                                 .unwrap_or_else(|_| "ai".to_string());
                             if ds == "ai" {
-                                let _ = db_sh.conn_ref().execute(
+                                if let Err(e) = db_sh.conn_ref().execute(
                                     "UPDATE account_stakeholders SET assessment = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_assessment = 'ai'",
                                     rusqlite::params![assessment, &input.entity_id, pid],
-                                );
+                                ) {
+                                    log::warn!(
+                                        "update AI-owned stakeholder assessment failed for {}:{}: {e}",
+                                        input.entity_id,
+                                        pid
+                                    );
+                                }
                             }
                         }
 
@@ -2312,10 +2320,16 @@ pub fn write_enrichment_results(
                             );
                             let is_dismissed = existing.as_ref().is_some_and(|(_, d)| d.is_some());
                             if !is_user_owned && !is_dismissed {
-                                let _ = db_sh.conn_ref().execute(
+                                if let Err(e) = db_sh.conn_ref().execute(
                                     "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
                                     rusqlite::params![&input.entity_id, pid, role],
-                                );
+                                ) {
+                                    log::warn!(
+                                        "upsert AI-owned stakeholder role failed for {}:{}: {e}",
+                                        input.entity_id,
+                                        pid
+                                    );
+                                }
                             }
                         }
                     } else {
@@ -2678,7 +2692,10 @@ pub fn write_enrichment_results(
                 ));
             }
             other => {
-                return Err(format!("fence write failed for {}: {other}", input.entity_id));
+                return Err(format!(
+                    "fence write failed for {}: {other}",
+                    input.entity_id
+                ));
             }
         }
     }
@@ -2715,7 +2732,8 @@ pub fn write_enrichment_results(
     if input.entity_type == "account" {
         if let Ok(Some(account)) = db.get_account(&input.entity_id) {
             if let Some(ref parent_id) = account.parent_id {
-                let _ = state.intel_queue.enqueue(IntelRequest {                    entity_id: parent_id.clone(),
+                let _ = state.intel_queue.enqueue(IntelRequest {
+                    entity_id: parent_id.clone(),
                     entity_type: "account".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
@@ -2733,7 +2751,8 @@ pub fn write_enrichment_results(
     if input.entity_type == "project" {
         if let Ok(Some(project)) = db.get_project(&input.entity_id) {
             if let Some(ref parent_id) = project.parent_id {
-                let _ = state.intel_queue.enqueue(IntelRequest {                    entity_id: parent_id.clone(),
+                let _ = state.intel_queue.enqueue(IntelRequest {
+                    entity_id: parent_id.clone(),
                     entity_type: "project".to_string(),
                     priority: IntelPriority::ContentChange,
                     requested_at: std::time::Instant::now(),
@@ -3326,9 +3345,7 @@ mod tests {
         }
         samples.sort();
         let median = samples[samples.len() / 2];
-        eprintln!(
-            "[suite-p baseline] enqueue+dequeue roundtrip: median={median}µs samples=500"
-        );
+        eprintln!("[suite-p baseline] enqueue+dequeue roundtrip: median={median}µs samples=500");
         assert!(
             median < 50,
             "regression: enqueue+dequeue took {median}µs (W1 baseline ~1-5µs; bound 50µs)"
@@ -3389,7 +3406,8 @@ mod tests {
     fn test_intel_queue_enqueue_dequeue() {
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3410,13 +3428,15 @@ mod tests {
         // entries regardless of priority, and should not touch other entities.
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "archived-acct".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "archived-acct".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ProactiveHygiene,
             requested_at: Instant::now(),
             retry_count: 0,
         });
-        let _ = queue.enqueue(IntelRequest {            entity_id: "other-acct".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "other-acct".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
@@ -3442,7 +3462,8 @@ mod tests {
         // unarchive → re-enqueue can proceed without the debounce delay.
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3458,7 +3479,8 @@ mod tests {
 
         // A fresh ContentChange enqueue for the same entity should now go through
         // instead of being debounced.
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3471,7 +3493,8 @@ mod tests {
     fn test_intel_queue_dedup_keeps_higher_priority() {
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3479,7 +3502,8 @@ mod tests {
         });
 
         // Same entity, higher priority → should upgrade
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
@@ -3495,7 +3519,8 @@ mod tests {
     fn test_intel_queue_dedup_ignores_lower_priority() {
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
@@ -3503,7 +3528,8 @@ mod tests {
         });
 
         // Same entity, lower priority → should be ignored
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3519,21 +3545,24 @@ mod tests {
     fn test_intel_queue_priority_ordering() {
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "alpha".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "alpha".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
             retry_count: 0,
         });
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "beta".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "beta".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
             retry_count: 0,
         });
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "gamma".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "gamma".to_string(),
             entity_type: "project".to_string(),
             priority: IntelPriority::CalendarChange,
             requested_at: Instant::now(),
@@ -3559,7 +3588,8 @@ mod tests {
         let queue = IntelligenceQueue::new();
 
         // First enqueue succeeds
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3571,7 +3601,8 @@ mod tests {
         assert!(queue.is_empty());
 
         // Second enqueue within debounce window is suppressed
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3587,7 +3618,8 @@ mod tests {
         let queue = IntelligenceQueue::new();
 
         // First: content change
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3598,7 +3630,8 @@ mod tests {
         let _ = queue.dequeue();
 
         // Manual request should bypass debounce
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
@@ -3641,14 +3674,16 @@ mod tests {
     fn test_intel_queue_multiple_entities() {
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "acme".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
             retry_count: 0,
         });
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "beta-project".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "beta-project".to_string(),
             entity_type: "project".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
@@ -3667,7 +3702,8 @@ mod tests {
         let queue = IntelligenceQueue::new();
 
         for name in &["alpha", "beta", "gamma", "delta"] {
-            let _ = queue.enqueue(IntelRequest {                entity_id: name.to_string(),
+            let _ = queue.enqueue(IntelRequest {
+                entity_id: name.to_string(),
                 entity_type: "account".to_string(),
                 priority: IntelPriority::ContentChange,
                 requested_at: Instant::now(),
@@ -3687,19 +3723,22 @@ mod tests {
     fn test_dequeue_batch_returns_by_priority() {
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "low".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "low".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),
             retry_count: 0,
         });
-        let _ = queue.enqueue(IntelRequest {            entity_id: "high".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "high".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::Manual,
             requested_at: Instant::now(),
             retry_count: 0,
         });
-        let _ = queue.enqueue(IntelRequest {            entity_id: "mid".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "mid".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::CalendarChange,
             requested_at: Instant::now(),
@@ -3724,7 +3763,8 @@ mod tests {
     fn test_dequeue_batch_fewer_than_max() {
         let queue = IntelligenceQueue::new();
 
-        let _ = queue.enqueue(IntelRequest {            entity_id: "only-one".to_string(),
+        let _ = queue.enqueue(IntelRequest {
+            entity_id: "only-one".to_string(),
             entity_type: "account".to_string(),
             priority: IntelPriority::ContentChange,
             requested_at: Instant::now(),

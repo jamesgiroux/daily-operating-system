@@ -102,10 +102,11 @@ impl TrustAssessment {
             )
         });
         let untrusted = match category {
-            AbilityCategory::Transform if has_prompt_fingerprint || has_llm_synthesis_field => {
-                true
-            }
-            AbilityCategory::Read | AbilityCategory::Transform | AbilityCategory::Publish | AbilityCategory::Maintenance => {
+            AbilityCategory::Transform if has_prompt_fingerprint || has_llm_synthesis_field => true,
+            AbilityCategory::Read
+            | AbilityCategory::Transform
+            | AbilityCategory::Publish
+            | AbilityCategory::Maintenance => {
                 has_prompt_fingerprint || has_llm_synthesis_field || has_untrusted_contribution
             }
         };
@@ -156,19 +157,24 @@ pub enum TrustReason {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::abilities::registry::AbilityCategory;
     use crate::abilities::provenance::{
         AbilityExecutionMode, AbilityVersion, Actor, FieldAttribution, FieldPath, InputsSnapshot,
         InvocationId, Provenance, SchemaVersion, SourceIdentifier, SubjectAttribution, SubjectRef,
     };
+    use crate::abilities::registry::AbilityCategory;
     use chrono::TimeZone;
 
     fn source(data_source: DataSource) -> SourceAttribution {
-        let observed_at = chrono::Utc
-            .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-            .unwrap();
-        SourceAttribution::new(data_source, Vec::new(), observed_at, Some(observed_at), 1.0, None)
-            .unwrap()
+        let observed_at = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
+        SourceAttribution::new(
+            data_source,
+            Vec::new(),
+            observed_at,
+            Some(observed_at),
+            1.0,
+            None,
+        )
+        .unwrap()
     }
 
     fn subject() -> SubjectAttribution {
@@ -210,12 +216,12 @@ mod tests {
 
     #[test]
     fn provenance_contains_stored_synthesis_from_source_marker() {
-        let observed_at = chrono::Utc
-            .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-            .unwrap();
+        let observed_at = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
         let marker = crate::abilities::provenance::SynthesisMarker {
             producer_ability: "summarize_account".into(),
-            producer_invocation_id: InvocationId::new("invocation-child"),
+            producer_invocation_id: InvocationId::new(
+                uuid::Uuid::parse_str("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb").unwrap(),
+            ),
             produced_at: observed_at,
         };
         let source = SourceAttribution::new(
@@ -245,16 +251,16 @@ mod tests {
 
     #[test]
     fn provenance_publish_maintenance_inherit_weakest_child() {
-        let observed_at = chrono::Utc
-            .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-            .unwrap();
+        let observed_at = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
         let subject = subject();
         let child = Provenance {
             provenance_schema_version: crate::abilities::provenance::PROVENANCE_SCHEMA_VERSION,
             ability_name: "transform_child".into(),
             ability_version: AbilityVersion::new(1, 0),
             ability_schema_version: SchemaVersion(1),
-            invocation_id: InvocationId::new("child-invocation"),
+            invocation_id: InvocationId::new(
+                uuid::Uuid::parse_str("cccccccc-cccc-4ccc-8ccc-cccccccccccc").unwrap(),
+            ),
             produced_at: observed_at,
             inputs_snapshot: InputsSnapshot::default(),
             actor: Actor::System {
@@ -277,7 +283,10 @@ mod tests {
             subject,
             warnings: Vec::new(),
         };
-        let children = vec![ComposedProvenance::new(CompositionId::new("child_a"), child)];
+        let children = vec![ComposedProvenance::new(
+            CompositionId::new("child_a"),
+            child,
+        )];
 
         let trust = TrustAssessment::compute(
             &[],
