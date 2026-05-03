@@ -16,12 +16,13 @@
 //! (which evolves with schema/repair worker changes). Reviewers can
 //! audit the matrix here without grepping the writer.
 
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 /// Closed set of typed feedback actions a user may apply to a claim.
 /// The variant set is the contract: extending it is a substrate change
 /// that requires updating every consumer that matches `FeedbackAction`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum FeedbackAction {
     /// "Yes, this is still true." Adds a user corroboration row and
@@ -88,7 +89,7 @@ impl FeedbackAction {
 ///   for user judgment. NOT auto-resolvable: only explicit user
 ///   feedback, a corrected superseding claim, or contradiction
 ///   reconciliation can close this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimVerificationState {
     #[default]
