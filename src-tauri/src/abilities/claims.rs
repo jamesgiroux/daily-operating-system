@@ -23,6 +23,38 @@ use serde::{Deserialize, Serialize};
 
 use crate::db::claims::{ClaimSensitivity, TemporalScope};
 
+/// Actor classes permitted to write a given claim type. The
+/// authorization grain at commit time: a claim type tagged with
+/// only `[System]` rejects writes from `User` actors and vice
+/// versa. An empty `allowed_actor_classes` slice means
+/// "no restriction" — useful during migration windows where the
+/// closed actor surface isn't fully defined.
+///
+/// W4-C `invoke_ability` consumes this for actor-filtered MCP
+/// discovery; the substrate exposes the field so authorization
+/// is colocated with the claim-type taxonomy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ClaimActorClass {
+    /// Real users producing claims via UI (manual dismiss,
+    /// stakeholder edit, etc.).
+    User,
+    /// Backfill / migration / repair / system-maintenance code.
+    System,
+    /// AI abilities producing claims (DOS-218 entity context,
+    /// DOS-219 meeting brief, etc.).
+    Agent,
+}
+
+impl ClaimActorClass {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::System => "system",
+            Self::Agent => "agent",
+        }
+    }
+}
+
 /// Subject kinds a claim may attach to. Matches the runtime
 /// `SubjectRef` set (Account, Meeting, Person, Project, Email).
 /// `Global` and `Multi` are deliberately absent: the v1.4.0 spine
@@ -74,6 +106,17 @@ pub enum ClaimType {
     TriageSnooze,
     MeetingEntityDismissed,
     AccountFieldCorrection,
+    /// Generic dismissed-item lifecycle row written by the
+    /// services::claims_backfill m9 path. Subject_ref is supplied
+    /// by the caller; the canonical subjects are entity-or-meeting.
+    DismissedItem,
+    /// Briefing-callout dismissal (legacy `briefing_callouts` table
+    /// migration). Subject is whatever the dismissed callout was
+    /// attached to — entity or meeting.
+    BriefingCalloutDismissed,
+    /// Nudge dismissal (legacy `nudges` table migration). Subject
+    /// is the entity the nudge targeted.
+    NudgeDismissed,
     // --- Pilot context (W5 abilities) -------------------------------
     EntityIdentity,
     EntitySummary,
@@ -141,6 +184,12 @@ pub struct ClaimTypeMetadata {
     /// Subjects this claim type may attach to. `commit_claim` rejects
     /// rows whose `subject_ref.kind` is not in this slice.
     pub canonical_subject_types: &'static [CanonicalSubjectType],
+    /// Actor classes permitted to write this claim type. Empty slice
+    /// means no restriction — useful during the W3 substrate window
+    /// where the closed actor surface is still being defined.
+    /// W4-C `invoke_ability` consumes this for actor-filtered MCP
+    /// discovery.
+    pub allowed_actor_classes: &'static [ClaimActorClass],
 }
 
 /// Compile-time exhaustive lookup. Adding a new `ClaimType` variant
@@ -158,22 +207,25 @@ pub const fn metadata_for_claim_type(kind: ClaimType) -> &'static ClaimTypeMetad
         ClaimType::TriageSnooze => &CLAIM_TYPE_REGISTRY[7],
         ClaimType::MeetingEntityDismissed => &CLAIM_TYPE_REGISTRY[8],
         ClaimType::AccountFieldCorrection => &CLAIM_TYPE_REGISTRY[9],
-        ClaimType::EntityIdentity => &CLAIM_TYPE_REGISTRY[10],
-        ClaimType::EntitySummary => &CLAIM_TYPE_REGISTRY[11],
-        ClaimType::EntityCurrentState => &CLAIM_TYPE_REGISTRY[12],
-        ClaimType::EntityRisk => &CLAIM_TYPE_REGISTRY[13],
-        ClaimType::EntityWin => &CLAIM_TYPE_REGISTRY[14],
-        ClaimType::StakeholderEngagement => &CLAIM_TYPE_REGISTRY[15],
-        ClaimType::StakeholderAssessment => &CLAIM_TYPE_REGISTRY[16],
-        ClaimType::ValueDelivered => &CLAIM_TYPE_REGISTRY[17],
-        ClaimType::MeetingReadiness => &CLAIM_TYPE_REGISTRY[18],
-        ClaimType::CompanyContext => &CLAIM_TYPE_REGISTRY[19],
-        ClaimType::OpenLoop => &CLAIM_TYPE_REGISTRY[20],
-        ClaimType::MeetingTopic => &CLAIM_TYPE_REGISTRY[21],
-        ClaimType::MeetingEventNote => &CLAIM_TYPE_REGISTRY[22],
-        ClaimType::AttendeeContext => &CLAIM_TYPE_REGISTRY[23],
-        ClaimType::MeetingChangeMarker => &CLAIM_TYPE_REGISTRY[24],
-        ClaimType::SuggestedOutcome => &CLAIM_TYPE_REGISTRY[25],
+        ClaimType::DismissedItem => &CLAIM_TYPE_REGISTRY[10],
+        ClaimType::BriefingCalloutDismissed => &CLAIM_TYPE_REGISTRY[11],
+        ClaimType::NudgeDismissed => &CLAIM_TYPE_REGISTRY[12],
+        ClaimType::EntityIdentity => &CLAIM_TYPE_REGISTRY[13],
+        ClaimType::EntitySummary => &CLAIM_TYPE_REGISTRY[14],
+        ClaimType::EntityCurrentState => &CLAIM_TYPE_REGISTRY[15],
+        ClaimType::EntityRisk => &CLAIM_TYPE_REGISTRY[16],
+        ClaimType::EntityWin => &CLAIM_TYPE_REGISTRY[17],
+        ClaimType::StakeholderEngagement => &CLAIM_TYPE_REGISTRY[18],
+        ClaimType::StakeholderAssessment => &CLAIM_TYPE_REGISTRY[19],
+        ClaimType::ValueDelivered => &CLAIM_TYPE_REGISTRY[20],
+        ClaimType::MeetingReadiness => &CLAIM_TYPE_REGISTRY[21],
+        ClaimType::CompanyContext => &CLAIM_TYPE_REGISTRY[22],
+        ClaimType::OpenLoop => &CLAIM_TYPE_REGISTRY[23],
+        ClaimType::MeetingTopic => &CLAIM_TYPE_REGISTRY[24],
+        ClaimType::MeetingEventNote => &CLAIM_TYPE_REGISTRY[25],
+        ClaimType::AttendeeContext => &CLAIM_TYPE_REGISTRY[26],
+        ClaimType::MeetingChangeMarker => &CLAIM_TYPE_REGISTRY[27],
+        ClaimType::SuggestedOutcome => &CLAIM_TYPE_REGISTRY[28],
     }
 }
 
@@ -193,6 +245,18 @@ const SUBJECTS_ENTITY_OR_MEETING: &[CanonicalSubjectType] = &[
     CanonicalSubjectType::Person,
     CanonicalSubjectType::Meeting,
 ];
+/// linking_dismissed must accept Email — `manual_dismiss` for
+/// owner_type=Email shadow-writes claim_type='linking_dismissed'
+/// on the Email subject. Distinct from the entity-or-meeting set
+/// because Email is a dismissable owner here but not for
+/// `meeting_entity_dismissed` (which only attaches to Meeting).
+const SUBJECTS_LINKING_DISMISSED: &[CanonicalSubjectType] = &[
+    CanonicalSubjectType::Account,
+    CanonicalSubjectType::Project,
+    CanonicalSubjectType::Person,
+    CanonicalSubjectType::Meeting,
+    CanonicalSubjectType::Email,
+];
 const SUBJECTS_TRIAGE: &[CanonicalSubjectType] = &[
     CanonicalSubjectType::Account,
     CanonicalSubjectType::Project,
@@ -200,6 +264,21 @@ const SUBJECTS_TRIAGE: &[CanonicalSubjectType] = &[
     CanonicalSubjectType::Meeting,
     CanonicalSubjectType::Email,
 ];
+
+/// Actor-class slices for the W3 substrate window. The system+user
+/// pairing covers all current dismissal lifecycle types (legacy
+/// backfill writes as system; runtime user-driven dismissals write
+/// as user). Pilot context types (DOS-218/219 entity_*, meeting_*)
+/// are agent-only since they're produced by AI abilities.
+const ACTORS_ANY: &[ClaimActorClass] = &[
+    ClaimActorClass::User,
+    ClaimActorClass::System,
+    ClaimActorClass::Agent,
+];
+const ACTORS_USER_OR_SYSTEM: &[ClaimActorClass] =
+    &[ClaimActorClass::User, ClaimActorClass::System];
+const ACTORS_AGENT: &[ClaimActorClass] = &[ClaimActorClass::Agent];
+const ACTORS_SYSTEM: &[ClaimActorClass] = &[ClaimActorClass::System];
 
 /// Closed registry of claim types. Index order MUST match the
 /// `metadata_for_claim_type` match arms above; the
@@ -212,6 +291,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ANY_ENTITY,
+        allowed_actor_classes: ACTORS_ANY,
     },
     ClaimTypeMetadata {
         kind: ClaimType::Win,
@@ -219,6 +299,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ANY_ENTITY,
+        allowed_actor_classes: ACTORS_ANY,
     },
     ClaimTypeMetadata {
         kind: ClaimType::StakeholderRole,
@@ -226,13 +307,18 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_PERSON,
+        allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
     },
     ClaimTypeMetadata {
         kind: ClaimType::LinkingDismissed,
         name: "linking_dismissed",
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
-        canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+        // Email is a dismissable owner here (manual_dismiss for
+        // owner_type=Email writes this) — distinct from the
+        // entity-or-meeting set used by other lifecycle types.
+        canonical_subject_types: SUBJECTS_LINKING_DISMISSED,
+        allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
     },
     ClaimTypeMetadata {
         kind: ClaimType::EmailDismissed,
@@ -240,6 +326,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_EMAIL,
+        allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
     },
     ClaimTypeMetadata {
         kind: ClaimType::IntelligenceFieldDismissed,
@@ -247,6 +334,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+        allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
     },
     ClaimTypeMetadata {
         kind: ClaimType::FeedbackFieldDismissed,
@@ -254,6 +342,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+        allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
     },
     ClaimTypeMetadata {
         kind: ClaimType::TriageSnooze,
@@ -261,6 +350,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_TRIAGE,
+        allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
     },
     ClaimTypeMetadata {
         kind: ClaimType::MeetingEntityDismissed,
@@ -268,6 +358,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_MEETING,
+        allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
     },
     ClaimTypeMetadata {
         kind: ClaimType::AccountFieldCorrection,
@@ -275,6 +366,35 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ACCOUNT,
+        allowed_actor_classes: ACTORS_USER_OR_SYSTEM,
+    },
+    // --- Backfill-only (legacy migration write paths) ---------------
+    ClaimTypeMetadata {
+        kind: ClaimType::DismissedItem,
+        name: "dismissed_item",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        // Subject_ref is supplied by the m9 backfill caller and may
+        // be any entity or meeting; matching the runtime triage set
+        // (incl. Email) keeps backfill insertion permissible.
+        canonical_subject_types: SUBJECTS_TRIAGE,
+        allowed_actor_classes: ACTORS_SYSTEM,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::BriefingCalloutDismissed,
+        name: "briefing_callout_dismissed",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+        allowed_actor_classes: ACTORS_SYSTEM,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::NudgeDismissed,
+        name: "nudge_dismissed",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+        allowed_actor_classes: ACTORS_SYSTEM,
     },
     // --- Pilot context (W5 abilities) -------------------------------
     ClaimTypeMetadata {
@@ -283,6 +403,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ANY_ENTITY,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::EntitySummary,
@@ -290,6 +411,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ANY_ENTITY,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::EntityCurrentState,
@@ -297,6 +419,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ANY_ENTITY,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::EntityRisk,
@@ -304,6 +427,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ANY_ENTITY,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::EntityWin,
@@ -311,6 +435,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ANY_ENTITY,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::StakeholderEngagement,
@@ -318,6 +443,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_PERSON,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::StakeholderAssessment,
@@ -325,6 +451,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Confidential,
         canonical_subject_types: SUBJECTS_PERSON,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::ValueDelivered,
@@ -332,6 +459,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ANY_ENTITY,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::MeetingReadiness,
@@ -339,6 +467,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_MEETING,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::CompanyContext,
@@ -346,6 +475,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ACCOUNT,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::OpenLoop,
@@ -353,6 +483,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::MeetingTopic,
@@ -360,6 +491,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_MEETING,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::MeetingEventNote,
@@ -369,6 +501,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::PointInTime,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_MEETING,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::AttendeeContext,
@@ -376,6 +509,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_PERSON,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::MeetingChangeMarker,
@@ -383,6 +517,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::PointInTime,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_MEETING,
+        allowed_actor_classes: ACTORS_AGENT,
     },
     ClaimTypeMetadata {
         kind: ClaimType::SuggestedOutcome,
@@ -390,6 +525,7 @@ pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
         default_temporal_scope: TemporalScope::State,
         default_sensitivity: ClaimSensitivity::Internal,
         canonical_subject_types: SUBJECTS_MEETING,
+        allowed_actor_classes: ACTORS_AGENT,
     },
 ];
 
@@ -445,6 +581,9 @@ mod tests {
             (ClaimType::TriageSnooze, "triage_snooze"),
             (ClaimType::MeetingEntityDismissed, "meeting_entity_dismissed"),
             (ClaimType::AccountFieldCorrection, "account_field_correction"),
+            (ClaimType::DismissedItem, "dismissed_item"),
+            (ClaimType::BriefingCalloutDismissed, "briefing_callout_dismissed"),
+            (ClaimType::NudgeDismissed, "nudge_dismissed"),
             (ClaimType::EntityIdentity, "entity_identity"),
             (ClaimType::EntitySummary, "entity_summary"),
             (ClaimType::EntityCurrentState, "entity_current_state"),
@@ -503,6 +642,106 @@ mod tests {
             ClaimType::EmailDismissed,
             "email"
         ));
+    }
+
+    #[test]
+    fn linking_dismissed_accepts_email_subject() {
+        // Regression: manual_dismiss for owner_type=Email
+        // shadow-writes claim_type='linking_dismissed' on the Email
+        // subject. The registry must permit this or the new
+        // commit_claim canonical-subject guard rejects every email
+        // link dismissal.
+        assert!(subject_kind_is_canonical_for(
+            ClaimType::LinkingDismissed,
+            "email"
+        ));
+        // Other linking_dismissed targets stay valid.
+        for k in ["account", "project", "person", "meeting"] {
+            assert!(
+                subject_kind_is_canonical_for(ClaimType::LinkingDismissed, k),
+                "linking_dismissed must permit subject {k}"
+            );
+        }
+    }
+
+    #[test]
+    fn backfill_claim_types_are_registered() {
+        // The migration 130/131 backfill paths and the
+        // claims_backfill m9 hot path write these claim_type
+        // strings. They must round-trip through the registry or
+        // ClaimType::try_from_db_str rejects rows the migrations
+        // already inserted.
+        for name in [
+            "dismissed_item",
+            "briefing_callout_dismissed",
+            "nudge_dismissed",
+        ] {
+            assert!(
+                ClaimType::try_from_db_str(name).is_ok(),
+                "backfill claim_type {name} missing from registry"
+            );
+        }
+    }
+
+    #[test]
+    fn allowed_actor_classes_partition_substrate_correctly() {
+        // Pilot context types are agent-only; lifecycle dismissals
+        // accept user or system; legacy backfill is system-only.
+        // The partition is the W4-C authorization gate input —
+        // a test pins the shape so accidental widening doesn't
+        // grant agents permission to write dismissal lifecycle
+        // rows or vice-versa.
+        let agent_only = [
+            ClaimType::EntityIdentity,
+            ClaimType::EntitySummary,
+            ClaimType::EntityCurrentState,
+            ClaimType::EntityRisk,
+            ClaimType::EntityWin,
+            ClaimType::StakeholderEngagement,
+            ClaimType::StakeholderAssessment,
+            ClaimType::ValueDelivered,
+            ClaimType::MeetingReadiness,
+            ClaimType::CompanyContext,
+            ClaimType::OpenLoop,
+            ClaimType::MeetingTopic,
+            ClaimType::MeetingEventNote,
+            ClaimType::AttendeeContext,
+            ClaimType::MeetingChangeMarker,
+            ClaimType::SuggestedOutcome,
+        ];
+        for kind in agent_only {
+            let actors = metadata_for_claim_type(kind).allowed_actor_classes;
+            assert_eq!(actors.len(), 1, "{kind:?} should be agent-only");
+            assert_eq!(actors[0], ClaimActorClass::Agent);
+        }
+
+        let system_only = [
+            ClaimType::DismissedItem,
+            ClaimType::BriefingCalloutDismissed,
+            ClaimType::NudgeDismissed,
+        ];
+        for kind in system_only {
+            let actors = metadata_for_claim_type(kind).allowed_actor_classes;
+            assert_eq!(actors.len(), 1, "{kind:?} should be system-only");
+            assert_eq!(actors[0], ClaimActorClass::System);
+        }
+
+        let user_or_system = [
+            ClaimType::StakeholderRole,
+            ClaimType::LinkingDismissed,
+            ClaimType::EmailDismissed,
+            ClaimType::IntelligenceFieldDismissed,
+            ClaimType::FeedbackFieldDismissed,
+            ClaimType::TriageSnooze,
+            ClaimType::MeetingEntityDismissed,
+            ClaimType::AccountFieldCorrection,
+        ];
+        for kind in user_or_system {
+            let actors = metadata_for_claim_type(kind).allowed_actor_classes;
+            assert_eq!(actors.len(), 2, "{kind:?} should be user-or-system");
+            assert!(actors.contains(&ClaimActorClass::User));
+            assert!(actors.contains(&ClaimActorClass::System));
+        }
     }
 
     #[test]
