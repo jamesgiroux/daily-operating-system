@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Meridian Harbor — Q2 Business Review · DailyOS Reference</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/primitives.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+<style>
+  .folio-actions {
+    position: fixed; top: var(--folio-height); left: 0; right: 0;
+    height: 36px;
+    background: rgba(245,242,239,0.78); backdrop-filter: blur(10px);
+    border-bottom: 1px solid var(--color-rule-light);
+    display: flex; justify-content: flex-end; gap: 10px;
+    padding: 0 48px 0 80px;
+    z-index: 99;
+    align-items: center;
+  }
+  .folio-actions button {
+    background: transparent; border: 1px solid var(--color-rule-heavy);
+    color: var(--color-text-secondary);
+    font: 500 11px/1 var(--font-mono);
+    text-transform: uppercase; letter-spacing: 0.06em;
+    padding: 6px 12px; border-radius: var(--radius-sm); cursor: pointer;
+  }
+  .folio-actions button.primary {
+    background: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric);
+    color: var(--color-desk-charcoal);
+  }
+  .folio-actions button:hover { background: var(--color-desk-charcoal-4); }
+  .folio-actions button.primary:hover { opacity: 0.92; }
+
+  .meeting-page { margin-top: 36px; }
+
+  .agenda-list { list-style: none; margin: 0; padding: 0; }
+  .agenda-row {
+    display: grid; grid-template-columns: 24px 1fr auto; gap: 12px;
+    padding: 12px 0; border-bottom: 1px solid var(--color-rule-light);
+    align-items: baseline;
+  }
+  .agenda-row .icon { font-family: var(--font-mono); font-size: 14px; color: var(--color-garden-sage); }
+  .agenda-row .icon.open { color: var(--color-text-tertiary); }
+  .agenda-row .icon.new { color: var(--color-garden-larkspur); }
+  .agenda-row .what { font-family: var(--font-serif); font-size: 16px; color: var(--color-text-primary); }
+  .agenda-row .meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--color-text-tertiary); white-space: nowrap; }
+  .agenda-row .meta.overdue { color: var(--color-spice-terracotta); font-weight: 600; }
+
+  .findings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
+  .findings-col h3 { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+  .findings-col.risks h3 { color: var(--color-spice-terracotta); }
+  .findings-col.wins h3 { color: var(--color-garden-rosemary); }
+  .finding { display: grid; grid-template-columns: 14px 1fr; gap: 10px; margin-bottom: 16px; }
+  .finding .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; }
+  .finding.risk .dot { background: var(--color-spice-terracotta); }
+  .finding.win .dot { background: var(--color-garden-sage); }
+  .finding.decision .dot { background: var(--color-text-tertiary); }
+  .finding-title { font-family: var(--font-serif); font-size: 16px; color: var(--color-text-primary); margin-bottom: 4px; }
+  .finding-impact { font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; }
+  .evidence { font-family: var(--font-serif); font-style: italic; font-size: 14px; color: var(--color-text-secondary); border-left: 2px solid var(--color-rule-heavy); padding: 4px 0 4px 12px; margin: 8px 0; max-width: 480px; }
+  .attribution { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--color-text-tertiary); }
+
+  .findings-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
+  .findings-3 h3 { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
+  .findings-3 .col.wins h3 { color: var(--color-garden-rosemary); }
+  .findings-3 .col.risks h3 { color: var(--color-spice-terracotta); }
+  .findings-3 .col.decisions h3 { color: var(--color-text-tertiary); }
+
+  .talk-balance { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 16px 0 8px; }
+  .talk-balance span { font-family: var(--font-mono); font-size: 10px; padding: 0 8px; line-height: 14px; color: #fff; white-space: nowrap; overflow: hidden; }
+
+  .signal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 32px; max-width: 600px; }
+  .signal-grid .sk { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); }
+  .signal-grid .sv { font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); }
+
+  .commitment, .suggested-action {
+    display: grid; grid-template-columns: 90px 1fr auto; gap: 16px;
+    padding: 14px 0; border-bottom: 1px solid var(--color-rule-light); align-items: baseline;
+  }
+  .pill-yours { background: var(--color-spice-turmeric-12); color: var(--color-spice-turmeric); }
+  .pill-theirs { background: var(--color-garden-larkspur-12); color: var(--color-garden-larkspur); }
+  .pill-suggested { background: var(--color-spice-saffron-15); color: #8a6f1a; }
+  .pill-pending { background: var(--color-desk-charcoal-4); color: var(--color-text-secondary); }
+  .commit-tag {
+    display: inline-flex; padding: 3px 10px; border-radius: 100px;
+    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
+  }
+  .commit-text { font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); line-height: 1.5; }
+  .commit-meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--color-text-tertiary); }
+
+  .accept-btn { background: var(--color-spice-turmeric); color: var(--color-desk-charcoal); border: none; padding: 6px 14px; border-radius: var(--radius-sm); font: 500 11px var(--font-mono); cursor: pointer; }
+  .dismiss-btn { background: transparent; border: 1px solid var(--color-rule-heavy); color: var(--color-text-secondary); padding: 6px 14px; border-radius: var(--radius-sm); font: 500 11px var(--font-mono); cursor: pointer; }
+
+  .role-row { display: grid; grid-template-columns: 200px 1fr; gap: 16px; padding: 12px 0; }
+  .role-name { font-family: var(--font-serif); font-size: 16px; color: var(--color-text-primary); }
+  .role-trans { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; color: var(--color-text-secondary); }
+</style>
+</head>
+<body
+  data-folio-label="Meeting"
+  data-folio-crumbs="Meetings > Meridian Harbor — Q2 Business Review"
+  data-folio-status="Apr 17, 2026 · 13:08 · processed"
+  data-folio-actions="search"
+  data-tint="turmeric"
+  data-active-page="briefing"
+  data-nav-base=".">
+
+<div class="folio-actions" data-ds-name="FolioActions" data-ds-tier="pattern" data-ds-spec="patterns/FolioActions.md">
+  <button title="Copy">⧉ Copy</button>
+  <button title="Share">↗ Share</button>
+  <button class="primary">Send Recap</button>
+  <button title="Re-extract">↺ Re-extract</button>
+</div>
+
+<main class="page meeting-page" data-ds-name="MeetingDetail" data-ds-tier="surface" data-ds-spec="surfaces/MeetingDetail.md">
+
+<header class="hero" data-ds-name="MeetingHero" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
+  <span class="pill" data-tone="sage" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md">
+    <span class="pill-dot"></span>
+    Wrapped 8 minutes ago · 56 min recorded
+  </span>
+  <p class="hero-eyebrow" style="margin-top:18px;">Meeting Recap · Tuesday, Apr 17 · 11:00–11:56 AM PT</p>
+  <h1 class="hero-title">Meridian Harbor — Q2 Business Review</h1>
+  <p class="hero-lede" style="font-style:normal; font-size:18px;">
+    Hosted by you · with <a href="person.html" style="border-bottom:1px solid var(--color-rule-heavy);">Priya Shankar</a> (CSM), <a href="person.html" style="border-bottom:1px solid var(--color-rule-heavy);">Marco Devine</a>, <a href="person.html" style="border-bottom:1px solid var(--color-rule-heavy);">Liu Kang</a>, <a href="person.html" style="border-bottom:1px solid var(--color-rule-heavy);">Aoife Murphy</a> · 56 min · Granola transcript attached
+  </p>
+  <p style="font-family:var(--font-serif); font-size:18px; line-height:1.6; color:var(--color-text-primary); margin-top:24px; max-width:740px;">
+    Marco raised pricing in the first 4 minutes — he wants a 12% reduction tied to a 24-month renewal. Aoife (procurement) backed him. You held the floor on Helpline adoption and the audit-log work, and you committed to a follow-up renewal-pricing meeting with Aoife on Apr 24. Liu was quiet but warmed up when the SSO topic came up. No decisions today; one new commitment from you, three follow-ups assigned to Priya.
+  </p>
+</header>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Plan<span class="margin-label-count">tracked</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">What happened to your plan</h2>
+      <p class="chapter-epigraph">Tracking the 4 agenda items from the briefing.</p>
+    </div>
+    <ul class="agenda-list" data-ds-name="AgendaThreadList" data-ds-tier="pattern" data-ds-spec="patterns/AgendaThreadList.md">
+      <li class="agenda-row"><span class="icon">✓</span><div class="what">Pricing pressure raised first — confirmed.<div class="meta">Item 1 of plan · 18 min spent</div></div><span></span></li>
+      <li class="agenda-row"><span class="icon">✓</span><div class="what">Helpline rollout discussed; Marco accepted the one-sprint slip without escalation.<div class="meta">Item 2 of plan · 11 min spent</div></div><span></span></li>
+      <li class="agenda-row"><span class="icon open">○</span><div class="what">Liu re-engagement — partially. She joined SSO discussion but didn't speak on technical roadmap.<div class="meta">Item 3 of plan · 7 min spent</div></div><span></span></li>
+      <li class="agenda-row"><span class="icon">✓</span><div class="what">Renewal scenarios deferred to Apr 24 follow-up. Aoife will attend.<div class="meta">Item 4 of plan · 8 min spent</div></div><span></span></li>
+      <li class="agenda-row"><span class="icon open">○</span><div class="what">Audit-log export to Marco — STILL OPEN.<div class="meta overdue">Carried over · 9 days overdue</div></div><span></span></li>
+      <li class="agenda-row"><span class="icon new">+</span><div class="what">Aoife Murphy<div class="meta">new attendee · procurement lead</div></div><span></span></li>
+    </ul>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Predictions<span class="margin-label-count">vs reality</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Predictions vs. Reality</h2>
+    </div>
+    <div class="findings-grid" data-ds-name="PredictionsVsRealityGrid" data-ds-tier="pattern" data-ds-spec="patterns/PredictionsVsRealityGrid.md">
+      <div class="findings-col risks">
+        <h3>Risks (from briefing)</h3>
+        <div class="finding risk"><div class="dot"></div><div><div class="finding-title">Procurement-led 12% pricing compression — CONFIRMED</div><div class="finding-impact">Asked exactly as predicted. Marco named Acme as the comparator.</div></div></div>
+        <div class="finding risk"><div class="dot"></div><div><div class="finding-title">Helpline slip — surfaced but not escalated</div><div class="finding-impact">Marco accepted the new dates without pushback.</div></div></div>
+        <div class="finding risk"><div class="dot"></div><div><div class="finding-title">Liu's disengagement — partial</div><div class="finding-impact">She joined for ~9 minutes but did not engage on roadmap.</div></div></div>
+      </div>
+      <div class="findings-col wins">
+        <h3>Wins (from briefing)</h3>
+        <div class="finding win"><div class="dot"></div><div><div class="finding-title">92% Helpline adoption landed well</div><div class="finding-impact">Marco asked for a case-study quote — first time this quarter.</div></div></div>
+        <div class="finding win"><div class="dot"></div><div><div class="finding-title">SSO/audit-log work re-anchored the technical thread</div><div class="finding-impact">Liu acknowledged the cleanup; Marco followed up with the audit-log request.</div></div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Conversation<span class="margin-label-count">analysis</span></div>
+  <div class="margin-content">
+    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Conversation</h2></div>
+
+    <div class="talk-balance" data-ds-name="TalkBalanceBar" data-ds-tier="pattern" data-ds-spec="patterns/TalkBalanceBar.md">
+      <span style="background:var(--color-spice-turmeric); flex:38; color:var(--color-desk-charcoal);">You — 38%</span>
+      <span style="background:var(--color-spice-terracotta); flex:27;">Marco — 27%</span>
+      <span style="background:var(--color-garden-larkspur); flex:18;">Priya — 18%</span>
+      <span style="background:var(--color-garden-eucalyptus); flex:11;">Aoife — 11%</span>
+      <span style="background:var(--color-text-tertiary); flex:6;">Liu — 6%</span>
+    </div>
+
+    <div class="signal-grid" data-ds-name="SignalGrid" data-ds-tier="pattern" data-ds-spec="patterns/SignalGrid.md" style="margin-top:20px;">
+      <div><span class="sk">Question density</span> <span class="sv">High (1.4/min)</span></div>
+      <div><span class="sk">Decision maker active</span> <span class="sv">Marco — yes</span></div>
+      <div><span class="sk">Forward-looking</span> <span class="sv">62% of statements</span></div>
+      <div><span class="sk">Monologue risk</span> <span class="sv">Yes — minute 18–24</span></div>
+    </div>
+
+    <div data-ds-name="EscalationQuote" data-ds-tier="pattern" data-ds-spec="patterns/EscalationQuote.md" style="margin-top:24px;">
+      <p class="evidence" style="font-size:18px; max-width:600px;">"If we're going to defend this number to our CFO, we need to see what flexibility looks like before we sign anything."</p>
+      <p class="attribution">— Aoife Murphy · Procurement Lead · 11:14 AM</p>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Findings<span class="margin-label-count">3 cols</span></div>
+  <div class="margin-content">
+    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Findings</h2></div>
+
+    <div class="findings-3" data-ds-name="FindingsTriad" data-ds-tier="pattern" data-ds-spec="patterns/FindingsTriad.md">
+      <div class="col wins">
+        <h3>Wins</h3>
+        <div class="finding win"><div class="dot"></div><div>
+          <div class="finding-title">Marco asked for a case-study quote</div>
+          <div class="finding-impact">First time this quarter. Public reference candidate.</div>
+          <div class="evidence">"The team's been telling me it's the best ticketing setup we've had in three years — happy to say that on the record."</div>
+          <p class="attribution">— Marco · 11:31</p>
+        </div></div>
+      </div>
+      <div class="col risks">
+        <h3>Risks</h3>
+        <div class="finding risk"><div class="dot"></div><div>
+          <div class="finding-title">Aoife framed renewal as conditional on pricing</div>
+          <div class="finding-impact">Procurement now has the floor on the renewal conversation, not Marco.</div>
+          <div class="evidence">"This year we'll need procurement sign-off before any auto-renew, and that's going to mean a competitive review."</div>
+          <p class="attribution">— Aoife · 11:18</p>
+        </div></div>
+      </div>
+      <div class="col decisions">
+        <h3>Decisions</h3>
+        <div class="finding decision"><div class="dot"></div><div>
+          <div class="finding-title">Renewal-pricing follow-up scheduled</div>
+          <div class="finding-impact">Apr 24 · 1pm · with Aoife · pricing scenarios required.</div>
+        </div></div>
+        <div class="finding decision"><div class="dot"></div><div>
+          <div class="finding-title">Helpline rollout date reset to May 8</div>
+          <div class="finding-impact">Marco accepted the one-sprint slip. Confirmed in the room.</div>
+        </div></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Champion<span class="margin-label-count">Marco</span></div>
+  <div class="margin-content">
+    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Champion Health</h2></div>
+    <div data-ds-name="ChampionHealthBlock" data-ds-tier="pattern" data-ds-spec="patterns/ChampionHealthBlock.md">
+      <div style="display:flex; gap:18px; align-items:baseline;">
+        <span style="font-family:var(--font-serif); font-size:24px;">Marco Devine</span>
+        <span style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.06em; color:var(--color-spice-saffron);">● Still champion · weakening</span>
+      </div>
+      <div class="evidence" style="margin-top:14px;">"I'll go to bat for the Helpline numbers internally — but the per-seat math has to come down or I won't have cover."</div>
+      <p class="attribution">— Marco · 11:52 — last 4 minutes of the call</p>
+      <p style="margin-top:14px; font-family:var(--font-sans); font-size:14px; line-height:1.55; color:var(--color-spice-chili);">
+        <strong>Risk:</strong> Marco is now using procurement as cover. If pricing isn't resolved by mid-May, he stops being a champion and becomes a neutral.
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Commits<span class="margin-label-count">3 + 3 sug</span></div>
+  <div class="margin-content">
+    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Commitments &amp; Actions</h2></div>
+
+    <div class="commitment" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
+      <span class="commit-tag pill-yours">YOURS</span>
+      <div class="commit-text">Send three pricing scenarios for the Apr 24 follow-up — covering 0%, 6%, and 12% reduction with renewal-term tradeoffs.</div>
+      <span></span>
+    </div>
+    <div class="commitment" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
+      <span class="commit-tag pill-yours">YOURS</span>
+      <div class="commit-text">Audit-log export to Marco by EOD Friday (carried over from March).</div>
+      <span></span>
+    </div>
+    <div class="commitment" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
+      <span class="commit-tag pill-theirs">THEIRS</span>
+      <div class="commit-text">Marco will confirm Aoife's authority level for the Apr 24 meeting.</div>
+      <span></span>
+    </div>
+
+    <h3 style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary); margin:24px 0 12px;">Suggested actions</h3>
+
+    <div class="suggested-action" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
+      <span class="commit-tag pill-suggested">Suggested</span>
+      <div>
+        <div class="commit-text"><strong>Schedule the Apr 24 renewal-pricing meeting</strong></div>
+        <div class="commit-meta">P1 · Owner: you · Due Apr 19</div>
+        <div class="evidence">"Apr 24 at 1pm works for us." — Aoife, 11:54</div>
+      </div>
+      <div style="display:flex; gap:8px;"><button class="accept-btn">Accept</button><button class="dismiss-btn">Dismiss</button></div>
+    </div>
+    <div class="suggested-action" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
+      <span class="commit-tag pill-suggested">Suggested</span>
+      <div>
+        <div class="commit-text"><strong>Loop Anika in on the discount-floor request</strong></div>
+        <div class="commit-meta">P1 · Owner: you · Due Apr 22</div>
+      </div>
+      <div style="display:flex; gap:8px;"><button class="accept-btn">Accept</button><button class="dismiss-btn">Dismiss</button></div>
+    </div>
+    <div class="suggested-action" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
+      <span class="commit-tag pill-suggested">Suggested</span>
+      <div>
+        <div class="commit-text"><strong>Draft case-study quote for Marco's review</strong></div>
+        <div class="commit-meta">P2 · Owner: Priya · Due Apr 24</div>
+      </div>
+      <div style="display:flex; gap:8px;"><button class="accept-btn">Accept</button><button class="dismiss-btn">Dismiss</button></div>
+    </div>
+
+    <div class="commitment" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
+      <span class="commit-tag pill-pending">Pending</span>
+      <div class="commit-text"><strong>Send the audit-log export</strong><div class="commit-meta">P1 · Owner: you · Due Apr 8 — overdue</div></div>
+      <button class="dismiss-btn">Mark complete</button>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Roles<span class="margin-label-count">2 changes</span></div>
+  <div class="margin-content">
+    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Role changes detected</h2></div>
+    <div data-ds-name="RoleTransitionRow" data-ds-tier="pattern" data-ds-spec="patterns/RoleTransitionRow.md" class="role-row">
+      <div class="role-name">Aoife Murphy</div>
+      <div class="role-trans">No relationship → Procurement gatekeeper</div>
+    </div>
+    <div data-ds-name="RoleTransitionRow" data-ds-tier="pattern" data-ds-spec="patterns/RoleTransitionRow.md" class="role-row">
+      <div class="role-name">Marco Devine</div>
+      <div class="role-trans">Champion → Champion (weakening)</div>
+    </div>
+  </div>
+</section>
+
+<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
+  <div class="finis-mark">✱ ✱ ✱</div>
+  <div class="finis-date">Processed Apr 17, 2026 · 13:08 — from 56-min Granola transcript</div>
+</div>
+
+</main>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

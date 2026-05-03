@@ -1,0 +1,174 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Primitives · DailyOS Design System</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/primitives.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+<style>
+  body {
+    background: var(--color-paper-cream);
+    padding: 48px 80px 96px;
+    font-family: var(--font-sans);
+    color: var(--color-text-primary);
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+  header {
+    border-bottom: 1px solid var(--color-rule-heavy);
+    padding-bottom: 24px;
+    margin-bottom: 48px;
+  }
+  header .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 10px; }
+  header h1 { font-family: var(--font-serif); font-size: 56px; font-weight: 400; letter-spacing: -0.02em; }
+  header p { font-family: var(--font-serif); font-style: italic; font-size: 18px; color: var(--color-text-secondary); margin-top: 12px; max-width: 720px; line-height: 1.55; }
+  nav.tier-nav { display: flex; gap: 24px; margin: 24px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
+  nav.tier-nav a { color: var(--color-text-tertiary); text-decoration: none; padding-bottom: 4px; border-bottom: 1px solid transparent; }
+  nav.tier-nav a:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+  nav.tier-nav a.active { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
+  .frame {
+    border: 1px solid var(--color-rule-light);
+    border-radius: 8px;
+    padding: 24px;
+    margin-bottom: 24px;
+    background: var(--color-paper-warm-white);
+  }
+  .frame > .frame-head {
+    display: flex; align-items: baseline; gap: 14px;
+    padding-bottom: 14px; border-bottom: 1px solid var(--color-rule-light); margin-bottom: 18px;
+  }
+  .frame-head .tier-badge { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; padding: 3px 7px; border-radius: 3px; background: #1ea672; }
+  .frame-head h3 { font-family: var(--font-serif); font-size: 22px; font-weight: 400; }
+  .frame-head .spec-link { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); margin-left: auto; }
+  .frame-head .job { font-family: var(--font-serif); font-style: italic; font-size: 14px; color: var(--color-text-secondary); flex-basis: 100%; margin-top: 6px; }
+  .examples { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
+  section.wave { margin-bottom: 56px; }
+  section.wave > h2 { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-tertiary); padding-bottom: 8px; border-bottom: 1px solid var(--color-rule-heavy); margin-bottom: 18px; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="eyebrow">DailyOS Design System · Reference</div>
+  <h1>Primitives</h1>
+  <p>The smallest reusable units. Generic, unopinionated, no domain knowledge. Each frame loads its variants. Press <code>?</code> to inspect any element.</p>
+  <nav class="tier-nav">
+    <a href="../index.html">← Reference home</a>
+    <a href="tokens.html">Tokens</a>
+    <a href="primitives.html" class="active">Primitives</a>
+    <a href="patterns.html">Patterns</a>
+  </nav>
+</header>
+
+<section class="wave">
+<h2>Wave 1 (v1.4.3 substrate · 0.1.0)</h2>
+
+<div class="frame">
+  <div class="frame-head"><span class="tier-badge">primitive</span><h3>Pill</h3><span class="spec-link">primitives/Pill.md</span><div class="job">Visual primitive for inline status / label / category badges. Tone variants.</div></div>
+  <div class="examples">
+    <span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Ready</span>
+    <span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Active</span>
+    <span class="pill" data-tone="terracotta" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Overdue</span>
+    <span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Internal</span>
+    <span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Neutral</span>
+  </div>
+</div>
+
+<div class="frame">
+  <div class="frame-head"><span class="tier-badge">primitive</span><h3>TrustBandBadge</h3><span class="spec-link">primitives/TrustBandBadge.md</span><div class="job">v1.4.0 surface trust band. likely_current / use_with_caution / needs_verification.</div></div>
+  <div class="examples">
+    <span class="pill" data-tone="sage" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md" data-ds-variant="likely_current"><span class="pill-dot"></span>Likely current</span>
+    <span class="pill" data-tone="turmeric" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md" data-ds-variant="use_with_caution"><span class="pill-dot"></span>Use with caution</span>
+    <span class="pill" data-tone="terracotta" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md" data-ds-variant="needs_verification"><span class="pill-dot"></span>Needs verification</span>
+  </div>
+</div>
+
+<div class="frame">
+  <div class="frame-head"><span class="tier-badge">primitive</span><h3>IntelligenceQualityBadge</h3><span class="spec-link">primitives/IntelligenceQualityBadge.md</span><div class="job">Intelligence completeness: sparse / developing / ready / fresh. Existing in src/.</div></div>
+  <div class="examples">
+    <span class="pill" data-tone="neutral" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" data-ds-variant="sparse"><span class="pill-dot"></span>Sparse</span>
+    <span class="pill" data-tone="turmeric" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" data-ds-variant="developing"><span class="pill-dot"></span>Developing</span>
+    <span class="pill" data-tone="sage" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" data-ds-variant="ready"><span class="pill-dot"></span>Ready</span>
+    <span class="pill" data-tone="sage" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" data-ds-variant="fresh"><span class="pill-dot"></span>Fresh</span>
+  </div>
+</div>
+
+<div class="frame">
+  <div class="frame-head"><span class="tier-badge">primitive</span><h3>FreshnessIndicator</h3><span class="spec-link">primitives/FreshnessIndicator.md</span><div class="job">Raw recency timestamp + relative age. Distinct from trust judgment.</div></div>
+  <div class="examples" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); align-items:baseline; gap:24px;">
+    <span data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" data-ds-variant="relative">3h ago</span>
+    <span data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" data-ds-variant="relative" style="color:var(--color-spice-saffron);">stale 5d</span>
+    <span data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" data-ds-variant="absolute">Apr 22, 10:30am</span>
+    <span data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" data-ds-variant="both">3h ago · Apr 22 10:30</span>
+  </div>
+</div>
+
+<div class="frame">
+  <div class="frame-head"><span class="tier-badge">primitive</span><h3>ProvenanceTag</h3><span class="spec-link">primitives/ProvenanceTag.md</span><div class="job">Source attribution. Suppresses synthesized by default.</div></div>
+  <div class="examples" style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); align-items:baseline; gap:18px;">
+    <span data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">glean</span>
+    <span data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">salesforce</span>
+    <span data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">email</span>
+    <span data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md" data-ds-variant="discrepancy" style="color:var(--color-spice-saffron); border-bottom:1px dotted var(--color-spice-saffron); padding-bottom:1px;">slack · disagreement</span>
+  </div>
+</div>
+
+<div class="frame">
+  <div class="frame-head"><span class="tier-badge">primitive</span><h3>EntityChip</h3><span class="spec-link">primitives/EntityChip.md</span><div class="job">Entity reference with entity-type color (account / project / person).</div></div>
+  <div class="examples" style="font-family:var(--font-mono); font-size:10px;">
+    <span style="background:var(--color-spice-turmeric-8); color:var(--color-entity-account); padding:2px 8px; border-radius:3px; text-transform:uppercase; letter-spacing:0.04em;" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md" data-ds-variant="account">▢ Acme Corp</span>
+    <span style="background:var(--color-garden-olive-8); color:var(--color-entity-project); padding:2px 8px; border-radius:3px; text-transform:uppercase; letter-spacing:0.04em;" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md" data-ds-variant="project">▣ Q2 Launch</span>
+    <span style="background:var(--color-garden-larkspur-8); color:var(--color-entity-person); padding:2px 8px; border-radius:3px; text-transform:uppercase; letter-spacing:0.04em;" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md" data-ds-variant="person">◔ Jen Park</span>
+  </div>
+</div>
+
+<div class="frame">
+  <div class="frame-head"><span class="tier-badge">primitive</span><h3>TypeBadge</h3><span class="spec-link">primitives/TypeBadge.md</span><div class="job">Account-type categorical: Customer / Internal / Partner.</div></div>
+  <div class="examples">
+    <span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md" data-ds-variant="customer">Customer</span>
+    <span class="type-badge internal" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md" data-ds-variant="internal">Internal</span>
+    <span class="type-badge partner" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md" data-ds-variant="partner">Partner</span>
+  </div>
+</div>
+</section>
+
+<section class="wave">
+<h2>Wave 2 (v1.4.4 trust UI · 0.2.0)</h2>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>SourceCoverageLine</h3><span class="spec-link">primitives/SourceCoverageLine.md</span><div class="job">Compact line summarizing source coverage with optional stale count.</div></div><div class="examples" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); gap:24px;"><span data-ds-name="SourceCoverageLine" data-ds-tier="primitive" data-ds-spec="primitives/SourceCoverageLine.md">Glean · 4 sources</span><span data-ds-name="SourceCoverageLine" data-ds-tier="primitive" data-ds-spec="primitives/SourceCoverageLine.md" data-ds-variant="withStaleCount">Salesforce · 8 sources · <span style="color:var(--color-spice-saffron)">2 stale</span></span></div></div>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>ConfidenceScoreChip</h3><span class="spec-link">primitives/ConfidenceScoreChip.md</span><div class="job">Numerical confidence chip; tone shifts per band threshold.</div></div><div class="examples"><span class="pill" data-tone="sage" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">94%</span><span class="pill" data-tone="turmeric" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">72%</span><span class="pill" data-tone="terracotta" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">38%</span></div></div>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>VerificationStatusFlag</h3><span class="spec-link">primitives/VerificationStatusFlag.md</span><div class="job">Consistency state per v1.4.0: ok / corrected / flagged.</div></div><div class="examples" style="font-family:var(--font-mono); font-size:11px;"><span style="color:var(--color-garden-rosemary)" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md" data-ds-variant="ok">✓ ok</span><span style="color:var(--color-spice-turmeric)" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md" data-ds-variant="corrected">⟲ corrected</span><span style="color:var(--color-spice-terracotta)" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md" data-ds-variant="flagged">⚠ flagged</span></div></div>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>DataGapNotice</h3><span class="spec-link">primitives/DataGapNotice.md</span><div class="job">Inline warning that intelligence is missing critical inputs.</div></div><div class="examples"><span style="font-family:var(--font-sans); font-size:13px; color:var(--color-spice-saffron); background:var(--color-spice-saffron-15); padding:6px 12px; border-radius:4px;" data-ds-name="DataGapNotice" data-ds-tier="primitive" data-ds-spec="primitives/DataGapNotice.md">⚠ No recent meetings on this account</span></div></div>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>AsOfTimestamp</h3><span class="spec-link">primitives/AsOfTimestamp.md</span><div class="job">Static "as of" label; companion to FreshnessIndicator.</div></div><div class="examples" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary);"><span data-ds-name="AsOfTimestamp" data-ds-tier="primitive" data-ds-spec="primitives/AsOfTimestamp.md">As of Apr 23, 06:00 AM</span></div></div>
+</section>
+
+<section class="wave">
+<h2>Wave 3 (Settings substrate · 0.3.0)</h2>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>InlineInput</h3><span class="spec-link">primitives/InlineInput.md</span><div class="job">Click-to-edit text input with pencil affordance.</div></div><div class="examples"><div style="display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border:1px dashed var(--color-rule-heavy); border-radius:4px; min-width:240px;" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md"><input style="border:none; background:transparent; font-family:var(--font-sans); font-size:14px; flex:1; outline:none;" value="sam@subsidiary.com"><span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">edit</span></div></div></div>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>Switch</h3><span class="spec-link">primitives/Switch.md</span><div class="job">Aria-checked toggle button.</div></div><div class="examples"><button style="width:36px; height:20px; background:var(--color-garden-sage); border-radius:10px; border:none; position:relative;" aria-checked="true" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"><span style="position:absolute; top:2px; right:2px; width:16px; height:16px; background:#fff; border-radius:50%;"></span></button><button style="width:36px; height:20px; background:var(--color-desk-charcoal-25); border-radius:10px; border:none; position:relative;" aria-checked="false" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"><span style="position:absolute; top:2px; left:2px; width:16px; height:16px; background:#fff; border-radius:50%;"></span></button></div></div>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>Segmented</h3><span class="spec-link">primitives/Segmented.md</span><div class="job">Tinted button group with aria-pressed state.</div></div><div class="examples"><div style="display:inline-flex; gap:0; background:var(--color-desk-charcoal-4); border-radius:6px; padding:3px;" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md"><button style="font-family:var(--font-mono); font-size:11px; padding:6px 14px; border-radius:4px; border:none; background:transparent; color:var(--color-text-tertiary);">Compact</button><button style="font-family:var(--font-mono); font-size:11px; padding:6px 14px; border-radius:4px; border:none; background:var(--color-spice-turmeric); color:var(--color-desk-charcoal);" aria-pressed="true">Regular</button><button style="font-family:var(--font-mono); font-size:11px; padding:6px 14px; border-radius:4px; border:none; background:transparent; color:var(--color-text-tertiary);">Comfy</button></div></div></div>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>RemovableChip</h3><span class="spec-link">primitives/RemovableChip.md</span><div class="job">Chip with × removal affordance. Distinct from Pill (interaction).</div></div><div class="examples"><span style="display:inline-flex; gap:6px; align-items:center; padding:4px 8px 4px 12px; background:var(--color-garden-larkspur-12); color:var(--color-garden-larkspur); border-radius:100px; font-family:var(--font-sans); font-size:12px;" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Engineering<span style="opacity:0.6; font-weight:600;">×</span></span><span style="display:inline-flex; gap:6px; align-items:center; padding:4px 8px 4px 12px; background:var(--color-spice-turmeric-12); color:var(--color-spice-turmeric); border-radius:100px; font-family:var(--font-sans); font-size:12px;" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Product<span style="opacity:0.6; font-weight:600;">×</span></span></div></div>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>GlanceCell</h3><span class="spec-link">primitives/GlanceCell.md</span><div class="job">Single key/value stat cell (composed in GlanceRow).</div></div><div class="examples" style="gap:32px;"><div style="border-left:2px solid var(--color-rule-heavy); padding-left:14px;" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);">Connectors</div><div style="font-family:var(--font-serif); font-size:22px;">6 healthy</div></div><div style="border-left:2px solid var(--color-spice-terracotta); padding-left:14px;" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md" data-ds-state="warn"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);">Anomalies 24h</div><div style="font-family:var(--font-serif); font-size:22px; color:var(--color-spice-terracotta);">2 recovered</div></div></div></div>
+</section>
+
+<section class="wave">
+<h2>Wave 4 (Meeting Detail substrate · 0.4.0)</h2>
+
+<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>MeetingStatusPill</h3><span class="spec-link">primitives/MeetingStatusPill.md</span><div class="job">Meeting status: wrapped / processing / failed.</div></div><div class="examples"><span class="pill" data-tone="sage" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md" data-ds-variant="wrapped"><span class="pill-dot"></span>Wrapped 8 min ago · 56 min recorded</span><span class="pill" data-tone="turmeric" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md" data-ds-variant="processing"><span class="pill-dot"></span>Processing transcript…</span><span class="pill" data-tone="terracotta" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md" data-ds-variant="failed"><span class="pill-dot"></span>Failed · retry</span></div></div>
+
+</section>
+
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

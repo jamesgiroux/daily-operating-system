@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Accounts | DailyOS Reference</title>
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/tokens.css">
+  <link rel="stylesheet" href="../_shared/primitives.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+  <style>
+    .index-toolbar { display: flex; align-items: end; justify-content: space-between; gap: var(--space-lg); margin: var(--space-xl) 0 var(--space-lg); }
+    .index-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); margin-top: var(--space-lg); }
+    .stat-card { border-top: 1px solid var(--color-rule-heavy); padding-top: 12px; }
+    .stat-value { font-family: var(--font-serif); font-size: 32px; line-height: 1; color: var(--color-text-primary); }
+    .stat-label { margin-top: 6px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); }
+    .list-shell { border-top: 1px solid var(--color-rule-heavy); border-bottom: 1px solid var(--color-rule-heavy); }
+    .list-head, .account-row { display: grid; grid-template-columns: 112px minmax(220px, 1.4fr) 160px 128px 120px; gap: var(--space-md); align-items: center; }
+    .list-head { padding: 12px 0; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); border-bottom: 1px solid var(--color-rule-light); }
+    .account-row { min-height: 76px; padding: 14px 0; border-bottom: 1px solid var(--color-rule-light); }
+    .account-row:last-child { border-bottom: none; }
+    .entity-title { font-family: var(--font-serif); font-size: 22px; line-height: 1.15; color: var(--color-text-primary); }
+    .entity-sub { margin-top: 5px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--color-text-tertiary); }
+    .entity-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 4px; background: var(--color-spice-turmeric-10); color: #8a6f1a; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+    .entity-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-entity-account); }
+    .health-meter { display: grid; grid-template-columns: 44px 1fr; gap: 10px; align-items: center; font-family: var(--font-mono); font-size: 12px; color: var(--color-text-secondary); }
+    .health-track { height: 6px; border-radius: 999px; background: var(--color-desk-charcoal-8); overflow: hidden; }
+    .health-fill { height: 100%; border-radius: inherit; background: var(--color-spice-turmeric); }
+    .health-fill.good { background: var(--color-garden-sage); }
+    .health-fill.risk { background: var(--color-spice-terracotta); }
+    .owner { font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); }
+    @media (max-width: 900px) {
+      .index-stats { grid-template-columns: 1fr; }
+      .list-head { display: none; }
+      .account-row { grid-template-columns: 1fr; gap: 10px; }
+    }
+  </style>
+</head>
+<body data-folio-label="Accounts" data-folio-crumbs="Accounts" data-tint="turmeric" data-active-page="accounts" data-nav-base=".">
+  <main class="page" data-ds-name="AccountsIndexSurface" data-ds-tier="surface" data-ds-spec="surface.accounts.index">
+    <section class="hero" data-ds-name="Hero" data-ds-tier="pattern" data-ds-spec="pattern.index.hero">
+      <div class="hero-eyebrow"><span class="quality-dot"></span>Account index</div>
+      <h1 class="hero-title">Accounts</h1>
+      <p class="hero-lede">A compact book view for customers, internal teams, and partners with health and lifecycle context visible in the row.</p>
+      <div class="index-stats" data-ds-name="SummaryStats" data-ds-tier="pattern" data-ds-spec="pattern.index.summary-stats">
+        <div class="stat-card"><div class="stat-value">10</div><div class="stat-label">Tracked accounts</div></div>
+        <div class="stat-card"><div class="stat-value">67</div><div class="stat-label">Median health</div></div>
+        <div class="stat-card"><div class="stat-value">4</div><div class="stat-label">Renewal or QBR</div></div>
+      </div>
+    </section>
+
+    <section class="index-toolbar" data-ds-name="IndexToolbar" data-ds-tier="pattern" data-ds-spec="pattern.index.toolbar">
+      <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="pattern.chapter-heading">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Active book</h2>
+        <p class="chapter-epigraph">Sorted by the accounts most likely to need follow-up this month.</p>
+      </div>
+      <span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.filter"><span class="pill-dot"></span>Active</span>
+    </section>
+
+    <section class="list-shell" aria-label="Accounts list" data-ds-name="AccountList" data-ds-tier="pattern" data-ds-spec="pattern.accounts.list">
+      <div class="list-head" data-ds-name="ListHeader" data-ds-tier="pattern" data-ds-spec="pattern.index.list-header">
+        <span>Type</span><span>Account</span><span>Health</span><span>Stage</span><span>Owner</span>
+      </div>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row">
+        <span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.customer">Customer</span>
+        <div><div class="entity-title">Acme Corp</div><div class="entity-sub">acme.example.com</div></div>
+        <div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>71</span><span class="health-track"><span class="health-fill" style="width:71%"></span></span></div>
+        <span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>Renewal</span>
+        <span class="owner">Jen Park</span>
+      </article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.customer">Customer</span><div><div class="entity-title">Globex Inc</div><div class="entity-sub">globex.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>58</span><span class="health-track"><span class="health-fill risk" style="width:58%"></span></span></div><span class="pill" data-tone="terracotta" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>At Risk</span><span class="owner">Priya Raman</span></article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.customer">Customer</span><div><div class="entity-title">Northwind Traders</div><div class="entity-sub">northwind.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>64</span><span class="health-track"><span class="health-fill" style="width:64%"></span></span></div><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>QBR</span><span class="owner">Kevin Otieno</span></article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.customer">Customer</span><div><div class="entity-title">Stark Industries</div><div class="entity-sub">stark.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>82</span><span class="health-track"><span class="health-fill good" style="width:82%"></span></span></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>Healthy</span><span class="owner">Sara Wu</span></article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.customer">Customer</span><div><div class="entity-title">Meridian Harbor</div><div class="entity-sub">meridian.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>75</span><span class="health-track"><span class="health-fill good" style="width:75%"></span></span></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>Expanding</span><span class="owner">Marco Devine</span></article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge partner" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.partner">Partner</span><div><div class="entity-title">Umbrella Health</div><div class="entity-sub">umbrella.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>69</span><span class="health-track"><span class="health-fill" style="width:69%"></span></span></div><span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>Partner</span><span class="owner">Priya Raman</span></article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge internal" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.internal">Internal</span><div><div class="entity-title">DailyOS Platform</div><div class="entity-sub">dailyos.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>88</span><span class="health-track"><span class="health-fill good" style="width:88%"></span></span></div><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>Internal</span><span class="owner">Priya Raman</span></article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge internal" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.internal">Internal</span><div><div class="entity-title">RevOps Guild</div><div class="entity-sub">revops.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>61</span><span class="health-track"><span class="health-fill" style="width:61%"></span></span></div><span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>Shared</span><span class="owner">Dan Mitchell</span></article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge partner" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.partner">Partner</span><div><div class="entity-title">Initech Labs</div><div class="entity-sub">initech.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>55</span><span class="health-track"><span class="health-fill risk" style="width:55%"></span></span></div><span class="pill" data-tone="terracotta" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>Blocked</span><span class="owner">Liu Kang</span></article>
+      <article class="account-row" data-ds-name="AccountRow" data-ds-tier="pattern" data-ds-spec="pattern.accounts.row"><span class="type-badge partner" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitive.type-badge.partner">Partner</span><div><div class="entity-title">Wayne Foundation</div><div class="entity-sub">wayne.example.com</div></div><div class="health-meter" data-ds-name="HealthMeter" data-ds-tier="primitive" data-ds-spec="primitive.health-meter"><span>73</span><span class="health-track"><span class="health-fill good" style="width:73%"></span></span></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.stage"><span class="pill-dot"></span>Aligned</span><span class="owner">Aoife Murphy</span></article>
+    </section>
+  </main>
+  <script src="../_shared/chrome.js"></script>
+  <script src="../_shared/inspector.js"></script>
+</body>
+</html>

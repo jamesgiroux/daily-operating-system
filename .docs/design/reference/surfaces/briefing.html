@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daily Briefing · DailyOS Reference</title>
+  <link rel="stylesheet" href="../_shared/tokens.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/primitives.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+  <style>
+    .briefing-lead { max-width: 820px; padding-top: var(--space-5xl); }
+    .briefing-lead .hero-title { font-size: 58px; max-width: 820px; }
+    .sharp { color: var(--color-spice-turmeric); font-style: italic; }
+    .focus-note {
+      margin-top: var(--space-lg);
+      border-left: 3px solid var(--color-spice-turmeric);
+      padding: 14px 0 14px var(--space-lg);
+      background: linear-gradient(to right, var(--color-spice-turmeric-5), transparent 70%);
+      max-width: 680px;
+      font-family: var(--font-serif);
+      font-size: 20px;
+      line-height: 1.45;
+      color: var(--color-text-primary);
+    }
+    .schedule-stack, .attention-stack, .intelligence-grid { display: grid; gap: var(--space-md); }
+    .meeting-spine {
+      display: grid;
+      grid-template-columns: 86px 1fr auto;
+      gap: var(--space-lg);
+      padding: var(--space-lg) 0;
+      border-bottom: 1px solid var(--color-rule-light);
+      align-items: start;
+    }
+    .meeting-time {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+    }
+    .meeting-title {
+      margin: 0;
+      font-family: var(--font-serif);
+      font-size: 24px;
+      font-weight: 400;
+      line-height: 1.2;
+    }
+    .meeting-meta, .meeting-context {
+      margin-top: 5px;
+      font-size: 13px;
+      color: var(--color-text-secondary);
+      line-height: 1.5;
+    }
+    .meeting-context { max-width: 560px; }
+    .meeting-spine[data-state="next"] .meeting-title { color: var(--color-spice-turmeric); }
+    .briefing-badge-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 10px; }
+    .attention-group {
+      padding-top: var(--space-md);
+      border-top: 1px solid var(--color-rule-light);
+    }
+    .group-label {
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      margin-bottom: var(--space-sm);
+    }
+    .email-card, .lifecycle-card, .ask-dock {
+      padding: var(--space-md) 0;
+      border-bottom: 1px solid var(--color-rule-light);
+    }
+    .email-title, .lifecycle-title {
+      font-family: var(--font-serif);
+      font-size: 18px;
+      line-height: 1.35;
+      margin: 0;
+    }
+    .email-meta, .lifecycle-meta {
+      margin-top: 5px;
+      font-family: var(--font-mono);
+      font-size: 10px;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+    }
+    .ask-dock {
+      margin-top: var(--space-lg);
+      border: 1px solid var(--color-rule-heavy);
+      border-radius: var(--radius-sm);
+      background: var(--color-paper-warm-white);
+      padding: var(--space-md);
+      display: grid;
+      grid-template-columns: 1fr auto;
+      gap: var(--space-md);
+      align-items: center;
+    }
+    .ask-placeholder { color: var(--color-text-tertiary); font-style: italic; }
+    @media (max-width: 760px) {
+      .briefing-lead .hero-title { font-size: 40px; }
+      .meeting-spine { grid-template-columns: 1fr; gap: var(--space-sm); }
+    }
+  </style>
+</head>
+<body
+  data-folio-label="Daily Briefing"
+  data-folio-crumbs="Reference / Surfaces / Daily Briefing"
+  data-tint="turmeric"
+  data-active-page="briefing"
+  data-nav-base=".">
+<main class="page" data-ds-name="DailyBriefing" data-ds-tier="surface" data-ds-spec="surfaces/DailyBriefing.md">
+  <section class="hero briefing-lead" data-ds-name="Lead" data-ds-tier="pattern" data-ds-spec="patterns/Lead.md">
+    <div class="hero-eyebrow">Today, Thursday April 23 <span class="quality-dot"></span> Live briefing</div>
+    <h1 class="hero-title">Four meetings, one renewal risk, and <span class="sharp">Q2 Launch</span> needs the cleanest room.</h1>
+    <p class="hero-lede">Read the morning narrative, then move through the schedule and attention queue.</p>
+    <div class="focus-note" data-ds-name="FocusDirective" data-ds-tier="pattern" data-ds-spec="patterns/FocusDirective.md">
+      Protect the 1:30 PM block for MSA Renewal prep. The critical path is Acme Corp alignment before the Stark Industries review.
+    </div>
+  </section>
+
+  <section class="vitals" data-ds-name="VitalsStrip" data-ds-tier="primitive" data-ds-spec="primitives/VitalsStrip.md">
+    <div class="vitals-row">
+      <div class="vital"><span class="vital-text" data-highlight="turmeric">3/4 briefings ready</span><span class="vital-source">calendar and email sync 8:12 AM</span></div>
+      <span class="vital-sep"></span>
+      <div class="vital"><span class="vital-text" data-highlight="sage">2h 15m available</span><span class="vital-source">one deep work block</span></div>
+      <span class="vital-sep"></span>
+      <div class="vital"><span class="vital-text" data-highlight="larkspur">3 actions due</span><span class="vital-source">ranked by meeting relevance</span></div>
+    </div>
+  </section>
+
+  <section class="margin-section" id="today" data-ds-name="MarginGrid" data-ds-tier="primitive" data-ds-spec="primitives/MarginGrid.md">
+    <div class="margin-label">Schedule<span class="vital-source">4 meetings</span></div>
+    <div class="margin-content">
+      <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="primitive" data-ds-spec="primitives/ChapterHeading.md">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Today</h2>
+        <p class="chapter-epigraph">A customer-heavy morning, a prep window, then the executive readout.</p>
+      </div>
+      <div class="schedule-stack" data-ds-name="MeetingSpine" data-ds-tier="composition" data-ds-spec="compositions/MeetingSpine.md">
+        <article class="meeting-spine" data-state="past" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md">
+          <div class="meeting-time">8:30 AM</div>
+          <div>
+            <h3 class="meeting-title">Globex Inc implementation standup</h3>
+            <p class="meeting-meta">Dan Mitchell, Priya Raman &middot; Helpline Rollout &middot; 30m</p>
+            <p class="meeting-context">Outcome captured: support queue ownership moved to Priya Raman; two follow-ups remain open.</p>
+            <div class="briefing-badge-row"><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Outcomes captured</span></div>
+          </div>
+          <span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Past</span>
+        </article>
+        <article class="meeting-spine" data-state="next" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md">
+          <div class="meeting-time">10:00 AM</div>
+          <div>
+            <h3 class="meeting-title">Acme Corp renewal checkpoint</h3>
+            <p class="meeting-meta">Jen Park, Marco Devine &middot; MSA Renewal &middot; 45m</p>
+            <p class="meeting-context">Jen Park asked for final redline clarity from parent.com before approving the commercial terms.</p>
+            <div class="briefing-badge-row"><span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Up next</span><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Briefing ready</span></div>
+          </div>
+          <span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Ready</span>
+        </article>
+        <article class="meeting-spine" data-state="later" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md">
+          <div class="meeting-time">1:30 PM</div>
+          <div>
+            <h3 class="meeting-title">Northwind Traders Q2 Launch prep</h3>
+            <p class="meeting-meta">Sara Wu, Kevin Otieno &middot; Q2 Launch &middot; 60m</p>
+            <p class="meeting-context">Bring the adoption story, launch blockers, and example.com campaign dependencies into one decision list.</p>
+            <div class="briefing-badge-row"><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Building</span></div>
+          </div>
+          <span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Prep</span>
+        </article>
+        <article class="meeting-spine" data-state="later" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md">
+          <div class="meeting-time">4:00 PM</div>
+          <div>
+            <h3 class="meeting-title">Stark Industries executive readout</h3>
+            <p class="meeting-meta">Aoife Murphy, Liu Kang &middot; Q2 Launch &middot; 45m</p>
+            <p class="meeting-context">The exec readout should avoid raw signal language and focus on launch readiness, risk, and owner names.</p>
+            <div class="briefing-badge-row"><span class="pill" data-tone="terracotta" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>No briefing yet</span></div>
+          </div>
+          <span class="pill" data-tone="terracotta" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Needs prep</span>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <section class="margin-section" id="attention" data-ds-name="MarginGrid" data-ds-tier="primitive" data-ds-spec="primitives/MarginGrid.md">
+    <div class="margin-label">Attention</div>
+    <div class="margin-content">
+      <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="primitive" data-ds-spec="primitives/ChapterHeading.md">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Worth your attention</h2>
+        <p class="chapter-epigraph">Meeting-linked actions and entity intelligence, capped to what can change the day.</p>
+      </div>
+      <div class="attention-stack" data-ds-name="AttentionSection" data-ds-tier="composition" data-ds-spec="compositions/AttentionSection.md">
+        <div class="attention-group">
+          <p class="group-label">Actions</p>
+          <div class="action-row overdue" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md"><span class="action-check"></span><span class="action-title">Send Acme Corp final MSA Renewal redlines to Jen Park</span><span class="action-meta">Overdue</span></div>
+          <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md"><span class="action-check"></span><span class="action-title">Prepare Northwind Traders Q2 Launch dependency list</span><span class="action-meta">Today</span></div>
+          <div class="action-row" data-ds-name="ActionRow" data-ds-tier="primitive" data-ds-spec="primitives/ActionRow.md"><span class="action-check"></span><span class="action-title">Ask Dan Mitchell for Helpline Rollout ownership notes</span><span class="action-meta">30m</span></div>
+        </div>
+        <div class="attention-group" data-ds-name="IntelligenceSummary" data-ds-tier="pattern" data-ds-spec="patterns/IntelligenceSummary.md">
+          <p class="group-label">Intelligence</p>
+          <article class="email-card" data-ds-name="EntityPortraitCard" data-ds-tier="pattern" data-ds-spec="patterns/EntityPortraitCard.md">
+            <h3 class="email-title">Meridian Harbor moved from active to renewing after a parent.com procurement thread.</h3>
+            <p class="email-meta">Aoife Murphy &middot; parent.com &middot; confidence 82% &middot; 2026-04-22</p>
+          </article>
+          <article class="email-card" data-ds-name="EntityPortraitCard" data-ds-tier="pattern" data-ds-spec="patterns/EntityPortraitCard.md">
+            <h3 class="email-title">Northwind Traders has launch pressure from subsidiary.com, but Sara Wu is still aligned.</h3>
+            <p class="email-meta">Sara Wu &middot; subsidiary.com &middot; refreshed 8:12 AM</p>
+          </article>
+        </div>
+        <div class="attention-group" data-ds-name="LifecycleReview" data-ds-tier="pattern" data-ds-spec="patterns/LifecycleReview.md">
+          <p class="group-label">Lifecycle</p>
+          <article class="lifecycle-card">
+            <h3 class="lifecycle-title">Acme Corp: active &rarr; renewing</h3>
+            <p class="lifecycle-meta">Stage: negotiating &middot; health 74 &rarr; 68 &middot; 86% confidence &middot; Apr 23</p>
+          </article>
+        </div>
+      </div>
+      <div class="ask-dock" data-ds-name="AskAnythingDock" data-ds-tier="pattern" data-ds-spec="patterns/AskAnythingDock.md">
+        <span class="ask-placeholder">Ask about Acme Corp, Q2 Launch, or today's meetings...</span>
+        <span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Ask</span>
+      </div>
+    </div>
+  </section>
+
+  <footer class="finis" data-ds-name="FinisMarker" data-ds-tier="primitive" data-ds-spec="primitives/FinisMarker.md">
+    <div class="finis-mark">*</div>
+    <div class="finis-date">Updated 2026-04-23 8:12 AM</div>
+    <p class="finis-caption">You are briefed.</p>
+  </footer>
+</main>
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

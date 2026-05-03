@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Acme Corp · DailyOS Reference</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/primitives.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+<style>
+  .account-view-switcher {
+    position: sticky;
+    bottom: 24px;
+    margin: 56px auto 0;
+    width: fit-content;
+    background: var(--color-desk-charcoal);
+    border-radius: 999px;
+    padding: 4px;
+    display: inline-flex;
+    gap: 4px;
+    box-shadow: var(--shadow-modal);
+    z-index: 50;
+  }
+  .account-view-switcher button {
+    background: transparent;
+    color: var(--color-paper-cream);
+    opacity: 0.6;
+    border: none;
+    padding: 8px 18px;
+    border-radius: 999px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    cursor: pointer;
+    transition: opacity 0.15s, background 0.15s;
+  }
+  .account-view-switcher button[aria-current="page"] {
+    background: var(--color-spice-turmeric);
+    color: var(--color-desk-charcoal);
+    opacity: 1;
+  }
+  .triage-card {
+    border-left: 3px solid var(--color-spice-terracotta);
+    padding: 14px 0 14px 18px;
+    margin-bottom: 18px;
+  }
+  .triage-card .tone-mono {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--color-spice-terracotta);
+    margin-bottom: 6px;
+  }
+  .triage-card .triage-title {
+    font-family: var(--font-serif);
+    font-size: 18px;
+    color: var(--color-text-primary);
+    margin-bottom: 4px;
+  }
+  .triage-card .triage-impact {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--color-text-secondary);
+    line-height: 1.5;
+  }
+  .triage-card.warm { border-left-color: var(--color-spice-saffron); }
+  .triage-card.warm .tone-mono { color: var(--color-spice-saffron); }
+  .triage-card.cool { border-left-color: var(--color-garden-larkspur); }
+  .triage-card.cool .tone-mono { color: var(--color-garden-larkspur); }
+
+  .vitals-row .vital { padding: 0 14px; border-right: 1px solid var(--color-rule-light); }
+  .vitals-row .vital:last-child { border-right: none; }
+</style>
+</head>
+<body
+  data-folio-label="Account"
+  data-folio-crumbs="Accounts > Acme Corp"
+  data-folio-status="Live · briefed 6:00a"
+  data-folio-actions="refresh,reports,tools,search"
+  data-folio-mark="pulsing"
+  data-tint="turmeric"
+  data-active-page="accounts"
+  data-nav-base=".">
+
+<main class="page" data-ds-name="AccountDetail" data-ds-tier="surface" data-ds-spec="surfaces/AccountDetail.md">
+
+<header class="hero" data-ds-name="AccountHero" data-ds-tier="pattern" data-ds-spec="patterns/AccountHero.md">
+  <a href="accounts.html" class="hero-parent-link">← Accounts</a>
+  <div class="hero-eyebrow">
+    <span class="quality-dot"></span>
+    Customer · Renewal cycle · Health 71 ↑
+  </div>
+  <span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md">Customer<span class="chev">▾</span></span>
+  <h1 class="hero-title">Acme Corp</h1>
+  <p class="hero-lede">Mid-market enterprise customer in renewal cycle. Tier 3 pricing decisions outstanding; legal review starting this week. Sentiment trending up since the Q1 product update landed.</p>
+
+  <div class="vitals" data-ds-name="VitalsStrip" data-ds-tier="pattern" data-ds-spec="patterns/VitalsStrip.md">
+    <div class="vitals-row">
+      <div class="vital">
+        <span class="vital-text" data-highlight="turmeric">Health 71 ↑ 3</span>
+        <span class="vital-source">last 30 days</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text">Stage Renewal</span>
+        <span class="vital-source">closes Jun 15</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text">Confidence 82%</span>
+        <span class="vital-source">3 sources</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text">Owner You</span>
+        <span class="vital-source">since Jan 2025</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text" data-highlight="larkspur">Champion Jen Park</span>
+        <span class="vital-source">CTO · still active</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<!-- Health & Outlook view (active) -->
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Sentiment<span class="margin-label-count">trending up</span></div>
+  <div class="margin-content">
+    <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Sentiment</h2>
+      <p class="chapter-epigraph">What you've felt about this account, with deltas.</p>
+    </div>
+    <div data-ds-name="SentimentHero" data-ds-tier="pattern" data-ds-spec="patterns/SentimentHero.md">
+      <p style="font-family:var(--font-serif); font-size:21px; line-height:1.5; color:var(--color-text-primary); max-width:640px;">
+        Renewal momentum returning. Jen Park is engaged again after the March pause; pricing is the only blocker.
+      </p>
+      <p style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.06em; color:var(--color-text-tertiary); text-transform:uppercase; margin-top:8px;">
+        Logged 2d ago · trend ↑ since Mar 12 · 14 captures
+      </p>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Triage<span class="margin-label-count">3 needs</span></div>
+  <div class="margin-content">
+    <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Needs attention</h2>
+      <p class="chapter-epigraph">Items with active impact on the renewal timeline.</p>
+    </div>
+
+    <div class="triage-card" data-ds-name="HealthTriageCard" data-ds-tier="pattern" data-ds-spec="patterns/HealthTriageCard.md">
+      <div class="tone-mono">Risk · Pricing</div>
+      <div class="triage-title">Adjusted pricing memo overdue 2 days</div>
+      <div class="triage-impact">Jen Park is waiting on the tier 3 numbers before legal can finalize MSA. Every day this slips delays Jun 15 close. <strong>You</strong> own this.</div>
+    </div>
+
+    <div class="triage-card warm" data-ds-name="HealthTriageCard" data-ds-tier="pattern" data-ds-spec="patterns/HealthTriageCard.md">
+      <div class="tone-mono">Watch · Legal</div>
+      <div class="triage-title">Legal flagged 3 MSA clauses · Dan Mitchell reviewing</div>
+      <div class="triage-impact">Standard SOC2/SLA pushback. Dan has historically resolved these in 2-3 days. No escalation needed yet.</div>
+    </div>
+
+    <div class="triage-card cool" data-ds-name="HealthTriageCard" data-ds-tier="pattern" data-ds-spec="patterns/HealthTriageCard.md">
+      <div class="tone-mono">New stakeholder</div>
+      <div class="triage-title">Sara Wu (VP Eng) added to renewal thread</div>
+      <div class="triage-impact">First time Sara's been on a deal thread for Acme. Likely sponsoring the architecture review. Worth a 1:1 before the Apr 24 call.</div>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Outlook<span class="margin-label-count">renewal</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Renewal outlook</h2>
+      <p class="chapter-epigraph">Confidence + benchmark + recommended next move.</p>
+    </div>
+
+    <div data-ds-name="OutlookPanel" data-ds-tier="pattern" data-ds-spec="patterns/OutlookPanel.md" style="display:grid; grid-template-columns:200px 1fr; gap:32px; align-items:start;">
+      <div>
+        <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary); margin-bottom:6px;">Confidence</div>
+        <div style="font-family:var(--font-serif); font-size:36px; font-weight:500; color:var(--color-garden-rosemary);">82%</div>
+        <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.04em; color:var(--color-text-tertiary); margin-top:6px;">Strong · 3 corroborating sources</div>
+      </div>
+      <div>
+        <p class="pull-quote-left" data-ds-name="PullQuote" data-ds-tier="primitive" data-ds-spec="primitives/PullQuote.md">
+          <span class="pq-label">Recommended next move</span>
+          <span style="font-family:var(--font-serif); font-style:italic; font-size:18px; line-height:1.5; color:var(--color-text-primary);">Send the adjusted memo today. If Jen has it before her Wed exec sync, the Jun 15 close holds. Otherwise it slips a quarter.</span>
+        </p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">About<span class="margin-label-count">data</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">About this intelligence</h2>
+    </div>
+    <div data-ds-name="AboutThisIntelligencePanel" data-ds-tier="pattern" data-ds-spec="patterns/AboutThisIntelligencePanel.md" style="font-family:var(--font-sans); font-size:14px; line-height:1.6; color:var(--color-text-secondary); max-width:640px;">
+      <p>Health and outlook are derived from <strong>14 captures</strong> across Mail, Calendar, Meetings, and CRM since Jan 2025. Last enriched <strong>2 hours ago</strong>. Sources: Glean (8), Salesforce (4), manual (2).</p>
+      <p>Confidence math: subject_fit 0.88 · freshness 0.94 · cross-entity coherence 0.78 · provenance 0.85 · agent trust 0.79. Geometric mean 0.82.</p>
+    </div>
+  </div>
+</section>
+
+<!-- View switcher (sticky bottom) -->
+<nav class="account-view-switcher" data-ds-name="AccountViewSwitcher" data-ds-tier="pattern" data-ds-spec="patterns/AccountViewSwitcher.md" aria-label="Account views">
+  <button aria-current="page">Health & Outlook</button>
+  <button>Context</button>
+  <button>Work</button>
+</nav>
+
+<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
+  <div class="finis-mark">*&nbsp;&nbsp;*&nbsp;&nbsp;*</div>
+  <div class="finis-date">Apr 23, 2026 · enriched 2h ago</div>
+  <div class="finis-caption">Acme Corp · briefed since Jan 2025</div>
+</div>
+
+</main>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

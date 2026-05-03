@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Projects | DailyOS Reference</title>
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/tokens.css">
+  <link rel="stylesheet" href="../_shared/primitives.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+  <style>
+    .index-stats { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); margin-top: var(--space-lg); }
+    .stat-card { border-top: 1px solid var(--color-rule-heavy); padding-top: 12px; }
+    .stat-value { font-family: var(--font-serif); font-size: 32px; line-height: 1; color: var(--color-text-primary); }
+    .stat-label { margin-top: 6px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); }
+    .index-toolbar { display: flex; align-items: end; justify-content: space-between; gap: var(--space-lg); margin: var(--space-xl) 0 var(--space-lg); }
+    .list-shell { border-top: 1px solid var(--color-rule-heavy); border-bottom: 1px solid var(--color-rule-heavy); }
+    .list-head, .project-row { display: grid; grid-template-columns: minmax(220px, 1.4fr) 180px 130px 128px 112px; gap: var(--space-md); align-items: center; }
+    .list-head { padding: 12px 0; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); border-bottom: 1px solid var(--color-rule-light); }
+    .project-row { min-height: 76px; padding: 14px 0; border-bottom: 1px solid var(--color-rule-light); }
+    .project-row:last-child { border-bottom: none; }
+    .entity-title { font-family: var(--font-serif); font-size: 22px; line-height: 1.15; color: var(--color-text-primary); }
+    .entity-sub { margin-top: 5px; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--color-text-tertiary); }
+    .entity-chip { display: inline-flex; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 4px; background: var(--color-garden-olive-10); color: var(--color-garden-olive); font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.05em; text-transform: uppercase; white-space: nowrap; }
+    .entity-chip::before { content: ""; width: 6px; height: 6px; border-radius: 50%; background: var(--color-entity-project); }
+    .owner, .date-cell { font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); }
+    @media (max-width: 900px) {
+      .index-stats { grid-template-columns: 1fr; }
+      .list-head { display: none; }
+      .project-row { grid-template-columns: 1fr; gap: 10px; }
+    }
+  </style>
+</head>
+<body data-folio-label="Projects" data-folio-crumbs="Projects" data-tint="olive" data-active-page="projects" data-nav-base=".">
+  <main class="page" data-ds-name="ProjectsIndexSurface" data-ds-tier="surface" data-ds-spec="surface.projects.index">
+    <section class="hero" data-ds-name="Hero" data-ds-tier="pattern" data-ds-spec="pattern.index.hero">
+      <div class="hero-eyebrow"><span class="quality-dot"></span>Project index</div>
+      <h1 class="hero-title">Projects</h1>
+      <p class="hero-lede">A delivery ledger for account work, with account context, owner, due date, and status in one scannable line.</p>
+      <div class="index-stats" data-ds-name="SummaryStats" data-ds-tier="pattern" data-ds-spec="pattern.index.summary-stats">
+        <div class="stat-card"><div class="stat-value">8</div><div class="stat-label">Active projects</div></div>
+        <div class="stat-card"><div class="stat-value">3</div><div class="stat-label">Due this month</div></div>
+        <div class="stat-card"><div class="stat-value">1</div><div class="stat-label">At risk</div></div>
+      </div>
+    </section>
+
+    <section class="index-toolbar" data-ds-name="IndexToolbar" data-ds-tier="pattern" data-ds-spec="pattern.index.toolbar">
+      <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="pattern.chapter-heading">
+        <hr class="chapter-rule">
+        <h2 class="chapter-title">Delivery board</h2>
+        <p class="chapter-epigraph">Sorted by nearest target date, then customer impact.</p>
+      </div>
+      <span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.filter"><span class="pill-dot"></span>Current</span>
+    </section>
+
+    <section class="list-shell" aria-label="Projects list" data-ds-name="ProjectList" data-ds-tier="pattern" data-ds-spec="pattern.projects.list">
+      <div class="list-head" data-ds-name="ListHeader" data-ds-tier="pattern" data-ds-spec="pattern.index.list-header">
+        <span>Project</span><span>Account</span><span>Status</span><span>Owner</span><span>Due</span>
+      </div>
+      <article class="project-row" data-ds-name="ProjectRow" data-ds-tier="pattern" data-ds-spec="pattern.projects.row">
+        <div><div class="entity-title">Q2 Launch</div><div class="entity-sub">launch plan and account comms</div></div>
+        <span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Acme Corp</span>
+        <span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.status"><span class="pill-dot"></span>Active</span>
+        <span class="owner">Jen Park</span><span class="date-cell">2026-04-18</span>
+      </article>
+      <article class="project-row" data-ds-name="ProjectRow" data-ds-tier="pattern" data-ds-spec="pattern.projects.row"><div><div class="entity-title">Helpline Rollout</div><div class="entity-sub">support workflow migration</div></div><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Meridian Harbor</span><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.status"><span class="pill-dot"></span>Active</span><span class="owner">Marco Devine</span><span class="date-cell">2026-04-19</span></article>
+      <article class="project-row" data-ds-name="ProjectRow" data-ds-tier="pattern" data-ds-spec="pattern.projects.row"><div><div class="entity-title">MSA Renewal</div><div class="entity-sub">legal redlines and pricing approval</div></div><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Globex Inc</span><span class="pill" data-tone="terracotta" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.status"><span class="pill-dot"></span>At Risk</span><span class="owner">Priya Raman</span><span class="date-cell">2026-04-21</span></article>
+      <article class="project-row" data-ds-name="ProjectRow" data-ds-tier="pattern" data-ds-spec="pattern.projects.row"><div><div class="entity-title">Data Residency Review</div><div class="entity-sub">architecture review and evidence pack</div></div><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Northwind Traders</span><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.status"><span class="pill-dot"></span>Review</span><span class="owner">Liu Kang</span><span class="date-cell">2026-04-22</span></article>
+      <article class="project-row" data-ds-name="ProjectRow" data-ds-tier="pattern" data-ds-spec="pattern.projects.row"><div><div class="entity-title">Procurement Pilot</div><div class="entity-sub">vendor checklist and buyer enablement</div></div><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Meridian Harbor</span><span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.status"><span class="pill-dot"></span>On Hold</span><span class="owner">Aoife Murphy</span><span class="date-cell">2026-04-24</span></article>
+      <article class="project-row" data-ds-name="ProjectRow" data-ds-tier="pattern" data-ds-spec="pattern.projects.row"><div><div class="entity-title">Stark Executive Briefing</div><div class="entity-sub">VP readout and adoption notes</div></div><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Stark Industries</span><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.status"><span class="pill-dot"></span>Active</span><span class="owner">Sara Wu</span><span class="date-cell">2026-04-25</span></article>
+      <article class="project-row" data-ds-name="ProjectRow" data-ds-tier="pattern" data-ds-spec="pattern.projects.row"><div><div class="entity-title">Partner Enablement</div><div class="entity-sub">field guide and escalation map</div></div><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">Umbrella Health</span><span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.status"><span class="pill-dot"></span>Planning</span><span class="owner">Dan Mitchell</span><span class="date-cell">2026-04-27</span></article>
+      <article class="project-row" data-ds-name="ProjectRow" data-ds-tier="pattern" data-ds-spec="pattern.projects.row"><div><div class="entity-title">Internal List Hygiene</div><div class="entity-sub">dedupe accounts and normalize owners</div></div><span class="entity-chip" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitive.entity-chip.account">DailyOS Platform</span><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitive.pill.status"><span class="pill-dot"></span>Completed</span><span class="owner">Priya Raman</span><span class="date-cell">2026-04-29</span></article>
+    </section>
+  </main>
+  <script src="../_shared/chrome.js"></script>
+  <script src="../_shared/inspector.js"></script>
+</body>
+</html>

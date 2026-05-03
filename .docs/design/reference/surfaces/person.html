@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Marco Devine · DailyOS Reference</title>
+<link rel="stylesheet" href="../_shared/tokens.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/primitives.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+<style>
+  .vitals-row .vital { padding: 0 14px; border-right: 1px solid var(--color-rule-light); }
+  .vitals-row .vital:last-child { border-right: none; }
+  .relationship-row { display: grid; grid-template-columns: 200px 1fr; gap: 32px; padding: 16px 0; border-bottom: 1px solid var(--color-rule-light); align-items: baseline; }
+  .relationship-row:last-child { border-bottom: none; }
+  .rk { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); }
+  .rv { font-family: var(--font-serif); font-size: 16px; color: var(--color-text-primary); line-height: 1.5; }
+</style>
+</head>
+<body
+  data-folio-label="Person"
+  data-folio-crumbs="People > Marco Devine"
+  data-tint="larkspur"
+  data-active-page="people"
+  data-nav-base=".">
+
+<main class="page" data-ds-name="PersonDetail" data-ds-tier="surface" data-ds-spec="surfaces/PersonDetail.md">
+
+<header class="hero" data-ds-name="PersonHero" data-ds-tier="pattern" data-ds-spec="patterns/PersonHero.md">
+  <a href="people.html" class="hero-parent-link">← People</a>
+  <div class="hero-eyebrow">
+    <span class="quality-dot developing"></span>
+    Champion (weakening) · Meridian Harbor · last touch 6d ago
+  </div>
+  <h1 class="hero-title">Marco Devine</h1>
+  <p class="hero-lede">VP Engineering at Meridian Harbor. Long-time champion (since Aug 2024). Currently using procurement as cover on the Q2 renewal — needs the per-seat pricing resolved by mid-May to stay engaged.</p>
+
+  <div class="vitals" data-ds-name="VitalsStrip" data-ds-tier="pattern" data-ds-spec="patterns/VitalsStrip.md">
+    <div class="vitals-row">
+      <div class="vital">
+        <span class="vital-text" data-highlight="larkspur">Champion</span>
+        <span class="vital-source">since Aug 2024</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text" data-highlight="saffron">Weakening</span>
+        <span class="vital-source">Apr 17 QBR</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text">VP Engineering</span>
+        <span class="vital-source">Meridian Harbor</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text">Last touch 6d ago</span>
+        <span class="vital-source">QBR Apr 17</span>
+      </div>
+      <div class="vital">
+        <span class="vital-text">12 meetings · 47 emails</span>
+        <span class="vital-source">last 12 months</span>
+      </div>
+    </div>
+  </div>
+</header>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Relationship<span class="margin-label-count">arc</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Relationship</h2>
+      <p class="chapter-epigraph">How you've worked with Marco.</p>
+    </div>
+
+    <div data-ds-name="PersonRelationships" data-ds-tier="pattern" data-ds-spec="patterns/PersonRelationships.md">
+      <div class="relationship-row">
+        <div class="rk">First met</div>
+        <div class="rv">August 2024 · Meridian Harbor onboarding (introduced by Priya Raman)</div>
+      </div>
+      <div class="relationship-row">
+        <div class="rk">Champion since</div>
+        <div class="rv">November 2024 — championed Helpline rollout internally despite procurement headwinds</div>
+      </div>
+      <div class="relationship-row">
+        <div class="rk">Cadence</div>
+        <div class="rv">Monthly QBR + ad-hoc Slack · ~3-4 touches per quarter</div>
+      </div>
+      <div class="relationship-row">
+        <div class="rk">Last 4 interactions</div>
+        <div class="rv">QBR Apr 17 · Slack Apr 9 · Email Mar 28 · Meeting Mar 12</div>
+      </div>
+      <div class="relationship-row">
+        <div class="rk">Recent risk</div>
+        <div class="rv">Apr 17 QBR — using procurement as cover on per-seat math. If pricing isn't resolved by mid-May, status downgrades to neutral.</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Network<span class="margin-label-count">5 connections</span></div>
+  <div class="margin-content">
+    <div class="chapter">
+      <hr class="chapter-rule">
+      <h2 class="chapter-title">Network</h2>
+      <p class="chapter-epigraph">Who Marco works with internally and externally.</p>
+    </div>
+
+    <div data-ds-name="PersonNetwork" data-ds-tier="pattern" data-ds-spec="patterns/PersonNetwork.md" style="display:grid; grid-template-columns:repeat(2, 1fr); gap:14px 32px;">
+      <div class="relationship-row" style="grid-template-columns:1fr; gap:6px; padding:0; border:none;">
+        <div class="rk">Reports to</div>
+        <div class="rv">Aoife Murphy (Procurement) · since Mar 2026</div>
+      </div>
+      <div class="relationship-row" style="grid-template-columns:1fr; gap:6px; padding:0; border:none;">
+        <div class="rk">Works closely with</div>
+        <div class="rv">Liu Kang (Architect) — co-leads SSO/audit work</div>
+      </div>
+      <div class="relationship-row" style="grid-template-columns:1fr; gap:6px; padding:0; border:none;">
+        <div class="rk">Internal partner</div>
+        <div class="rv">Priya Raman (CSM) — primary day-to-day contact</div>
+      </div>
+      <div class="relationship-row" style="grid-template-columns:1fr; gap:6px; padding:0; border:none;">
+        <div class="rk">Cross-account</div>
+        <div class="rv">Has historical relationship with Jen Park (Acme CTO) — previous employer</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+  <div class="margin-label">Record<span class="margin-label-count">recent</span></div>
+  <div class="margin-content">
+    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">The Record</h2></div>
+
+    <div class="timeline" data-ds-name="UnifiedTimeline" data-ds-tier="pattern" data-ds-spec="patterns/UnifiedTimeline.md">
+      <div class="timeline-entry" data-type="meeting" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Apr 17</span>
+          <div>
+            <h3 class="timeline-title"><a href="meeting.html">Meridian Harbor — Q2 Business Review</a></h3>
+            <p class="timeline-subtitle">Champion status downgraded to "weakening"</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-entry" data-type="email" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Apr 9</span>
+          <div>
+            <h3 class="timeline-title">Slack — Re: Helpline rollout dates</h3>
+            <p class="timeline-subtitle">Marco accepted one-sprint slip without escalation</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-entry" data-type="email" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Mar 28</span>
+          <div>
+            <h3 class="timeline-title">Email — Audit-log scope question</h3>
+            <p class="timeline-subtitle">First mention of compliance review</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-entry" data-type="capture" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Mar 12</span>
+          <div>
+            <h3 class="timeline-title">QBR — Helpline 92% adoption confirmed</h3>
+            <p class="timeline-subtitle">Marco called it "best ticketing setup in three years"</p>
+          </div>
+        </div>
+      </div>
+      <div class="timeline-entry" data-type="value" data-ds-name="TimelineEntry" data-ds-tier="pattern" data-ds-spec="patterns/TimelineEntry.md">
+        <div class="timeline-row">
+          <span class="timeline-date">Nov 2024</span>
+          <div>
+            <h3 class="timeline-title">Champion status established</h3>
+            <p class="timeline-subtitle">After internally championing initial Helpline pilot</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
+  <div class="finis-mark">*&nbsp;&nbsp;*&nbsp;&nbsp;*</div>
+  <div class="finis-date">Apr 23, 2026 · enriched 2h ago</div>
+  <div class="finis-caption">Marco Devine · since Aug 2024</div>
+</div>
+
+</main>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>
