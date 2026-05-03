@@ -145,19 +145,7 @@
   gap: 6px;
 }
 
-/* --- Pills and indicators --- */
-
-.nowPill {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  background: var(--color-spice-turmeric-18);
-  color: var(--color-spice-turmeric);
-  flex-shrink: 0;
-}
+/* --- Indicators --- */
 
 .prepDot {
   width: 5px;

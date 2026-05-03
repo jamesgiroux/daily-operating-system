@@ -26,9 +26,11 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { X, Building2, FolderKanban, User } from "lucide-react";
+import { Building2, FolderKanban, User } from "lucide-react";
 import { EntityPicker } from "./entity-picker";
 import { EntityLinkPicker, TitleOnlyBanner } from "@/components/entity/EntityLinkPicker";
+import { RemovableChip } from "@/components/ui/RemovableChip";
+import type { PillTone } from "@/components/ui/Pill";
 import { getPrimaryEntity, isTitleOnlyPrimary } from "@/lib/entity-helpers";
 import type { LinkedEntity, LinkOutcome } from "@/types";
 
@@ -44,17 +46,11 @@ interface MeetingEntityChipsProps {
   compact?: boolean;
 }
 
-const entityColor: Record<string, string> = {
-  account: "var(--color-account)",
-  project: "var(--color-project)",
-  person: "var(--color-person)",
-};
-
-const entityBg: Record<string, string> = {
-  account: "var(--color-spice-turmeric-8)",
-  project: "var(--color-garden-olive-8)",
-  person: "var(--color-garden-larkspur-8)",
-};
+function toneForEntityType(entityType: LinkedEntity["entityType"]): PillTone {
+  if (entityType === "project") return "olive";
+  if (entityType === "person") return "larkspur";
+  return "turmeric";
+}
 
 export function MeetingEntityChips({
   meetingId,
@@ -135,10 +131,6 @@ export function MeetingEntityChips({
     [meetingId, onEntitiesChanged],
   );
 
-  const fontSize = compact ? 11 : 12;
-  const chipPadding = compact ? "2px 8px" : "3px 10px";
-  const iconSize = compact ? 10 : 12;
-
   // Derive the P9 LinkOutcome so EntityLinkPicker can decide whether
   // to show. We use the new `role` field when present; otherwise fall back to
   // the legacy `isPrimary`/`suggested` flags so old data still renders.
@@ -208,8 +200,6 @@ export function MeetingEntityChips({
         }}
       >
         {localEntities.map((entity) => {
-          const color = entityColor[entity.entityType] ?? "var(--color-text-tertiary)";
-          const bg = entityBg[entity.entityType] ?? "var(--color-desk-charcoal-4)";
           const Icon = entity.entityType === "project"
             ? FolderKanban
             : entity.entityType === "person"
@@ -232,65 +222,26 @@ export function MeetingEntityChips({
           const isAutoSuggested =
             entity.role === "auto_suggested" || (entity.role === undefined && entity.suggested === true);
           return (
-            <span
+            <RemovableChip
               key={entity.id}
               title={isAutoSuggested ? "Auto-suggested — not confirmed" : undefined}
-              style={{
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 4,
-                fontFamily: "var(--font-sans)",
-                fontSize,
-                fontWeight: 400,
-                color,
-                background: isAutoSuggested ? "transparent" : bg,
-                padding: chipPadding,
-                borderRadius: 4,
-                lineHeight: 1.3,
-                opacity: isAutoSuggested ? 0.65 : 1,
-                border: isAutoSuggested ? `1px dashed ${color}` : "none",
-                transition: "background 0.15s ease, opacity 0.15s ease",
-              }}
-            >
-              <Icon style={{ width: iconSize, height: iconSize, opacity: 0.7, flexShrink: 0 }} />
-              <Link
-                to={linkTo}
-                params={linkParams as any}
-                style={{
-                  color: "inherit",
-                  textDecoration: "none",
-                }}
-              >
-                {entity.name}
-              </Link>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  e.preventDefault();
-                  handleRemove(entity.id, entity.name, entity.entityType);
-                }}
-                style={{
-                  display: "inline-flex",
-                  alignItems: "center",
-                  justifyContent: "center",
-                  width: compact ? 14 : 16,
-                  height: compact ? 14 : 16,
-                  padding: 0,
-                  border: "none",
-                  background: "transparent",
-                  cursor: "pointer",
-                  color: "inherit",
-                  opacity: 0.4,
-                  transition: "opacity 0.15s ease",
-                  borderRadius: 2,
-                  marginLeft: 2,
-                }}
-                onMouseEnter={(e) => { e.currentTarget.style.opacity = "0.8"; }}
-                onMouseLeave={(e) => { e.currentTarget.style.opacity = "0.4"; }}
-              >
-                <X style={{ width: compact ? 10 : 12, height: compact ? 10 : 12 }} />
-              </button>
-            </span>
+              tone={toneForEntityType(entity.entityType)}
+              size={compact ? "compact" : "standard"}
+              data-suggested={isAutoSuggested ? "true" : undefined}
+              label={(
+                <>
+                  <Icon size={compact ? 10 : 12} strokeWidth={2} aria-hidden="true" />
+                  <Link
+                    to={linkTo}
+                    params={linkParams as any}
+                  >
+                    {entity.name}
+                  </Link>
+                </>
+              )}
+              aria-label={`Remove ${entity.name}`}
+              onRemove={() => handleRemove(entity.id, entity.name, entity.entityType)}
+            />
           );
         })}
 

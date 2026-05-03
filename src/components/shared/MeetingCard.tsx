@@ -8,6 +8,7 @@
 import { Link } from "@tanstack/react-router";
 import clsx from "clsx";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
+import { MeetingStatusPill } from "@/components/meeting/MeetingStatusPill";
 import s from "./MeetingCard.module.css";
 
 export interface MeetingCardProps {
@@ -97,7 +98,11 @@ export function MeetingCard({
       <div className={s.content}>
         <div className={s.titleRow}>
           <span className={s.title}>{title}</span>
-          {isActive && <span className={s.nowPill}>NOW</span>}
+          {isActive && (
+            <MeetingStatusPill state="in-progress" size="compact">
+              NOW
+            </MeetingStatusPill>
+          )}
           {titleExtra}
           {isPast && showNavigationHint && (
             <span className={s.pastArrow}>&rarr;</span>

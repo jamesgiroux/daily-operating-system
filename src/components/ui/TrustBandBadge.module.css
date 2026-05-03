@@ -1,0 +1,30 @@
+.badge {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.compact {
+  font-size: 10px;
+}
+
+.likelyCurrent {
+  --pill-background: var(--color-trust-likely-current-15);
+  --pill-color: var(--color-trust-likely-current);
+  --pill-dot-color: var(--color-trust-likely-current);
+  --pill-border: var(--color-trust-likely-current-12);
+}
+
+.useWithCaution {
+  --pill-background: var(--color-trust-use-with-caution-15);
+  --pill-color: var(--color-trust-use-with-caution);
+  --pill-dot-color: var(--color-trust-use-with-caution);
+  --pill-border: var(--color-trust-use-with-caution-12);
+}
+
+.needsVerification {
+  --pill-background: var(--color-trust-needs-verification-15);
+  --pill-color: var(--color-trust-needs-verification);
+  --pill-dot-color: var(--color-trust-needs-verification);
+  --pill-border: var(--color-trust-needs-verification-12);
+}

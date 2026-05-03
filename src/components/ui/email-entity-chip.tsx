@@ -14,6 +14,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { Building2, FolderKanban, User } from "lucide-react";
 import { EntityPicker } from "./entity-picker";
+import { Pill, type PillTone } from "./Pill";
 
 interface EmailEntityChipProps {
   entityType?: string;
@@ -26,17 +27,11 @@ interface EmailEntityChipProps {
   onEntityChanged?: () => void;
 }
 
-const entityColor: Record<string, string> = {
-  account: "var(--color-account)",
-  project: "var(--color-project)",
-  person: "var(--color-person)",
-};
-
-const entityBg: Record<string, string> = {
-  account: "var(--color-spice-turmeric-8)",
-  project: "var(--color-garden-olive-8)",
-  person: "var(--color-garden-larkspur-8)",
-};
+function toneForEntityType(entityType?: string): PillTone {
+  if (entityType === "project") return "olive";
+  if (entityType === "person") return "larkspur";
+  return "turmeric";
+}
 
 export function EmailEntityChip({
   entityType,
@@ -103,8 +98,6 @@ export function EmailEntityChip({
     return null;
   }
 
-  const color = entityColor[entityType ?? "account"] ?? "var(--color-text-tertiary)";
-  const bg = entityBg[entityType ?? "account"] ?? "var(--color-desk-charcoal-4)";
   const Icon = entityType === "project"
     ? FolderKanban
     : entityType === "person"
@@ -112,22 +105,10 @@ export function EmailEntityChip({
       : Building2;
 
   return (
-    <span
-      style={{
-        display: "inline-flex",
-        alignItems: "center",
-        gap: 3,
-        fontFamily: "var(--font-sans)",
-        fontSize: 11,
-        fontWeight: 400,
-        color,
-        background: bg,
-        padding: "1px 7px",
-        borderRadius: 3,
-        lineHeight: 1.3,
-        cursor: editable ? "pointer" : "default",
-        transition: "background 0.15s ease",
-      }}
+    <Pill
+      tone={toneForEntityType(entityType)}
+      size="compact"
+      interactive={editable}
       onClick={editable ? (e) => {
         e.stopPropagation();
         e.preventDefault();
@@ -135,8 +116,8 @@ export function EmailEntityChip({
       } : undefined}
       title={editable ? "Click to change" : undefined}
     >
-      <Icon style={{ width: 10, height: 10, opacity: 0.7, flexShrink: 0 }} />
+      <Icon size={10} strokeWidth={2} aria-hidden="true" />
       {entityName}
-    </span>
+    </Pill>
   );
 }

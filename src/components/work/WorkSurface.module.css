@@ -251,57 +251,8 @@
   align-items: center;
 }
 
-/* ── Audience pill ── */
-.audiencePill {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  padding: 5px 14px;
-  border-radius: 100px;
-}
-.audienceCustomer {
-  background: var(--color-garden-sage-15);
-  color: var(--color-garden-rosemary);
-}
-.audienceInternal {
-  background: var(--color-desk-charcoal-8);
-  color: var(--color-text-secondary);
-}
-
-/* ── Visibility pill (Private / Shared) ── */
-.visibilityPill {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  padding: 5px 14px;
-  border-radius: 100px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  text-decoration: none;
-}
-.visibilityPill::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-}
-.visibilityPrivate {
-  background: var(--color-desk-charcoal-8);
-  color: var(--color-text-secondary);
-}
-.visibilityPrivate::before {
-  background: var(--color-text-tertiary);
-}
-.visibilityShared {
-  background: var(--color-garden-sage-15);
-  color: var(--color-garden-rosemary);
+.visibilityLink {
   border-bottom: 1px dotted var(--color-garden-rosemary);
-}
-.visibilityShared::before {
-  background: var(--color-garden-sage);
 }
 
 /* ── Soft nudge (non-guilt flag inside a commitment) ── */

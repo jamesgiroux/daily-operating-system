@@ -1,0 +1,29 @@
+.status {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.upcoming {
+  --pill-background: var(--color-garden-sage-15);
+  --pill-color: var(--color-garden-rosemary);
+  --pill-dot-color: var(--color-garden-sage);
+}
+
+.inProgress {
+  --pill-background: var(--color-spice-turmeric-15);
+  --pill-color: var(--color-spice-turmeric);
+  --pill-dot-color: var(--color-spice-turmeric);
+}
+
+.past {
+  --pill-background: var(--color-desk-charcoal-4);
+  --pill-color: var(--color-text-secondary);
+  --pill-dot-color: var(--color-text-tertiary);
+}
+
+.cancelled {
+  --pill-background: var(--color-spice-terracotta-15);
+  --pill-color: var(--color-spice-chili);
+  --pill-dot-color: var(--color-spice-terracotta);
+}
