@@ -1614,6 +1614,25 @@ mod tests {
     }
 
     #[test]
+    fn dedup_key_signature_excludes_thread_id() {
+        // Substrate invariant: thread_id participates in storage but
+        // NOT in claim identity. compute_dedup_key takes only content
+        // hash + subject + claim_type + field_path; same-content
+        // claims that participate in different topic threads MUST
+        // hash to the same dedup_key so they merge as one claim.
+        // This test enforces the structural property — the function
+        // signature has no thread_id parameter — so a future change
+        // adding one would break this call site.
+        let key_a = compute_dedup_key("h1", SUBJECT, "risk", Some("health.risk"));
+        let key_b = compute_dedup_key("h1", SUBJECT, "risk", Some("health.risk"));
+        assert_eq!(
+            key_a, key_b,
+            "identical content+subject+claim_type+field_path must produce identical dedup_key \
+             regardless of any topic-thread participation"
+        );
+    }
+
+    #[test]
     fn commit_lock_serializes_same_key_writers() {
         let key = (
             "subject-lock".to_string(),
