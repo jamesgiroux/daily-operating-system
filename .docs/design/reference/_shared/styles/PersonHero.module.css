@@ -18,14 +18,14 @@
   width: 56px;
   height: 56px;
   border-radius: 50%;
-  background: var(--color-garden-larkspur-15);
+  background: var(--color-person-15);
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: var(--font-serif);
   font-size: 28px;
   font-weight: 400;
-  color: var(--color-garden-larkspur);
+  color: var(--color-person);
   flex-shrink: 0;
 }
 
@@ -106,7 +106,7 @@
 
 .PersonHero_metaButtonEnriching {
   composes: metaButton;
-  color: var(--color-garden-larkspur);
+  color: var(--color-person);
   text-decoration: none;
   cursor: default;
 }
@@ -154,7 +154,7 @@
 .PersonHero_socialLink {
   font-family: var(--font-mono);
   font-size: 12px;
-  color: var(--color-garden-larkspur);
+  color: var(--color-person);
   text-decoration: none;
 }
 

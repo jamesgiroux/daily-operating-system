@@ -44,8 +44,8 @@
 }
 
 .AccountHero_customerBadge {
-  background: var(--color-spice-turmeric-12);
-  color: var(--color-spice-turmeric);
+  background: var(--color-account-12);
+  color: var(--color-account);
 }
 
 .AccountHero_internalBadge {
@@ -190,7 +190,7 @@
 }
 
 .AccountHero_typeBadgeOptionCustomer {
-  color: var(--color-spice-turmeric);
+  color: var(--color-account);
 }
 
 .AccountHero_typeBadgeOptionInternal {
