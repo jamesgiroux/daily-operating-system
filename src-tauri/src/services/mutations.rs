@@ -20,7 +20,27 @@ pub fn set_meeting_prep_context(
 
 pub fn reset_email_dismissals(ctx: &ServiceContext<'_>, db: &ActionDb) -> Result<u64, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    db.reset_email_dismissals().map_err(|e| e.to_string())
+    // L2 cycle-26 fix #1: legacy `email_dismissals` reset must also
+    // withdraw the matching `email_dismissed` tombstone claims that
+    // `dismiss_email_item` shadow-wrote (cf. services/emails.rs).
+    // Without this the legacy preference clears but PRE-GATE / readers
+    // continue suppressing email items via the still-tombstoned claim
+    // rows — the user-facing "fresh start" promise is broken.
+    db.with_transaction(|tx| {
+        let count = tx
+            .conn_ref()
+            .execute("DELETE FROM email_dismissals", [])
+            .map_err(|e| e.to_string())?;
+        // Withdraw the parallel email_dismissed tombstone claims so
+        // PRE-GATE / readers stop suppressing email items.
+        crate::services::claims::withdraw_all_tombstones_of_type(
+            tx,
+            "email_dismissed",
+            "reset_by_user",
+        )
+        .map_err(|e| format!("withdraw email_dismissed claims failed: {e}"))?;
+        Ok(count as u64)
+    })
 }
 
 pub fn update_capture_content(

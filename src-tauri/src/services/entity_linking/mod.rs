@@ -342,44 +342,36 @@ pub async fn manual_undismiss(
                 &entity.entity_id,
                 &entity.entity_type,
             )?;
-            // L2 cycle-25 fix #1: withdraw the shadow m5 tombstone
-            // claim that manual_dismiss wrote, so the substrate
-            // tracks the restore. Without this, legacy says
-            // "restored" while the claim substrate still records
-            // user_removal — PRE-GATE / readers continue
-            // suppressing the link. EmailThread is rejected at
-            // manual_dismiss entry per cycle-23, so any tombstone
-            // here is for Meeting or Email subjects (skip
-            // EmailThread; no claim ever existed for it).
-            // dos7-allowed: cycle-25 restore semantics — claim_state
-            // + retraction_reason are lifecycle columns.
+            // L2 cycle-25 fix #1 (cycle-26 hardening): withdraw the
+            // shadow m5 tombstone claim that manual_dismiss wrote, so
+            // the substrate tracks the restore. Without this, legacy
+            // says "restored" while the claim substrate still records
+            // user_removal — PRE-GATE / readers continue suppressing
+            // the link. EmailThread is rejected at manual_dismiss entry
+            // per cycle-23 (no claim ever existed for it).
+            //
+            // L2 cycle-26 fix #2: error propagated via `?` instead of
+            // `let _ =` so a failed UPDATE doesn't silently leave the
+            // legacy row visible while the tombstone stays active —
+            // exactly the split-brain restore failure cycle-25 was
+            // meant to close.
             if let Some(owner_kind) = match owner_type {
                 OwnerType::Meeting => Some("meeting"),
                 OwnerType::Email => Some("email"),
                 OwnerType::EmailThread => None,
             } {
-                let _ = db.conn_ref().execute(
-                    "UPDATE intelligence_claims /* dos7-allowed: cycle-25 restore semantics */ \
-                     SET claim_state = 'withdrawn', \
-                         surfacing_state = 'dormant', \
-                         retraction_reason = 'restored_by_user' \
-                     WHERE id IN ( \
-                         SELECT ic.id FROM intelligence_claims ic \
-                         WHERE ic.claim_state = 'tombstoned' \
-                           AND ic.claim_type = 'linking_dismissed' /* dos7-allowed: WHERE-filter, not SET */ \
-                           AND json_valid(ic.subject_ref) = 1 \
-                           AND lower(json_extract(ic.subject_ref, '$.kind')) = ?1 \
-                           AND json_extract(ic.subject_ref, '$.id') = ?2 \
-                           AND coalesce(ic.field_path, '') = coalesce(?3, '') \
-                           AND ic.text = ?4 /* dos7-allowed: WHERE-filter, not SET */ \
-                     )",
-                    rusqlite::params![
-                        owner_kind,
-                        owner_id,
-                        entity.entity_type,
-                        entity.entity_id,
-                    ],
-                );
+                crate::services::claims::withdraw_tombstones_for(
+                    db,
+                    crate::services::claims::WithdrawTombstoneFilter {
+                        subject_kind: owner_kind,
+                        subject_id: &owner_id,
+                        claim_type: "linking_dismissed",
+                        text: Some(&entity.entity_id),
+                        field_path: Some(&entity.entity_type),
+                        retraction_reason: "restored_by_user",
+                    },
+                )
+                .map_err(|e| format!("withdraw linking_dismissed claim failed: {e}"))?;
             }
             // Restore the raw row to the rule-derived source so it becomes
             // visible in the linked_entities view again.

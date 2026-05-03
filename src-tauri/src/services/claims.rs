@@ -1360,6 +1360,99 @@ pub fn shadow_write_tombstone_claim(
     }
 }
 
+/// L2 cycle-26 fix: filter for `withdraw_tombstones_for`. All fields
+/// other than `subject_id` + `retraction_reason` are filters that
+/// further narrow which tombstone claims to withdraw.
+pub struct WithdrawTombstoneFilter<'a> {
+    /// Subject kind in any case (`"Account"` / `"account"` / `"Person"` …).
+    /// Maps to canonical lowercase form before comparison; non-substrate
+    /// kinds (e.g. `EmailThread`) cause the helper to no-op (returns 0).
+    pub subject_kind: &'a str,
+    pub subject_id: &'a str,
+    pub claim_type: &'a str,
+    /// Optional exact-text filter (e.g. role name for `stakeholder_role`).
+    pub text: Option<&'a str>,
+    /// Optional `field_path` filter (e.g. `entity_type` for `linking_dismissed`).
+    pub field_path: Option<&'a str>,
+    /// Recorded into `intelligence_claims.retraction_reason`. Convention:
+    /// `"restored_by_user"` for re-pin / undismiss, `"reset_by_user"` for
+    /// bulk preference resets.
+    pub retraction_reason: &'a str,
+}
+
+/// L2 cycle-26 fix: centralize lifecycle-tombstone withdrawal so restore
+/// paths don't need ad-hoc `UPDATE intelligence_claims` statements.
+/// Returns the number of rows withdrawn (0 if no matching tombstone or
+/// if the subject_kind has no claim-substrate representation).
+///
+/// SET targets only lifecycle columns (`claim_state`, `surfacing_state`,
+/// `retraction_reason`) — never assertion-identity columns. The
+/// `claim_type` / `text` references in the WHERE clause are filters,
+/// not mutations; the `dos7-allowed:` markers below exist only because
+/// the immutability lint is clause-blind (cf. DOS-362 follow-up).
+///
+/// Errors propagate to the caller. The cycle-25 `let _ =` swallow
+/// pattern is the exact split-brain failure cycle-26 closed: legacy
+/// row reverts but tombstone claim stays active because the UPDATE
+/// silently failed.
+/// L2 cycle-26 fix #1: bulk-withdraw every tombstone claim of a given
+/// `claim_type` regardless of subject. Used by user-facing reset paths
+/// (e.g. `reset_email_dismissals`) that wipe a legacy preference table
+/// and need the parallel claim tombstones cleared in the same
+/// transaction so PRE-GATE / readers stop suppressing the items.
+///
+/// SET targets only lifecycle columns. The `claim_type` reference in
+/// WHERE is a filter, not a mutation.
+pub fn withdraw_all_tombstones_of_type(
+    db: &ActionDb,
+    claim_type: &str,
+    retraction_reason: &str,
+) -> Result<usize, rusqlite::Error> {
+    db.conn_ref().execute(
+        "UPDATE intelligence_claims /* dos7-allowed: bulk withdrawal helper */ \
+         SET claim_state = 'withdrawn', \
+             surfacing_state = 'dormant', \
+             retraction_reason = ?1 \
+         WHERE claim_state = 'tombstoned' \
+           AND claim_type = ?2 /* dos7-allowed: WHERE-filter */",
+        rusqlite::params![retraction_reason, claim_type],
+    )
+}
+
+pub fn withdraw_tombstones_for(
+    db: &ActionDb,
+    filter: WithdrawTombstoneFilter<'_>,
+) -> Result<usize, rusqlite::Error> {
+    let Some(normalized_kind) = normalize_subject_kind_for_claim(filter.subject_kind) else {
+        return Ok(0);
+    };
+
+    db.conn_ref().execute(
+        "UPDATE intelligence_claims /* dos7-allowed: lifecycle withdrawal helper */ \
+         SET claim_state = 'withdrawn', \
+             surfacing_state = 'dormant', \
+             retraction_reason = ?1 \
+         WHERE id IN ( \
+             SELECT ic.id FROM intelligence_claims ic \
+             WHERE ic.claim_state = 'tombstoned' \
+               AND ic.claim_type = ?2 /* dos7-allowed: WHERE-filter */ \
+               AND json_valid(ic.subject_ref) = 1 \
+               AND lower(json_extract(ic.subject_ref, '$.kind')) = ?3 \
+               AND json_extract(ic.subject_ref, '$.id') = ?4 \
+               AND (?5 IS NULL OR ic.text = ?5) \
+               AND (?6 IS NULL OR coalesce(ic.field_path, '') = coalesce(?6, '')) \
+         )",
+        rusqlite::params![
+            filter.retraction_reason,
+            filter.claim_type,
+            normalized_kind,
+            filter.subject_id,
+            filter.text,
+            filter.field_path,
+        ],
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use std::sync::mpsc;
@@ -2630,5 +2723,170 @@ mod tests {
             )
             .unwrap();
         assert_eq!(null_count, 1, "permanent dismissals must leave expires_at NULL");
+    }
+
+    /// L2 cycle-26 fix #3: `withdraw_tombstones_for` flips matching
+    /// tombstone rows to `withdrawn` + `dormant` and stamps the
+    /// supplied `retraction_reason`. Non-matching rows are untouched.
+    #[test]
+    fn withdraw_tombstones_for_flips_only_matching_rows() {
+        let db = test_db();
+        seed_account(&db);
+        // Seed a Person row so a 'person' subject can be a valid claim subject.
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) \
+                 VALUES (?1, ?2, ?3, ?4)",
+                params!["p-1", "p1@example.com", "P One", TS],
+            )
+            .unwrap();
+
+        // Seed THREE tombstones: one matching, one with different role, one with different person.
+        for (subj, role, label) in [
+            ("p-1", "champion", "match"),
+            ("p-1", "decision_maker", "wrong_role"),
+            ("p-2", "champion", "wrong_person"),
+        ] {
+            let outcome = shadow_write_tombstone_claim(
+                &db,
+                ShadowTombstoneClaim {
+                    subject_kind: "Person",
+                    subject_id: subj,
+                    claim_type: "stakeholder_role",
+                    field_path: None,
+                    text: role,
+                    actor: "user",
+                    source_scope: Some(label),
+                    observed_at: TS,
+                    expires_at: None,
+                },
+            );
+            assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
+        }
+
+        let withdrawn = withdraw_tombstones_for(
+            &db,
+            WithdrawTombstoneFilter {
+                subject_kind: "Person",
+                subject_id: "p-1",
+                claim_type: "stakeholder_role",
+                text: Some("champion"),
+                field_path: None,
+                retraction_reason: "restored_by_user",
+            },
+        )
+        .unwrap();
+        assert_eq!(withdrawn, 1, "exactly one row should be withdrawn");
+
+        // The matching row is now withdrawn / dormant / restored_by_user.
+        let (state, surfacing, reason): (String, String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT claim_state, surfacing_state, retraction_reason \
+                 FROM intelligence_claims \
+                 WHERE json_extract(metadata_json, '$.source_scope') = 'match'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap_or_else(|e| panic!("failed to read withdrawn row: {e}"));
+        assert_eq!(state, "withdrawn");
+        assert_eq!(surfacing, "dormant");
+        assert_eq!(reason, "restored_by_user");
+
+        // The non-matching rows stay tombstoned.
+        let still_tombstoned: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims \
+                 WHERE claim_state = 'tombstoned'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(still_tombstoned, 2);
+
+        // Calling again is idempotent (no rows match, returns 0).
+        let zero = withdraw_tombstones_for(
+            &db,
+            WithdrawTombstoneFilter {
+                subject_kind: "Person",
+                subject_id: "p-1",
+                claim_type: "stakeholder_role",
+                text: Some("champion"),
+                field_path: None,
+                retraction_reason: "restored_by_user",
+            },
+        )
+        .unwrap();
+        assert_eq!(zero, 0, "idempotent: no matching tombstones remain");
+    }
+
+    /// L2 cycle-26 fix #1: `withdraw_all_tombstones_of_type` is the
+    /// bulk reset path. Used by `reset_email_dismissals` to wipe
+    /// every email_dismissed claim in a single transaction so PRE-GATE
+    /// stops suppressing items after the legacy table is cleared.
+    #[test]
+    fn withdraw_all_tombstones_of_type_clears_every_matching_row() {
+        let db = test_db();
+        // Seed two distinct email subjects + two emails.
+        for (eid, _label) in [("em-A", "matching-A"), ("em-B", "matching-B")] {
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO emails (email_id, subject, received_at) \
+                     VALUES (?1, 'subj', ?2)",
+                    params![eid, TS],
+                )
+                .unwrap();
+            let outcome = shadow_write_tombstone_claim(
+                &db,
+                ShadowTombstoneClaim {
+                    subject_kind: "Email",
+                    subject_id: eid,
+                    claim_type: "email_dismissed",
+                    field_path: Some("commitment"),
+                    text: "blocking_item",
+                    actor: "user",
+                    source_scope: None,
+                    observed_at: TS,
+                    expires_at: None,
+                },
+            );
+            assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
+        }
+        // Also seed an off-type tombstone that must NOT be touched.
+        seed_account(&db);
+        let _ = shadow_write_tombstone_claim(
+            &db,
+            ShadowTombstoneClaim {
+                subject_kind: "Account",
+                subject_id: "acct-1",
+                claim_type: "risk",
+                field_path: Some("risks"),
+                text: "off_type",
+                actor: "user",
+                source_scope: None,
+                observed_at: TS,
+                expires_at: None,
+            },
+        );
+
+        let withdrawn =
+            withdraw_all_tombstones_of_type(&db, "email_dismissed", "reset_by_user").unwrap();
+        assert_eq!(withdrawn, 2, "both email_dismissed tombstones must be withdrawn");
+
+        let (e_count, off_type_active): (i64, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT \
+                   (SELECT count(*) FROM intelligence_claims \
+                    WHERE claim_type = 'email_dismissed' AND claim_state = 'withdrawn'), \
+                   (SELECT count(*) FROM intelligence_claims \
+                    WHERE claim_type = 'risk' AND claim_state = 'tombstoned')",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(e_count, 2);
+        assert_eq!(off_type_active, 1, "off-type rows are untouched");
     }
 }

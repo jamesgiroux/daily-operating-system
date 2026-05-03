@@ -3415,30 +3415,31 @@ fn add_stakeholder_role_inner(
                 rusqlite::params![account_id, person_id, role, now],
             )
             .map_err(|e| e.to_string())?;
-        // L2 cycle-25 fix #2: re-adding a role clears the legacy
-        // dismissed_at, but the cycle-21 + cycle-2-fix-#4 shadow
-        // m2 tombstone claim from a prior remove/swap is still
-        // active. Without withdrawing it, the substrate records
-        // user_removal for the same (Person, role) tuple while
-        // the legacy UI shows the role as re-pinned — PRE-GATE
+        // L2 cycle-25 fix #2 (cycle-26 hardening): re-adding a role
+        // clears the legacy dismissed_at, but the cycle-21 + cycle-2
+        // fix-#4 shadow m2 tombstone claim from a prior remove/swap
+        // is still active. Without withdrawing it, the substrate
+        // records user_removal for the same (Person, role) tuple
+        // while the legacy UI shows the role as re-pinned — PRE-GATE
         // can keep blocking AI re-recognition of the role.
-        // dos7-allowed: cycle-25 re-pin restore semantics.
-        let _ = tx.conn_ref().execute(
-            "UPDATE intelligence_claims /* dos7-allowed: cycle-25 re-pin restore semantics */ \
-             SET claim_state = 'withdrawn', \
-                 surfacing_state = 'dormant', \
-                 retraction_reason = 'restored_by_user' \
-             WHERE id IN ( \
-                 SELECT ic.id FROM intelligence_claims ic \
-                 WHERE ic.claim_state = 'tombstoned' \
-                   AND ic.claim_type = 'stakeholder_role' /* dos7-allowed: WHERE-filter, not SET */ \
-                   AND json_valid(ic.subject_ref) = 1 \
-                   AND lower(json_extract(ic.subject_ref, '$.kind')) = 'person' \
-                   AND json_extract(ic.subject_ref, '$.id') = ?1 \
-                   AND ic.text = ?2 /* dos7-allowed: WHERE-filter, not SET */ \
-             )",
-            rusqlite::params![person_id, role],
-        );
+        //
+        // L2 cycle-26 fix #2: error propagated via `?` instead of
+        // `let _ =` so a failed UPDATE doesn't silently leave the
+        // legacy row visible while the tombstone stays active —
+        // exactly the split-brain restore failure cycle-25 was
+        // meant to close.
+        crate::services::claims::withdraw_tombstones_for(
+            tx,
+            crate::services::claims::WithdrawTombstoneFilter {
+                subject_kind: "person",
+                subject_id: person_id,
+                claim_type: "stakeholder_role",
+                text: Some(role.as_str()),
+                field_path: None,
+                retraction_reason: "restored_by_user",
+            },
+        )
+        .map_err(|e| format!("withdraw stakeholder_role claim failed: {e}"))?;
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
