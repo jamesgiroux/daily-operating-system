@@ -40,8 +40,8 @@ pub enum ClaimActorClass {
     User,
     /// Backfill / migration / repair / system-maintenance code.
     System,
-    /// AI abilities producing claims (DOS-218 entity context,
-    /// DOS-219 meeting brief, etc.).
+    /// AI abilities producing claims such as entity context and
+    /// meeting brief outputs.
     Agent,
 }
 
@@ -268,8 +268,8 @@ const SUBJECTS_TRIAGE: &[CanonicalSubjectType] = &[
 /// Actor-class slices for the W3 substrate window. The system+user
 /// pairing covers all current dismissal lifecycle types (legacy
 /// backfill writes as system; runtime user-driven dismissals write
-/// as user). Pilot context types (DOS-218/219 entity_*, meeting_*)
-/// are agent-only since they're produced by AI abilities.
+/// as user). Pilot context claim types are agent-only since they're
+/// produced by AI abilities.
 const ACTORS_ANY: &[ClaimActorClass] = &[
     ClaimActorClass::User,
     ClaimActorClass::System,

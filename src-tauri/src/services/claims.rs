@@ -24,6 +24,11 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
+use crate::abilities::claims::{metadata_for_name, ClaimActorClass};
+use crate::abilities::feedback::{
+    feedback_semantics, transition_for_feedback, ClaimFeedbackMetadata, ClaimVerificationState,
+    FeedbackAction,
+};
 use crate::db::claim_invalidation::SubjectRef;
 use crate::db::claims::{
     ClaimSensitivity, ClaimState, IntelligenceClaim, ReconciliationKind, SurfacingState,
@@ -91,6 +96,24 @@ pub enum CommittedClaim {
     },
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ClaimFeedbackInput {
+    pub claim_id: String,
+    pub action: FeedbackAction,
+    pub actor: String,
+    pub actor_id: Option<String>,
+    pub payload_json: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
+pub struct ClaimFeedbackOutcome {
+    pub feedback_id: String,
+    pub claim_id: String,
+    pub action: FeedbackAction,
+    pub new_verification_state: ClaimVerificationState,
+    pub applied_at_pending: bool,
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum ClaimError {
     #[error("ServiceContext mutation gate: {0}")]
@@ -99,8 +122,16 @@ pub enum ClaimError {
     SubjectRef(String),
     #[error("unknown claim_type: {0} (not in CLAIM_TYPE_REGISTRY)")]
     UnknownClaimType(String),
+    #[error("unknown claim_id: {0}")]
+    UnknownClaimId(String),
+    #[error("invalid claim feedback: {0}")]
+    InvalidFeedback(String),
+    #[error("actor class not allowed for claim_type {claim_type}: {actor}")]
+    ActorClassNotAllowed { claim_type: String, actor: String },
     #[error("tombstone PRE-GATE: claim is tombstoned and cannot be re-committed")]
     TombstonedPreGate,
+    #[error("transaction error: {0}")]
+    Transaction(String),
     #[error("database error: {0}")]
     Db(#[from] DbError),
     #[error("rusqlite error: {0}")]
@@ -431,20 +462,34 @@ fn with_claim_transaction<T>(
     db: &ActionDb,
     f: impl FnOnce(&ActionDb) -> Result<T, ClaimError>,
 ) -> Result<T, ClaimError> {
-    if !db.conn_ref().is_autocommit() {
-        return f(db);
-    }
+    let mut outcome: Option<Result<T, ClaimError>> = None;
+    let transaction_result = db.with_transaction(|tx| {
+        let result = f(tx);
+        let result_for_return = if result.is_ok() {
+            Ok(())
+        } else {
+            Err(result
+                .as_ref()
+                .err()
+                .map(ToString::to_string)
+                .unwrap_or_else(|| "claim transaction failed".to_string()))
+        };
+        outcome = Some(result);
+        result_for_return
+    });
 
-    db.conn_ref().execute_batch("BEGIN IMMEDIATE")?;
-    match f(db) {
-        Ok(value) => {
-            db.conn_ref().execute_batch("COMMIT")?;
-            Ok(value)
-        }
-        Err(error) => {
-            let _ = db.conn_ref().execute_batch("ROLLBACK");
-            Err(error)
-        }
+    match transaction_result {
+        Ok(()) => match outcome {
+            Some(Ok(value)) => Ok(value),
+            Some(Err(error)) => Err(error),
+            None => Err(ClaimError::Transaction(
+                "transaction completed without running closure".to_string(),
+            )),
+        },
+        Err(message) => match outcome {
+            Some(Err(error)) => Err(error),
+            Some(Ok(_)) | None => Err(ClaimError::Transaction(message)),
+        },
     }
 }
 
@@ -456,10 +501,12 @@ fn insert_claim_row(tx: &ActionDb, claim: &IntelligenceClaim) -> Result<(), Clai
             created_at, provenance_json, metadata_json, claim_state, surfacing_state,
             demotion_reason, reactivated_at, retraction_reason, expires_at,
             superseded_by, trust_score, trust_computed_at, trust_version, thread_id,
-            temporal_scope, sensitivity
+            temporal_scope, sensitivity, verification_state, verification_reason,
+            needs_user_decision_at
         ) VALUES (
             ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15,
-            ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29
+            ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27, ?28, ?29,
+            ?30, ?31, ?32
         )",
         params![
             &claim.id,
@@ -491,6 +538,9 @@ fn insert_claim_row(tx: &ActionDb, claim: &IntelligenceClaim) -> Result<(), Clai
             claim.thread_id.as_deref(),
             enum_to_db(&claim.temporal_scope)?,
             enum_to_db(&claim.sensitivity)?,
+            enum_to_db(&claim.verification_state)?,
+            claim.verification_reason.as_deref(),
+            claim.needs_user_decision_at.as_deref(),
         ],
     )?;
     Ok(())
@@ -500,7 +550,8 @@ const CLAIM_COLUMNS: &str = "id, subject_ref, claim_type, field_path, topic_key,
     item_hash, actor, data_source, source_ref, source_asof, observed_at, created_at,
     provenance_json, metadata_json, claim_state, surfacing_state, demotion_reason,
     reactivated_at, retraction_reason, expires_at, superseded_by, trust_score,
-    trust_computed_at, trust_version, thread_id, temporal_scope, sensitivity";
+    trust_computed_at, trust_version, thread_id, temporal_scope, sensitivity,
+    verification_state, verification_reason, needs_user_decision_at";
 
 fn read_claim_row(row: &rusqlite::Row<'_>) -> Result<IntelligenceClaim, ClaimError> {
     Ok(IntelligenceClaim {
@@ -533,7 +584,24 @@ fn read_claim_row(row: &rusqlite::Row<'_>) -> Result<IntelligenceClaim, ClaimErr
         thread_id: row.get(26)?,
         temporal_scope: parse_db_enum(row.get(27)?)?,
         sensitivity: parse_db_enum(row.get(28)?)?,
+        verification_state: parse_db_enum(row.get(29)?)?,
+        verification_reason: row.get(30)?,
+        needs_user_decision_at: row.get(31)?,
     })
+}
+
+fn load_claim_by_id(
+    conn: &rusqlite::Connection,
+    claim_id: &str,
+) -> Result<Option<IntelligenceClaim>, ClaimError> {
+    let sql = format!("SELECT {CLAIM_COLUMNS} FROM intelligence_claims WHERE id = ?1 LIMIT 1");
+    let mut stmt = conn.prepare(&sql)?;
+    let mut rows = stmt.query(params![claim_id])?;
+    if let Some(row) = rows.next()? {
+        Ok(Some(read_claim_row(row)?))
+    } else {
+        Ok(None)
+    }
 }
 
 /// L2 cycle-1 fix #6: load the single ACTIVE claim with this exact
@@ -734,6 +802,105 @@ fn load_claims_where(
     Ok(claims)
 }
 
+fn actor_class_for_actor(actor: &str) -> Option<ClaimActorClass> {
+    let normalized = actor.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        return None;
+    }
+    let head = normalized
+        .split([':', '/', '@'])
+        .next()
+        .unwrap_or(normalized.as_str());
+    match head {
+        "user" | "human" => Some(ClaimActorClass::User),
+        "system" | "system_backfill" | "backfill" | "migration" | "repair" => {
+            Some(ClaimActorClass::System)
+        }
+        "agent" | "ai" | "glean" | "llm" => Some(ClaimActorClass::Agent),
+        _ => None,
+    }
+}
+
+fn validate_feedback_actor_for_claim(
+    claim: &IntelligenceClaim,
+    actor: &str,
+) -> Result<(), ClaimError> {
+    let actor_class = actor_class_for_actor(actor).ok_or_else(|| {
+        ClaimError::InvalidFeedback(format!(
+            "actor '{}' does not map to a registered actor class",
+            actor
+        ))
+    })?;
+    let metadata = metadata_for_name(&claim.claim_type)
+        .ok_or_else(|| ClaimError::UnknownClaimType(claim.claim_type.clone()))?;
+    if metadata.allowed_actor_classes.is_empty()
+        || metadata.allowed_actor_classes.contains(&actor_class)
+    {
+        return Ok(());
+    }
+
+    Err(ClaimError::ActorClassNotAllowed {
+        claim_type: claim.claim_type.clone(),
+        actor: actor.to_string(),
+    })
+}
+
+fn validate_feedback_payload(
+    input: &ClaimFeedbackInput,
+    metadata: &ClaimFeedbackMetadata,
+) -> Result<(), ClaimError> {
+    let payload = input
+        .payload_json
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    if let Some(payload) = payload {
+        serde_json::from_str::<serde_json::Value>(payload).map_err(|e| {
+            ClaimError::InvalidFeedback(format!("payload_json must be valid JSON: {e}"))
+        })?;
+        return Ok(());
+    }
+
+    if metadata.requires_action_metadata {
+        return Err(ClaimError::InvalidFeedback(format!(
+            "{} feedback requires payload_json metadata",
+            input.action.as_str()
+        )));
+    }
+
+    Ok(())
+}
+
+fn verification_update_for_feedback(
+    claim: &IntelligenceClaim,
+    action: FeedbackAction,
+    now: &str,
+) -> (ClaimVerificationState, Option<String>, Option<String>) {
+    let next_state = transition_for_feedback(claim.verification_state, action);
+    if next_state == claim.verification_state {
+        return (
+            next_state,
+            claim.verification_reason.clone(),
+            claim.needs_user_decision_at.clone(),
+        );
+    }
+
+    let reason = match next_state {
+        ClaimVerificationState::Active => None,
+        ClaimVerificationState::Contested | ClaimVerificationState::NeedsUserDecision => {
+            Some(action.as_str().to_string())
+        }
+    };
+    let needs_user_decision_at = if matches!(next_state, ClaimVerificationState::NeedsUserDecision)
+    {
+        Some(now.to_string())
+    } else {
+        None
+    };
+
+    (next_state, reason, needs_user_decision_at)
+}
+
 // ---------------------------------------------------------------------------
 // commit_claim
 // ---------------------------------------------------------------------------
@@ -921,6 +1088,9 @@ pub fn commit_claim(
                     thread_id: proposal.thread_id.clone(),
                     temporal_scope: proposal.temporal_scope.clone(),
                     sensitivity: proposal.sensitivity.clone(),
+                    verification_state: ClaimVerificationState::Active,
+                    verification_reason: None,
+                    needs_user_decision_at: None,
                 };
                 insert_claim_row(tx, &contradicting)?;
 
@@ -984,6 +1154,9 @@ pub fn commit_claim(
             thread_id: proposal.thread_id.clone(),
             temporal_scope: proposal.temporal_scope.clone(),
             sensitivity: proposal.sensitivity.clone(),
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
         };
 
         insert_claim_row(tx, &claim)?;
@@ -994,6 +1167,72 @@ pub fn commit_claim(
         } else {
             Ok(CommittedClaim::Inserted { claim })
         }
+    })
+}
+
+// ---------------------------------------------------------------------------
+// record_claim_feedback
+// ---------------------------------------------------------------------------
+
+pub fn record_claim_feedback(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: ClaimFeedbackInput,
+) -> Result<ClaimFeedbackOutcome, ClaimError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| ClaimError::Mode(e.to_string()))?;
+
+    let metadata = feedback_semantics(input.action);
+    validate_feedback_payload(&input, &metadata)?;
+
+    with_claim_transaction(db, |tx| {
+        let now = ctx.clock.now().to_rfc3339();
+        let claim = load_claim_by_id(tx.conn_ref(), &input.claim_id)?
+            .ok_or_else(|| ClaimError::UnknownClaimId(input.claim_id.clone()))?;
+        validate_feedback_actor_for_claim(&claim, &input.actor)?;
+
+        let feedback_id = uuid::Uuid::new_v4().to_string();
+        tx.conn_ref().execute(
+            "INSERT INTO claim_feedback (
+                id, claim_id, feedback_type, actor, actor_id, payload_json,
+                submitted_at, applied_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)",
+            params![
+                &feedback_id,
+                &input.claim_id,
+                input.action.as_str(),
+                &input.actor,
+                input.actor_id.as_deref(),
+                input.payload_json.as_deref(),
+                &now,
+            ],
+        )?;
+
+        let (new_verification_state, verification_reason, needs_user_decision_at) =
+            verification_update_for_feedback(&claim, input.action, &now);
+        tx.conn_ref().execute(
+            "UPDATE intelligence_claims
+             SET verification_state = ?1,
+                 verification_reason = ?2,
+                 needs_user_decision_at = ?3
+             WHERE id = ?4",
+            params![
+                enum_to_db(&new_verification_state)?,
+                verification_reason.as_deref(),
+                needs_user_decision_at.as_deref(),
+                &input.claim_id,
+            ],
+        )?;
+
+        bump_invalidation_for_claim_id(tx, &input.claim_id)?;
+
+        Ok(ClaimFeedbackOutcome {
+            feedback_id,
+            claim_id: input.claim_id.clone(),
+            action: input.action,
+            new_verification_state,
+            applied_at_pending: true,
+        })
     })
 }
 
@@ -1594,6 +1833,9 @@ mod tests {
             thread_id: None,
             temporal_scope: TemporalScope::State,
             sensitivity: ClaimSensitivity::Internal,
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
         };
         insert_claim_row(db, &claim).expect("insert fixture claim");
     }
@@ -1603,6 +1845,63 @@ mod tests {
             CommittedClaim::Inserted { claim } | CommittedClaim::Tombstoned { claim } => claim.id,
             other => panic!("expected inserted/tombstoned claim, got {other:?}"),
         }
+    }
+
+    fn all_feedback_actions() -> [FeedbackAction; 9] {
+        [
+            FeedbackAction::ConfirmCurrent,
+            FeedbackAction::MarkOutdated,
+            FeedbackAction::MarkFalse,
+            FeedbackAction::WrongSubject,
+            FeedbackAction::WrongSource,
+            FeedbackAction::CannotVerify,
+            FeedbackAction::NeedsNuance,
+            FeedbackAction::SurfaceInappropriate,
+            FeedbackAction::NotRelevantHere,
+        ]
+    }
+
+    fn feedback_payload_for(action: FeedbackAction) -> Option<String> {
+        match action {
+            FeedbackAction::WrongSource => {
+                Some(serde_json::json!({ "source_ref": "src-1" }).to_string())
+            }
+            FeedbackAction::NeedsNuance => Some(
+                serde_json::json!({ "corrected_text": "Renewal risk needs a qualifier" })
+                    .to_string(),
+            ),
+            FeedbackAction::SurfaceInappropriate => {
+                Some(serde_json::json!({ "surface": "briefing" }).to_string())
+            }
+            FeedbackAction::NotRelevantHere => {
+                Some(serde_json::json!({ "invocation": "meeting-prep" }).to_string())
+            }
+            _ => None,
+        }
+    }
+
+    fn feedback_input(claim_id: &str, action: FeedbackAction) -> ClaimFeedbackInput {
+        ClaimFeedbackInput {
+            claim_id: claim_id.to_string(),
+            action,
+            actor: "user".to_string(),
+            actor_id: Some("user@example.com".to_string()),
+            payload_json: feedback_payload_for(action),
+        }
+    }
+
+    fn read_verification_columns(
+        db: &ActionDb,
+        claim_id: &str,
+    ) -> (String, Option<String>, Option<String>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT verification_state, verification_reason, needs_user_decision_at \
+                 FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read verification columns")
     }
 
     #[test]
@@ -1973,6 +2272,204 @@ mod tests {
         record_corroboration(&ctx, &db, &claim_id, "glean", Some(TS), Some("backfill")).unwrap();
 
         assert_eq!(read_account_claim_version(&db), after_commit + 1);
+    }
+
+    #[test]
+    fn record_claim_feedback_persists_a_row_per_action_for_each_of_9_variants() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk for feedback")).unwrap());
+
+        for action in all_feedback_actions() {
+            let outcome =
+                record_claim_feedback(&ctx, &db, feedback_input(&claim_id, action)).unwrap();
+            assert_eq!(outcome.claim_id, claim_id);
+            assert_eq!(outcome.action, action);
+            assert!(outcome.applied_at_pending);
+        }
+
+        let rows: Vec<String> = {
+            let mut stmt = db
+                .conn_ref()
+                .prepare(
+                    "SELECT feedback_type FROM claim_feedback \
+                     WHERE claim_id = ?1 ORDER BY rowid",
+                )
+                .unwrap();
+            stmt.query_map(params![&claim_id], |row| row.get::<_, String>(0))
+                .unwrap()
+                .collect::<Result<Vec<_>, _>>()
+                .unwrap()
+        };
+        let expected = all_feedback_actions()
+            .iter()
+            .map(FeedbackAction::as_str)
+            .map(str::to_string)
+            .collect::<Vec<_>>();
+        assert_eq!(rows, expected);
+    }
+
+    #[test]
+    fn record_claim_feedback_transitions_verification_state_to_contested_for_cannot_verify() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk needing evidence")).unwrap());
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+
+        assert_eq!(
+            outcome.new_verification_state,
+            ClaimVerificationState::Contested
+        );
+        let (state, reason, needs_user_decision_at) = read_verification_columns(&db, &claim_id);
+        assert_eq!(state, "contested");
+        assert_eq!(reason.as_deref(), Some("cannot_verify"));
+        assert_eq!(needs_user_decision_at, None);
+    }
+
+    #[test]
+    fn record_claim_feedback_idempotent_replay_does_not_dup_state_change() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk replay")).unwrap());
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+        let first = read_verification_columns(&db, &claim_id);
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+        let second = read_verification_columns(&db, &claim_id);
+
+        assert_eq!(second, first);
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_feedback WHERE claim_id = ?1",
+                params![&claim_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(feedback_count, 2);
+    }
+
+    #[test]
+    fn record_claim_feedback_rejects_unknown_claim_id() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let err = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input("missing-claim", FeedbackAction::CannotVerify),
+        )
+        .expect_err("unknown claim should be rejected");
+
+        assert!(matches!(err, ClaimError::UnknownClaimId(id) if id == "missing-claim"));
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row("SELECT count(*) FROM claim_feedback", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(feedback_count, 0);
+    }
+
+    #[test]
+    fn record_claim_feedback_blocks_in_simulate_mode() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let live = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&live, &db, proposal("Risk simulate gate")).unwrap());
+        let simulate = ServiceContext::new_simulate(&clock, &rng, &external);
+
+        let err = record_claim_feedback(
+            &simulate,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .expect_err("simulate mode should block mutation");
+
+        assert!(matches!(err, ClaimError::Mode(_)));
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row("SELECT count(*) FROM claim_feedback", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(feedback_count, 0);
+    }
+
+    #[test]
+    fn intelligence_claims_verification_state_defaults_to_active_after_migration() {
+        let db = test_db();
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO intelligence_claims (
+                    id, subject_ref, claim_type, text, dedup_key, actor, data_source,
+                    observed_at, created_at, provenance_json, temporal_scope, sensitivity
+                 ) VALUES (
+                    'claim-default-verification', ?1, 'risk', 'defaulted', 'dedup-default',
+                    'agent:test', 'unit_test', ?2, ?2, '{}', 'state', 'internal'
+                 )",
+                params![SUBJECT, TS],
+            )
+            .unwrap();
+
+        let (state, reason, needs_user_decision_at) =
+            read_verification_columns(&db, "claim-default-verification");
+        assert_eq!(state, "active");
+        assert_eq!(reason, None);
+        assert_eq!(needs_user_decision_at, None);
+    }
+
+    #[test]
+    fn claim_feedback_check_constraint_accepts_all_9_action_strings() {
+        let db = test_db();
+
+        for action in all_feedback_actions() {
+            let payload = feedback_payload_for(action);
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO claim_feedback (
+                        id, claim_id, feedback_type, actor, actor_id, payload_json, submitted_at
+                     ) VALUES (?1, 'claim-1', ?2, 'user', 'user@example.com', ?3, ?4)",
+                    params![
+                        format!("feedback-{}", action.as_str()),
+                        action.as_str(),
+                        payload.as_deref(),
+                        TS,
+                    ],
+                )
+                .unwrap_or_else(|e| panic!("{} should satisfy CHECK: {e}", action.as_str()));
+        }
+
+        let feedback_count: i64 = db
+            .conn_ref()
+            .query_row("SELECT count(*) FROM claim_feedback", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(feedback_count, 9);
     }
 
     /// L2 cycle-1 fix #5: reconcile_contradiction must bump per-entity

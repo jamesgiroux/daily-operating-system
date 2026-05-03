@@ -7,6 +7,8 @@
 use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
 
+pub use crate::abilities::feedback::{ClaimVerificationState, FeedbackAction as FeedbackType};
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimState {
@@ -59,16 +61,6 @@ pub enum ReconciliationKind {
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
-pub enum FeedbackType {
-    Confirm,
-    Correct,
-    Reject,
-    WrongSubject,
-    CannotVerify,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
 pub enum RepairJobState {
     Pending,
     InProgress,
@@ -109,6 +101,9 @@ pub struct IntelligenceClaim {
     pub thread_id: Option<String>,
     pub temporal_scope: TemporalScope,
     pub sensitivity: ClaimSensitivity,
+    pub verification_state: ClaimVerificationState,
+    pub verification_reason: Option<String>,
+    pub needs_user_decision_at: Option<String>,
 }
 
 /// Mirror of the `claim_corroborations` row.
@@ -163,6 +158,7 @@ pub struct ClaimFeedbackRow {
     pub actor_id: Option<String>,
     pub payload_json: Option<String>,
     pub submitted_at: String,
+    pub applied_at: Option<String>,
 }
 
 /// Mirror of the `claim_repair_job` row.
@@ -249,11 +245,18 @@ mod tests {
 
     #[test]
     fn feedback_type_serde_roundtrip() {
-        roundtrip_enum(FeedbackType::Confirm, "\"confirm\"");
-        roundtrip_enum(FeedbackType::Correct, "\"correct\"");
-        roundtrip_enum(FeedbackType::Reject, "\"reject\"");
+        roundtrip_enum(FeedbackType::ConfirmCurrent, "\"confirm_current\"");
+        roundtrip_enum(FeedbackType::MarkOutdated, "\"mark_outdated\"");
+        roundtrip_enum(FeedbackType::MarkFalse, "\"mark_false\"");
         roundtrip_enum(FeedbackType::WrongSubject, "\"wrong_subject\"");
+        roundtrip_enum(FeedbackType::WrongSource, "\"wrong_source\"");
         roundtrip_enum(FeedbackType::CannotVerify, "\"cannot_verify\"");
+        roundtrip_enum(FeedbackType::NeedsNuance, "\"needs_nuance\"");
+        roundtrip_enum(
+            FeedbackType::SurfaceInappropriate,
+            "\"surface_inappropriate\"",
+        );
+        roundtrip_enum(FeedbackType::NotRelevantHere, "\"not_relevant_here\"");
     }
 
     #[test]
@@ -297,6 +300,9 @@ mod tests {
             thread_id: Some("thread-1".to_string()),
             temporal_scope: TemporalScope::State,
             sensitivity: ClaimSensitivity::Internal,
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
         };
 
         let json = serde_json::to_string(&claim).unwrap();
@@ -305,6 +311,7 @@ mod tests {
         assert!(json.contains("\"claim_state\":\"active\""));
         assert!(json.contains("\"temporal_scope\":\"state\""));
         assert!(json.contains("\"sensitivity\":\"internal\""));
+        assert!(json.contains("\"verification_state\":\"active\""));
 
         let back: IntelligenceClaim = serde_json::from_str(&json).unwrap();
         assert_eq!(back, claim);
@@ -342,6 +349,9 @@ mod tests {
             thread_id: None,
             temporal_scope: TemporalScope::PointInTime,
             sensitivity: ClaimSensitivity::Confidential,
+            verification_state: ClaimVerificationState::Contested,
+            verification_reason: Some("source_support".to_string()),
+            needs_user_decision_at: None,
         };
 
         let json = serde_json::to_string(&claim).unwrap();
@@ -351,6 +361,7 @@ mod tests {
         assert!(json.contains("\"surfacing_state\":\"dormant\""));
         assert!(json.contains("\"temporal_scope\":\"point_in_time\""));
         assert!(json.contains("\"sensitivity\":\"confidential\""));
+        assert!(json.contains("\"verification_state\":\"contested\""));
 
         let back: IntelligenceClaim = serde_json::from_str(&json).unwrap();
         assert_eq!(back, claim);
