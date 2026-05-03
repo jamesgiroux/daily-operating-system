@@ -4,171 +4,956 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Primitives · DailyOS Design System</title>
-<link rel="stylesheet" href="../_shared/tokens.css">
-<link rel="stylesheet" href="../_shared/primitives.css">
+
+<link rel="stylesheet" href="../_shared/fonts.css">
+<link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
+<link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
+<link rel="stylesheet" href="../_shared/styles/editable-inline.module.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
 <link rel="stylesheet" href="../_shared/inspector.css">
+
 <style>
-  body {
-    background: var(--color-paper-cream);
-    padding: 48px 80px 96px;
-    font-family: var(--font-sans);
-    color: var(--color-text-primary);
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  header {
+  .pr-cover {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-3xl);
     border-bottom: 1px solid var(--color-rule-heavy);
-    padding-bottom: 24px;
-    margin-bottom: 48px;
   }
-  header .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 10px; }
-  header h1 { font-family: var(--font-serif); font-size: 56px; font-weight: 400; letter-spacing: -0.02em; }
-  header p { font-family: var(--font-serif); font-style: italic; font-size: 18px; color: var(--color-text-secondary); margin-top: 12px; max-width: 720px; line-height: 1.55; }
-  nav.tier-nav { display: flex; gap: 24px; margin: 24px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
-  nav.tier-nav a { color: var(--color-text-tertiary); text-decoration: none; padding-bottom: 4px; border-bottom: 1px solid transparent; }
-  nav.tier-nav a:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
-  nav.tier-nav a.active { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
-  .frame {
+
+  .pr-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-md);
+  }
+
+  .pr-title {
+    font-family: var(--font-serif);
+    font-size: 76px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1;
+    color: var(--color-text-primary);
+    margin: 0;
+  }
+
+  .pr-lede {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 21px;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    max-width: 720px;
+    margin: var(--space-lg) 0 0;
+  }
+
+  .pr-meta {
+    display: flex;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+    margin-top: var(--space-2xl);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .pr-meta span + span::before {
+    content: "/";
+    margin-right: var(--space-lg);
+    opacity: 0.45;
+  }
+
+  .pr-reference-nav {
+    display: flex;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+    margin-top: var(--space-xl);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .pr-reference-nav a,
+  .pr-family-nav a,
+  .pr-spec-link {
+    color: var(--color-text-tertiary);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: color var(--transition-normal), border-color var(--transition-normal);
+  }
+
+  .pr-reference-nav a:hover,
+  .pr-family-nav a:hover,
+  .pr-spec-link:hover {
+    color: var(--color-person);
+    border-color: currentColor;
+  }
+
+  .pr-reference-nav .is-active {
+    color: var(--color-person);
+    border-color: currentColor;
+  }
+
+  .pr-family-nav {
+    display: flex;
+    gap: var(--space-sm);
+    flex-wrap: wrap;
+    padding: var(--space-lg) 0 var(--space-xl);
+    border-bottom: 1px solid var(--color-rule-light);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .pr-family-nav a {
+    padding: 5px 10px;
+    border: 1px solid var(--color-rule-light);
+    border-radius: 999px;
+    background: rgba(250, 248, 246, 0.58);
+  }
+
+  .pr-family {
+    padding: var(--space-3xl) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+    scroll-margin-top: 88px;
+  }
+
+  .pr-family-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-md);
+    flex-wrap: wrap;
+    margin-bottom: var(--space-md);
+  }
+
+  .pr-family-title {
+    font-family: var(--font-serif);
+    font-size: 36px;
+    font-weight: 400;
+    letter-spacing: 0;
+    color: var(--color-text-primary);
+    margin: 0;
+  }
+
+  .pr-family-count {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .pr-family-lede {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    max-width: 720px;
+    margin: 0 0 var(--space-xl);
+  }
+
+  .pr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    gap: var(--space-md);
+  }
+
+  .pr-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 260px;
+    padding: var(--space-lg);
+    background: rgba(250, 248, 246, 0.82);
     border: 1px solid var(--color-rule-light);
     border-radius: 8px;
-    padding: 24px;
-    margin-bottom: 24px;
+  }
+
+  .pr-card-header {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    gap: var(--space-sm) var(--space-md);
+    align-items: baseline;
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .pr-card-title {
+    font-family: var(--font-serif);
+    font-size: 24px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.15;
+    color: var(--color-text-primary);
+    margin: 0;
+  }
+
+  .pr-tier {
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.09em;
+    text-transform: uppercase;
+    color: var(--color-paper-warm-white);
+    background: var(--color-person);
+    border-radius: 3px;
+    padding: 3px 7px;
+    white-space: nowrap;
+  }
+
+  .pr-summary {
+    grid-column: 1 / -1;
+    font-family: var(--font-serif);
+    font-size: 14px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.45;
+    color: var(--color-text-secondary);
+    margin: 0;
+  }
+
+  .pr-spec-link {
+    justify-self: start;
+    grid-column: 1 / -1;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+
+  .pr-demo {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    min-height: 92px;
+    margin-top: auto;
+    padding-top: var(--space-lg);
+  }
+
+  .pr-demo-stack {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .pr-pill,
+  .pr-entity-chip,
+  .pr-type-badge,
+  .pr-removable-chip,
+  .pr-confidence-chip,
+  .pr-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.2;
+    white-space: nowrap;
+  }
+
+  .pr-pill {
+    color: var(--tone-fg, var(--color-text-secondary));
+    background: var(--tone-bg, var(--color-desk-charcoal-4));
+  }
+
+  .pr-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+    opacity: 0.75;
+    flex: 0 0 auto;
+  }
+
+  .pr-tone-sage { --tone-bg: var(--color-garden-sage-15); --tone-fg: var(--color-garden-rosemary); }
+  .pr-tone-turmeric { --tone-bg: var(--color-spice-turmeric-15); --tone-fg: var(--color-spice-turmeric); }
+  .pr-tone-terracotta { --tone-bg: var(--color-spice-terracotta-15); --tone-fg: var(--color-spice-chili); }
+  .pr-tone-larkspur { --tone-bg: var(--color-garden-larkspur-15); --tone-fg: var(--color-person); }
+  .pr-tone-neutral { --tone-bg: var(--color-desk-charcoal-4); --tone-fg: var(--color-text-secondary); }
+
+  .pr-entity-chip {
+    border-radius: 4px;
+    font-size: 12px;
+    background: var(--entity-bg);
+    color: var(--entity-fg);
+  }
+
+  .pr-entity-chip[data-entity="account"] { --entity-bg: var(--color-account-8); --entity-fg: var(--color-account); }
+  .pr-entity-chip[data-entity="project"] { --entity-bg: var(--color-project-8); --entity-fg: var(--color-project); }
+  .pr-entity-chip[data-entity="person"] { --entity-bg: var(--color-person-8); --entity-fg: var(--color-person); }
+
+  .pr-entity-mark {
+    width: 7px;
+    height: 7px;
+    border-radius: 2px;
+    border: 1px solid currentColor;
+    opacity: 0.8;
+  }
+
+  .pr-type-badge {
+    min-height: 22px;
+    border-radius: 4px;
+    padding: 3px 9px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .pr-type-customer { color: var(--color-account); background: var(--color-account-12); }
+  .pr-type-internal { color: var(--color-person); background: var(--color-person-15); }
+  .pr-type-partner { color: var(--color-garden-rosemary); background: var(--color-garden-rosemary-12); }
+
+  .pr-removable-chip {
+    border: 1px solid var(--color-rule-light);
+    background: var(--color-desk-charcoal-4);
+    color: var(--color-text-secondary);
+    padding-right: 6px;
+  }
+
+  .pr-removable-chip button {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .pr-time,
+  .pr-source-line,
+  .pr-provenance-tag,
+  .pr-verification-flag {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+  }
+
+  .pr-time[data-staleness="aging"] { opacity: 0.72; }
+  .pr-time[data-staleness="stale"] { color: var(--color-spice-saffron); }
+
+  .pr-provenance-tag {
+    border-bottom: 1px dotted transparent;
+    padding-bottom: 1px;
+  }
+
+  .pr-provenance-tag[data-discrepancy="true"] {
+    color: var(--color-spice-saffron);
+    border-color: currentColor;
+  }
+
+  .pr-source-line[data-empty="true"] {
+    opacity: 0.58;
+  }
+
+  .pr-source-stale {
+    color: var(--color-spice-saffron);
+  }
+
+  .pr-confidence-chip {
+    min-height: 24px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    background: var(--tone-bg);
+    color: var(--tone-fg);
+  }
+
+  .pr-verification-flag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .pr-verification-flag[data-status="ok"] { color: var(--color-text-tertiary); }
+  .pr-verification-flag[data-status="corrected"] { color: var(--color-spice-saffron); }
+  .pr-verification-flag[data-status="flagged"] { color: var(--color-spice-chili); }
+
+  .pr-flag-mark {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 1px solid currentColor;
+    font-size: 9px;
+    line-height: 1;
+  }
+
+  .pr-data-gap {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    border-left: 2px solid var(--gap-color, var(--color-text-tertiary));
+    background: var(--gap-bg, var(--color-desk-charcoal-4));
+    color: var(--gap-color, var(--color-text-secondary));
+    padding: 8px 11px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1.35;
+  }
+
+  .pr-data-gap[data-severity="warning"] {
+    --gap-color: var(--color-spice-saffron);
+    --gap-bg: var(--color-spice-saffron-10);
+  }
+
+  .pr-data-gap[data-severity="info"] {
+    --gap-color: var(--color-text-tertiary);
+    --gap-bg: var(--color-desk-charcoal-4);
+  }
+
+  .pr-inline-input {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-width: 240px;
+    padding: 8px 10px;
+    border: 1px dashed var(--color-rule-heavy);
+    border-radius: 4px;
+    background: rgba(250, 248, 246, 0.72);
+  }
+
+  .pr-inline-input .editable-inline_input {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .pr-edit-affordance {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+  }
+
+  .pr-switch {
+    position: relative;
+    width: 38px;
+    height: 22px;
+    border: 0;
+    border-radius: 999px;
+    background: var(--color-desk-charcoal-25);
+  }
+
+  .pr-switch[aria-checked="true"] {
+    background: var(--color-garden-sage);
+  }
+
+  .pr-switch span {
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
     background: var(--color-paper-warm-white);
+    box-shadow: var(--shadow-sm);
   }
-  .frame > .frame-head {
-    display: flex; align-items: baseline; gap: 14px;
-    padding-bottom: 14px; border-bottom: 1px solid var(--color-rule-light); margin-bottom: 18px;
+
+  .pr-switch[aria-checked="true"] span {
+    left: 19px;
   }
-  .frame-head .tier-badge { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; padding: 3px 7px; border-radius: 3px; background: #1ea672; }
-  .frame-head h3 { font-family: var(--font-serif); font-size: 22px; font-weight: 400; }
-  .frame-head .spec-link { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); margin-left: auto; }
-  .frame-head .job { font-family: var(--font-serif); font-style: italic; font-size: 14px; color: var(--color-text-secondary); flex-basis: 100%; margin-top: 6px; }
-  .examples { display: flex; gap: 14px; flex-wrap: wrap; align-items: center; }
-  section.wave { margin-bottom: 56px; }
-  section.wave > h2 { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-tertiary); padding-bottom: 8px; border-bottom: 1px solid var(--color-rule-heavy); margin-bottom: 18px; }
+
+  .pr-segmented {
+    display: inline-flex;
+    align-items: center;
+    gap: 2px;
+    padding: 3px;
+    border-radius: 8px;
+    background: var(--color-account-8);
+    border: 1px solid var(--color-rule-light);
+  }
+
+  .pr-segmented button {
+    min-height: 30px;
+    border: 0;
+    border-radius: 5px;
+    padding: 0 12px;
+    background: transparent;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-sans);
+    font-size: 12px;
+  }
+
+  .pr-segmented button[aria-pressed="true"] {
+    background: var(--color-account);
+    color: var(--color-desk-charcoal);
+  }
+
+  .pr-glance {
+    display: grid;
+    gap: 6px;
+    min-width: 136px;
+    border-left: 2px solid var(--glance-rule, var(--color-rule-heavy));
+    padding-left: var(--space-md);
+  }
+
+  .pr-glance[data-status="healthy"] { --glance-rule: var(--color-garden-sage); }
+  .pr-glance[data-status="warn"] { --glance-rule: var(--color-spice-terracotta); }
+
+  .pr-glance-key {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .pr-glance-value {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    font-family: var(--font-serif);
+    font-size: 22px;
+    color: var(--color-text-primary);
+  }
+
+  .pr-glance[data-status="warn"] .pr-glance-value {
+    color: var(--color-spice-terracotta);
+  }
+
+  .pr-status-pill {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: var(--tone-bg);
+    color: var(--tone-fg);
+  }
+
+  .pr-finis {
+    text-align: center;
+    padding: var(--space-4xl) 0 var(--space-lg);
+    color: var(--color-person);
+  }
+
+  .pr-finis-mark {
+    font-family: var(--font-mark);
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.42em;
+    opacity: 0.62;
+  }
+
+  @media (max-width: 720px) {
+    .pr-title { font-size: 52px; }
+    .pr-family-title { font-size: 28px; }
+    .pr-card { min-height: 0; }
+    .pr-card-header { grid-template-columns: 1fr; }
+    .pr-tier { justify-self: start; }
+    .pr-inline-input { min-width: 100%; }
+    .pr-segmented { width: 100%; }
+    .pr-segmented button { flex: 1; padding-left: 8px; padding-right: 8px; }
+  }
 </style>
 </head>
-<body>
+<body
+  data-folio-label="Primitives"
+  data-folio-crumbs="Reference > Primitives"
+  data-tint="larkspur"
+  data-active-page="today"
+  data-chapters="identity:users:Identity|state:activity:State|trust:shield:Trust|controls:settings:Controls|editorial:bookopen:Editorial">
 
-<header>
-  <div class="eyebrow">DailyOS Design System · Reference</div>
-  <h1>Primitives</h1>
-  <p>The smallest reusable units. Generic, unopinionated, no domain knowledge. Each frame loads its variants. Press <code>?</code> to inspect any element.</p>
-  <nav class="tier-nav">
-    <a href="../index.html">← Reference home</a>
-    <a href="tokens.html">Tokens</a>
-    <a href="primitives.html" class="active">Primitives</a>
-    <a href="patterns.html">Patterns</a>
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <header class="pr-cover">
+    <p class="pr-eyebrow">DailyOS · Design System · Reference</p>
+    <h1 class="pr-title">Primitives</h1>
+    <p class="pr-lede">
+      The smallest reusable units in the system: labels, chips, timestamps, controls, and trust markers that compose cleanly inside higher-order patterns.
+    </p>
+    <div class="pr-meta" aria-label="Primitive inventory summary">
+      <span>18 primitives</span>
+      <span>5 families</span>
+      <span>18 visual demos</span>
+    </div>
+    <nav class="pr-reference-nav" aria-label="Reference tiers">
+      <a href="../index.html">Reference home</a>
+      <a href="tokens.html">Tokens</a>
+      <a href="primitives.html" class="is-active">Primitives</a>
+      <a href="patterns.html">Patterns</a>
+    </nav>
+  </header>
+
+  <nav class="pr-family-nav" aria-label="Primitive families">
+    <a href="#identity">Identity &amp; Marks</a>
+    <a href="#state">Intelligence State</a>
+    <a href="#trust">Trust UI</a>
+    <a href="#controls">Form Controls</a>
+    <a href="#editorial">Editorial</a>
   </nav>
-</header>
 
-<section class="wave">
-<h2>Wave 1 (v1.4.3 substrate · 0.1.0)</h2>
+  <section class="pr-family" id="identity">
+    <div class="pr-family-header">
+      <h2 class="pr-family-title">Identity &amp; Marks</h2>
+      <span class="pr-family-count">4 primitives</span>
+    </div>
+    <p class="pr-family-lede">
+      Compact labels and entity markers. These are visual primitives first: they identify a thing, category, or removable value without owning workflow.
+    </p>
+    <div class="pr-grid">
 
-<div class="frame">
-  <div class="frame-head"><span class="tier-badge">primitive</span><h3>Pill</h3><span class="spec-link">primitives/Pill.md</span><div class="job">Visual primitive for inline status / label / category badges. Tone variants.</div></div>
-  <div class="examples">
-    <span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Ready</span>
-    <span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Active</span>
-    <span class="pill" data-tone="terracotta" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Overdue</span>
-    <span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Internal</span>
-    <span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Neutral</span>
-  </div>
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">Pill</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">The visual primitive for any inline status, label, or category badge.</p>
+          <a class="pr-spec-link" href="../../primitives/Pill.md">primitives/Pill.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md">
+          <span class="pr-pill pr-tone-sage" data-ds-variant="tone=sage"><span class="pr-dot"></span>Ready</span>
+          <span class="pr-pill pr-tone-turmeric" data-ds-variant="tone=turmeric"><span class="pr-dot"></span>Active</span>
+          <span class="pr-pill pr-tone-terracotta" data-ds-variant="tone=terracotta"><span class="pr-dot"></span>Overdue</span>
+          <span class="pr-pill pr-tone-larkspur" data-ds-variant="tone=larkspur"><span class="pr-dot"></span>Internal</span>
+          <span class="pr-pill pr-tone-neutral" data-ds-variant="tone=neutral"><span class="pr-dot"></span>Draft</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">EntityChip</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render an inline reference to an entity, color-coded by account, project, or person type.</p>
+          <a class="pr-spec-link" href="../../primitives/EntityChip.md">primitives/EntityChip.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md">
+          <span class="pr-entity-chip" data-entity="account" data-ds-variant="entityType=account"><span class="pr-entity-mark"></span>Acme Corp</span>
+          <span class="pr-entity-chip" data-entity="project" data-ds-variant="entityType=project"><span class="pr-entity-mark"></span>Q2 Launch</span>
+          <span class="pr-entity-chip" data-entity="person" data-ds-variant="entityType=person"><span class="pr-entity-mark"></span>Jen Park</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">TypeBadge</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render an account-type categorical badge such as Customer, Internal, or Partner.</p>
+          <a class="pr-spec-link" href="../../primitives/TypeBadge.md">primitives/TypeBadge.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md">
+          <span class="pr-type-badge pr-type-customer" data-ds-variant="accountType=customer">Customer</span>
+          <span class="pr-type-badge pr-type-internal" data-ds-variant="accountType=internal">Internal</span>
+          <span class="pr-type-badge pr-type-partner" data-ds-variant="accountType=partner">Partner</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">RemovableChip</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Display a selected or applied item with a built-in removal affordance.</p>
+          <a class="pr-spec-link" href="../../primitives/RemovableChip.md">primitives/RemovableChip.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">
+          <span class="pr-removable-chip" data-ds-variant="default">gmail.com<button type="button" aria-label="Remove gmail.com">x</button></span>
+          <span class="pr-removable-chip" data-ds-variant="default">Product<button type="button" aria-label="Remove Product">x</button></span>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="pr-family" id="state">
+    <div class="pr-family-header">
+      <h2 class="pr-family-title">Intelligence State</h2>
+      <span class="pr-family-count">5 primitives</span>
+    </div>
+    <p class="pr-family-lede">
+      Small state signals for completeness, timing, and surface readiness. They describe what exists before a user decides how much to rely on it.
+    </p>
+    <div class="pr-grid">
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">IntelligenceQualityBadge</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render the completeness of intelligence on an entity or meeting prep surface.</p>
+          <a class="pr-spec-link" href="../../primitives/IntelligenceQualityBadge.md">primitives/IntelligenceQualityBadge.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md">
+          <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=sparse">
+            <span class="IntelligenceQualityBadge_dot IntelligenceQualityBadge_mutedDot" style="background:var(--color-text-tertiary);"></span>
+            <span class="IntelligenceQualityBadge_label">Sparse</span>
+          </span>
+          <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=developing">
+            <span class="IntelligenceQualityBadge_dot" style="background:var(--color-spice-saffron);"></span>
+            <span class="IntelligenceQualityBadge_label">Developing</span>
+          </span>
+          <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=ready">
+            <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage);"></span>
+            <span class="IntelligenceQualityBadge_label">Ready</span>
+          </span>
+          <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=fresh">
+            <span class="IntelligenceQualityBadge_structuredDotShell">
+              <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage);"></span>
+              <span class="IntelligenceQualityBadge_newSignalDot"></span>
+            </span>
+            <span class="IntelligenceQualityBadge_label">Fresh</span>
+          </span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">TrustBandBadge</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render the v1.4.0 surface trust band on a piece of intelligence.</p>
+          <a class="pr-spec-link" href="../../primitives/TrustBandBadge.md">primitives/TrustBandBadge.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md">
+          <span class="pr-pill pr-tone-sage" data-ds-variant="band=likely_current"><span class="pr-dot"></span>Likely current</span>
+          <span class="pr-pill pr-tone-turmeric" data-ds-variant="band=use_with_caution"><span class="pr-dot"></span>Use with caution</span>
+          <span class="pr-pill pr-tone-terracotta" data-ds-variant="band=needs_verification"><span class="pr-dot"></span>Needs verification</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">FreshnessIndicator</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render raw recency as relative age, absolute time, or both without trust judgment.</p>
+          <a class="pr-spec-link" href="../../primitives/FreshnessIndicator.md">primitives/FreshnessIndicator.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md">
+          <span class="pr-time" data-staleness="fresh" data-ds-variant="format=relative">3h ago</span>
+          <span class="pr-time" data-staleness="aging" data-ds-variant="format=absolute">Apr 22, 10:30am</span>
+          <span class="pr-time" data-staleness="stale" data-ds-variant="format=both">stale 5d · Apr 28 09:00</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">AsOfTimestamp</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render the static as-of timestamp for intelligence in a neutral metadata tone.</p>
+          <a class="pr-spec-link" href="../../primitives/AsOfTimestamp.md">primitives/AsOfTimestamp.md</a>
+        </div>
+        <div class="pr-demo pr-demo-stack" data-ds-name="AsOfTimestamp" data-ds-tier="primitive" data-ds-spec="primitives/AsOfTimestamp.md">
+          <span class="pr-time" data-ds-variant="format=relative">As of 3h ago</span>
+          <span class="pr-time" data-ds-variant="format=absolute">As of Apr 22, 10:30am</span>
+          <span class="pr-time" data-ds-variant="format=both">As of 3h ago · Apr 22 10:30</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">MeetingStatusPill</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Show the extraction state of a meeting recap in one compact, readable pill.</p>
+          <a class="pr-spec-link" href="../../primitives/MeetingStatusPill.md">primitives/MeetingStatusPill.md</a>
+        </div>
+        <div class="pr-demo pr-demo-stack" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md">
+          <span class="pr-status-pill pr-tone-sage" data-ds-variant="wrapped"><span class="pr-dot"></span>Wrapped 8 min ago · 56 min recorded</span>
+          <span class="pr-status-pill pr-tone-turmeric" data-ds-variant="processing"><span class="pr-dot"></span>Processing transcript</span>
+          <span class="pr-status-pill pr-tone-terracotta" data-ds-variant="failed"><span class="pr-dot"></span>Extraction failed</span>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="pr-family" id="trust">
+    <div class="pr-family-header">
+      <h2 class="pr-family-title">Trust UI</h2>
+      <span class="pr-family-count">5 primitives</span>
+    </div>
+    <p class="pr-family-lede">
+      Evidence and verification cues. These primitives stay compact so receipt, claim, and inspection patterns can compose them without inventing new trust language.
+    </p>
+    <div class="pr-grid">
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">ProvenanceTag</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render a muted source-attribution label when the source is meaningful to users.</p>
+          <a class="pr-spec-link" href="../../primitives/ProvenanceTag.md">primitives/ProvenanceTag.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">
+          <span class="pr-provenance-tag" data-ds-variant="default">from Salesforce</span>
+          <span class="pr-provenance-tag" data-ds-variant="default">from email</span>
+          <span class="pr-provenance-tag" data-discrepancy="true" data-ds-variant="discrepancy">from Glean · disagreement</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">SourceCoverageLine</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render a compact line summarizing which source system contributed and how much coverage exists.</p>
+          <a class="pr-spec-link" href="../../primitives/SourceCoverageLine.md">primitives/SourceCoverageLine.md</a>
+        </div>
+        <div class="pr-demo pr-demo-stack" data-ds-name="SourceCoverageLine" data-ds-tier="primitive" data-ds-spec="primitives/SourceCoverageLine.md">
+          <span class="pr-source-line" data-ds-variant="default">Glean · 4 sources</span>
+          <span class="pr-source-line" data-ds-variant="withStaleCount">Salesforce · 8 sources · <span class="pr-source-stale">2 stale</span></span>
+          <span class="pr-source-line" data-empty="true" data-ds-variant="empty">No source coverage</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">ConfidenceScoreChip</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render a numerical confidence score in a compact chip while mapping color to trust bands.</p>
+          <a class="pr-spec-link" href="../../primitives/ConfidenceScoreChip.md">primitives/ConfidenceScoreChip.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">
+          <span class="pr-confidence-chip pr-tone-sage" data-ds-variant="band=likely_current">94%</span>
+          <span class="pr-confidence-chip pr-tone-turmeric" data-ds-variant="band=use_with_caution">72%</span>
+          <span class="pr-confidence-chip pr-tone-terracotta" data-ds-variant="band=needs_verification">38%</span>
+          <span class="pr-confidence-chip pr-tone-neutral" data-ds-variant="unavailable">--</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">VerificationStatusFlag</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render consistency state as a small icon plus mono label for verified, corrected, or flagged claims.</p>
+          <a class="pr-spec-link" href="../../primitives/VerificationStatusFlag.md">primitives/VerificationStatusFlag.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md">
+          <span class="pr-verification-flag" data-status="ok" data-ds-variant="status=ok"><span class="pr-flag-mark">OK</span>OK</span>
+          <span class="pr-verification-flag" data-status="corrected" data-ds-variant="status=corrected"><span class="pr-flag-mark">R</span>Corrected</span>
+          <span class="pr-verification-flag" data-status="flagged" data-ds-variant="status=flagged"><span class="pr-flag-mark">!</span>Flagged</span>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">DataGapNotice</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Render an inline notice that intelligence is missing a critical input.</p>
+          <a class="pr-spec-link" href="../../primitives/DataGapNotice.md">primitives/DataGapNotice.md</a>
+        </div>
+        <div class="pr-demo pr-demo-stack" data-ds-name="DataGapNotice" data-ds-tier="primitive" data-ds-spec="primitives/DataGapNotice.md">
+          <span class="pr-data-gap" data-severity="info" data-ds-variant="severity=info">Missing stakeholder roles</span>
+          <span class="pr-data-gap" data-severity="warning" data-ds-variant="severity=warning">No recent meetings on this account</span>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="pr-family" id="controls">
+    <div class="pr-family-header">
+      <h2 class="pr-family-title">Form Controls</h2>
+      <span class="pr-family-count">3 primitives</span>
+    </div>
+    <p class="pr-family-lede">
+      Quiet, settings-friendly controls. Each one keeps interaction localized and leaves explanatory copy to the surrounding row or pattern.
+    </p>
+    <div class="pr-grid">
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">InlineInput</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Let users edit a short piece of text in place without leaving the surrounding settings row.</p>
+          <a class="pr-spec-link" href="../../primitives/InlineInput.md">primitives/InlineInput.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md">
+          <label class="pr-inline-input" data-ds-variant="font=mono">
+            <input class="editable-inline_input" value="sam@subsidiary.com" aria-label="Profile email">
+            <span class="pr-edit-affordance">edit</span>
+          </label>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">Switch</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Give users a compact on/off control for a single binary setting.</p>
+          <a class="pr-spec-link" href="../../primitives/Switch.md">primitives/Switch.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md">
+          <button class="pr-switch" type="button" role="switch" aria-checked="true" aria-label="Daily briefing enabled" data-ds-variant="on"><span></span></button>
+          <button class="pr-switch" type="button" role="switch" aria-checked="false" aria-label="Weekend digest disabled" data-ds-variant="off"><span></span></button>
+        </div>
+      </article>
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">Segmented</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Let users choose one value from a small fixed set without opening a menu.</p>
+          <a class="pr-spec-link" href="../../primitives/Segmented.md">primitives/Segmented.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md">
+          <div class="pr-segmented" role="group" aria-label="Density" data-ds-variant="tint=turmeric">
+            <button type="button" aria-pressed="false">Compact</button>
+            <button type="button" aria-pressed="true">Regular</button>
+            <button type="button" aria-pressed="false">Comfy</button>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="pr-family" id="editorial">
+    <div class="pr-family-header">
+      <h2 class="pr-family-title">Editorial</h2>
+      <span class="pr-family-count">1 primitive</span>
+    </div>
+    <p class="pr-family-lede">
+      Primitive-level editorial rhythm: small, scannable facts that slot into mastheads and glance rows without becoming a full analytics pattern.
+    </p>
+    <div class="pr-grid">
+
+      <article class="pr-card">
+        <div class="pr-card-header">
+          <h3 class="pr-card-title">GlanceCell</h3>
+          <span class="pr-tier">primitive</span>
+          <p class="pr-summary">Present one compact key/value stat for a masthead glance row.</p>
+          <a class="pr-spec-link" href="../../primitives/GlanceCell.md">primitives/GlanceCell.md</a>
+        </div>
+        <div class="pr-demo" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
+          <div class="pr-glance" data-status="healthy" data-ds-variant="status=healthy">
+            <span class="pr-glance-key">Connectors</span>
+            <span class="pr-glance-value"><span class="StatusDot_dot StatusDot_sm StatusDot_connected"></span>6 healthy</span>
+          </div>
+          <div class="pr-glance" data-status="warn" data-ds-variant="status=warn">
+            <span class="pr-glance-key">Anomalies 24h</span>
+            <span class="pr-glance-value"><span class="StatusDot_dot StatusDot_sm StatusDot_error"></span>2 recovered</span>
+          </div>
+        </div>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="pr-finis" aria-label="End of primitive reference">
+    <div class="pr-finis-mark">***</div>
+  </section>
+
+</main>
 </div>
 
-<div class="frame">
-  <div class="frame-head"><span class="tier-badge">primitive</span><h3>TrustBandBadge</h3><span class="spec-link">primitives/TrustBandBadge.md</span><div class="job">v1.4.0 surface trust band. likely_current / use_with_caution / needs_verification.</div></div>
-  <div class="examples">
-    <span class="pill" data-tone="sage" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md" data-ds-variant="likely_current"><span class="pill-dot"></span>Likely current</span>
-    <span class="pill" data-tone="turmeric" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md" data-ds-variant="use_with_caution"><span class="pill-dot"></span>Use with caution</span>
-    <span class="pill" data-tone="terracotta" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md" data-ds-variant="needs_verification"><span class="pill-dot"></span>Needs verification</span>
-  </div>
-</div>
-
-<div class="frame">
-  <div class="frame-head"><span class="tier-badge">primitive</span><h3>IntelligenceQualityBadge</h3><span class="spec-link">primitives/IntelligenceQualityBadge.md</span><div class="job">Intelligence completeness: sparse / developing / ready / fresh. Existing in src/.</div></div>
-  <div class="examples">
-    <span class="pill" data-tone="neutral" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" data-ds-variant="sparse"><span class="pill-dot"></span>Sparse</span>
-    <span class="pill" data-tone="turmeric" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" data-ds-variant="developing"><span class="pill-dot"></span>Developing</span>
-    <span class="pill" data-tone="sage" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" data-ds-variant="ready"><span class="pill-dot"></span>Ready</span>
-    <span class="pill" data-tone="sage" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md" data-ds-variant="fresh"><span class="pill-dot"></span>Fresh</span>
-  </div>
-</div>
-
-<div class="frame">
-  <div class="frame-head"><span class="tier-badge">primitive</span><h3>FreshnessIndicator</h3><span class="spec-link">primitives/FreshnessIndicator.md</span><div class="job">Raw recency timestamp + relative age. Distinct from trust judgment.</div></div>
-  <div class="examples" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); align-items:baseline; gap:24px;">
-    <span data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" data-ds-variant="relative">3h ago</span>
-    <span data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" data-ds-variant="relative" style="color:var(--color-spice-saffron);">stale 5d</span>
-    <span data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" data-ds-variant="absolute">Apr 22, 10:30am</span>
-    <span data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md" data-ds-variant="both">3h ago · Apr 22 10:30</span>
-  </div>
-</div>
-
-<div class="frame">
-  <div class="frame-head"><span class="tier-badge">primitive</span><h3>ProvenanceTag</h3><span class="spec-link">primitives/ProvenanceTag.md</span><div class="job">Source attribution. Suppresses synthesized by default.</div></div>
-  <div class="examples" style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); align-items:baseline; gap:18px;">
-    <span data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">glean</span>
-    <span data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">salesforce</span>
-    <span data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">email</span>
-    <span data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md" data-ds-variant="discrepancy" style="color:var(--color-spice-saffron); border-bottom:1px dotted var(--color-spice-saffron); padding-bottom:1px;">slack · disagreement</span>
-  </div>
-</div>
-
-<div class="frame">
-  <div class="frame-head"><span class="tier-badge">primitive</span><h3>EntityChip</h3><span class="spec-link">primitives/EntityChip.md</span><div class="job">Entity reference with entity-type color (account / project / person).</div></div>
-  <div class="examples" style="font-family:var(--font-mono); font-size:10px;">
-    <span style="background:var(--color-spice-turmeric-8); color:var(--color-entity-account); padding:2px 8px; border-radius:3px; text-transform:uppercase; letter-spacing:0.04em;" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md" data-ds-variant="account">▢ Acme Corp</span>
-    <span style="background:var(--color-garden-olive-8); color:var(--color-entity-project); padding:2px 8px; border-radius:3px; text-transform:uppercase; letter-spacing:0.04em;" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md" data-ds-variant="project">▣ Q2 Launch</span>
-    <span style="background:var(--color-garden-larkspur-8); color:var(--color-entity-person); padding:2px 8px; border-radius:3px; text-transform:uppercase; letter-spacing:0.04em;" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md" data-ds-variant="person">◔ Jen Park</span>
-  </div>
-</div>
-
-<div class="frame">
-  <div class="frame-head"><span class="tier-badge">primitive</span><h3>TypeBadge</h3><span class="spec-link">primitives/TypeBadge.md</span><div class="job">Account-type categorical: Customer / Internal / Partner.</div></div>
-  <div class="examples">
-    <span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md" data-ds-variant="customer">Customer</span>
-    <span class="type-badge internal" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md" data-ds-variant="internal">Internal</span>
-    <span class="type-badge partner" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md" data-ds-variant="partner">Partner</span>
-  </div>
-</div>
-</section>
-
-<section class="wave">
-<h2>Wave 2 (v1.4.4 trust UI · 0.2.0)</h2>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>SourceCoverageLine</h3><span class="spec-link">primitives/SourceCoverageLine.md</span><div class="job">Compact line summarizing source coverage with optional stale count.</div></div><div class="examples" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); gap:24px;"><span data-ds-name="SourceCoverageLine" data-ds-tier="primitive" data-ds-spec="primitives/SourceCoverageLine.md">Glean · 4 sources</span><span data-ds-name="SourceCoverageLine" data-ds-tier="primitive" data-ds-spec="primitives/SourceCoverageLine.md" data-ds-variant="withStaleCount">Salesforce · 8 sources · <span style="color:var(--color-spice-saffron)">2 stale</span></span></div></div>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>ConfidenceScoreChip</h3><span class="spec-link">primitives/ConfidenceScoreChip.md</span><div class="job">Numerical confidence chip; tone shifts per band threshold.</div></div><div class="examples"><span class="pill" data-tone="sage" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">94%</span><span class="pill" data-tone="turmeric" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">72%</span><span class="pill" data-tone="terracotta" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">38%</span></div></div>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>VerificationStatusFlag</h3><span class="spec-link">primitives/VerificationStatusFlag.md</span><div class="job">Consistency state per v1.4.0: ok / corrected / flagged.</div></div><div class="examples" style="font-family:var(--font-mono); font-size:11px;"><span style="color:var(--color-garden-rosemary)" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md" data-ds-variant="ok">✓ ok</span><span style="color:var(--color-spice-turmeric)" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md" data-ds-variant="corrected">⟲ corrected</span><span style="color:var(--color-spice-terracotta)" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md" data-ds-variant="flagged">⚠ flagged</span></div></div>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>DataGapNotice</h3><span class="spec-link">primitives/DataGapNotice.md</span><div class="job">Inline warning that intelligence is missing critical inputs.</div></div><div class="examples"><span style="font-family:var(--font-sans); font-size:13px; color:var(--color-spice-saffron); background:var(--color-spice-saffron-15); padding:6px 12px; border-radius:4px;" data-ds-name="DataGapNotice" data-ds-tier="primitive" data-ds-spec="primitives/DataGapNotice.md">⚠ No recent meetings on this account</span></div></div>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>AsOfTimestamp</h3><span class="spec-link">primitives/AsOfTimestamp.md</span><div class="job">Static "as of" label; companion to FreshnessIndicator.</div></div><div class="examples" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary);"><span data-ds-name="AsOfTimestamp" data-ds-tier="primitive" data-ds-spec="primitives/AsOfTimestamp.md">As of Apr 23, 06:00 AM</span></div></div>
-</section>
-
-<section class="wave">
-<h2>Wave 3 (Settings substrate · 0.3.0)</h2>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>InlineInput</h3><span class="spec-link">primitives/InlineInput.md</span><div class="job">Click-to-edit text input with pencil affordance.</div></div><div class="examples"><div style="display:inline-flex; align-items:center; gap:8px; padding:6px 12px; border:1px dashed var(--color-rule-heavy); border-radius:4px; min-width:240px;" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md"><input style="border:none; background:transparent; font-family:var(--font-sans); font-size:14px; flex:1; outline:none;" value="sam@subsidiary.com"><span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">edit</span></div></div></div>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>Switch</h3><span class="spec-link">primitives/Switch.md</span><div class="job">Aria-checked toggle button.</div></div><div class="examples"><button style="width:36px; height:20px; background:var(--color-garden-sage); border-radius:10px; border:none; position:relative;" aria-checked="true" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"><span style="position:absolute; top:2px; right:2px; width:16px; height:16px; background:#fff; border-radius:50%;"></span></button><button style="width:36px; height:20px; background:var(--color-desk-charcoal-25); border-radius:10px; border:none; position:relative;" aria-checked="false" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"><span style="position:absolute; top:2px; left:2px; width:16px; height:16px; background:#fff; border-radius:50%;"></span></button></div></div>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>Segmented</h3><span class="spec-link">primitives/Segmented.md</span><div class="job">Tinted button group with aria-pressed state.</div></div><div class="examples"><div style="display:inline-flex; gap:0; background:var(--color-desk-charcoal-4); border-radius:6px; padding:3px;" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md"><button style="font-family:var(--font-mono); font-size:11px; padding:6px 14px; border-radius:4px; border:none; background:transparent; color:var(--color-text-tertiary);">Compact</button><button style="font-family:var(--font-mono); font-size:11px; padding:6px 14px; border-radius:4px; border:none; background:var(--color-spice-turmeric); color:var(--color-desk-charcoal);" aria-pressed="true">Regular</button><button style="font-family:var(--font-mono); font-size:11px; padding:6px 14px; border-radius:4px; border:none; background:transparent; color:var(--color-text-tertiary);">Comfy</button></div></div></div>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>RemovableChip</h3><span class="spec-link">primitives/RemovableChip.md</span><div class="job">Chip with × removal affordance. Distinct from Pill (interaction).</div></div><div class="examples"><span style="display:inline-flex; gap:6px; align-items:center; padding:4px 8px 4px 12px; background:var(--color-garden-larkspur-12); color:var(--color-garden-larkspur); border-radius:100px; font-family:var(--font-sans); font-size:12px;" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Engineering<span style="opacity:0.6; font-weight:600;">×</span></span><span style="display:inline-flex; gap:6px; align-items:center; padding:4px 8px 4px 12px; background:var(--color-spice-turmeric-12); color:var(--color-spice-turmeric); border-radius:100px; font-family:var(--font-sans); font-size:12px;" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Product<span style="opacity:0.6; font-weight:600;">×</span></span></div></div>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>GlanceCell</h3><span class="spec-link">primitives/GlanceCell.md</span><div class="job">Single key/value stat cell (composed in GlanceRow).</div></div><div class="examples" style="gap:32px;"><div style="border-left:2px solid var(--color-rule-heavy); padding-left:14px;" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);">Connectors</div><div style="font-family:var(--font-serif); font-size:22px;">6 healthy</div></div><div style="border-left:2px solid var(--color-spice-terracotta); padding-left:14px;" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md" data-ds-state="warn"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);">Anomalies 24h</div><div style="font-family:var(--font-serif); font-size:22px; color:var(--color-spice-terracotta);">2 recovered</div></div></div></div>
-</section>
-
-<section class="wave">
-<h2>Wave 4 (Meeting Detail substrate · 0.4.0)</h2>
-
-<div class="frame"><div class="frame-head"><span class="tier-badge">primitive</span><h3>MeetingStatusPill</h3><span class="spec-link">primitives/MeetingStatusPill.md</span><div class="job">Meeting status: wrapped / processing / failed.</div></div><div class="examples"><span class="pill" data-tone="sage" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md" data-ds-variant="wrapped"><span class="pill-dot"></span>Wrapped 8 min ago · 56 min recorded</span><span class="pill" data-tone="turmeric" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md" data-ds-variant="processing"><span class="pill-dot"></span>Processing transcript…</span><span class="pill" data-tone="terracotta" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md" data-ds-variant="failed"><span class="pill-dot"></span>Failed · retry</span></div></div>
-
-</section>
-
+<script src="../_shared/chrome.js"></script>
 <script src="../_shared/inspector.js"></script>
 </body>
 </html>

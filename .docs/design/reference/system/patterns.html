@@ -4,155 +4,1497 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Patterns · DailyOS Design System</title>
-<link rel="stylesheet" href="../_shared/tokens.css">
+
+<link rel="stylesheet" href="../_shared/fonts.css">
+<link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+<link rel="stylesheet" href="../_shared/styles/PostMeetingIntelligence.module.css">
 <link rel="stylesheet" href="../_shared/chrome.css">
-<link rel="stylesheet" href="../_shared/primitives.css">
 <link rel="stylesheet" href="../_shared/inspector.css">
+
 <style>
-  body {
-    background: var(--color-paper-cream);
-    padding: 48px 80px 96px;
-    font-family: var(--font-sans);
-    color: var(--color-text-primary);
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  header {
+  .patterns-cover {
+    padding: var(--space-5xl) 0 var(--space-3xl);
     border-bottom: 1px solid var(--color-rule-heavy);
-    padding-bottom: 24px;
-    margin-bottom: 48px;
   }
-  header .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 10px; }
-  header h1 { font-family: var(--font-serif); font-size: 56px; font-weight: 400; letter-spacing: -0.02em; }
-  header p { font-family: var(--font-serif); font-style: italic; font-size: 18px; color: var(--color-text-secondary); margin-top: 12px; max-width: 720px; line-height: 1.55; }
-  nav.tier-nav { display: flex; gap: 24px; margin: 24px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
-  nav.tier-nav a { color: var(--color-text-tertiary); text-decoration: none; padding-bottom: 4px; border-bottom: 1px solid transparent; }
-  nav.tier-nav a:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
-  nav.tier-nav a.active { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
-  nav.wave-jump { display: flex; gap: 14px; margin: 12px 0 0; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); }
-  nav.wave-jump a { color: var(--color-text-tertiary); text-decoration: none; }
-  nav.wave-jump a:hover { color: var(--color-spice-turmeric); }
-  .frame {
+
+  .patterns-eyebrow {
+    margin: 0 0 var(--space-md);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-title {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 86px;
+    font-weight: 400;
+    line-height: 1.02;
+    letter-spacing: -0.025em;
+    color: var(--color-text-primary);
+  }
+
+  .patterns-lede {
+    max-width: 690px;
+    margin: var(--space-lg) 0 0;
+    font-family: var(--font-serif);
+    font-size: 22px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+
+  .patterns-summary {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-lg);
+    margin-top: var(--space-2xl);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-summary span + span::before {
+    content: ".";
+    margin-right: var(--space-lg);
+    opacity: 0.45;
+  }
+
+  .patterns-anchorNav {
+    display: grid;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: var(--space-sm);
+    margin-top: var(--space-2xl);
+  }
+
+  .patterns-anchorNav a {
+    min-height: 74px;
+    padding: var(--space-md);
     border: 1px solid var(--color-rule-light);
-    border-radius: 8px;
-    padding: 24px;
-    margin-bottom: 24px;
+    border-radius: var(--radius-editorial-sm);
     background: var(--color-paper-warm-white);
+    color: inherit;
+    text-decoration: none;
+    transition: border-color var(--transition-normal), background var(--transition-normal);
   }
-  .frame > .frame-head {
-    display: flex; align-items: baseline; gap: 14px;
-    padding-bottom: 14px; border-bottom: 1px solid var(--color-rule-light); margin-bottom: 18px;
+
+  .patterns-anchorNav a:hover {
+    border-color: var(--color-rule-heavy);
+    background: var(--color-paper-cream);
+  }
+
+  .patterns-anchorNav span {
+    display: block;
+    margin-bottom: var(--space-xs);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-garden-olive);
+  }
+
+  .patterns-anchorNav strong {
+    display: block;
+    font-family: var(--font-serif);
+    font-size: 18px;
+    font-weight: 400;
+    line-height: 1.2;
+    color: var(--color-text-primary);
+  }
+
+  .patterns-section {
+    padding: var(--space-3xl) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .patterns-sectionHeader {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--space-md);
+    margin-bottom: var(--space-xl);
     flex-wrap: wrap;
   }
-  .frame-head .tier-badge { font-family: var(--font-mono); font-size: 9px; letter-spacing: 0.08em; text-transform: uppercase; color: #fff; padding: 3px 7px; border-radius: 3px; background: #d97a1a; }
-  .frame-head h3 { font-family: var(--font-serif); font-size: 22px; font-weight: 400; }
-  .frame-head .spec-link { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); margin-left: auto; }
-  .frame-head .job { font-family: var(--font-serif); font-style: italic; font-size: 14px; color: var(--color-text-secondary); flex-basis: 100%; margin-top: 6px; }
-  .example { padding: 14px; background: var(--color-paper-cream); border-radius: 6px; }
-  section.wave { margin-bottom: 56px; }
-  section.wave > h2 { font-family: var(--font-mono); font-size: 12px; letter-spacing: 0.1em; text-transform: uppercase; color: var(--color-text-tertiary); padding-bottom: 8px; border-bottom: 1px solid var(--color-rule-heavy); margin-bottom: 18px; }
-  .placeholder { font-family: var(--font-serif); font-style: italic; font-size: 14px; color: var(--color-text-tertiary); }
+
+  .patterns-sectionTitle {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 38px;
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--color-garden-olive);
+  }
+
+  .patterns-sectionMeta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-sectionLede {
+    max-width: 720px;
+    margin: calc(var(--space-md) * -1) 0 var(--space-xl);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+  }
+
+  .patterns-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-md);
+  }
+
+  .patterns-card {
+    display: flex;
+    flex-direction: column;
+    min-height: 100%;
+    padding: var(--space-lg);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+    background: var(--color-paper-warm-white);
+  }
+
+  .patterns-cardHeader {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding-bottom: var(--space-md);
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .patterns-nameWrap {
+    min-width: 0;
+  }
+
+  .patterns-tier {
+    display: inline-flex;
+    margin-bottom: var(--space-xs);
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: var(--color-garden-olive);
+    color: var(--color-paper-warm-white);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .patterns-cardTitle {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.15;
+    color: var(--color-text-primary);
+  }
+
+  .patterns-specLink {
+    flex-shrink: 0;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+  }
+
+  .patterns-specLink:hover {
+    color: var(--color-garden-olive);
+    border-color: currentColor;
+  }
+
+  .patterns-composition {
+    margin: var(--space-md) 0 0;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+
+  .patterns-composition strong {
+    color: var(--color-text-primary);
+    font-weight: 500;
+  }
+
+  .patterns-variants {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
+    margin-top: var(--space-sm);
+  }
+
+  .patterns-variants span {
+    display: inline-flex;
+    padding: 2px 7px;
+    border-radius: 3px;
+    background: var(--color-garden-olive-8);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+
+  .patterns-demo {
+    margin-top: var(--space-md);
+    padding: var(--space-md);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+    background: var(--color-paper-cream);
+    overflow: hidden;
+  }
+
+  .patterns-demo[data-compact="true"] {
+    padding: var(--space-sm) var(--space-md);
+  }
+
+  .patterns-muted {
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-mono {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .patterns-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--color-garden-sage-10);
+    color: var(--color-garden-rosemary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+  }
+
+  .patterns-pill[data-tone="caution"] {
+    background: var(--color-spice-saffron-10);
+    color: #8a6f1a;
+  }
+
+  .patterns-pill[data-tone="risk"] {
+    background: var(--color-spice-terracotta-10);
+    color: var(--color-spice-chili);
+  }
+
+  .patterns-dot {
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: currentColor;
+  }
+
+  .patterns-leadEyebrow {
+    margin: 0 0 var(--space-md);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-leadSentence {
+    max-width: 760px;
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 38px;
+    font-weight: 400;
+    line-height: 1.08;
+    color: var(--color-text-primary);
+  }
+
+  .patterns-sharp {
+    background: linear-gradient(transparent 62%, var(--color-spice-turmeric-15) 62%);
+  }
+
+  .patterns-marginGrid {
+    display: grid;
+    grid-template-columns: 100px minmax(0, 1fr);
+    gap: var(--space-xl);
+    align-items: start;
+  }
+
+  .patterns-marginLabel {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.1em;
+    text-align: right;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-marginLabel span {
+    display: block;
+    margin-top: var(--space-xs);
+    color: var(--color-garden-olive);
+  }
+
+  .patterns-serifBody {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 17px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+
+  .patterns-dayChartTicks,
+  .patterns-dayLegend {
+    display: grid;
+    grid-template-columns: repeat(6, 1fr);
+    gap: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-dayLegend {
+    display: flex;
+    margin-bottom: var(--space-sm);
+    gap: var(--space-md);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  .patterns-dayBars {
+    position: relative;
+    height: 96px;
+    margin-top: var(--space-sm);
+    border-top: 1px solid var(--color-rule-heavy);
+    border-bottom: 1px solid var(--color-rule-heavy);
+    background: repeating-linear-gradient(to right, transparent 0, transparent calc(16.666% - 1px), var(--color-rule-light) calc(16.666% - 1px), var(--color-rule-light) 16.666%);
+  }
+
+  .patterns-dayBar {
+    position: absolute;
+    top: 18px;
+    height: 56px;
+    padding: 9px 10px;
+    border-radius: 3px;
+    overflow: hidden;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    line-height: 1.35;
+    color: var(--color-text-primary);
+  }
+
+  .patterns-dayBar strong {
+    display: block;
+    font-family: var(--font-serif);
+    font-size: 14px;
+    font-weight: 400;
+    white-space: nowrap;
+  }
+
+  .patterns-nowLine {
+    position: absolute;
+    top: 8px;
+    bottom: 8px;
+    left: 34%;
+    width: 2px;
+    background: var(--color-spice-terracotta);
+  }
+
+  .patterns-nowLine span {
+    position: absolute;
+    top: -16px;
+    left: -22px;
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--color-spice-terracotta);
+    white-space: nowrap;
+  }
+
+  .patterns-meetingItem {
+    display: grid;
+    grid-template-columns: 76px minmax(0, 1fr);
+    gap: var(--space-lg);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .patterns-meetingTime {
+    text-align: right;
+    font-family: var(--font-mono);
+    color: var(--color-text-primary);
+  }
+
+  .patterns-meetingTime strong {
+    display: block;
+    font-size: 18px;
+    font-weight: 500;
+  }
+
+  .patterns-meetingEyebrow {
+    display: flex;
+    align-items: center;
+    gap: var(--space-sm);
+    margin-bottom: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--color-spice-turmeric);
+  }
+
+  .patterns-meetingTitle {
+    margin: 0 0 var(--space-sm);
+    font-family: var(--font-serif);
+    font-size: 24px;
+    font-weight: 400;
+    line-height: 1.2;
+  }
+
+  .patterns-meetingContext {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 15px;
+    font-style: italic;
+    line-height: 1.45;
+    color: var(--color-text-secondary);
+  }
+
+  .patterns-portrait {
+    display: grid;
+    grid-template-columns: 180px minmax(0, 1fr);
+    min-height: 190px;
+    border: 1px solid var(--color-rule-light);
+    background: var(--color-paper-warm-white);
+  }
+
+  .patterns-portraitAside {
+    padding: var(--space-lg);
+    background: linear-gradient(180deg, var(--color-spice-turmeric) 0 6px, var(--color-spice-turmeric-8) 6px);
+  }
+
+  .patterns-portraitState {
+    margin: 0 0 var(--space-md);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-spice-turmeric);
+  }
+
+  .patterns-portraitName {
+    margin: 0 0 var(--space-lg);
+    font-family: var(--font-serif);
+    font-size: 30px;
+    font-weight: 500;
+    line-height: 1;
+  }
+
+  .patterns-portraitStats {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-portraitMain {
+    position: relative;
+    padding: var(--space-lg);
+  }
+
+  .patterns-portraitGlyph {
+    position: absolute;
+    top: 2px;
+    right: 16px;
+    font-family: var(--font-serif);
+    font-size: 100px;
+    font-style: italic;
+    line-height: 1;
+    color: var(--color-spice-turmeric);
+    opacity: 0.1;
+  }
+
+  .patterns-threadList {
+    display: grid;
+    gap: var(--space-sm);
+    margin-top: var(--space-md);
+    font-family: var(--font-serif);
+    font-size: 14px;
+  }
+
+  .patterns-threadLine {
+    display: grid;
+    grid-template-columns: 44px minmax(0, 1fr) auto;
+    gap: var(--space-sm);
+    align-items: baseline;
+  }
+
+  .patterns-threadWhen {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-threadMark {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 6px;
+    border: 0;
+    border-radius: 3px;
+    background: var(--color-spice-turmeric-7);
+    color: var(--color-spice-turmeric);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    cursor: pointer;
+  }
+
+  .patterns-askDock {
+    border: 1px solid var(--color-rule-heavy);
+    border-radius: 10px;
+    background: var(--frosted-glass-nav);
+    overflow: hidden;
+  }
+
+  .patterns-askInput {
+    display: flex;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md);
+  }
+
+  .patterns-askInput input {
+    width: 100%;
+    border: 0;
+    outline: 0;
+    background: transparent;
+    font-family: var(--font-serif);
+    font-size: 19px;
+    font-style: italic;
+    color: var(--color-text-secondary);
+  }
+
+  .patterns-chipRow {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    padding: 0 var(--space-md) var(--space-md);
+  }
+
+  .patterns-chip {
+    padding: 5px 10px;
+    border-radius: 999px;
+    background: var(--color-desk-charcoal-4);
+    font-family: var(--font-sans);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+  }
+
+  .patterns-scope {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding: var(--space-sm) var(--space-md);
+    border-top: 1px solid var(--color-rule-light);
+    background: var(--color-desk-charcoal-4);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-folioDemo .FolioBar_folio {
+    position: relative;
+    inset: auto;
+    z-index: 1;
+    height: 40px;
+    border: 1px solid var(--color-rule-heavy);
+    border-radius: var(--radius-editorial-sm);
+  }
+
+  .patterns-navDemo .FloatingNavIsland_navIslandContainer {
+    position: relative;
+    right: auto;
+    top: auto;
+    transform: none;
+    justify-content: center;
+    z-index: 1;
+  }
+
+  .patterns-navDemo .FloatingNavIsland_navIslandItem::after,
+  .patterns-navDemo .FloatingNavIsland_navIslandLocalItem::after,
+  .patterns-navDemo .FloatingNavIsland_navIslandMark::after {
+    display: none;
+  }
+
+  .patterns-atmosphereDemo .AtmosphereLayer_atmosphere {
+    position: relative;
+    z-index: 1;
+    height: 180px;
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+  }
+
+  .patterns-atmosphereDemo .AtmosphereLayer_watermark {
+    width: 180px;
+    height: 180px;
+    right: 16px;
+  }
+
+  .patterns-trustBand {
+    display: inline-flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+  }
+
+  .patterns-provenance,
+  .patterns-freshness {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-claim {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-md);
+    align-items: center;
+    padding: var(--space-md) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .patterns-claimSubject {
+    margin: 0 0 var(--space-xs);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-claimValue {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 20px;
+    line-height: 1.3;
+    color: var(--color-text-primary);
+  }
+
+  .patterns-callout {
+    padding: var(--space-md);
+    border: 1px solid var(--color-garden-sage-20);
+    border-left: 3px solid var(--color-garden-sage);
+    border-radius: var(--radius-editorial-sm);
+    background: var(--color-paper-warm-white);
+  }
+
+  .patterns-callout[data-tone="caution"] {
+    border-color: var(--color-spice-saffron-12);
+    border-left-color: var(--color-spice-saffron);
+  }
+
+  .patterns-callout[data-tone="risk"] {
+    border-color: var(--color-spice-terracotta-12);
+    border-left-color: var(--color-spice-terracotta);
+  }
+
+  .patterns-calloutTitle {
+    margin: 0 0 var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-calloutText {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+  }
+
+  .patterns-sourceRows {
+    display: grid;
+    gap: var(--space-sm);
+    margin-top: var(--space-sm);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-sourceRows div {
+    display: flex;
+    justify-content: space-between;
+    gap: var(--space-md);
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--color-rule-light);
+  }
+
+  .patterns-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: var(--space-md);
+    padding: var(--space-md);
+    border-left: 3px solid var(--color-spice-terracotta);
+    background: var(--color-spice-terracotta-8);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    color: var(--color-text-primary);
+  }
+
+  .patterns-button {
+    border: 1px solid var(--color-rule-heavy);
+    border-radius: var(--radius-editorial-sm);
+    background: transparent;
+    padding: 6px 12px;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+  }
+
+  .patterns-button[data-primary="true"] {
+    border-color: var(--color-spice-turmeric);
+    background: var(--color-spice-turmeric);
+    color: var(--color-desk-charcoal);
+  }
+
+  .patterns-masthead {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-lg);
+    align-items: start;
+  }
+
+  .patterns-mastheadTitle {
+    margin: var(--space-xs) 0 var(--space-sm);
+    font-family: var(--font-serif);
+    font-size: 40px;
+    font-weight: 400;
+    line-height: 1.1;
+  }
+
+  .patterns-glanceRow {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: var(--space-md);
+    margin-top: var(--space-md);
+  }
+
+  .patterns-glanceCell {
+    border-left: 2px solid var(--color-rule-heavy);
+    padding-left: var(--space-sm);
+  }
+
+  .patterns-glanceCell[data-state="warn"] {
+    border-left-color: var(--color-spice-terracotta);
+  }
+
+  .patterns-glanceKey {
+    margin: 0 0 var(--space-xs);
+    font-family: var(--font-mono);
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-glanceValue {
+    margin: 0;
+    font-family: var(--font-serif);
+    font-size: 20px;
+    line-height: 1.2;
+  }
+
+  .patterns-formRow {
+    display: grid;
+    grid-template-columns: 220px minmax(0, 1fr) 110px;
+    gap: var(--space-lg);
+    align-items: center;
+    padding: var(--space-md) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .patterns-formLabel {
+    margin: 0 0 var(--space-xs);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    color: var(--color-text-primary);
+  }
+
+  .patterns-formHelp {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 12px;
+    line-height: 1.35;
+    color: var(--color-text-tertiary);
+  }
+
+  .patterns-inlineInput {
+    width: 100%;
+    min-height: 36px;
+    border: 1px dashed var(--color-rule-heavy);
+    border-radius: var(--radius-editorial-sm);
+    background: transparent;
+    padding: 0 10px;
+    font-family: var(--font-sans);
+    color: var(--color-text-primary);
+  }
+
+  .patterns-actionsBar {
+    display: flex;
+    justify-content: flex-end;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    padding: var(--space-sm);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+    background: rgba(250, 248, 246, 0.7);
+  }
+
+  .patterns-triad {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: var(--space-lg);
+  }
+
+  @media (max-width: 920px) {
+    .patterns-anchorNav,
+    .patterns-grid,
+    .patterns-triad {
+      grid-template-columns: 1fr;
+    }
+
+    .patterns-title {
+      font-size: 58px;
+    }
+
+    .patterns-portrait,
+    .patterns-marginGrid,
+    .patterns-meetingItem,
+    .patterns-masthead,
+    .patterns-formRow,
+    .patterns-claim {
+      grid-template-columns: 1fr;
+    }
+
+    .patterns-marginLabel,
+    .patterns-meetingTime {
+      text-align: left;
+    }
+
+    .patterns-glanceRow {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+  }
 </style>
 </head>
-<body>
 
-<header>
-  <div class="eyebrow">DailyOS Design System · Reference</div>
-  <h1>Patterns</h1>
-  <p>Composed, opinionated, named after the job. 31 patterns across 4 waves. Each frame shows a representative render. Press <code>?</code> to inspect.</p>
-  <nav class="tier-nav">
-    <a href="../index.html">← Reference home</a>
-    <a href="tokens.html">Tokens</a>
-    <a href="primitives.html">Primitives</a>
-    <a href="patterns.html" class="active">Patterns</a>
-  </nav>
-  <nav class="wave-jump">
-    <a href="#wave1">Wave 1 · Briefing/chrome</a> ·
-    <a href="#wave2">Wave 2 · Trust UI</a> ·
-    <a href="#wave3">Wave 3 · Settings</a> ·
-    <a href="#wave4">Wave 4 · Meeting</a>
-  </nav>
-</header>
+<body
+  data-folio-label="Patterns"
+  data-folio-crumbs="Reference > Patterns"
+  data-tint="olive"
+  data-active-page="today"
+  data-nav-base="../surfaces"
+  data-folio-actions="refresh"
+  data-folio-refresh-title="Refresh pattern reference"
+  data-chapters="editorial:bookopen:Editorial|chrome:compass:Chrome|trust:shield:Trust UI|forms:wrench:Forms|meeting:target:Meeting">
 
-<section class="wave" id="wave1">
-<h2>Wave 1 · v1.4.3 substrate (0.1.0) — chrome + briefing</h2>
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>FolioBar</h3><span class="spec-link">patterns/FolioBar.md</span><div class="job">Top frosted bar with crumbs + actions. Auto-injected via chrome.js.</div></div><div class="example"><div style="height:40px; background:var(--frosted-glass-background); border:1px solid var(--color-rule-heavy); padding:0 16px; display:flex; align-items:center; justify-content:space-between; font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);" data-ds-name="FolioBar" data-ds-tier="pattern" data-ds-spec="patterns/FolioBar.md"><span><span style="font-family:var(--font-mark); font-weight:800; color:var(--color-spice-turmeric); margin-right:10px;">*</span>Daily Briefing</span><span>refresh · ask anything ⌘K</span></div></div></div>
+  <section class="patterns-cover">
+    <p class="patterns-eyebrow">DailyOS · Design System · Reference</p>
+    <h1 class="patterns-title">Patterns</h1>
+    <p class="patterns-lede">Composed, opinionated UI contracts. Each pattern below maps back to its markdown spec and shows the primitives it composes.</p>
+    <div class="patterns-summary">
+      <span>31 patterns across 5 categories</span>
+      <span>31 markdown specs enumerated</span>
+      <span>31 visual demos</span>
+    </div>
+    <nav class="patterns-anchorNav" aria-label="Pattern categories">
+      <a href="#editorial"><span>01 · 8 patterns</span><strong>Editorial Briefing</strong></a>
+      <a href="#chrome"><span>02 · 3 patterns</span><strong>Surface Chrome</strong></a>
+      <a href="#trust"><span>03 · 7 patterns</span><strong>Trust UI</strong></a>
+      <a href="#forms"><span>04 · 3 patterns</span><strong>Forms &amp; Mastheads</strong></a>
+      <a href="#meeting"><span>05 · 10 patterns</span><strong>Meeting Intelligence</strong></a>
+    </nav>
+  </section>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>FloatingNavIsland</h3><span class="spec-link">patterns/FloatingNavIsland.md</span><div class="job">Dual-pill app + chapter nav. The canonical local-nav pattern (D2).</div></div><div class="example"><p class="placeholder">Visual: see chrome.js auto-injection on any surface render. Global pill (right) always visible; local pill (left) appears when surface provides chapters.</p></div></div>
+  <section id="editorial" class="patterns-section">
+    <div class="patterns-sectionHeader">
+      <h2 class="patterns-sectionTitle">Editorial Briefing</h2>
+      <span class="patterns-sectionMeta">Wave 1 · 8 patterns</span>
+    </div>
+    <p class="patterns-sectionLede">DailyBriefing and editorial-surface patterns: lead voice, marginalia, day shape, meeting spine, moving entity portraits, and the conversational affordance.</p>
+    <div class="patterns-grid">
+      <article id="Lead" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">Lead</h3></div>
+          <a class="patterns-specLink" href="../../patterns/Lead.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> mono eyebrow, single serif lead sentence, optional sharp-clause highlight.</p>
+        <div class="patterns-variants"><span>calm</span><span>sharp</span><span>quiet</span></div>
+        <div class="patterns-demo" data-ds-name="Lead" data-ds-tier="pattern" data-ds-spec="patterns/Lead.md">
+          <p class="patterns-leadEyebrow">Today, Thursday Apr 23</p>
+          <p class="patterns-leadSentence">Four meetings today, two with customers; <span class="patterns-sharp">the Acme renewal at 10:00 is the one to nail</span>.</p>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>AtmosphereLayer</h3><span class="spec-link">patterns/AtmosphereLayer.md</span><div class="job">Page-tinted radial gradient background. Slow opacity-breath animation.</div></div><div class="example"><p class="placeholder">Background layer — visible on every surface render. Tint per surface (data-tint attribute).</p></div></div>
+      <article id="MarginGrid" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">MarginGrid</h3></div>
+          <a class="patterns-specLink" href="../../patterns/MarginGrid.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> fixed mono margin label, optional count, content column.</p>
+        <div class="patterns-variants"><span>default</span><span>label-count</span></div>
+        <div class="patterns-demo" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+          <section class="patterns-marginGrid">
+            <div class="patterns-marginLabel">Today<span>4 meetings</span></div>
+            <p class="patterns-serifBody">The right column carries the section content while the left margin keeps the editorial spine visible.</p>
+          </section>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>MarginGrid</h3><span class="spec-link">patterns/MarginGrid.md</span><div class="job">Two-column section layout (margin label + content). D-spine signature.</div></div><div class="example"><div class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md"><div class="margin-label">Today<span class="margin-label-count">4 meetings</span></div><div class="margin-content"><p style="font-family:var(--font-serif); font-size:17px; color:var(--color-text-secondary);">Section content fills the right column.</p></div></div></div></div>
+      <article id="ChapterHeading" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ChapterHeading</h3></div>
+          <a class="patterns-specLink" href="../../patterns/ChapterHeading.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> heavy rule, serif title, optional italic epigraph.</p>
+        <div class="patterns-variants"><span>default</span><span>light</span></div>
+        <div class="patterns-demo" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
+          <div class="ChapterHeading_heading">
+            <hr class="ChapterHeading_rule" />
+            <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Health &amp; Outlook</h2></div>
+            <p class="ChapterHeading_epigraph">What the room is feeling and what the data shows.</p>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>ChapterHeading</h3><span class="spec-link">patterns/ChapterHeading.md</span><div class="job">Section opener (heavy rule + serif title + epigraph).</div></div><div class="example"><div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md"><hr class="chapter-rule"><h2 class="chapter-title">Health & Outlook</h2><p class="chapter-epigraph">What the room is feeling and what the data shows.</p></div></div></div>
+      <article id="DayChart" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">DayChart</h3></div>
+          <a class="patterns-specLink" href="../../patterns/DayChart.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> legend, hour ticks, positioned meeting bars, NOW indicator.</p>
+        <div class="patterns-variants"><span>default</span><span>no legend</span><span>height</span></div>
+        <div class="patterns-demo" data-ds-name="DayChart" data-ds-tier="pattern" data-ds-spec="patterns/DayChart.md">
+          <div class="patterns-dayLegend"><span>Customer</span><span>Internal</span><span>1:1</span></div>
+          <div class="patterns-dayChartTicks"><span>8 AM</span><span>9</span><span>10</span><span>11</span><span>12 PM</span><span>1</span></div>
+          <div class="patterns-dayBars">
+            <div class="patterns-dayBar" style="left:16%;width:15%;background:var(--color-paper-linen);border:1px solid var(--color-rule-heavy);"><strong>Standup</strong>9:00 · 30m</div>
+            <div class="patterns-dayBar" style="left:33%;width:22%;background:var(--color-spice-turmeric);"><strong>Acme Renewal</strong>10:00 · 45m</div>
+            <div class="patterns-dayBar" style="left:68%;width:18%;background:var(--color-garden-larkspur-12);"><strong>Sara 1:1</strong>12:30 · 30m</div>
+            <div class="patterns-nowLine"><span>NOW · 10:18</span></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>Lead</h3><span class="spec-link">patterns/Lead.md</span><div class="job">Single-sentence editorial headline (DailyBriefing).</div></div><div class="example"><div data-ds-name="Lead" data-ds-tier="pattern" data-ds-spec="patterns/Lead.md"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.12em; text-transform:uppercase; color:var(--color-text-tertiary); margin-bottom:14px;">Today, Thursday April 23</div><p style="font-family:var(--font-serif); font-size:36px; font-weight:400; line-height:1.1; max-width:800px; margin:0;">Four meetings today, two with customers — the Acme renewal at 10:00 is the one to nail; the pricing memo still hasn't gone.</p></div></div></div>
+      <article id="MeetingSpineItem" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">MeetingSpineItem</h3></div>
+          <a class="patterns-specLink" href="../../patterns/MeetingSpineItem.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> time column, entity eyebrow, serif title, context line, prep footer.</p>
+        <div class="patterns-variants"><span>past</span><span>in_progress</span><span>upcoming</span><span>cancelled</span></div>
+        <div class="patterns-demo" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md">
+          <article class="patterns-meetingItem">
+            <div class="patterns-meetingTime"><strong>10:00</strong><span class="patterns-muted patterns-mono">45m · now</span></div>
+            <div>
+              <div class="patterns-meetingEyebrow"><span class="patterns-dot"></span>Acme Corp · Renewal</div>
+              <h4 class="patterns-meetingTitle">Acme renewal, pricing and tier 3</h4>
+              <p class="patterns-meetingContext">Jen wants the adjusted memo before legal goes deep on MSA.</p>
+            </div>
+          </article>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>DayChart</h3><span class="spec-link">patterns/DayChart.md</span><div class="job">Visual day shape — hour ticks + colored bars + NOW line.</div></div><div class="example" data-ds-name="DayChart" data-ds-tier="pattern" data-ds-spec="patterns/DayChart.md"><div style="position:relative; height:80px; background:repeating-linear-gradient(to right, transparent 0, transparent calc(9.09% - 1px), rgba(30,37,48,0.05) calc(9.09% - 1px), rgba(30,37,48,0.05) 9.09%); border-top:1px solid var(--color-rule-medium, var(--color-rule-light)); border-bottom:1px solid var(--color-rule-medium, var(--color-rule-light));"><div style="position:absolute; top:8px; left:18%; width:4%; height:64px; background:var(--color-paper-linen); border:1px solid var(--color-rule-heavy); padding:8px; font:500 10px var(--font-mono);">Eng standup</div><div style="position:absolute; top:8px; left:27%; width:7%; height:64px; background:var(--color-spice-turmeric); padding:8px; font:500 10px var(--font-mono); box-shadow:0 0 0 2px var(--color-spice-terracotta);">Acme · NOW</div><div style="position:absolute; top:8px; left:64%; width:9%; height:64px; background:var(--color-spice-terracotta); color:#fff; padding:8px; font:500 10px var(--font-mono);">Northwind</div></div></div></div>
+      <article id="EntityPortraitCard" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">EntityPortraitCard</h3></div>
+          <a class="patterns-specLink" href="../../patterns/EntityPortraitCard.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> entity-tinted aside, state label, key stats, lede, typed thread list.</p>
+        <div class="patterns-variants"><span>account</span><span>project</span><span>person</span><span>at_risk</span></div>
+        <div class="patterns-demo" data-ds-name="EntityPortraitCard" data-ds-tier="pattern" data-ds-spec="patterns/EntityPortraitCard.md">
+          <article class="patterns-portrait">
+            <aside class="patterns-portraitAside">
+              <p class="patterns-portraitState">Renewing up</p>
+              <h4 class="patterns-portraitName">Acme Corp</h4>
+              <div class="patterns-portraitStats"><span>Health<br>71 up</span><span>Stage<br>Renewal</span><span>Owner<br>You</span><span>Conf<br>82%</span></div>
+            </aside>
+            <div class="patterns-portraitMain">
+              <span class="patterns-portraitGlyph">&ldquo;</span>
+              <p class="patterns-serifBody">Legal review is starting. The adjusted pricing memo goes to Jen in two hours.</p>
+              <div class="patterns-threadList">
+                <div class="patterns-threadLine"><span class="patterns-threadWhen">10:00</span><span>Pricing alignment in progress</span><button class="patterns-threadMark">talk</button></div>
+                <div class="patterns-threadLine"><span class="patterns-threadWhen">2d</span><span>Adjusted memo overdue</span><button class="patterns-threadMark">talk</button></div>
+              </div>
+            </div>
+          </article>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>MeetingSpineItem</h3><span class="spec-link">patterns/MeetingSpineItem.md</span><div class="job">Magazine-style meeting list entry (DailyBriefing).</div></div><div class="example"><article style="display:grid; grid-template-columns:88px 1fr; gap:0 36px; align-items:first baseline;" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md"><div style="text-align:right;"><span style="font-family:var(--font-mono); font-size:18px; font-weight:500; display:block;">10:00</span><span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); text-transform:uppercase; letter-spacing:0.06em;">45m</span></div><div><div style="font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.16em; text-transform:uppercase; color:var(--color-spice-turmeric); margin-bottom:8px;">Acme Corp · Renewal</div><a href="#" style="font-family:var(--font-serif); font-size:24px; font-weight:400; color:var(--color-text-primary); text-decoration:none; display:block; margin-bottom:10px;">Acme renewal — pricing & tier 3</a><p style="font-family:var(--font-serif); font-style:italic; font-size:15px; color:var(--color-text-secondary); margin:0;">Decisions on tier 3 pricing. Jen wants the adjusted memo before legal goes deep on MSA.</p></div></article></div></div>
+      <article id="ThreadMark" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ThreadMark</h3></div>
+          <a class="patterns-specLink" href="../../patterns/ThreadMark.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> small hook-arrow affordance, mono label, context seed target.</p>
+        <div class="patterns-variants"><span>hover-only</span><span>persistent</span></div>
+        <div class="patterns-demo" data-compact="true" data-ds-name="ThreadMark" data-ds-tier="pattern" data-ds-spec="patterns/ThreadMark.md">
+          <button class="patterns-threadMark" type="button">-&gt; talk</button>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>EntityPortraitCard</h3><span class="spec-link">patterns/EntityPortraitCard.md</span><div class="job">Color-banded entity portrait with thread (DailyBriefing Moving section).</div></div><div class="example"><article style="display:grid; grid-template-columns:200px 1fr; min-height:160px; background:var(--color-paper-warm-white); border:1px solid var(--color-rule-light);" data-ds-name="EntityPortraitCard" data-ds-tier="pattern" data-ds-spec="patterns/EntityPortraitCard.md"><aside style="padding:20px; background:linear-gradient(180deg, var(--color-spice-turmeric) 0 6px, var(--color-spice-turmeric-8) 6px); padding-top:32px;"><div style="font-family:var(--font-mono); font-size:10px; font-weight:600; letter-spacing:0.14em; text-transform:uppercase; color:var(--color-spice-turmeric); margin-bottom:14px;">Renewing ↑</div><h3 style="font-family:var(--font-serif); font-size:26px; font-weight:500; color:var(--color-text-primary); margin:0;">Acme Corp</h3></aside><div style="padding:24px; position:relative;"><span style="position:absolute; top:8px; right:16px; font-family:var(--font-serif); font-style:italic; font-size:90px; line-height:1; color:var(--color-spice-turmeric); opacity:0.1;">"</span><p style="font-family:var(--font-serif); font-size:16px; line-height:1.45; color:var(--color-text-primary); margin:0; max-width:480px;">Legal review starting. The adjusted pricing memo goes to Jen in two hours — everything else for Acme today chains to that one send.</p></div></article></div></div>
+      <article id="AskAnythingDock" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">AskAnythingDock</h3></div>
+          <a class="patterns-specLink" href="../../patterns/AskAnythingDock.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> editorial input row, suggestion chips, scoped-source footer.</p>
+        <div class="patterns-variants"><span>inline</span><span>fixed-bottom</span><span>chips</span></div>
+        <div class="patterns-demo" data-ds-name="AskAnythingDock" data-ds-tier="pattern" data-ds-spec="patterns/AskAnythingDock.md">
+          <div class="patterns-askDock">
+            <div class="patterns-askInput"><span class="patterns-muted">?</span><input value="What is slipping on Acme this week?" aria-label="Ask anything demo" readonly><span class="patterns-pill" data-tone="caution">Cmd K</span></div>
+            <div class="patterns-chipRow"><span class="patterns-chip">Show Northwind's last 5 emails</span><span class="patterns-chip">Who should I check on?</span></div>
+            <div class="patterns-scope"><span>Mail · Calendar · CRM · Slack</span><span>Writes back to briefing</span></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>ThreadMark</h3><span class="spec-link">patterns/ThreadMark.md</span><div class="job">Universal "talk about this" hover affordance (cross-version).</div></div><div class="example"><span style="font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.06em; color:var(--color-spice-turmeric); background:var(--color-spice-turmeric-7, var(--color-spice-turmeric-8)); padding:3px 6px; border-radius:2px;" data-ds-name="ThreadMark" data-ds-tier="pattern" data-ds-spec="patterns/ThreadMark.md">↪ talk</span></div></div>
+  <section id="chrome" class="patterns-section">
+    <div class="patterns-sectionHeader">
+      <h2 class="patterns-sectionTitle">Surface Chrome</h2>
+      <span class="patterns-sectionMeta">Wave 1 · 3 patterns</span>
+    </div>
+    <p class="patterns-sectionLede">The substrate patterns that make a DailyOS page feel like a magazine surface: folio, floating navigation, and ambient tint.</p>
+    <div class="patterns-grid">
+      <article id="FolioBar" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FolioBar</h3></div>
+          <a class="patterns-specLink" href="../../patterns/FolioBar.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> brand mark, publication label or breadcrumbs, optional center status, action set.</p>
+        <div class="patterns-variants"><span>default</span><span>live status</span><span>reports/tools</span></div>
+        <div class="patterns-demo patterns-folioDemo" data-ds-name="FolioBar" data-ds-tier="pattern" data-ds-spec="patterns/FolioBar.md">
+          <header class="FolioBar_folio">
+            <div class="FolioBar_folioLeft">
+              <span class="FolioBar_folioMark">*</span>
+              <nav class="FolioBar_folioBreadcrumbs" aria-label="Demo breadcrumb">
+                <span class="FolioBar_folioBreadcrumbLabel">Reference</span><span class="FolioBar_folioBreadcrumbSeparator">/</span><span class="FolioBar_folioBreadcrumbCurrent">Patterns</span>
+              </nav>
+            </div>
+            <div class="FolioBar_folioCenter">PATTERN REFERENCE</div>
+            <div class="FolioBar_folioRight"><button class="FolioBar_folioSearch" type="button">Cmd K</button></div>
+          </header>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>AskAnythingDock</h3><span class="spec-link">patterns/AskAnythingDock.md</span><div class="job">Multi-line conversational dock (cross-version).</div></div><div class="example" data-ds-name="AskAnythingDock" data-ds-tier="pattern" data-ds-spec="patterns/AskAnythingDock.md"><div style="background:var(--color-paper-warm-white); border:1px solid var(--color-rule-heavy); border-radius:10px; padding:18px;"><div style="display:flex; align-items:center; gap:12px;"><span style="font-family:var(--font-serif); color:var(--color-text-tertiary); font-size:18px;">⌕</span><input style="border:none; background:transparent; font-family:var(--font-serif); font-style:italic; font-size:16px; flex:1; outline:none; color:var(--color-text-tertiary);" placeholder="What did Sara say about tier 3 last quarter?" /><span style="font-family:var(--font-mono); font-size:10px; background:var(--color-desk-charcoal-4); padding:3px 6px; border-radius:3px; color:var(--color-text-tertiary);">⌘K</span></div></div></div></div>
-</section>
+      <article id="FloatingNavIsland" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FloatingNavIsland</h3></div>
+          <a class="patterns-specLink" href="../../patterns/FloatingNavIsland.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> global app-nav pill, optional local chapter pill, active tint states.</p>
+        <div class="patterns-variants"><span>dual-pill</span><span>chapter-only</span><span>per-tint</span></div>
+        <div class="patterns-demo patterns-navDemo" data-ds-name="FloatingNavIsland" data-ds-tier="pattern" data-ds-spec="patterns/FloatingNavIsland.md">
+          <div class="FloatingNavIsland_navIslandContainer">
+            <nav class="FloatingNavIsland_navIslandLocal FloatingNavIsland_colorOlive" aria-label="Demo chapter navigation">
+              <button class="FloatingNavIsland_navIslandLocalItem FloatingNavIsland_activeOlive" type="button">1</button>
+              <button class="FloatingNavIsland_navIslandLocalItem" type="button">2</button>
+              <button class="FloatingNavIsland_navIslandLocalItem" type="button">3</button>
+            </nav>
+            <nav class="FloatingNavIsland_navIslandGlobal FloatingNavIsland_navIslandGlobalMerged FloatingNavIsland_colorOlive" aria-label="Demo app navigation">
+              <button class="FloatingNavIsland_navIslandMark FloatingNavIsland_navIslandMarkActive" type="button">*</button>
+              <button class="FloatingNavIsland_navIslandItem" type="button">W</button>
+              <div class="FloatingNavIsland_navIslandDivider"></div>
+              <button class="FloatingNavIsland_navIslandItem FloatingNavIsland_activeOlive" type="button">P</button>
+            </nav>
+          </div>
+        </div>
+      </article>
 
-<section class="wave" id="wave2">
-<h2>Wave 2 · v1.4.4 trust UI (0.2.0)</h2>
+      <article id="AtmosphereLayer" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">AtmosphereLayer</h3></div>
+          <a class="patterns-specLink" href="../../patterns/AtmosphereLayer.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> fixed full-viewport radial gradient layer and tinted watermark.</p>
+        <div class="patterns-variants"><span>turmeric</span><span>larkspur</span><span>terracotta</span><span>olive</span><span>eucalyptus</span></div>
+        <div class="patterns-demo patterns-atmosphereDemo" data-ds-name="AtmosphereLayer" data-ds-tier="pattern" data-ds-spec="patterns/AtmosphereLayer.md">
+          <div class="AtmosphereLayer_atmosphere AtmosphereLayer_olive">
+            <div class="AtmosphereLayer_watermark AtmosphereLayer_watermarkOlive">*</div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>TrustBand</h3><span class="spec-link">patterns/TrustBand.md</span><div class="job">Canonical trust signal cluster: TrustBandBadge + ProvenanceTag + FreshnessIndicator.</div></div><div class="example" data-ds-name="TrustBand" data-ds-tier="pattern" data-ds-spec="patterns/TrustBand.md"><div style="display:inline-flex; gap:8px; align-items:center;"><span class="pill" data-tone="sage"><span class="pill-dot"></span>likely_current</span><span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">salesforce</span><span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">3h ago</span></div></div></div>
+  <section id="trust" class="patterns-section">
+    <div class="patterns-sectionHeader">
+      <h2 class="patterns-sectionTitle">Trust UI</h2>
+      <span class="patterns-sectionMeta">Wave 2 · 7 patterns</span>
+    </div>
+    <p class="patterns-sectionLede">The claim, provenance, freshness, correction, and receipt layer. These patterns answer whether intelligence can be trusted and why.</p>
+    <div class="patterns-grid">
+      <article id="TrustBand" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">TrustBand</h3></div>
+          <a class="patterns-specLink" href="../../patterns/TrustBand.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> TrustBandBadge, ProvenanceTag, FreshnessIndicator.</p>
+        <div class="patterns-variants"><span>compact</span><span>default</span><span>expanded</span><span>inline</span><span>row</span></div>
+        <div class="patterns-demo" data-ds-name="TrustBand" data-ds-tier="pattern" data-ds-spec="patterns/TrustBand.md">
+          <div class="patterns-trustBand"><span class="patterns-pill"><span class="patterns-dot"></span>Likely current</span><span class="patterns-provenance">salesforce</span><span class="patterns-freshness">3h ago</span></div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>ClaimRow</h3><span class="spec-link">patterns/ClaimRow.md</span><div class="job">Single-claim render API; the unit consumed everywhere.</div></div><div class="example" data-ds-name="ClaimRow" data-ds-tier="pattern" data-ds-spec="patterns/ClaimRow.md"><div style="display:grid; grid-template-columns:1fr auto; gap:18px; padding:12px 0; border-bottom:1px solid var(--color-rule-light);"><div><div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); margin-bottom:4px;">Acme Corp · renewal_date</div><div style="font-family:var(--font-serif); font-size:18px;">June 15, 2026</div></div><div style="display:inline-flex; gap:8px; align-items:center;"><span class="pill" data-tone="sage"><span class="pill-dot"></span>likely_current</span><span style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary);">salesforce · 3h</span></div></div></div></div>
+      <article id="ClaimRow" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ClaimRow</h3></div>
+          <a class="patterns-specLink" href="../../patterns/ClaimRow.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> subject prefix, claim value, TrustBand, optional ReceiptCallout.</p>
+        <div class="patterns-variants"><span>compact</span><span>default</span><span>rich</span><span>expandable</span></div>
+        <div class="patterns-demo" data-ds-name="ClaimRow" data-ds-tier="pattern" data-ds-spec="patterns/ClaimRow.md">
+          <div class="patterns-claim">
+            <div><p class="patterns-claimSubject">Acme Corp · renewal_date</p><p class="patterns-claimValue">June 15, 2026</p></div>
+            <div class="patterns-trustBand"><span class="patterns-pill"><span class="patterns-dot"></span>Likely current</span><span class="patterns-provenance">CRM · 3h</span></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>ReceiptCallout</h3><span class="spec-link">patterns/ReceiptCallout.md</span><div class="job">v1.4.4 inspection layer — expandable receipt with resolver bands + corrections.</div></div><div class="example" data-ds-name="ReceiptCallout" data-ds-tier="pattern" data-ds-spec="patterns/ReceiptCallout.md"><div style="background:var(--color-paper-warm-white); border:1px solid var(--color-garden-sage); border-radius:6px; padding:14px;"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-text-tertiary); margin-bottom:8px;">Receipt · Acme Corp · renewal_date</div><div style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-secondary);">Resolver: Resolved (0.94) · Consistency: ok · Source: Salesforce · As of 3h ago · 3 corroborating signals</div></div></div></div>
+      <article id="ReceiptCallout" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ReceiptCallout</h3></div>
+          <a class="patterns-specLink" href="../../patterns/ReceiptCallout.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> ClaimRow, resolver confidence, ConsistencyFindingBanner, provenance detail, freshness chain, actions.</p>
+        <div class="patterns-variants"><span>collapsed</span><span>expanded</span><span>inline</span><span>drawer</span></div>
+        <div class="patterns-demo" data-ds-name="ReceiptCallout" data-ds-tier="pattern" data-ds-spec="patterns/ReceiptCallout.md">
+          <div class="patterns-callout">
+            <p class="patterns-calloutTitle">Receipt · Acme Corp · renewal_date</p>
+            <p class="patterns-calloutText">Resolver 0.94 · consistency ok · source Salesforce opportunity field · fetched 3h ago · verified today.</p>
+            <div class="patterns-variants"><span>Confirm</span><span>Correct</span><span>Dismiss</span></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>AboutThisIntelligencePanel</h3><span class="spec-link">patterns/AboutThisIntelligencePanel.md</span><div class="job">Chapter-level coverage / freshness / source explanation.</div></div><div class="example" data-ds-name="AboutThisIntelligencePanel" data-ds-tier="pattern" data-ds-spec="patterns/AboutThisIntelligencePanel.md"><p style="font-family:var(--font-sans); font-size:14px; line-height:1.6; color:var(--color-text-secondary); max-width:640px;">Health derived from <strong>14 captures</strong> across Mail, Calendar, CRM since Jan 2025. Last enriched <strong>2 hours ago</strong>. Sources: Glean (8), Salesforce (4), manual (2). Confidence math geometric mean 0.82.</p></div></div>
+      <article id="AboutThisIntelligencePanel" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">AboutThisIntelligencePanel</h3></div>
+          <a class="patterns-specLink" href="../../patterns/AboutThisIntelligencePanel.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> TrustBandBadge, AsOfTimestamp, SourceCoverageLine list, optional DataGapNotice list.</p>
+        <div class="patterns-variants"><span>neutral</span><span>caution</span><span>incomplete</span><span>compact</span></div>
+        <div class="patterns-demo" data-ds-name="AboutThisIntelligencePanel" data-ds-tier="pattern" data-ds-spec="patterns/AboutThisIntelligencePanel.md">
+          <div class="patterns-callout" data-tone="caution">
+            <p class="patterns-calloutTitle">About this intelligence</p>
+            <p class="patterns-calloutText">Salesforce is current, but meeting notes are incomplete. Last enriched 2h ago.</p>
+            <div class="patterns-sourceRows"><div><span>Salesforce</span><span>covered</span></div><div><span>Glean</span><span>partial · 3 docs</span></div></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>DossierSourceCoveragePanel</h3><span class="spec-link">patterns/DossierSourceCoveragePanel.md</span><div class="job">Dossier-level source coverage (account/project/person).</div></div><div class="example" data-ds-name="DossierSourceCoveragePanel" data-ds-tier="pattern" data-ds-spec="patterns/DossierSourceCoveragePanel.md"><div style="display:grid; gap:8px; font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary);"><div>Glean · 4 sources</div><div>Salesforce · 8 sources · <span style="color:var(--color-spice-saffron)">2 stale</span></div><div>Manual · 2 captures</div><div style="color:var(--color-spice-saffron); margin-top:4px;">⚠ No recent meetings (last 30d)</div></div></div></div>
+      <article id="DossierSourceCoveragePanel" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">DossierSourceCoveragePanel</h3></div>
+          <a class="patterns-specLink" href="../../patterns/DossierSourceCoveragePanel.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> AsOfTimestamp, SourceCoverageLine rows, DataGapNotice for dossier gaps.</p>
+        <div class="patterns-variants"><span>account</span><span>project</span><span>person</span><span>compact</span></div>
+        <div class="patterns-demo" data-ds-name="DossierSourceCoveragePanel" data-ds-tier="pattern" data-ds-spec="patterns/DossierSourceCoveragePanel.md">
+          <div class="patterns-callout">
+            <p class="patterns-calloutTitle">Account source coverage · as of 08:00</p>
+            <div class="patterns-sourceRows"><div><span>CRM fields</span><span>covered</span></div><div><span>Recent meetings</span><span>partial</span></div><div><span>Stakeholders</span><span>2 need characterization</span></div></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>StaleReportBanner</h3><span class="spec-link">patterns/StaleReportBanner.md</span><div class="job">Banner above generated reports when underlying intel has gone stale.</div></div><div class="example" data-ds-name="StaleReportBanner" data-ds-tier="pattern" data-ds-spec="patterns/StaleReportBanner.md"><div style="background:var(--color-spice-saffron-15); border-left:3px solid var(--color-spice-saffron); padding:14px 18px; font-family:var(--font-sans); font-size:13px; color:var(--color-text-primary); display:flex; justify-content:space-between; align-items:center;"><span>⚠ Underlying intelligence has changed since this report was generated 4 days ago.</span><button style="background:var(--color-spice-saffron); color:var(--color-desk-charcoal); border:none; padding:6px 12px; border-radius:4px; font-family:var(--font-mono); font-size:11px; cursor:pointer;">Regenerate</button></div></div></div>
+      <article id="ConsistencyFindingBanner" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ConsistencyFindingBanner</h3></div>
+          <a class="patterns-specLink" href="../../patterns/ConsistencyFindingBanner.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> VerificationStatusFlag, finding text, Inspect/Correct/Dismiss actions.</p>
+        <div class="patterns-variants"><span>corrected</span><span>flagged</span><span>low</span><span>medium</span><span>high</span></div>
+        <div class="patterns-demo" data-ds-name="ConsistencyFindingBanner" data-ds-tier="pattern" data-ds-spec="patterns/ConsistencyFindingBanner.md">
+          <div class="patterns-banner"><span>Flagged: renewal risk conflicts with the latest meeting note.</span><button class="patterns-button" type="button">Inspect</button></div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>ConsistencyFindingBanner</h3><span class="spec-link">patterns/ConsistencyFindingBanner.md</span><div class="job">Inline banner when v1.4.0 trust compiler flags consistency findings.</div></div><div class="example" data-ds-name="ConsistencyFindingBanner" data-ds-tier="pattern" data-ds-spec="patterns/ConsistencyFindingBanner.md"><div style="background:var(--color-spice-terracotta-8); border-left:3px solid var(--color-spice-terracotta); padding:10px 14px; font-family:var(--font-sans); font-size:13px; color:var(--color-spice-chili);">⚠ This claim conflicts with Salesforce record (renewal date) — flagged for review.</div></div></div>
-</section>
+      <article id="StaleReportBanner" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">StaleReportBanner</h3></div>
+          <a class="patterns-specLink" href="../../patterns/StaleReportBanner.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> FreshnessIndicator, AsOfTimestamp, regenerate or refresh action.</p>
+        <div class="patterns-variants"><span>info</span><span>warning</span><span>regenerate</span><span>refresh</span></div>
+        <div class="patterns-demo" data-ds-name="StaleReportBanner" data-ds-tier="pattern" data-ds-spec="patterns/StaleReportBanner.md">
+          <div class="patterns-banner"><span>Underlying intelligence changed since this report was generated 4 days ago.</span><button class="patterns-button" data-primary="true" type="button">Regenerate</button></div>
+        </div>
+      </article>
+    </div>
+  </section>
 
-<section class="wave" id="wave3">
-<h2>Wave 3 · Settings substrate (0.3.0)</h2>
+  <section id="forms" class="patterns-section">
+    <div class="patterns-sectionHeader">
+      <h2 class="patterns-sectionTitle">Forms &amp; Mastheads</h2>
+      <span class="patterns-sectionMeta">Wave 3 · 3 patterns</span>
+    </div>
+    <p class="patterns-sectionLede">Settings and non-briefing surface openers: structured mastheads, at-a-glance stats, and predictable settings rows.</p>
+    <div class="patterns-grid">
+      <article id="SurfaceMasthead" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">SurfaceMasthead</h3></div>
+          <a class="patterns-specLink" href="../../patterns/SurfaceMasthead.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> mono eyebrow, serif title, lede, accessory slot, optional GlanceRow slot.</p>
+        <div class="patterns-variants"><span>compact</span><span>default</span><span>rich</span><span>accessory</span><span>glance</span></div>
+        <div class="patterns-demo" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
+          <div class="patterns-masthead">
+            <div><p class="patterns-mono patterns-muted">Settings · Last edited 4 minutes ago</p><h4 class="patterns-mastheadTitle">Settings</h4><p class="patterns-serifBody">A quiet morning, all systems steady.</p></div>
+            <span class="patterns-pill">Healthy</span>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>SurfaceMasthead</h3><span class="spec-link">patterns/SurfaceMasthead.md</span><div class="job">Generic surface-top block (eyebrow + title + lede + accessory + glance slot).</div></div><div class="example" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md"><div style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary); margin-bottom:10px;">Settings · Last edited 4 minutes ago</div><h2 style="font-family:var(--font-serif); font-size:36px; font-weight:400; margin:0;">Settings</h2><p style="font-family:var(--font-serif); font-style:italic; font-size:17px; color:var(--color-text-secondary); margin-top:10px; max-width:600px;">A quiet morning, all systems steady. One connector — Gravatar — is refreshing its avatar cache; nothing to act on.</p></div></div>
+      <article id="GlanceRow" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">GlanceRow</h3></div>
+          <a class="patterns-specLink" href="../../patterns/GlanceRow.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> GlanceCell instances in a horizontal masthead stat row.</p>
+        <div class="patterns-variants"><span>default</span><span>compact</span><span>wrap</span></div>
+        <div class="patterns-demo" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
+          <div class="patterns-glanceRow">
+            <div class="patterns-glanceCell"><p class="patterns-glanceKey">Connectors</p><p class="patterns-glanceValue">6 healthy</p></div>
+            <div class="patterns-glanceCell"><p class="patterns-glanceKey">Database</p><p class="patterns-glanceValue">220 MB</p></div>
+            <div class="patterns-glanceCell" data-state="warn"><p class="patterns-glanceKey">AI today</p><p class="patterns-glanceValue">82%</p></div>
+            <div class="patterns-glanceCell" data-state="warn"><p class="patterns-glanceKey">Anomalies</p><p class="patterns-glanceValue">2 recovered</p></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>FormRow</h3><span class="spec-link">patterns/FormRow.md</span><div class="job">Universal label/help | ctrl | aux row.</div></div><div class="example" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div style="display:grid; grid-template-columns:240px 1fr 120px; gap:24px; padding:14px 0; border-bottom:1px solid var(--color-rule-light); align-items:baseline;"><div><div style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary);">Auto-refresh briefing</div><div style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary); margin-top:2px;">Re-runs intelligence every 10 minutes during business hours.</div></div><div><button style="width:36px; height:20px; background:var(--color-garden-sage); border-radius:10px; border:none; position:relative;" aria-checked="true"><span style="position:absolute; top:2px; right:2px; width:16px; height:16px; background:#fff; border-radius:50%;"></span></button></div><div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); text-align:right;">Default</div></div></div></div>
+      <article id="FormRow" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FormRow</h3></div>
+          <a class="patterns-specLink" href="../../patterns/FormRow.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> label/help block, control slot, optional right-aligned aux slot.</p>
+        <div class="patterns-variants"><span>default</span><span>dense</span><span>stacked</span><span>readonly</span></div>
+        <div class="patterns-demo" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md">
+          <div class="patterns-formRow">
+            <div><p class="patterns-formLabel">Display name</p><p class="patterns-formHelp">Shown in briefings and shared exports.</p></div>
+            <input class="patterns-inlineInput" value="Sam Chen" aria-label="Display name demo" readonly>
+            <span class="patterns-muted patterns-mono">Saved</span>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>GlanceRow</h3><span class="spec-link">patterns/GlanceRow.md</span><div class="job">Horizontal row of GlanceCell instances inside a SurfaceMasthead.</div></div><div class="example" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md"><div style="display:grid; grid-template-columns:repeat(4,1fr); gap:24px;"><div style="border-left:2px solid var(--color-rule-heavy); padding-left:14px;"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);">Connectors</div><div style="font-family:var(--font-serif); font-size:22px;">6 healthy</div></div><div style="border-left:2px solid var(--color-rule-heavy); padding-left:14px;"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);">Database</div><div style="font-family:var(--font-serif); font-size:22px;">220.8 MB</div></div><div style="border-left:2px solid var(--color-spice-terracotta); padding-left:14px;"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);">AI today</div><div style="font-family:var(--font-serif); font-size:22px; color:var(--color-spice-terracotta);">82%</div></div><div style="border-left:2px solid var(--color-spice-terracotta); padding-left:14px;"><div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary);">Anomalies 24h</div><div style="font-family:var(--font-serif); font-size:22px; color:var(--color-spice-terracotta);">2 recovered</div></div></div></div></div>
-</section>
+  <section id="meeting" class="patterns-section">
+    <div class="patterns-sectionHeader">
+      <h2 class="patterns-sectionTitle">Meeting Intelligence</h2>
+      <span class="patterns-sectionMeta">Wave 4 · 10 patterns</span>
+    </div>
+    <p class="patterns-sectionLede">Post-meeting and meeting-detail patterns: plans versus outcomes, behavior signals, findings, champion health, commitments, suggestions, and role changes.</p>
+    <div class="patterns-grid">
+      <article id="FolioActions" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FolioActions</h3></div>
+          <a class="patterns-specLink" href="../../patterns/FolioActions.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> compact Button instances for document-level actions below FolioBar.</p>
+        <div class="patterns-variants"><span>meeting-detail</span><span>loading</span><span>disabled</span></div>
+        <div class="patterns-demo" data-ds-name="FolioActions" data-ds-tier="pattern" data-ds-spec="patterns/FolioActions.md">
+          <div class="patterns-actionsBar"><button class="patterns-button" type="button">Copy</button><button class="patterns-button" type="button">Share</button><button class="patterns-button" data-primary="true" type="button">Send Recap</button><button class="patterns-button" type="button">Re-extract</button></div>
+        </div>
+      </article>
 
-<section class="wave" id="wave4">
-<h2>Wave 4 · Meeting Detail substrate (0.4.0)</h2>
+      <article id="AgendaThreadList" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">AgendaThreadList</h3></div>
+          <a class="patterns-specLink" href="../../patterns/AgendaThreadList.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> status icon markers, item text, detail metadata in a vertical list.</p>
+        <div class="patterns-variants"><span>confirmed</span><span>open</span><span>new</span><span>overdue</span></div>
+        <div class="patterns-demo" data-ds-name="AgendaThreadList" data-ds-tier="pattern" data-ds-spec="patterns/AgendaThreadList.md">
+          <ul class="PostMeetingIntelligence_threadList">
+            <li class="PostMeetingIntelligence_threadItem"><span class="PostMeetingIntelligence_threadIcon PostMeetingIntelligence_threadIconConfirmed">OK</span><span>Pricing pressure raised first <span class="PostMeetingIntelligence_threadDetail">18 min spent</span></span></li>
+            <li class="PostMeetingIntelligence_threadItem"><span class="PostMeetingIntelligence_threadIcon PostMeetingIntelligence_threadIconOpen">O</span><span>Audit-log export owner <span class="PostMeetingIntelligence_threadDetail">carried over</span></span></li>
+            <li class="PostMeetingIntelligence_threadItem"><span class="PostMeetingIntelligence_threadIcon PostMeetingIntelligence_threadIconNewFace">+</span><span>Aoife Murphy <span class="PostMeetingIntelligence_threadDetail">new attendee</span></span></li>
+          </ul>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>SuggestedActionRow</h3><span class="spec-link">patterns/SuggestedActionRow.md</span><div class="job">AI-suggested action with Accept/Dismiss; meeting + work contexts.</div></div><div class="example" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md"><div style="display:grid; grid-template-columns:90px 1fr auto; gap:16px; padding:12px 0; align-items:baseline;"><span style="background:var(--color-spice-saffron-15); color:#8a6f1a; padding:3px 10px; border-radius:100px; font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.06em;">Suggested</span><div><strong style="font-family:var(--font-serif); font-size:15px;">Schedule the Apr 24 renewal-pricing meeting</strong><div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); margin-top:4px;">P1 · Owner: you · Due Apr 19</div></div><div style="display:flex; gap:8px;"><button style="background:var(--color-spice-turmeric); color:var(--color-desk-charcoal); border:none; padding:6px 14px; border-radius:4px; font-family:var(--font-mono); font-size:11px; cursor:pointer;">Accept</button><button style="background:transparent; border:1px solid var(--color-rule-heavy); padding:6px 14px; border-radius:4px; font-family:var(--font-mono); font-size:11px; cursor:pointer; color:var(--color-text-secondary);">Dismiss</button></div></div></div></div>
+      <article id="PredictionsVsRealityGrid" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">PredictionsVsRealityGrid</h3></div>
+          <a class="patterns-specLink" href="../../patterns/PredictionsVsRealityGrid.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> risk and win columns, section labels, dot markers, finding title and impact text.</p>
+        <div class="patterns-variants"><span>default</span><span>comfortable</span><span>compact</span><span>empty</span></div>
+        <div class="patterns-demo" data-ds-name="PredictionsVsRealityGrid" data-ds-tier="pattern" data-ds-spec="patterns/PredictionsVsRealityGrid.md">
+          <div class="patterns-triad" style="grid-template-columns:1fr 1fr;">
+            <div class="PostMeetingIntelligence_predictionGroup"><p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelTerracotta">Risks</p><div class="PostMeetingIntelligence_predictionItem PostMeetingIntelligence_predictionItemConfirmed"><span class="PostMeetingIntelligence_predictionIcon PostMeetingIntelligence_predictionIconConfirmed">OK</span><span>Procurement-led pricing compression confirmed.</span></div></div>
+            <div class="PostMeetingIntelligence_predictionGroup"><p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelSage">Wins</p><div class="PostMeetingIntelligence_predictionItem PostMeetingIntelligence_predictionItemSurprise"><span class="PostMeetingIntelligence_predictionIcon PostMeetingIntelligence_predictionIconSurprise">+</span><span>Helpline adoption landed as a reference candidate.</span></div></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>FolioActions</h3><span class="spec-link">patterns/FolioActions.md</span><div class="job">Sub-row of action buttons below FolioBar (actions, not nav).</div></div><div class="example"><div style="display:flex; justify-content:flex-end; gap:10px; padding:10px 16px; background:rgba(245,242,239,0.7); border:1px solid var(--color-rule-light); border-radius:4px;" data-ds-name="FolioActions" data-ds-tier="pattern" data-ds-spec="patterns/FolioActions.md"><button style="background:transparent; border:1px solid var(--color-rule-heavy); padding:6px 12px; font-family:var(--font-mono); font-size:11px; border-radius:4px; cursor:pointer;">⧉ Copy</button><button style="background:transparent; border:1px solid var(--color-rule-heavy); padding:6px 12px; font-family:var(--font-mono); font-size:11px; border-radius:4px; cursor:pointer;">↗ Share</button><button style="background:var(--color-spice-turmeric); border:1px solid var(--color-spice-turmeric); padding:6px 14px; font-family:var(--font-mono); font-size:11px; border-radius:4px; cursor:pointer; color:var(--color-desk-charcoal);">Send Recap</button><button style="background:transparent; border:1px solid var(--color-rule-heavy); padding:6px 12px; font-family:var(--font-mono); font-size:11px; border-radius:4px; cursor:pointer;">↺ Re-extract</button></div></div></div>
+      <article id="SignalGrid" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">SignalGrid</h3></div>
+          <a class="patterns-specLink" href="../../patterns/SignalGrid.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> four mono signal keys and concise tone-aware values in a compact grid.</p>
+        <div class="patterns-variants"><span>neutral</span><span>positive</span><span>caution</span></div>
+        <div class="patterns-demo" data-ds-name="SignalGrid" data-ds-tier="pattern" data-ds-spec="patterns/SignalGrid.md">
+          <div class="PostMeetingIntelligence_signalGrid">
+            <span class="PostMeetingIntelligence_signalKey">Question density</span><span class="PostMeetingIntelligence_signalValue">High (1.4/min)</span>
+            <span class="PostMeetingIntelligence_signalKey">Decision maker</span><span class="PostMeetingIntelligence_signalValue">Marco · yes</span>
+            <span class="PostMeetingIntelligence_signalKey">Forward looking</span><span class="PostMeetingIntelligence_signalValue">62%</span>
+            <span class="PostMeetingIntelligence_signalKey">Monologue risk</span><span class="PostMeetingIntelligence_signalValue">Yes · minute 18-24</span>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>AgendaThreadList</h3><span class="spec-link">patterns/AgendaThreadList.md</span><div class="job">Predicted agenda items checked off post-meeting (✓ / ○ / +).</div></div><div class="example" data-ds-name="AgendaThreadList" data-ds-tier="pattern" data-ds-spec="patterns/AgendaThreadList.md"><ul style="list-style:none; margin:0; padding:0; font-family:var(--font-serif); font-size:14px;"><li style="padding:8px 0; border-bottom:1px solid var(--color-rule-light);"><span style="color:var(--color-garden-sage); font-family:var(--font-mono); margin-right:8px;">✓</span> Pricing pressure raised first — confirmed</li><li style="padding:8px 0; border-bottom:1px solid var(--color-rule-light);"><span style="color:var(--color-text-tertiary); font-family:var(--font-mono); margin-right:8px;">○</span> Liu re-engagement — partial</li><li style="padding:8px 0;"><span style="color:var(--color-garden-larkspur); font-family:var(--font-mono); margin-right:8px;">+</span> New attendee: Aoife Murphy</li></ul></div></div>
+      <article id="EscalationQuote" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">EscalationQuote</h3></div>
+          <a class="patterns-specLink" href="../../patterns/EscalationQuote.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> highlighted serif quote, attribution line, optional transcript timestamp link.</p>
+        <div class="patterns-variants"><span>default</span><span>deep-link</span></div>
+        <div class="patterns-demo" data-ds-name="EscalationQuote" data-ds-tier="pattern" data-ds-spec="patterns/EscalationQuote.md">
+          <div class="PostMeetingIntelligence_escalationBlock">
+            <p class="PostMeetingIntelligence_escalationQuote">&ldquo;We need to see what flexibility looks like before we sign anything.&rdquo;</p>
+            <p class="PostMeetingIntelligence_escalationAttribution">Aoife Murphy · Procurement Lead · 11:14 AM</p>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>PredictionsVsRealityGrid</h3><span class="spec-link">patterns/PredictionsVsRealityGrid.md</span><div class="job">Two-column risks/wins comparison vs briefing predictions.</div></div><div class="example" data-ds-name="PredictionsVsRealityGrid" data-ds-tier="pattern" data-ds-spec="patterns/PredictionsVsRealityGrid.md"><div style="display:grid; grid-template-columns:1fr 1fr; gap:24px;"><div><h4 style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-spice-terracotta); margin-bottom:8px;">Risks</h4><div style="font-family:var(--font-serif); font-size:14px; padding:6px 0; border-bottom:1px solid var(--color-rule-light);">Procurement-led pricing — CONFIRMED</div></div><div><h4 style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-garden-rosemary); margin-bottom:8px;">Wins</h4><div style="font-family:var(--font-serif); font-size:14px; padding:6px 0; border-bottom:1px solid var(--color-rule-light);">92% Helpline adoption landed</div></div></div></div></div>
+      <article id="FindingsTriad" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FindingsTriad</h3></div>
+          <a class="patterns-specLink" href="../../patterns/FindingsTriad.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> Wins, Risks, Decisions columns with finding dots, impact copy, evidence quote, attribution.</p>
+        <div class="patterns-variants"><span>wins</span><span>risks</span><span>decisions</span><span>with evidence</span></div>
+        <div class="patterns-demo" data-ds-name="FindingsTriad" data-ds-tier="pattern" data-ds-spec="patterns/FindingsTriad.md">
+          <div class="patterns-triad">
+            <div class="PostMeetingIntelligence_findingsGroup"><p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelSage">Wins</p><div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotSage"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Case-study quote ask</p><p class="PostMeetingIntelligence_findingImpact">Public reference candidate.</p></div></div></div>
+            <div class="PostMeetingIntelligence_findingsGroup"><p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelTerracotta">Risks</p><div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotTerracotta"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Procurement floor</p><p class="PostMeetingIntelligence_findingImpact">Pricing pressure is explicit.</p></div></div></div>
+            <div class="PostMeetingIntelligence_findingsGroup"><p class="PostMeetingIntelligence_monoLabel">Decisions</p><div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotCharcoal"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Apr 24 follow-up</p><p class="PostMeetingIntelligence_findingImpact">Joint review scheduled.</p></div></div></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>SignalGrid</h3><span class="spec-link">patterns/SignalGrid.md</span><div class="job">2x2 stats grid (Question density, Decision maker, Forward-looking, Monologue risk).</div></div><div class="example" data-ds-name="SignalGrid" data-ds-tier="pattern" data-ds-spec="patterns/SignalGrid.md"><div style="display:grid; grid-template-columns:1fr 1fr; gap:14px 32px;"><div><span style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary);">Question density</span> <span style="font-family:var(--font-sans); font-size:14px;">High (1.4/min)</span></div><div><span style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary);">Decision maker active</span> <span style="font-family:var(--font-sans); font-size:14px;">Marco — yes</span></div><div><span style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary);">Forward-looking</span> <span style="font-family:var(--font-sans); font-size:14px;">62% of statements</span></div><div><span style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary);">Monologue risk</span> <span style="font-family:var(--font-sans); font-size:14px;">Yes — minute 18-24</span></div></div></div></div>
+      <article id="ChampionHealthBlock" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ChampionHealthBlock</h3></div>
+          <a class="patterns-specLink" href="../../patterns/ChampionHealthBlock.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> champion name, status pill, evidence quote, attribution, risk paragraph.</p>
+        <div class="patterns-variants"><span>strengthening</span><span>steady</span><span>weakening</span><span>lost</span></div>
+        <div class="patterns-demo" data-ds-name="ChampionHealthBlock" data-ds-tier="pattern" data-ds-spec="patterns/ChampionHealthBlock.md">
+          <div class="PostMeetingIntelligence_championHeader"><span class="PostMeetingIntelligence_championName">Marco Devine</span><span class="PostMeetingIntelligence_championBadge PostMeetingIntelligence_championBadgeWeak">Still champion · weakening</span></div>
+          <p class="PostMeetingIntelligence_championEvidence">&ldquo;I'll go to bat for Helpline, but the per-seat math has to come down.&rdquo;</p>
+          <p class="PostMeetingIntelligence_championRisk">Risk: Marco is now using procurement as cover.</p>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>EscalationQuote</h3><span class="spec-link">patterns/EscalationQuote.md</span><div class="job">Highlighted attributed quote where the room turned.</div></div><div class="example" data-ds-name="EscalationQuote" data-ds-tier="pattern" data-ds-spec="patterns/EscalationQuote.md"><blockquote style="font-family:var(--font-serif); font-style:italic; font-size:18px; color:var(--color-text-secondary); border-left:2px solid var(--color-rule-heavy); padding:6px 0 6px 16px; margin:0; max-width:600px;">"If we're going to defend this number to our CFO, we need to see what flexibility looks like before we sign anything."</blockquote><p style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.06em; color:var(--color-text-tertiary); margin-top:8px;">— Aoife Murphy · Procurement Lead · 11:14 AM</p></div></div>
+      <article id="CommitmentRow" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">CommitmentRow</h3></div>
+          <a class="patterns-specLink" href="../../patterns/CommitmentRow.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> ownership pill, commitment body, optional list divider.</p>
+        <div class="patterns-variants"><span>yours</span><span>theirs</span><span>captured</span><span>pending</span><span>complete</span></div>
+        <div class="patterns-demo" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
+          <div class="PostMeetingIntelligence_commitmentItem"><span class="PostMeetingIntelligence_commitmentIcon">-&gt;</span><span>Send three pricing scenarios for the Apr 24 follow-up.<span class="PostMeetingIntelligence_commitmentTag">Yours</span></span></div>
+          <div class="PostMeetingIntelligence_commitmentItem"><span class="PostMeetingIntelligence_commitmentIcon">-&gt;</span><span>Aoife will confirm procurement's approval path.<span class="PostMeetingIntelligence_commitmentTag">Theirs</span></span></div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>FindingsTriad</h3><span class="spec-link">patterns/FindingsTriad.md</span><div class="job">Three-column Wins / Risks / Decisions cards with evidence quotes.</div></div><div class="example" data-ds-name="FindingsTriad" data-ds-tier="pattern" data-ds-spec="patterns/FindingsTriad.md"><div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:18px;"><div><h4 style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-garden-rosemary); margin-bottom:8px;">Wins</h4><div style="font-family:var(--font-serif); font-size:14px;">Case-study quote ask</div></div><div><h4 style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-spice-terracotta); margin-bottom:8px;">Risks</h4><div style="font-family:var(--font-serif); font-size:14px;">Procurement floor</div></div><div><h4 style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin-bottom:8px;">Decisions</h4><div style="font-family:var(--font-serif); font-size:14px;">Apr 24 follow-up scheduled</div></div></div></div></div>
+      <article id="SuggestedActionRow" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">SuggestedActionRow</h3></div>
+          <a class="patterns-specLink" href="../../patterns/SuggestedActionRow.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> suggested pill, serif action title, mono metadata, optional context quote, Accept and Dismiss buttons.</p>
+        <div class="patterns-variants"><span>meeting</span><span>work</span><span>suggested</span><span>pending</span><span>accepted</span><span>dismissed</span></div>
+        <div class="patterns-demo" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
+          <div class="PostMeetingIntelligence_actionItem PostMeetingIntelligence_actionItemSuggested">
+            <span class="PostMeetingIntelligence_suggestedPill">Suggested</span>
+            <div class="PostMeetingIntelligence_actionText">Schedule the Apr 24 renewal-pricing meeting <span class="PostMeetingIntelligence_actionMeta PostMeetingIntelligence_priorityP1">Urgent · due Apr 19</span><span class="PostMeetingIntelligence_actionContext">&ldquo;Apr 24 at 1pm works for us.&rdquo; · Aoife, 11:54</span></div>
+            <div class="PostMeetingIntelligence_actionControls"><button class="PostMeetingIntelligence_actionBtn PostMeetingIntelligence_btnAccept" type="button">Accept</button><button class="PostMeetingIntelligence_actionBtn PostMeetingIntelligence_btnDismiss" type="button">Dismiss</button></div>
+          </div>
+        </div>
+      </article>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>ChampionHealthBlock</h3><span class="spec-link">patterns/ChampionHealthBlock.md</span><div class="job">Champion relationship state + evidence + risk paragraph.</div></div><div class="example" data-ds-name="ChampionHealthBlock" data-ds-tier="pattern" data-ds-spec="patterns/ChampionHealthBlock.md"><div style="display:flex; gap:16px; align-items:baseline;"><span style="font-family:var(--font-serif); font-size:20px;">Marco Devine</span><span style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.06em; color:var(--color-spice-saffron);">● Still champion · weakening</span></div><blockquote style="font-family:var(--font-serif); font-style:italic; font-size:14px; color:var(--color-text-secondary); border-left:2px solid var(--color-rule-heavy); padding-left:12px; margin:10px 0;">"I'll go to bat for Helpline — but per-seat math has to come down."</blockquote></div></div>
+      <article id="RoleTransitionRow" class="patterns-card">
+        <div class="patterns-cardHeader">
+          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">RoleTransitionRow</h3></div>
+          <a class="patterns-specLink" href="../../patterns/RoleTransitionRow.md">Spec</a>
+        </div>
+        <p class="patterns-composition"><strong>Composes:</strong> person name, before-status pill, transition arrow, after-status pill, optional evidence quote.</p>
+        <div class="patterns-variants"><span>default</span><span>strengthening</span><span>weakening</span></div>
+        <div class="patterns-demo" data-ds-name="RoleTransitionRow" data-ds-tier="pattern" data-ds-spec="patterns/RoleTransitionRow.md">
+          <div class="PostMeetingIntelligence_roleChange">
+            <div class="PostMeetingIntelligence_roleHeader"><span class="PostMeetingIntelligence_roleName">Aoife Murphy</span><span class="PostMeetingIntelligence_roleTransition"><span class="PostMeetingIntelligence_roleStatus">No relationship</span><span class="PostMeetingIntelligence_roleArrow">-&gt;</span><span class="PostMeetingIntelligence_roleStatus">Procurement gatekeeper</span></span></div>
+            <div class="PostMeetingIntelligence_roleEvidenceBlock"><p class="PostMeetingIntelligence_roleEvidence">&ldquo;Our CFO will need to see the pricing walk before approval.&rdquo;</p></div>
+          </div>
+        </div>
+      </article>
+    </div>
+  </section>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>CommitmentRow</h3><span class="spec-link">patterns/CommitmentRow.md</span><div class="job">Captured commitment with YOURS / THEIRS tag.</div></div><div class="example" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md"><div style="display:grid; grid-template-columns:90px 1fr; gap:16px; padding:8px 0;"><span style="background:var(--color-spice-turmeric-12); color:var(--color-spice-turmeric); padding:3px 10px; border-radius:100px; font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.06em; text-align:center;">YOURS</span><div style="font-family:var(--font-sans); font-size:14px; line-height:1.5;">Send three pricing scenarios for Apr 24 follow-up.</div></div></div></div>
+</main>
+</div>
 
-<div class="frame"><div class="frame-head"><span class="tier-badge">pattern</span><h3>RoleTransitionRow</h3><span class="spec-link">patterns/RoleTransitionRow.md</span><div class="job">Person role transition (before-status → after-status pill chain).</div></div><div class="example" data-ds-name="RoleTransitionRow" data-ds-tier="pattern" data-ds-spec="patterns/RoleTransitionRow.md"><div style="display:grid; grid-template-columns:200px 1fr; gap:16px; padding:8px 0;"><span style="font-family:var(--font-serif); font-size:16px;">Aoife Murphy</span><span style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-secondary);">No relationship → Procurement gatekeeper</span></div></div></div>
-
-</section>
-
+<script src="../_shared/chrome.js"></script>
 <script src="../_shared/inspector.js"></script>
 </body>
 </html>

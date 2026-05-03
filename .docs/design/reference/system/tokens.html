@@ -4,202 +4,932 @@
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>Tokens · DailyOS Design System</title>
-<link rel="stylesheet" href="../_shared/tokens.css">
-<link rel="stylesheet" href="../_shared/primitives.css">
+
+<link rel="stylesheet" href="../_shared/fonts.css">
+<link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
 <link rel="stylesheet" href="../_shared/inspector.css">
+
 <style>
-  body {
-    background: var(--color-paper-cream);
-    padding: 48px 80px 96px;
-    font-family: var(--font-sans);
-    color: var(--color-text-primary);
-    max-width: 1200px;
-    margin: 0 auto;
-  }
-  header {
+  .tokens-cover {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-3xl);
     border-bottom: 1px solid var(--color-rule-heavy);
-    padding-bottom: 24px;
-    margin-bottom: 48px;
   }
-  header .eyebrow {
-    font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em;
-    text-transform: uppercase; color: var(--color-text-tertiary); margin-bottom: 10px;
+
+  .tokens-eyebrow,
+  .tokens-nav,
+  .tokens-section-kicker,
+  .tokens-count,
+  .token-group-title,
+  .token-name,
+  .token-value,
+  .token-unit,
+  .token-stack {
+    font-family: var(--font-mono);
   }
-  header h1 { font-family: var(--font-serif); font-size: 56px; font-weight: 400; letter-spacing: -0.02em; }
-  header p { font-family: var(--font-serif); font-style: italic; font-size: 18px; color: var(--color-text-secondary); margin-top: 12px; max-width: 720px; line-height: 1.55; }
-  nav.tier-nav { display: flex; gap: 24px; margin: 24px 0 0; font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; text-transform: uppercase; }
-  nav.tier-nav a { color: var(--color-text-tertiary); text-decoration: none; padding-bottom: 4px; border-bottom: 1px solid transparent; }
-  nav.tier-nav a:hover { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
-  nav.tier-nav a.active { color: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric); }
-  section { margin-bottom: 64px; }
-  section > h2 { font-family: var(--font-serif); font-size: 28px; font-weight: 400; margin-bottom: 6px; padding-top: 14px; border-top: 1px solid var(--color-rule-heavy); }
-  section > p.lede { font-family: var(--font-serif); font-style: italic; font-size: 15px; color: var(--color-text-tertiary); margin-bottom: 24px; }
-  h3 { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); margin: 24px 0 12px; }
-  .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 14px; }
-  .swatch {
-    display: flex; gap: 12px; align-items: center;
-    padding: 10px; border: 1px solid var(--color-rule-light); border-radius: 6px;
+
+  .tokens-eyebrow {
+    margin: 0 0 var(--space-md);
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
   }
-  .swatch .chip { width: 40px; height: 40px; border-radius: 4px; flex-shrink: 0; box-shadow: inset 0 0 0 1px rgba(0,0,0,0.05); }
-  .swatch .meta { min-width: 0; }
-  .swatch .name { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-primary); }
-  .swatch .value { font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); }
-  .type-row { padding: 14px 0; border-bottom: 1px solid var(--color-rule-light); display: grid; grid-template-columns: 200px 1fr; gap: 24px; align-items: baseline; }
-  .type-row .label { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); }
-  .space-row { display: grid; grid-template-columns: 80px 1fr 80px; gap: 16px; align-items: center; padding: 6px 0; }
-  .space-row .label { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); }
-  .space-row .bar { background: var(--color-spice-turmeric); height: 16px; border-radius: 2px; }
-  .space-row .px { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); text-align: right; }
-  .shadow-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 24px; }
-  .shadow-cell { background: var(--color-paper-warm-white); padding: 24px; border-radius: 8px; text-align: center; }
-  .shadow-cell .name { font-family: var(--font-mono); font-size: 11px; margin-top: 12px; color: var(--color-text-secondary); }
+
+  .tokens-eyebrow a {
+    color: inherit;
+    text-decoration: none;
+    border-bottom: 1px solid currentColor;
+  }
+
+  .tokens-title {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-family: var(--font-serif);
+    font-size: 72px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.02;
+  }
+
+  .tokens-lede {
+    max-width: 700px;
+    margin: var(--space-lg) 0 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.55;
+  }
+
+  .tokens-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-md) var(--space-lg);
+    margin-top: var(--space-2xl);
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .tokens-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    margin-top: var(--space-xl);
+  }
+
+  .tokens-nav a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 var(--space-md);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    text-transform: uppercase;
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    border-radius: 999px;
+    transition: background var(--transition-normal), border-color var(--transition-normal), color var(--transition-normal);
+  }
+
+  .tokens-nav a:hover {
+    color: var(--color-text-primary);
+    background: var(--color-account-6);
+    border-color: var(--color-rule-heavy);
+  }
+
+  .tokens-section {
+    padding: var(--space-3xl) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .tokens-section-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-lg);
+    align-items: end;
+    margin-bottom: var(--space-xl);
+  }
+
+  .tokens-section-kicker {
+    margin: 0 0 var(--space-sm);
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+  }
+
+  .tokens-section-title {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-family: var(--font-serif);
+    font-size: 40px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.1;
+  }
+
+  .tokens-count {
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-align: right;
+    text-transform: uppercase;
+  }
+
+  .token-group {
+    margin-top: var(--space-xl);
+  }
+
+  .token-group:first-of-type {
+    margin-top: 0;
+  }
+
+  .token-group-title {
+    margin: 0 0 var(--space-md);
+    padding-bottom: var(--space-sm);
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .token-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+    gap: var(--space-md);
+  }
+
+  .token-grid-wide {
+    grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  }
+
+  .token-card {
+    min-width: 0;
+    padding: var(--space-md);
+    background: rgba(250, 248, 246, 0.72);
+    border: 1px solid var(--color-rule-light);
+    border-radius: 8px;
+  }
+
+  .token-visual {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    min-height: 92px;
+    margin-bottom: var(--space-md);
+    overflow: hidden;
+    background: var(--color-paper-cream);
+    border: 1px solid var(--color-rule-light);
+    border-radius: 6px;
+  }
+
+  .token-visual-color {
+    min-height: 74px;
+    padding: var(--space-sm);
+    background-color: var(--color-paper-warm-white);
+    background-image:
+      linear-gradient(45deg, var(--color-black-4) 25%, transparent 25%),
+      linear-gradient(-45deg, var(--color-black-4) 25%, transparent 25%),
+      linear-gradient(45deg, transparent 75%, var(--color-black-4) 75%),
+      linear-gradient(-45deg, transparent 75%, var(--color-black-4) 75%);
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+    background-size: 12px 12px;
+  }
+
+  .token-chip {
+    display: block;
+    width: 100%;
+    height: 54px;
+    border-radius: 4px;
+    box-shadow: inset 0 0 0 1px rgba(30, 37, 48, 0.08);
+  }
+
+  .token-type-sample {
+    width: 100%;
+    padding: var(--space-md);
+    color: var(--color-text-primary);
+    font-size: 28px;
+    line-height: 1.18;
+    text-align: left;
+  }
+
+  .token-space-rail,
+  .token-layout-rail {
+    width: 100%;
+    height: 20px;
+    background: var(--color-paper-linen);
+    border-radius: 999px;
+    box-shadow: inset 0 0 0 1px var(--color-rule-light);
+  }
+
+  .token-space-fill,
+  .token-layout-fill {
+    display: block;
+    height: 100%;
+    min-width: 4px;
+    background: var(--color-account);
+    border-radius: inherit;
+  }
+
+  .token-layout-fill {
+    background: var(--color-person);
+  }
+
+  .token-radius-sample {
+    width: 74px;
+    height: 74px;
+    background: var(--color-account-12);
+    border: 1px solid var(--color-account-30);
+  }
+
+  .token-shadow-sample {
+    width: 92px;
+    height: 58px;
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    border-radius: 8px;
+  }
+
+  .token-motion-track {
+    position: relative;
+    width: 100%;
+    height: 28px;
+    background: var(--color-paper-linen);
+    border-radius: 999px;
+  }
+
+  .token-motion-dot {
+    position: absolute;
+    top: 4px;
+    left: 4px;
+    width: 20px;
+    height: 20px;
+    background: var(--color-action);
+    border-radius: 999px;
+  }
+
+  .token-card:hover .token-motion-dot {
+    transform: translateX(52px);
+    background: var(--color-garden-rosemary);
+  }
+
+  .token-glass-field {
+    position: relative;
+    width: 100%;
+    min-height: 92px;
+    padding: var(--space-md);
+    background:
+      linear-gradient(135deg, var(--color-account-30), transparent 42%),
+      linear-gradient(315deg, var(--color-person-15), transparent 48%),
+      var(--color-paper-linen);
+  }
+
+  .token-glass-copy {
+    color: var(--color-desk-charcoal-40);
+    font-family: var(--font-serif);
+    font-size: 30px;
+    line-height: 1;
+  }
+
+  .token-glass-pane {
+    position: absolute;
+    inset: 18px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border: 1px solid var(--color-rule-heavy);
+    border-radius: 8px;
+  }
+
+  .token-z-list {
+    display: grid;
+    gap: var(--space-sm);
+  }
+
+  .token-z-row {
+    display: grid;
+    grid-template-columns: 80px minmax(0, 1fr);
+    gap: var(--space-md);
+    align-items: baseline;
+    padding: var(--space-sm) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .token-stack {
+    color: var(--color-account);
+    font-size: 18px;
+  }
+
+  .token-name {
+    color: var(--color-text-primary);
+    font-size: 11px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .token-value {
+    margin-top: var(--space-xs);
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    line-height: 1.45;
+    overflow-wrap: anywhere;
+  }
+
+  .token-unit {
+    margin-top: var(--space-xs);
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  @media (max-width: 720px) {
+    .tokens-title {
+      font-size: 46px;
+    }
+
+    .tokens-section-header {
+      grid-template-columns: 1fr;
+    }
+
+    .tokens-count {
+      text-align: left;
+    }
+
+    .token-grid,
+    .token-grid-wide {
+      grid-template-columns: 1fr;
+    }
+  }
 </style>
 </head>
-<body>
+<body
+  data-folio-label="Tokens"
+  data-folio-crumbs="Reference > Tokens"
+  data-tint="turmeric"
+  data-active-page="today"
+  data-chapters="color:compass:Color|typography:alignleft:Typography|spacing:target:Spacing|motion:activity:Motion">
 
-<header>
-  <div class="eyebrow">DailyOS Design System · Reference</div>
-  <h1>Tokens</h1>
-  <p>Color, typography, spacing, motion. The lowest-level decisions every primitive and pattern consumes. Press <code>?</code> to inspect any element.</p>
-  <nav class="tier-nav">
-    <a href="../index.html">← Reference home</a>
-    <a href="tokens.html" class="active">Tokens</a>
-    <a href="primitives.html">Primitives</a>
-    <a href="patterns.html">Patterns</a>
-  </nav>
-</header>
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
 
-<section data-ds-name="ColorTokens" data-ds-tier="token" data-ds-spec="tokens/color.md">
-  <h2>Color</h2>
-  <p class="lede">Four-family palette per ADR-0076: Paper (grounds), Desk (frame + ink), Spice (warm accents), Garden (cool accents). Plus semantic + entity layers.</p>
+  <section class="tokens-cover">
+    <p class="tokens-eyebrow"><a href="../index.html">Reference home</a> / System</p>
+    <h1 class="tokens-title">Tokens</h1>
+    <p class="tokens-lede">
+      Every custom property from src/styles/design-tokens.css rendered as a visible sample, grouped by the families the app consumes.
+    </p>
+    <div class="tokens-meta" id="token-summary" aria-live="polite"></div>
+    <nav class="tokens-nav" aria-label="Token families">
+      <a href="#color">Color</a>
+      <a href="#typography">Typography</a>
+      <a href="#spacing">Spacing</a>
+      <a href="#layout">Layout</a>
+      <a href="#radius">Radius</a>
+      <a href="#shadows">Shadows</a>
+      <a href="#motion">Motion</a>
+      <a href="#glass">Glass</a>
+      <a href="#z-index">Z-index</a>
+    </nav>
+  </section>
 
-  <h3>Paper · grounds + backgrounds</h3>
-  <div class="swatch-grid">
-    <div class="swatch"><span class="chip" style="background:var(--color-paper-cream)"></span><div class="meta"><div class="name">--color-paper-cream</div><div class="value">#f5f2ef · page ground</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-paper-linen)"></span><div class="meta"><div class="name">--color-paper-linen</div><div class="value">#e8e2d9 · secondary surface</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-paper-warm-white)"></span><div class="meta"><div class="name">--color-paper-warm-white</div><div class="value">#faf8f6 · primary card</div></div></div>
-  </div>
+  <section class="tokens-section" id="color" data-ds-name="ColorTokens" data-ds-tier="token" data-ds-spec="tokens/color.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Paint / surfaces / semantic aliases</p>
+        <h2 class="tokens-section-title">Color</h2>
+      </div>
+      <p class="tokens-count" data-token-count="color"></p>
+    </div>
+    <div id="color-groups"></div>
+  </section>
 
-  <h3>Desk · ink + frame</h3>
-  <div class="swatch-grid">
-    <div class="swatch"><span class="chip" style="background:var(--color-desk-charcoal)"></span><div class="meta"><div class="name">--color-desk-charcoal</div><div class="value">#1e2530 · primary ink</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-desk-ink)"></span><div class="meta"><div class="name">--color-desk-ink</div><div class="value">#2a2b3d · alternate ink</div></div></div>
-  </div>
+  <section class="tokens-section" id="typography" data-ds-name="TypographyTokens" data-ds-tier="token" data-ds-spec="tokens/typography.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Newsreader / DM Sans / JetBrains Mono / Montserrat</p>
+        <h2 class="tokens-section-title">Typography</h2>
+      </div>
+      <p class="tokens-count" data-token-count="typography"></p>
+    </div>
+    <div class="token-grid token-grid-wide" id="typography-grid"></div>
+  </section>
 
-  <h3>Spice · warm accents</h3>
-  <div class="swatch-grid">
-    <div class="swatch"><span class="chip" style="background:var(--color-spice-turmeric)"></span><div class="meta"><div class="name">--color-spice-turmeric</div><div class="value">#c9a227 · accounts, active</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-spice-saffron)"></span><div class="meta"><div class="name">--color-spice-saffron</div><div class="value">#deb841 · secondary warm</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-spice-terracotta)"></span><div class="meta"><div class="name">--color-spice-terracotta</div><div class="value">#c4654a · urgency, errors</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-spice-chili)"></span><div class="meta"><div class="name">--color-spice-chili</div><div class="value">#9b3a2a · critical</div></div></div>
-  </div>
+  <section class="tokens-section" id="spacing" data-ds-name="SpacingTokens" data-ds-tier="token" data-ds-spec="tokens/spacing.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Base 4px grid</p>
+        <h2 class="tokens-section-title">Spacing</h2>
+      </div>
+      <p class="tokens-count" data-token-count="spacing"></p>
+    </div>
+    <div class="token-grid token-grid-wide" id="spacing-grid"></div>
+  </section>
 
-  <h3>Garden · cool accents</h3>
-  <div class="swatch-grid">
-    <div class="swatch"><span class="chip" style="background:var(--color-garden-sage)"></span><div class="meta"><div class="name">--color-garden-sage</div><div class="value">#7eaa7b · success, healthy</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-garden-olive)"></span><div class="meta"><div class="name">--color-garden-olive</div><div class="value">#6b7c52 · projects</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-garden-rosemary)"></span><div class="meta"><div class="name">--color-garden-rosemary</div><div class="value">#4a6741 · deep success</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-garden-larkspur)"></span><div class="meta"><div class="name">--color-garden-larkspur</div><div class="value">#8fa3c4 · people, forward</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-garden-eucalyptus)"></span><div class="meta"><div class="name">--color-garden-eucalyptus</div><div class="value">#6ba8a4 · user (/me), self</div></div></div>
-  </div>
+  <section class="tokens-section" id="layout" data-ds-name="LayoutTokens" data-ds-tier="token" data-ds-spec="tokens/layout.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Folio / page / navigation dimensions</p>
+        <h2 class="tokens-section-title">Layout</h2>
+      </div>
+      <p class="tokens-count" data-token-count="layout"></p>
+    </div>
+    <div class="token-grid token-grid-wide" id="layout-grid"></div>
+  </section>
 
-  <h3>Entity aliases · semantic identity (DOS-357)</h3>
-  <div class="swatch-grid">
-    <div class="swatch"><span class="chip" style="background:var(--color-entity-account)"></span><div class="meta"><div class="name">--color-entity-account</div><div class="value">→ turmeric</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-entity-project)"></span><div class="meta"><div class="name">--color-entity-project</div><div class="value">→ olive</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-entity-person)"></span><div class="meta"><div class="name">--color-entity-person</div><div class="value">→ larkspur</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-entity-action)"></span><div class="meta"><div class="name">--color-entity-action</div><div class="value">→ terracotta</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-entity-user)"></span><div class="meta"><div class="name">--color-entity-user</div><div class="value">→ eucalyptus</div></div></div>
-  </div>
+  <section class="tokens-section" id="radius" data-ds-name="RadiusTokens" data-ds-tier="token" data-ds-spec="tokens/radius.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Editorial corner scale</p>
+        <h2 class="tokens-section-title">Border radius</h2>
+      </div>
+      <p class="tokens-count" data-token-count="radii"></p>
+    </div>
+    <div class="token-grid" id="radii-grid"></div>
+  </section>
 
-  <h3>Semantic text + rules</h3>
-  <div class="swatch-grid">
-    <div class="swatch"><span class="chip" style="background:var(--color-text-primary)"></span><div class="meta"><div class="name">--color-text-primary</div><div class="value">→ desk-charcoal</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-text-secondary)"></span><div class="meta"><div class="name">--color-text-secondary</div><div class="value">#5a6370 · body</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary)"></span><div class="meta"><div class="name">--color-text-tertiary</div><div class="value">#6b7280 · labels</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-rule-heavy)"></span><div class="meta"><div class="name">--color-rule-heavy</div><div class="value">12% charcoal · primary divider</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-rule-light)"></span><div class="meta"><div class="name">--color-rule-light</div><div class="value">6% charcoal · soft separator</div></div></div>
-  </div>
-</section>
+  <section class="tokens-section" id="shadows" data-ds-name="ShadowTokens" data-ds-tier="token" data-ds-spec="tokens/shadows.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Elevation scale</p>
+        <h2 class="tokens-section-title">Shadows</h2>
+      </div>
+      <p class="tokens-count" data-token-count="shadows"></p>
+    </div>
+    <div class="token-grid" id="shadows-grid"></div>
+  </section>
 
-<section data-ds-name="TypographyTokens" data-ds-tier="token" data-ds-spec="tokens/typography.md">
-  <h2>Typography</h2>
-  <p class="lede">Four families per ADR-0073: Newsreader (display/serif), DM Sans (UI), JetBrains Mono (time/code), Montserrat (brand mark).</p>
+  <section class="tokens-section" id="motion" data-ds-name="MotionTokens" data-ds-tier="token" data-ds-spec="tokens/motion.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Transition timings</p>
+        <h2 class="tokens-section-title">Transitions</h2>
+      </div>
+      <p class="tokens-count" data-token-count="transitions"></p>
+    </div>
+    <div class="token-grid" id="transitions-grid"></div>
+  </section>
 
-  <div class="type-row">
-    <span class="label">--font-serif · 76px · weight 400</span>
-    <div style="font-family:var(--font-serif); font-size:76px; font-weight:400; letter-spacing:-0.025em; line-height:1.06;">Hero title</div>
-  </div>
-  <div class="type-row">
-    <span class="label">--font-serif · 28px · weight 400</span>
-    <div style="font-family:var(--font-serif); font-size:28px; font-weight:400; letter-spacing:-0.005em;">Chapter heading</div>
-  </div>
-  <div class="type-row">
-    <span class="label">--font-serif italic · 21px · weight 300</span>
-    <div style="font-family:var(--font-serif); font-style:italic; font-size:21px; font-weight:300; line-height:1.65;">Italic lede or epigraph rendering across two lines for context.</div>
-  </div>
-  <div class="type-row">
-    <span class="label">--font-sans · 15px · weight 400</span>
-    <div style="font-family:var(--font-sans); font-size:15px; line-height:1.55;">Body text in DM Sans. Comfortable reading at this size for UI content.</div>
-  </div>
-  <div class="type-row">
-    <span class="label">--font-mono · 11px uppercase · 0.08em</span>
-    <div style="font-family:var(--font-mono); font-size:11px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary);">EYEBROW LABEL · MONO UPPERCASE</div>
-  </div>
-  <div class="type-row">
-    <span class="label">--font-mono · 18px · time</span>
-    <div style="font-family:var(--font-mono); font-size:18px; font-weight:500;">10:00 · 45M</div>
-  </div>
-  <div class="type-row">
-    <span class="label">--font-mark · 18px · weight 800</span>
-    <div style="font-family:var(--font-mark); font-weight:800; font-size:18px; color:var(--color-spice-turmeric);">*</div>
-  </div>
-</section>
+  <section class="tokens-section" id="glass" data-ds-name="GlassTokens" data-ds-tier="token" data-ds-spec="tokens/glass.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Backdrop and frosted chrome</p>
+        <h2 class="tokens-section-title">Glass effects</h2>
+      </div>
+      <p class="tokens-count" data-token-count="glass"></p>
+    </div>
+    <div class="token-grid token-grid-wide" id="glass-grid"></div>
+  </section>
 
-<section data-ds-name="SpacingTokens" data-ds-tier="token" data-ds-spec="tokens/spacing.md">
-  <h2>Spacing</h2>
-  <p class="lede">Base 4px grid per ADR-0073. xs through 5xl.</p>
+  <section class="tokens-section" id="z-index" data-ds-name="ZIndexTokens" data-ds-tier="token" data-ds-spec="tokens/z-index.md">
+    <div class="tokens-section-header">
+      <div>
+        <p class="tokens-section-kicker">Layer order</p>
+        <h2 class="tokens-section-title">Z-index</h2>
+      </div>
+      <p class="tokens-count" data-token-count="z"></p>
+    </div>
+    <div class="token-z-list" id="z-grid"></div>
+  </section>
 
-  <div class="space-row"><span class="label">--space-xs</span><div class="bar" style="width:4px"></div><span class="px">4px</span></div>
-  <div class="space-row"><span class="label">--space-sm</span><div class="bar" style="width:8px"></div><span class="px">8px</span></div>
-  <div class="space-row"><span class="label">--space-md</span><div class="bar" style="width:16px"></div><span class="px">16px</span></div>
-  <div class="space-row"><span class="label">--space-lg</span><div class="bar" style="width:24px"></div><span class="px">24px</span></div>
-  <div class="space-row"><span class="label">--space-xl</span><div class="bar" style="width:32px"></div><span class="px">32px</span></div>
-  <div class="space-row"><span class="label">--space-2xl</span><div class="bar" style="width:48px"></div><span class="px">48px</span></div>
-  <div class="space-row"><span class="label">--space-3xl</span><div class="bar" style="width:56px"></div><span class="px">56px</span></div>
-  <div class="space-row"><span class="label">--space-4xl</span><div class="bar" style="width:72px"></div><span class="px">72px</span></div>
-  <div class="space-row"><span class="label">--space-5xl</span><div class="bar" style="width:80px"></div><span class="px">80px</span></div>
-</section>
+</main>
+</div>
 
-<section data-ds-name="MotionTokens" data-ds-tier="token" data-ds-spec="tokens/motion.md">
-  <h2>Motion + shadows</h2>
-  <p class="lede">Restrained motion. Editorial surfaces don't dance.</p>
+<script>
+const TOKENS = [
+  { name: "--color-paper-cream", value: "#f5f2ef" },
+  { name: "--color-paper-linen", value: "#e8e2d9" },
+  { name: "--color-paper-warm-white", value: "#faf8f6" },
+  { name: "--color-desk-charcoal", value: "#1e2530" },
+  { name: "--color-desk-ink", value: "#2a2b3d" },
+  { name: "--color-surface", value: "var(--color-paper-cream)" },
+  { name: "--color-surface-primary", value: "var(--color-paper-warm-white)" },
+  { name: "--color-surface-secondary", value: "var(--color-paper-linen)" },
+  { name: "--color-surface-inset", value: "var(--color-desk-charcoal-4)" },
+  { name: "--color-surface-subtle", value: "var(--color-black-4)" },
+  { name: "--color-spice-turmeric", value: "#c9a227" },
+  { name: "--color-spice-saffron", value: "#deb841" },
+  { name: "--color-spice-terracotta", value: "#c4654a" },
+  { name: "--color-spice-chili", value: "#9b3a2a" },
+  { name: "--color-garden-sage", value: "#7eaa7b" },
+  { name: "--color-garden-olive", value: "#6b7c52" },
+  { name: "--color-garden-rosemary", value: "#4a6741" },
+  { name: "--color-garden-larkspur", value: "#8fa3c4" },
+  { name: "--color-garden-eucalyptus", value: "#6ba8a4" },
+  { name: "--color-text-primary", value: "var(--color-desk-charcoal)" },
+  { name: "--color-text-secondary", value: "#5a6370" },
+  { name: "--color-text-tertiary", value: "#6b7280" },
+  { name: "--color-rule-heavy", value: "rgba(30, 37, 48, 0.12)" },
+  { name: "--color-rule-light", value: "rgba(30, 37, 48, 0.06)" },
+  { name: "--color-account", value: "var(--color-spice-turmeric)" },
+  { name: "--color-project", value: "var(--color-garden-olive)" },
+  { name: "--color-person", value: "var(--color-garden-larkspur)" },
+  { name: "--color-action", value: "var(--color-spice-terracotta)" },
+  { name: "--color-self", value: "var(--color-garden-eucalyptus)" },
+  { name: "--color-account-4", value: "var(--color-spice-turmeric-4)" },
+  { name: "--color-account-5", value: "var(--color-spice-turmeric-5)" },
+  { name: "--color-account-6", value: "var(--color-spice-turmeric-6)" },
+  { name: "--color-account-7", value: "var(--color-spice-turmeric-7)" },
+  { name: "--color-account-8", value: "var(--color-spice-turmeric-8)" },
+  { name: "--color-account-10", value: "var(--color-spice-turmeric-10)" },
+  { name: "--color-account-12", value: "var(--color-spice-turmeric-12)" },
+  { name: "--color-account-15", value: "var(--color-spice-turmeric-15)" },
+  { name: "--color-account-18", value: "var(--color-spice-turmeric-18)" },
+  { name: "--color-account-30", value: "var(--color-spice-turmeric-30)" },
+  { name: "--color-account-60", value: "var(--color-spice-turmeric-60)" },
+  { name: "--color-project-6", value: "var(--color-garden-olive-6)" },
+  { name: "--color-project-8", value: "var(--color-garden-olive-8)" },
+  { name: "--color-project-10", value: "var(--color-garden-olive-10)" },
+  { name: "--color-person-8", value: "var(--color-garden-larkspur-8)" },
+  { name: "--color-person-10", value: "var(--color-garden-larkspur-10)" },
+  { name: "--color-person-12", value: "var(--color-garden-larkspur-12)" },
+  { name: "--color-person-14", value: "var(--color-garden-larkspur-14)" },
+  { name: "--color-person-15", value: "var(--color-garden-larkspur-15)" },
+  { name: "--color-action-8", value: "var(--color-spice-terracotta-8)" },
+  { name: "--color-action-10", value: "var(--color-spice-terracotta-10)" },
+  { name: "--color-action-12", value: "var(--color-spice-terracotta-12)" },
+  { name: "--color-action-15", value: "var(--color-spice-terracotta-15)" },
+  { name: "--color-action-20", value: "var(--color-spice-terracotta-20)" },
+  { name: "--color-self-6", value: "var(--color-garden-eucalyptus-6)" },
+  { name: "--color-self-10", value: "var(--color-garden-eucalyptus-10)" },
+  { name: "--color-spice-turmeric-8", value: "rgba(201, 162, 39, 0.08)" },
+  { name: "--color-spice-turmeric-12", value: "rgba(201, 162, 39, 0.12)" },
+  { name: "--color-spice-turmeric-30", value: "rgba(201, 162, 39, 0.30)" },
+  { name: "--color-spice-saffron-8", value: "rgba(222, 184, 65, 0.08)" },
+  { name: "--color-spice-saffron-12", value: "rgba(222, 184, 65, 0.12)" },
+  { name: "--color-spice-terracotta-8", value: "rgba(196, 101, 74, 0.08)" },
+  { name: "--color-spice-terracotta-12", value: "rgba(196, 101, 74, 0.12)" },
+  { name: "--color-garden-sage-12", value: "rgba(126, 170, 123, 0.12)" },
+  { name: "--color-garden-larkspur-8", value: "rgba(143, 163, 196, 0.08)" },
+  { name: "--color-garden-larkspur-12", value: "rgba(143, 163, 196, 0.12)" },
+  { name: "--color-garden-larkspur-15", value: "rgba(143, 163, 196, 0.15)" },
+  { name: "--color-garden-eucalyptus-6", value: "rgba(107, 168, 164, 0.06)" },
+  { name: "--color-garden-eucalyptus-10", value: "rgba(107, 168, 164, 0.10)" },
+  { name: "--color-garden-olive-6", value: "rgba(107, 124, 82, 0.06)" },
+  { name: "--color-garden-olive-8", value: "rgba(107, 124, 82, 0.08)" },
+  { name: "--color-garden-olive-10", value: "rgba(107, 124, 82, 0.10)" },
+  { name: "--color-garden-sage-8", value: "rgba(126, 170, 123, 0.08)" },
+  { name: "--color-garden-sage-10", value: "rgba(126, 170, 123, 0.10)" },
+  { name: "--color-garden-sage-14", value: "rgba(126, 170, 123, 0.14)" },
+  { name: "--color-garden-sage-15", value: "rgba(126, 170, 123, 0.15)" },
+  { name: "--color-garden-sage-20", value: "rgba(126, 170, 123, 0.20)" },
+  { name: "--color-garden-larkspur-10", value: "rgba(143, 163, 196, 0.10)" },
+  { name: "--color-garden-larkspur-14", value: "rgba(143, 163, 196, 0.14)" },
+  { name: "--color-garden-rosemary-12", value: "rgba(74, 103, 65, 0.12)" },
+  { name: "--color-garden-rosemary-14", value: "rgba(74, 103, 65, 0.14)" },
+  { name: "--color-spice-turmeric-4", value: "rgba(201, 162, 39, 0.04)" },
+  { name: "--color-spice-turmeric-5", value: "rgba(201, 162, 39, 0.05)" },
+  { name: "--color-spice-turmeric-6", value: "rgba(201, 162, 39, 0.06)" },
+  { name: "--color-spice-turmeric-7", value: "rgba(201, 162, 39, 0.07)" },
+  { name: "--color-spice-turmeric-10", value: "rgba(201, 162, 39, 0.10)" },
+  { name: "--color-spice-turmeric-15", value: "rgba(201, 162, 39, 0.15)" },
+  { name: "--color-spice-turmeric-18", value: "rgba(201, 162, 39, 0.18)" },
+  { name: "--color-spice-turmeric-60", value: "rgba(201, 162, 39, 0.60)" },
+  { name: "--color-spice-terracotta-10", value: "rgba(196, 101, 74, 0.10)" },
+  { name: "--color-spice-terracotta-15", value: "rgba(196, 101, 74, 0.15)" },
+  { name: "--color-spice-terracotta-20", value: "rgba(196, 101, 74, 0.20)" },
+  { name: "--color-spice-saffron-10", value: "rgba(222, 184, 65, 0.10)" },
+  { name: "--color-desk-charcoal-15", value: "rgba(30, 37, 48, 0.015)" },
+  { name: "--color-desk-charcoal-4", value: "rgba(30, 37, 48, 0.04)" },
+  { name: "--color-desk-charcoal-5", value: "rgba(30, 37, 48, 0.05)" },
+  { name: "--color-desk-charcoal-8", value: "rgba(30, 37, 48, 0.08)" },
+  { name: "--color-desk-charcoal-25", value: "rgba(30, 37, 48, 0.25)" },
+  { name: "--color-desk-charcoal-40", value: "rgba(30, 37, 48, 0.40)" },
+  { name: "--color-overlay-light", value: "rgba(0, 0, 0, 0.4)" },
+  { name: "--color-overlay-medium", value: "rgba(0, 0, 0, 0.5)" },
+  { name: "--color-black-2", value: "rgba(0, 0, 0, 0.02)" },
+  { name: "--color-black-3", value: "rgba(0, 0, 0, 0.03)" },
+  { name: "--color-black-4", value: "rgba(0, 0, 0, 0.04)" },
+  { name: "--color-black-8", value: "rgba(0, 0, 0, 0.08)" },
+  { name: "--font-serif", value: "'Newsreader', Georgia, serif" },
+  { name: "--font-sans", value: "'DM Sans', -apple-system, sans-serif" },
+  { name: "--font-mono", value: "'JetBrains Mono', ui-monospace, monospace" },
+  { name: "--font-mark", value: "'Montserrat', sans-serif" },
+  { name: "--space-xs", value: "4px" },
+  { name: "--space-sm", value: "8px" },
+  { name: "--space-md", value: "16px" },
+  { name: "--space-lg", value: "24px" },
+  { name: "--space-xl", value: "32px" },
+  { name: "--space-2xl", value: "48px" },
+  { name: "--space-3xl", value: "56px" },
+  { name: "--space-4xl", value: "72px" },
+  { name: "--space-5xl", value: "80px" },
+  { name: "--folio-height", value: "40px" },
+  { name: "--folio-padding-top", value: "10px" },
+  { name: "--folio-padding-bottom", value: "10px" },
+  { name: "--folio-padding-left", value: "80px" },
+  { name: "--folio-padding-right", value: "48px" },
+  { name: "--page-padding-horizontal", value: "120px" },
+  { name: "--page-padding-bottom", value: "160px" },
+  { name: "--page-margin-top", value: "40px" },
+  { name: "--page-max-width", value: "1180px" },
+  { name: "--page-content-width-standard", value: "900px" },
+  { name: "--page-content-width-reading", value: "760px" },
+  { name: "--nav-island-right", value: "28px" },
+  { name: "--radius-editorial-sm", value: "4px" },
+  { name: "--radius-editorial-md", value: "10px" },
+  { name: "--radius-editorial-lg", value: "12px" },
+  { name: "--radius-editorial-xl", value: "16px" },
+  { name: "--shadow-sm", value: "0 2px 8px rgba(30, 37, 48, 0.1)" },
+  { name: "--shadow-md", value: "0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04)" },
+  { name: "--shadow-lg", value: "0 4px 12px rgba(0, 0, 0, 0.08)" },
+  { name: "--shadow-xl", value: "0 4px 16px rgba(0, 0, 0, 0.12)" },
+  { name: "--shadow-2xl", value: "0 8px 32px rgba(0, 0, 0, 0.12)" },
+  { name: "--shadow-modal", value: "0 20px 60px rgba(30, 37, 48, 0.15)" },
+  { name: "--shadow-dropdown", value: "0 4px 24px rgba(0, 0, 0, 0.08)" },
+  { name: "--transition-fast", value: "0.12s ease" },
+  { name: "--transition-normal", value: "0.15s ease" },
+  { name: "--backdrop-blur", value: "blur(12px)" },
+  { name: "--frosted-glass-background", value: "rgba(245, 242, 239, 0.85)" },
+  { name: "--frosted-glass-nav", value: "rgba(250, 248, 246, 0.8)" },
+  { name: "--z-atmosphere", value: "0" },
+  { name: "--z-page-content", value: "1" },
+  { name: "--z-app-shell", value: "100" },
+  { name: "--z-lock", value: "1000" },
+];
 
-  <h3>Transitions</h3>
-  <div class="swatch-grid">
-    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary)"></span><div class="meta"><div class="name">--transition-fast</div><div class="value">0.12s ease · hover</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary)"></span><div class="meta"><div class="name">--transition-normal</div><div class="value">0.15s ease · color/bg</div></div></div>
-  </div>
+const COLOR_GROUPS = [
+  "Paper",
+  "Desk",
+  "Surface aliases",
+  "Spice",
+  "Garden",
+  "Semantic text",
+  "Rules",
+  "Named surface tokens",
+  "Account alpha variants",
+  "Project alpha variants",
+  "Person alpha variants",
+  "Action alpha variants",
+  "Self alpha variants",
+  "Opacity tints",
+  "Overlay",
+  "Black opacity",
+];
 
-  <h3>Shadows · elevation</h3>
-  <div class="shadow-grid">
-    <div class="shadow-cell" style="box-shadow:var(--shadow-sm)"><div class="name">--shadow-sm</div></div>
-    <div class="shadow-cell" style="box-shadow:var(--shadow-md)"><div class="name">--shadow-md</div></div>
-    <div class="shadow-cell" style="box-shadow:var(--shadow-lg)"><div class="name">--shadow-lg</div></div>
-    <div class="shadow-cell" style="box-shadow:var(--shadow-xl)"><div class="name">--shadow-xl</div></div>
-    <div class="shadow-cell" style="box-shadow:var(--shadow-modal)"><div class="name">--shadow-modal</div></div>
-    <div class="shadow-cell" style="box-shadow:var(--shadow-dropdown)"><div class="name">--shadow-dropdown</div></div>
-  </div>
+const NAMED_SURFACES = new Set([
+  "--color-account",
+  "--color-project",
+  "--color-person",
+  "--color-action",
+  "--color-self",
+]);
 
-  <h3>Z-index stack</h3>
-  <div class="swatch-grid">
-    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary); width:18px; height:18px; border-radius:50%; align-self:center;"></span><div class="meta"><div class="name">--z-atmosphere · 0</div><div class="value">background layer</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary); width:18px; height:18px; border-radius:50%; align-self:center;"></span><div class="meta"><div class="name">--z-page-content · 1</div><div class="value">main content</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary); width:18px; height:18px; border-radius:50%; align-self:center;"></span><div class="meta"><div class="name">--z-app-shell · 100</div><div class="value">folio + nav</div></div></div>
-    <div class="swatch"><span class="chip" style="background:var(--color-text-tertiary); width:18px; height:18px; border-radius:50%; align-self:center;"></span><div class="meta"><div class="name">--z-lock · 1000</div><div class="value">lock overlay</div></div></div>
-  </div>
-</section>
+function isBasePaint(name, prefix) {
+  return name.startsWith(prefix) && !/-\d+$/.test(name);
+}
 
+function colorGroup(name) {
+  if (name.startsWith("--color-paper-")) return "Paper";
+  if (name === "--color-desk-charcoal" || name === "--color-desk-ink") return "Desk";
+  if (name.startsWith("--color-surface")) return "Surface aliases";
+  if (isBasePaint(name, "--color-spice-")) return "Spice";
+  if (isBasePaint(name, "--color-garden-")) return "Garden";
+  if (name.startsWith("--color-text-")) return "Semantic text";
+  if (name.startsWith("--color-rule-")) return "Rules";
+  if (NAMED_SURFACES.has(name)) return "Named surface tokens";
+  if (name.startsWith("--color-account-")) return "Account alpha variants";
+  if (name.startsWith("--color-project-")) return "Project alpha variants";
+  if (name.startsWith("--color-person-")) return "Person alpha variants";
+  if (name.startsWith("--color-action-")) return "Action alpha variants";
+  if (name.startsWith("--color-self-")) return "Self alpha variants";
+  if (name.startsWith("--color-overlay-")) return "Overlay";
+  if (name.startsWith("--color-black-")) return "Black opacity";
+  return "Opacity tints";
+}
+
+function tokenFamily(name) {
+  if (name.startsWith("--color-")) return "color";
+  if (name.startsWith("--font-")) return "typography";
+  if (name.startsWith("--space-")) return "spacing";
+  if (name.startsWith("--folio-") || name.startsWith("--page-") || name.startsWith("--nav-")) return "layout";
+  if (name.startsWith("--radius-")) return "radii";
+  if (name.startsWith("--shadow-")) return "shadows";
+  if (name.startsWith("--transition-")) return "transitions";
+  if (name.startsWith("--backdrop-") || name.startsWith("--frosted-")) return "glass";
+  if (name.startsWith("--z-")) return "z";
+  return "other";
+}
+
+function el(tag, className, text) {
+  const node = document.createElement(tag);
+  if (className) node.className = className;
+  if (text !== undefined) node.textContent = text;
+  return node;
+}
+
+function withMeta(card, token) {
+  card.append(el("div", "token-name", token.name));
+  card.append(el("div", "token-value", token.value));
+  return card;
+}
+
+function colorCard(token) {
+  const card = el("article", "token-card");
+  card.dataset.tokenName = token.name;
+  const visual = el("div", "token-visual token-visual-color");
+  const chip = el("span", "token-chip");
+  chip.style.background = `var(${token.name})`;
+  visual.append(chip);
+  card.append(visual);
+  return withMeta(card, token);
+}
+
+function typeSample(token) {
+  if (token.name === "--font-serif") return "Editorial cadence";
+  if (token.name === "--font-sans") return "Interface body copy";
+  if (token.name === "--font-mono") return "REFERENCE / 10:00 / READY";
+  return "* DailyOS";
+}
+
+function typographyCard(token) {
+  const card = el("article", "token-card");
+  card.dataset.tokenName = token.name;
+  const visual = el("div", "token-visual");
+  const sample = el("div", "token-type-sample", typeSample(token));
+  sample.style.fontFamily = `var(${token.name})`;
+  if (token.name === "--font-mark") sample.style.fontWeight = "800";
+  visual.append(sample);
+  card.append(visual);
+  return withMeta(card, token);
+}
+
+function spacingCard(token) {
+  const card = el("article", "token-card");
+  card.dataset.tokenName = token.name;
+  const visual = el("div", "token-visual");
+  const rail = el("div", "token-space-rail");
+  const fill = el("span", "token-space-fill");
+  fill.style.width = `var(${token.name})`;
+  rail.append(fill);
+  visual.append(rail);
+  card.append(visual);
+  card.append(el("div", "token-unit", token.value));
+  return withMeta(card, token);
+}
+
+function layoutCard(token) {
+  const card = el("article", "token-card");
+  card.dataset.tokenName = token.name;
+  const visual = el("div", "token-visual");
+  const rail = el("div", "token-layout-rail");
+  const fill = el("span", "token-layout-fill");
+  fill.style.width = `min(var(${token.name}), 100%)`;
+  rail.append(fill);
+  visual.append(rail);
+  card.append(visual);
+  card.append(el("div", "token-unit", token.value));
+  return withMeta(card, token);
+}
+
+function radiusCard(token) {
+  const card = el("article", "token-card");
+  card.dataset.tokenName = token.name;
+  const visual = el("div", "token-visual");
+  const sample = el("div", "token-radius-sample");
+  sample.style.borderRadius = `var(${token.name})`;
+  visual.append(sample);
+  card.append(visual);
+  return withMeta(card, token);
+}
+
+function shadowCard(token) {
+  const card = el("article", "token-card");
+  card.dataset.tokenName = token.name;
+  const visual = el("div", "token-visual");
+  const sample = el("div", "token-shadow-sample");
+  sample.style.boxShadow = `var(${token.name})`;
+  visual.append(sample);
+  card.append(visual);
+  return withMeta(card, token);
+}
+
+function transitionCard(token) {
+  const card = el("article", "token-card");
+  card.dataset.tokenName = token.name;
+  const visual = el("div", "token-visual");
+  const track = el("div", "token-motion-track");
+  const dot = el("span", "token-motion-dot");
+  dot.style.transition = `transform var(${token.name}), background var(${token.name})`;
+  track.append(dot);
+  visual.append(track);
+  card.append(visual);
+  return withMeta(card, token);
+}
+
+function glassCard(token) {
+  const card = el("article", "token-card");
+  card.dataset.tokenName = token.name;
+  const visual = el("div", "token-visual");
+  const field = el("div", "token-glass-field");
+  field.append(el("div", "token-glass-copy", "Folio"));
+  const pane = el("div", "token-glass-pane", token.name.replace("--", ""));
+  if (token.name === "--backdrop-blur") {
+    pane.style.backdropFilter = `var(${token.name})`;
+    pane.style.webkitBackdropFilter = `var(${token.name})`;
+    pane.style.background = "var(--frosted-glass-nav)";
+  } else {
+    pane.style.background = `var(${token.name})`;
+    pane.style.backdropFilter = "var(--backdrop-blur)";
+    pane.style.webkitBackdropFilter = "var(--backdrop-blur)";
+  }
+  field.append(pane);
+  visual.append(field);
+  card.append(visual);
+  return withMeta(card, token);
+}
+
+function zRow(token) {
+  const row = el("article", "token-z-row");
+  row.dataset.tokenName = token.name;
+  row.append(el("div", "token-stack", token.value));
+  const meta = el("div");
+  meta.append(el("div", "token-name", token.name));
+  meta.append(el("div", "token-value", token.value));
+  row.append(meta);
+  return row;
+}
+
+function renderGrid(targetId, tokens, renderer) {
+  const target = document.getElementById(targetId);
+  tokens.forEach((token) => target.append(renderer(token)));
+}
+
+const groups = TOKENS.reduce((acc, token) => {
+  const family = tokenFamily(token.name);
+  if (!acc[family]) acc[family] = [];
+  acc[family].push(token);
+  return acc;
+}, {});
+
+const colorRoot = document.getElementById("color-groups");
+COLOR_GROUPS.forEach((groupName) => {
+  const items = (groups.color || []).filter((token) => colorGroup(token.name) === groupName);
+  if (!items.length) return;
+  const group = el("section", "token-group");
+  group.append(el("h3", "token-group-title", `${groupName} (${items.length})`));
+  const grid = el("div", "token-grid");
+  items.forEach((token) => grid.append(colorCard(token)));
+  group.append(grid);
+  colorRoot.append(group);
+});
+
+renderGrid("typography-grid", groups.typography || [], typographyCard);
+renderGrid("spacing-grid", groups.spacing || [], spacingCard);
+renderGrid("layout-grid", groups.layout || [], layoutCard);
+renderGrid("radii-grid", groups.radii || [], radiusCard);
+renderGrid("shadows-grid", groups.shadows || [], shadowCard);
+renderGrid("transitions-grid", groups.transitions || [], transitionCard);
+renderGrid("glass-grid", groups.glass || [], glassCard);
+renderGrid("z-grid", groups.z || [], zRow);
+
+const counts = {
+  color: (groups.color || []).length,
+  typography: (groups.typography || []).length,
+  spacing: (groups.spacing || []).length,
+  layout: (groups.layout || []).length,
+  radii: (groups.radii || []).length,
+  shadows: (groups.shadows || []).length,
+  transitions: (groups.transitions || []).length,
+  glass: (groups.glass || []).length,
+  z: (groups.z || []).length,
+};
+const total = Object.values(counts).reduce((sum, count) => sum + count, 0);
+
+Object.entries(counts).forEach(([family, count]) => {
+  const target = document.querySelector(`[data-token-count="${family}"]`);
+  if (target) target.textContent = `${count} token${count === 1 ? "" : "s"}`;
+});
+
+document.getElementById("token-summary").replaceChildren(
+  el("span", null, `${counts.color} color tokens`),
+  el("span", null, `${counts.typography} typography samples`),
+  el("span", null, `${counts.spacing} spacing steps`),
+  el("span", null, `${counts.radii} radii`),
+  el("span", null, `${counts.shadows} shadows`),
+  el("span", null, `${total} total visualizations`)
+);
+</script>
+<script src="../_shared/chrome.js"></script>
 <script src="../_shared/inspector.js"></script>
 </body>
 </html>

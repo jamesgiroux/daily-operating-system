@@ -67,7 +67,7 @@
 
 .ProjectHero_metaButtonEnriching {
   composes: metaButton;
-  color: var(--color-garden-olive);
+  color: var(--color-project);
   text-decoration: none;
   cursor: default;
 }

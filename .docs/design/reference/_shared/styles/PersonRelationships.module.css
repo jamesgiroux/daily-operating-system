@@ -66,7 +66,7 @@
 }
 
 .PersonRelationships_edgeLink:hover {
-  color: var(--color-garden-larkspur);
+  color: var(--color-person);
 }
 
 .PersonRelationships_edgeBadge {
@@ -211,8 +211,8 @@
 }
 
 .PersonRelationships_addBtn:hover {
-  color: var(--color-garden-larkspur);
-  border-color: var(--color-garden-larkspur);
+  color: var(--color-person);
+  border-color: var(--color-person);
 }
 
 /* Add flow container */
@@ -234,7 +234,7 @@
 }
 
 .PersonRelationships_searchInput:focus {
-  border-color: var(--color-garden-larkspur);
+  border-color: var(--color-person);
 }
 
 .PersonRelationships_searchResults {
@@ -361,7 +361,7 @@
   font-size: 13px;
   font-weight: 500;
   color: var(--color-paper-warm-white);
-  background: var(--color-garden-larkspur);
+  background: var(--color-person);
   border: none;
   border-radius: var(--radius-editorial-sm);
   padding: 6px 14px;

@@ -1,0 +1,550 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Surfaces · DailyOS Design System</title>
+
+<link rel="stylesheet" href="../_shared/fonts.css">
+<link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+
+<style>
+  .surf-header {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-2xl);
+    border-bottom: 1px solid var(--color-rule-heavy);
+  }
+  .surf-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-md);
+  }
+  .surf-eyebrow a { color: inherit; border-bottom: 1px solid currentColor; text-decoration: none; }
+  .surf-title {
+    font-family: var(--font-serif);
+    font-size: 64px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.04;
+    margin: 0;
+  }
+  .surf-lede {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 19px;
+    color: var(--color-text-secondary);
+    max-width: 640px;
+    margin: var(--space-md) 0 0;
+  }
+  .surf-stats {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-lg);
+    display: flex;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+  }
+
+  .surf-section {
+    padding: var(--space-3xl) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+  .surf-section-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-lg);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  /* Referenced surfaces — preview grid with iframe thumbs */
+  .surf-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: var(--space-lg);
+  }
+  .surf-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-md);
+    overflow: hidden;
+    transition: border-color var(--transition-normal), transform var(--transition-normal);
+  }
+  .surf-card:hover {
+    border-color: var(--color-rule-heavy);
+    transform: translateY(-2px);
+  }
+  .surf-thumb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    background: var(--color-paper-cream);
+    overflow: hidden;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+  /* iframe scaled down to give a true preview of the surface */
+  .surf-thumb iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 800px;
+    transform: scale(0.22);
+    transform-origin: 0 0;
+    pointer-events: none;
+    border: 0;
+  }
+  .surf-tint {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 6px;
+    height: 100%;
+    z-index: 2;
+  }
+  .surf-tint-turmeric   { background: var(--color-account); }
+  .surf-tint-larkspur   { background: var(--color-person); }
+  .surf-tint-olive      { background: var(--color-project); }
+  .surf-tint-terracotta { background: var(--color-action); }
+  .surf-tint-eucalyptus { background: var(--color-self); }
+
+  .surf-card-body { padding: var(--space-md) var(--space-lg) var(--space-lg); }
+  .surf-card-name {
+    font-family: var(--font-serif);
+    font-size: 20px;
+    font-weight: 400;
+    color: var(--color-text-primary);
+    margin: 0;
+    line-height: 1.25;
+  }
+  .surf-card-route {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-top: 4px;
+  }
+  .surf-card-jtbd {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    margin-top: var(--space-sm);
+  }
+  .surf-card-state {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-garden-rosemary);
+    margin-top: var(--space-sm);
+  }
+
+  /* Gap table — non-thumbnail listing */
+  .surf-gap-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 14px;
+  }
+  .surf-gap-table th {
+    text-align: left;
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-rule-heavy);
+  }
+  .surf-gap-table td {
+    padding: var(--space-sm) var(--space-md);
+    border-bottom: 1px solid var(--color-rule-light);
+    vertical-align: top;
+  }
+  .surf-gap-table .surf-gap-name {
+    font-family: var(--font-serif);
+    font-size: 16px;
+    color: var(--color-text-primary);
+  }
+  .surf-gap-table .surf-gap-jtbd {
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+  }
+  .surf-gap-table .surf-gap-issue {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-action);
+  }
+  .surf-gap-table .surf-gap-issue a { color: inherit; border-bottom: 1px dotted currentColor; text-decoration: none; }
+
+  @media (max-width: 720px) {
+    .surf-title { font-size: 44px; }
+    .surf-grid { grid-template-columns: 1fr; }
+    .surf-thumb iframe { transform: scale(0.3); }
+  }
+</style>
+</head>
+<body
+  data-folio-label="Surfaces"
+  data-folio-crumbs="Reference > Surfaces"
+  data-tint="terracotta"
+  data-active-page="today">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <section class="surf-header">
+    <p class="surf-eyebrow"><a href="../index.html">← Design System</a></p>
+    <h1 class="surf-title">Surfaces</h1>
+    <p class="surf-lede">
+      Faithful 1:1 mirrors of every app surface that has a reference render. Hover any thumbnail to preview, click to open the full page. The full inventory of 49 surfaces (referenced + spec'd + gap) lives in <a href="../../INVENTORY.md" style="color:inherit; border-bottom:1px solid currentColor;">INVENTORY.md</a>.
+    </p>
+    <div class="surf-stats">
+      <span>13 referenced</span>
+      <span>3 with canonical specs</span>
+      <span>10 routed-page gaps</span>
+      <span>5 non-route gaps</span>
+    </div>
+  </section>
+
+  <!-- Referenced surfaces -->
+  <section class="surf-section">
+    <h2 class="surf-section-title">Referenced (13) — links to the full mirror</h2>
+    <div class="surf-grid">
+      <a class="surf-card" href="briefing.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-turmeric"></span>
+          <iframe src="briefing.html" loading="lazy" title="Daily Briefing preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Daily Briefing</p>
+          <p class="surf-card-route">/ · turmeric</p>
+          <p class="surf-card-jtbd">View today's briefing, meeting prep, and what changed since the last scan.</p>
+          <p class="surf-card-state">spec + referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="week.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-larkspur"></span>
+          <iframe src="week.html" loading="lazy" title="Weekly Forecast preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Weekly Forecast</p>
+          <p class="surf-card-route">/week · larkspur</p>
+          <p class="surf-card-jtbd">Understand the upcoming week's meeting load and briefing readiness.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="account.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-turmeric"></span>
+          <iframe src="account.html" loading="lazy" title="Account Detail preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Account Detail</p>
+          <p class="surf-card-route">/accounts/$id · turmeric</p>
+          <p class="surf-card-jtbd">Review an account's health, context, and work in a three-view editorial dossier.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="accounts.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-turmeric"></span>
+          <iframe src="accounts.html" loading="lazy" title="Accounts preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Accounts</p>
+          <p class="surf-card-route">/accounts · turmeric</p>
+          <p class="surf-card-jtbd">Browse, search, filter, create, and discover accounts.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="meeting.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-turmeric"></span>
+          <iframe src="meeting.html" loading="lazy" title="Meeting Briefing preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Meeting Briefing</p>
+          <p class="surf-card-route">/meeting/$id · turmeric</p>
+          <p class="surf-card-jtbd">Prepare for or review a meeting — context, risks, room, plan, outcomes.</p>
+          <p class="surf-card-state">spec + referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="actions.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-terracotta"></span>
+          <iframe src="actions.html" loading="lazy" title="Actions preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Actions</p>
+          <p class="surf-card-route">/actions · terracotta</p>
+          <p class="surf-card-jtbd">Review suggested, active, and completed actions by priority.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="inbox.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-larkspur"></span>
+          <iframe src="inbox.html" loading="lazy" title="Inbox preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Inbox</p>
+          <p class="surf-card-route">/inbox · larkspur</p>
+          <p class="surf-card-jtbd">Drop or import files, classify them, route to the right account or project.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="people.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-larkspur"></span>
+          <iframe src="people.html" loading="lazy" title="People preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">People</p>
+          <p class="surf-card-route">/people · larkspur</p>
+          <p class="surf-card-jtbd">Browse, search, create, and clean up people across internal/external.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="person.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-larkspur"></span>
+          <iframe src="person.html" loading="lazy" title="Person Detail preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Person Detail</p>
+          <p class="surf-card-route">/people/$id · larkspur</p>
+          <p class="surf-card-jtbd">Understand and maintain a person's relationship context, network, record, and work.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="project.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-olive"></span>
+          <iframe src="project.html" loading="lazy" title="Project Detail preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Project Detail</p>
+          <p class="surf-card-route">/projects/$id · olive</p>
+          <p class="surf-card-jtbd">Understand and maintain a project's mission, trajectory, team, timeline, work.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="projects.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-olive"></span>
+          <iframe src="projects.html" loading="lazy" title="Projects preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Projects</p>
+          <p class="surf-card-route">/projects · olive</p>
+          <p class="surf-card-jtbd">Browse, search, create, and archive the project hierarchy.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="me.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-eucalyptus"></span>
+          <iframe src="me.html" loading="lazy" title="Me preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Me</p>
+          <p class="surf-card-route">/me · eucalyptus</p>
+          <p class="surf-card-jtbd">Maintain the user's profile, priorities, context, attachments, report entry points.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+
+      <a class="surf-card" href="settings.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-turmeric"></span>
+          <iframe src="settings.html" loading="lazy" title="Settings preview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Settings</p>
+          <p class="surf-card-route">/settings · turmeric</p>
+          <p class="surf-card-jtbd">Configure identity, connectors, data, system, notifications, diagnostics.</p>
+          <p class="surf-card-state">spec + referenced</p>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <!-- Routed page gaps -->
+  <section class="surf-section">
+    <h2 class="surf-section-title">Routed pages — referenced gap (10)</h2>
+    <table class="surf-gap-table">
+      <thead>
+        <tr>
+          <th>Surface</th>
+          <th>Route</th>
+          <th>JTBD</th>
+          <th>Linear</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="surf-gap-name">Action Detail</td>
+          <td><code>/actions/$id</code></td>
+          <td class="surf-gap-jtbd">Inspect and update a single action — priority, due, links, status.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-368">DOS-368</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Email Correspondent</td>
+          <td><code>/emails</code></td>
+          <td class="surf-gap-jtbd">Triage email intelligence, extract commitments, act on reply debt.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-367">DOS-367</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">History</td>
+          <td><code>/history</code></td>
+          <td class="surf-gap-jtbd">Review past inbox processing activity and where files were classified.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-367">DOS-367</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Account Health Report</td>
+          <td><code>/accounts/$id/reports/account_health</code></td>
+          <td class="surf-gap-jtbd">Generate and edit a slide-based account health review.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-370">DOS-370</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Risk Briefing</td>
+          <td><code>/accounts/$id/reports/risk_briefing</code></td>
+          <td class="surf-gap-jtbd">Generate an executive risk briefing and recovery plan.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-370">DOS-370</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">SWOT</td>
+          <td><code>/accounts/$id/reports/swot</code></td>
+          <td class="surf-gap-jtbd">Generate and edit a SWOT analysis slide deck.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-370">DOS-370</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">EBR / QBR</td>
+          <td><code>/accounts/$id/reports/ebr_qbr</code></td>
+          <td class="surf-gap-jtbd">Customer-facing executive or quarterly business review deck.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-370">DOS-370</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Weekly Impact</td>
+          <td><code>/me/reports/weekly_impact</code></td>
+          <td class="surf-gap-jtbd">Weekly impact report — work moved, wins, watch items, next week.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-370">DOS-370</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Monthly Wrapped</td>
+          <td><code>/me/reports/monthly_wrapped</code></td>
+          <td class="surf-gap-jtbd">Monthly retrospective of work, wins, watch items.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-370">DOS-370</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Book of Business</td>
+          <td><code>/me/reports/book_of_business</code></td>
+          <td class="surf-gap-jtbd">Leadership-ready portfolio review across the customer book.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-370">DOS-370</a></td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Non-route gaps -->
+  <section class="surf-section">
+    <h2 class="surf-section-title">Full-screen non-route — gap (5)</h2>
+    <table class="surf-gap-table">
+      <thead>
+        <tr>
+          <th>Surface</th>
+          <th>File</th>
+          <th>JTBD</th>
+          <th>Linear</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td class="surf-gap-name">Onboarding Flow</td>
+          <td><code>src/components/onboarding/OnboardingFlow.tsx</code></td>
+          <td class="surf-gap-jtbd">First-run setup — Google, Claude Code, Glean, context, role, initial briefing.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-371">DOS-371</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Loading / Splash</td>
+          <td><code>src/components/startup/StartupBriefingScreen.tsx</code></td>
+          <td class="surf-gap-jtbd">Branded splash/progress while DailyOS prepares context.</td>
+          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-372">DOS-372</a></td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Lock Overlay</td>
+          <td><code>src/components/LockOverlay.tsx</code></td>
+          <td class="surf-gap-jtbd">Block app access while locked; unlock with Touch ID.</td>
+          <td class="surf-gap-issue">documented</td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Database Recovery</td>
+          <td><code>src/components/DatabaseRecovery.tsx</code></td>
+          <td class="surf-gap-jtbd">Recover from unsafe DB startup — restore, export, fresh-start.</td>
+          <td class="surf-gap-issue">documented</td>
+        </tr>
+        <tr>
+          <td class="surf-gap-name">Encryption Recovery</td>
+          <td><code>src/components/EncryptionRecovery.tsx</code></td>
+          <td class="surf-gap-jtbd">Explain encrypted DB can't open without Keychain key; offer recovery.</td>
+          <td class="surf-gap-issue">documented</td>
+        </tr>
+      </tbody>
+    </table>
+  </section>
+
+  <!-- Finis -->
+  <section>
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+    </div>
+    <p style="font-family:var(--font-serif); font-style:italic; color:var(--color-text-tertiary); text-align:center; padding-bottom:48px;">
+      19 dialogs and sheets also live in the <a href="../../INVENTORY.md" style="color:inherit; border-bottom:1px solid currentColor;">full inventory</a>.
+    </p>
+  </section>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>
