@@ -12,6 +12,99 @@ After decisions land, this document moves to `_archive/` and per-entry `.md` fil
 
 ---
 
+## Decisions made — 2026-05-02
+
+All eight decisions in Part 1 are resolved. Originals preserved below for context. Two were overrides; one was refined; five matched the original recommendation.
+
+### D1 — Entity color aliases: **A (keep)** ✅
+Add to canonical `tokens/color.md`. File Linear issue to migrate `src/styles/design-tokens.css` to consume them.
+
+### D2 — Local nav: **Production `FloatingNavIsland` is canonical** ⚠️ override
+Two distinct use cases were bundled in the original D2; separating them clarifies:
+
+**Navigation** (where am I, where can I go) — production `src/components/layout/FloatingNavIsland.tsx` is canonical. It's a **dual-pill architecture**:
+- **Global pill** (right): always-visible app navigation (Today / Week / Mail / Actions / Me / People / Accounts / Projects / Inbox / Settings)
+- **Local pill** (left): chapter/section navigation that appears when the surface provides a `chapters` prop. Pills visually merge.
+
+Mockup nav patterns (`DayStrip`, `SectionTabbar`) are **rejected as separate patterns** — surfaces provide chapters; `FloatingNavIsland` renders them. Three competing nav patterns collapse into one.
+
+**Actions** (what can I do here) — `FolioActions` from the meeting mockup is a different concern: a toolbar of verbs (Copy / Share / Send Recap / Re-extract). Stays as a candidate pattern (Wave 4 or sooner if another deliverable surface needs it).
+
+**Wave 1 impact:**
+- Drop `DayStrip` (was entry #15). DailyBriefing provides chapters via `chapters` prop.
+- `FloatingNavIsland` (entry #11) spec must document the dual-pill API, chapters contract, when the local pill appears, merge-rendering behavior, source: `src/components/layout/FloatingNavIsland.tsx`.
+- Settings doesn't need `SectionTabbar`; its sections become chapters.
+
+### D3 — Pill consolidation: **B (family of named primitives)** ✅
+`Pill` is the visual primitive (with tone variants). Named primitives compose it: `EntityChip`, `TypeBadge`, `ProvenancePill`, etc. `Chip` (removable) is separate.
+
+### D4 — `src/components/{shared,editorial}/` rename: **A (don't rename)** ✅
+Document the implementation-folder vs. taxonomy mapping in `SYSTEM-MAP.md`. `data-ds-tier` attributes carry the semantic truth.
+
+### D5 — Freshness/quality vocabulary: **Use v1.4.0 trust bands** ⚠️ refines
+Per `.docs/plans/v1.4.0-waves.md:631`, v1.4.0 substrate ships **three trust bands** that bias surface rendering: `likely_current`, `use_with_caution`, `needs_verification`. These are the user-facing trust signals, wired through DOS-320 (render surfaces filter by trust band).
+
+These are **distinct from** intelligence-completeness vocabulary (`sparse / developing / ready / fresh` — what `IntelligenceQualityBadge` already represents). Two different concepts, two different primitives:
+
+- **`TrustBandBadge`** (NEW primitive) — `likely_current / use_with_caution / needs_verification` — directly maps to v1.4.0's surface render layer.
+- **`IntelligenceQualityBadge`** (existing primitive in `src/components/entity/`) — `sparse / developing / ready / fresh` — intelligence completeness; document as-is.
+- **D-spine `prep-state`** (`ready / building / new / sparse / captured`) — closer to `IntelligenceQualityBadge` than `TrustBandBadge`. Reconcile with `IntelligenceQualityBadge`, not invent a third primitive.
+
+**Wave 1 impact:** entry #6 (was "QualityBadge") splits into two entries — `TrustBandBadge` (new) and `IntelligenceQualityBadge` (existing, document). D-spine's `prep-state` swap when implementing means consuming `IntelligenceQualityBadge` with the right variant.
+
+### D6 — `AccountViewSwitcher`: **Keep production as-is** ⚠️ override
+Production has `AccountViewSwitcher` (bottom pill bar). Don't migrate to anything else. Document it as the canonical pattern for tri-view account switching. If we change it later, it goes through a versioned design-system update **after testing**, not as a casual reconciliation.
+
+**Wave 1 impact:** drop the `DS-DECISION-06` Linear issue. `AccountViewSwitcher` becomes a canonical pattern in its own right (Wave 5 / surface pass). The mockup's `AccountTabs` masthead approach is rejected.
+
+### D7 — `Dashboard` → `DailyBriefing` rename: **C (after v1.4.3)** ✅
+Stays as Task #7. Don't bundle.
+
+### D8 — `_shared/` substrate promotion: **B (after D1 lands)** ✅
+Sequence: D1 token reconciliation PR → `_shared/` promotion to `.docs/design/reference/_shared/` PR.
+
+---
+
+## Wave 1 — updated entry list (post-decisions)
+
+Reflects D2 (drop DayStrip, FloatingNavIsland is dual-pill production component), D5 (split QualityBadge into TrustBandBadge + IntelligenceQualityBadge), D6 (AccountViewSwitcher unchanged).
+
+| # | Tier | `data-ds-name` | Source | Job |
+|---|---|---|---|---|
+| 1 | tokens | `color` (file) | `_shared/tokens.css` + production (post-D1) | Color tokens including entity aliases |
+| 2 | tokens | `typography` (file) | `_shared/tokens.css` + production | Type families, scale, weights, line-heights |
+| 3 | tokens | `spacing` (file) | `_shared/tokens.css` + production | Base unit + xs..5xl scale |
+| 4 | tokens | `motion` (file) | `_shared/tokens.css` + production | Transitions, durations, animations |
+| 5 | primitive | `Pill` | `_shared/.pill` | Generic pill with `tone` variants (D3) |
+| 6a | primitive | `TrustBandBadge` | NEW per D5 + v1.4.0 contract | likely_current / use_with_caution / needs_verification |
+| 6b | primitive | `IntelligenceQualityBadge` | `src/components/entity/IntelligenceQualityBadge.tsx` | sparse / developing / ready / fresh; existing, document |
+| 7 | primitive | `ProvenanceTag` | `src/components/ui/ProvenanceTag.tsx` (already exists) | Source attribution label |
+| 8 | primitive | `EntityChip` | D-spine `.entity-chip` + production refs | Entity reference with entity color (composes Pill per D3) |
+| 9 | primitive | `TypeBadge` | `_shared/.type-badge` | Customer / Internal / Partner badge |
+| 10 | pattern | `FolioBar` | `_shared/.folio` + chrome.js | Top frosted bar with crumbs + actions |
+| 11 | pattern | `FloatingNavIsland` | `src/components/layout/FloatingNavIsland.tsx` (dual-pill production component, per D2) | Global app nav + optional local pill via `chapters` prop |
+| 12 | pattern | `AtmosphereLayer` | `_shared/.atmosphere` | Page-tinted radial gradient |
+| 13 | pattern | `MarginGrid` | `_shared/.margin-section` | Label + content layout (D-spine signature) |
+| 14 | pattern | `ChapterHeading` | `src/components/editorial/ChapterHeading.tsx` + `_shared/.chapter` + variants | Section opener (heavy rule + serif title + epigraph) |
+| ~~15~~ | ~~pattern~~ | ~~`DayStrip`~~ | **dropped per D2** | DailyBriefing provides chapters to `FloatingNavIsland` instead |
+| 16 | pattern | `Lead` | D-spine `.lead-sentence` | Single-sentence headline |
+| 17 | pattern | `DayChart` | D-spine `.day-chart` | Hour ticks + colored bars + NOW line |
+| 18 | pattern | `MeetingSpineItem` | D-spine `.meeting` | Magazine-style meeting list item |
+| 19 | pattern | `EntityPortraitCard` | D-spine `.acc-card` | Color-banded aside + lede + threaded events |
+| 20 | pattern | `ThreadMark` | D-spine `.thread-mark` | Universal "talk about this" hover affordance |
+| 21 | pattern | `AskAnythingDock` | D-spine `.ask-bar` | Multi-line input + suggestions + scope |
+| 22 | surface | `DailyBriefing` | mockup D-spine + `Dashboard.tsx` (rename per D7 deferred) | Surface spec; documents which chapters it provides to `FloatingNavIsland` |
+
+**Total:** 22 entries → 22 (DayStrip dropped, IntelligenceQualityBadge added).
+
+## Linear issues — updated
+
+Drop `DS-DECISION-06` (D6 closed: keep AccountViewSwitcher in production). Drop `DS-DECISION-02` rephrasing (D2 resolved: production FloatingNavIsland canonical, document chapters contract). Other 6 decision issues remain as **closed-with-resolution** records.
+
+Add: `DS-XCUT-05: Document FloatingNavIsland chapters contract and surface adoption` — surfaces (DailyBriefing, Settings, etc.) need to define their chapters and consume the production component.
+
+---
+
 ## Part 1 — Decisions
 
 Eight decisions to make. Each has options + a recommendation. Numbered so you can respond by number.
