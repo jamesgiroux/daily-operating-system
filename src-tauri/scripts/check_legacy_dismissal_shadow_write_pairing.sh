@@ -40,7 +40,18 @@ allowed_basename_regex='services/claims_backfill\.rs|services/claims\.rs|migrati
 # We deliberately do NOT match `INSERT INTO suppression_tombstones_quarantine`
 # (DOS-308 audit trail) or generic `account_stakeholder_roles`
 # inserts without `dismissed_at` (those create roles, not dismissals).
-write_pattern='INSERT[[:space:]]+INTO[[:space:]]+(email_dismissals|meeting_entity_dismissals|linking_dismissals|nudge_dismissals|triage_snoozes)|UPDATE[[:space:]]+briefing_callouts[[:space:]]+SET[[:space:]]+dismissed_at|INSERT[[:space:]]+OR[[:space:]]+IGNORE[[:space:]]+INTO[[:space:]]+linking_dismissals'
+#
+# L2 cycle-20 fix #2: previously matched only
+#   `UPDATE briefing_callouts SET dismissed_at = ...`
+# which let `UPDATE briefing_callouts SET other_col = ?, dismissed_at = ?`
+# slip through (same first-SET-column blind spot the immutability
+# lint had pre-cycle-19). The new pattern uses `[^;]*` between
+# `SET` and `dismissed_at` to allow any SET-clause prefix, but
+# stays scoped to a single SQL statement (no semicolon). Quoted
+# identifier shapes ("dismissed_at", `dismissed_at`,
+# [dismissed_at]) are also matched per the cycle-20 fix #1 pattern
+# from the immutability lint.
+write_pattern='INSERT[[:space:]]+INTO[[:space:]]+(email_dismissals|meeting_entity_dismissals|linking_dismissals|nudge_dismissals|triage_snoozes)|UPDATE[[:space:]]+briefing_callouts[[:space:]]+SET[[:space:]][^;]*("|`|\[)?\bdismissed_at\b("|`|\])?|INSERT[[:space:]]+OR[[:space:]]+IGNORE[[:space:]]+INTO[[:space:]]+linking_dismissals'
 
 # Files containing matches, after allowlist exclusion.
 candidate_files="$(

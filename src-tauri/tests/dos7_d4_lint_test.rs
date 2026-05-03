@@ -111,6 +111,82 @@ fn lint_immutability_catches_multi_column_subject_ref_set() {
     );
 }
 
+/// L2 cycle-20 fix #1: prove the immutability lint catches
+/// QUOTED forbidden identifiers in any SET position. SQLite
+/// accepts `"col"`, `` `col` ``, and `[col]` — all should be
+/// caught even when not the first SET target.
+#[test]
+fn lint_immutability_catches_quoted_subject_ref_in_multi_column_set() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let forbidden = "subject".to_string() + "_" + "ref";
+    // Single-line UPDATE so the quoted-identifier match is on the
+    // same line as `UPDATE intelligence_claims`. The `\"…\"` in the
+    // format string emits a literal `"col"` SQL-quoted form into
+    // the fixture file.
+    let bad_sql = format!(
+        "let _ = conn.execute(\n\
+         \"UPDATE intelligence_claims SET dedup_key = ?1, \"{forbidden}\" = ?2 WHERE id = ?3\",\n\
+         params,\n\
+         );\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_quoted.rs"), bad_sql)
+        .expect("write quoted bad fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on quoted forbidden identifier in non-leading SET position. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+/// L2 cycle-20 fix #2: prove the legacy dismissal pairing lint
+/// catches `UPDATE briefing_callouts SET other = ?, dismissed_at = ?`
+/// when `dismissed_at` is not the first SET target. Same blind
+/// spot the immutability lint had pre-cycle-19.
+#[test]
+fn lint_legacy_dismissal_pairing_catches_non_leading_dismissed_at_set() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let dismissed_field = "dismissed".to_string() + "_at";
+    // briefing_callouts UPDATE with dismissed_at as the SECOND
+    // SET target, no shadow_write_tombstone_claim nearby.
+    let bad_sql = format!(
+        "fn purge() {{\n\
+         let _ = conn.execute(\n\
+         \"UPDATE briefing_callouts SET updated_at = ?1, {dismissed_field} = ?2 WHERE id = ?3\",\n\
+         params,\n\
+         );\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_dismiss.rs"), bad_sql)
+        .expect("write dismiss bad fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_legacy_dismissal_shadow_write_pairing.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on non-leading dismissed_at SET without shadow-write pairing. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 #[test]
 fn lint_legacy_dismissal_shadow_write_pairing_passes_against_current_tree() {
     let (ok, stdout, stderr) =
