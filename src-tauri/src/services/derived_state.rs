@@ -620,12 +620,15 @@ fn stakeholder_cache_memberships(
     tx: &ActionDb,
     person_id: &str,
 ) -> Result<Vec<StakeholderEntityMembership>, ProjectionErrorClass> {
+    // `entity_members` has no status or dismissal column; by schema it
+    // represents current project/entity membership, so rows are active.
     let mut stmt = tx
         .conn_ref()
         .prepare(
-            "SELECT account_id, 'account' AS entity_type
+             "SELECT account_id, 'account' AS entity_type
              FROM account_stakeholders
              WHERE person_id = ?1
+               AND status = 'active'
              UNION
              SELECT em.entity_id, COALESCE(e.entity_type, 'project') AS entity_type
              FROM entity_members em
@@ -650,7 +653,7 @@ fn stakeholder_cache_memberships(
     Ok(memberships)
 }
 
-fn rebuild_stakeholder_insights_cache_for_entity(
+pub(crate) fn rebuild_stakeholder_insights_cache_for_entity(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     entity_id: &str,
@@ -717,12 +720,15 @@ fn stakeholder_person_ids_for_entity(
     tx: &ActionDb,
     entity_id: &str,
 ) -> Result<Vec<String>, ProjectionErrorClass> {
+    // `entity_members` has no status or dismissal column; by schema it
+    // represents current project/entity membership, so rows are active.
     let mut stmt = tx
         .conn_ref()
         .prepare(
-            "SELECT person_id
+             "SELECT person_id
              FROM account_stakeholders
              WHERE account_id = ?1
+               AND status = 'active'
              UNION
              SELECT person_id
              FROM entity_members
@@ -1249,7 +1255,7 @@ mod tests {
     use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::TimeZone;
-    use rusqlite::params;
+    use rusqlite::{params, OptionalExtension};
 
     const TS: &str = "2026-05-03T12:00:00+00:00";
 
@@ -1371,6 +1377,98 @@ mod tests {
             sensitivity: Some(ClaimSensitivity::Internal),
             tombstone: None,
         }
+    }
+
+    fn stakeholder_claim_proposal(person_id: &str, text: &str) -> ClaimProposal {
+        ClaimProposal {
+            subject_ref: serde_json::json!({
+                "kind": "person",
+                "id": person_id,
+            })
+            .to_string(),
+            claim_type: "stakeholder_engagement".to_string(),
+            field_path: None,
+            topic_key: None,
+            text: text.to_string(),
+            actor: "agent".to_string(),
+            data_source: "manual".to_string(),
+            source_ref: None,
+            source_asof: None,
+            observed_at: TS.to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(TemporalScope::State),
+            sensitivity: Some(ClaimSensitivity::Internal),
+            tombstone: None,
+        }
+    }
+
+    fn seed_account_person(db: &ActionDb, account_id: &str, person_id: &str, name: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params![account_id, "Cache Test Account", TS],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO people (id, email, name, relationship, updated_at)
+                 VALUES (?1, ?2, ?3, 'external', ?4)",
+                params![person_id, format!("{person_id}@example.test"), name, TS],
+            )
+            .unwrap();
+    }
+
+    fn seed_account_stakeholder(db: &ActionDb, account_id: &str, person_id: &str, status: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, created_at)
+                 VALUES (?1, ?2, 'user', ?3, ?4)
+                 ON CONFLICT(account_id, person_id) DO UPDATE SET
+                    data_source = excluded.data_source,
+                    status = excluded.status",
+                params![account_id, person_id, status, TS],
+            )
+            .unwrap();
+    }
+
+    fn commit_stakeholder_engagement(
+        ctx: &ServiceContext<'_>,
+        db: &ActionDb,
+        person_id: &str,
+        text: &str,
+    ) {
+        commit_claim(ctx, db, stakeholder_claim_proposal(person_id, text)).unwrap();
+    }
+
+    fn stakeholder_cache_json(db: &ActionDb, account_id: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                "SELECT stakeholder_insights_json FROM entity_assessment WHERE entity_id = ?1",
+                params![account_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .optional()
+            .unwrap()
+            .flatten()
+    }
+
+    fn assert_cache_contains(db: &ActionDb, account_id: &str, expected: &str) {
+        let cache = stakeholder_cache_json(db, account_id)
+            .unwrap_or_else(|| panic!("expected stakeholder cache for {account_id}"));
+        assert!(
+            cache.contains(expected),
+            "cache for {account_id} should contain {expected:?}, got {cache}"
+        );
+    }
+
+    fn assert_cache_excludes(db: &ActionDb, account_id: &str, excluded: &str) {
+        let cache = stakeholder_cache_json(db, account_id).unwrap_or_default();
+        assert!(
+            !cache.contains(excluded),
+            "cache for {account_id} should exclude {excluded:?}, got {cache}"
+        );
     }
 
     #[test]
@@ -1605,6 +1703,116 @@ mod tests {
             .unwrap();
 
         assert_eq!(second_enriched_at, first_enriched_at);
+    }
+
+    #[test]
+    fn stakeholder_cache_excludes_pending_review_stakeholders() {
+        let db = test_db();
+        let account_id = "acct-pending-cache";
+        seed_account_person(&db, account_id, "person-active", "Active Stakeholder");
+        seed_account_person(&db, account_id, "person-pending", "Pending Stakeholder");
+        seed_account_stakeholder(&db, account_id, "person-active", "active");
+        seed_account_stakeholder(&db, account_id, "person-pending", "pending_review");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, "person-active", "active engagement only");
+        commit_stakeholder_engagement(&ctx, &db, "person-pending", "pending engagement hidden");
+
+        assert_cache_contains(&db, account_id, "active engagement only");
+        assert_cache_excludes(&db, account_id, "pending engagement hidden");
+    }
+
+    #[test]
+    fn stakeholder_cache_excludes_dismissed_stakeholders() {
+        let db = test_db();
+        let account_id = "acct-dismissed-cache";
+        seed_account_person(&db, account_id, "person-active", "Active Stakeholder");
+        seed_account_person(&db, account_id, "person-dismissed", "Dismissed Stakeholder");
+        seed_account_stakeholder(&db, account_id, "person-active", "active");
+        seed_account_stakeholder(&db, account_id, "person-dismissed", "dismissed");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, "person-active", "active engagement visible");
+        commit_stakeholder_engagement(&ctx, &db, "person-dismissed", "dismissed engagement hidden");
+
+        assert_cache_contains(&db, account_id, "active engagement visible");
+        assert_cache_excludes(&db, account_id, "dismissed engagement hidden");
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuilds_on_relationship_dismiss() {
+        let db = test_db();
+        let account_id = "acct-dismiss-rebuild";
+        seed_account_person(&db, account_id, "person-dismiss", "Dismissed Stakeholder");
+        seed_account_stakeholder(&db, account_id, "person-dismiss", "pending_review");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, "person-dismiss", "stale pending engagement");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_assessment (entity_id, entity_type, stakeholder_insights_json)
+                 VALUES (?1, 'account', ?2)
+                 ON CONFLICT(entity_id) DO UPDATE SET
+                    stakeholder_insights_json = excluded.stakeholder_insights_json",
+                params![account_id, r#"[{"engagement":"stale pending engagement"}]"#],
+            )
+            .unwrap();
+
+        crate::services::entity_linking::dismiss_stakeholder_suggestion_inner(
+            &ctx,
+            &db,
+            account_id,
+            "person-dismiss",
+        )
+        .unwrap();
+
+        assert!(stakeholder_cache_json(&db, account_id).is_none());
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuilds_on_person_delete_cascade() {
+        let db = test_db();
+        let account_id = "acct-delete-cascade";
+        seed_account_person(&db, account_id, "person-delete", "Deleted Stakeholder");
+        seed_account_stakeholder(&db, account_id, "person-delete", "active");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, "person-delete", "delete cascade engagement");
+        assert_cache_contains(&db, account_id, "delete cascade engagement");
+
+        let state = crate::state::AppState::new();
+        crate::services::people::delete_person(&ctx, &db, &state, "person-delete").unwrap();
+
+        assert!(stakeholder_cache_json(&db, account_id).is_none());
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuilds_on_relationship_confirm() {
+        let db = test_db();
+        let account_id = "acct-confirm-rebuild";
+        seed_account_person(&db, account_id, "person-confirm", "Confirmed Stakeholder");
+        seed_account_stakeholder(&db, account_id, "person-confirm", "pending_review");
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        commit_stakeholder_engagement(&ctx, &db, "person-confirm", "confirmed engagement visible");
+        assert_cache_excludes(&db, account_id, "confirmed engagement visible");
+
+        let user_domains = Vec::new();
+        crate::services::entity_linking::confirm_stakeholder_suggestion_inner(
+            &ctx,
+            &db,
+            account_id,
+            "person-confirm",
+            &user_domains,
+        )
+        .unwrap();
+
+        assert_cache_contains(&db, account_id, "confirmed engagement visible");
     }
 
     #[test]

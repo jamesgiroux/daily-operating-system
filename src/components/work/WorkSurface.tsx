@@ -16,6 +16,7 @@
  */
 import { useState, type ReactNode } from "react";
 import { EditableText } from "@/components/ui/EditableText";
+import { Pill } from "@/components/ui/Pill";
 import s from "./WorkSurface.module.css";
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -30,19 +31,28 @@ export interface VisibilityPillProps {
 }
 
 export function VisibilityPill({ variant, label, href }: VisibilityPillProps) {
-  const className =
-    variant === "private"
-      ? `${s.visibilityPill} ${s.visibilityPrivate}`
-      : `${s.visibilityPill} ${s.visibilityShared}`;
   const text = label ?? (variant === "private" ? "Private" : "Shared");
+  const tone = variant === "private" ? "neutral" : "sage";
   if (variant === "shared" && href) {
     return (
-      <a className={className} href={href} target="_blank" rel="noreferrer">
+      <Pill
+        as="a"
+        tone={tone}
+        dot
+        href={href}
+        target="_blank"
+        rel="noreferrer"
+        className={s.visibilityLink}
+      >
         {text}
-      </a>
+      </Pill>
     );
   }
-  return <span className={className}>{text}</span>;
+  return (
+    <Pill tone={tone} dot>
+      {text}
+    </Pill>
+  );
 }
 
 /* ─────────────────────────────────────────────────────────────────────────
@@ -53,14 +63,10 @@ export interface AudiencePillProps {
 }
 
 export function AudiencePill({ variant }: AudiencePillProps) {
-  const className =
-    variant === "customer"
-      ? `${s.audiencePill} ${s.audienceCustomer}`
-      : `${s.audiencePill} ${s.audienceInternal}`;
   return (
-    <span className={className}>
+    <Pill tone={variant === "customer" ? "sage" : "neutral"}>
       {variant === "customer" ? "Customer-facing" : "Internal"}
-    </span>
+    </Pill>
   );
 }
 

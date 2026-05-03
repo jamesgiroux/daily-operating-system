@@ -195,21 +195,6 @@
   margin-top: 0;
 }
 
-.calloutSeverityBadge {
-  display: inline-block;
-  margin-left: 6px;
-  padding: 1px 6px;
-  border-radius: 3px;
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: var(--color-paper-cream);
-  background: var(--color-spice-terracotta);
-  vertical-align: middle;
-}
-
 /* ─────────────────────────────────────────────────────────────────────────────
    BRIEFING CALLOUTS (I623 AC4)
    ───────────────────────────────────────────────────────────────────────────── */
