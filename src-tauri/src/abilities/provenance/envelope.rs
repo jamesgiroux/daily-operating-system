@@ -129,15 +129,32 @@ impl JsonSchema for CompositionId {
     }
 }
 
+/// Strict UUID-backed thread identifier per ADR-0124.
+///
+/// The String form is rejected at deserialize: arbitrary slugs
+/// cannot be confused with user-authored theme labels, and the
+/// v1.4.2 retrieval / assignment work has a single canonical
+/// shape to compile against.
 #[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
 )]
 #[serde(transparent)]
-pub struct ThreadId(pub String);
+pub struct ThreadId(
+    #[schemars(with = "String")]
+    pub uuid::Uuid,
+);
 
 impl ThreadId {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    /// Build a `ThreadId` from a `Uuid`. Tests typically construct
+    /// via `ThreadId::new(Uuid::nil())` or `Uuid::parse_str(...)`.
+    pub fn new(value: uuid::Uuid) -> Self {
+        Self(value)
+    }
+
+    /// Parse a UUID string. Returns `Err` on non-UUID inputs;
+    /// callers route the error rather than silently coercing.
+    pub fn parse(s: &str) -> Result<Self, uuid::Error> {
+        Ok(Self(uuid::Uuid::parse_str(s)?))
     }
 }
 
@@ -571,16 +588,16 @@ mod tests {
     #[test]
     fn provenance_thread_ids_roundtrip_two_ids() {
         let mut provenance = fixture_provenance();
-        provenance
-            .thread_ids
-            .push(ThreadId::new("renewal-q4-strategy"));
-        provenance.thread_ids.push(ThreadId::new("acme-onboarding"));
+        let id_a = uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap();
+        let id_b = uuid::Uuid::parse_str("22222222-2222-4222-8222-222222222222").unwrap();
+        provenance.thread_ids.push(ThreadId::new(id_a));
+        provenance.thread_ids.push(ThreadId::new(id_b));
 
         let value = serde_json::to_value(&provenance).unwrap();
         let decoded: Provenance = serde_json::from_value(value).unwrap();
         assert_eq!(decoded.thread_ids.len(), 2);
-        assert_eq!(decoded.thread_ids[0].0, "renewal-q4-strategy");
-        assert_eq!(decoded.thread_ids[1].0, "acme-onboarding");
+        assert_eq!(decoded.thread_ids[0].0, id_a);
+        assert_eq!(decoded.thread_ids[1].0, id_b);
         assert_eq!(decoded, provenance);
     }
 
@@ -606,7 +623,51 @@ mod tests {
         let provenance = fixture_provenance();
         assert_eq!(provenance.provenance_schema_version, 1);
         let mut with_threads = provenance.clone();
-        with_threads.thread_ids.push(ThreadId::new("topic-1"));
+        let topic_uuid = uuid::Uuid::parse_str("33333333-3333-4333-8333-333333333333").unwrap();
+        with_threads.thread_ids.push(ThreadId::new(topic_uuid));
         assert_eq!(with_threads.provenance_schema_version, 1);
+    }
+
+    #[test]
+    fn thread_id_rejects_non_uuid_string() {
+        // ADR-0124 requirement: deserialize must fail on
+        // non-UUID input so user-authored theme labels can't be
+        // confused with valid thread identifiers.
+        let bad = "\"renewal-q4-strategy\"";
+        let res: Result<ThreadId, _> = serde_json::from_str(bad);
+        assert!(
+            res.is_err(),
+            "non-UUID string must fail ThreadId deserialization"
+        );
+
+        let parse = ThreadId::parse("not-a-uuid");
+        assert!(parse.is_err());
+    }
+
+    #[test]
+    fn thread_id_accepts_well_formed_uuid_string() {
+        let good = "\"11111111-1111-4111-8111-111111111111\"";
+        let id: ThreadId = serde_json::from_str(good).unwrap();
+        assert_eq!(
+            id.0,
+            uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap()
+        );
+    }
+
+    #[test]
+    fn provenance_tolerates_unknown_additive_fields() {
+        // ADR-0105 §1 forward-compat: a future Provenance payload
+        // adding an unrelated field must still deserialize cleanly.
+        // Pin this so a future deny_unknown_fields drift doesn't
+        // silently break older / cross-version consumers.
+        let provenance = fixture_provenance();
+        let mut value = serde_json::to_value(&provenance).unwrap();
+        value
+            .as_object_mut()
+            .unwrap()
+            .insert("future_v2_field".into(), serde_json::json!({"hello": 1}));
+        let decoded: Provenance = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.thread_ids.len(), 0);
+        assert_eq!(decoded.provenance_schema_version, 1);
     }
 }
