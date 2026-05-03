@@ -37,6 +37,7 @@ fi
 # - devtools writes seed/mock data or debug-only repair state.
 allowed_basename_regex='services/derived_state\.rs|services/claims_backfill\.rs|migrations/[^:]+\.sql|db/success_plans\.rs|services/success_plans\.rs|self_healing/[^:]+\.rs|privacy\.rs|signals/callouts\.rs|context_provider/glean\.rs|hygiene/mod\.rs|db/data_lifecycle\.rs|intelligence/io\.rs|intelligence/write_fence\.rs|devtools/mod\.rs'
 projection_tables='entity_assessment|entity_quality|account_objectives|account_milestones'
+registry_backed_entity_assessment_columns='executive_assessment|risks_json|recent_wins_json|current_state_json|stakeholder_insights_json|company_context_json|value_delivered'
 account_ai_columns='company_overview|strategic_programs|notes'
 sql_write='(INSERT([[:space:]]+OR[[:space:]]+(IGNORE|REPLACE))?[[:space:]]+INTO|REPLACE[[:space:]]+INTO|UPDATE)'
 direct_pattern="(${sql_write}[[:space:]]+(${projection_tables})\\b)|(^|[^[:alnum:]_])write_intelligence_json[[:space:]]*\\("
@@ -89,6 +90,26 @@ for file in $candidate_files; do
       matches+="${file}:${lineno}: INSERT accounts includes legacy AI projection column within 7-line window"$'\n'
     fi
   done < <(grep -nEi "$account_insert_pattern" "$file" 2>/dev/null | cut -d: -f1 || true)
+done
+
+for root in "${roots[@]}"; do
+  legacy_snapshot_file="$root/services/derived_state.rs"
+  [[ -f "$legacy_snapshot_file" ]] || continue
+
+  legacy_snapshot_hits="$(
+    awk '
+      /pub fn upsert_entity_intelligence_legacy_snapshot[[:space:]]*\(/ { in_fn = 1 }
+      in_fn { print FILENAME ":" FNR ":" $0 }
+      in_fn && /pub fn upsert_entity_health_legacy_projection[[:space:]]*\(/ { in_fn = 0 }
+    ' "$legacy_snapshot_file" \
+      | grep -Ei "\b(${registry_backed_entity_assessment_columns})\b" \
+      || true
+  )"
+
+  if [[ -n "$legacy_snapshot_hits" ]]; then
+    matches+="upsert_entity_intelligence_legacy_snapshot writes registry-backed entity_assessment columns:"$'\n'
+    matches+="$legacy_snapshot_hits"$'\n'
+  fi
 done
 
 matches="$(printf '%s\n' "$matches" | sort -u | sed '/^$/d')"

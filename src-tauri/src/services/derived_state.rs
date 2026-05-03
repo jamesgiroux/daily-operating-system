@@ -372,9 +372,21 @@ fn project_entity_intelligence(
         return committed_outcome(ProjectionTarget::EntityIntelligence, attempted_at);
     }
 
-    match run_rule_savepoint(tx, "entity_intelligence", || {
-        rebuild_entity_assessment_from_claims(ctx, tx, claim)
-    }) {
+    let projection_result = if claim.claim_type == "stakeholder_engagement"
+        && matches!(
+            entity_identity_from_subject_ref(&claim.subject_ref),
+            Ok((_, "person"))
+        ) {
+        run_rule_savepoint(tx, "stakeholder_insights_cache", || {
+            rebuild_stakeholder_insights_cache_from_claims(ctx, tx, claim)
+        })
+    } else {
+        run_rule_savepoint(tx, "entity_intelligence", || {
+            rebuild_entity_assessment_from_claims(ctx, tx, claim)
+        })
+    };
+
+    match projection_result {
         Ok(()) => committed_outcome(ProjectionTarget::EntityIntelligence, attempted_at),
         Err(error_class) => failed_outcome(
             ProjectionTarget::EntityIntelligence,
@@ -581,6 +593,154 @@ fn rebuild_entity_assessment_from_claims(
     Ok(())
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct StakeholderEntityMembership {
+    entity_id: String,
+    entity_type: String,
+}
+
+fn rebuild_stakeholder_insights_cache_from_claims(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+) -> Result<(), ProjectionErrorClass> {
+    let person_id = person_id_from_subject_ref(&claim.subject_ref)?;
+    for membership in stakeholder_cache_memberships(tx, &person_id)? {
+        rebuild_stakeholder_insights_cache_for_entity(
+            ctx,
+            tx,
+            &membership.entity_id,
+            &membership.entity_type,
+        )?;
+    }
+    Ok(())
+}
+
+fn stakeholder_cache_memberships(
+    tx: &ActionDb,
+    person_id: &str,
+) -> Result<Vec<StakeholderEntityMembership>, ProjectionErrorClass> {
+    let mut stmt = tx
+        .conn_ref()
+        .prepare(
+            "SELECT account_id, 'account' AS entity_type
+             FROM account_stakeholders
+             WHERE person_id = ?1
+             UNION
+             SELECT em.entity_id, COALESCE(e.entity_type, 'project') AS entity_type
+             FROM entity_members em
+             LEFT JOIN entities e ON e.id = em.entity_id
+             WHERE em.person_id = ?1
+             ORDER BY 1, 2",
+        )
+        .map_err(classify_sql_error)?;
+    let rows = stmt
+        .query_map(rusqlite::params![person_id], |row| {
+            Ok(StakeholderEntityMembership {
+                entity_id: row.get(0)?,
+                entity_type: row.get(1)?,
+            })
+        })
+        .map_err(classify_sql_error)?;
+
+    let mut memberships = Vec::new();
+    for row in rows {
+        memberships.push(row.map_err(classify_sql_error)?);
+    }
+    Ok(memberships)
+}
+
+fn rebuild_stakeholder_insights_cache_for_entity(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+) -> Result<(), ProjectionErrorClass> {
+    let person_ids = stakeholder_person_ids_for_entity(tx, entity_id)?;
+    let mut claims = Vec::new();
+    for person_id in person_ids {
+        let subject_ref = serde_json::json!({
+            "kind": "person",
+            "id": person_id,
+        })
+        .to_string();
+        let mut person_claims = crate::services::claims::load_claims_active(
+            tx,
+            &subject_ref,
+            Some("stakeholder_engagement"),
+        )
+        .map_err(|_| ProjectionErrorClass::ValidationError)?;
+        claims.append(&mut person_claims);
+    }
+
+    let claim_refs = claims.iter().collect::<Vec<_>>();
+    let stakeholder_insights_json = json_array_from_claims(&claim_refs, "engagement");
+    let existing = tx
+        .conn_ref()
+        .query_row(
+            "SELECT stakeholder_insights_json
+             FROM entity_assessment
+             WHERE entity_id = ?1",
+            rusqlite::params![entity_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(classify_sql_error)?
+        .flatten();
+
+    if skip_if_unchanged(Some(existing), stakeholder_insights_json.clone()).is_none() {
+        return Ok(());
+    }
+
+    tx.conn_ref()
+        .execute(
+            "INSERT INTO entity_assessment (
+                entity_id, entity_type, enriched_at, stakeholder_insights_json
+             ) VALUES (?1, ?2, ?3, ?4)
+             ON CONFLICT(entity_id) DO UPDATE SET
+                entity_type = excluded.entity_type,
+                enriched_at = excluded.enriched_at,
+                stakeholder_insights_json = excluded.stakeholder_insights_json",
+            rusqlite::params![
+                entity_id,
+                entity_type,
+                ctx.clock.now().to_rfc3339(),
+                stakeholder_insights_json.as_deref(),
+            ],
+        )
+        .map_err(classify_sql_error)?;
+
+    Ok(())
+}
+
+fn stakeholder_person_ids_for_entity(
+    tx: &ActionDb,
+    entity_id: &str,
+) -> Result<Vec<String>, ProjectionErrorClass> {
+    let mut stmt = tx
+        .conn_ref()
+        .prepare(
+            "SELECT person_id
+             FROM account_stakeholders
+             WHERE account_id = ?1
+             UNION
+             SELECT person_id
+             FROM entity_members
+             WHERE entity_id = ?1
+             ORDER BY 1",
+        )
+        .map_err(classify_sql_error)?;
+    let rows = stmt
+        .query_map(rusqlite::params![entity_id], |row| row.get::<_, String>(0))
+        .map_err(classify_sql_error)?;
+
+    let mut person_ids = Vec::new();
+    for row in rows {
+        person_ids.push(row.map_err(classify_sql_error)?);
+    }
+    Ok(person_ids)
+}
+
 fn rebuild_account_columns_from_claims(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
@@ -673,6 +833,15 @@ fn entity_identity_from_subject_ref(
         SubjectRef::Email { .. } | SubjectRef::Multi(_) | SubjectRef::Global => {
             Err(ProjectionErrorClass::ValidationError)
         }
+    }
+}
+
+fn person_id_from_subject_ref(subject_ref: &str) -> Result<String, ProjectionErrorClass> {
+    let (id, entity_type) = entity_identity_from_subject_ref(subject_ref)?;
+    if entity_type == "person" {
+        Ok(id)
+    } else {
+        Err(ProjectionErrorClass::ValidationError)
     }
 }
 
@@ -825,27 +994,17 @@ pub fn upsert_entity_intelligence_legacy_snapshot(
     conn.execute(
         "INSERT INTO entity_assessment (
             entity_id, entity_type, enriched_at, source_file_count,
-            executive_assessment, risks_json, recent_wins_json,
-            current_state_json, stakeholder_insights_json,
-            next_meeting_readiness_json, company_context_json,
-            value_delivered, success_metrics, open_commitments,
+            next_meeting_readiness_json, success_metrics, open_commitments,
             relationship_depth, health_json, org_health_json, consistency_status,
             consistency_findings_json, consistency_checked_at,
             portfolio_json, network_json, user_edits_json, source_manifest_json,
             dimensions_json, success_plan_signals_json, pull_quote
-        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
         ON CONFLICT(entity_id) DO UPDATE SET
             entity_type = excluded.entity_type,
             enriched_at = excluded.enriched_at,
             source_file_count = excluded.source_file_count,
-            executive_assessment = excluded.executive_assessment,
-            risks_json = excluded.risks_json,
-            recent_wins_json = excluded.recent_wins_json,
-            current_state_json = excluded.current_state_json,
-            stakeholder_insights_json = excluded.stakeholder_insights_json,
             next_meeting_readiness_json = excluded.next_meeting_readiness_json,
-            company_context_json = excluded.company_context_json,
-            value_delivered = excluded.value_delivered,
             success_metrics = excluded.success_metrics,
             open_commitments = excluded.open_commitments,
             relationship_depth = excluded.relationship_depth,
@@ -866,14 +1025,7 @@ pub fn upsert_entity_intelligence_legacy_snapshot(
             intel.entity_type,
             intel.enriched_at,
             intel.source_file_count,
-            intel.executive_assessment,
-            serde_json::to_string(&intel.risks).ok(),
-            serde_json::to_string(&intel.recent_wins).ok(),
-            serde_json::to_string(&intel.current_state).ok(),
-            serde_json::to_string(&intel.stakeholder_insights).ok(),
             serde_json::to_string(&intel.next_meeting_readiness).ok(),
-            serde_json::to_string(&intel.company_context).ok(),
-            serde_json::to_string(&intel.value_delivered).ok(),
             serde_json::to_string(&intel.success_metrics).ok(),
             serde_json::to_string(&intel.open_commitments).ok(),
             serde_json::to_string(&intel.relationship_depth).ok(),
