@@ -54,7 +54,11 @@ CREATE TABLE IF NOT EXISTS intelligence_claims (
     temporal_scope      TEXT NOT NULL DEFAULT 'state'
                                   CHECK (temporal_scope IN ('state', 'point_in_time', 'trend')),
     sensitivity         TEXT NOT NULL DEFAULT 'internal'
-                                  CHECK (sensitivity IN ('public', 'internal', 'confidential', 'user_only'))
+                                  CHECK (sensitivity IN ('public', 'internal', 'confidential', 'user_only')),
+    verification_state  TEXT NOT NULL DEFAULT 'active'
+                                  CHECK (verification_state IN ('active', 'contested', 'needs_user_decision')),
+    verification_reason TEXT,
+    needs_user_decision_at TEXT
 );
 
 CREATE INDEX IF NOT EXISTS idx_claims_default_read
@@ -136,11 +140,22 @@ CREATE TABLE IF NOT EXISTS claim_feedback (
     id              TEXT PRIMARY KEY,
     claim_id        TEXT NOT NULL REFERENCES intelligence_claims(id),
     feedback_type   TEXT NOT NULL
-                              CHECK (feedback_type IN ('confirm', 'correct', 'reject', 'wrong_subject', 'cannot_verify')),
+                              CHECK (feedback_type IN (
+                                  'confirm_current',
+                                  'mark_outdated',
+                                  'mark_false',
+                                  'wrong_subject',
+                                  'wrong_source',
+                                  'cannot_verify',
+                                  'needs_nuance',
+                                  'surface_inappropriate',
+                                  'not_relevant_here'
+                              )),
     actor           TEXT NOT NULL,
     actor_id        TEXT,
     payload_json    TEXT,
-    submitted_at    TEXT NOT NULL DEFAULT (datetime('now'))
+    submitted_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    applied_at      TEXT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_feedback_claim
