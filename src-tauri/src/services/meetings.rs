@@ -1964,6 +1964,32 @@ pub async fn restore_meeting_entity(
                    AND entity_id = ?2 AND entity_type = ?3",
                 rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
             );
+            // L2 cycle-24 fix #1: withdraw the shadow tombstone claims
+            // (m4 meeting_entity_dismissed + m5 linking_dismissed) for
+            // this (Meeting, entity_type, entity_id) tuple. Without
+            // this, the legacy tables say "restored" but the claim
+            // substrate still records the dismissal — PRE-GATE +
+            // claim-backed readers continue treating the link as
+            // dismissed even though the user just undid it.
+            // dos7-allowed: cycle-24 restore semantics — claim_state +
+            // retraction_reason are lifecycle columns (lint allows).
+            let _ = db.conn_ref().execute(
+                "UPDATE intelligence_claims \
+                 SET claim_state = 'withdrawn', \
+                     surfacing_state = 'dormant', \
+                     retraction_reason = 'restored_by_user' \
+                 WHERE id IN ( \
+                     SELECT ic.id FROM intelligence_claims ic \
+                     WHERE ic.claim_state = 'tombstoned' \
+                       AND json_valid(ic.subject_ref) = 1 \
+                       AND lower(json_extract(ic.subject_ref, '$.kind')) = 'meeting' \
+                       AND json_extract(ic.subject_ref, '$.id') = ?1 \
+                       AND ic.claim_type IN ('meeting_entity_dismissed', 'linking_dismissed') \
+                       AND coalesce(ic.field_path, '') = coalesce(?2, '') \
+                       AND ic.text = ?3 \
+                 )",
+                rusqlite::params![meeting_id_s, entity_type_s, entity_id_s],
+            );
             let _ = db.conn_ref().execute(
                 "UPDATE linked_entities_raw SET source = 'rule:restored' \
                  WHERE owner_type = 'meeting' AND owner_id = ?1 \
@@ -1997,15 +2023,16 @@ pub async fn unlink_meeting_entity_with_prep_queue(
     let unlinked_at = ctx.clock.now().to_rfc3339();
     state
         .db_write(move |db| {
-            // Legacy write — kept during cutover window.
-            db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
-                .map_err(|e| e.to_string())?;
-            let _ = db.conn_ref().execute(
-                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
-                rusqlite::params![meeting_id_s],
-            );
-            // DOS-258 dual-write: unlink = dismiss in the new model.
-            // Look up entity_type from meeting_entities first; fall back to 'account'.
+            // L2 cycle-24 fix #2: read entity_type BEFORE the
+            // legacy unlink. The previous order was
+            // unlink → query meeting_entities → fall back to
+            // 'account' on miss; since unlink_meeting_entity
+            // deletes the meeting_entities row, the SELECT always
+            // missed and EVERY non-account dismissal got recorded
+            // with field_path='account'. Project/Person link
+            // dismissals could resurface because PRE-GATE matches
+            // on field_path and saw 'account' instead of the real
+            // entity_type.
             let entity_type: String = db
                 .conn_ref()
                 .query_row(
@@ -2014,7 +2041,21 @@ pub async fn unlink_meeting_entity_with_prep_queue(
                     rusqlite::params![meeting_id_s, entity_id_s],
                     |row| row.get(0),
                 )
-                .unwrap_or_else(|_| "account".to_string());
+                .map_err(|e| {
+                    format!(
+                        "unlink_meeting_entity_with_prep_queue: meeting_entities row not found for ({}, {}): {e}",
+                        meeting_id_s, entity_id_s
+                    )
+                })?;
+
+            // Legacy write — kept during cutover window.
+            db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
+                .map_err(|e| e.to_string())?;
+            let _ = db.conn_ref().execute(
+                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                rusqlite::params![meeting_id_s],
+            );
+            // DOS-258 dual-write: unlink = dismiss in the new model.
             let now = unlinked_at;
             let _ = db.conn_ref().execute(
                 "INSERT OR IGNORE INTO linking_dismissals \
