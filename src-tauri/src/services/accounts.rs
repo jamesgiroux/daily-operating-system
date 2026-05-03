@@ -3468,6 +3468,27 @@ fn remove_stakeholder_role_inner(
                 rusqlite::params![account_id, person_id, role],
             )
             .map_err(|e| e.to_string())?;
+        // L2 cycle-21 fix: shadow-write the m2 stakeholder_role
+        // tombstone so commit_claim PRE-GATE blocks the AI from
+        // re-surfacing the dismissed role on the next enrichment.
+        // Cycle-1 fix #5 audit missed this third remove path
+        // (set_team_member_role at line ~2596 covers the swap case;
+        // soft-delete at db/accounts.rs covers the multi-role
+        // case; this single-role remove was uncovered).
+        let observed_at = ctx.clock.now().to_rfc3339();
+        let _ = crate::services::claims::shadow_write_tombstone_claim(
+            tx,
+            crate::services::claims::ShadowTombstoneClaim {
+                subject_kind: "Person",
+                subject_id: person_id,
+                claim_type: "stakeholder_role",
+                field_path: None,
+                text: role,
+                actor: "user",
+                source_scope: Some("stakeholder_role_removed"),
+                observed_at: &observed_at,
+            },
+        );
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
