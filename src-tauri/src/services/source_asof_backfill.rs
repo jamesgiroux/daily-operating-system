@@ -1,7 +1,9 @@
+use std::collections::BTreeMap;
 use std::path::Path;
 
 use chrono::{DateTime, Utc};
-use rusqlite::params;
+use rusqlite::types::Type;
+use rusqlite::{params, OptionalExtension, Params, Statement};
 use serde_json::Value;
 
 use crate::abilities::provenance::source_time::{
@@ -47,6 +49,50 @@ impl From<rusqlite::Error> for BackfillError {
     }
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct QuarantinedSourceAsofRow {
+    pub id: String,
+    pub claim_source: String,
+    pub legacy_entity_id: String,
+    pub legacy_field_path: String,
+    pub legacy_item_hash: Option<String>,
+    pub raw_sourced_at: Option<String>,
+    pub reason: String,
+    pub created_at: String,
+    pub remediation_status: QuarantineRemediationStatus,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum QuarantineRemediationStatus {
+    Pending,
+    Resolved,
+    Discarded,
+}
+
+impl QuarantineRemediationStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Pending => "pending",
+            Self::Resolved => "resolved",
+            Self::Discarded => "discarded",
+        }
+    }
+
+    pub fn try_from_str(s: &str) -> Option<Self> {
+        Some(match s {
+            "pending" => Self::Pending,
+            "resolved" => Self::Resolved,
+            "discarded" => Self::Discarded,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub struct QuarantineSummary {
+    pub by_reason: BTreeMap<String, BTreeMap<String, u64>>,
+}
+
 #[derive(Debug)]
 struct LegacyClaimRow {
     id: String,
@@ -56,6 +102,294 @@ struct LegacyClaimRow {
     observed_at: String,
     provenance_json: String,
     metadata_json: Option<String>,
+}
+
+pub fn list_pending_quarantine(
+    db: &ActionDb,
+) -> Result<Vec<QuarantinedSourceAsofRow>, rusqlite::Error> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT id, claim_source, legacy_entity_id, legacy_field_path,
+                legacy_item_hash, raw_sourced_at, reason, created_at,
+                remediation_status
+         FROM source_asof_backfill_quarantine
+         WHERE remediation_status = 'pending'
+         ORDER BY created_at",
+    )?;
+    collect_quarantine_rows(&mut stmt, [])
+}
+
+pub fn list_quarantine_by_reason(
+    db: &ActionDb,
+    reason: &str,
+) -> Result<Vec<QuarantinedSourceAsofRow>, rusqlite::Error> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT id, claim_source, legacy_entity_id, legacy_field_path,
+                legacy_item_hash, raw_sourced_at, reason, created_at,
+                remediation_status
+         FROM source_asof_backfill_quarantine
+         WHERE reason = ?1
+         ORDER BY created_at",
+    )?;
+    collect_quarantine_rows(&mut stmt, params![reason])
+}
+
+pub fn quarantine_summary(db: &ActionDb) -> Result<QuarantineSummary, rusqlite::Error> {
+    let mut stmt = db.conn_ref().prepare(
+        "SELECT reason, remediation_status, count(*)
+         FROM source_asof_backfill_quarantine
+         GROUP BY reason, remediation_status
+         ORDER BY reason, remediation_status",
+    )?;
+    let mapped = stmt.query_map([], |row| {
+        let reason: String = row.get(0)?;
+        let status: String = row.get(1)?;
+        let count: u64 = row.get::<_, i64>(2)?.try_into().map_err(|e| {
+            rusqlite::Error::FromSqlConversionFailure(2, Type::Integer, Box::new(e))
+        })?;
+        Ok((reason, status, count))
+    })?;
+
+    let mut summary = QuarantineSummary::default();
+    for row in mapped {
+        let (reason, status, count) = row?;
+        summary
+            .by_reason
+            .entry(reason)
+            .or_default()
+            .insert(status, count);
+    }
+    Ok(summary)
+}
+
+pub fn resolve_quarantine_row(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    quarantine_id: &str,
+    replacement_source_asof: Option<&str>,
+) -> Result<(), BackfillError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| BackfillError::Mode(e.to_string()))?;
+
+    let replacement_source_asof = replacement_source_asof
+        .map(|raw| parse_accepted_replacement_source_asof(ctx, raw))
+        .transpose()?;
+
+    with_backfill_transaction(db, |tx| {
+        let quarantine = load_quarantine_row(tx, quarantine_id)?;
+        update_quarantine_status(tx, quarantine_id, QuarantineRemediationStatus::Resolved)?;
+
+        if let Some(source_asof) = replacement_source_asof.as_deref() {
+            let updated = update_matching_claim_source_asof(tx, &quarantine, source_asof)?;
+            if updated == 0 {
+                log::warn!(
+                    "source_asof quarantine remediation found no matching intelligence_claims row for quarantine_id={quarantine_id}"
+                );
+            }
+        }
+
+        Ok(())
+    })
+}
+
+pub fn discard_quarantine_row(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    quarantine_id: &str,
+) -> Result<(), BackfillError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| BackfillError::Mode(e.to_string()))?;
+
+    with_backfill_transaction(db, |tx| {
+        update_quarantine_status(tx, quarantine_id, QuarantineRemediationStatus::Discarded)?;
+        Ok(())
+    })
+}
+
+fn collect_quarantine_rows<P>(
+    stmt: &mut Statement<'_>,
+    params: P,
+) -> Result<Vec<QuarantinedSourceAsofRow>, rusqlite::Error>
+where
+    P: Params,
+{
+    let mapped = stmt.query_map(params, row_to_quarantined_source_asof)?;
+    let mut rows = Vec::new();
+    for row in mapped {
+        rows.push(row?);
+    }
+    Ok(rows)
+}
+
+fn row_to_quarantined_source_asof(
+    row: &rusqlite::Row<'_>,
+) -> Result<QuarantinedSourceAsofRow, rusqlite::Error> {
+    let remediation_status_raw: String = row.get(8)?;
+    let remediation_status = QuarantineRemediationStatus::try_from_str(&remediation_status_raw)
+        .ok_or_else(|| {
+            rusqlite::Error::FromSqlConversionFailure(
+                8,
+                Type::Text,
+                Box::new(std::io::Error::new(
+                    std::io::ErrorKind::InvalidData,
+                    format!("invalid remediation_status: {remediation_status_raw}"),
+                )),
+            )
+        })?;
+
+    Ok(QuarantinedSourceAsofRow {
+        id: row.get(0)?,
+        claim_source: row.get(1)?,
+        legacy_entity_id: row.get(2)?,
+        legacy_field_path: row.get(3)?,
+        legacy_item_hash: row.get(4)?,
+        raw_sourced_at: row.get(5)?,
+        reason: row.get(6)?,
+        created_at: row.get(7)?,
+        remediation_status,
+    })
+}
+
+fn parse_accepted_replacement_source_asof(
+    ctx: &ServiceContext<'_>,
+    raw: &str,
+) -> Result<String, BackfillError> {
+    match parse_source_timestamp(Some(raw), ctx.clock.now(), None) {
+        SourceTimestampStatus::Accepted(parsed) => Ok(parsed.to_rfc3339()),
+        SourceTimestampStatus::Implausible { reason, .. } => Err(BackfillError::Mode(format!(
+            "replacement source_asof implausible: {}",
+            implausible_reason_label(reason)
+        ))),
+        SourceTimestampStatus::Malformed(reason) => Err(BackfillError::Mode(format!(
+            "replacement source_asof malformed: {}",
+            malformed_reason_label(reason)
+        ))),
+        SourceTimestampStatus::Missing => Err(BackfillError::Mode(
+            "replacement source_asof missing".to_string(),
+        )),
+    }
+}
+
+fn load_quarantine_row(
+    tx: &ActionDb,
+    quarantine_id: &str,
+) -> Result<QuarantinedSourceAsofRow, BackfillError> {
+    tx.conn_ref()
+        .query_row(
+            "SELECT id, claim_source, legacy_entity_id, legacy_field_path,
+                    legacy_item_hash, raw_sourced_at, reason, created_at,
+                    remediation_status
+             FROM source_asof_backfill_quarantine
+             WHERE id = ?1",
+            params![quarantine_id],
+            row_to_quarantined_source_asof,
+        )
+        .map_err(BackfillError::from)
+}
+
+fn update_quarantine_status(
+    tx: &ActionDb,
+    quarantine_id: &str,
+    status: QuarantineRemediationStatus,
+) -> Result<usize, BackfillError> {
+    tx.conn_ref()
+        .execute(
+            "UPDATE source_asof_backfill_quarantine
+             SET remediation_status = ?1
+             WHERE id = ?2",
+            params![status.as_str(), quarantine_id],
+        )
+        .map_err(BackfillError::from)
+}
+
+fn update_matching_claim_source_asof(
+    tx: &ActionDb,
+    quarantine: &QuarantinedSourceAsofRow,
+    source_asof: &str,
+) -> Result<usize, BackfillError> {
+    let claim_id = tx
+        .conn_ref()
+        .query_row(
+            "SELECT id
+             FROM intelligence_claims
+             WHERE data_source = 'legacy_dismissal'
+               AND COALESCE(
+                   NULLIF(trim(json_extract(CASE WHEN json_valid(subject_ref) THEN subject_ref ELSE '{}' END, '$.id')), ''),
+                   NULLIF(trim(json_extract(CASE WHEN json_valid(subject_ref) THEN subject_ref ELSE '{}' END, '$.entity_id')), ''),
+                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.entity_id')), ''),
+                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.owner_id')), ''),
+                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.account_id')), ''),
+                   '<unknown>'
+               ) = ?1
+               AND COALESCE(
+                   NULLIF(trim(field_path), ''),
+                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.field')), ''),
+                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.item_type')), ''),
+                   NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.entity_type')), ''),
+                   ''
+               ) = ?2
+               AND (
+                   (?3 IS NULL AND COALESCE(
+                       NULLIF(trim(item_hash), ''),
+                       NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.item_hash')), '')
+                   ) IS NULL)
+                   OR COALESCE(
+                       NULLIF(trim(item_hash), ''),
+                       NULLIF(trim(json_extract(CASE WHEN metadata_json IS NOT NULL AND json_valid(metadata_json) THEN metadata_json ELSE '{}' END, '$.item_hash')), '')
+                   ) = ?3
+               )
+             ORDER BY id
+             LIMIT 1",
+            params![
+                &quarantine.legacy_entity_id,
+                &quarantine.legacy_field_path,
+                quarantine.legacy_item_hash.as_deref(),
+            ],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()?;
+
+    let Some(claim_id) = claim_id else {
+        return Ok(0);
+    };
+
+    tx.conn_ref()
+        .execute(
+            "UPDATE intelligence_claims /* dos7-allowed: source-asof quarantine remediation applies admin-approved timestamp */
+             SET source_asof = ?1 /* dos7-allowed: source-asof quarantine remediation applies admin-approved timestamp */
+             WHERE id = ?2",
+            params![source_asof, claim_id],
+        )
+        .map_err(BackfillError::from)
+}
+
+fn with_backfill_transaction<T, F>(db: &ActionDb, f: F) -> Result<T, BackfillError>
+where
+    F: FnOnce(&ActionDb) -> Result<T, BackfillError>,
+{
+    let mut typed_result: Option<Result<T, BackfillError>> = None;
+    let transaction_result = db.with_transaction(|tx| {
+        let result = f(tx);
+        let transaction_return = match &result {
+            Ok(_) => Ok(()),
+            Err(error) => Err(error.to_string()),
+        };
+        typed_result = Some(result);
+        transaction_return
+    });
+
+    match transaction_result {
+        Ok(()) => match typed_result {
+            Some(Ok(value)) => Ok(value),
+            Some(Err(error)) => Err(error),
+            None => Err(BackfillError::Mode(
+                "source_asof backfill transaction did not run".to_string(),
+            )),
+        },
+        Err(message) => match typed_result {
+            Some(Err(error)) => Err(error),
+            Some(Ok(_)) | None => Err(BackfillError::Mode(message)),
+        },
+    }
 }
 
 pub fn backfill_source_asof_for_legacy_claims(
@@ -660,6 +994,85 @@ mod tests {
         run_with_workspace(db, workspace.path())
     }
 
+    fn seed_quarantine(
+        db: &ActionDb,
+        id: &str,
+        reason: &str,
+        remediation_status: QuarantineRemediationStatus,
+    ) {
+        seed_quarantine_with_identity(
+            db,
+            id,
+            "acct-1",
+            "risks",
+            Some("hash-1"),
+            reason,
+            remediation_status,
+        );
+    }
+
+    fn seed_quarantine_with_identity(
+        db: &ActionDb,
+        id: &str,
+        legacy_entity_id: &str,
+        legacy_field_path: &str,
+        legacy_item_hash: Option<&str>,
+        reason: &str,
+        remediation_status: QuarantineRemediationStatus,
+    ) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO source_asof_backfill_quarantine (
+                    id, claim_source, legacy_entity_id, legacy_field_path,
+                    legacy_item_hash, raw_sourced_at, reason, created_at,
+                    remediation_status
+                 ) VALUES (
+                    ?1, 'migration_130_suppression_tombstones', ?2, ?3,
+                    ?4, 'raw-bad', ?5, '2026-05-01T12:00:00Z', ?6
+                 )",
+                params![
+                    id,
+                    legacy_entity_id,
+                    legacy_field_path,
+                    legacy_item_hash,
+                    reason,
+                    remediation_status.as_str(),
+                ],
+            )
+            .unwrap();
+    }
+
+    fn quarantine_status(db: &ActionDb, id: &str) -> String {
+        db.conn_ref()
+            .query_row(
+                "SELECT remediation_status FROM source_asof_backfill_quarantine WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn claim_source_asof(db: &ActionDb, id: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                "SELECT source_asof FROM intelligence_claims WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn set_claim_source_asof(db: &ActionDb, id: &str, source_asof: &str) {
+        db.conn_ref()
+            .execute(
+                "UPDATE intelligence_claims /* dos7-allowed: source-asof backfill test seed */
+                 SET source_asof = ?1 /* dos7-allowed: source-asof backfill test seed */
+                 WHERE id = ?2",
+                params![source_asof, id],
+            )
+            .unwrap();
+    }
+
     #[test]
     fn backfill_lifts_item_source_sourced_at_to_source_asof() {
         let conn = fresh_db();
@@ -869,5 +1282,229 @@ mod tests {
         assert_eq!(summary.accepted, 19);
         assert_eq!(summary.implausible, 1);
         assert_eq!(summary.coverage_pct, 0.95);
+    }
+
+    #[test]
+    fn list_pending_quarantine_returns_only_pending_rows() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_quarantine(
+            db,
+            "q-pending",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        seed_quarantine(
+            db,
+            "q-resolved",
+            "unparseable",
+            QuarantineRemediationStatus::Resolved,
+        );
+        seed_quarantine(
+            db,
+            "q-discarded",
+            "unparseable",
+            QuarantineRemediationStatus::Discarded,
+        );
+
+        let rows = list_pending_quarantine(db).unwrap();
+
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, "q-pending");
+        assert_eq!(
+            rows[0].remediation_status,
+            QuarantineRemediationStatus::Pending
+        );
+    }
+
+    #[test]
+    fn list_quarantine_by_reason_filters_correctly() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_quarantine(
+            db,
+            "q-unparseable-1",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        seed_quarantine(
+            db,
+            "q-missing-tz",
+            "missing_timezone",
+            QuarantineRemediationStatus::Pending,
+        );
+        seed_quarantine(
+            db,
+            "q-unparseable-2",
+            "unparseable",
+            QuarantineRemediationStatus::Resolved,
+        );
+
+        let rows = list_quarantine_by_reason(db, "unparseable").unwrap();
+        let ids: Vec<_> = rows.iter().map(|row| row.id.as_str()).collect();
+
+        assert_eq!(ids, vec!["q-unparseable-1", "q-unparseable-2"]);
+        assert!(rows.iter().all(|row| row.reason == "unparseable"));
+    }
+
+    #[test]
+    fn quarantine_summary_groups_by_reason_and_status() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_quarantine(
+            db,
+            "q-1",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        seed_quarantine(
+            db,
+            "q-2",
+            "unparseable",
+            QuarantineRemediationStatus::Resolved,
+        );
+        seed_quarantine(
+            db,
+            "q-3",
+            "unparseable",
+            QuarantineRemediationStatus::Resolved,
+        );
+        seed_quarantine(
+            db,
+            "q-4",
+            "missing_timezone",
+            QuarantineRemediationStatus::Discarded,
+        );
+
+        let summary = quarantine_summary(db).unwrap();
+
+        assert_eq!(summary.by_reason["unparseable"]["pending"], 1);
+        assert_eq!(summary.by_reason["unparseable"]["resolved"], 2);
+        assert_eq!(summary.by_reason["missing_timezone"]["discarded"], 1);
+    }
+
+    #[test]
+    fn resolve_quarantine_row_with_valid_replacement_updates_claim() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_claim(
+            db,
+            "m1-remediate",
+            "2026-04-15T00:00:00Z",
+            Some("suppression_tombstones"),
+            serde_json::json!({ "raw_sourced_at": "garbleZ" }),
+        );
+        seed_quarantine(
+            db,
+            "m1-remediate",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        resolve_quarantine_row(&ctx, db, "m1-remediate", Some("2026-04-12T10:00:00Z")).unwrap();
+
+        assert_eq!(
+            claim_source_asof(db, "m1-remediate").as_deref(),
+            Some("2026-04-12T10:00:00+00:00")
+        );
+        assert_eq!(quarantine_status(db, "m1-remediate"), "resolved");
+    }
+
+    #[test]
+    fn resolve_quarantine_row_with_implausible_replacement_rejects() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_claim(
+            db,
+            "m1-reject",
+            "2026-04-15T00:00:00Z",
+            Some("suppression_tombstones"),
+            serde_json::json!({ "raw_sourced_at": "garbleZ" }),
+        );
+        seed_quarantine(
+            db,
+            "m1-reject",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        let err = resolve_quarantine_row(&ctx, db, "m1-reject", Some("2032-05-02T00:00:00Z"))
+            .unwrap_err();
+
+        assert!(matches!(err, BackfillError::Mode(_)));
+        assert_eq!(quarantine_status(db, "m1-reject"), "pending");
+        assert_eq!(claim_source_asof(db, "m1-reject"), None);
+    }
+
+    #[test]
+    fn resolve_quarantine_row_without_replacement_just_marks_resolved() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_claim(
+            db,
+            "m1-no-replacement",
+            "2026-04-15T00:00:00Z",
+            Some("suppression_tombstones"),
+            serde_json::json!({ "raw_sourced_at": "garbleZ" }),
+        );
+        set_claim_source_asof(db, "m1-no-replacement", "2026-04-01T00:00:00+00:00");
+        seed_quarantine(
+            db,
+            "m1-no-replacement",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        resolve_quarantine_row(&ctx, db, "m1-no-replacement", None).unwrap();
+
+        assert_eq!(quarantine_status(db, "m1-no-replacement"), "resolved");
+        assert_eq!(
+            claim_source_asof(db, "m1-no-replacement").as_deref(),
+            Some("2026-04-01T00:00:00+00:00")
+        );
+    }
+
+    #[test]
+    fn discard_quarantine_row_marks_discarded() {
+        let conn = fresh_db();
+        let db = ActionDb::from_conn(&conn);
+        seed_claim(
+            db,
+            "m1-discard",
+            "2026-04-15T00:00:00Z",
+            Some("suppression_tombstones"),
+            serde_json::json!({ "raw_sourced_at": "garbleZ" }),
+        );
+        set_claim_source_asof(db, "m1-discard", "2026-04-01T00:00:00+00:00");
+        seed_quarantine(
+            db,
+            "m1-discard",
+            "unparseable",
+            QuarantineRemediationStatus::Pending,
+        );
+        let clock = FixedClock::new(now());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = fixture_ctx(&clock, &rng, &ext);
+
+        discard_quarantine_row(&ctx, db, "m1-discard").unwrap();
+
+        assert_eq!(quarantine_status(db, "m1-discard"), "discarded");
+        assert_eq!(
+            claim_source_asof(db, "m1-discard").as_deref(),
+            Some("2026-04-01T00:00:00+00:00")
+        );
     }
 }
