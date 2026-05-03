@@ -246,7 +246,7 @@ pub fn update_meeting_user_layer(
     })
 }
 
-// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+// ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
 #[allow(clippy::too_many_arguments)]
 pub fn record_pipeline_failure(
     ctx: &ServiceContext<'_>,

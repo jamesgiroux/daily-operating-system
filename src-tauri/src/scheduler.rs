@@ -35,10 +35,10 @@ const TIME_JUMP_THRESHOLD_SECS: i64 = 300;
 /// Poll interval for scheduler loop (1 minute)
 const POLL_INTERVAL_SECS: u64 = 60;
 
-/// Delay before retrying a failed scheduler-owned task (I515).
+/// Delay before retrying a failed scheduler-owned task.
 const SCHEDULED_RETRY_DELAY_SECS: i64 = 3600;
 
-/// Maximum number of scheduler-owned retries per task per day (I515).
+/// Maximum number of scheduler-owned retries per task per day.
 const MAX_SCHEDULED_RETRIES_PER_DAY: u8 = 3;
 
 /// Message sent to trigger workflow execution
@@ -132,13 +132,13 @@ impl Scheduler {
                 let _ = self.app_handle.emit("day-changed", ());
                 crate::meeting_prep_queue::sweep_meetings_needing_prep(&self.state);
 
-                // I418: Auto-generate weekly impact on Monday
+                // Auto-generate weekly impact on Monday
                 if today.weekday() == chrono::Weekday::Mon {
                     self.run_scheduler_task_with_retry(SchedulerRetryTask::WeeklyImpact, 0)
                         .await;
                 }
 
-                // I419: Auto-generate monthly wrapped on 1st of month
+                // Auto-generate monthly wrapped on 1st of month
                 if today.day() == 1 {
                     self.run_scheduler_task_with_retry(SchedulerRetryTask::MonthlyWrapped, 0)
                         .await;
@@ -162,10 +162,10 @@ impl Scheduler {
             // Check and run due jobs
             self.check_and_run_due_jobs(now).await;
 
-            // I305: Drain prep invalidation queue and trigger re-generation
+            // Drain prep invalidation queue and trigger re-generation
             self.drain_prep_invalidation_queue().await;
 
-            // Auto-archive stale action queues daily (I256, I540)
+            // Auto-archive stale action queues daily
             if (now - last_proposed_archive).num_hours() >= 24 {
                 self.auto_archive_stale_actions();
                 last_proposed_archive = now;
@@ -182,7 +182,7 @@ impl Scheduler {
         }
     }
 
-    /// I305: Drain the prep invalidation queue and trigger a briefing refresh.
+    /// Drain the prep invalidation queue and trigger a briefing refresh.
     ///
     /// When a user corrects a meeting's entity, the prep is invalidated (data
     /// cleared, file deleted) but nothing regenerates it. This method drains
@@ -317,7 +317,7 @@ impl Scheduler {
         }
     }
 
-    /// Post-meeting email correlation (I308)
+    /// Post-meeting email correlation
     fn run_post_meeting_email_correlation(&self) {
         match crate::db::ActionDb::open() {
             Ok(db) => {
@@ -408,7 +408,7 @@ impl Scheduler {
             let next_utc = next_time.with_timezone(&Utc);
             let diff = (now - next_utc).num_seconds().abs();
 
-            // Within 2 minutes of scheduled time (I67: wider window for sleep/wake)
+            // Within 2 minutes of scheduled time (wider window for sleep/wake)
             if diff < 120 {
                 // Check if we already ran this scheduled time
                 if let Some(last) = last_run {

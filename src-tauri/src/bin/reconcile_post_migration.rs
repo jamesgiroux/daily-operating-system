@@ -1,4 +1,4 @@
-//! DOS-311 post-migration reconcile + repair binary.
+//!  post-migration reconcile + repair binary.
 //!
 //! Runs the reconcile SQL from `scripts/reconcile_ghost_resurrection.sql`
 //! against the workspace DB and reports/repairs ghost-resurrection
@@ -12,7 +12,7 @@
 //!
 //! Skeleton form. The binary fully detects + runs the reconcile SQL when
 //! `intelligence_claims` exists; per-finding repair logic that consumes
-//! `services::claims::commit_claim` lands when DOS-7 (W3) ships that
+//! `services::claims::commit_claim` lands when  (W3) ships that
 //! module. Until then `--repair` is a no-op with a clear log message.
 
 use std::path::PathBuf;
@@ -53,7 +53,7 @@ fn main() -> ExitCode {
         }
     };
 
-    // DOS-7-precondition check: intelligence_claims table must exist.
+    // precondition check: intelligence_claims table must exist.
     let claims_exists: bool = db
         .conn_ref()
         .query_row(

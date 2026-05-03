@@ -1,4 +1,4 @@
--- I529: Add UNIQUE constraint on (entity_id, entity_type, field) for intelligence_feedback.
+-- Add UNIQUE constraint on (entity_id, entity_type, field) for intelligence_feedback.
 -- Ensures one vote per field per entity — changing vote replaces previous (AC16).
 -- Approach: recreate table with constraint since SQLite doesn't support ADD CONSTRAINT.
 

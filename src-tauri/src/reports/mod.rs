@@ -1,4 +1,4 @@
-//! Report infrastructure for v0.15.0 (I397).
+//! Report infrastructure for v0.15.0.
 //!
 //! Manages the reports table: SWOT analyses, Account Health Reviews,
 //! EBR/QBR, Weekly Impact, Monthly Wrapped.

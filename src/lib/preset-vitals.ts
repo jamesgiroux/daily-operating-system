@@ -1,5 +1,5 @@
 /**
- * preset-vitals.ts — Build VitalDisplay[] from a RolePreset config (I312).
+ * preset-vitals.ts — Build VitalDisplay from a RolePreset config.
  *
  * Maps preset vital field definitions to actual entity data. Each field
  * has a `source` that tells us where to read: "column" for direct DB

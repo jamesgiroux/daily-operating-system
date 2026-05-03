@@ -1,4 +1,4 @@
-//! Enrichment trigger function (I408).
+//! Enrichment trigger function.
 //!
 //! Replaces the hardcoded 14-day staleness threshold with a continuous
 //! priority score based on meeting imminence, staleness, importance,

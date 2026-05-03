@@ -1,4 +1,4 @@
--- I513: Add columns to entity_assessment for fields currently stored only in intelligence.json
+-- Add columns to entity_assessment for fields currently stored only in intelligence.json
 ALTER TABLE entity_assessment ADD COLUMN portfolio_json TEXT;
 ALTER TABLE entity_assessment ADD COLUMN network_json TEXT;
 ALTER TABLE entity_assessment ADD COLUMN user_edits_json TEXT;

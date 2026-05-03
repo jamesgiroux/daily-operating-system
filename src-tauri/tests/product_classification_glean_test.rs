@@ -1,4 +1,4 @@
-//! I651: Product Classification from Glean integration tests.
+//! Product Classification from Glean integration tests.
 //!
 //! Tests for extracting and upserting product classification data from Glean
 //! Financial dimension responses to the account_products table.

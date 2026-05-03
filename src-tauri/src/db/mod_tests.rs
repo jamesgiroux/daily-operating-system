@@ -192,7 +192,7 @@ fn test_archive_email_archives_entire_thread() {
 
 #[test]
 fn test_dos31_last_successful_fetch_at_roundtrip() {
-    // DOS-31: the `email_sync_meta` singleton row must be seeded by migration 094
+    // the `email_sync_meta` singleton row must be seeded by migration 094
     // and round-trip through the get/set API. Starts as None, becomes Some(now)
     // after a recorded successful fetch.
     let db = test_db();
@@ -213,7 +213,7 @@ fn test_dos31_last_successful_fetch_at_roundtrip() {
 
 #[test]
 fn test_dos31_sync_stats_includes_last_successful_fetch_at() {
-    // DOS-31 AC: `get_email_sync_stats` exposes the separate
+    // Acceptance criterion: `get_email_sync_stats` exposes the separate
     // `last_successful_fetch_at` timestamp so the UI can distinguish a healthy
     // fetch from a stalled enrichment pipeline.
     let db = test_db();
@@ -227,7 +227,7 @@ fn test_dos31_sync_stats_includes_last_successful_fetch_at() {
 }
 
 /// Seed a single email row in the `failed` state at the 3-attempt cap.
-/// Centralized so the DOS-226 rollback/finalize tests stay readable.
+/// Centralized so the rollback/finalize tests stay readable.
 #[cfg(test)]
 fn seed_failed_email(db: &ActionDb, email_id: &str) {
     let mut stuck = sample_email(email_id, "thread-stuck", "Stuck email");
@@ -257,7 +257,7 @@ fn read_enrichment_state(db: &ActionDb, email_id: &str) -> (String, i32) {
 
 #[test]
 fn test_dos226_mark_failed_for_retry_preserves_attempts() {
-    // DOS-226: the retry transition must preserve enrichment_attempts so a
+    // the retry transition must preserve enrichment_attempts so a
     // rollback (refresh failure) can restore the row to exactly its pre-retry
     // state. Counting the row as failed in the UI also depends on the
     // attempts cap staying at 3.
@@ -274,7 +274,7 @@ fn test_dos226_mark_failed_for_retry_preserves_attempts() {
 
 #[test]
 fn test_dos226_pending_retry_still_counts_as_failed_in_stats() {
-    // DOS-226: while a retry is in flight, the UI must keep rendering the
+    // while a retry is in flight, the UI must keep rendering the
     // Retry notice. That means `get_email_sync_stats().failed` needs to
     // include rows in the transitional `pending_retry` state.
     let db = test_db();
@@ -290,7 +290,7 @@ fn test_dos226_pending_retry_still_counts_as_failed_in_stats() {
 
 #[test]
 fn test_dos226_rollback_restores_failed_state() {
-    // DOS-226: If the Gmail refresh fails mid-retry, the rows must return
+    // If the Gmail refresh fails mid-retry, the rows must return
     // to `failed` with their original `enrichment_attempts` so the user
     // can retry again (and the Retry notice never silently disappeared).
     let db = test_db();
@@ -307,7 +307,7 @@ fn test_dos226_rollback_restores_failed_state() {
 
 #[test]
 fn test_dos226_finalize_success_promotes_to_pending_and_zeros_attempts() {
-    // DOS-226: On refresh success, `pending_retry` rows must become `pending`
+    // On refresh success, `pending_retry` rows must become `pending`
     // with zeroed attempts so the enrichment pipeline actually re-runs them
     // (it skips rows that have reached the 3-attempt cap).
     let db = test_db();
@@ -440,7 +440,7 @@ fn test_dos226_rollback_stale_respects_fresh_batches() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-226 Wave 0g: retry-batched finalize failure must surface, not swallow
+// retry-batched finalize failure must surface, not swallow
 // ---------------------------------------------------------------------------
 //
 // Regression guard for the Wave 0g HIGH finding: the orchestrator promoted
@@ -568,7 +568,7 @@ fn test_dos226_pending_retry_eligible_for_enrichment_after_finalize() {
 
 #[test]
 fn test_dos226_set_last_successful_fetch_at_is_upsert() {
-    // DOS-226: If the `email_sync_meta` singleton row is missing (fresh DB
+    // If the `email_sync_meta` singleton row is missing (fresh DB
     // that skipped the seed insert, partial restore, etc.), the timestamp
     // write must still materialize. The old UPDATE-only path silently
     // no-op'd, leaving the UI stuck on "never fetched".
@@ -592,7 +592,7 @@ fn test_dos226_set_last_successful_fetch_at_is_upsert() {
 
 #[test]
 fn test_dos226_get_email_sync_stats_propagates_errors() {
-    // DOS-226: `get_email_sync_stats` previously swallowed errors from the
+    // `get_email_sync_stats` previously swallowed errors from the
     // meta query as `Ok(None)`, masking schema drift (e.g. migration 094
     // never applied) as a benign "never fetched". Verify errors bubble up.
     let db = test_db();
@@ -1408,7 +1408,7 @@ fn test_idempotent_schema_application() {
 }
 
 // =========================================================================
-// Intelligence query tests (I42)
+// Intelligence query tests
 // =========================================================================
 
 #[test]
@@ -1655,7 +1655,7 @@ fn test_get_stale_accounts() {
 
 #[test]
 fn test_get_stale_accounts_excludes_archived() {
-    // DOS-286: archived accounts must never be returned by the stale query,
+    // archived accounts must never be returned by the stale query,
     // because the stale query is the primary input to ProactiveHygiene enrichment.
     let db = test_db();
 
@@ -1689,7 +1689,7 @@ fn test_get_stale_accounts_excludes_archived() {
 
 #[test]
 fn test_get_renewal_alerts_excludes_archived() {
-    // DOS-286: archived accounts must never be returned by renewal alerts,
+    // archived accounts must never be returned by renewal alerts,
     // otherwise they get enqueued for enrichment by the hygiene sweep.
     let db = test_db();
     let soon = (Utc::now() + chrono::Duration::days(10))
@@ -1726,7 +1726,7 @@ fn test_get_renewal_alerts_excludes_archived() {
 
 #[test]
 fn test_is_entity_archived() {
-    // DOS-286: the helper must report archive state accurately so enqueue
+    // the helper must report archive state accurately so enqueue
     // paths can guard against enriching archived entities.
     let db = test_db();
 
@@ -1788,7 +1788,7 @@ fn test_needs_decision_migration() {
 }
 
 // =========================================================================
-// Stakeholder Signals tests (I43)
+// Stakeholder Signals tests
 // =========================================================================
 
 #[test]
@@ -1912,7 +1912,7 @@ fn test_compute_trend() {
 }
 
 // =========================================================================
-// People Tests (I51)
+// People Tests
 // =========================================================================
 
 fn sample_person(email: &str) -> DbPerson {
@@ -2814,7 +2814,7 @@ fn test_delete_person_cascades() {
 }
 
 // =========================================================================
-// Projects (I50)
+// Projects
 // =========================================================================
 
 #[test]
@@ -3125,7 +3125,7 @@ fn test_link_meeting_to_project_and_query() {
 }
 
 // =========================================================================
-// I52: Meeting-entity M2M junction tests
+// Meeting-entity M2M junction tests
 // =========================================================================
 
 #[test]
@@ -3321,7 +3321,7 @@ fn test_captures_with_project_id() {
 }
 
 // =========================================================================
-// I124: Content Index tests
+// Content Index tests
 // =========================================================================
 
 #[test]
@@ -3548,7 +3548,7 @@ fn test_chat_session_roundtrip() {
     assert_eq!(turns[0].content, "hi");
 }
 
-// === I127/I128: Manual action creation & editing tests ===
+// ===: Manual action creation & editing tests ===
 
 #[test]
 fn test_create_action_all_fields() {
@@ -3870,7 +3870,7 @@ fn test_get_latest_processing_status() {
 }
 
 // =========================================================================
-// cascade_meeting_entity_to_people (I184)
+// cascade_meeting_entity_to_people
 // =========================================================================
 
 /// Helper: create an account and ensure its entity row exists.
@@ -3941,7 +3941,7 @@ fn test_cascade_meeting_entity_to_people_external_only() {
     setup_meeting(&db, "m1", "Acme QBR");
     setup_meeting(&db, "m2", "Acme Follow-up");
 
-    // External person attends 2 meetings with same account (I652: 2+ threshold)
+    // External person attends 2 meetings with same account (2+ threshold)
     let mut external = sample_person("jane@acme.com");
     external.relationship = "external".to_string();
     db.upsert_person(&external).expect("upsert external");
@@ -4027,7 +4027,7 @@ fn test_cascade_meeting_entity_to_people_no_entity() {
 }
 
 // =========================================================================
-// Domain reclassification tests (I184)
+// Domain reclassification tests
 // =========================================================================
 
 #[test]
@@ -4062,7 +4062,7 @@ fn test_reclassify_people_for_domains() {
 #[test]
 fn test_reclassify_meeting_types_from_attendees() {
     let db = test_db();
-    // DOS-225: Path A now requires full attendee coverage via the `attendees`
+    // Path A now requires full attendee coverage via the `attendees`
     // JSON blob, so the meeting must have it populated explicitly rather than
     // relying on junction-join coverage alone.
     setup_meeting_with_attendees(&db, "m1", "customer", r#"["alice@subsidiary.com"]"#);
@@ -4095,7 +4095,7 @@ fn test_reclassify_meeting_types_from_attendees() {
     assert_eq!(meeting, "internal");
 }
 
-/// DOS-206 regression: stale meeting rows must be swept even when no people
+/// Regression: stale meeting rows must be swept even when no people
 /// rows changed during the current reclassification pass.
 ///
 /// Scenario: user adds a new user_domain. People records were already
@@ -4106,7 +4106,7 @@ fn test_reclassify_meeting_types_from_attendees() {
 #[test]
 fn test_dos206_reclassify_catches_stale_customer_meetings() {
     let db = test_db();
-    // DOS-225: populate the attendees JSON blob — the new Path A enforces
+    // populate the attendees JSON blob — the new Path A enforces
     // full-attendee-coverage against this canonical list.
     setup_meeting_with_attendees(
         &db,
@@ -5234,7 +5234,7 @@ fn test_get_continuity_thread_includes_actions_health_delta_and_new_attendees() 
     assert!(!thread.is_first_meeting);
 }
 
-/// DOS-74 regression: when a meeting's linked_entities junction contains a
+/// Regression: when a meeting's linked_entities junction contains a
 /// high-confidence primary plus a low-confidence sibling (a "suggestion"),
 /// `get_meeting_linked_entities` returns them in primary-first, confidence-
 /// descending order and flags the sibling as `suggested`.
@@ -5253,7 +5253,7 @@ fn test_dos74_get_meeting_linked_entities_primary_then_suggestions() {
     // High-confidence primary link (e.g. resolved from strong domain signal).
     db.link_meeting_entity_with_confidence("m_dos74", "parent", "account", 0.95, true)
         .expect("link primary");
-    // Low-confidence sibling link (domain_sibling tier, DOS-74 suggestion).
+    // Low-confidence sibling link (domain_sibling tier, suggestion).
     db.link_meeting_entity_with_confidence("m_dos74", "sub", "account", 0.45, false)
         .expect("link suggestion");
 
@@ -5274,7 +5274,7 @@ fn test_dos74_get_meeting_linked_entities_primary_then_suggestions() {
     assert!(linked[1].confidence < 0.60);
 }
 
-/// DOS-74 regression: `link_meeting_entity_with_confidence` must NEVER
+/// Regression: `link_meeting_entity_with_confidence` must NEVER
 /// downgrade an existing high-confidence link. If a manual/junction
 /// resolution already wrote confidence 0.95 / is_primary=true, a later
 /// background sweep at 0.45 must not stomp that row.
@@ -5307,7 +5307,7 @@ fn test_dos74_link_confidence_never_downgrades() {
 
 #[test]
 fn test_dos228_sentiment_note_bound_to_current_value() {
-    // DOS-228 Fix 1: get_latest_sentiment_note must return None when the
+    // Regression guard: get_latest_sentiment_note must return None when the
     // account's current sentiment has no associated note, even if older
     // sentiment values have notes in the journal history.
     let db = test_db();
@@ -5370,7 +5370,7 @@ fn test_dos228_sentiment_note_bound_to_current_value() {
 
 #[test]
 fn test_dos228_sentiment_note_none_when_no_current_sentiment() {
-    // DOS-228 Fix 1: when user_health_sentiment is NULL, return None even if
+    // Regression guard: when user_health_sentiment is NULL, return None even if
     // historical journal entries exist.
     let db = test_db();
     let acct = sample_account("acct-no-sent", "NoSent Co");
@@ -5394,7 +5394,7 @@ fn test_dos228_sentiment_note_none_when_no_current_sentiment() {
 
 #[test]
 fn test_dos228_risk_briefing_job_lifecycle() {
-    // DOS-228 Fix 3: job progresses enqueued → running → complete.
+    // Regression guard: job progresses enqueued → running → complete.
     let db = test_db();
     let acct = sample_account("acct-rb", "RB Co");
     db.upsert_account(&acct).expect("upsert");
@@ -5442,7 +5442,7 @@ fn test_dos228_risk_briefing_job_lifecycle() {
 
 #[test]
 fn test_dos228_risk_briefing_job_failure_path() {
-    // DOS-228 Fix 3: failed jobs persist an error_message so the UI can
+    // Regression guard: failed jobs persist an error_message so the UI can
     // explain the retry prompt.
     let db = test_db();
     let acct = sample_account("acct-rb-fail", "Fail Co");
@@ -5488,7 +5488,7 @@ fn test_dos228_risk_briefing_job_failure_path() {
 
 #[test]
 fn test_dos228_risk_briefing_job_error_truncation() {
-    // DOS-228 Fix 3: huge error blobs are truncated to 2000 chars so a
+    // Regression guard: huge error blobs are truncated to 2000 chars so a
     // runaway PTY stderr cannot bloat the DB.
     let db = test_db();
     let acct = sample_account("acct-rb-big", "Big Co");
@@ -5592,7 +5592,7 @@ fn test_dos228_w0eb_health_recompute_pending_marker_lifecycle() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-228 Wave 0f: health_recompute_pending marker durability across sessions.
+// health_recompute_pending marker durability across sessions.
 //
 // The contract the debouncer refactor must uphold:
 //   1. Mutation-path writer commits both the edit and the marker in the same
@@ -5775,7 +5775,7 @@ fn test_dos228_w0f_drain_recovers_after_simulated_shutdown() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-228 Wave 0g: stakeholder mutations co-commit health_recompute_pending
+// stakeholder mutations co-commit health_recompute_pending
 // ---------------------------------------------------------------------------
 //
 // Regression for the Wave 0g HIGH finding: stakeholder mutations
@@ -6005,7 +6005,7 @@ fn test_dos228_w0g_marker_rolled_back_on_tx_failure() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-240: meeting-entity dismissal dictionary
+// meeting-entity dismissal dictionary
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -6037,7 +6037,7 @@ fn test_dos240_dismissal_roundtrip() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-224: single-primary invariant on scored junction writes
+// single-primary invariant on scored junction writes
 // ---------------------------------------------------------------------------
 
 #[test]
@@ -6145,7 +6145,7 @@ fn test_dos224_primary_upsert_does_not_downgrade_confidence() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-225: Path A reclassify — full-attendee-coverage regression
+// Path A reclassify — full-attendee-coverage regression
 // ---------------------------------------------------------------------------
 
 fn setup_meeting_with_attendees(
@@ -6186,7 +6186,7 @@ fn setup_meeting_with_attendees(
     db.upsert_meeting(&meeting).expect("upsert meeting");
 }
 
-/// DOS-225 regression: a meeting whose raw-email attendee list contains
+/// Regression: a meeting whose raw-email attendee list contains
 /// BOTH an internal attendee (with a people row) AND an external attendee
 /// (no people row, unknown domain) must NOT flip to `internal`. The prior
 /// Path A implementation JOIN-dropped the external attendee and the
@@ -6221,7 +6221,7 @@ fn test_dos225_mixed_attendees_blocks_internal_flip() {
     );
 }
 
-/// DOS-225 regression: a fully-internal meeting (every raw attendee has a
+/// Regression: a fully-internal meeting (every raw attendee has a
 /// people row with relationship=internal) must still flip to `internal`.
 #[test]
 fn test_dos225_fully_internal_still_flips() {
@@ -6252,7 +6252,7 @@ fn test_dos225_fully_internal_still_flips() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-224: scored persistence — calendar-sync path
+// scored persistence — calendar-sync path
 // ---------------------------------------------------------------------------
 
 use crate::google_api::classify::ResolvedMeetingEntity as Rme;
@@ -6267,7 +6267,7 @@ fn rme(id: &str, confidence: f64, source: &str) -> Rme {
     }
 }
 
-/// DOS-224 regression: an all-internal meeting that title-matched a known
+/// Regression: an all-internal meeting that title-matched a known
 /// account slug (confidence 0.50 / source="title") must NOT produce an
 /// `is_primary = 1` junction row on the calendar-sync path. The entity
 /// still persists — as a non-primary suggestion — so the UI can surface it
@@ -6303,7 +6303,7 @@ fn test_dos224_title_only_never_primary_on_calendar_sync() {
     assert!(rows[0].confidence < 0.70);
 }
 
-/// DOS-224 regression: when multiple domain-matched account entities land
+/// Regression: when multiple domain-matched account entities land
 /// (e.g., parent BU + subsidiary sharing a domain), the calendar-sync
 /// persistence path must still pick exactly one primary and persist the
 /// others as suggestions. Mirrors the single-primary rule from the
@@ -6345,7 +6345,7 @@ fn test_dos224_multi_bu_single_primary_on_calendar_sync() {
     assert_eq!(primaries[0].id, "parent-bu", "highest-confidence wins");
 }
 
-/// DOS-240 regression: a dismissed entity must NOT be re-linked by the
+/// Regression: a dismissed entity must NOT be re-linked by the
 /// calendar-sync persistence path, even if the resolver still thinks the
 /// match is valid. The legacy behavior (auto-relink on every sync) is the
 /// bug we're fixing.
@@ -6378,7 +6378,7 @@ fn test_dos240_dismissal_blocks_calendar_sync_relink() {
     assert!(rows.is_empty(), "no junction row should have been written");
 }
 
-/// DOS-240 regression: after `restore_meeting_entity` removes the dismissal
+/// Regression: after `restore_meeting_entity` removes the dismissal
 /// record, the next persistence pass re-links the entity normally.
 #[test]
 fn test_dos240_restore_allows_relink() {
@@ -6426,8 +6426,8 @@ fn test_dos240_restore_allows_relink() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-232 Codex fix: account-specific recentMeetings must include non-primary
-// high-confidence account links. DOS-224 persists exactly one primary per
+// account-specific recentMeetings must include non-primary
+// high-confidence account links. The persistence path stores exactly one primary per
 // meeting even when multiple accounts share that meeting, so gating on
 // `is_primary = 1` hid legitimate secondary accounts from their own dossier.
 // ---------------------------------------------------------------------------
@@ -6489,7 +6489,7 @@ fn test_dos232_recent_meetings_still_filters_below_confidence_floor() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-233 Codex fix: unbounded count queries for About-this-dossier totals.
+// unbounded count queries for About-this-dossier totals.
 // ---------------------------------------------------------------------------
 
 /// `get_meeting_count_for_account` must return COUNT(*) without applying the
@@ -6541,7 +6541,7 @@ fn test_dos233_account_meeting_and_transcript_counts_unbounded() {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-231 Codex fix: `update_technical_footprint_field` persists a single
+// `update_technical_footprint_field` persists a single
 // whitelisted column on `account_technical_footprint`. Creates the row if it
 // does not yet exist; stamps `source = 'user_edit'`.
 // ---------------------------------------------------------------------------
@@ -6617,7 +6617,7 @@ fn test_dos231_update_technical_footprint_field_rejects_bad_numeric() {
     );
 }
 
-/// DOS-232 Codex follow-up: `get_meetings_for_account` (used by account
+///  Codex follow-up: `get_meetings_for_account` (used by account
 /// chat LLM context, dossier markdown, email prep enrichment) previously
 /// had no confidence predicate and contaminated chat/prep context with
 /// speculative junctions. The 0.70 floor — already applied to the Record
@@ -6661,7 +6661,7 @@ fn test_dos232_get_meetings_for_account_applies_confidence_floor() {
     );
 }
 
-/// DOS-231 Codex follow-up: editing `usage_tier` (or any non-`open_tickets`
+///  Codex follow-up: editing `usage_tier` (or any non-`open_tickets`
 /// gap field) via `update_technical_footprint_field` must NOT reset an
 /// existing `open_tickets` value. The bootstrap path previously called the
 /// full-row upsert with a sentinel `0`, and the upsert's UPDATE branch
@@ -6710,12 +6710,12 @@ fn test_dos231_update_footprint_field_preserves_existing_open_tickets() {
 }
 
 // =============================================================================
-// DOS-31 / DOS-29 / DOS-226 bundle tests
+// bundle tests
 // =============================================================================
 
 #[test]
 fn test_dos31_auto_retry_promotes_stale_failed() {
-    // DOS-31: a failed row older than the staleness bound and under the
+    // a failed row older than the staleness bound and under the
     // cumulative cap must be promoted back to `pending` with attempts=0
     // so the next enrichment pass picks it up. This is the core
     // "inbox self-heals" behaviour — without it, every transient
@@ -6754,7 +6754,7 @@ fn test_dos31_auto_retry_promotes_stale_failed() {
 
 #[test]
 fn test_dos31_auto_retry_skips_fresh_failed() {
-    // DOS-31: a failure that just happened (well within the staleness
+    // a failure that just happened (well within the staleness
     // bound) must NOT be auto-retried — the same enrichment is likely
     // to fail the same way, and we'd just churn. Only stale failures
     // are eligible.
@@ -6775,10 +6775,10 @@ fn test_dos31_auto_retry_skips_fresh_failed() {
 
 #[test]
 fn test_dos31_auto_retry_respects_cap() {
-    // DOS-31 / DOS-29: rows that have hit the cumulative auto-retry cap
+    // rows that have hit the cumulative auto-retry cap
     // must stay in `failed` so they surface in the user-facing
     // "couldn't be enriched" UX. This is the bridge between auto-recovery
-    // (DOS-31) and explicit user triage (DOS-29).
+    //  and explicit user triage.
     let db = test_db();
     seed_failed_email(&db, "em-capped");
 
@@ -6803,7 +6803,7 @@ fn test_dos31_auto_retry_respects_cap() {
 
 #[test]
 fn test_dos29_permanently_failed_count_in_sync_stats() {
-    // DOS-29: `get_email_sync_stats.permanently_failed` must count only
+    // `get_email_sync_stats.permanently_failed` must count only
     // rows the system has stopped auto-retrying. A row in `failed` but
     // below the cap is invisible to the user-facing failure UX (the
     // next refresh will silently auto-retry it).
@@ -6828,7 +6828,7 @@ fn test_dos29_permanently_failed_count_in_sync_stats() {
 
 #[test]
 fn test_dos29_list_permanently_failed_previews_returns_capped_rows_only() {
-    // DOS-29: the "View details" payload must include only rows above the
+    // the "View details" payload must include only rows above the
     // cap, with subject + sender so the user can decide to retry or skip
     // with context (no enrichment plumbing leaks).
     let db = test_db();
@@ -6855,7 +6855,7 @@ fn test_dos29_list_permanently_failed_previews_returns_capped_rows_only() {
 
 #[test]
 fn test_dos29_skip_failed_emails_marks_resolved() {
-    // DOS-29: Skip = mark resolved so the row leaves the failed-count
+    // Skip = mark resolved so the row leaves the failed-count
     // entirely. Subsequent stats queries must not surface it.
     let db = test_db();
     seed_failed_email(&db, "em-skip-1");
@@ -6873,7 +6873,7 @@ fn test_dos29_skip_failed_emails_marks_resolved() {
 
 #[test]
 fn test_dos226_retry_primitives_are_transactional() {
-    // DOS-226: each retry primitive runs through `with_transaction`. A
+    // each retry primitive runs through `with_transaction`. A
     // single UPDATE is already atomic in SQLite, but the transaction
     // boundary is the contract future signal-emission additions can
     // rely on. Smoke test: invoking each primitive via the transactional
@@ -6910,7 +6910,7 @@ fn test_dos226_retry_primitives_are_transactional() {
 fn test_dos31_dos29_end_to_end_self_heal_then_surface() {
     // End-to-end: a stale failure self-heals on refresh until it hits
     // the cap, then surfaces in the failure UX. This pins the
-    // DOS-31 → DOS-29 handoff.
+    //  →  handoff.
     let db = test_db();
     seed_failed_email(&db, "em-journey");
 

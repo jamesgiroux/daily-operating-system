@@ -1,4 +1,4 @@
--- I645: Feedback events + suppression tombstones
+-- Feedback events + suppression tombstones
 CREATE TABLE IF NOT EXISTS entity_feedback_events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     entity_id TEXT NOT NULL,

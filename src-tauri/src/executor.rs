@@ -2,7 +2,7 @@
 //!
 //! Each workflow has its own execution strategy:
 //! - Today: per-operation pipeline (ADR-0042) — Rust-native prepare + delivery + AI enrichment
-//! - Week: per-operation pipeline (I94) — Rust-native prepare + delivery + AI enrichment
+//! - Week: per-operation pipeline  — Rust-native prepare + delivery + AI enrichment
 //! - Archive: pure Rust reconciliation + file moves
 //! - InboxBatch: direct processor calls
 
@@ -24,7 +24,7 @@ use crate::types::{
     WorkflowPhase, WorkflowStatus,
 };
 
-/// Parameters for Phase 2 background enrichment (I652 Phase 6)
+/// Parameters for Phase 2 background enrichment
 struct Phase2EnrichmentParams {
     workspace: PathBuf,
     execution_id: String,
@@ -334,7 +334,7 @@ impl Executor {
                                 .map_err(|e| e.to_string())?;
                             if was_inserted {
                                 inserted += 1;
-                                // I353 Step 2: Bridge email_signals → signal_events
+                                // Bridge email_signals → signal_events
                                 // Emit email_received for person entities to trigger hygiene rules
                                 if entity_type == "person" {
                                     if let Some(ref pid) = person_id {
@@ -543,7 +543,7 @@ impl Executor {
             self.execute_inbox_batch(&workspace, &execution_id, trigger)
                 .await
         } else if workflow_id == WorkflowId::Week {
-            // Week workflow: per-operation pipeline (I94)
+            // Week workflow: per-operation pipeline
             self.execute_week(&workspace, &execution_id, trigger, &record)
                 .await
         } else {
@@ -616,7 +616,7 @@ impl Executor {
             recon.flags.len(),
         );
 
-        // Step 1.5: Daily impact rollup (feature-gated, I36/I39)
+        // Step 1.5: Daily impact rollup (feature-gated, )
         {
             let impact_enabled = self
                 .state
@@ -670,7 +670,7 @@ impl Executor {
         if let Ok(db) = crate::db::ActionDb::open() {
             reconcile::persist_meetings(&db, &recon, workspace);
         }
-        // DOS-258: legacy entity resolution wake removed. Entity linking
+        // legacy entity resolution wake removed. Entity linking
         // runs on calendar poll via `services::entity_linking::calendar_adapter`.
 
         // Step 3: Archive (move files, clean data/)
@@ -739,7 +739,7 @@ impl Executor {
         execution_id: &str,
         trigger: ExecutionTrigger,
     ) -> Result<(), ExecutionError> {
-        // Feature gate (I39): skip if inbox processing is disabled
+        // Feature gate: skip if inbox processing is disabled
         let inbox_enabled = self
             .state
             .config
@@ -1018,9 +1018,9 @@ impl Executor {
         let _ = self.app_handle.emit("operation-delivered", "actions");
         log::info!("Today pipeline: actions delivered");
 
-        // I513: sync_actions_to_db removed — DB is the source of truth for actions.
+        // sync_actions_to_db removed — DB is the source of truth for actions.
 
-        // Deliver preps (feature-gated I39)
+        // Deliver preps (feature-gated)
         let prep_enabled = self
             .state
             .config
@@ -1031,7 +1031,7 @@ impl Executor {
         let prep_paths = if prep_enabled {
             let paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
-            // I166: reconcile hasPrep flags based on actual content
+            // reconcile hasPrep flags based on actual content
             let _ = crate::workflow::deliver::reconcile_prep_flags(&data_dir);
             let _ = self.app_handle.emit("operation-delivered", "preps");
             log::info!("Today pipeline: preps delivered");
@@ -1041,7 +1041,7 @@ impl Executor {
             Vec::new()
         };
 
-        // Deliver emails (mechanical — instant, feature-gated I39)
+        // Deliver emails (mechanical — instant, feature-gated)
         let email_enabled = self
             .state
             .config
@@ -1124,7 +1124,7 @@ impl Executor {
                 focus: None,
             });
 
-        // Create per-tier PtyManagers (I174)
+        // Create per-tier PtyManagers
         let ai_config = self.ai_model_config();
         let extraction_pty = PtyManager::for_tier(ModelTier::Extraction, &ai_config)
             .with_usage_context(
@@ -1139,7 +1139,7 @@ impl Executor {
                     .with_tier(ModelTier::Synthesis),
             );
 
-        // AI: Enrich emails (high-priority only, feature-gated I39)
+        // AI: Enrich emails (high-priority only, feature-gated)
         if email_enabled {
             if let Err(e) = self.enrich_emails_with_fallback(
                 &data_dir,
@@ -1182,7 +1182,7 @@ impl Executor {
                 .emit("operation-delivered", "emails-enriched");
         }
 
-        // AI: Enrich prep agendas (feature-gated I39)
+        // AI: Enrich prep agendas (feature-gated)
         if prep_enabled {
             if let Err(e) =
                 crate::workflow::deliver::enrich_preps(&data_dir, &extraction_pty, workspace)
@@ -1283,7 +1283,7 @@ impl Executor {
         Ok(path)
     }
 
-    /// Execute standalone email refresh (I20, ADR-0049 Rust-native).
+    /// Execute standalone email refresh (ADR-0049 Rust-native).
     ///
     /// 1. Check that /today pipeline is not currently running
     /// 2. Fetch emails from Gmail, classify, write directive (Rust-native)
@@ -1296,7 +1296,7 @@ impl Executor {
             .await
     }
 
-    /// DOS-226 (Codex finding 1): Variant of `execute_email_refresh` that
+    ///  Variant of `execute_email_refresh` that
     /// threads a user-initiated retry batch id into the orchestrator so
     /// `pending_retry` rows belonging to that batch are promoted to
     /// `pending` *before* the enrichment pass runs.
@@ -1460,7 +1460,7 @@ mod tests {
         ));
     }
 
-    // --- I652 Phase 6: Pipeline Restructuring for Async Enrichment Tests ---
+    // --- Pipeline Restructuring for Async Enrichment Tests ---
     //
     // Key test scenarios:
     // 1. Phase 1 completes and returns result (<45 seconds)

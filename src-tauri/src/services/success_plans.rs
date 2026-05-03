@@ -509,7 +509,7 @@ pub fn create_objective(
         .map_err(|e: crate::db::DbError| e.to_string())
 }
 
-// DOS-209: ServiceContext adds 1 arg; request-object refactor is outside W2-A.
+// ServiceContext adds 1 arg; request-object refactor is outside W2-A.
 #[allow(clippy::too_many_arguments)]
 pub fn update_objective(
     ctx: &ServiceContext<'_>,
@@ -588,7 +588,7 @@ pub fn create_milestone(
         .map_err(|e: crate::db::DbError| e.to_string())
 }
 
-// DOS-209: ServiceContext adds 1 arg; request-object refactor is outside W2-A.
+// ServiceContext adds 1 arg; request-object refactor is outside W2-A.
 #[allow(clippy::too_many_arguments)]
 pub fn update_milestone(
     ctx: &ServiceContext<'_>,
@@ -817,7 +817,7 @@ pub fn apply_success_plan_template(
     })
 }
 
-/// DOS-16: Match unconsumed commitments to milestone titles via Jaccard similarity.
+/// Match unconsumed commitments to milestone titles via Jaccard similarity.
 ///
 /// For each unconsumed commitment on an account, compares its title against all
 /// pending milestones across active objectives. If similarity > 0.7, links the
@@ -1197,7 +1197,7 @@ mod tests {
     }
 }
 
-// ─── DOS-14: Objective Reconciliation ────────────────────────────────
+// ─── Objective Reconciliation ────────────────────────────────
 
 /// Reconcile AI-extracted statedObjectives against user-created objectives.
 ///

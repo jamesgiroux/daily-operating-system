@@ -99,7 +99,7 @@ interface UnifiedAttendee {
   temperature?: string;
   engagement?: string;
   assessment?: string;
-  /** Field path in prep_frozen_json for inline editing (I548) */
+  /** Field path in prep_frozen_json for inline editing  */
   assessmentFieldPath?: string;
   meetingCount?: number;
   lastSeen?: string;
@@ -173,10 +173,10 @@ export default function MeetingDetailPage() {
   const transientRetryCount = useRef(0);
   const granolaAutoCheckInFlight = useRef(false);
 
-  // I529: Intelligence quality feedback
+  // Intelligence quality feedback
   const feedback = useIntelligenceFeedback(meetingId ?? undefined, "meeting");
 
-  // Entity mutation in progress — shows "Updating briefing..." (I477)
+  // Entity mutation in progress — shows "Updating briefing..."
   const [briefingUpdating, setBriefingUpdating] = useState(false);
 
   // Transcript attach
@@ -704,7 +704,7 @@ export default function MeetingDetailPage() {
 
   useTauriEvent<TranscriptProgressPayload>("transcript-progress", handleTranscriptProgress);
 
-  // Safety timeout: clear updating banner after 15s if prep-ready never arrives (I477)
+  // Safety timeout: clear updating banner after 15s if prep-ready never arrives
   useEffect(() => {
     if (!briefingUpdating) return;
     const timer = setTimeout(() => {
@@ -822,11 +822,11 @@ Thanks!`;
     return diff > 0 && diff <= 120 ? diff : null;
   }, [meetingMeta?.startTime]);
 
-  // Determine meeting time state for editability (I194)
+  // Determine meeting time state for editability
   const isPastMeeting = !canEditUserLayer;
   const isEditable = canEditUserLayer;
 
-  // Save a single field in prep_frozen_json (I548 — inline editing for briefing sections)
+  // Save a single field in prep_frozen_json (inline editing for briefing sections)
   const savePrepField = useCallback(async (fieldPath: string, value: string, targetPersonId?: string) => {
     if (!meetingId || !isEditable) return;
     setSaveStatus("saving");
@@ -1009,7 +1009,7 @@ Thanks!`;
   );
   const hasLinkedEntities = linkedEntities.length > 0;
 
-  // Derived data — track source for inline editing (I548)
+  // Derived data — track source for inline editing
   const topRiskEntries = [
     ...((data.entityRisks ?? []).map((risk, i) => ({
       text: sanitizeInlineText(risk.text),
@@ -1185,7 +1185,7 @@ Thanks!`;
           </div>
         )}
 
-        {/* Briefing updating banner (I477) — shown during entity mutation */}
+        {/* Briefing updating banner  — shown during entity mutation */}
         {briefingUpdating && (
           <div className={styles.updatingBanner}>
             <Loader2 size={14} />
@@ -1255,7 +1255,7 @@ Thanks!`;
               </div>
             )}
 
-              {/* Account health strip — I502 */}
+              {/* Account health strip —  */}
               {linkedEntities.some((e) => e.entityType === "account" && entityHealthMap?.[e.id]) && (
                 <div className={styles.healthStripContainer}>
                   {linkedEntities
@@ -1285,7 +1285,7 @@ Thanks!`;
                 </div>
               )}
 
-              {/* I527: Deterministic consistency status banner */}
+              {/* Deterministic consistency status banner */}
               {data.consistencyStatus && data.consistencyStatus !== "ok" && (
                 <div
                   className={clsx(
@@ -1980,7 +1980,7 @@ function UnifiedAttendeeList({
 }
 
 // =============================================================================
-// User Editability Components (I194 / ADR-0065)
+// User Editability Components (ADR-0065)
 // =============================================================================
 
 function UnifiedPlanEditor({
@@ -2263,7 +2263,7 @@ function UnifiedPlanEditor({
 }
 
 // =============================================================================
-// Outcomes Section (I195 / ADR-0066)
+// Outcomes Section (ADR-0066)
 // =============================================================================
 
 function OutcomesSection({

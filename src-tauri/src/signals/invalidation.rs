@@ -1,4 +1,4 @@
-//! Signal-driven prep invalidation (I308 — ADR-0080 Phase 4).
+//! Signal-driven prep invalidation (ADR-0080 Phase 4).
 //!
 //! When a signal arrives for an entity, check upcoming meetings (48h) linked
 //! to that entity. If the meeting has stale prep, push its ID to the existing

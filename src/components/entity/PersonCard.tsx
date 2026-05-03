@@ -446,7 +446,7 @@ function deriveLocation(person: StakeholderFull): string | null {
   // If we have a specific city/location field later, read it here. For now
   // the mockup shows "New York · external" — we don't have city, but we
   // can still show the internal/external marker when the org differs.
-  // Return null to skip; an explicit schema field lives in DOS-249.
+  // Return null to skip; an explicit schema field lives in.
   void person;
   return null;
 }

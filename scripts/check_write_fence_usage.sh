@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DOS-311: enforce universal write fence — production callers of
+# enforce universal write fence — production callers of
 # `write_intelligence_json` should route through
 # `crate::intelligence::write_fence::fenced_write_intelligence_json`.
 #
@@ -7,19 +7,20 @@
 # `write_intelligence_json(` call sites added outside the allowlist, but
 # does NOT yet require migrating the W0 post-commit warn-log paths in
 # `services/intelligence.rs` to the fence (those are the natural fence
-# integration points; W3 cleanup migrates them alongside DOS-7's cutover).
+# integration points; the claims cleanup migrates them alongside the schema
+# cutover).
 #
 # Allowlist:
 #   - intelligence/write_fence.rs   — the fence module's own internal use
 #   - intelligence/io.rs            — the canonical implementation
 #   - tests, fixtures, examples
 #   - services/intelligence.rs      — W0 post-commit cache writes (transitional;
-#                                     migrated in W3 alongside DOS-7)
+#                                     migrated alongside the claims schema cutover)
 #   - intel_queue.rs                — the queue worker's final write
-#                                     (transitional; migrated in W3)
+#                                     (transitional; migrated alongside the fence)
 #
-# After W3, the allowlist for `services/intelligence.rs` and `intel_queue.rs`
-# is removed.
+# After the fence migration, the allowlist for `services/intelligence.rs` and
+# `intel_queue.rs` is removed.
 
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -62,7 +63,7 @@ while IFS= read -r line; do
   check_line "$line"
 done < <(grep -rEn "$PATTERN" "$ROOT_DIR/src-tauri/src/" 2>/dev/null || true)
 
-# DOS-311 follow-up: also catch any atomic_write_str call whose path
+# also catch any atomic_write_str call whose path
 # argument references intelligence.json. The W1 audit found no such
 # bypass today; this guard prevents future regressions where a caller
 # constructs an intelligence.json path manually and writes it raw.
@@ -74,8 +75,8 @@ done < <(grep -rEn "$ATOMIC_PATTERN" "$ROOT_DIR/src-tauri/src/" 2>/dev/null || t
 if [ "$violations" -gt 0 ]; then
   echo
   echo "ERROR: ${violations} direct write_intelligence_json call(s) outside fence allowlist."
-  echo "Use intelligence::write_fence::fenced_write_intelligence_json (DOS-311)."
-  echo "If intentionally adding to a transitional allowlist (e.g., post-W3 cleanup),"
+  echo "Use intelligence::write_fence::fenced_write_intelligence_json."
+  echo "If intentionally adding to a transitional allowlist,"
   echo "update scripts/check_write_fence_usage.sh."
   exit 1
 fi

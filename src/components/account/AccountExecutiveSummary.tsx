@@ -23,7 +23,7 @@ export function AccountExecutiveSummary({ intelligence }: Props) {
   const narrativeTruncated = fullNarrative.length > LEDE_LIMIT && !showFullLede;
   const narrative = narrativeTruncated ? fullNarrative.slice(0, LEDE_LIMIT) + "\u2026" : fullNarrative;
 
-  // DOS-83: Check if executive assessment is flagged as cross-entity contamination.
+  // Check if executive assessment is flagged as cross-entity contamination.
   const assessmentBleed = hasBleedFlag(intelligence?.consistencyFindings, "executiveAssessment");
 
   if (!narrative) return null;

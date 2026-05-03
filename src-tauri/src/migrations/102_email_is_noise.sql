@@ -1,4 +1,4 @@
--- DOS-242: Email noise filter — hard drop.
+-- Email noise filter — hard drop.
 -- Add is_noise column to emails table so bulk/automated/marketing email
 -- can be suppressed entirely (not merely demoted to priority='low').
 --

@@ -1,4 +1,4 @@
-//! DOS-259 (W2-B): `PtyClaudeCode` — `IntelligenceProvider` adapter for the
+//!  `PtyClaudeCode` — `IntelligenceProvider` adapter for the
 //! local Claude Code PTY path.
 //!
 //! Wraps `pty::PtyManager` so callers in `intel_queue` and `services::intelligence`
@@ -47,11 +47,11 @@ const DEFAULT_NICE_PRIORITY: i32 = 10;
 /// Claude Code does not expose a temperature flag; the underlying model
 /// uses its native default sampling temperature (effectively `1.0` for
 /// the Claude family). Recorded here for ADR-0106 §3 fingerprint metadata
-/// completeness. DOS-213 (W3) replaces this with the actual configured
+/// completeness.  (W3) replaces this with the actual configured
 /// temperature when canonical fingerprint hashing lands.
 const CLAUDE_CODE_DEFAULT_TEMPERATURE: f32 = 1.0;
 
-/// DOS-259 (W2-B cycle 3): bundled args for `PtySpawnAdapter::spawn_claude`.
+///  bundled args for `PtySpawnAdapter::spawn_claude`.
 ///
 /// Bundles workspace, prompt, tier, ai_config, usage_context, timeout,
 /// and nice_priority into a single struct so the trait method stays under
@@ -66,7 +66,7 @@ pub struct PtySpawnRequest<'a> {
     pub nice_priority: i32,
 }
 
-/// DOS-259 (W2-B cycle 3, L2 finding #2): test seam for the actual PTY
+///  test seam for the actual PTY
 /// invocation. Production uses `DefaultPtySpawnAdapter` which constructs
 /// a `PtyManager` per call (matching the legacy inline behavior). Tests
 /// inject a `FakePtySpawnAdapter` with a captured-stdout fixture so
@@ -312,7 +312,7 @@ mod tests {
     }
 
     /// `pty_claude_code_fixture_returns_expected_fingerprint_metadata`
-    /// (per DOS-259 plan §9): the metadata fields PtyClaudeCode populates
+    /// (per plan §9): the metadata fields PtyClaudeCode populates
     /// at complete() time are deterministic for a given (config, tier).
     /// We assert the metadata shape via current_model() + provider_kind()
     /// rather than spawning Claude Code (which would require an authenticated

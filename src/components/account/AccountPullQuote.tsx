@@ -5,7 +5,7 @@ import styles from "@/pages/AccountDetailEditorial.module.css";
 
 interface AccountPullQuoteProps {
   intelligence: EntityIntelligence;
-  /** DOS-18: render as the Thesis chapter (serif 40px, label + freshness meta). */
+  /** render as the Thesis chapter (serif 40px, label + freshness meta). */
   variant?: "default" | "thesis";
   /** Source count fragments for freshness meta (e.g., "14 meetings · 5 transcripts"). */
   freshnessFragments?: string[];

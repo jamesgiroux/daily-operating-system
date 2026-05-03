@@ -19,13 +19,13 @@ pub struct BridgeSyncSummary {
     pub updated: usize,
     pub skipped_tombstoned: usize,
     pub skipped_missing_id: usize,
-    /// DOS-321: bridge_id was new but mapped to an existing action via
+    /// bridge_id was new but mapped to an existing action via
     /// normalized-title match (alias). No new action row was created;
     /// the bridge row was inserted pointing at the existing action.
     pub aliased_to_existing: usize,
 }
 
-/// DOS-321: Normalize a commitment title for cross-source dedup.
+/// Normalize a commitment title for cross-source dedup.
 ///
 /// The AI emits stable commitment_ids per source — but re-enrichment hits
 /// different sources (Gong call, meeting transcript, CRM, Glean) for the
@@ -146,7 +146,7 @@ pub fn sync_ai_commitments(
             None => {
                 // Brand-new commitment_id. Two sub-cases:
                 //
-                // (a) DOS-321: The same commitment text may already have a
+                // (a) The same commitment text may already have a
                 //     non-tombstoned action under a *different* commitment_id
                 //     (different source, e.g. Gong vs meeting transcript vs
                 //     Glean). Re-emerging the row would create dupes that
@@ -234,7 +234,7 @@ pub fn sync_ai_commitments(
     Ok(summary)
 }
 
-/// DOS-321: Look up an existing non-terminal commitment-typed action with
+/// Look up an existing non-terminal commitment-typed action with
 /// the same normalized title under the given entity. Used by
 /// `sync_ai_commitments` to alias a new commitment_id onto an existing
 /// action instead of creating a duplicate row.

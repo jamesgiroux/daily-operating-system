@@ -1,4 +1,4 @@
--- DOS-7 L2 cycle-12 fix #2 + cycle-15 fix #2: withdraw any backfill
+-- Withdraw any backfill
 -- claim row whose subject_ref kind is not a supported SubjectRef
 -- variant.
 --

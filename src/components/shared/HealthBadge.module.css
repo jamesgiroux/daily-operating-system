@@ -28,7 +28,7 @@
   height: 10px;
 }
 
-/* DOS-84: Muted dot for insufficient data */
+/* Muted dot for insufficient data */
 .dotMuted {
   background: var(--color-text-quaternary, #ccc);
   opacity: 0.5;
@@ -55,7 +55,7 @@
   color: var(--color-text-primary);
 }
 
-/* DOS-84: Muted score for insufficient data */
+/* Muted score for insufficient data */
 .scoreMuted {
   color: var(--color-text-tertiary);
   opacity: 0.6;

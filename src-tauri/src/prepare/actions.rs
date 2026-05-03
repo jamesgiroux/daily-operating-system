@@ -1,7 +1,7 @@
 //! Action parsing from workspace markdown + SQLite state merge.
 //!
 //! Ported from ops/action_parse.py per ADR-0049.
-//! Addresses I23: pre-checks SQLite before extracting from markdown
+//! Addresses pre-checks SQLite before extracting from markdown
 //! to avoid re-extracting completed actions.
 
 use std::collections::HashSet;
@@ -48,12 +48,12 @@ impl ActionResult {
 
 /// Parse actions from workspace markdown + merge SQLite state.
 ///
-/// Addresses I23: pre-checks SQLite before extracting from markdown
+/// Addresses pre-checks SQLite before extracting from markdown
 /// to avoid re-extracting completed actions.
 pub fn parse_workspace_actions(workspace: &Path, db: Option<&crate::db::ActionDb>) -> ActionResult {
     let mut result = ActionResult::new();
 
-    // Load existing action titles from SQLite (I23 pre-check)
+    // Load existing action titles from SQLite (pre-check)
     let existing_titles = match db {
         Some(db) => load_existing_titles(db),
         None => HashSet::new(),
@@ -123,7 +123,7 @@ pub fn parse_workspace_actions(workspace: &Path, db: Option<&crate::db::ActionDb
         // Collapse whitespace
         title = whitespace_re.replace_all(&title, " ").trim().to_string();
 
-        // I23: Skip if this action already exists in SQLite
+        // Skip if this action already exists in SQLite
         if existing_titles.contains(&title.to_lowercase()) {
             continue;
         }
@@ -169,7 +169,7 @@ pub fn parse_workspace_actions(workspace: &Path, db: Option<&crate::db::ActionDb
     result
 }
 
-/// Load all existing action titles from SQLite for dedup pre-check (I23).
+/// Load all existing action titles from SQLite for dedup pre-check.
 fn load_existing_titles(db: &crate::db::ActionDb) -> HashSet<String> {
     let mut titles = HashSet::new();
     let conn = db.conn_ref();

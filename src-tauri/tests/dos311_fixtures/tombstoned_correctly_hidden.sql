@@ -1,4 +1,4 @@
--- DOS-311 fixture: tombstoned-correctly-hidden.
+-- Tombstone fixture: correctly hidden item.
 --
 -- A tombstone exists. The legacy projection does NOT include the item
 -- (it was correctly hidden when the user dismissed). Reconcile must

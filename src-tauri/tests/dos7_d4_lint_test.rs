@@ -1,7 +1,7 @@
-//! DOS-7 D4-2: lint regression tests for the claim-substrate guards.
+//! Claim-substrate lint regression tests.
 //!
 //! Each lint script in src-tauri/scripts/check_claim_*.sh enforces an
-//! invariant from the DOS-7 plan §6 + amendment D. These tests run the
+//! invariant from the claims plan §6 + amendment D. These tests run the
 //! scripts against the live tree and assert clean exit, so a future
 //! regression that violates the invariant fails CI loudly.
 

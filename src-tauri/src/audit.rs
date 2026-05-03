@@ -1,4 +1,4 @@
-//! Audit trail for AI-generated data (I297).
+//! Audit trail for AI-generated data.
 //!
 //! Persists raw Claude output to disk so bad AI data can be investigated
 //! after the fact. Files are written to `{workspace}/_audit/` and pruned

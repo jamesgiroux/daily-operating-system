@@ -1,7 +1,7 @@
 //! ADR-0098 data lifecycle primitives.
 //!
 //! Source-aware purge infrastructure used when connector credentials are revoked.
-//! Also provides DB growth monitoring and age-based purge (I614).
+//! Also provides DB growth monitoring and age-based purge.
 
 use std::collections::HashMap;
 
@@ -13,7 +13,7 @@ use super::{ActionDb, DbError};
 use crate::db::people::FieldSource;
 
 // =============================================================================
-// I614: DB growth monitoring
+// DB growth monitoring
 // =============================================================================
 
 /// Row count for a single monitored table.
@@ -123,7 +123,7 @@ pub fn log_db_size_at_startup() -> u64 {
 }
 
 // =============================================================================
-// I614: Age-based purge
+// Age-based purge
 // =============================================================================
 
 /// Result of an age-based purge run.
@@ -274,7 +274,7 @@ pub fn purge_orphaned_embeddings(db: &ActionDb) -> Result<usize, DbError> {
 
 /// Run all age-based purge operations. Returns a report of what was purged.
 ///
-/// Retention defaults (from I614 spec):
+/// Retention defaults (from spec):
 /// - signal_events: 180 days (user corrections preserved)
 /// - email_signals (deactivated): 30 days
 /// - emails (resolved): 60 days
@@ -773,7 +773,7 @@ mod tests {
         assert_eq!(remaining_user_signals, 1);
     }
 
-    // --- I614: Age-based purge tests ---
+    // --- Age-based purge tests ---
 
     #[test]
     fn purge_aged_signals_preserves_user_corrections() {

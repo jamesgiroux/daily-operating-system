@@ -682,7 +682,7 @@
   color: var(--color-text-tertiary);
 }
 
-/* ── Enrichment provenance tag (I550) ── */
+/* ── Enrichment provenance tag  ── */
 
 .enrichmentTag {
   display: inline-block;
@@ -867,7 +867,7 @@
   color: var(--color-text-secondary);
 }
 
-/* -- Champion designation badge (I646 C2) -- */
+/* -- Champion designation badge (C2) -- */
 
 .championBadgeRow {
   margin-top: 24px;
@@ -935,7 +935,7 @@
   margin: 0;
 }
 
-/* ── I652: Suggested stakeholder card overlays (editorial grid cards) ── */
+/* ── Suggested stakeholder card overlays (editorial grid cards) ── */
 
 .suggestedCardActions {
   position: absolute;
@@ -1001,7 +1001,7 @@
   margin-top: 8px;
 }
 
-/* ── I652: Multi-role badges ── */
+/* ── Multi-role badges ── */
 
 .roleBadges {
   display: flex;
@@ -1085,7 +1085,7 @@
   color: var(--color-garden-larkspur);
 }
 
-/* ── I652: Role picker dropdown ── */
+/* ── Role picker dropdown ── */
 
 .rolePickerDropdown {
   position: absolute;
@@ -1117,7 +1117,7 @@
   background: var(--color-black-4);
 }
 
-/* ── I652: Engagement badge variants ── */
+/* ── Engagement badge variants ── */
 
 .engagementStrongAdvocate { background: var(--color-spice-turmeric-12); color: var(--color-spice-turmeric); }
 .engagementEngaged { background: var(--color-garden-rosemary-14); color: var(--color-garden-rosemary); }

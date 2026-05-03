@@ -401,7 +401,7 @@ pub fn uninstall_global() {
 
 #[cfg(test)]
 mod tests {
-    //! DOS-229 — verify that writes are immediately visible to subsequent
+    //! verify that writes are immediately visible to subsequent
     //! reads through the long-lived reader pool. Without the fix, the
     //! `query_only=ON` reader connections could serve a stale WAL snapshot.
     use super::*;

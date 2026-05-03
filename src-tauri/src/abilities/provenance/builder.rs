@@ -159,7 +159,7 @@ impl ProvenanceBuilder {
     /// Finalizes an ability output by serializing `data`, walking its JSON-pointer
     /// leaves, and verifying every leaf has field attribution.
     ///
-    /// This is the DOS-211 interpretation of ADR-0105 §7 / plan §41:
+    /// This is the current interpretation of ADR-0105 §7 / plan §41:
     /// "build time" means `ProvenanceBuilder::finalize()` time at the ability
     /// return boundary, not Rust compile time. The builder rejects missing
     /// attribution before returning `AbilityOutput<T>`.

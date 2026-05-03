@@ -6,7 +6,7 @@
  * - standard: dot + score + trend arrow
  * - hero: large score + band tint + trend rationale + confidence qualifier
  *
- * I502: Wired across AccountsPage, AccountHero, MeetingDetailPage,
+ * Wired across AccountsPage, AccountHero, MeetingDetailPage,
  * DailyBriefing, and WeekPage.
  */
 import { TrendingUp, TrendingDown, Minus, Zap } from "lucide-react";
@@ -18,7 +18,7 @@ interface HealthBadgeProps {
   band: "green" | "yellow" | "red";
   trend: IntelligenceHealthTrend;
   confidence?: number;
-  /** DOS-84: When false, show "Insufficient Data" instead of the score. */
+  /** When false, show "Insufficient Data" instead of the score. */
   sufficientData?: boolean;
   source?: string;
   size?: "compact" | "standard" | "hero";
@@ -77,7 +77,7 @@ export function HealthBadge({
   showScore = true,
   divergence,
 }: HealthBadgeProps) {
-  // DOS-84: When sufficientData is not true (false OR undefined from old cached data),
+  // When sufficientData is not true (false OR undefined from old cached data),
   // show "Insufficient Data" instead of the computed score (which is unreliable with < 3 dimensions).
   const isInsufficient = sufficientData !== true;
 
@@ -135,7 +135,7 @@ export function HealthBadge({
   const dotSizeClass = size === "compact" ? styles.dotCompact : styles.dotStandard;
   const scoreSizeClass = size === "compact" ? styles.scoreCompact : styles.scoreStandard;
 
-  // DOS-84: Insufficient data in compact/standard — muted dot + visible label
+  // Insufficient data in compact/standard — muted dot + visible label
   if (isInsufficient) {
     return (
       <span className={styles.badge} title="Insufficient data for health score">

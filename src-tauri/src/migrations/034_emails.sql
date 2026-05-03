@@ -1,4 +1,4 @@
--- Migration 034: Email metadata persistence (I368)
+-- Migration 034: Email metadata persistence
 -- Stores email metadata from Gmail inbox for enrichment, reconciliation, and entity linking.
 
 CREATE TABLE IF NOT EXISTS emails (

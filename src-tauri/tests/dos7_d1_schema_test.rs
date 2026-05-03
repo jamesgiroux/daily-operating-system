@@ -1,4 +1,4 @@
-//! DOS-7 D1: schema-only test for the claims commit substrate. Verifies
+//! Claims substrate schema-only test. Verifies
 //! that the D1 migration SQL creates all 6 tables + indexes idempotently.
 
 use rusqlite::Connection;

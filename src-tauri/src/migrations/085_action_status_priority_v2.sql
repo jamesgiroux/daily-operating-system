@@ -1,4 +1,4 @@
--- DOS-55: Migrate action status to Linear-compatible 6-status vocabulary
+-- Migrate action status to Linear-compatible 6-status vocabulary
 -- and priority from P1/P2/P3 strings to integers 0-4.
 --
 -- Status mapping:

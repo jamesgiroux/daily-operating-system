@@ -1,4 +1,4 @@
-//! DOS-259 (W2-B): `IntelligenceProvider` trait + supporting types.
+//!  `IntelligenceProvider` trait + supporting types.
 //!
 //! Combines ADR-0106 §3 (`Completion` / `FingerprintMetadata` / trait shape)
 //! and ADR-0091 (`Send + Sync`, `ProviderError`, AppState-owned `Arc`).
@@ -9,13 +9,13 @@
 //!
 //! `ReplayProvider` lives in this module gated for `#[cfg(test)]` and the
 //! `Evaluate` execution mode. Fixture file format and on-disk layout are
-//! out of scope here — W4-B (DOS-216) owns that.
+//! out of scope here — W4-B  owns that.
 //!
 //! ## Provider seam routing (per ADR-0104 + L6 2026-04-29 ruling)
 //!
 //! `select_provider(ctx: &AbilityContext, tier)` is the single source of
 //! ability-context provider selection. `AbilityContext` lands in W3-A
-//! (DOS-210 ability registry); until then early callers — `intel_queue.rs`
+//! (ability registry); until then early callers — `intel_queue.rs`
 //! and `services::intelligence` — read `AppState`'s configured provider
 //! `Arc` per ADR-0091 ("read at call time; switch mid-queue takes effect
 //! on next dequeue"). When `AbilityContext` lands those callers migrate
@@ -90,7 +90,7 @@ impl From<&str> for ModelName {
 /// `ProviderKind::Other("replay")` + `ModelName::new("replay")` +
 /// `temperature: 0.0`. Live providers MUST override at construction.
 ///
-/// DOS-213 (W3) consumes this for canonical fingerprint hashing.
+/// Canonical fingerprint hashing consumes this metadata.
 #[derive(Debug, Clone)]
 pub struct FingerprintMetadata {
     pub provider: ProviderKind,
@@ -130,7 +130,7 @@ pub struct Completion {
 /// `text` is the rendered prompt the provider executes. `workspace` is
 /// the optional working directory for PTY-style providers (Claude Code
 /// requires a workspace; HTTP-style providers ignore it).
-/// `template_id` and `template_hash` are forward-looking hooks DOS-213
+/// `template_id` and `template_hash` are forward-looking hooks
 /// will populate when production prompt fingerprinting lands; W2-B
 /// callers may leave them `None`.
 #[derive(Debug, Clone, Default)]
@@ -160,8 +160,7 @@ impl PromptInput {
 /// Provider error surface per ADR-0091.
 ///
 /// Variants cover the failure modes downstream callers branch on. The
-/// L2 cycle-26 (DOS-259) review flagged the original surface as too
-/// coarse — ADR-0106 §3 + the DOS-259 acceptance criteria call out
+/// original surface was too coarse: ADR-0106 §3 calls out
 /// `Unavailable` (provider offline / disconnected), `MalformedResponse`
 /// (parse failure on a successful HTTP/PTY round-trip),
 /// `TierUnavailable` (tier-specific capability missing), and
@@ -245,9 +244,9 @@ pub trait IntelligenceProvider: Send + Sync {
 
 /// Stable hash of a prompt's text used for `ReplayProvider` lookups.
 ///
-/// W2-B uses a SHA-256 of the rendered prompt text. DOS-213 lands a
-/// canonical-prompt hash that includes template id + parameter values
-/// for production fingerprinting; this is the W2-B-only hook.
+/// Replay mode uses a SHA-256 of the rendered prompt text. Production
+/// fingerprinting can later include template id + parameter values; this
+/// hook intentionally stays text-only for replay fixtures.
 pub fn prompt_replay_hash(prompt: &PromptInput) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -360,11 +359,11 @@ pub enum ExecutionMode {
     Simulate,
 }
 
-/// L2 cycle-26 (DOS-259) fix #2: real mode-bearing provider selector.
+/// Real mode-bearing provider selector.
 ///
 /// Replaces the prior `select_provider_stub` that always returned
 /// `Err(ModeNotSupported)`. This signature is forward-compatible with
-/// the W3-A `AbilityContext`-bearing form: when DOS-210 lands the
+/// the future `AbilityContext`-bearing form: when the ability context lands,
 /// caller migrates from `(mode, live, replay, tier)` to
 /// `(ability_ctx, tier)` while the routing semantics stay identical.
 ///
@@ -494,8 +493,8 @@ mod tests {
 
     #[tokio::test]
     async fn select_provider_routes_modes_to_correct_arc() {
-        // L2 cycle-26 (DOS-259) F2: replaced the prior
-        // select_provider_stub with a real mode-bearing selector.
+        // Replaced the prior select_provider_stub with a real
+        // mode-bearing selector.
         // Live → live; Evaluate → replay (or fail-closed if unset);
         // Simulate → fail-closed.
         let live: Arc<dyn IntelligenceProvider> = Arc::new(

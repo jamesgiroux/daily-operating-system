@@ -509,7 +509,7 @@ function TimelineDayGroup({
         {meetings.map((m) => {
           const daysUntil = !isPast ? computeDaysUntil(m.startTime) : null;
           const needsPrep = !m.hasPrep;
-          // I502: First linked account with health data
+          // First linked account with health data
           const accountHealth = m.entityHealthMap
             ? m.entities
                 .filter((e) => e.entityType === "account" && m.entityHealthMap?.[e.id])

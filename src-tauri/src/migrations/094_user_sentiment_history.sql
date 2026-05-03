@@ -1,4 +1,4 @@
--- DOS-27: Sentiment journal entries.
+-- Sentiment journal entries.
 -- Each entry is a journal record (value + optional note + timestamp).
 -- Computed health band at set-time is stored for divergence analysis
 -- and sparkline overlay.

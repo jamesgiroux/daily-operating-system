@@ -1,4 +1,4 @@
-//! Filesystem hardening for the DailyOS data directory (I463).
+//! Filesystem hardening for the DailyOS data directory.
 //!
 //! Sets restrictive permissions and excludes sensitive data from Time Machine.
 //! All operations are best-effort — log warnings on failure, never crash.

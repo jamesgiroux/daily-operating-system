@@ -1,4 +1,4 @@
--- I529/I536: Intelligence feedback table for tracking user reactions to AI-generated content.
+--: Intelligence feedback table for tracking user reactions to AI-generated content.
 --
 -- Records positive/negative/replaced feedback on individual intelligence fields,
 -- enabling the system to learn which assessments resonate and which don't.

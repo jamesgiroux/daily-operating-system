@@ -1,4 +1,4 @@
-//! Person-to-person relationship storage (I390 — ADR-0088).
+//! Person-to-person relationship storage (ADR-0088).
 
 use rusqlite::params;
 use serde::{Deserialize, Serialize};

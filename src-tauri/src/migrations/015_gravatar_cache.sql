@@ -1,4 +1,4 @@
--- I229: Gravatar MCP integration — avatar and profile cache
+-- Gravatar MCP integration — avatar and profile cache
 CREATE TABLE IF NOT EXISTS gravatar_cache (
     email TEXT PRIMARY KEY,
     avatar_url TEXT,

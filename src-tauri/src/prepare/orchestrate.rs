@@ -62,7 +62,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             .insert("focus".to_string(), json!(focus));
     }
 
-    // Step 2: Fetch calendar events + classify (I336: entity-generic)
+    // Step 2: Fetch calendar events + classify (entity-generic)
     let entity_hints = {
         let db_guard_owned = crate::db::ActionDb::open().ok();
         let db_ref = db_guard_owned.as_ref();
@@ -82,7 +82,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                         keywords: vec![],
                         emails: vec![],
                         // account_type is unknown in the filesystem fallback (no DB).
-                        // The DOS-206 guard will not fire for internal accounts in
+                        // The  guard will not fire for internal accounts in
                         // this path — acceptable because the DB-backed path is
                         // always used in production.
                         account_type: None,
@@ -113,10 +113,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4: Fetch and classify emails
     let customer_domains = extract_customer_domains(&meetings_by_type);
-    // DOS-176: use merged email priority keywords (base + preset) from cached config
+    // use merged email priority keywords (base + preset) from cached config
     let preset_email_keywords: Vec<String> =
         state.get_merged_signal_config().email_priority_keywords;
-    // I374: Load dismissed domains for relevance learning penalty
+    // Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
         .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
@@ -151,7 +151,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         email_result.low_count,
     );
 
-    // Step 4a2: Signal-context boosting (I320 — boost medium emails with entity signals)
+    // Step 4a2: Signal-context boosting (boost medium emails with entity signals)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
             let merged_signal_types = state.get_merged_signal_config().email_signal_types;
@@ -206,10 +206,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // I365: Persist fetched emails to DB (after classification + boosting)
+    // Persist fetched emails to DB (after classification + boosting)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
-            // DOS-242: load tracked domains once for the noise filter.
+            // load tracked domains once for the noise filter.
             let (account_domains_for_noise, person_domains_for_noise) = load_tracked_domains(&db);
             let mut persisted = 0usize;
             let mut suppressed = 0usize;
@@ -288,12 +288,12 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 );
             }
 
-            // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
+            // Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
             reconcile_inbox_emails(&email_result.raw_emails, &db);
         }
     }
 
-    // I370: Refresh thread positions from sent messages
+    // Refresh thread positions from sent messages
     {
         let sent_thread_ids = google_api::gmail::fetch_recent_sent_thread_ids(
             &google_api::get_valid_access_token()
@@ -309,7 +309,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // I367: Mandatory email enrichment (entity resolution + AI analysis)
+    // Mandatory email enrichment (entity resolution + AI analysis)
     // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
     {
         let ai_config = {
@@ -323,7 +323,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         if enriched > 0 {
             log::info!("prepare_today: enriched {} emails", enriched);
         }
-        // I372: Emit entity signals from enriched emails
+        // Emit entity signals from enriched emails
         if let Ok(db) = crate::db::ActionDb::open() {
             let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
                 &db,
@@ -335,7 +335,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // I395: Score enriched emails after enrichment + signal emission
+    // Score enriched emails after enrichment + signal emission
     {
         // Split-lock: read active emails, score on a separate DB connection, then
         // write scores back under lock. Avoids holding DB mutex during ONNX inference.
@@ -378,7 +378,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Step 4a3: Email commitment extraction (I321 — extract actions from high-priority email bodies)
+    // Step 4a3: Email commitment extraction (extract actions from high-priority email bodies)
     {
         let body_access_enabled = {
             let config_guard = state.config.read();
@@ -460,7 +460,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Step 4b: Email-meeting bridge (I306 — correlate email signals with upcoming meetings)
+    // Step 4b: Email-meeting bridge (correlate email signals with upcoming meetings)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
             match crate::signals::email_bridge::run_email_meeting_bridge(&db, &state.signals.engine)
@@ -479,7 +479,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Step 4b2: Email cadence monitoring (I319 — anomaly detection)
+    // Step 4b2: Email cadence monitoring (anomaly detection)
     let cadence_anomalies = {
         if let Ok(db) = crate::db::ActionDb::open() {
             let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies_with_engine(
@@ -546,7 +546,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Step 4b3: Auto-archive low-priority emails (I323)
+    // Step 4b3: Auto-archive low-priority emails
     let mut archived_count = 0u64;
     {
         let auto_archive_enabled = {
@@ -619,7 +619,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Step 4c: Thread position tracking (I318 — "ball in your court")
+    // Step 4c: Thread position tracking ("ball in your court")
     // Only track high-priority email threads for "ball in your court" detection
     let replies_needed = {
         if let Ok(db) = crate::db::ActionDb::open() {
@@ -743,7 +743,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     continue;
                 }
 
-                // DOS-258: entity linking is owned by
+                // entity linking is owned by
                 // `services::entity_linking::calendar_adapter::evaluate_meeting`,
                 // which runs on every calendar poll and writes to
                 // `linked_entities_raw`. The legacy classification-time
@@ -760,7 +760,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Step 5b: Intelligence freshness check (I327/I331)
+    // Step 5b: Intelligence freshness check
     // For each classified meeting, check if intelligence exists and is fresh.
     // Refresh stale or missing intelligence before gathering meeting contexts.
     {
@@ -862,7 +862,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         );
     }
 
-    // Step 6: Meeting contexts (I305: thread embedding model for entity resolution)
+    // Step 6: Meeting contexts (thread embedding model for entity resolution)
     let db_guard_owned = crate::db::ActionDb::open().ok();
     let db_ref = db_guard_owned.as_ref();
     let embedding_ref = state.embedding_model.as_ref();
@@ -875,7 +875,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         active_preset.as_ref(),
     );
 
-    // I331: Assembly model — inject pre-computed AI intelligence into meeting contexts.
+    // Assembly model — inject pre-computed AI intelligence into meeting contexts.
     // Meetings that were enriched by generate_meeting_intelligence (Step 5b or weekly run)
     // have AI-enriched prep_context_json. Merge that into the directive's meeting contexts
     // so downstream surfaces (meeting detail, briefing) can render narrative, risks, etc.
@@ -907,7 +907,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // DB connection dropped when scope ends — no persistent handle to manage.
 
-    // Step 6a: Run proactive detection scan (I260)
+    // Step 6a: Run proactive detection scan
     {
         if let Ok(db) = crate::db::ActionDb::open() {
             let (profile, user_domains, _) = get_config(state);
@@ -925,7 +925,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     }
 
-    // Step 6b: Signal-driven briefing callouts (I308)
+    // Step 6b: Signal-driven briefing callouts
     let callouts = {
         let callout_guard_owned = crate::db::ActionDb::open().ok();
         let callout_db = callout_guard_owned.as_ref();
@@ -944,7 +944,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         }
     };
 
-    // Step 6c: Person intelligence enrichment triggers (I338)
+    // Step 6c: Person intelligence enrichment triggers
     {
         if let Ok(db) = crate::db::ActionDb::open() {
             let n =
@@ -965,7 +965,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 8: Generate AI tasks
     let ai_tasks = generate_ai_tasks(&classified, &time_status, &email_result.high);
 
-    // Step 7b: Synthesize email briefing narrative (I322)
+    // Step 7b: Synthesize email briefing narrative
     let email_narrative = synthesize_email_narrative(
         &replies_needed,
         &email_result.high,
@@ -1081,7 +1081,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         "profile": profile,
     });
 
-    // Fetch and classify calendar events for the week (I336: entity-generic)
+    // Fetch and classify calendar events for the week (entity-generic)
     let entity_hints = {
         let db_guard_owned = crate::db::ActionDb::open().ok();
         let db_ref = db_guard_owned.as_ref();
@@ -1173,7 +1173,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     new_id
                 };
 
-                // DOS-258: entity linking is owned by
+                // entity linking is owned by
                 // `services::entity_linking::calendar_adapter::evaluate_meeting`,
                 // which runs on every calendar poll and writes to
                 // `linked_entities_raw`. The legacy classification-time
@@ -1257,7 +1257,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         None => json!({"overdue": [], "thisWeek": []}),
     };
 
-    // Meeting contexts (I305: thread embedding model for entity resolution)
+    // Meeting contexts (thread embedding model for entity resolution)
     let embedding_ref_week = state.embedding_model.as_ref();
     let active_preset_week = state.active_preset.read().clone();
     let meeting_contexts = meeting_context::gather_all_meeting_contexts(
@@ -1304,7 +1304,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         }
     }
 
-    // Proactive scan + callouts for week view (I260)
+    // Proactive scan + callouts for week view
     let week_callouts = {
         let callout_guard_owned = crate::db::ActionDb::open().ok();
         let callout_db = callout_guard_owned.as_ref();
@@ -1333,7 +1333,7 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
         }
     };
 
-    // Person intelligence enrichment triggers (I338)
+    // Person intelligence enrichment triggers
     {
         if let Ok(db) = crate::db::ActionDb::open() {
             let n =
@@ -1380,7 +1380,7 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
     refresh_emails_with_retry_batch(state, workspace, None).await
 }
 
-/// DOS-226 (Codex finding 1): Email refresh variant that understands an
+///  Email refresh variant that understands an
 /// in-flight user-initiated retry batch.
 ///
 /// When `retry_batch_id` is Some, this function promotes the batch's
@@ -1392,13 +1392,13 @@ pub async fn refresh_emails(state: &AppState, workspace: &Path) -> Result<(), Ex
 /// to participate in — the bug Codex caught.
 ///
 /// When `retry_batch_id` is None (auto-poll, /today pipeline) the
-/// function behaves exactly like the pre-DOS-226 refresh.
+/// function behaves exactly like the pre- refresh.
 pub async fn refresh_emails_with_retry_batch(
     state: &AppState,
     workspace: &Path,
     retry_batch_id: Option<&str>,
 ) -> Result<(), ExecutionError> {
-    // I567: Permit moved to wrap only the PTY enrichment call below.
+    // Permit moved to wrap only the PTY enrichment call below.
     // Gmail fetch, DB persistence, thread update, signal emission run without the permit.
 
     let (_profile, user_domains, _user_focus) = get_config(state);
@@ -1435,10 +1435,10 @@ pub async fn refresh_emails_with_retry_batch(
         }
     }
 
-    // DOS-176: use merged email priority keywords (base + preset) from cached config
+    // use merged email priority keywords (base + preset) from cached config
     let preset_email_keywords: Vec<String> =
         state.get_merged_signal_config().email_priority_keywords;
-    // I374: Load dismissed domains for relevance learning penalty
+    // Load dismissed domains for relevance learning penalty
     let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
         .ok()
         .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
@@ -1456,9 +1456,9 @@ pub async fn refresh_emails_with_retry_batch(
         return Err(ExecutionError::NetworkError(sync_error.message));
     }
 
-    // I365: Persist fetched emails to DB
+    // Persist fetched emails to DB
     if let Ok(db) = crate::db::ActionDb::open() {
-        // DOS-242: load tracked domains once for the noise filter.
+        // load tracked domains once for the noise filter.
         let (account_domains_for_noise, person_domains_for_noise) = load_tracked_domains(&db);
         let mut persisted = 0usize;
         let mut suppressed = 0usize;
@@ -1529,15 +1529,15 @@ pub async fn refresh_emails_with_retry_batch(
             );
         }
 
-        // I366: Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
+        // Inbox reconciliation — mark vanished emails resolved, reappear resolved ones
         reconcile_inbox_emails(&email_result.raw_emails, &db);
 
-        // DOS-31: Record that a Gmail fetch succeeded (independent of whether
+        // Record that a Gmail fetch succeeded (independent of whether
         // downstream enrichment succeeds below). This is the canonical "fetch
         // is healthy" timestamp surfaced in the sync status UI, as opposed to
         // `last_seen_at` which only moves when individual rows are upserted.
         //
-        // DOS-226: a write failure here is propagated, not swallowed. Pre-fix
+        // a write failure here is propagated, not swallowed. Pre-fix
         // this was log-only — meaning a corrupted `email_sync_meta` row, a
         // schema-drift drop of the table, or a disk-full ENOSPC would leave
         // the sync_status UI stuck at "never fetched" forever while every
@@ -1553,7 +1553,7 @@ pub async fn refresh_emails_with_retry_batch(
             )));
         }
 
-        // DOS-226 (Codex finding 1): promote this retry batch's rows
+        //  promote this retry batch's rows
         // *before* enrichment runs below. `get_pending_enrichment` filters
         // `enrichment_attempts < 3`; leaving rows at attempts=3 in
         // `pending_retry` means the enrichment pass immediately below
@@ -1562,7 +1562,7 @@ pub async fn refresh_emails_with_retry_batch(
         // *after* orchestrate returned — which is why the UI reported
         // "retrying, cleared" while zero enrichment work happened.
         //
-        // DOS-226 Wave 0g: for retry-batched refreshes (`retry_batch_id`
+        // for retry-batched refreshes (`retry_batch_id`
         // is Some), finalize failure is LOAD-BEARING. If the promotion
         // errors or unexpectedly promotes zero rows, the enrichment pass
         // below will skip the retried rows and the service layer's
@@ -1614,7 +1614,7 @@ pub async fn refresh_emails_with_retry_batch(
         }
     }
 
-    // I370: Refresh thread positions from sent messages
+    // Refresh thread positions from sent messages
     {
         let sent_thread_ids = google_api::gmail::fetch_recent_sent_thread_ids(
             &google_api::get_valid_access_token()
@@ -1630,9 +1630,9 @@ pub async fn refresh_emails_with_retry_batch(
         }
     }
 
-    // I367: Mandatory email enrichment (entity resolution + AI analysis)
+    // Mandatory email enrichment (entity resolution + AI analysis)
     // Uses two-phase approach: short DB locks for reads/writes, no lock during PTY calls
-    // I567: Only hold orchestration permit during the PTY enrichment call.
+    // Only hold orchestration permit during the PTY enrichment call.
     {
         let ai_config = {
             let cfg = state.config.read();
@@ -1649,7 +1649,7 @@ pub async fn refresh_emails_with_retry_batch(
         if enriched > 0 {
             log::info!("refresh_emails: enriched {} emails", enriched);
         }
-        // I372: Emit entity signals from enriched emails
+        // Emit entity signals from enriched emails
         if let Ok(db) = crate::db::ActionDb::open() {
             let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
                 &db,
@@ -1661,7 +1661,7 @@ pub async fn refresh_emails_with_retry_batch(
         }
     }
 
-    // I395: Score enriched emails after enrichment + signal emission
+    // Score enriched emails after enrichment + signal emission
     {
         // Split-lock: read active emails, score on a separate DB connection, then
         // write scores back under lock. Avoids holding DB mutex during ONNX inference.
@@ -1795,7 +1795,7 @@ pub fn deliver_week(workspace: &Path) -> Result<(), String> {
 }
 
 // ============================================================================
-// Person intelligence enrichment (I338)
+// Person intelligence enrichment
 // ============================================================================
 
 /// Scan meeting contexts for person entities and trigger intelligence enrichment.
@@ -1845,7 +1845,7 @@ fn queue_person_intelligence(
             let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
         }
 
-        // Check intelligence freshness (I513: DB is the sole source — no file fallback)
+        // Check intelligence freshness (DB is the sole source — no file fallback)
         let intel_opt = db.get_entity_intelligence(&entity_id).ok().flatten();
         if let Some(intel) = intel_opt {
             if let Ok(ts) = chrono::DateTime::parse_from_rfc3339(&intel.enriched_at) {
@@ -2188,7 +2188,7 @@ async fn fetch_and_classify_week(
     )
 }
 
-/// DOS-242: collect every domain we treat as "tracked correspondence" so the
+/// collect every domain we treat as "tracked correspondence" so the
 /// noise filter never suppresses real customer or contact email. Sourced from
 /// `account_domains` (every account, not just today's meeting attendees) and
 /// `person_emails` (all tracked-person addresses). Returned as
@@ -2209,7 +2209,7 @@ fn load_tracked_domains(db: &crate::db::ActionDb) -> (HashSet<String>, HashSet<S
         }
     }
 
-    // DOS-248: return full email addresses (not just domains). Domain-only
+    // return full email addresses (not just domains). Domain-only
     // matching let internal-org bulk notifications (e.g.
     // no-reply@gainsightapp.com, notifications@wordpress.com) escape
     // suppression because a colleague at the same domain was tracked.
@@ -2240,7 +2240,7 @@ struct EmailResult {
     medium_count: u64,
     low_count: u64,
     sync_error: Option<EmailSyncFailure>,
-    /// Raw emails from Gmail for DB persistence (I365).
+    /// Raw emails from Gmail for DB persistence.
     raw_emails: Vec<google_api::gmail::RawEmail>,
     /// Classified priorities keyed by email ID, for DB upsert.
     priorities: std::collections::HashMap<String, String>,
@@ -2371,7 +2371,7 @@ async fn fetch_and_classify_emails(
     }
 }
 
-/// I370: Update thread positions using pre-fetched sent thread IDs.
+/// Update thread positions using pre-fetched sent thread IDs.
 ///
 /// Compares sent thread IDs against active emails in the DB and updates
 /// `user_is_last_sender` accordingly.
@@ -2410,13 +2410,13 @@ fn update_thread_positions_from_sent(
     }
 }
 
-/// I366: Reconcile inbox state -- mark vanished emails as resolved.
+/// Reconcile inbox state -- mark vanished emails as resolved.
 ///
 /// Compares the current inbox email IDs against active (non-resolved) emails in the DB.
 /// Emails in DB but not in inbox are marked resolved. Also deactivates signals for vanished emails.
 ///
 /// NOTE: We intentionally do NOT unmark_resolved for emails that are in Gmail but
-/// resolved locally. The user may have archived them via the UI (I579) -- un-resolving
+/// resolved locally. The user may have archived them via the UI  -- un-resolving
 /// would undo their explicit action. Only genuinely new emails (never seen before) are
 /// treated as new, and those are handled by the normal persist path above.
 fn reconcile_inbox_emails(raw_emails: &[google_api::gmail::RawEmail], db: &crate::db::ActionDb) {
@@ -2517,7 +2517,7 @@ fn extract_recipient_addresses(header: &str) -> Option<String> {
     }
 }
 
-/// I318: Track thread positions from fetched high-priority emails.
+/// Track thread positions from fetched high-priority emails.
 /// Groups emails by thread_id, determines last sender per thread,
 /// persists to email_threads table, and emits thread_position signals.
 /// Returns (total_tracked, awaiting_reply_count).
@@ -2606,7 +2606,7 @@ fn track_thread_positions(
 
 /// Compute human-readable wait duration from a date string.
 ///
-/// Public alias for use by services that build replies_needed from DB (I513).
+/// Public alias for use by services that build replies_needed from DB.
 pub fn compute_wait_duration_public(date_str: &str, now: &chrono::DateTime<Utc>) -> String {
     compute_wait_duration(date_str, now)
 }
@@ -2635,14 +2635,14 @@ fn compute_wait_duration(date_str: &str, now: &chrono::DateTime<Utc>) -> String 
     String::new()
 }
 
-/// I322: Synthesize a short editorial headline for the email page.
+/// Synthesize a short editorial headline for the email page.
 ///
 /// Must be a single punchy sentence — max ~10 words — suitable for display
 /// at 76px serif. Combines the most newsworthy signal from:
-/// - Thread positions (replies_needed from I318)
+/// - Thread positions (replies_needed from)
 /// - High-priority emails
-/// - Meeting contexts with email digests (I317)
-/// - Cadence anomalies (I319)
+/// - Meeting contexts with email digests
+/// - Cadence anomalies
 ///
 /// Returns None if there's nothing meaningful to say.
 fn synthesize_email_narrative(
@@ -3010,7 +3010,7 @@ fn build_week_overview(directive: &Value, data_dir: &Path) -> Value {
     if !readiness_checks.is_empty() {
         result["readinessChecks"] = json!(readiness_checks);
     }
-    // weekNarrative and topPriority left null — I94 adds them via AI
+    // weekNarrative and topPriority left null — adds them via AI
 
     result
 }
@@ -4008,7 +4008,7 @@ mod tests {
         });
 
         let checks = build_readiness_checks(&directive, data_dir);
-        // I159: both customer and team_sync are now prep-eligible
+        // both customer and team_sync are now prep-eligible
         assert_eq!(checks.len(), 2);
         assert_eq!(checks[0]["checkType"], "no_prep");
         assert!(checks[0]["message"]
@@ -4115,7 +4115,7 @@ mod tests {
     #[test]
     fn test_resolve_prep_status_non_eligible() {
         let tmp = TempDir::new().unwrap();
-        // I159: internal, team_sync, one_on_one are now person-prep eligible
+        // internal, team_sync, one_on_one are now person-prep eligible
         assert_eq!(resolve_prep_status("m1", "personal", tmp.path()), "done");
         assert_eq!(resolve_prep_status("m1", "all_hands", tmp.path()), "done");
     }
@@ -4419,7 +4419,7 @@ mod tests {
         assert_eq!(monday, NaiveDate::from_ymd_opt(2026, 2, 9).unwrap());
     }
 
-    // ── I338: queue_person_intelligence tests ────────────────────────────
+    // ── queue_person_intelligence tests ────────────────────────────
 
     fn person_meeting_context(entity_id: &str, entity_name: &str, confidence: f64) -> Value {
         json!({
@@ -4501,7 +4501,7 @@ mod tests {
         let queue = crate::intel_queue::IntelligenceQueue::new();
         let workspace = TempDir::new().unwrap();
 
-        // I513: Insert fresh intelligence into DB (no file fallback).
+        // Insert fresh intelligence into DB (no file fallback).
         let intel = crate::intelligence::IntelligenceJson {
             version: 1,
             entity_id: "person_fresh_example_com".to_string(),

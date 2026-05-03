@@ -2,10 +2,10 @@
  * StakeholderGallery — People chapter.
  * 2-column grid of stakeholder cards with multi-role badges and engagement levels.
  * Renders exclusively from DB-backed `stakeholdersFull` data.
- * AI suggestions come from a separate `suggestions` prop (I652 phase 2).
+ * AI suggestions come from a separate `suggestions` prop.
  * Includes an optional "Your Team" strip for account team members.
  *
- * I652: Removed intelligence JSON rendering. Stakeholders are DB-first.
+ * Removed intelligence JSON rendering. Stakeholders are DB-first.
  * Multi-role display, engagement from DB, AI suggestions from prop.
  */
 import { useState, useRef, useEffect, useCallback } from "react";
@@ -48,22 +48,22 @@ interface StakeholderGalleryProps {
   accountTeam?: AccountTeamMember[];
   /** DB-first stakeholder read model — primary display source when non-empty. */
   stakeholdersFull?: StakeholderFull[];
-  /** AI-suggested stakeholders pending accept/dismiss (I652). */
+  /** AI-suggested stakeholders pending accept/dismiss. */
   suggestions?: StakeholderSuggestion[];
   sectionId?: string;
   chapterTitle?: string;
-  /** DOS-18: Optional freshness strip rendered under the chapter heading. */
+  /** Optional freshness strip rendered under the chapter heading. */
   chapterFreshness?: React.ReactNode;
-  /** DOS-18: When true, render "Their team" / "Our team" subsection labels per account-context mockup. */
+  /** When true, render "Their team" / "Our team" subsection labels per account-context mockup. */
   subsectionLabels?: boolean;
   /**
-   * DOS-18: When subsectionLabels is true, the italic hints next to the
+   * When subsectionLabels is true, the italic hints next to the
    * "Their team" / "Our team" labels show who we're meeting with. Optional —
    * if omitted we fall back to generic phrasing without the customer name.
    */
   accountName?: string;
   /**
-   * DOS-18: Optional anchor builder — returns the href (e.g. "#dimension-adoption")
+   * Optional anchor builder — returns the href (e.g. "#dimension-adoption")
    * to the Health tab chapter that mentions this person. When provided, each
    * confirmed stakeholder card renders an "Active in Health →" cross-reference
    * pill. Returning null skips the pill for that person.
@@ -83,17 +83,17 @@ interface StakeholderGalleryProps {
   teamSearchQuery?: string;
   onTeamSearchQueryChange?: (query: string) => void;
   teamSearchResults?: Person[];
-  /** Accept a stakeholder suggestion (I652). */
+  /** Accept a stakeholder suggestion. */
   onAcceptSuggestion?: (suggestionId: number) => void;
-  /** Dismiss a stakeholder suggestion (I652). */
+  /** Dismiss a stakeholder suggestion. */
   onDismissSuggestion?: (suggestionId: number) => void;
-  /** Update engagement level for a stakeholder (I652). */
+  /** Update engagement level for a stakeholder. */
   onUpdateEngagement?: (personId: string, engagement: string) => void;
-  /** Update assessment for a stakeholder (I652). */
+  /** Update assessment for a stakeholder. */
   onUpdateAssessment?: (personId: string, assessment: string) => void;
-  /** Add a role to a stakeholder (I652 multi-role). */
+  /** Add a role to a stakeholder (multi-role). */
   onAddRole?: (personId: string, role: string) => void;
-  /** Remove a role from a stakeholder (I652 multi-role). */
+  /** Remove a role from a stakeholder (multi-role). */
   onRemoveRole?: (personId: string, role: string) => void;
 }
 
@@ -530,7 +530,7 @@ export function StakeholderGallery({
 
                 {personDetail && <p className={css.titleLine}>{personDetail}</p>}
 
-                {/* Multi-role badges (I652) */}
+                {/* Multi-role badges  */}
                 {(roles.length > 0 || onAddRole) && (
                   <div className={css.roleBadges}>
                     {roles.map((r) => (
@@ -590,7 +590,7 @@ export function StakeholderGallery({
                   </span>
                 )}
 
-                {/* Assessment from DB (I652) or gap-state placeholder per mockup */}
+                {/* Assessment from DB  or gap-state placeholder per mockup */}
                 {s.assessment ? (
                   <TruncatedAssessment text={s.assessment} />
                 ) : (
@@ -640,7 +640,7 @@ export function StakeholderGallery({
         </div>
       )}
 
-      {/* ── Suggested stakeholders — rendered as editorial cards in the grid (I652) ── */}
+      {/* ── Suggested stakeholders — rendered as editorial cards in the grid  ── */}
       {pendingSuggestions.length > 0 && (
         <div className={`${css.grid} ${visibleConfirmed.length > 0 ? css.suggestedGridOffset : ""}`}>
           {pendingSuggestions.map((s) => {
@@ -819,7 +819,7 @@ export function StakeholderGallery({
         </div>
       )}
 
-      {/* I557: Relationship Depth Summary */}
+      {/* Relationship Depth Summary */}
       {intelligence?.relationshipDepth && (
         <div className={css.relationshipDepthSection}>
           <div className={css.depthStrip}>
@@ -860,7 +860,7 @@ export function StakeholderGallery({
       )}
 
 
-      {/* I646 C2: Champion designation badge — visible even without AI enrichment */}
+      {/*  C2: Champion designation badge — visible even without AI enrichment */}
       {teamMembers.filter((m) => m.role?.toLowerCase().includes("champion")).length > 0 &&
         !intelligence?.relationshipDepth?.championStrength && (
         <div className={css.championBadgeRow}>

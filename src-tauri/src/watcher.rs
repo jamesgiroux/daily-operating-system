@@ -27,7 +27,7 @@ pub struct InboxUpdate {
     pub count: usize,
 }
 
-/// Payload emitted to the frontend when content files change in entity dirs (I125).
+/// Payload emitted to the frontend when content files change in entity dirs.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ContentChangePayload {
@@ -45,7 +45,7 @@ enum WatchSource {
     Projects(PathBuf),
     ProjectContent(PathBuf),
     UserAttachments(PathBuf),
-    /// DOS-44: New directory created under Accounts/ or Projects/
+    /// New directory created under Accounts/ or Projects
     NewEntityDir,
 }
 
@@ -140,7 +140,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .is_some_and(|n| n == "dashboard.json")
                         });
 
-                        // I125: Non-dashboard files in Accounts/ dirs
+                        // Non-dashboard files in Accounts/ dirs
                         let is_account_content = !is_accounts
                             && event.paths.iter().any(|p| {
                                 p.starts_with(&accounts_dir_clone)
@@ -160,7 +160,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .is_some_and(|n| n == "dashboard.json")
                         });
 
-                        // I138: Non-dashboard files in Projects/ dirs
+                        // Non-dashboard files in Projects/ dirs
                         let is_project_content = !is_projects
                             && event.paths.iter().any(|p| {
                                 p.starts_with(&projects_dir_clone)
@@ -184,7 +184,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 let _ = tx.try_send(WatchSource::People(path.clone()));
                             }
                         } else if is_account_content {
-                            // I125: Content file changed in an account dir
+                            // Content file changed in an account dir
                             for path in &event.paths {
                                 if path.starts_with(&accounts_dir_clone) {
                                     let _ = tx.try_send(WatchSource::AccountContent(path.clone()));
@@ -200,7 +200,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 let _ = tx.try_send(WatchSource::Accounts(path.clone()));
                             }
                         } else if is_project_content {
-                            // I138: Content file changed in a project dir
+                            // Content file changed in a project dir
                             for path in &event.paths {
                                 if path.starts_with(&projects_dir_clone) {
                                     let _ = tx.try_send(WatchSource::ProjectContent(path.clone()));
@@ -215,7 +215,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             }) {
                                 let _ = tx.try_send(WatchSource::Projects(path.clone()));
                             }
-                        // DOS-44: Detect new or renamed directories under Accounts/ or Projects/.
+                        // Detect new or renamed directories under Accounts/ or Projects.
                         // Create: user made a new folder. Rename/Modify: user renamed it
                         // in Finder. Both trigger a workspace resync so the DB stays in
                         // sync with the filesystem. The sync is idempotent — existing
@@ -293,7 +293,7 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             }
         }
 
-        // Start watching _user/attachments/ for user context documents (I413)
+        // Start watching _user/attachments/ for user context documents
         if user_attachments_dir.exists() {
             if let Err(e) = watcher.watch(&user_attachments_dir, RecursiveMode::NonRecursive) {
                 log::warn!(
@@ -418,26 +418,26 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 inbox_dirty = false;
             }
 
-            // Process people changes (I51: external person.json edits)
+            // Process people changes (external person.json edits)
             if !people_dirty.is_empty() {
                 handle_people_changes(&people_dirty, &state, &workspace);
                 let _ = app_handle.emit("people-updated", ());
                 people_dirty.clear();
             }
 
-            // Process account changes (I75: external dashboard.json edits)
+            // Process account changes (external dashboard.json edits)
             if !accounts_dirty.is_empty() {
                 handle_account_changes(&accounts_dirty, &state, &workspace);
                 let _ = app_handle.emit("accounts-updated", ());
                 accounts_dirty.clear();
             }
 
-            // Process account content changes (I125: non-dashboard files)
+            // Process account content changes (non-dashboard files)
             if !account_content_dirty.is_empty() {
                 let payload =
                     handle_account_content_changes(&account_content_dirty, &state, &workspace);
                 if let Some(ref payload) = payload {
-                    // I132: Queue intelligence refresh for affected entities
+                    // Queue intelligence refresh for affected entities
                     for entity_id in &payload.entity_ids {
                         state.embedding_queue.enqueue(
                             crate::processor::embeddings::EmbeddingRequest {
@@ -460,14 +460,14 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 account_content_dirty.clear();
             }
 
-            // Process project changes (I50: external dashboard.json edits)
+            // Process project changes (external dashboard.json edits)
             if !projects_dirty.is_empty() {
                 handle_project_changes(&projects_dirty, &state, &workspace);
                 let _ = app_handle.emit("projects-updated", ());
                 projects_dirty.clear();
             }
 
-            // Process project content changes (I138: non-dashboard files in Projects/)
+            // Process project content changes (non-dashboard files in Projects)
             if !project_content_dirty.is_empty() {
                 let payload =
                     handle_project_content_changes(&project_content_dirty, &state, &workspace);
@@ -495,13 +495,13 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 project_content_dirty.clear();
             }
 
-            // Process user attachment changes (I413: _user/attachments/)
+            // Process user attachment changes (_user/attachments)
             if !user_attachments_dirty.is_empty() {
                 handle_user_attachment_changes(&user_attachments_dirty, &state, &workspace);
                 user_attachments_dirty.clear();
             }
 
-            // DOS-44: New entity directory discovered — lightweight bootstrap only.
+            // New entity directory discovered — lightweight bootstrap only.
             // Creates DB records and writes dashboard files so the account/project
             // appears in the UI immediately. Does NOT trigger expensive PTY/intel
             // operations — those happen lazily on next scheduled intel cycle or
@@ -548,11 +548,11 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
     });
 }
 
-/// Handle detected changes to People/*/person.json files (I51).
+/// Handle detected changes to People/*/person.json files.
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates person.md.
 fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) {
-    // I298: Skip in dev DB mode
+    // Skip in dev DB mode
     if crate::db::is_dev_db_mode() {
         log::debug!("Watcher: skipping people sync — dev DB mode active");
         return;
@@ -601,11 +601,11 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
     }
 }
 
-/// Handle detected changes to Accounts/*/dashboard.json files (I75).
+/// Handle detected changes to Accounts/*/dashboard.json files.
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
 fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
-    // I298: Skip watcher sync when dev DB mode is active. The watcher watches
+    // Skip watcher sync when dev DB mode is active. The watcher watches
     // the live workspace, but the DB is pointing at the dev DB — syncing would
     // leak live account data into the dev sandbox.
     if crate::db::is_dev_db_mode() {
@@ -644,11 +644,11 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
     }
 }
 
-/// Handle detected changes to Projects/*/dashboard.json files (I50).
+/// Handle detected changes to Projects/*/dashboard.json files.
 ///
 /// Reads the changed JSON files, syncs to SQLite, regenerates dashboard.md.
 fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path) {
-    // I298: Skip watcher sync in dev DB mode (same rationale as accounts above)
+    // Skip watcher sync in dev DB mode (same rationale as accounts above)
     if crate::db::is_dev_db_mode() {
         log::debug!("Watcher: skipping project sync — dev DB mode active");
         return;
@@ -679,7 +679,7 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
     }
 }
 
-/// Handle detected changes to non-dashboard files in Accounts/ dirs (I125).
+/// Handle detected changes to non-dashboard files in Accounts/ dirs.
 ///
 /// Extracts affected account IDs from the file paths, syncs their content index,
 /// and returns a payload for the frontend event.
@@ -688,7 +688,7 @@ fn handle_account_content_changes(
     _state: &AppState,
     workspace: &Path,
 ) -> Option<ContentChangePayload> {
-    // I298: Skip in dev DB mode
+    // Skip in dev DB mode
     if crate::db::is_dev_db_mode() {
         return None;
     }
@@ -745,7 +745,7 @@ fn handle_account_content_changes(
     }
 }
 
-/// Handle detected changes to non-dashboard files in Projects/ dirs (I138).
+/// Handle detected changes to non-dashboard files in Projects/ dirs.
 ///
 /// Parallel to `handle_account_content_changes` — extracts affected project IDs,
 /// syncs their content index, and returns a payload for the frontend event.
@@ -754,7 +754,7 @@ fn handle_project_content_changes(
     _state: &AppState,
     workspace: &Path,
 ) -> Option<ContentChangePayload> {
-    // I298: Skip in dev DB mode
+    // Skip in dev DB mode
     if crate::db::is_dev_db_mode() {
         return None;
     }
@@ -811,7 +811,7 @@ fn handle_project_content_changes(
     }
 }
 
-/// Handle detected changes to _user/attachments/ files (I413).
+/// Handle detected changes to _user/attachments/ files.
 ///
 /// Processes new or modified user attachment files through the pipeline
 /// and queues embedding generation.
@@ -851,7 +851,7 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
                     path.display(),
                     message
                 );
-                // I413 AC5: Enqueue for retry — the next hygiene/embedding cycle will
+                // Acceptance criterion: Enqueue for retry — the next hygiene/embedding cycle will
                 // re-attempt processing when the embedding worker picks up this request.
                 state
                     .embedding_queue

@@ -1,4 +1,4 @@
--- DOS-308 cycle-4: partial index for the quarantine gate's
+--  cycle-4: partial index for the quarantine gate's
 -- `WHERE resolved_at IS NULL` count query. Split out from migration 127
 -- so a partial-failure retry cannot record v127 complete with the column
 -- added but the index missing. CREATE INDEX IF NOT EXISTS makes this

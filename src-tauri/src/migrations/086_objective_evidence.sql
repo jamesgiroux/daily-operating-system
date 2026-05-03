@@ -1,4 +1,4 @@
--- DOS-14: Add evidence tracking and AI origin to account_objectives.
+-- Add evidence tracking and AI origin to account_objectives.
 -- Evidence accumulates from AI enrichment when statedObjectives match user objectives.
 -- ai_origin_id enables deduplication of suggestions.
 

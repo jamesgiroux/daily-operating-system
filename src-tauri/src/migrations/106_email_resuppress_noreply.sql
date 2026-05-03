@@ -1,6 +1,6 @@
--- DOS-248: Re-suppress emails that escaped the new noise rules.
+-- Re-suppress emails that escaped the new noise rules.
 --
--- DOS-247's recovery (migration 106) un-suppressed everything outside the
+-- The email noise recovery migration un-suppressed everything outside the
 -- bulk allow-list to fix a 75+ false-positive case. That recovery was
 -- correct but coarse — it also restored noreply / no-reply / donotreply
 -- senders and emails with the new bracket-prefix subject patterns

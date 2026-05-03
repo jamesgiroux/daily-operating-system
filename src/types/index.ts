@@ -31,10 +31,10 @@ export type MeetingType =
   | "external"
   | "personal";
 
-/** I634: Meeting page temporal lifecycle stage. */
+/** Meeting page temporal lifecycle stage. */
 export type MeetingStage = "upcoming" | "in-progress" | "just-ended" | "processed";
 
-/** I637: Meeting-to-meeting continuity thread. */
+/** Meeting-to-meeting continuity thread. */
 export interface ThreadAction { title: string; date?: string; isOverdue: boolean; }
 export interface HealthDelta { previous: number; current: number; }
 export interface ContinuityThread {
@@ -48,7 +48,7 @@ export interface ContinuityThread {
   isFirstMeeting: boolean;
 }
 
-/** I635: Prediction scorecard. */
+/** Prediction scorecard. */
 export type PredictionCategory = "confirmed" | "notRaised" | "surprise";
 export interface PredictionResult {
   text: string;
@@ -62,7 +62,7 @@ export interface PredictionScorecard {
   hasData: boolean;
 }
 
-/** Feature flags for gating incomplete features (I537). */
+/** Feature flags for gating incomplete features. */
 export interface FeatureFlags {
   book_of_business_enabled: boolean;
   glean_discovery_enabled: boolean;
@@ -130,22 +130,22 @@ export interface LinkedEntity {
   id: string;
   name: string;
   entityType: "account" | "project" | "person";
-  /** DOS-74: per-junction confidence (0.0 – 1.0). Higher = stronger match. */
+  /** per-junction confidence (0.0 – 1.0). Higher = stronger match. */
   confidence?: number;
-  /** DOS-74: true if this is the primary entity for the meeting. */
+  /** true if this is the primary entity for the meeting. */
   isPrimary?: boolean;
-  /** DOS-74: true for low-confidence siblings rendered as muted suggestions. */
+  /** true for low-confidence siblings rendered as muted suggestions. */
   suggested?: boolean;
   /**
-   * DOS-258: deterministic link role from the new entity linking engine.
+   * deterministic link role from the new entity linking engine.
    * Supersedes isPrimary + suggested when present.
    */
   role?: LinkRole;
-  /** DOS-258: rule identifier that produced this link (e.g. "P5", "P9"). */
+  /** rule identifier that produced this link (e.g. "P5", "P9"). */
   appliedRule?: string | null;
 }
 
-// ─── DOS-258: New entity linking vocabulary ───────────────────────────────────
+// ─── New entity linking vocabulary ───────────────────────────────────
 
 /** Role of a linked entity in the context of its owner (meeting / email / thread). */
 export type LinkRole = "primary" | "related" | "auto_suggested" | "user_dismissed";
@@ -156,7 +156,7 @@ export type LinkTier = "entity" | "person" | "minimal" | "skip";
 /** Owner surface types for entity linking. */
 export type OwnerType = "meeting" | "email" | "email_thread";
 
-/** A resolved entity chip as produced by the DOS-258 link engine. */
+/** A resolved entity chip as produced by the entity linking engine. */
 export interface LinkedEntityChip {
   entityId: string;
   entityType: string;
@@ -199,9 +199,9 @@ export interface Meeting {
   overlayStatus?: OverlayStatus;
   /** Whether the user has reviewed this prep (ADR-0033) */
   prepReviewed?: boolean;
-  /** Entities linked via M2M junction table (I52) */
+  /** Entities linked via M2M junction table  */
   linkedEntities?: LinkedEntity[];
-  /** Account ID suggestion when meeting matches an archived account (I161) */
+  /** Account ID suggestion when meeting matches an archived account  */
   suggestedUnarchiveAccountId?: string;
   /** Calendar event description from Google Calendar */
   calendarDescription?: string;
@@ -270,23 +270,23 @@ export interface DbAction {
   waitingOn?: string;
   updatedAt: string;
   personId?: string;
-  /** Next upcoming meeting title for the action's account (I342) */
+  /** Next upcoming meeting title for the action's account  */
   nextMeetingTitle?: string;
-  /** Next upcoming meeting start time for the action's account (I342) */
+  /** Next upcoming meeting start time for the action's account  */
   nextMeetingStart?: string;
-  /** Whether this action requires a decision (DOS-17) */
+  /** Whether this action requires a decision  */
   needsDecision?: boolean;
-  /** Who owns the decision (DOS-17) */
+  /** Who owns the decision  */
   decisionOwner?: string;
-  /** What's at stake if the decision is delayed (DOS-17) */
+  /** What's at stake if the decision is delayed  */
   decisionStakes?: string;
-  /** Linear issue identifier when pushed to Linear (DOS-52) */
+  /** Linear issue identifier when pushed to Linear  */
   linearIdentifier?: string;
-  /** Linear issue URL when pushed to Linear (DOS-52) */
+  /** Linear issue URL when pushed to Linear  */
   linearUrl?: string;
 }
 
-/** Result of pushing an action to Linear (DOS-52). */
+/** Result of pushing an action to Linear. */
 export interface LinearPushResult {
   identifier: string;
   url: string;
@@ -314,11 +314,11 @@ export interface EmailSyncStatus {
   lastSuccessAt?: string;
 }
 
-/** Email sync stats from DB enrichment state counts (I373 / DOS-31). */
+/** Email sync stats from DB enrichment state counts. */
 export interface EmailSyncStats {
   lastFetchAt: string | null;
   /**
-   * DOS-31: Last time the Gmail fetch itself completed successfully,
+   * Last time the Gmail fetch itself completed successfully,
    * independent of enrichment success. When `lastFetchAt` is stale but
    * `lastSuccessfulFetchAt` is recent, the inbox is healthy and only the
    * enrichment pipeline is stuck — different message than "can't reach Gmail".
@@ -329,15 +329,15 @@ export interface EmailSyncStats {
   pending: number;
   failed: number;
   /**
-   * DOS-29: Subset of `failed` that has exhausted automatic retries. Rows
+   * Subset of `failed` that has exhausted automatic retries. Rows
    * still under the auto-retry cap will be silently re-attempted by the
-   * next refresh (DOS-31) and shouldn't bother the user. The failure UX
+   * next refresh  and shouldn't bother the user. The failure UX
    * shows `permanentlyFailed`, not `failed`.
    */
   permanentlyFailed: number;
 }
 
-/** DOS-29: Lightweight preview of a permanently-failed email for the
+/** Lightweight preview of a permanently-failed email for the
  *  "View details" expansion on the EmailsPage failure UX. */
 export interface FailedEmailPreview {
   emailId: string;
@@ -366,33 +366,33 @@ export interface Email {
   conversationArc?: string;
   /** Email category from AI classification */
   emailType?: string;
-  /** Commitments extracted from the email (I354) */
+  /** Commitments extracted from the email  */
   commitments?: string[];
-  /** Questions requiring a response (I354) */
+  /** Questions requiring a response  */
   questions?: string[];
-  /** Overall sentiment: positive, neutral, negative, urgent (I354) */
+  /** Overall sentiment: positive, neutral, negative, urgent  */
   sentiment?: string;
-  /** Urgency from AI enrichment (I369) */
+  /** Urgency from AI enrichment  */
   urgency?: string;
-  /** Resolved entity ID from enrichment (I368) */
+  /** Resolved entity ID from enrichment  */
   entityId?: string;
   /** Resolved entity type (account, person, project) */
   entityType?: string;
   /** Human-readable entity name */
   entityName?: string;
-  /** Relevance score from scoring pipeline (I395) — 0.0 to 1.0 */
+  /** Relevance score from scoring pipeline  — 0.0 to 1.0 */
   relevanceScore?: number;
-  /** Human-readable score reason (I395) */
+  /** Human-readable score reason  */
   scoreReason?: string;
-  /** When this email was pinned for triage sort boost (I579) */
+  /** When this email was pinned for triage sort boost  */
   pinnedAt?: string;
-  /** Actions created from commitments extracted from this email (I580) */
+  /** Actions created from commitments extracted from this email  */
   trackedCommitments?: TrackedEmailCommitment[];
-  /** Meeting this email's sender is attending (upcoming only) (I582) */
+  /** Meeting this email's sender is attending (upcoming only)  */
   meetingLinked?: LinkedMeeting;
 }
 
-/** An upcoming meeting linked to an email via sender-attendee match (I582). */
+/** An upcoming meeting linked to an email via sender-attendee match. */
 export interface LinkedMeeting {
   meetingId: string;
   title: string;
@@ -433,7 +433,7 @@ export type DataFreshness =
   | { freshness: "stale"; dataDate: string; generatedAt: string }
   | { freshness: "unknown" };
 
-/** A thread awaiting the user's reply (I318 — "ball in your court"). */
+/** A thread awaiting the user's reply ("ball in your court"). */
 export interface ReplyNeeded {
   threadId: string;
   subject: string;
@@ -442,7 +442,7 @@ export interface ReplyNeeded {
   waitDuration?: string;
 }
 
-/** I577: Reply debt item — an email where the ball is in the user's court. */
+/** Reply debt item — an email where the ball is in the user's court. */
 export interface ReplyDebtItem {
   emailId: string;
   senderName: string;
@@ -476,19 +476,19 @@ export interface DashboardData {
   emailSync?: EmailSyncStatus;
   focus?: DailyFocus;
   lifecycleUpdates?: DashboardLifecycleUpdate[];
-  /** AI-synthesized email narrative (I322/I355) */
+  /** AI-synthesized email narrative  */
   emailNarrative?: string;
-  /** Threads awaiting user reply (I318/I355) */
+  /** Threads awaiting user reply  */
   repliesNeeded?: ReplyNeeded[];
-  /** I502: Health data keyed by entity ID for accounts linked to today's meetings. */
+  /** Health data keyed by entity ID for accounts linked to today's meetings. */
   entityHealthMap?: Record<string, IntelligenceAccountHealth>;
-  /** Briefing callouts from signal propagation (I623 AC4). */
+  /** Briefing callouts from signal propagation (AC4). */
   briefingCallouts?: BriefingCallout[];
-  /** DOS-53: Count of actions approaching the 30-day auto-archive threshold. */
+  /** Count of actions approaching the 30-day auto-archive threshold. */
   agingActionCount?: number;
 }
 
-/** A briefing callout surfaced to the daily briefing (I623). */
+/** A briefing callout surfaced to the daily briefing. */
 export interface BriefingCallout {
   id: string;
   entityId: string;
@@ -514,7 +514,7 @@ export interface WeekOverview {
   focusAreas?: string[];
   availableTimeBlocks?: TimeBlock[];
   readinessChecks?: ReadinessCheck[];
-  /** Per-day density and meeting shape (I93) */
+  /** Per-day density and meeting shape  */
   dayShapes?: DayShape[];
 }
 
@@ -530,7 +530,7 @@ export interface WeekMeeting {
   meetingId?: string;
   type: MeetingType;
   prepStatus: PrepStatus;
-  /** Entities linked via M2M junction table or entity resolution (I339) */
+  /** Entities linked via M2M junction table or entity resolution  */
   linkedEntities?: LinkedEntity[];
 }
 
@@ -538,13 +538,13 @@ export interface WeekActionSummary {
   overdueCount: number;
   dueThisWeek: number;
   criticalItems: string[];
-  /** Actual overdue action items (I93) */
+  /** Actual overdue action items  */
   overdue?: WeekAction[];
-  /** Actual due-this-week action items (I93) */
+  /** Actual due-this-week action items  */
   dueThisWeekItems?: WeekAction[];
 }
 
-/** A single action item for week view (I93) */
+/** A single action item for week view  */
 export interface WeekAction {
   id: string;
   title: string;
@@ -555,7 +555,7 @@ export interface WeekAction {
   source?: string;
 }
 
-/** Proactive readiness check for the week (I93) */
+/** Proactive readiness check for the week  */
 export interface ReadinessCheck {
   checkType: string;
   message: string;
@@ -564,7 +564,7 @@ export interface ReadinessCheck {
   accountId?: string;
 }
 
-/** Per-day density shape for the week view (I93) */
+/** Per-day density shape for the week view  */
 export interface DayShape {
   dayName: string;
   date: string;
@@ -573,7 +573,7 @@ export interface DayShape {
   density: string;
   meetings: WeekMeeting[];
   availableBlocks: TimeBlock[];
-  /** Per-day prioritized actions from live DB enrichment (I279) */
+  /** Per-day prioritized actions from live DB enrichment  */
   prioritizedActions?: PrioritizedAction[];
   focusImplications?: {
     achievableCount: number;
@@ -603,7 +603,7 @@ export interface TimeBlock {
   meetingId?: string;
 }
 
-/** AI-identified top priority for the week (I94) */
+/** AI-identified top priority for the week  */
 export interface TopPriority {
   title: string;
   reason: string;
@@ -742,17 +742,17 @@ export interface EmailBriefingData {
   entityThreads: EntityEmailThread[];
   stats: EmailBriefingStats;
   hasEnrichment: boolean;
-  /** AI-synthesized narrative headline for the dispatch (I355) */
+  /** AI-synthesized narrative headline for the dispatch  */
   emailNarrative?: string;
-  /** Threads awaiting user reply — "ball in your court" (I355) */
+  /** Threads awaiting user reply — "ball in your court"  */
   repliesNeeded?: ReplyNeeded[];
-  /** I577: Reply debt — entity-linked emails awaiting user reply. */
+  /** Reply debt — entity-linked emails awaiting user reply. */
   replyDebt?: ReplyDebtItem[];
-  /** Accounts whose email cadence has dropped significantly (I581) */
+  /** Accounts whose email cadence has dropped significantly  */
   goneQuiet?: GoneQuietAccount[];
 }
 
-/** An account whose email cadence has gone quiet (I581). */
+/** An account whose email cadence has gone quiet. */
 export interface GoneQuietAccount {
   entityId: string;
   entityName: string;
@@ -765,7 +765,7 @@ export interface GoneQuietAccount {
 }
 
 // =============================================================================
-// Post-Meeting Intelligence (I558)
+// Post-Meeting Intelligence
 // =============================================================================
 
 export interface SpeakerSentiment {
@@ -847,7 +847,7 @@ export interface ActionWithContext {
   isOverdue: boolean;
 }
 
-/** Proposed agenda item synthesized from prep data (I80) */
+/** Proposed agenda item synthesized from prep data  */
 export interface AgendaItem {
   topic: string;
   why?: string;
@@ -867,7 +867,7 @@ export type GleanAuthStatus =
   | { status: "notconfigured" }
   | { status: "authenticated"; email: string; name?: string };
 
-// I561 — Onboarding: Three Connectors
+// Onboarding: Three Connectors
 export interface OnboardingImportResult {
   created: number;
   failed: string[];
@@ -999,10 +999,10 @@ export interface CapturedAction {
 }
 
 // =============================================================================
-// Transcript & Meeting Outcomes (I44 / I45 / ADR-0044)
+// Transcript & Meeting Outcomes (ADR-0044)
 // =============================================================================
 
-/** Sentiment analysis from transcript processing (I509) */
+/** Sentiment analysis from transcript processing  */
 export interface TranscriptSentiment {
   overall?: string;
   customer?: string;
@@ -1013,7 +1013,7 @@ export interface TranscriptSentiment {
   championEngaged?: boolean;
 }
 
-/** Engagement quality signals from a transcript (I509) */
+/** Engagement quality signals from a transcript  */
 export interface EngagementSignals {
   questionDensity?: string;
   decisionMakerActive?: string;
@@ -1021,7 +1021,7 @@ export interface EngagementSignals {
   monologueRisk?: boolean;
 }
 
-/** An escalation signal detected in meeting language (I509) */
+/** An escalation signal detected in meeting language  */
 export interface EscalationSignal {
   quote: string;
   speaker?: string;
@@ -1109,7 +1109,7 @@ export interface MeetingIntelligence {
     staleness: "current" | "aging" | "stale";
     hasNewSignals: boolean;
   };
-  /** I502: Health data keyed by entity ID for linked accounts that have intelligence health. */
+  /** Health data keyed by entity ID for linked accounts that have intelligence health. */
   entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
@@ -1127,7 +1127,7 @@ export interface AgendaDraftResult {
 }
 
 // =============================================================================
-// Executive Intelligence (I42)
+// Executive Intelligence
 // =============================================================================
 
 export interface DecisionSignal {
@@ -1195,11 +1195,11 @@ export interface FullMeetingPrep {
   title: string;
   timeRange: string;
   meetingContext?: string;
-  /** Calendar event description from Google Calendar (I185) */
+  /** Calendar event description from Google Calendar  */
   calendarNotes?: string;
   /** Quick Context metrics (key-value pairs like Ring, ARR, Health) — legacy */
   quickContext?: [string, string][];
-  /** Intelligence-enriched account snapshot (I186) */
+  /** Intelligence-enriched account snapshot  */
   accountSnapshot?: AccountSnapshotItem[];
   attendees?: Stakeholder[];
   /** Since Last Meeting section items */
@@ -1212,38 +1212,38 @@ export interface FullMeetingPrep {
   risks?: string[];
   /** Suggested Talking Points */
   talkingPoints?: string[];
-  /** Canonical recent wins for meeting prep (I196) */
+  /** Canonical recent wins for meeting prep  */
   recentWins?: string[];
-  /** Structured provenance for recent wins (I196) */
+  /** Structured provenance for recent wins  */
   recentWinSources?: SourceReference[];
   questions?: string[];
   keyPrinciples?: string[];
   references?: SourceReference[];
-  /** Stakeholder relationship signals (I43) — computed live from meeting history */
+  /** Stakeholder relationship signals  — computed live from meeting history */
   stakeholderSignals?: StakeholderSignals;
-  /** Per-attendee context from people database (I51) */
+  /** Per-attendee context from people database  */
   attendeeContext?: AttendeeContext[];
-  /** Proposed agenda synthesized from prep data (I80) */
+  /** Proposed agenda synthesized from prep data  */
   proposedAgenda?: AgendaItem[];
-  /** User-authored agenda items (I194 / ADR-0065) */
+  /** User-authored agenda items (ADR-0065) */
   userAgenda?: string[];
-  /** User-authored notes (I194 / ADR-0065) */
+  /** User-authored notes (ADR-0065) */
   userNotes?: string;
-  /** Intelligence summary — executive assessment from entity_assessment DB (I513). */
+  /** Intelligence summary — executive assessment from entity_assessment DB. */
   intelligenceSummary?: string;
-  /** Entity-level risks from intelligence.json (I135) */
+  /** Entity-level risks from intelligence.json  */
   entityRisks?: IntelRisk[];
-  /** Entity meeting readiness items from intelligence.json (I135) */
+  /** Entity meeting readiness items from intelligence.json  */
   entityReadiness?: string[];
-  /** Stakeholder insights from intelligence.json (I135) */
+  /** Stakeholder insights from intelligence.json  */
   stakeholderInsights?: StakeholderInsight[];
-  /** Recent email-derived signals linked to meeting entity context (I215) */
+  /** Recent email-derived signals linked to meeting entity context  */
   recentEmailSignals?: EmailSignal[];
-  /** Structured digest of linked recent correspondence (I582 / I317). */
+  /** Structured digest of linked recent correspondence. */
   emailDigest?: MeetingEmailDigest;
-  /** I527: Deterministic consistency status from intelligence checks. */
+  /** Deterministic consistency status from intelligence checks. */
   consistencyStatus?: ConsistencyStatus;
-  /** I527: Deterministic consistency findings for trust transparency. */
+  /** Deterministic consistency findings for trust transparency. */
   consistencyFindings?: ConsistencyFinding[];
 }
 
@@ -1260,7 +1260,7 @@ export interface MeetingEmailDigestThread {
   source: string;
 }
 
-/** Account snapshot item for intelligence-enriched Quick Context (I186) */
+/** Account snapshot item for intelligence-enriched Quick Context  */
 export interface AccountSnapshotItem {
   label: string;
   value: string;
@@ -1268,7 +1268,7 @@ export interface AccountSnapshotItem {
   urgency?: string;
 }
 
-/** Relationship context signals computed from meeting history and account data (I43) */
+/** Relationship context signals computed from meeting history and account data  */
 export interface StakeholderSignals {
   meetingFrequency30d: number;
   meetingFrequency90d: number;
@@ -1281,7 +1281,7 @@ export interface StakeholderSignals {
 }
 
 // =============================================================================
-// People (I51)
+// People
 // =============================================================================
 
 export type PersonRelationship = "internal" | "external" | "unknown";
@@ -1300,7 +1300,7 @@ export interface Person {
   meetingCount: number;
   updatedAt: string;
   archived: boolean;
-  // Clay enrichment fields (I228)
+  // Clay enrichment fields
   linkedinUrl?: string;
   twitterHandle?: string;
   phone?: string;
@@ -1319,7 +1319,7 @@ export interface Person {
   enrichmentSources?: Record<string, { source: string; at: string }>;
 }
 
-/** Person with pre-computed signals for list pages (I106). */
+/** Person with pre-computed signals for list pages. */
 export interface PersonListItem extends Person {
   temperature: string;
   trend: string;
@@ -1372,15 +1372,15 @@ export interface AttendeeContext {
 }
 
 // =============================================================================
-// Accounts (I72)
+// Accounts
 // =============================================================================
 
 export type AccountHealth = "green" | "yellow" | "red";
 
-/** Account classification: customer, internal org, or partner (I382). */
+/** Account classification: customer, internal org, or partner. */
 export type AccountType = "customer" | "internal" | "partner";
 
-/** I494: Account discovered from Glean search. */
+/** Account discovered from Glean search. */
 export interface DiscoveredAccount {
   name: string;
   myRole: string | null;
@@ -1392,14 +1392,14 @@ export interface DiscoveredAccount {
   alreadyInDailyos: boolean;
 }
 
-/** I495: A single section within an ephemeral briefing. */
+/** A single section within an ephemeral briefing. */
 export interface BriefingSection {
   title: string;
   content: string;
   source: string | null;
 }
 
-/** I495: One-shot briefing about an account from Glean. */
+/** One-shot briefing about an account from Glean. */
 export interface EphemeralBriefing {
   name: string;
   summary: string;
@@ -1420,18 +1420,18 @@ export interface AccountListItem {
   renewalDate?: string;
   openActionCount: number;
   daysSinceLastMeeting?: number;
-  /** I114: Parent-child hierarchy fields */
+  /** Parent-child hierarchy fields */
   parentId?: string;
   parentName?: string;
   childCount: number;
   isParent: boolean;
   accountType: AccountType;
   archived: boolean;
-  /** I502: Intelligence health data when available (populated from entity_intelligence). */
+  /** Intelligence health data when available (populated from entity_intelligence). */
   intelligenceHealth?: IntelligenceAccountHealth | null;
-  /** DOS-110: User's manual health sentiment assessment. */
+  /** User's manual health sentiment assessment. */
   userHealthSentiment?: string;
-  /** DOS-110: When the sentiment was last set. */
+  /** When the sentiment was last set. */
   sentimentSetAt?: string;
 }
 
@@ -1466,7 +1466,7 @@ export interface MeetingPreview {
   prepContext?: PrepContext;
 }
 
-/** Aggregated signals for parent account's children (I114). */
+/** Aggregated signals for parent account's children. */
 export interface ParentAggregate {
   buCount: number;
   totalArr?: number;
@@ -1474,7 +1474,7 @@ export interface ParentAggregate {
   nearestRenewal?: string;
 }
 
-/** Compact child account summary for parent detail pages (I114). */
+/** Compact child account summary for parent detail pages. */
 export interface AccountChildSummary {
   id: string;
   name: string;
@@ -1502,16 +1502,16 @@ export interface StakeholderFull {
   personRole?: string | null;
   /** Comma-separated roles from account_stakeholder_roles. */
   stakeholderRole: string;
-  /** Typed multi-role assignments with per-role provenance (I652). */
+  /** Typed multi-role assignments with per-role provenance. */
   roles: StakeholderRole[];
   dataSource: string;
-  /** Engagement level (I652). */
+  /** Engagement level. */
   engagement?: string | null;
-  /** Provenance for engagement (I652). */
+  /** Provenance for engagement. */
   dataSourceEngagement?: string | null;
-  /** Free-text assessment (I652). */
+  /** Free-text assessment. */
   assessment?: string | null;
-  /** Provenance for assessment (I652). */
+  /** Provenance for assessment. */
   dataSourceAssessment?: string | null;
   lastSeenInGlean?: string | null;
   createdAt: string;
@@ -1540,7 +1540,7 @@ export interface StakeholderSuggestion {
   resolvedAt?: string | null;
 }
 
-/** DOS-258 Lane F: a pending_review row from account_stakeholders + people join. */
+/** a pending_review row from account_stakeholders + people join. */
 export interface PendingStakeholderSuggestion {
   personId: string;
   name: string | null;
@@ -1569,11 +1569,11 @@ export interface AccountTeamImportNote {
 export interface AccountDetail extends AccountListItem {
   contractStart?: string;
   renewalStage?: string | null;
-  /** I646 C3: Separate commercial opportunity stage. */
+  /**  C3: Separate commercial opportunity stage. */
   commercialStage?: string | null;
-  /** JSON-serialized string[] of resolution keywords (I305) */
+  /** JSON-serialized string of resolution keywords  */
   keywords?: string;
-  /** ISO timestamp when keywords were last extracted (I305) */
+  /** ISO timestamp when keywords were last extracted  */
   keywordsExtractedAt?: string;
   companyOverview?: CompanyOverview;
   strategicPrograms: StrategicProgram[];
@@ -1581,11 +1581,11 @@ export interface AccountDetail extends AccountListItem {
   upcomingMeetings: MeetingSummary[];
   /** ADR-0063: richer type with optional prep context for preview cards. */
   recentMeetings: MeetingPreview[];
-  /** DOS-233 Codex fix: total meeting count for the About-dossier chapter.
+  /** total meeting count for the About-dossier chapter.
    * `recentMeetings` is capped at 10 for preview rendering; this is the
    * unbounded COUNT(*) source of truth. */
   meetingTotalCount?: number;
-  /** DOS-233 Codex fix: total transcripts-on-record count, unbounded. */
+  /** total transcripts-on-record count, unbounded. */
   transcriptTotalCount?: number;
   openActions: Action[];
   linkedPeople: Person[];
@@ -1607,7 +1607,7 @@ export interface AccountDetail extends AccountListItem {
     meetingTitle: string;
   }[];
   recentEmailSignals?: EmailSignal[];
-  /** I114: Parent-child hierarchy */
+  /** Parent-child hierarchy */
   children: AccountChildSummary[];
   parentAggregate?: ParentAggregate;
   objectives: AccountObjective[];
@@ -1617,24 +1617,24 @@ export interface AccountDetail extends AccountListItem {
   fieldConflicts?: AccountFieldConflictSuggestion[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
-  /** I628 AC5: Recently auto-completed milestones for timeline display. */
+  /**  AC5: Recently auto-completed milestones for timeline display. */
   autoCompletedMilestones?: AccountMilestone[];
-  /** I649: Technical footprint, adoption, and service-delivery data. */
+  /** Technical footprint, adoption, and service-delivery data. */
   technicalFootprint?: AccountTechnicalFootprint;
   /** DB-first stakeholder read model: all stakeholders with provenance. */
   stakeholdersFull?: StakeholderFull[];
-  /** I644: Per-field source attribution from account_source_refs. */
+  /** Per-field source attribution from account_source_refs. */
   sourceRefs?: AccountSourceRef[];
-  /** DOS-27: Most recent journal note attached to the current sentiment value. */
+  /** Most recent journal note attached to the current sentiment value. */
   sentimentNote?: string;
-  /** DOS-27: Sentiment journal entries from the last 90 days, newest-first. */
+  /** Sentiment journal entries from the last 90 days, newest-first. */
   sentimentHistory?: SentimentJournalEntry[];
-  /** DOS-27: Daily computed-health sparkline points (last 90 days, chronological). */
+  /** Daily computed-health sparkline points (last 90 days, chronological). */
   healthSparkline?: HealthSparklinePoint[];
-  /** DOS-15: Glean leading-signal enrichment bundle (health & outlook signals). */
+  /** Glean leading-signal enrichment bundle (health & outlook signals). */
   gleanSignals?: HealthOutlookSignals | null;
   /**
-   * DOS-228 Wave 0e Fix 4: Current risk-briefing generation job status.
+   * Current risk-briefing generation job status.
    * Present when a briefing has ever been enqueued for this account. The
    * Health tab uses this to pin a "generating…" affordance at the top while
    * status === "running", surface the error + retry button when
@@ -1643,7 +1643,7 @@ export interface AccountDetail extends AccountListItem {
   riskBriefingJob?: RiskBriefingJob;
 }
 
-/** DOS-228 Wave 0e Fix 4: Risk-briefing job status contract. */
+/** Risk-briefing job status contract. */
 export interface RiskBriefingJob {
   /** One of: `enqueued`, `running`, `complete`, `failed`. */
   status: "enqueued" | "running" | "complete" | "failed";
@@ -1652,7 +1652,7 @@ export interface RiskBriefingJob {
   errorMessage?: string;
 }
 
-/** DOS-27: A single sentiment journal entry. */
+/** A single sentiment journal entry. */
 export type SentimentValue =
   | "strong"
   | "on_track"
@@ -1668,14 +1668,14 @@ export interface SentimentJournalEntry {
   setAt: string;
 }
 
-/** DOS-27: One day of computed health score for the sparkline. */
+/** One day of computed health score for the sparkline. */
 export interface HealthSparklinePoint {
   day: string;
   score: number;
   band: string;
 }
 
-/** DOS-15: Glean leading-signal enrichment types (Health & Outlook tab). */
+/** Glean leading-signal enrichment types (Health & Outlook tab). */
 export interface HealthOutlookSignals {
   championRisk?: ChampionRiskSignal | null;
   productUsageTrend?: ProductUsageTrendSignal | null;
@@ -1684,7 +1684,7 @@ export interface HealthOutlookSignals {
   commercialSignals?: CommercialSignalsBlock | null;
   advocacyTrack?: AdvocacyTrackSignal | null;
   quoteWall: QuoteWallEntry[];
-  /** Trend signals from a separate PTY pass (DOS-204). `null` until that pass runs. */
+  /** Trend signals from a separate PTY pass. `null` until that pass runs. */
   trends?: TrendSignals | null;
 }
 
@@ -1850,7 +1850,7 @@ export interface TrendSignals {
   sentimentOverTime: unknown[];
 }
 
-/** I644: Source reference for a tracked account field. */
+/** Source reference for a tracked account field. */
 export interface AccountSourceRef {
   id: string;
   accountId: string;
@@ -1861,7 +1861,7 @@ export interface AccountSourceRef {
   observedAt: string;
 }
 
-/** I649: Technical footprint data for an account. */
+/** Technical footprint data for an account. */
 export interface AccountTechnicalFootprint {
   usageTier?: string | null;
   adoptionScore?: number | null;
@@ -1963,7 +1963,7 @@ export interface OnboardingPrimingContext {
 }
 
 // =============================================================================
-// Content Index (I124)
+// Content Index
 // =============================================================================
 
 export interface ContentFile {
@@ -1984,7 +1984,7 @@ export interface ContentFile {
 }
 
 // =============================================================================
-// Entity Intelligence (I130 / ADR-0057)
+// Entity Intelligence (ADR-0057)
 // =============================================================================
 
 /** A record of a user edit to an intelligence field (protects from AI overwrite). */
@@ -1996,7 +1996,7 @@ export interface UserEdit {
 export type ConsistencyStatus = "ok" | "corrected" | "flagged";
 export type ConsistencySeverity = "high" | "medium" | "low";
 
-/** Deterministic contradiction finding recorded during consistency checks (I527). */
+/** Deterministic contradiction finding recorded during consistency checks. */
 export interface ConsistencyFinding {
   code: string;
   severity: ConsistencySeverity;
@@ -2006,14 +2006,14 @@ export interface ConsistencyFinding {
   autoFixed: boolean;
 }
 
-/** A child account flagged as a hotspot in a parent's portfolio assessment (I384). */
+/** A child account flagged as a hotspot in a parent's portfolio assessment. */
 export interface PortfolioHotspot {
   childId: string;
   childName: string;
   reason: string;
 }
 
-/** Portfolio-level intelligence for parent accounts (I384). */
+/** Portfolio-level intelligence for parent accounts. */
 export interface PortfolioIntelligence {
   healthSummary?: string;
   hotspots: PortfolioHotspot[];
@@ -2021,7 +2021,7 @@ export interface PortfolioIntelligence {
   portfolioNarrative?: string;
 }
 
-/** A key relationship in a person's network (I391, ADR-0088). */
+/** A key relationship in a person's network (ADR-0088). */
 export interface NetworkKeyRelationship {
   personId: string;
   name: string;
@@ -2030,7 +2030,7 @@ export interface NetworkKeyRelationship {
   signalSummary?: string;
 }
 
-/** Network intelligence for person entities (I391, ADR-0088). */
+/** Network intelligence for person entities (ADR-0088). */
 export interface NetworkIntelligence {
   health: 'strong' | 'at_risk' | 'weakened' | 'unknown';
   keyRelationships: NetworkKeyRelationship[];
@@ -2048,7 +2048,7 @@ export interface PersonAccountRole {
   dataSource: string;
 }
 
-/** A person-to-person relationship edge (I390, ADR-0088). */
+/** A person-to-person relationship edge (ADR-0088). */
 export interface PersonRelationshipEdge {
   id: string;
   fromPersonId: string;
@@ -2075,7 +2075,7 @@ export interface IntelligenceAccountHealth {
   band: "green" | "yellow" | "red";
   source: "org" | "computed" | "userSet";
   confidence: number;
-  /** DOS-84: true when >= 3 of 6 health dimensions have data.
+  /** true when >= 3 of 6 health dimensions have data.
    *  When false, UI should show "Insufficient Data" instead of the score. */
   sufficientData?: boolean;
   trend: IntelligenceHealthTrend;
@@ -2085,7 +2085,7 @@ export interface IntelligenceAccountHealth {
   recommendedActions?: string[];
 }
 
-/** DOS-249: Structured signal tag for the trend meta line. */
+/** Structured signal tag for the trend meta line. */
 export interface HealthTrendTag {
   label: string;
   direction: "up" | "down" | "stable";
@@ -2096,9 +2096,9 @@ export interface IntelligenceHealthTrend {
   rationale?: string | null;
   timeframe?: string;
   confidence?: number;
-  /** DOS-249: Integer score delta over the trend window. Positive = improving. */
+  /** Integer score delta over the trend window. Positive = improving. */
   delta?: number | null;
-  /** DOS-249: Structured signal tags for the trend meta line. */
+  /** Structured signal tags for the trend meta line. */
   tags?: HealthTrendTag[];
 }
 
@@ -2106,15 +2106,15 @@ export interface IntelligenceHealthTrend {
  * Six health scoring dimensions. Field names mirror the Rust serde output
  * (camelCase via `rename_all = "camelCase"`).
  *
- * DOS-179: `keyAdvocateHealth` replaced the former `championHealth` field name.
+ * `keyAdvocateHealth` replaced the former `championHealth` field name.
  * The preset label for this dimension varies by role (CS: "Champion Health";
- * affiliates-partnerships: "Partner Lead Health") — see DOS-177.
+ * affiliates-partnerships: "Partner Lead Health").
  */
 export interface RelationshipDimensions {
   meetingCadence: DimensionScore;
   emailEngagement: DimensionScore;
   stakeholderCoverage: DimensionScore;
-  /** DOS-179: renamed from championHealth. Preset label is role-specific. */
+  /** renamed from championHealth. Preset label is role-specific. */
   keyAdvocateHealth: DimensionScore;
   financialProximity: DimensionScore;
   signalMomentum: DimensionScore;
@@ -2157,7 +2157,7 @@ export interface IntelligenceTranscriptSentiment {
 }
 
 // =============================================================================
-// I508a: Intelligence Dimension Sub-Types
+// Intelligence dimension sub-types
 // =============================================================================
 
 // -- Dimension 1: Strategic Assessment --
@@ -2168,9 +2168,9 @@ export interface CompetitiveInsight {
   context?: string;
   source?: string;
   detectedAt?: string;
-  /** I576: Structured source attribution with confidence. */
+  /** Structured source attribution with confidence. */
   itemSource?: ItemSource;
-  /** I576: True if multiple sources disagree on this item. */
+  /** True if multiple sources disagree on this item. */
   discrepancy?: boolean;
 }
 
@@ -2194,7 +2194,7 @@ export interface MarketContextItem {
 }
 
 /**
- * DOS-207: Regulatory / compliance item (DORA, SOC 2, HIPAA, GDPR, CUSTOM).
+ * Regulatory / compliance item (DORA, SOC 2, HIPAA, GDPR, CUSTOM).
  * Populated by the strategic_context enrichment. Items with status='gap'
  * emit regulatory_gap_detected signals on enrichment write.
  */
@@ -2229,9 +2229,9 @@ export interface OrgChange {
   to?: string;
   detectedAt?: string;
   source?: string;
-  /** I576: Structured source attribution with confidence. */
+  /** Structured source attribution with confidence. */
   itemSource?: ItemSource;
-  /** I576: True if multiple sources disagree on this item. */
+  /** True if multiple sources disagree on this item. */
   discrepancy?: boolean;
 }
 
@@ -2288,9 +2288,9 @@ export interface ExpansionSignal {
   arrImpact?: number;
   source?: string;
   stage?: string;
-  /** I576: Structured source attribution with confidence. */
+  /** Structured source attribution with confidence. */
   itemSource?: ItemSource;
-  /** I576: True if multiple sources disagree on this item. */
+  /** True if multiple sources disagree on this item. */
   discrepancy?: boolean;
 }
 
@@ -2298,19 +2298,19 @@ export interface AgreementOutlook {
   confidence?: string;
   riskFactors?: string[];
   expansionPotential?: string;
-  /** DOS-249: One-paragraph editorial read on the renewal, rendered as pull-quote. */
+  /** One-paragraph editorial read on the renewal, rendered as pull-quote. */
   renewalNarrative?: string;
   recommendedStart?: string;
   negotiationLeverage?: string[];
   negotiationRisk?: string[];
-  /** DOS-204: Peer-cohort renewal benchmark for the Outlook panel's Benchmark cell. */
+  /** Peer-cohort renewal benchmark for the Outlook panel's Benchmark cell. */
   peerBenchmark?: PeerBenchmark | null;
 }
 
-/** DOS-204: Peer benchmark band — where this account sits vs the cohort. */
+/** Peer benchmark band — where this account sits vs the cohort. */
 export type PeerBenchmarkBand = "above" | "at" | "below" | "unknown";
 
-/** DOS-204: Peer-cohort renewal benchmark sourced from a dedicated Glean chat pass. */
+/** Peer-cohort renewal benchmark sourced from a dedicated Glean chat pass. */
 export interface PeerBenchmark {
   band: PeerBenchmarkBand;
   narrative: string;
@@ -2354,7 +2354,7 @@ export interface EntityIntelligence {
   sourceFileCount: number;
   sourceManifest: SourceManifestEntry[];
   executiveAssessment?: string;
-  /** I576: Concise editorial pull quote — one impactful sentence. */
+  /** Concise editorial pull quote — one impactful sentence. */
   pullQuote?: string;
   risks: IntelRisk[];
   recentWins: IntelWin[];
@@ -2362,31 +2362,31 @@ export interface EntityIntelligence {
   stakeholderInsights: StakeholderInsight[];
   nextMeetingReadiness?: IntelMeetingReadiness;
   companyContext?: IntelCompanyContext;
-  /** Portfolio intelligence for parent accounts (I384) */
+  /** Portfolio intelligence for parent accounts  */
   portfolio?: PortfolioIntelligence;
-  /** Network intelligence for person entities (I391) */
+  /** Network intelligence for person entities  */
   network?: NetworkIntelligence;
   userEdits?: UserEdit[];
   /** ADR-0097 structured health payload. */
   health?: IntelligenceAccountHealth | null;
-  /** I500 org-health baseline payload (when available). */
+  /**  org-health baseline payload (when available). */
   orgHealth?: OrgHealthData | null;
-  /** I396: Value delivered to the account. */
+  /** Value delivered to the account. */
   valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
-  /** I396: Success metrics / KPIs tracked for this entity. */
+  /** Success metrics / KPIs tracked for this entity. */
   successMetrics?: Array<{ name: string; target?: string; current?: string; status?: string; owner?: string }> | null;
-  /** I396: Open commitments (promises made to/from the account). */
+  /** Open commitments (promises made to/from the account). */
   openCommitments?: Array<{ commitmentId?: string; description: string; owner?: string; dueDate?: string; source?: string; status?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
-  /** I396: Relationship depth assessment. */
+  /** Relationship depth assessment. */
   relationshipDepth?: { championStrength?: string; executiveAccess?: string; stakeholderCoverage?: string; coverageGaps?: string[] } | null;
-  /** I527: Deterministic consistency status. */
+  /** Deterministic consistency status. */
   consistencyStatus?: ConsistencyStatus;
-  /** I527: Deterministic contradiction findings. */
+  /** Deterministic contradiction findings. */
   consistencyFindings?: ConsistencyFinding[];
-  /** I527: Timestamp of latest consistency check. */
+  /** Timestamp of latest consistency check. */
   consistencyCheckedAt?: string;
 
-  // I508a: Intelligence Dimension Fields
+  // Intelligence dimension fields
 
   /** Dimension 1: Competitive insights. */
   competitiveContext?: CompetitiveInsight[];
@@ -2394,7 +2394,7 @@ export interface EntityIntelligence {
   strategicPriorities?: StrategicPriority[];
   /** Dimension 1: Market / regulatory context items. */
   marketContext?: MarketContextItem[];
-  /** DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR). */
+  /** Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR). */
   regulatoryContext?: RegulatoryItem[];
 
   /** Dimension 2: Stakeholder coverage assessment. */
@@ -2426,14 +2426,14 @@ export interface EntityIntelligence {
   /** Dimension 6: NPS/CSAT satisfaction data. */
   npsCsat?: SatisfactionData | null;
 
-  /** Cross-cutting: source attribution (I507). */
+  /** Cross-cutting: source attribution. */
   sourceAttribution?: Record<string, string[]> | null;
 
-  /** DOS-13: AI-recommended actions from intelligence enrichment. */
+  /** AI-recommended actions from intelligence enrichment. */
   recommendedActions?: RecommendedAction[];
 }
 
-/** DOS-13: A recommended action produced by intelligence enrichment. */
+/** A recommended action produced by intelligence enrichment. */
 export interface RecommendedAction {
   title: string;
   rationale: string;
@@ -2447,7 +2447,7 @@ export interface SourceManifestEntry {
   format?: string;
 }
 
-/** I576: Source attribution for individual intelligence items. */
+/** Source attribution for individual intelligence items. */
 export interface ItemSource {
   source: string;
   confidence: number;
@@ -2459,15 +2459,15 @@ export interface IntelRisk {
   text: string;
   source?: string;
   urgency: string;
-  /** DOS-249: Punchy 1-liner headline for the triage card (≤80 chars). */
+  /** Punchy 1-liner headline for the triage card (≤80 chars). */
   headline?: string;
-  /** DOS-249: Evidence body — multi-sentence supporting detail. */
+  /** Evidence body — multi-sentence supporting detail. */
   evidence?: string;
-  /** DOS-249: Specific kind label emitted by AI (e.g. "Renewal drag · compliance gap"). */
+  /** Specific kind label emitted by AI (e.g. "Renewal drag · compliance gap"). */
   kindLabel?: string;
-  /** I576: Structured source attribution with confidence. */
+  /** Structured source attribution with confidence. */
   itemSource?: ItemSource;
-  /** I576: True if multiple sources disagree on this item. */
+  /** True if multiple sources disagree on this item. */
   discrepancy?: boolean;
 }
 
@@ -2475,9 +2475,9 @@ export interface IntelWin {
   text: string;
   source?: string;
   impact?: string;
-  /** I576: Structured source attribution with confidence. */
+  /** Structured source attribution with confidence. */
   itemSource?: ItemSource;
-  /** I576: True if multiple sources disagree on this item. */
+  /** True if multiple sources disagree on this item. */
   discrepancy?: boolean;
 }
 
@@ -2493,24 +2493,24 @@ export interface StakeholderInsight {
   assessment?: string;
   engagement?: string;
   source?: string;
-  /** Deterministic link to a Person entity (I420: reconciliation). */
+  /** Deterministic link to a Person entity (reconciliation). */
   personId?: string;
-  /** Suggested Person link (0.6–0.85 confidence) awaiting user confirmation (I420). */
+  /** Suggested Person link (0.6–0.85 confidence) awaiting user confirmation. */
   suggestedPersonId?: string;
   /**
-   * DOS-207: Whether this assessment was grounded in an actual
+   * Whether this assessment was grounded in an actual
    * customer-conversation transcript (true) or inferred from meeting
    * attendance alone (false). Frontend renders a "needs assessment" pill
    * when false.
    */
   verified?: boolean;
-  /** DOS-207: How verification was established — 'meeting' | 'glean' | 'user'. */
+  /** How verification was established — 'meeting' | 'glean' | 'user'. */
   verifiedSource?: string;
-  /** DOS-207: RFC3339 timestamp when verification was established. */
+  /** RFC3339 timestamp when verification was established. */
   verifiedAt?: string;
-  /** I576: Structured source attribution with confidence. */
+  /** Structured source attribution with confidence. */
   itemSource?: ItemSource;
-  /** I576: True if multiple sources disagree on this item. */
+  /** True if multiple sources disagree on this item. */
   discrepancy?: boolean;
 }
 
@@ -2529,7 +2529,7 @@ export interface IntelCompanyContext {
 }
 
 // =============================================================================
-// Projects (I50)
+// Projects
 // =============================================================================
 
 export type ProjectStatus = "active" | "on_hold" | "completed" | "archived";
@@ -2545,7 +2545,7 @@ export interface ProjectListItem {
   openActionCount: number;
   daysSinceLastMeeting?: number;
   archived: boolean;
-  /** I388: Parent-child hierarchy fields */
+  /** Parent-child hierarchy fields */
   parentId?: string;
   parentName?: string;
   childCount: number;
@@ -2559,7 +2559,7 @@ export interface ProjectMilestone {
   notes?: string;
 }
 
-/** Compact child project summary for parent detail pages (I388). */
+/** Compact child project summary for parent detail pages. */
 export interface ProjectChildSummary {
   id: string;
   name: string;
@@ -2568,7 +2568,7 @@ export interface ProjectChildSummary {
   openActionCount: number;
 }
 
-/** Aggregated signals for parent project's children (I388). */
+/** Aggregated signals for parent project's children. */
 export interface ProjectParentAggregate {
   childCount: number;
   activeCount: number;
@@ -2585,9 +2585,9 @@ export interface ProjectDetail extends ProjectListItem {
   openActions: Action[];
   recentMeetings: MeetingSummary[];
   linkedPeople: Person[];
-  /** JSON-serialized string[] of resolution keywords (I305) */
+  /** JSON-serialized string of resolution keywords  */
   keywords?: string;
-  /** ISO timestamp when keywords were last extracted (I305) */
+  /** ISO timestamp when keywords were last extracted  */
   keywordsExtractedAt?: string;
   signals?: {
     meetingFrequency30d: number;
@@ -2607,13 +2607,13 @@ export interface ProjectDetail extends ProjectListItem {
   recentEmailSignals?: EmailSignal[];
   /** ADR-0057: Synthesized entity intelligence */
   intelligence?: EntityIntelligence;
-  /** I388: Parent-child hierarchy */
+  /** Parent-child hierarchy */
   children: ProjectChildSummary[];
   parentAggregate?: ProjectParentAggregate;
 }
 
 // =============================================================================
-// AI Model Config (I174)
+// AI Model Config
 // =============================================================================
 
 export interface AiModelConfig {
@@ -2676,11 +2676,11 @@ export interface MeetingHistoryDetail {
   attendees: string[];
   captures: DbCapture[];
   actions: DbAction[];
-  /** Persisted pre-meeting prep context (I181). */
+  /** Persisted pre-meeting prep context. */
   prepContext?: PrepContext;
 }
 
-/** Enriched pre-meeting prep context (I181). */
+/** Enriched pre-meeting prep context. */
 export interface PrepContext {
   intelligenceSummary?: string;
   entityRisks?: Array<{ text: string; urgency?: string; source?: string }>;
@@ -2700,7 +2700,7 @@ export interface PrepContext {
   consistencyFindings?: ConsistencyFinding[];
 }
 
-/** Meeting search result (I183). */
+/** Meeting search result. */
 export interface MeetingSearchResult {
   id: string;
   title: string;
@@ -2711,7 +2711,7 @@ export interface MeetingSearchResult {
 }
 
 // =============================================================================
-// Account Events (I143)
+// Account Events
 // =============================================================================
 
 export type AccountEventType =
@@ -2776,9 +2776,9 @@ export interface AccountObjective {
   linkedActionCount: number;
   completedMilestoneCount: number;
   totalMilestoneCount: number;
-  /** DOS-14: Evidence from AI enrichment matching this objective */
+  /** Evidence from AI enrichment matching this objective */
   evidenceJson?: string | null;
-  /** DOS-14: ID linking to original AI statedObjective */
+  /** ID linking to original AI statedObjective */
   aiOriginId?: string | null;
 }
 
@@ -2814,7 +2814,7 @@ export interface SuccessPlanTemplate {
 }
 
 // =============================================================================
-// Duplicate People Detection (I172)
+// Duplicate People Detection
 // =============================================================================
 
 export interface DuplicateCandidate {
@@ -2963,7 +2963,7 @@ export interface GranolaStatus {
 }
 
 // =============================================================================
-// Clay Integration (I228)
+// Clay Integration
 // =============================================================================
 
 export interface ClayStatusData {
@@ -2988,7 +2988,7 @@ export interface EnrichmentLogEntry {
 }
 
 // =============================================================================
-// Linear Integration (I346)
+// Linear Integration
 // =============================================================================
 
 export interface LinearStatusData {
@@ -3001,7 +3001,7 @@ export interface LinearStatusData {
 }
 
 // =============================================================================
-// Google Drive Integration (I426)
+// Google Drive Integration
 // =============================================================================
 
 export interface DriveStatusData {
@@ -3046,16 +3046,16 @@ export interface TimelineMeeting {
   entities: LinkedEntity[];
   hasNewSignals: boolean;
   priorMeetingId?: string;
-  /** Count of follow-up actions linked to this meeting (I342) */
+  /** Count of follow-up actions linked to this meeting  */
   followUpCount?: number;
   /** Whether a meeting briefing exists (prep_frozen_json or disk file) */
   hasPrep?: boolean;
-  /** I502: Health data keyed by entity ID for linked accounts with intelligence health. */
+  /** Health data keyed by entity ID for linked accounts with intelligence health. */
   entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
 // =============================================================================
-// User Entity Types (I411 — ADR-0089/0090)
+// User Entity Types (ADR-0089/0090)
 // =============================================================================
 
 export interface UserEntity {
@@ -3123,7 +3123,7 @@ export interface QuarterlyPriority {
 }
 
 // =============================================================================
-// I427: Global Search
+// Global Search
 // =============================================================================
 
 export interface GlobalSearchResult {
@@ -3141,7 +3141,7 @@ export interface CopyToInboxReport {
 }
 
 // =============================================================================
-// I428: Connectivity / Sync Freshness
+// Connectivity / Sync Freshness
 // =============================================================================
 
 export interface SyncFreshness {
@@ -3155,7 +3155,7 @@ export interface SyncFreshness {
 }
 
 // =============================================================================
-// I429: Data Export
+// Data Export
 // =============================================================================
 
 export interface ExportReport {
@@ -3175,7 +3175,7 @@ export interface ExportCounts {
 }
 
 // =============================================================================
-// I430: Privacy Controls
+// Privacy Controls
 // =============================================================================
 
 export interface DataSummary {

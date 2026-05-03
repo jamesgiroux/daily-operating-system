@@ -1,12 +1,12 @@
 #!/usr/bin/env bash
-# DOS-259 (W2-B): forbid direct `Utc::now()` / `thread_rng()` in the new
-# provider modules so they remain mode-aware (clock/RNG come through
-# `ServiceContext` once W2-A lands; until then, providers must not anchor
-# to wall clock or system RNG by accident).
+# Forbid direct `Utc::now` / `thread_rng` in provider modules so they remain
+# mode-aware. Providers should get clock/RNG through `ServiceContext`; until
+# that wiring is available, they must not anchor to wall clock or system RNG by
+# accident.
 #
 # Coverage: intelligence/{provider,pty_provider,glean_provider}.rs only.
-# The wave invariant for W2-A already covers `services/` and `abilities/`;
-# this lint closes the gap for the W2-B-introduced provider modules.
+# The existing clock/RNG invariant already covers `services/` and `abilities/`;
+# this lint closes the provider-module gap.
 #
 # Pattern matches any of:
 #   chrono::Utc::now(           Utc::now(           chrono::offset::Utc::now(
@@ -34,15 +34,14 @@ else
   )
 fi
 
-# Grandfathered allowlist: pre-W2-B `Utc::now()` calls in `glean_provider.rs`
+# Grandfathered allowlist: existing `Utc::now()` calls in `glean_provider.rs`
 # that timestamp serializable response / manifest fields. These migrate to
-# `ctx.clock.now()` when W2-A's `ServiceContext` lands and the Glean impl
-# can take a clock reference. Until then the lint accepts each call
-# annotated with a `// dos259-grandfathered: <reason>` marker within
-# 3 lines above. Line-number-only allowlists rotted on file edits per
-# the L2 codex review; the marker is stable across edits.
+# `ctx.clock.now()` when the Glean implementation can take a clock reference.
+# Until then the lint accepts each call annotated with a
+# `// dos259-grandfathered: <reason>` marker within 3 lines above. Line-number
+# allowlists rot on file edits; the marker is stable across edits.
 #
-# When W2-A migrates these, the markers and this comment block delete.
+# When those call sites migrate, the markers and this comment block delete.
 
 # Pattern: clock or RNG call, in any qualified form.
 PATTERN='\b(chrono::offset::Utc::now|chrono::Utc::now|Utc::now|rand::thread_rng|thread_rng|rand::rng)[[:space:]]*\('
@@ -53,7 +52,8 @@ for file in "${FILES[@]}"; do
 
   # Build a list of byte spans that are inside #[cfg(test)] mod blocks
   # using a simple line-level scanner. This is the same shape as the
-  # W1/W2-A lints — accurate enough for the small file set.
+  # Existing lints use this same line-level scanner; it is accurate enough for
+  # the small file set.
   in_cfg_test=0
   brace_depth=0
   cfg_test_start_depth=0
@@ -101,7 +101,7 @@ for file in "${FILES[@]}"; do
       start=$((lineno - 3))
       [ "$start" -lt 1 ] && start=1
       preceding="$(sed -n "${start},${lineno}p" "$file" 2>/dev/null)"
-      # New code uses `dos259-exempt:` markers; pre-W2-B grandfathered
+      # New code uses `dos259-exempt:` markers; grandfathered
       # calls (currently in glean_provider.rs only) use
       # `dos259-grandfathered:` markers. Both bypass the lint. Markers
       # are content-stable across line shifts (per L2 codex review).
@@ -119,7 +119,7 @@ if [ "$violations" -gt 0 ]; then
   echo
   echo "ERROR: ${violations} direct clock/RNG call(s) in DOS-259 provider modules."
   echo "Provider modules must not anchor to wall clock or system RNG directly."
-  echo "Route through ServiceContext.clock / ServiceContext.rng once W2-A lands."
+  echo "Route through ServiceContext.clock / ServiceContext.rng once the provider wiring supports it."
   echo "If intentionally needed (e.g., glean_chat retry jitter), add a"
   echo "  // dos259-exempt: <reason>"
   echo "comment within 3 lines above the call."

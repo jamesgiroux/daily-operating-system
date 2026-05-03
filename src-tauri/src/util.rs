@@ -229,7 +229,7 @@ Read the generated overview for a comprehensive summary of this {etype}. For str
     Ok(())
 }
 
-// ─── Managed Workspace Files (I275) ─────────────────────────────────────────
+// ─── Managed Workspace Files  ─────────────────────────────────────────
 //
 // CLAUDE.md and .claude/settings.json are written to the workspace root so that
 // Claude Code / Cowork automatically understands the workspace structure.
@@ -590,7 +590,7 @@ pub fn classify_relationship(email: &str, user_domain: Option<&str>) -> String {
     }
 }
 
-/// Classify a person as internal/external based on multiple user domains (I171).
+/// Classify a person as internal/external based on multiple user domains.
 ///
 /// Returns "internal" if the email domain matches ANY of the user's domains,
 /// "external" if it matches none, or "unknown" if the list is empty.
@@ -624,7 +624,7 @@ pub fn slugify(name: &str) -> String {
         .join("-")
 }
 
-/// Sanitize a string for use as a filesystem directory or file name (I70).
+/// Sanitize a string for use as a filesystem directory or file name.
 ///
 /// Strips `:*?"<>|`, replaces `/\` with `-`, trims leading/trailing dots and spaces,
 /// and falls back to "unnamed" if the result is empty.
@@ -642,7 +642,7 @@ pub fn sanitize_for_filesystem(name: &str) -> String {
     }
 }
 
-// ─── iCloud Workspace Detection (I464) ──────────────────────────────────────
+// ─── iCloud Workspace Detection  ──────────────────────────────────────
 
 /// Check if a path is under iCloud sync scope.
 /// Returns true if the path is under `~/Library/Mobile Documents/`, or
@@ -689,7 +689,7 @@ pub fn is_under_icloud_scope(path: &str) -> bool {
 
 // ─── Prompt Injection Hardening ─────────────────────────────────────────────
 
-/// Standard injection resistance preamble for AI prompts (ADR-0093, I468).
+/// Standard injection resistance preamble for AI prompts (ADR-0093).
 ///
 /// Inserted at the start of every prompt that processes external data.
 /// Creates a clear boundary so the model treats `<user_data>` regions as
@@ -717,7 +717,7 @@ pub fn contains_tag_escape(content: &str) -> bool {
     content.contains("</user_data>") || content.contains("<user_data")
 }
 
-/// Strip invisible Unicode characters that could be used for prompt injection (I469).
+/// Strip invisible Unicode characters that could be used for prompt injection.
 /// Removes soft hyphens, zero-width spaces/joiners, BOM, and line/paragraph separators.
 pub fn strip_invisible_unicode(content: &str) -> String {
     content
@@ -737,7 +737,7 @@ pub fn strip_invisible_unicode(content: &str) -> String {
         .collect()
 }
 
-/// Sanitize an external field for prompt interpolation (I469).
+/// Sanitize an external field for prompt interpolation.
 /// Strips invisible characters, truncates to 2000 bytes, then wraps with `wrap_user_data`.
 pub fn sanitize_external_field(content: &str) -> String {
     let cleaned = strip_invisible_unicode(content);
@@ -754,7 +754,7 @@ pub fn sanitize_external_field(content: &str) -> String {
     wrap_user_data(truncated)
 }
 
-/// Encode a high-risk field (email subjects, calendar titles) as base64 (I469).
+/// Encode a high-risk field (email subjects, calendar titles) as base64.
 /// Strips invisible characters, base64-encodes, then wraps with encoding attribute.
 pub fn encode_high_risk_field(content: &str) -> String {
     use base64::Engine;
@@ -795,7 +795,7 @@ mod tests {
         assert_eq!(slugify("simple"), "simple");
     }
 
-    // Person helper tests (I51)
+    // Person helper tests
 
     #[test]
     fn test_person_id_from_email() {
@@ -858,7 +858,7 @@ mod tests {
         );
     }
 
-    // Path traversal guard tests (I60)
+    // Path traversal guard tests
 
     #[test]
     fn test_validate_inbox_path_valid() {
@@ -875,7 +875,7 @@ mod tests {
         assert!(validate_inbox_path(workspace, "foo/../../outside").is_err());
     }
 
-    // Entity name validation tests (I60)
+    // Entity name validation tests
 
     #[test]
     fn test_validate_entity_name_valid() {
@@ -907,7 +907,7 @@ mod tests {
         assert!(validate_entity_name("foo|bar").is_err());
     }
 
-    // Filesystem sanitization tests (I70)
+    // Filesystem sanitization tests
 
     #[test]
     fn test_sanitize_for_filesystem_basic() {
@@ -938,7 +938,7 @@ mod tests {
         assert_eq!(sanitize_for_filesystem(":*?"), "unnamed");
     }
 
-    // Atomic write tests (I64)
+    // Atomic write tests
 
     #[test]
     fn test_atomic_write_basic() {
@@ -1044,7 +1044,7 @@ mod tests {
 
     // normalize_domains tests moved to helpers.rs (DRY dedup)
 
-    // Managed workspace files tests (I275)
+    // Managed workspace files tests
 
     #[test]
     fn test_managed_files_fresh_write() {
@@ -1117,7 +1117,7 @@ mod tests {
         assert!(dir.path().join(".claude/settings.json").exists());
     }
 
-    // Prompt injection hardening tests (I466)
+    // Prompt injection hardening tests
 
     #[test]
     fn test_wrap_user_data_escapes_html_tags() {
@@ -1158,7 +1158,7 @@ mod tests {
         );
     }
 
-    // Prompt sanitization tests (I469)
+    // Prompt sanitization tests
 
     #[test]
     fn test_strip_invisible_unicode() {

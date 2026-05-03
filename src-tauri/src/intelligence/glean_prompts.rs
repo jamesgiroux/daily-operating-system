@@ -1,6 +1,6 @@
-//! I535: Structured prompt builders for Glean MCP `chat` tool.
+//! Structured prompt builders for Glean MCP `chat` tool.
 //!
-//! These prompts request the full I508 + I554 enriched schema as JSON.
+//! These prompts request the full enriched schema as JSON.
 //! The output must be parseable by `parse_intelligence_response()` — the
 //! same parser used for PTY output. Both paths produce identical types.
 
@@ -112,7 +112,7 @@ pub fn build_glean_enrichment_prompt(
             }
         }
 
-        // I555 extra blocks (engagement patterns, champion health, commitments)
+        //  extra blocks (engagement patterns, champion health, commitments)
         for block in &ctx.extra_blocks {
             prompt.push_str(block);
             prompt.push_str("\n\n");
@@ -157,7 +157,7 @@ pub fn build_glean_enrichment_prompt(
 
 /// Build the JSON schema instructions for the Glean prompt.
 ///
-/// Mirrors the full IntelligenceJson struct with I508 base + I554 enrichments.
+/// Mirrors the full IntelligenceJson struct with base +  enrichments.
 fn build_json_schema(entity_type: &str) -> String {
     let mut schema = String::from("```json\n{\n");
 
@@ -176,7 +176,7 @@ fn build_json_schema(entity_type: &str) -> String {
   "nextMeetingReadiness": { "prepItems": ["max 3 items to prepare"] },
 "#);
 
-    // I554 enrichments
+    //  enrichments
     schema.push_str(r#"  "keyAdvocateHealth": { "name": "champion name or null", "status": "strong|weak|lost|none", "evidence": "behavioral evidence", "risk": "if weak/lost, the risk and recommended action" },
   "commitments": [{ "content": "what was committed", "ownedBy": "us|them|joint", "successCriteria": "how we know it's done", "targetDate": "YYYY-MM-DD or null" }],
   "successPlanSignals": {
@@ -238,7 +238,7 @@ fn build_json_schema(entity_type: &str) -> String {
 
 /// Build an ephemeral account query prompt for a named account.
 ///
-/// Used by I495 to produce a one-shot briefing about an account that may not
+/// Used by to produce a one-shot briefing about an account that may not
 /// be in the local database yet. Returns prose-friendly structured JSON.
 pub fn build_ephemeral_query_prompt(name: &str) -> String {
     format!(

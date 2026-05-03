@@ -1,4 +1,4 @@
--- DOS-311 fixture: tombstoned-with-new-evidence.
+-- Tombstone fixture: newer evidence wins.
 --
 -- A tombstone exists. The legacy projection includes a NEWER version of
 -- the item (`sourced_at > tombstone.dismissed_at`). This is legitimate —

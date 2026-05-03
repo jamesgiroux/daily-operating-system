@@ -1,4 +1,4 @@
-//! Executive Intelligence computation (I42).
+//! Executive Intelligence computation.
 //!
 //! Pure computation layer that cross-references SQLite data + today's schedule
 //! to surface signals: decisions due, stale delegations, portfolio alerts,
@@ -262,7 +262,7 @@ fn is_cancelable_candidate(m: &Meeting) -> bool {
     is_internal && no_prep && not_cancelled
 }
 
-/// Person-level alerts: stale relationships and new faces (I51).
+/// Person-level alerts: stale relationships and new faces.
 fn compute_person_alerts(db: &ActionDb) -> Vec<PersonAlert> {
     let mut alerts = Vec::new();
     let now = chrono::Utc::now();

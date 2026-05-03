@@ -1,5 +1,5 @@
 /**
- * EmptyState.tsx — Unified empty state component (I437)
+ * EmptyState.tsx — Unified empty state component
  *
  * Replaces EditorialEmpty and EntityListEmpty with a single editorial
  * component. DashboardEmpty stays bespoke (it's the app's front door).

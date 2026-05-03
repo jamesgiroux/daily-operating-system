@@ -1,6 +1,6 @@
-//! DOS-311: schema-epoch fence for `intelligence.json` writes.
+//! schema-epoch fence for `intelligence.json` writes.
 //!
-//! The fence prevents stale writes during the W3 / DOS-7 cutover. The flow:
+//! The fence prevents stale writes during claims-schema cutovers. The flow:
 //!
 //! 1. A worker captures the current `migration_state.schema_epoch` at
 //!    job pickup via [`FenceCycle::capture`].
@@ -8,19 +8,18 @@
 //!    to minutes for PTY/Glean paths).
 //! 3. Before writing `intelligence.json`, the worker passes its `FenceCycle`
 //!    to [`fenced_write_intelligence_json`]. The fence re-reads the epoch;
-//!    if it has advanced (because DOS-7's migration ran mid-flight), the
+//!    if it has advanced because a migration ran mid-flight, the
 //!    write is rejected with [`FenceError::EpochAdvanced`].
 //! 4. The caller treats `EpochAdvanced` as a soft skip: log, do not roll
 //!    back DB state (DB is canonical), and re-enqueue the work for the
 //!    next cycle.
 //!
-//! ## Cross-issue dependency note
+//! ## Cross-migration dependency note
 //!
-//! The live DOS-311 ticket also requires `--repair` mode that consumes
-//! `services/claims.rs::commit_claim` (DOS-7) and a reconcile pass over
-//! `intelligence_claims` (DOS-7 schema). Both ship in W3. This module
-//! ships the substrate primitive (epoch capture + recheck on write); the
-//! reconcile + repair binary land alongside DOS-7.
+//! The repair/reconcile path consumes `services::claims::commit_claim` and
+//! `intelligence_claims`. This module ships the substrate primitive
+//! (epoch capture + recheck on write); the reconcile + repair binary land
+//! alongside it.
 
 use std::path::Path;
 use std::sync::atomic::{AtomicUsize, Ordering};
@@ -112,8 +111,8 @@ impl FenceCycle {
 /// Wait for all in-flight [`FenceCycle`] handles to drop, or until the
 /// timeout fires. Returns `Ok(in_flight_count_when_done)` (0 means clean
 /// drain) or `Err(remaining)` if the timeout fired with handles still
-/// active. Used by DOS-7's migration sequence at step 3 (drain workers)
-/// after step 2 (bump epoch) — bumping first guarantees workers that
+/// active. Used by claims migrations when draining workers after bumping the
+/// schema epoch; bumping first guarantees workers that
 /// already captured will see the advance on `recheck` and abort their
 /// writes.
 ///
@@ -133,9 +132,9 @@ pub fn drain_with_timeout(timeout: Duration) -> Result<usize, usize> {
     }
 }
 
-/// Bump `migration_state.schema_epoch`. Called by DOS-7's migration script
-/// at step 2 of the 7-step sequence (pre-flight log → bump → drain → backfill →
-/// requeue → reconcile → resume). Must only be called from migration code.
+/// Bump `migration_state.schema_epoch`. Called by migration scripts before
+/// draining workers and running backfill/reconcile work. Must only be called
+/// from migration code.
 #[must_use = "schema_epoch bumps must be propagated; silent discard breaks cutover safety"]
 pub fn bump_schema_epoch(db: &ActionDb) -> Result<i64, String> {
     db.conn_ref()
@@ -185,7 +184,7 @@ impl std::fmt::Display for FenceError {
 
 impl std::error::Error for FenceError {}
 
-/// Convenience wrapper for post-commit cache writes (DOS-309 W0 pattern).
+/// Convenience wrapper for post-commit cache writes (W0 pattern).
 /// Captures a fresh [`FenceCycle`], writes through the fence, and logs at
 /// `warn!` level on any failure — never returns an error to the caller.
 /// DB is canonical; the legacy `intelligence.json` cache is best-effort.
@@ -427,10 +426,9 @@ mod tests {
 
     #[test]
     fn dos311_substrate_migration_sequence_end_to_end() {
-        // Live ticket DOS-311 acceptance: the 7-step migration sequence
-        // shape (pre-flight → bump → drain → backfill → requeue →
-        // reconcile → resume). DOS-7 (W3) supplies steps 1, 4, 5, 6.
-        // This test exercises the substrate primitives DOS-311 owns:
+        // The migration sequence shape is pre-flight → bump → drain →
+        // backfill → requeue → reconcile → resume. This test exercises the
+        // substrate primitives owned by this module:
         // bump_schema_epoch, drain_with_timeout, FenceCycle capture/recheck.
         //
         // Scenario:
@@ -512,12 +510,12 @@ mod tests {
 
     #[test]
     fn dos311_force_abort_drain_completes_within_timeout() {
-        // Live ticket DOS-311 acceptance: "Force-abort path tested: simulate
-        // stuck worker, verify migration completes cleanly."
+        // Force-abort path: simulate a stuck worker and verify migration
+        // drain completes cleanly.
         //
         // We simulate a stuck worker by holding a FenceCycle past the drain
         // timeout. The drain MUST return within the timeout window with an
-        // Err carrying the in-flight count — DOS-7's migration script then
+        // Err carrying the in-flight count — the migration script then
         // surfaces this as a force-abort condition rather than blocking
         // forever.
         let db = test_db();

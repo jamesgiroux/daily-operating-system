@@ -1,21 +1,21 @@
--- DOS-311 fixture schema for tombstone-resurrection reconcile tests.
+-- Fixture schema for tombstone-resurrection reconcile tests.
 --
 -- TEST-ONLY scaffolding. The production `intelligence_claims` table ships
--- with DOS-7 (W3); this file mirrors enough of that schema for the W1
+-- with (W3); this file mirrors enough of that schema for the W1
 -- reconcile-pass tests to exercise the SQL in `scripts/reconcile_ghost_resurrection.sql`.
 --
--- DOS-7 may migrate this schema during W3 (e.g., adding columns,
+--  may migrate this schema during W3 (e.g., adding columns,
 -- renaming fields). The fixtures are designed to be regenerable from
--- the canonical DOS-7 schema once it lands; until then they encode the
--- shape promised by the live DOS-7 ticket text.
+-- the canonical  schema once it lands; until then they encode the
+-- shape promised by the live  ticket text.
 --
--- Columns mirrored from DOS-7 ticket text + ADR-0113:
+-- Columns mirrored from ticket text + ADR-0113:
 --   subject_ref       — the claim's subject (stored as JSON string in
 --                       fixtures; production may use a different shape)
 --   claim_type        — claim type registry key
 --   field_path        — the claim's projected field path
 --   dedup_key         — canonical dedup key
---   item_hash         — content fingerprint (DOS-311 reconcile fallback)
+--   item_hash         — content fingerprint (reconcile fallback)
 --   source_asof       — when the source evidence was observed
 --   created_at        — claim row creation (also used as tombstone's
 --                       dismissed_at for tombstoned-state rows)
@@ -23,7 +23,7 @@
 --   superseded_at     — if non-null, the row is superseded
 --
 -- The companion `legacy_projection_state` view materializes the legacy
--- pre-DOS-7 projection shape (entity_intelligence JSON, intelligence.json
+-- pre- projection shape (entity_intelligence JSON, intelligence.json
 -- file content, accounts.* narrative columns). For test purposes we
 -- fixture it as a simple table.
 
@@ -40,11 +40,11 @@ CREATE TABLE IF NOT EXISTS intelligence_claims (
     superseded_at TEXT
 );
 
--- Index pattern that DOS-7 will mirror on the production table.
+-- Index pattern that  will mirror on the production table.
 CREATE INDEX IF NOT EXISTS idx_claims_subject_state
     ON intelligence_claims(subject_ref, claim_type, claim_state);
 
--- Test scaffolding for legacy projection state. Production DOS-7 wires
+-- Test scaffolding for legacy projection state. Production  wires
 -- a view over entity_intelligence + accounts.* narrative columns +
 -- intelligence.json content; the test fixture shape exposes only the
 -- columns the reconcile SQL joins on.

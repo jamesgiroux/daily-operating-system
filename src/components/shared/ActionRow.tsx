@@ -25,7 +25,7 @@ function priorityLabel(p: number | string): string {
   }
 }
 
-/** Map internal status codes to user-facing labels (DOS-52). */
+/** Map internal status codes to user-facing labels. */
 export function statusLabel(status: string): string {
   switch (status) {
     case "backlog": return "Suggested";

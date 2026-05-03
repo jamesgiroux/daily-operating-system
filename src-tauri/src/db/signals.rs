@@ -33,7 +33,7 @@ pub struct EmailSignalInput<'a> {
 
 impl ActionDb {
     // =========================================================================
-    // Stakeholder Signals (I43)
+    // Stakeholder Signals
     // =========================================================================
 
     /// Compute stakeholder signals for an account: meeting frequency, last contact,
@@ -232,7 +232,7 @@ impl ActionDb {
         )
     }
 
-    /// Insert a capture with optional project_id (I52).
+    /// Insert a capture with optional project_id.
     pub fn insert_capture_with_project(
         &self,
         meeting_id: &str,
@@ -252,7 +252,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Insert an enriched capture with metadata columns (I555).
+    /// Insert an enriched capture with metadata columns.
     pub fn insert_capture_enriched(
         &self,
         input: &CaptureInput<'_>,
@@ -269,7 +269,7 @@ impl ActionDb {
 
     /// Query recent captures (wins/risks) for an account within `days_back` days.
     ///
-    /// Used by meeting:prep (ADR-0030 / I33) to surface recent wins and risks
+    /// Used by meeting:prep (ADR-0030) to surface recent wins and risks
     /// in meeting preparation context.
     pub fn get_captures_for_account(
         &self,
@@ -294,7 +294,7 @@ impl ActionDb {
         Ok(captures)
     }
 
-    /// Query recent captures for a project within `days_back` days (I52).
+    /// Query recent captures for a project within `days_back` days.
     pub fn get_captures_for_project(
         &self,
         project_id: &str,
@@ -508,7 +508,7 @@ impl ActionDb {
     }
 
     /// List recent email signals directly associated with an entity (no propagated signals).
-    /// DOS-156: Used by The Record display — requires precision over recall.
+    /// Used by The Record display — requires precision over recall.
     /// Excludes signals that were propagated from person→account (person_id IS NOT NULL
     /// means the signal was created for a person and propagated to this account).
     pub fn list_direct_email_signals_for_entity(
@@ -552,7 +552,7 @@ impl ActionDb {
         Ok(signals)
     }
 
-    /// DOS-156: Deactivate propagated email signals (person_id IS NOT NULL) for all accounts.
+    /// Deactivate propagated email signals (person_id IS NOT NULL) for all accounts.
     /// One-time cleanup to remove the 14.6x fan-out noise.
     pub fn deactivate_propagated_email_signals(&self) -> Result<usize, DbError> {
         let now = chrono::Utc::now().to_rfc3339();
@@ -618,7 +618,7 @@ impl ActionDb {
     }
 
     // ================================================================
-    // Email dismissals (I342 — The Correspondent relevance learning)
+    // Email dismissals (The Correspondent relevance learning)
     // ================================================================
 
     /// Record a user dismissal of an email-extracted item for relevance learning.
@@ -652,7 +652,7 @@ impl ActionDb {
         Ok(dismissed)
     }
 
-    /// Get sender domains with dismissal count >= threshold (I374).
+    /// Get sender domains with dismissal count >= threshold.
     /// Returns a set of domains that the user has repeatedly dismissed items from.
     pub fn get_dismissed_domains(
         &self,
@@ -672,14 +672,14 @@ impl ActionDb {
         Ok(domains)
     }
 
-    /// Truncate all email dismissal records (I374 reset).
+    /// Truncate all email dismissal records (reset).
     pub fn reset_email_dismissals(&self) -> Result<u64, DbError> {
         let count = self.conn.execute("DELETE FROM email_dismissals", [])?;
         Ok(count as u64)
     }
 
     // ================================================================
-    // Email thread tracking (I318)
+    // Email thread tracking
     // ================================================================
 
     /// Upsert an email thread position record.
@@ -742,7 +742,7 @@ impl ActionDb {
     }
 
     // ================================================================
-    // Hygiene actions log (I353 Phase 2)
+    // Hygiene actions log
     // ================================================================
 
     /// Log a hygiene action triggered by a signal.
@@ -766,7 +766,7 @@ impl ActionDb {
 
     /// Query all captures (wins/risks/decisions) recorded on a given date.
     ///
-    /// Used by the daily impact rollup (I36) to aggregate outcomes into
+    /// Used by the daily impact rollup  to aggregate outcomes into
     /// the weekly impact file during the archive workflow.
     pub fn get_captures_for_date(&self, date: &str) -> Result<Vec<DbCapture>, DbError> {
         let mut stmt = self.conn.prepare(
@@ -794,7 +794,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Deactivate email signals for resolved emails (I366).
+    /// Deactivate email signals for resolved emails.
     /// Sets `deactivated_at` to now for all signals linked to the given email IDs.
     /// Returns the number of signals deactivated.
     pub fn deactivate_signals_for_emails(&self, email_ids: &[String]) -> Result<usize, String> {
@@ -819,7 +819,7 @@ impl ActionDb {
         Ok(rows)
     }
 
-    /// I487: Check if a Glean document signal already exists for a URL.
+    /// Check if a Glean document signal already exists for a URL.
     ///
     /// If `updated_at` is provided, checks if a signal exists with that URL
     /// created since the document's update time. Otherwise uses max_age_days.
@@ -858,7 +858,7 @@ impl ActionDb {
         Ok(count > 0)
     }
 
-    /// I499: Get recent signal events for an entity within a time window.
+    /// Get recent signal events for an entity within a time window.
     pub fn get_recent_signals_for_entity(
         &self,
         entity_id: &str,

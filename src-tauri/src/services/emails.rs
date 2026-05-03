@@ -14,7 +14,7 @@ use crate::types::{
 
 /// Get enriched email data for the emails page.
 ///
-/// Tries to load emails from the DB first (I368). If the DB has active emails,
+/// Tries to load emails from the DB first. If the DB has active emails,
 /// uses those. Otherwise falls back to JSON loading for first-run compatibility.
 pub async fn get_emails_enriched(
     ctx: &ServiceContext<'_>,
@@ -30,7 +30,7 @@ pub async fn get_emails_enriched(
     let workspace = std::path::Path::new(&config.workspace_path);
     let today_dir = workspace.join("_today");
 
-    // DB is the source of truth for active emails (I448: resolved_at IS NULL filtering)
+    // DB is the source of truth for active emails (resolved_at IS NULL filtering)
     let db_emails: Vec<crate::db::DbEmail> = state
         .db_read(|db| db.get_all_active_emails().map_err(|e| e.to_string()))
         .await
@@ -131,11 +131,11 @@ pub async fn get_emails_enriched(
         Vec::new()
     };
 
-    // I395: Sort by relevance score (highest first, nulls last)
+    // Sort by relevance score (highest first, nulls last)
     let mut emails = emails;
     emails.sort_by(compare_email_rank);
 
-    // I368 AC3: Write emails.json from DB so it stays current even without a Gmail fetch
+    // Acceptance criterion: Write emails.json from DB so it stays current even without a Gmail fetch
     if !thread_emails.is_empty() {
         let json_path = today_dir.join("data").join("emails.json");
         if let Ok(json) = serde_json::to_string_pretty(&emails) {
@@ -144,7 +144,7 @@ pub async fn get_emails_enriched(
         }
     }
 
-    // I577: Build reply debt from active emails where user hasn't replied yet
+    // Build reply debt from active emails where user hasn't replied yet
     // and the email is linked to a tracked entity.
     let email_entity_names: HashMap<String, String> = emails
         .iter()
@@ -200,7 +200,7 @@ pub async fn get_emails_enriched(
         })
         .collect();
 
-    // I513: Build replies_needed from DB instead of directive file.
+    // Build replies_needed from DB instead of directive file.
     let replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded> = state
         .db_read(move |db| {
             let now = replies_needed_now;
@@ -392,7 +392,7 @@ pub async fn get_emails_enriched(
 
     let total = high.len() + medium.len() + low.len();
 
-    // I448: Build narrative dynamically from real counts, not the stale directive.
+    // Build narrative dynamically from real counts, not the stale directive.
     // Count how many emails are linked to entities that have meetings today.
     let meeting_linked = if email_entity_ids.is_empty() {
         0usize
@@ -442,7 +442,7 @@ pub async fn get_emails_enriched(
         Some(format!("{} threads in your inbox.", total))
     };
 
-    // ── I581: Gone-quiet accounts from entity_email_cadence ──────────────
+    // ── Gone-quiet accounts from entity_email_cadence ──────────────
     let gone_quiet: Vec<GoneQuietAccount> = state
         .db_read(detect_gone_quiet_accounts)
         .await
@@ -496,7 +496,7 @@ pub async fn get_emails_enriched(
             .await;
     }
 
-    // ── I582: Link emails to upcoming meetings via pre_meeting_context bridge ──
+    // ── Link emails to upcoming meetings via pre_meeting_context bridge ──
     let all_sender_emails: HashSet<String> = high
         .iter()
         .chain(medium.iter())
@@ -849,9 +849,9 @@ pub(crate) fn best_account_for_person(
     Some(best_name.clone())
 }
 
-// ── I451: Email mutation handlers extracted from commands.rs ──────────
+// ── Email mutation handlers extracted from commands.rs ──────────
 
-/// Get emails linked to a specific entity for entity detail pages (I368 AC5).
+/// Get emails linked to a specific entity for entity detail pages (AC5).
 /// Queries by entity_id directly, OR by sender domain for accounts without direct entity links.
 pub fn get_entity_emails(
     db: &crate::db::ActionDb,
@@ -1074,7 +1074,7 @@ pub fn dismiss_email_signal(
     Ok(())
 }
 
-/// Mark an email as replied to (I577 reply debt).
+/// Mark an email as replied to (reply debt).
 /// Sets `user_is_last_sender` and emits a `reply_debt_cleared` signal via the bus
 /// with propagation so downstream effects (health scoring, prep invalidation) fire.
 pub fn mark_reply_sent(
@@ -1104,7 +1104,7 @@ pub fn mark_reply_sent(
     Ok(())
 }
 
-// ── I579: Per-email triage actions ────────────────────────────────────
+// ── Per-email triage actions ────────────────────────────────────
 
 /// Archive an email: set resolved_at locally AND archive in Gmail.
 /// Signal emission for Intelligence Loop compliance.
@@ -1218,8 +1218,8 @@ async fn unarchive_emails_in_gmail(
     Ok(())
 }
 
-/// DOS-242 rescue: clear `is_noise` on an email so it surfaces again in inbox
-/// and Records. Used by the "this isn't noise" affordance (DOS-41 wires UI).
+///  rescue: clear `is_noise` on an email so it surfaces again in inbox
+/// and Records. Used by the "this isn't noise" affordance (wires UI).
 /// All mutations go through services per CLAUDE.md.
 pub fn unsuppress_email(
     ctx: &ServiceContext<'_>,
@@ -1257,7 +1257,7 @@ pub fn pin_email(
     Ok(now_pinned)
 }
 
-// ── I580: Commitment -> Action promotion ──────────────────────────────
+// ── Commitment -> Action promotion ──────────────────────────────
 
 /// Parameters for promoting an email commitment to a tracked action.
 #[derive(Debug)]
@@ -1388,7 +1388,7 @@ fn email_entity_context(db: &crate::db::ActionDb, email_id: &str) -> (String, St
     }
 }
 
-/// Dismiss a gone-quiet cadence alert for an account (I581).
+/// Dismiss a gone-quiet cadence alert for an account.
 pub fn dismiss_gone_quiet(
     ctx: &ServiceContext<'_>,
     db: &crate::db::ActionDb,
@@ -1416,7 +1416,7 @@ pub fn dismiss_gone_quiet(
 }
 
 /// Dismiss an email item (commitment, question, etc.) with signal emission.
-// DOS-209: ServiceContext adds one arg; request-object refactor deferred.
+// ServiceContext adds one arg; request-object refactor deferred.
 #[allow(clippy::too_many_arguments)]
 pub fn dismiss_email_item(
     ctx: &ServiceContext<'_>,
@@ -1439,7 +1439,7 @@ pub fn dismiss_email_item(
     )
     .map_err(|e| e.to_string())?;
 
-    // DOS-7 L2 cycle-3 fix: shadow-write the dismissal as an
+    // Shadow-write the dismissal as an
     // intelligence_claims tombstone with subject_kind=Email. Migration
     // 132 added emails.claim_version so SubjectRef::Email participates
     // in per-entity invalidation alongside Account/Meeting/Person/
@@ -1508,7 +1508,7 @@ fn reconcile_inbox_presence_from_ids(
     let vanished: Vec<String> = db_ids.difference(inbox_ids).cloned().collect();
 
     // Only treat as "reappeared" if the email is truly new (not in our DB at all).
-    // Emails that are in Gmail but resolved locally (user-archived via I579) should
+    // Emails that are in Gmail but resolved locally (user-archived via) should
     // NOT be unmarked — the user explicitly archived them. We query ALL known email
     // IDs (including resolved) to distinguish "genuinely new" from "user-archived but
     // still in Gmail inbox".
@@ -1597,7 +1597,7 @@ pub async fn sync_email_inbox_presence(
     Ok(result.changed)
 }
 
-/// Archive low-priority emails in Gmail and remove from local data (I144).
+/// Archive low-priority emails in Gmail and remove from local data.
 pub async fn archive_low_priority_emails(
     ctx: &ServiceContext<'_>,
     state: &AppState,
@@ -1663,14 +1663,14 @@ pub async fn archive_low_priority_emails(
     Ok(archived)
 }
 
-/// DOS-226 (Codex finding 2): bound for `rollback_stale_pending_retry`.
+///  bound for `rollback_stale_pending_retry`.
 /// Any `pending_retry` row older than this is assumed to belong to a
 /// crashed or never-finalized refresh from a previous process instance.
 /// 10 minutes comfortably exceeds the p99 refresh duration even with slow
 /// PTY enrichment while still recovering before the user retries again.
 const PENDING_RETRY_STALE_AFTER_SECS: i64 = 600;
 
-/// DOS-31: bound for `auto_retry_stale_failed`. A `failed` row older than
+/// bound for `auto_retry_stale_failed`. A `failed` row older than
 /// this (measured against `last_enrichment_at`, falling back to
 /// `created_at`) is automatically reset to `pending` on the next refresh
 /// so the user doesn't have to manually click Retry to clear an old
@@ -1682,9 +1682,9 @@ const STALE_FAILED_AFTER_SECS: i64 = 24 * 60 * 60;
 // Cumulative auto-retry cap is owned by `db::emails` so the stats query and
 // the retry pass share one threshold — see `STALE_FAILED_MAX_AUTO_RETRIES`.
 
-/// Refresh emails independently without re-running the full /today pipeline (I20).
+/// Refresh emails independently without re-running the full /today pipeline.
 ///
-/// DOS-31 / DOS-226: Manual refresh is a user signal that they want previously
+//: Manual refresh is a user signal that they want previously
 /// failed enrichments retried. The retry is rollback-safe and crash-safe:
 ///
 /// 1. Recover any `pending_retry` rows stranded by a prior crashed refresh
@@ -1706,9 +1706,9 @@ const STALE_FAILED_AFTER_SECS: i64 = 24 * 60 * 60;
 ///    surfaces to the caller so the UI can report the real state
 ///    (Codex finding 2).
 ///
-/// Prior behaviour (pre-DOS-226) reset `failed -> pending` with attempts=0
+/// Prior behaviour (pre) reset `failed -> pending` with attempts=0
 /// *before* the refresh ran; a refresh failure then left rows looking
-/// healthy when in fact enrichment had never re-run. The initial DOS-226
+/// healthy when in fact enrichment had never re-run. The initial
 /// fix deferred the attempts reset to *after* the refresh returned, which
 /// meant enrichment's `attempts < 3` filter skipped the retried rows
 /// (Codex finding 1).
@@ -1739,12 +1739,12 @@ pub async fn refresh_emails(
         );
     }
 
-    // Phase 0.5 (DOS-31) — auto-promote stale `failed` rows to `pending` so
+    // Phase 0.5  — auto-promote stale `failed` rows to `pending` so
     // the next enrichment pass picks them up without the user clicking
     // Retry. Failed rows under the cumulative `auto_retry_count` cap and
     // older than 24h are silently re-attempted; rows at the cap stay in
     // `failed` and surface in the user-facing "couldn't be enriched" UX
-    // (DOS-29). Runs BEFORE the manual retry batch is stamped so a row
+    // Runs BEFORE the manual retry batch is stamped so a row
     // promoted by auto-retry is selectable by `get_pending_enrichment`.
     // Runs AFTER the pending_retry recovery so we don't double-promote a
     // row that's just been rolled back from a crashed refresh.
@@ -1862,7 +1862,7 @@ pub async fn refresh_emails(
     refresh_outcome.map(|_| "Email refresh complete".to_string())
 }
 
-/// DOS-226: Reset failed email enrichments and trigger re-enrichment.
+/// Reset failed email enrichments and trigger re-enrichment.
 ///
 /// Centralizes retry semantics previously split between the Tauri command
 /// (`commands::workspace::retry_failed_emails`) and `refresh_emails`. The
@@ -1878,7 +1878,7 @@ pub async fn retry_failed_emails(
     app_handle: tauri::AppHandle,
 ) -> Result<usize, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    // DOS-226 (Codex finding 2): include `pending_retry` in the retriable
+    //  include `pending_retry` in the retriable
     // count so rows orphaned by a prior crashed refresh don't silently
     // drop to "nothing to retry". The refresh's phase-0 recovery will
     // roll them back to `failed` before the new batch is stamped.
@@ -1899,10 +1899,10 @@ pub async fn retry_failed_emails(
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
-// I652 Phase 3: EmailSnapshot batch helper
+// EmailSnapshot batch helper
 // ══════════════════════════════════════════════════════════════════════════════
 
-/// Snapshot of email content for deduplication and change detection (I652).
+/// Snapshot of email content for deduplication and change detection.
 /// Stores the state of an email when it was last enriched.
 /// Used to determine if content has changed since last enrichment (e.g., new reply in thread).
 /// Gate 0 compares current email content with this prior snapshot.
@@ -1916,7 +1916,7 @@ pub struct EmailSnapshot {
     pub received_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// Load email snapshots in batch for content change detection (I652 Gate 0).
+/// Load email snapshots in batch for content change detection (Gate 0).
 ///
 /// Prevents N+1 query pattern by loading all snapshots in a single SQL query.
 /// Returns a HashMap mapping email_id to EmailSnapshot for content-change detection.
@@ -2249,7 +2249,7 @@ mod tests {
         assert_eq!(snapshots["email_3"].subject, Some("Subject 3".to_string()));
     }
 
-    /// DOS-229 — thread-collapse swap reproducer.
+    /// thread-collapse swap reproducer.
     ///
     /// Repro for the user-visible "I changed the customer on this email and on
     /// next reload it reverted" symptom. The WAL-snapshot hypothesis was
@@ -2348,7 +2348,7 @@ mod tests {
         );
     }
 
-    /// DOS-229 — companion repro showing the same root cause hides a sentiment
+    /// companion repro showing the same root cause hides a sentiment
     /// edit. Sentiment is a column on `emails`, not on accounts; the
     /// "sentiment save" symptom lives at the same surface (account/email
     /// view that displays the most-recent thread row's sentiment).
@@ -2400,7 +2400,7 @@ mod tests {
         db.upsert_email(&a).expect("upsert A");
 
         // User edits sentiment on the row they currently see (A is the only one).
-        // DOS-229 fix: route the edit through `update_email_sentiment` which
+        //  fix: route the edit through `update_email_sentiment` which
         // cascades the new value to every unresolved row in the thread, so the
         // edit survives newer siblings arriving from a silent Gmail poll.
         db.update_email_sentiment("em-S-A", Some("positive"))
@@ -2425,7 +2425,7 @@ mod tests {
         );
     }
 
-    /// DOS-229 — the cascade must be bounded by `thread_id`. Editing one
+    /// the cascade must be bounded by `thread_id`. Editing one
     /// thread's entity must NOT touch any row in a different thread, even if
     /// other threads share the same prior entity. This is the safety bound
     /// that keeps `update_email_entity` from becoming a global rewrite.
@@ -2511,7 +2511,7 @@ mod tests {
         );
     }
 
-    /// DOS-229 — the cascade must be bounded by `resolved_at IS NULL`.
+    /// the cascade must be bounded by `resolved_at IS NULL`.
     /// Archived rows in the same thread keep their historical entity so that
     /// the past correctly reflects what was true when the user archived them.
     #[test]

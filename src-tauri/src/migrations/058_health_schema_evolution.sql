@@ -1,4 +1,4 @@
--- 058: Structured health schema evolution (I503 / ADR-0097)
+-- 058: Structured health schema evolution (ADR-0097)
 -- Adds structured health JSON columns to entity_assessment and backfills from
 -- legacy scalar mirrors in entity_quality.
 

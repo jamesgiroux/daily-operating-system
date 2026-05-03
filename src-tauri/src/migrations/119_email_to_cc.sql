@@ -1,4 +1,4 @@
--- DOS-258 follow-up: store email To/Cc recipients for multi-participant
+-- store email To/Cc recipients for multi-participant
 -- domain evidence in the entity linking engine (P4b/P4c rules).
 --
 -- Previously, email_adapter::build_context only had access to the sender

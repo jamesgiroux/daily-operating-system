@@ -1,4 +1,4 @@
--- I382: Replace boolean is_internal with account_type enum column.
+-- Replace boolean is_internal with account_type enum column.
 -- Valid values: 'customer', 'internal', 'partner'.
 ALTER TABLE accounts ADD COLUMN account_type TEXT NOT NULL DEFAULT 'customer';
 

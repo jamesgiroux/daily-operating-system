@@ -1,4 +1,4 @@
--- Migration 049: Rename drive_watched_sources.type → file_type (I426)
+-- Migration 049: Rename drive_watched_sources.type → file_type
 --
 -- An early version of migration 048 created the column as `type`.
 -- The Rust code expects `file_type`. This renames it for existing databases.

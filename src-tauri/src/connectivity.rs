@@ -1,4 +1,4 @@
-//! I428: Connectivity tracking and sync freshness.
+//! Connectivity tracking and sync freshness.
 
 use chrono::{DateTime, Utc};
 use rusqlite::{params, Connection};

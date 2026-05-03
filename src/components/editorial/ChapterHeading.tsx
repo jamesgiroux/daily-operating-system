@@ -3,7 +3,7 @@
  * Used at the top of each editorial chapter section.
  * No chapter number shown — just rule + title.
  *
- * I529: Optional feedbackSlot renders inline feedback controls next to the title.
+ * Optional feedbackSlot renders inline feedback controls next to the title.
  */
 import type { ReactNode } from "react";
 import styles from "./ChapterHeading.module.css";
@@ -11,11 +11,11 @@ import styles from "./ChapterHeading.module.css";
 interface ChapterHeadingProps {
   title: string;
   epigraph?: string;
-  /** I529: Optional inline feedback controls rendered after the title */
+  /** Optional inline feedback controls rendered after the title */
   feedbackSlot?: ReactNode;
-  /** DOS-18: Freshness strip rendered between title and epigraph. */
+  /** Freshness strip rendered between title and epigraph. */
   freshness?: ReactNode;
-  /** DOS-18: Render title in compact monospace uppercase ("reference weight") per mockup. */
+  /** Render title in compact monospace uppercase ("reference weight") per mockup. */
   variant?: "primary" | "reference";
   /** Suppress the chapter-break HR rule — use on the first chapter of a view. */
   noRule?: boolean;

@@ -1,4 +1,4 @@
-//! Push-to-Linear service (DOS-51).
+//! Push-to-Linear service.
 //!
 //! Pushes a DailyOS action to Linear as a new issue, records the link,
 //! updates action status, and emits a signal.
@@ -103,7 +103,7 @@ pub async fn push_action_to_linear(
     // 5. Build description from action context
     let description = build_description(&action);
 
-    // DailyOS priority is already Linear-compatible (0-4 integers, DOS-55)
+    // DailyOS priority is already Linear-compatible (0-4 integers)
     let linear_priority = if action.priority > 0 {
         Some(action.priority)
     } else {
@@ -139,7 +139,7 @@ pub async fn push_action_to_linear(
                 params![link_id, action_id_owned, created_id, created_identifier, created_url, now_clone],
             )
             .map_err(|e| e.to_string())?;
-        // Auto-set action status to 'started' (DOS-51: pushing = actively working)
+        // Auto-set action status to 'started' (pushing = actively working)
         db.conn_ref()
             .execute(
                 "UPDATE actions SET status = 'started', updated_at = ?1 WHERE id = ?2",
@@ -165,7 +165,7 @@ pub async fn push_action_to_linear(
     })
     .to_string();
 
-    // DOS-53: Check if this was an AI-suggested action for Bayesian feedback
+    // Check if this was an AI-suggested action for Bayesian feedback
     let is_ai_suggested = action
         .source_type
         .as_deref()
@@ -184,7 +184,7 @@ pub async fn push_action_to_linear(
             0.9,
         );
 
-        // DOS-53: Positive Bayesian feedback when an AI-suggested action is
+        // Positive Bayesian feedback when an AI-suggested action is
         // pushed to Linear — validates the suggestion quality.
         if is_ai_suggested {
             let _ = crate::services::signals::emit_and_propagate(

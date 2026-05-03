@@ -56,7 +56,7 @@ pub fn enrich_file(
     ai_config: Option<&AiModelConfig>,
     entity_tracker_path: Option<&str>,
 ) -> EnrichResult {
-    // I60: validate path stays within inbox
+    // validate path stays within inbox
     let file_path = match crate::util::validate_inbox_path(workspace, filename) {
         Ok(p) => p,
         Err(e) => return EnrichResult::Error { message: e },
@@ -75,13 +75,13 @@ pub fn enrich_file(
     let is_non_md = !matches!(format, super::extract::SupportedFormat::Markdown);
 
     // Build the prompt for Claude
-    // I313/DOS-178: Read active preset for domain-specific prompt language.
+    // Read active preset for domain-specific prompt language.
     let active_preset = state
         .map(|s| s.active_preset.read())
         .and_then(|guard| guard.as_ref().cloned());
     let prompt = build_enrichment_prompt(filename, &content, user_ctx, active_preset.as_ref());
 
-    // Invoke Claude Code via PTY (Mechanical tier — I174)
+    // Invoke Claude Code via PTY (Mechanical tier)
     let default_config = AiModelConfig::default();
     let pty = PtyManager::for_tier(ModelTier::Mechanical, ai_config.unwrap_or(&default_config))
         .with_usage_context(
@@ -100,7 +100,7 @@ pub fn enrich_file(
         }
     };
 
-    // Audit trail (I297)
+    // Audit trail
     let _ = crate::audit::write_audit_entry(workspace, "inbox_file", filename, &output);
 
     // Parse Claude's response
@@ -219,7 +219,7 @@ pub fn enrich_file(
                         );
                     }
                 }
-                // I474: Match meeting_notes to historical meetings
+                // Match meeting_notes to historical meetings
                 if file_type == "meeting_notes" {
                     if let Some(_state) = state {
                         if let Ok(db) = crate::db::ActionDb::open() {
@@ -359,7 +359,7 @@ pub fn enrich_file(
 /// Build the prompt for Claude Code enrichment.
 ///
 /// Detects transcript-like content and uses a richer prompt with DISCUSSION
-/// section for transcript summarization (I31).
+/// section for transcript summarization.
 fn build_enrichment_prompt(
     filename: &str,
     content: &str,
@@ -390,7 +390,7 @@ fn build_enrichment_prompt(
         .map(|ctx| ctx.prompt_fragment())
         .unwrap_or_default();
 
-    // I313/DOS-178: Use preset-driven terms when available.
+    // Use preset-driven terms when available.
     let vocabulary = preset.map(|p| &p.vocabulary);
     let system_role = preset
         .map(|p| p.intelligence.system_role.as_str())
@@ -618,7 +618,7 @@ pub struct ParsedEnrichment {
     pub business_unit: Option<String>,
     pub meeting_name: Option<String>,
     pub summary: String,
-    /// Discussion highlights from transcript summarization (I31).
+    /// Discussion highlights from transcript summarization.
     pub discussion: Vec<String>,
     /// Strategic TAM-perspective analysis from transcript prompt.
     pub analysis: Option<String>,
@@ -652,7 +652,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
     for line in output.lines() {
         let line = line.trim();
 
-        // Skip prompt instruction lines that appear inside sections (I554 sub-type guidance)
+        // Skip prompt instruction lines that appear inside sections (sub-type guidance)
         if (in_wins || in_risks || in_commitments)
             && !line.starts_with("- ")
             && !line.starts_with("END_")
@@ -771,7 +771,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         } else if in_decisions && line.starts_with("- ") {
             decisions.push(line.strip_prefix("- ").unwrap().to_string());
         } else if in_commitments && line.starts_with("- ") {
-            // Commitments are parsed but stored as decisions for now (I555 will persist separately)
+            // Commitments are parsed but stored as decisions for now (will persist separately)
             decisions.push(line.strip_prefix("- ").unwrap().to_string());
         }
     }
@@ -781,7 +781,7 @@ pub fn parse_enrichment_response(output: &str) -> ParsedEnrichment {
         actions_text = Some(actions_buf);
     }
 
-    // Cap array sizes to prevent oversized output (I296)
+    // Cap array sizes to prevent oversized output
     discussion.truncate(20);
     wins.truncate(10);
     risks.truncate(20);
@@ -1014,7 +1014,7 @@ END_RISKS";
     }
 
     // =========================================================================
-    // Transcript detection & discussion parsing tests (I31)
+    // Transcript detection & discussion parsing tests
     // =========================================================================
 
     #[test]
@@ -1163,7 +1163,7 @@ END_RISKS";
     }
 
     // =========================================================================
-    // I554 — COMMITMENTS section parsing
+    // COMMITMENTS section parsing
     // =========================================================================
 
     #[test]

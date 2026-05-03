@@ -1,4 +1,4 @@
-//! Account workspace file I/O (I72 / ADR-0047).
+//! Account workspace file I/O (ADR-0047).
 //!
 //! Each account gets a directory under `Accounts/` in the workspace:
 //!   Accounts/{Name}/dashboard.json  — canonical data (app + external tools write here)
@@ -109,12 +109,12 @@ pub struct StrategicProgram {
 // Filesystem I/O
 // =============================================================================
 
-/// Resolve the directory for an account's workspace files (I70: sanitized name).
+/// Resolve the directory for an account's workspace files (sanitized name).
 pub fn account_dir(workspace: &Path, name: &str) -> PathBuf {
     crate::entity_io::entity_dir(workspace, "Accounts", name)
 }
 
-/// Resolve the directory for an account, preferring `tracker_path` when set (I114).
+/// Resolve the directory for an account, preferring `tracker_path` when set.
 ///
 /// Child accounts have `tracker_path` like `Accounts/Crestview Media/BrandsCo` which
 /// correctly resolves to a nested directory. Falls back to `account_dir()` for
@@ -127,7 +127,7 @@ pub fn resolve_account_dir(workspace: &Path, account: &DbAccount) -> PathBuf {
     }
 }
 
-/// Check if a subdirectory name looks like a Business Unit (I114).
+/// Check if a subdirectory name looks like a Business Unit.
 ///
 /// BU directories have human-readable names (no numeric prefix).
 /// Internal org folders start with digits (`01-Customer-Information`, `02-Meetings`).
@@ -254,7 +254,7 @@ pub fn write_account_markdown(
         }
     }
 
-    // Read intelligence from DB (I513)
+    // Read intelligence from DB
     let intel_data = db.get_entity_intelligence(&account.id).ok().flatten();
 
     // Company Overview (from DB — skipped when intelligence has company_context)
@@ -319,7 +319,7 @@ pub fn write_account_markdown(
         }
     }
 
-    // === Intelligence sections (I134 — from intelligence.json) ===
+    // === Intelligence sections (from intelligence.json) ===
 
     if let Some(ref intel) = intel_data {
         let intel_md = crate::intelligence::format_intelligence_markdown(intel);
@@ -330,7 +330,7 @@ pub fn write_account_markdown(
 
     // === Auto-generated sections below ===
 
-    // Business Units (I114 — parent accounts only)
+    // Business Units (parent accounts only)
     let children = db.get_child_accounts(&account.id).unwrap_or_default();
     if !children.is_empty() {
         md.push_str("## Business Units\n\n");
@@ -482,7 +482,7 @@ pub struct ReadAccountResult {
 }
 
 /// Walk up from `account_dir` to the `Accounts` directory, collecting path
-/// segments. Returns `(id, name, parent_id, tracker_path)` (I316: n-level nesting).
+/// segments. Returns `(id, name, parent_id, tracker_path)` (n-level nesting).
 fn compute_account_hierarchy(
     account_dir: &Path,
 ) -> Result<(String, String, Option<String>, String), String> {
@@ -531,7 +531,7 @@ fn compute_account_hierarchy(
 /// Supports flat (`Accounts/Acme/dashboard.json`) and arbitrarily nested
 /// accounts (`Accounts/Crestview Media/BrandsCo/dashboard.json`, or deeper).
 ///
-/// I316: Uses `compute_account_hierarchy` to walk up the directory tree and
+/// Uses `compute_account_hierarchy` to walk up the directory tree and
 /// build an ID chain with `--` separators for any nesting depth.
 pub fn read_account_json(path: &Path) -> Result<ReadAccountResult, String> {
     let account_dir = path.parent().ok_or("No parent dir")?;
@@ -621,7 +621,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                 let _ = write_account_markdown(workspace, &db_account, None, db);
                 synced += 1;
             } else {
-                // DOS-44: Auto-bootstrap bare account directories, matching
+                // Auto-bootstrap bare account directories, matching
                 // the pattern Projects already uses. When a user creates a
                 // directory manually, we create a minimal DB record so the
                 // Intelligence Loop can discover and index it.
@@ -654,7 +654,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
             }) => {
                 match db.get_account(&file_account.id) {
                     Ok(Some(db_account)) => {
-                        // DOS-44: Detect directory rename — if the folder name
+                        // Detect directory rename — if the folder name
                         // doesn't match the DB name, the user renamed the directory
                         // in Finder. Update the account name + tracker_path to match.
                         let dir_name_str = name_str.to_string();
@@ -717,7 +717,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
         }
     }
 
-    // --- Nested BU scan (I114): discover child accounts under parent directories ---
+    // --- Nested BU scan: discover child accounts under parent directories ---
     // Re-scan each top-level Accounts/ directory for BU subdirectories.
     let top_entries = if accounts_dir.exists() {
         std::fs::read_dir(&accounts_dir)
@@ -741,7 +741,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
             continue;
         }
 
-        // I316: Recursive BU scan — discover child accounts at any depth
+        // Recursive BU scan — discover child accounts at any depth
         synced += scan_child_accounts_recursive(workspace, db, &entry.path());
     }
 
@@ -760,7 +760,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
     Ok(synced)
 }
 
-/// Recursively scan a parent directory for BU child subdirectories (I316).
+/// Recursively scan a parent directory for BU child subdirectories.
 ///
 /// Discovers child accounts at any nesting depth. Directories that contain
 /// `dashboard.json` are synced via `read_account_json`; bare directories are
@@ -855,7 +855,7 @@ fn scan_child_accounts_inner(
             }
         }
 
-        // Recurse into this directory's subdirectories (I316: n-level)
+        // Recurse into this directory's subdirectories (n-level)
         synced += scan_child_accounts_inner(workspace, db, &sub_entry.path(), depth + 1);
     }
 
@@ -863,7 +863,7 @@ fn scan_child_accounts_inner(
 }
 
 // =============================================================================
-// Content Index (I124)
+// Content Index
 // =============================================================================
 
 /// Sync the content index for a single account. Compares filesystem against DB,
@@ -898,13 +898,13 @@ pub fn sync_all_content_indexes(workspace: &Path, db: &ActionDb) -> Result<usize
         }
     }
 
-    // I138: Also sync project content indexes
+    // Also sync project content indexes
     total += crate::projects::sync_all_project_content_indexes(workspace, db).unwrap_or(0);
 
     Ok(total)
 }
 
-// Account enrichment via PTY removed per ADR-0086 (I376).
+// Account enrichment via PTY removed per ADR-0086.
 // Entity intelligence is now enriched solely via intel_queue.
 
 /// Create an AccountJson from a DbAccount, reading narrative fields from DB columns.
@@ -1124,7 +1124,7 @@ mod tests {
         let workspace = dir.path();
         let db = test_db();
 
-        // DOS-44: Create account directories with NO dashboard.json and NO SQLite record
+        // Create account directories with NO dashboard.json and NO SQLite record
         let acct1 = workspace.join("Accounts/Acme Corp");
         let acct2 = workspace.join("Accounts/Beta Industries");
         std::fs::create_dir_all(&acct1).unwrap();
@@ -1175,7 +1175,7 @@ mod tests {
         assert_eq!(delta_count, 1, "bootstrap must not create duplicates on re-sync");
     }
 
-    // ── I114: Parent-Child tests ────────────────────────────────────────────
+    // ── Parent-Child tests ────────────────────────────────────────────
 
     #[test]
     fn test_is_bu_directory() {
@@ -1486,7 +1486,7 @@ mod tests {
         assert_eq!(agg.nearest_renewal.as_deref(), Some("2026-03-15"));
     }
 
-    // ── I124: Content Index tests ─────────────────────────────────────────
+    // ── Content Index tests ─────────────────────────────────────────
 
     #[test]
     fn test_content_index_scan_empty_dir() {

@@ -51,7 +51,7 @@ interface EditableVitalsStripProps {
   extraVitals?: { text: string; highlight?: string }[];
   /** Field-level enrichment suggestions (accept/dismiss) */
   conflicts?: Map<string, VitalConflict>;
-  /** I644: Per-field source attribution refs */
+  /** Per-field source attribution refs */
   sourceRefs?: AccountSourceRef[];
 }
 
@@ -73,7 +73,7 @@ const healthColorMap: Record<string, string> = {
   yellow: "saffron",
 };
 
-/** DOS-85: Metrics where 0 means "no data" rather than a real measurement.
+/** Metrics where 0 means "no data" rather than a real measurement.
  *  NPS is intentionally excluded — its range is -100 to +100, so 0 is valid. */
 const ZERO_IS_NO_DATA = new Set<string>([]);
 
@@ -103,7 +103,7 @@ function resolveValue(field: PresetVitalField, entityData: EntityData, metadata?
   };
   const prop = colMap[col] ?? col;
   const v = entityData[prop];
-  // DOS-85: Treat 0 as "no data" for specific metrics
+  // Treat 0 as "no data" for specific metrics
   if (v === 0 && ZERO_IS_NO_DATA.has(field.key)) return "";
   return v != null ? String(v) : "";
 }

@@ -1,9 +1,9 @@
-//! Intelligence quality feedback service (I529).
+//! Intelligence quality feedback service.
 //!
 //! Records user feedback on intelligence fields and adjusts source weights
 //! via the Bayesian signal weight system.
 //!
-//! Source attribution strategy (coarse, per I529 spec):
+//! Source attribution strategy (coarse, per spec):
 //! 1. People: read `enrichment_sources[field]["source"]` for precise field-level attribution
 //! 2. All entities: fall back to most recent enrichment signal source for the entity
 //! 3. If no source identifiable: record feedback with `source = null` (signal still emitted)
@@ -17,7 +17,7 @@ use crate::services::context::ServiceContext;
 /// Records the feedback, adjusts source weights (Bayesian alpha/beta),
 /// and emits a signal for downstream propagation.
 ///
-/// DOS-209 (W2-A): takes `&ServiceContext` as first parameter and gates
+///  takes `&ServiceContext` as first parameter and gates
 /// on `ctx.check_mutation_allowed()?` per ADR-0104. Errors out of the
 /// `WriteBlockedByMode` boundary in non-Live modes.
 pub fn submit_intelligence_feedback(
@@ -101,7 +101,7 @@ fn resolve_intelligence_source(
     coarse
 }
 
-/// DOS-41: Fields whose correction should trigger a background health recalc.
+/// Fields whose correction should trigger a background health recalc.
 ///
 /// These mirror the fields `services::accounts::update_account_field` treats
 /// as provenance-worthy plus the explicit health scoring surface. When a user
@@ -123,7 +123,7 @@ fn is_health_affecting_field(field: &str) -> bool {
     )
 }
 
-/// DOS-227 (Codex finding 3): Fields that are stored as top-level account
+///  Fields that are stored as top-level account
 /// columns (not intelligence-blob fields). A correction on any of these
 /// must update the authoritative column so `recompute_entity_health` reads
 /// the corrected value; otherwise the recompute runs against the old
@@ -146,7 +146,7 @@ fn account_column_for_field(field: &str) -> Option<&'static str> {
     }
 }
 
-/// DOS-41 Codex follow-up: the DB layer writes numeric account columns via
+///  Codex follow-up: the DB layer writes numeric account columns via
 /// `CAST(?1 AS REAL)` / `CAST(?1 AS INTEGER)`. SQLite's CAST silently
 /// converts unparseable strings to `0` — which would overwrite real ARR /
 /// NPS commercial data with zero whenever a correction payload is
@@ -181,7 +181,7 @@ pub struct SubmitIntelligenceCorrectionInput<'a> {
     pub item_key: Option<&'a str>,
 }
 
-/// DOS-41: Submit a consolidated intelligence correction.
+/// Submit a consolidated intelligence correction.
 ///
 /// Persists the correction into `entity_feedback_events` with one of five
 /// actions (`confirmed` | `rejected` | `annotated` | `corrected` | `dismissed`), then runs the
@@ -355,7 +355,7 @@ pub fn submit_intelligence_correction(
         }
     }
 
-    // DOS-227 (Codex finding 3): write the corrected value to the
+    //  write the corrected value to the
     // authoritative account column BEFORE recompute_entity_health runs.
     // recompute_entity_health reads `DbAccount` as-is; without this
     // column update the "new" health score is computed from the OLD
@@ -381,7 +381,7 @@ pub fn submit_intelligence_correction(
                 value.to_string()
             };
 
-            // DOS-41 Codex follow-up: `db.update_account_field` writes
+            //  Codex follow-up: `db.update_account_field` writes
             // numeric columns via `CAST(?1 AS REAL)` / `CAST(?1 AS INTEGER)`
             // — SQLite silently coerces non-numeric strings to 0, so a
             // malformed "not-a-number" correction on ARR or NPS would wipe
@@ -408,7 +408,7 @@ pub fn submit_intelligence_correction(
     // entity_assessment.health_json + entity_quality are updated and signals
     // propagate; otherwise the next detail read would still see stale health.
     //
-    // DOS-227: because the block above updated the authoritative column
+    // because the block above updated the authoritative column
     // first, this recompute now reads the corrected value and the
     // resulting health score reflects the user's correction.
     if action == CorrectionAction::Corrected
@@ -436,7 +436,7 @@ pub fn submit_intelligence_correction(
         )
         .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
 
-        // DOS-7 D4-1a: shadow-write tombstone claim. Subject derived from
+        // Shadow-write tombstone claim. Subject derived from
         // entity_type; claim_type maps from field via the same convention
         // backfill mechanism 1 uses. Failure logged + ignored.
         let subject_kind = match entity_type {
@@ -532,7 +532,7 @@ fn field_to_signal_category(field: &str) -> String {
 
 #[cfg(test)]
 mod correction_tests {
-    //! DOS-41: Unit tests for `submit_intelligence_correction`.
+    //! Unit tests for `submit_intelligence_correction`.
     //!
     //! Each correction action goes through a distinct downstream path; the
     //! tests here exercise the contract.
@@ -542,7 +542,7 @@ mod correction_tests {
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::TimeZone;
 
-    /// DOS-209 test scaffold: returns a `Live` `ServiceContext` with
+    ///  test scaffold: returns a `Live` `ServiceContext` with
     /// deterministic clock + RNG so test mutators pass `check_mutation_allowed`
     /// AND get reproducible time/random values.
     fn test_ctx<'a>(
@@ -868,7 +868,7 @@ mod correction_tests {
         assert!(!is_health_affecting_field("watch_list"));
     }
 
-    /// DOS-41 backend hardening: invalid IPC payloads must be rejected
+    ///  backend hardening: invalid IPC payloads must be rejected
     /// before any DB write, signal emission, or Bayesian weight update.
     /// The hook has client-side guards but those are not the boundary.
     #[test]
@@ -957,7 +957,7 @@ mod correction_tests {
         }
     }
 
-    /// DOS-227: when a health-affecting field (arr, lifecycle, health,
+    /// when a health-affecting field (arr, lifecycle, health,
     /// contract_end, renewal_date) is corrected, the feedback service must
     /// drive the full health pipeline — not just compute and discard. That
     /// means entity_assessment.health_json and entity_quality.health_score
@@ -1031,14 +1031,14 @@ mod correction_tests {
         );
     }
 
-    /// DOS-227 (Codex finding 3): the regression that matters.
+    ///  the regression that matters.
     ///
     /// The pre-fix code recorded a correction of `arr` only in
     /// `entity_feedback_events`, then called `recompute_entity_health`.
     /// `recompute_entity_health` reads `DbAccount` as-is. The corrected ARR
     /// never flowed into the account row, so the new health score was
     /// computed from the OLD ARR and was effectively identical to the
-    /// pre-correction score. The existing DOS-227 test above only asserts
+    /// pre-correction score. The existing  test above only asserts
     /// "a score exists," not "the corrected value changed the score" —
     /// which is how the bug survived review.
     ///
@@ -1138,7 +1138,7 @@ mod correction_tests {
         );
     }
 
-    /// DOS-227: lifecycle is stored as an account column too — verify the
+    /// lifecycle is stored as an account column too — verify the
     /// column update path covers it (and normalizes, matching the
     /// services::accounts::update_account_field contract).
     #[test]
@@ -1172,7 +1172,7 @@ mod correction_tests {
         );
     }
 
-    /// DOS-227: intelligence-blob fields must NOT touch account columns —
+    /// intelligence-blob fields must NOT touch account columns —
     /// they don't have one. Guards against the column-update branch
     /// accidentally mapping blob fields to columns.
     #[test]
@@ -1208,7 +1208,7 @@ mod correction_tests {
         assert_eq!(before.nps, after.nps);
     }
 
-    /// DOS-227: non-health-affecting fields must NOT trigger a health
+    /// non-health-affecting fields must NOT trigger a health
     /// recompute. Guards against regression where the branch broadens and
     /// cascades unnecessary work / signals on every correction.
     #[test]
@@ -1243,7 +1243,7 @@ mod correction_tests {
     }
 
     // -----------------------------------------------------------------
-    // DOS-41 Codex follow-up: `db.update_account_field` uses
+    //  Codex follow-up: `db.update_account_field` uses
     // `CAST(?1 AS REAL)` / `CAST(?1 AS INTEGER)` for `arr` / `nps`. SQLite
     // silently coerces non-numeric strings to 0, so a malformed
     // correction would wipe real ARR / NPS commercial data and then

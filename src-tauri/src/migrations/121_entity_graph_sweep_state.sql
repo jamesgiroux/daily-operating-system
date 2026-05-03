@@ -1,4 +1,4 @@
--- DOS-258 Tier 4: record the last time the startup rescan swept stale
+-- Tier 4: record the last time the startup rescan swept stale
 -- weak-primary entity links. Consumed by the one-shot post-upgrade sweep
 -- that self-corrects existing production data after the evidence-hierarchy
 -- fix shipped.

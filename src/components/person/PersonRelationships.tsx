@@ -1,6 +1,6 @@
 /**
  * PersonRelationships — "Their Network" chapter showing person-to-person
- * relationship edges, grouped by context entity. (I392, ADR-0088)
+ * relationship edges, grouped by context entity. (ADR-0088)
  *
  * Always renders so users can manually add connections even when none exist yet.
  */

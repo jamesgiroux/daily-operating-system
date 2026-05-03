@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DOS-309: prevent silent discarding of feedback / tombstone / file-write
+# prevent silent discarding of feedback / tombstone / file-write
 # results. Catches `let _ = ...` patterns where the RHS calls one of the
 # protected functions, in any of these call forms:
 #   - method-call:   foo.write_intelligence_json(...)
@@ -9,7 +9,7 @@
 #   - named-prefix:  let _ignored = ...
 #
 # Does NOT catch (acceptable for W0; structural enforcement via
-# `#[must_use]` + clippy::let_underscore_must_use is DOS-342 territory):
+# `#[must_use]` + clippy::let_underscore_must_use is  territory):
 #   - match { _ => () }
 #   - if let Err(_) = ...
 #   - .ok();

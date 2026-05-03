@@ -27,7 +27,7 @@ export interface TimelineSource {
     evidence?: string | null;
   }[];
   contextEntries?: EntityContextEntry[];
-  /** I628 AC5: Auto-completed milestones for timeline display. */
+  /**  AC5: Auto-completed milestones for timeline display. */
   autoCompletedMilestones?: AccountMilestone[];
 }
 

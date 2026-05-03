@@ -1,7 +1,7 @@
 /**
- * TriageSection — "Needs attention" chapter for the Health tab (DOS-203).
+ * TriageSection — "Needs attention" chapter for the Health tab.
  *
- * Wave-0g rebuild (DOS-249): unified Local + Glean ranking with a hard cap.
+ * Wave-0g rebuild: unified Local + Glean ranking with a hard cap.
  *   - Every card is a `TriageCandidate` with `bucket` ("urgent" | "soon" |
  *     "stakeholder"), `source` ("local" | "glean"), and `sourcedAt` so we
  *     can order by urgency THEN recency and cap at 5.
@@ -38,7 +38,7 @@ import {
 } from "./TriageCard";
 import styles from "./health.module.css";
 
-/** DOS-269: snooze/resolve persistence row returned by list_triage_snoozes. */
+/** snooze/resolve persistence row returned by list_triage_snoozes. */
 interface TriageSnoozeRow {
   triageKey: string;
   snoozedUntil: string | null;
@@ -143,12 +143,12 @@ function localRiskCandidate(risk: IntelRisk, i: number): TriageCandidate {
       label: risk.itemSource?.reference ? `${label} · ${risk.itemSource.reference}` : label,
     });
   }
-  // DOS-249: Use AI-emitted headline/evidence when present (avoids client-side
+  // Use AI-emitted headline/evidence when present (avoids client-side
   // punctuation splitting). Fall back to splitHeadlineEvidence for backward compat.
   const headlineAndEvidence: { headline: string; evidence?: string } = risk.headline
     ? { headline: risk.headline, evidence: risk.evidence ?? undefined }
     : splitHeadlineEvidence(risk.text);
-  // DOS-249: Use AI-emitted kindLabel when present; fall back to urgency-derived label.
+  // Use AI-emitted kindLabel when present; fall back to urgency-derived label.
   const kind = risk.kindLabel ?? kindFromUrgency(risk.urgency);
   return {
     id: `local-risk-${i}`,
@@ -398,7 +398,7 @@ function buildGleanCandidates(glean: HealthOutlookSignals): TriageCandidate[] {
     });
   }
 
-  // Quote wall — sentiment branching (DOS-203 Wave-0f preserved)
+  // Quote wall — sentiment branching (Wave-0f preserved)
   const quoteWall = glean.quoteWall ?? [];
   if (quoteWall.length > 0) {
     const negativeCount = quoteWall.filter((q) => q.sentiment === "negative").length;
@@ -509,9 +509,9 @@ function passesSentimentThreshold(
 }
 
 /**
- * DOS-269: Per-card action handlers. Snooze → persisted to `triage_snoozes`
+ * Per-card action handlers. Snooze → persisted to `triage_snoozes`
  * (card removed on next render; reappears after the snooze window).
- * Confirm resolved → persisted resolution tombstone + DOS-41 "corrected"
+ * Confirm resolved → persisted resolution tombstone +  "corrected"
  * correction event so the Intelligence Loop sees the user acted.
  *
  * The action copy still reflects the mockup's bucket-specific secondary
@@ -573,14 +573,14 @@ interface TriageSectionProps {
   intelligence: EntityIntelligence | null;
   gleanSignals: HealthOutlookSignals | null;
   sentiment?: SentimentValue | null;
-  /** DOS-269: Account id is required to persist snooze/resolve state. When
+  /** Account id is required to persist snooze/resolve state. When
    *  absent (tests, previews), actions render but are no-ops. */
   accountId?: string;
-  /** Hard cap on rendered cards. Defaults to 5 per the DOS-249 spec. */
+  /** Hard cap on rendered cards. Defaults to 5. */
   maxCards?: number;
 }
 
-/** DOS-269: Is a snooze row still active (suppresses the card)? */
+/** Is a snooze row still active (suppresses the card)? */
 function isSuppressed(row: TriageSnoozeRow, now: number): boolean {
   if (row.resolvedAt) return true;
   if (!row.snoozedUntil) return false;
@@ -671,7 +671,7 @@ export function TriageSection({
   const allCandidates = buildAllCandidates(intelligence, gleanSignals);
   if (allCandidates.length === 0) return null;
 
-  // DOS-269: hide snoozed/resolved cards. `optimisticallyHidden` covers the
+  // hide snoozed/resolved cards. `optimisticallyHidden` covers the
   // gap between click and the backend round-trip for `list_triage_snoozes`.
   const now = Date.now();
   const suppressedKeys = new Set<string>(optimisticallyHidden);

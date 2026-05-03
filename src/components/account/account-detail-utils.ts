@@ -145,14 +145,14 @@ export function buildChapters(isParent: boolean, hasHealth: boolean) {
   return chapters;
 }
 
-/* ── Per-view chapter builders (DOS-112) ── */
+/* ── Per-view chapter builders  ── */
 
 export function buildHealthChapters(
   isParent: boolean,
   hasHealth: boolean,
   opts: { fineState?: boolean; hasOutlook?: boolean } = {},
 ) {
-  // DOS-203: Health tab IA matches renderHealthView section ids. Chapter
+  // Health tab IA matches renderHealthView section ids. Chapter
   // order mirrors the mockup (.docs/mockups/account-health-outlook-globex.html):
   //   your-assessment → needs-attention | on-track → outlook →
   //   relationship-health → [portfolio] → about-intelligence
@@ -207,7 +207,7 @@ export function buildContextChapters(
     hasTechnical?: boolean;
   } = {},
 ) {
-  // DOS-18: IA matches renderContextView section order. Conditional chapters
+  // IA matches renderContextView section order. Conditional chapters
   // are included only when the page renders them — otherwise the nav dead-links.
   const chapters: { id: string; label: string; icon: React.ReactNode }[] = [];
   if (opts.hasThesis !== false) {
@@ -235,7 +235,7 @@ export function buildContextChapters(
 }
 
 /**
- * DOS-13 Work tab IA — chapter pills matching section ids rendered by
+ *  Work tab IA — chapter pills matching section ids rendered by
  * AccountDetailPage.renderWorkView. Each id here MUST match a MarginSection
  * id in the page or the nav anchor will dead-link.
  *

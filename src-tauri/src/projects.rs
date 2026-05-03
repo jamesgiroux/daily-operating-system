@@ -1,4 +1,4 @@
-//! Project workspace file I/O (I50 / ADR-0047).
+//! Project workspace file I/O (ADR-0047).
 //!
 //! Each project gets a directory under `Projects/` in the workspace:
 //!   Projects/{Name}/dashboard.json  -- canonical data (app + external tools write here)
@@ -75,7 +75,7 @@ pub struct ProjectMilestone {
 // Filesystem I/O
 // =============================================================================
 
-/// Resolve the directory for a project's workspace files (I70: sanitized name).
+/// Resolve the directory for a project's workspace files (sanitized name).
 pub fn project_dir(workspace: &Path, name: &str) -> PathBuf {
     crate::entity_io::entity_dir(workspace, "Projects", name)
 }
@@ -200,7 +200,7 @@ pub fn write_project_markdown(
         }
     }
 
-    // === Intelligence sections (I134 — from intelligence.json) ===
+    // === Intelligence sections (from intelligence.json) ===
 
     if let Some(intel) = db.get_entity_intelligence(&project.id).ok().flatten() {
         let intel_md = crate::intelligence::format_intelligence_markdown(&intel);
@@ -496,7 +496,7 @@ pub fn sync_projects_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
 }
 
 // =============================================================================
-// Content Indexing (I138 — parallel to account content index)
+// Content Indexing (parallel to account content index)
 // =============================================================================
 
 /// Sync the content index for a single project. Compares filesystem against DB,
@@ -539,7 +539,7 @@ pub fn sync_all_project_content_indexes(workspace: &Path, db: &ActionDb) -> Resu
 }
 
 // =============================================================================
-// Enrichment (I50 / ADR-0047) — LEGACY, superseded by entity_intel for I138
+// Enrichment (ADR-0047) — LEGACY, superseded by entity_intel for
 // =============================================================================
 
 /// Parse Claude's enrichment response into a description string.
@@ -577,7 +577,7 @@ pub fn parse_project_enrichment_response(response: &str) -> Option<String> {
     description
 }
 
-// Project enrichment via PTY removed per ADR-0086 (I376).
+// Project enrichment via PTY removed per ADR-0086.
 // Entity intelligence is now enriched solely via intel_queue.
 
 /// Create a minimal ProjectJson from a DbProject (no narrative fields).

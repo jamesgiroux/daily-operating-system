@@ -47,7 +47,7 @@ const healthDotColor: Record<string, string> = {
   red: "var(--color-spice-terracotta)",
 };
 
-/** Section configuration for the three account type groups (I383). */
+/** Section configuration for the three account type groups. */
 const ACCOUNT_SECTIONS: {
   type: AccountListItem["accountType"];
   title: string;
@@ -76,7 +76,7 @@ export default function AccountsPage() {
   const [bulkMode, setBulkMode] = useState(false);
   const [bulkValue, setBulkValue] = useState("");
 
-  // I494/I495: Glean discovery and ephemeral query state
+  // Glean discovery and ephemeral query state
   const [gleanConnected, setGleanConnected] = useState(false);
   const [discoveryOpen, setDiscoveryOpen] = useState(false);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);
@@ -149,7 +149,7 @@ export default function AccountsPage() {
     }
   }, [archiveTab, loadAccounts, loadArchivedAccounts]);
 
-  // I494: Check Glean connection status + feature flag on mount
+  // Check Glean connection status + feature flag on mount
   const [discoveryEnabled, setDiscoveryEnabled] = useState(false);
   useEffect(() => {
     invoke<FeatureFlags>("get_feature_flags")
@@ -164,7 +164,7 @@ export default function AccountsPage() {
       .catch(() => setDiscoveryEnabled(false)); // Expected: feature flag check on init
   }, []);
 
-  // I494: Discover accounts from Glean
+  // Discover accounts from Glean
   async function handleDiscoverAccounts() {
     setDiscoveryOpen(true);
     setDiscoveryLoading(true);
@@ -181,7 +181,7 @@ export default function AccountsPage() {
     }
   }
 
-  // I494: Add a discovered account
+  // Add a discovered account
   async function handleAddDiscovered(account: DiscoveredAccount) {
     try {
       await invoke<string>("import_account_from_glean", {
@@ -206,7 +206,7 @@ export default function AccountsPage() {
     }
   }
 
-  // I495: Ephemeral account query
+  // Ephemeral account query
   async function handleEphemeralQuery(e: React.FormEvent) {
     e.preventDefault();
     if (!ephemeralQuery.trim()) return;
@@ -227,7 +227,7 @@ export default function AccountsPage() {
     }
   }
 
-  // I495: Add account from ephemeral briefing
+  // Add account from ephemeral briefing
   async function handleAddFromBriefing() {
     if (!ephemeralBriefing) return;
     try {
@@ -323,7 +323,7 @@ export default function AccountsPage() {
       next.add(parentId);
       if (!childrenCache[parentId]) {
         try {
-          // I316: Use get_descendant_accounts for n-level nesting support
+          // Use get_descendant_accounts for n-level nesting support
           const children = await invoke<AccountListItem[]>(
             "get_child_accounts_list",
             { parentId }
@@ -400,7 +400,7 @@ export default function AccountsPage() {
       )
     : archivedAccounts;
 
-  // I383: Group filtered accounts by accountType for three-section layout
+  // Group filtered accounts by accountType for three-section layout
   const groupedAccounts = useMemo(() => {
     const groups: Record<string, AccountListItem[]> = {
       customer: [],
@@ -553,7 +553,7 @@ export default function AccountsPage() {
         )}
       </EntityListHeader>
 
-      {/* I494: Discovery panel */}
+      {/* Discovery panel */}
       {discoveryOpen && !isArchived && (
         <div className={styles.discoveryPanel}>
           <div className={styles.discoveryHeader}>
@@ -665,7 +665,7 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {/* I495: Ephemeral account query */}
+      {/* Ephemeral account query */}
       {discoveryEnabled && gleanConnected && !isArchived && (
         <div className={styles.ephemeralContainer}>
           <form onSubmit={handleEphemeralQuery} className={styles.ephemeralForm}>
@@ -745,7 +745,7 @@ export default function AccountsPage() {
         </div>
       )}
 
-      {/* Account rows — grouped by account type (I383) or flat for archived */}
+      {/* Account rows — grouped by account type  or flat for archived */}
       {isArchived ? (
         <section>
           {filteredArchived.length === 0 ? (

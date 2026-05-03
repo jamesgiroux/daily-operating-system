@@ -1,4 +1,4 @@
--- I395: Email relevance scoring columns
+-- Email relevance scoring columns
 ALTER TABLE emails ADD COLUMN relevance_score REAL;
 ALTER TABLE emails ADD COLUMN score_reason TEXT;
 

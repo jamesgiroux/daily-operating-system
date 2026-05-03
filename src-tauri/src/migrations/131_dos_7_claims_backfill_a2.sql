@@ -1,4 +1,4 @@
--- DOS-7 D3a-2: Backfill legacy dismissal mechanisms 5-8 into
+-- Claims backfill D3a-2: Backfill legacy dismissal mechanisms 5-8 into
 -- intelligence_claims tombstone rows.
 --
 -- Scope:

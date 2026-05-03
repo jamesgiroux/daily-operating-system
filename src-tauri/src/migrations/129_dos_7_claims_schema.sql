@@ -1,11 +1,11 @@
--- DOS-7 D1: Claims commit substrate. The intelligence_claims table is the
+-- Claims commit substrate. The intelligence_claims table is the
 -- queryable commit log + tombstone gate + trust/feedback target + per-claim
 -- identity layer for v1.4.0. 5 sibling tables hold corroboration evidence,
 -- contradiction reconciliation, agent trust ledger, typed feedback, and the
 -- repair-job skeleton.
 --
 -- This migration creates schema only. commit_claim algorithm + 9-mechanism
--- backfill + caller refactors land in DOS-7 D2-D5.
+-- backfill + caller refactors land in D2-D5.
 
 CREATE TABLE IF NOT EXISTS intelligence_claims (
     -- Immutable assertion columns (UPDATE-forbidden outside services/claims.rs).
@@ -37,7 +37,7 @@ CREATE TABLE IF NOT EXISTS intelligence_claims (
     expires_at          TEXT,
     superseded_by       TEXT,                          -- FK soft-ref to intelligence_claims.id
 
-    -- Trust columns (owned by W4 / DOS-5; D1 just stores them).
+    -- Trust columns (owned by W4; D1 just stores them).
     trust_score         REAL,
     trust_computed_at   TEXT,
     trust_version       INTEGER,

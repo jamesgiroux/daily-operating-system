@@ -1,7 +1,7 @@
 //! P4b — 1:1 internal × external with a unique account_of.
 //! Domain evidence outranks title evidence (design principle 5).
 //!
-//! DOS-258 evidence-hierarchy fix: renamed from P4a so the stakeholder-inference
+//! Evidence-hierarchy fix: renamed from P4a so the stakeholder-inference
 //! rule (`P4aStakeholder`) can take the P4a slot.
 
 use crate::db::ActionDb;

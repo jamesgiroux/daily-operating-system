@@ -4,8 +4,8 @@
  * Surfaces agreementOutlook, expansionSignals, and contractContext
  * as three visually distinct editorial sections with generous whitespace.
  *
- * I550: Per-item inline editing, dismiss, and feedback controls.
- * I650: Editorial redesign — three breathing sections, prose risk factors.
+ * Per-item inline editing, dismiss, and feedback controls.
+ * Editorial redesign — three breathing sections, prose risk factors.
  */
 import { X } from "lucide-react";
 import type { EntityIntelligence } from "@/types";

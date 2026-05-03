@@ -285,7 +285,7 @@ pub fn check_upcoming_meeting_readiness(
 
         for entity in &entities {
             let entity_type = format!("{:?}", entity.entity_type).to_lowercase();
-            // Use the continuous trigger score (I408) -- meeting_imminence will be high
+            // Use the continuous trigger score  -- meeting_imminence will be high
             // since these meetings are within the pre-meeting window. Combined with
             // staleness, this replaces the binary PRE_MEETING_STALE_DAYS check.
             let trigger_score = crate::self_healing::remediation::compute_enrichment_trigger_score(
@@ -349,7 +349,7 @@ mod tests {
     use chrono::Utc;
     use std::path::Path;
 
-    // --- Duplicate People Detection tests (I172) ---
+    // --- Duplicate People Detection tests  ---
 
     #[test]
     fn test_split_name_basic() {

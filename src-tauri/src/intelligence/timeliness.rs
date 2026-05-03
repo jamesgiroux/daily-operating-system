@@ -1,4 +1,4 @@
-//! I645: Relevance-window filtering for intelligence items.
+//! Relevance-window filtering for intelligence items.
 //!
 //! Class-specific windows define how long each type of intelligence item
 //! remains relevant for active display. Stale items are filtered out of
@@ -6,7 +6,7 @@
 
 use chrono::{NaiveDateTime, Utc};
 
-/// I645: Class-specific relevance windows (days).
+/// Class-specific relevance windows (days).
 pub const RELEVANCE_WINDOWS: &[(&str, i64)] = &[
     ("support_incident", 45),
     ("active_blocker", 90),

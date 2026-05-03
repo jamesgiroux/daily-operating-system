@@ -1,4 +1,4 @@
--- DOS-18: Rejection learning for proposed actions.
+-- Rejection learning for proposed actions.
 -- Tracks patterns from rejected actions to suppress future proposals.
 
 CREATE TABLE IF NOT EXISTS rejected_action_patterns (

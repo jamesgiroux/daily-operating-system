@@ -284,7 +284,7 @@ pub fn save_token(token: &GoogleToken) -> Result<(), GoogleApiError> {
 /// Resolution order:
 /// 1. ~/.dailyos/google/credentials.json (dev override)
 /// 2. <workspace>/.config/google/credentials.json (CLI-era fallback)
-/// 3. Embedded defaults (production — I123)
+/// 3. Embedded defaults (production)
 pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, GoogleApiError> {
     // Dev override: file on disk takes priority
     let primary = credentials_path();
@@ -311,7 +311,7 @@ pub fn load_credentials(workspace: Option<&Path>) -> Result<ClientCredentials, G
     Ok(embedded_credentials())
 }
 
-/// Built-in OAuth client credentials (I123).
+/// Built-in OAuth client credentials.
 ///
 /// These are the production DailyOS Desktop App credentials registered in
 /// Google Cloud. A credentials.json on disk overrides these for local dev.
@@ -442,7 +442,7 @@ fn map_refresh_error(status: u16, body: &str) -> GoogleApiError {
 ///
 /// This is the main entry point for all API calls.
 pub async fn get_valid_access_token() -> Result<String, GoogleApiError> {
-    // I570: Keychain access (with retry/sleep) off Tokio threads.
+    // Keychain access (with retry/sleep) off Tokio threads.
     let token = tokio::task::spawn_blocking(load_token)
         .await
         .map_err(|e| GoogleApiError::RefreshFailed(format!("Keychain task panicked: {}", e)))??;
@@ -450,7 +450,7 @@ pub async fn get_valid_access_token() -> Result<String, GoogleApiError> {
     if is_token_expired(&token) {
         match refresh_access_token(&token).await {
             Ok(refreshed) => {
-                // I572: Structured log for token refresh (audit log access requires AppState)
+                // Structured log for token refresh (audit log access requires AppState)
                 log::info!("[audit:security] oauth_token_refreshed provider=google");
                 Ok(refreshed.token)
             }

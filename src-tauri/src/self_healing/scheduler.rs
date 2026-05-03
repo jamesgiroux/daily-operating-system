@@ -1,4 +1,4 @@
-//! Self-healing scheduler and circuit breaker (I410).
+//! Self-healing scheduler and circuit breaker.
 //!
 //! Manages the lifecycle of coherence checks after enrichment,
 //! with a circuit breaker to prevent infinite re-enrichment loops.
@@ -88,7 +88,7 @@ pub fn on_enrichment_complete(
         return Ok(());
     }
 
-    // Coherence failed — emit signal (I407 AC#6)
+    // Coherence failed — emit signal (AC#6)
     if let Some(engine) = signal_engine {
         let clock = crate::services::context::SystemClock;
         let rng = crate::services::context::SystemRng;

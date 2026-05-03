@@ -1,4 +1,4 @@
--- I551/I553: Success plan data model + template support
+--: Success plan data model + template support
 -- Rebuild entity_assessment to add success_plan_signals_json column.
 
 BEGIN IMMEDIATE;

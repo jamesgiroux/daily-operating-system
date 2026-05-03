@@ -1,7 +1,7 @@
 /**
  * IntelligenceCorrection — validation and correction for AI-authored claims.
  *
- * DOS-41: Replaces the three prior correction mechanisms (thumbs up/down,
+ * Replaces the three prior correction mechanisms (thumbs up/down,
  * inline edit, field-conflict accept/dismiss) with ONE unified "Is this
  * accurate?" pattern on account pages.
  *
@@ -37,7 +37,7 @@ import styles from "./IntelligenceCorrection.module.css";
 export interface IntelligenceCorrectionProps {
   /** Entity the AI assessment belongs to. */
   entityId: string;
-  /** Always "account" today — the component is account-only per DOS-41. */
+  /** Always "account" today — the component is account-only per the current implementation. */
   entityType: "account";
   /** Field key the correction targets (e.g. "state_of_play", "health"). */
   field: string;

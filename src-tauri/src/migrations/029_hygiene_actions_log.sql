@@ -1,4 +1,4 @@
--- I353 Phase 2: Signal → Hygiene feedback loop action log
+-- Signal → Hygiene feedback loop action log
 
 CREATE TABLE IF NOT EXISTS hygiene_actions_log (
     id TEXT PRIMARY KEY,

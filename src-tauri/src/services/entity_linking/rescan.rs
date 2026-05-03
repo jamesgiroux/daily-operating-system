@@ -1,4 +1,4 @@
-//! DOS-258 Tier 4 — graph-drift re-evaluation for weak primaries.
+//! Tier 4 — graph-drift re-evaluation for weak primaries.
 //!
 //! When the entity graph changes (account_domains, account_stakeholders,
 //! accounts.name/keywords, entity_keywords, projects), `entity_graph_version`

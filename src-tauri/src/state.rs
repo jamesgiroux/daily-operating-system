@@ -16,7 +16,7 @@ use crate::types::{
 /// Maximum number of execution records to keep in memory
 const MAX_HISTORY_SIZE: usize = 100;
 
-/// Cached merged signal/email classification config for the active preset (DOS-176).
+/// Cached merged signal/email classification config for the active preset.
 ///
 /// Computed once at `set_role` time by merging base lists with preset-specific
 /// overrides (max-wins for duplicate keywords, additive for new ones).
@@ -33,7 +33,7 @@ pub struct MergedSignalConfig {
     pub email_priority_keywords: Vec<String>,
 }
 
-/// Daily AI call budget for proactive hygiene (I146 — ADR-0058).
+/// Daily AI call budget for proactive hygiene (ADR-0058).
 pub struct HygieneBudget {
     pub daily_ai_calls: AtomicU32,
     pub daily_limit: u32,
@@ -58,7 +58,7 @@ impl HygieneBudget {
 
     /// Create an effectively unlimited hygiene budget.
     ///
-    /// DOS-279: The call-count hygiene budget is replaced by the token budget
+    /// The call-count hygiene budget is replaced by the token budget
     /// enforced at PTY call time. Hygiene uses `unlimited()` so it can enqueue
     /// freely; the PTY gate handles actual enforcement.
     pub fn unlimited() -> Self {
@@ -97,7 +97,7 @@ impl HygieneBudget {
     }
 }
 
-/// Hygiene subsystem state (I404).
+/// Hygiene subsystem state.
 pub struct HygieneState {
     pub report: Mutex<Option<crate::hygiene::HygieneReport>>,
     pub scan_running: AtomicBool,
@@ -107,35 +107,35 @@ pub struct HygieneState {
     pub full_orphan_scan_done: AtomicBool,
 }
 
-/// Capture subsystem state (I404).
+/// Capture subsystem state.
 pub struct CaptureState {
     pub dismissed: Mutex<std::collections::HashSet<String>>,
     pub captured: Mutex<std::collections::HashSet<String>>,
     pub transcript_processed: Mutex<HashMap<String, TranscriptRecord>>,
 }
 
-/// Calendar subsystem state (I404).
+/// Calendar subsystem state.
 pub struct CalendarState {
     pub google_auth: Mutex<GoogleAuthStatus>,
     pub events: RwLock<Vec<CalendarEvent>>,
     pub week_cache: RwLock<Option<(Vec<CalendarEvent>, Instant)>>,
 }
 
-/// Workflow execution state (I404).
+/// Workflow execution state.
 pub struct WorkflowState {
     pub status: RwLock<HashMap<WorkflowId, WorkflowStatus>>,
     pub history: Mutex<Vec<ExecutionRecord>>,
     pub last_scheduled_run: RwLock<HashMap<WorkflowId, DateTime<Utc>>>,
 }
 
-/// Integration poller wake signals (I405).
+/// Integration poller wake signals.
 pub struct IntegrationState {
     pub enrichment_wake: Arc<tokio::sync::Notify>,
     pub quill_poller_wake: Arc<tokio::sync::Notify>,
     pub linear_poller_wake: Arc<tokio::sync::Notify>,
     pub email_poller_wake: Arc<tokio::sync::Notify>,
     pub granola_poller_wake: Arc<tokio::sync::Notify>,
-    /// Wake signal for the Google Drive poller (I426).
+    /// Wake signal for the Google Drive poller.
     pub drive_poller_wake: Arc<tokio::sync::Notify>,
     /// Wake signal for the intelligence queue processor.
     pub intel_queue_wake: Arc<tokio::sync::Notify>,
@@ -145,7 +145,7 @@ pub struct IntegrationState {
     pub embedding_queue_wake: Arc<tokio::sync::Notify>,
 }
 
-/// Consolidated app lock state (I610).
+/// Consolidated app lock state.
 ///
 /// All lock-related fields behind a single `Mutex` so lock/unlock/check
 /// operations are atomic -- no inconsistent reads between `is_locked` and
@@ -168,13 +168,13 @@ impl Default for AppLockState {
     }
 }
 
-/// Signal bus state (I405).
+/// Signal bus state.
 pub struct SignalState {
     pub engine: Arc<crate::signals::propagation::PropagationEngine>,
     pub prep_invalidation_queue: Arc<Mutex<Vec<String>>>,
 }
 
-/// Startup database recovery status for migration/integrity failures (I539).
+/// Startup database recovery status for migration/integrity failures.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DatabaseRecoveryStatus {
@@ -207,7 +207,7 @@ impl DatabaseRecoveryStatus {
     }
 }
 
-/// Typed resource permits for concurrent background work (I565).
+/// Typed resource permits for concurrent background work.
 ///
 /// Replaces the single `heavy_work_semaphore` with per-resource permits so
 /// independent workloads (e.g. embedding inference vs. Gmail fetch) can run
@@ -243,7 +243,7 @@ impl ResourcePermits {
     }
 }
 
-/// DOS-259 (W2-B cycle 3): atomic state bundle for context-mode switches.
+///  atomic state bundle for context-mode switches.
 ///
 /// Combines the three Arcs that all change together when the user
 /// switches between Local and Glean modes:
@@ -264,7 +264,7 @@ pub struct ContextProviderBundle {
         Option<Arc<crate::intelligence::glean_provider::GleanIntelligenceProvider>>,
 }
 
-/// DOS-259 (W2-B cycle 3): coherent read snapshot of the context state.
+///  coherent read snapshot of the context state.
 ///
 /// Callers that need to make a routing decision based on multiple fields
 /// (e.g., `is_remote()` AND the trait `Arc`) MUST use this snapshot
@@ -304,15 +304,15 @@ pub struct AppState {
     /// `RwLock<Option<>>` instead of `OnceCell` so dev mode can reinitialize
     /// the service to point at `dailyos-dev.db`.
     pub db_service: tokio::sync::RwLock<Option<std::sync::Arc<crate::db_service::DbService>>>,
-    /// User activity monitor for throttling background work (I426).
+    /// User activity monitor for throttling background work.
     pub activity: Arc<crate::activity::ActivityMonitor>,
-    /// Calendar subsystem state (I404).
+    /// Calendar subsystem state.
     pub calendar: CalendarState,
-    /// Capture subsystem state (I404).
+    /// Capture subsystem state.
     pub capture: CaptureState,
-    /// Background intelligence enrichment queue (I132)
+    /// Background intelligence enrichment queue
     pub intel_queue: Arc<crate::intel_queue::IntelligenceQueue>,
-    /// DOS-228 Fix 2: Per-account debouncer for post-edit health recompute.
+    /// Regression guard: Per-account debouncer for post-edit health recompute.
     /// Rapid edits (10 in 2s) coalesce into a single recompute that reflects
     /// the final committed state. Replaces the old synchronous recompute in
     /// `services::accounts::update_account_field`.
@@ -322,47 +322,47 @@ pub struct AppState {
     pub embedding_model: Arc<crate::embeddings::EmbeddingModel>,
     /// Background embedding generation queue (Sprint 26).
     pub embedding_queue: Arc<crate::processor::embeddings::EmbeddingQueue>,
-    /// DOS-209 (W2-A): production clock for ServiceContext injection.
+    ///  production clock for ServiceContext injection.
     /// Concrete `SystemClock` so it is `Sized`; tests construct their
     /// own `FixedClock` and a separate `ServiceContext::test_live`.
     pub clock: crate::services::context::SystemClock,
-    /// DOS-209 (W2-A): production RNG for ServiceContext injection.
+    ///  production RNG for ServiceContext injection.
     /// Concrete `SystemRng`; tests use `SeedableRng`.
     pub rng: crate::services::context::SystemRng,
-    /// DOS-209 (W2-A): mode-aware external-client wrappers for
+    ///  mode-aware external-client wrappers for
     /// ServiceContext injection. Live mode wraps configured clients;
     /// non-Live modes hold replay/fixture wrappers per ADR-0104 §3.4.
     pub external: crate::services::context::ExternalClients,
-    /// Hygiene subsystem state (I404).
+    /// Hygiene subsystem state.
     pub hygiene: HygieneState,
-    /// Stashed live workspace path before switching to dev mode (I298).
+    /// Stashed live workspace path before switching to dev mode.
     /// `restore_live()` reads this back to return to the user's real workspace.
     pub pre_dev_workspace: Mutex<Option<String>>,
-    /// Signal bus state (I405).
+    /// Signal bus state.
     pub signals: SignalState,
-    /// Integration poller wake signals (I405).
+    /// Integration poller wake signals.
     pub integrations: IntegrationState,
-    /// App lock state consolidated into a single mutex (I610).
+    /// App lock state consolidated into a single mutex.
     pub lock_state: Mutex<AppLockState>,
-    /// True if the encryption key was not found in the Keychain on startup (I462).
+    /// True if the encryption key was not found in the Keychain on startup.
     /// When set, the frontend shows a recovery screen instead of normal UI.
     pub encryption_key_missing: AtomicBool,
-    /// DB recovery state when migrations/schema integrity fail on startup (I539).
+    /// DB recovery state when migrations/schema integrity fail on startup.
     pub database_recovery_status: Mutex<DatabaseRecoveryStatus>,
-    /// Tamper-evident audit log for enterprise observability (I471).
+    /// Tamper-evident audit log for enterprise observability.
     pub audit_log: Arc<Mutex<crate::audit_log::AuditLogger>>,
-    /// Active role preset loaded from config (I309).
+    /// Active role preset loaded from config.
     pub active_preset: RwLock<Option<crate::presets::schema::RolePreset>>,
-    /// Cached merged signal/email config for the active preset (DOS-176).
+    /// Cached merged signal/email config for the active preset.
     /// Recomputed at `set_role` time and on startup preset load. Supersedes
-    /// the earlier `merged_signal_keywords` field (DOS-178) by also caching
+    /// the earlier `merged_signal_keywords` field  by also caching
     /// email signal types and priority keywords alongside signal keywords.
     pub merged_signal_config: RwLock<MergedSignalConfig>,
     /// Background meeting prep queue for future meetings.
     pub meeting_prep_queue: Arc<crate::meeting_prep_queue::MeetingPrepQueue>,
-    /// Typed resource permits for concurrent background work (I565).
+    /// Typed resource permits for concurrent background work.
     pub permits: ResourcePermits,
-    /// DOS-259 (W2-B cycle 3, L6 2026-04-30): all three context-related
+    ///  all three context-related
     /// Arcs live behind ONE `RwLock<ContextProviderBundle>` so a settings
     /// switch updates them atomically. Multi-step reads use
     /// `context_snapshot()` to get a coherent view per ADR-0091's "switch
@@ -376,7 +376,7 @@ pub struct AppState {
 /// Base signal keywords applicable to any role (generic, role-neutral).
 ///
 /// CS-specific keywords (`churn`, `cancellation`, etc.) live in the CS preset's
-/// `intelligence.signal_keywords` and are merged in at `set_role` time (DOS-176).
+/// `intelligence.signal_keywords` and are merged in at `set_role` time.
 pub const BASE_SIGNAL_KEYWORDS: &[(&str, f64)] = &[
     ("renewal", 0.15),
     ("contract", 0.12),
@@ -392,7 +392,7 @@ pub const BASE_SIGNAL_KEYWORDS: &[(&str, f64)] = &[
 /// Base email boost signal types applicable to any role (generic, role-neutral).
 ///
 /// CS-specific types (`churn_risk`, `renewal_approaching`, `champion_risk`) live in
-/// the CS preset's `intelligence.email_signal_types` (DOS-176).
+/// the CS preset's `intelligence.email_signal_types`.
 pub const BASE_EMAIL_SIGNAL_TYPES: &[&str] = &[
     "engagement_warning",
     "escalation",
@@ -403,7 +403,7 @@ pub const BASE_EMAIL_SIGNAL_TYPES: &[&str] = &[
 ];
 
 /// Build a `MergedSignalConfig` from a preset by merging its intelligence config
-/// with the base lists. Called at `set_role` time and on startup (DOS-176).
+/// with the base lists. Called at `set_role` time and on startup.
 ///
 /// Merge semantics:
 /// - Additive: preset keywords appended to base list.
@@ -492,7 +492,7 @@ fn recovery_status_from_db_error(err: &crate::db::DbError) -> DatabaseRecoverySt
 
 impl AppState {
     pub fn new() -> Self {
-        // I298 recovery: if a dev-backup config exists, the app was quit during
+        //  recovery: if a dev-backup config exists, the app was quit during
         // dev mode without calling restore_live(). Restore the live config before
         // loading so startup sync doesn't import mock data into the live DB.
         recover_from_unclean_dev_exit();
@@ -517,7 +517,7 @@ impl AppState {
 
         let mut encryption_key_missing = false;
         let mut database_recovery_status = DatabaseRecoveryStatus::not_required();
-        // I609: Open DB for startup validation and context_mode reading only.
+        // Open DB for startup validation and context_mode reading only.
         // The connection is NOT stored in AppState -- all runtime DB access goes
         // through `db_service` (async) or `ActionDb::open()` (sync helpers).
         let startup_db = match crate::db::ActionDb::open() {
@@ -616,17 +616,17 @@ impl AppState {
         // Load transcript records from disk
         let transcript_processed = load_transcript_records().unwrap_or_default();
 
-        // Deprecated: hygiene call-count budget replaced by token budget (DOS-279).
+        // Deprecated: hygiene call-count budget replaced by token budget.
         let _hygiene_budget_limit = 0u32;
 
-        // DOS-279: Sync the daily AI token budget from config to KV store so
+        // Sync the daily AI token budget from config to KV store so
         // the preflight gate (running in a sync context) can read it without
         // going through AppState.
         if let (Some(cfg), Some(db)) = (config.as_ref(), startup_db.as_ref()) {
             crate::pty::sync_budget_config_to_kv(db, cfg.daily_ai_token_budget);
         }
 
-        // I309: Load active role preset from config
+        // Load active role preset from config
         let active_preset = config.as_ref().and_then(|c| {
             if let Some(ref path) = c.custom_preset_path {
                 crate::presets::loader::load_custom_preset(std::path::Path::new(path)).ok()
@@ -634,7 +634,7 @@ impl AppState {
                 crate::presets::loader::load_preset(&c.role).ok()
             }
         });
-        // DOS-176: Compute merged signal config from the startup preset.
+        // Compute merged signal config from the startup preset.
         let startup_merged_config = active_preset
             .as_ref()
             .map(build_merged_signal_config)
@@ -682,7 +682,7 @@ impl AppState {
             Arc::clone(&embedding_model),
         );
 
-        // DOS-259 (W2-B): If Glean mode is configured, also seed the
+        //  If Glean mode is configured, also seed the
         // AppState-owned `IntelligenceProvider` Arc per ADR-0091 so early
         // callers (intel_queue, services::intelligence) can route through the
         // trait without inline `GleanIntelligenceProvider::new(endpoint)`.
@@ -730,7 +730,7 @@ impl AppState {
         let intel_queue_arc = Arc::new(crate::intel_queue::IntelligenceQueue::new());
         let mut signal_engine = crate::signals::propagation::default_engine();
         signal_engine.set_prep_queue(Arc::clone(&prep_queue));
-        // I385: Wire intel_queue so propagated cross-entity signals trigger enrichment
+        // Wire intel_queue so propagated cross-entity signals trigger enrichment
         signal_engine.set_intel_queue(Arc::clone(&intel_queue_arc));
 
         Self {
@@ -766,7 +766,7 @@ impl AppState {
                 scan_running: AtomicBool::new(false),
                 last_scan_at: Mutex::new(None),
                 next_scan_at: Mutex::new(None),
-                // DOS-279: Hygiene call-count budget is deprecated. Use unlimited
+                // Hygiene call-count budget is deprecated. Use unlimited
                 // so hygiene can enqueue freely; token budget enforced at PTY call time.
                 budget: HygieneBudget::unlimited(),
                 full_orphan_scan_done: AtomicBool::new(false),
@@ -804,14 +804,14 @@ impl AppState {
         }
     }
 
-    /// Get a snapshot of the merged signal config for the active preset (DOS-176).
+    /// Get a snapshot of the merged signal config for the active preset.
     ///
     /// Returns the cached `MergedSignalConfig` — cheap clone, no recomputation.
     pub fn get_merged_signal_config(&self) -> MergedSignalConfig {
         self.merged_signal_config.read().clone()
     }
 
-    /// Update the active preset and recompute the cached merged signal config (DOS-176).
+    /// Update the active preset and recompute the cached merged signal config.
     ///
     /// Called by the `set_role` command after loading the new preset so downstream
     /// callers (`score_item`, `score_single_email`, `boost_with_entity_context`) always
@@ -822,7 +822,7 @@ impl AppState {
         *self.merged_signal_config.write() = merged;
     }
 
-    /// I573: Read config (parking_lot — no poison possible).
+    /// Read config (parking_lot — no poison possible).
     pub fn config_read_or_recover(
         &self,
     ) -> Result<parking_lot::RwLockReadGuard<'_, Option<Config>>, String> {
@@ -838,7 +838,7 @@ impl AppState {
         Arc::clone(&self.context_state.read().context_provider)
     }
 
-    /// DOS-259 (W2-B cycle 3, L6 2026-04-30): atomic snapshot of the
+    ///  atomic snapshot of the
     /// context state. Captures all three Arcs under one read-lock
     /// acquisition so callers reasoning about routing (`is_remote()` AND
     /// the trait `Arc`) see a coherent view.
@@ -878,7 +878,7 @@ impl AppState {
         );
     }
 
-    /// DOS-259 (W2-B): get the configured remote `IntelligenceProvider`, if any.
+    ///  get the configured remote `IntelligenceProvider`, if any.
     ///
     /// Per ADR-0091: read at call time so a swap mid-queue takes effect on
     /// the next dequeue. `None` means no remote provider is configured —
@@ -889,7 +889,7 @@ impl AppState {
         self.context_state.read().intelligence_provider.clone()
     }
 
-    /// DOS-259 (W2-B): hot-swap ONLY the `IntelligenceProvider` Arc.
+    ///  hot-swap ONLY the `IntelligenceProvider` Arc.
     ///
     /// **Prefer `set_context_mode_atomic`** for settings transitions —
     /// this single-field swap exists for tests and legacy paths.
@@ -901,14 +901,14 @@ impl AppState {
         guard.intelligence_provider = new;
     }
 
-    /// DOS-259 (W2-B) bridge: get the concrete Glean provider Arc, if any.
+    /// Glean provider bridge: get the concrete Glean provider Arc, if any.
     pub fn glean_intelligence_provider(
         &self,
     ) -> Option<Arc<crate::intelligence::glean_provider::GleanIntelligenceProvider>> {
         self.context_state.read().glean_intelligence_provider.clone()
     }
 
-    /// DOS-259 (W2-B) bridge: hot-swap ONLY the concrete Glean provider Arc.
+    /// Glean provider bridge: hot-swap ONLY the concrete Glean provider Arc.
     /// **Prefer `set_context_mode_atomic`** — this single-field swap is for tests.
     pub fn swap_glean_intelligence_provider(
         &self,
@@ -918,7 +918,7 @@ impl AppState {
         guard.glean_intelligence_provider = new;
     }
 
-    /// DOS-209 (W2-A): build a `Live` `ServiceContext` borrowing this
+    ///  build a `Live` `ServiceContext` borrowing this
     /// `AppState`'s clock + rng + external clients. Tauri command
     /// handlers and background workers call this once per-call to get
     /// the `&ServiceContext` they pass into service mutators.
@@ -939,7 +939,7 @@ impl AppState {
         )
     }
 
-    /// DOS-259 (W2-B cycle 3, L6 2026-04-30): atomic context-mode transition.
+    ///  atomic context-mode transition.
     ///
     /// Updates `context_provider` + `intelligence_provider` + `glean_intelligence_provider`
     /// inside ONE write-lock critical section. Callers reading via
@@ -1007,7 +1007,7 @@ impl AppState {
 
     /// Build a context provider for the given mode, using this state's config and embedding model.
     ///
-    /// DOS-259 (W2-B cycle 3): now routes through `set_context_mode_atomic`
+    ///  now routes through `set_context_mode_atomic`
     /// so the three context Arcs update under one write lock. Returns the
     /// new context provider Arc for callers that still want a handle, but
     /// AppState already holds it via the atomic swap — most callers can
@@ -1092,7 +1092,7 @@ impl AppState {
             .cloned()
     }
 
-    /// Sync DB read helper (I609).
+    /// Sync DB read helper.
     ///
     /// Opens a fresh `ActionDb` connection for the closure. Each call gets its
     /// own connection -- no shared mutex, no contention with async `db_service`.
@@ -1104,7 +1104,7 @@ impl AppState {
         f(&db)
     }
 
-    /// Sync DB write helper (I609).
+    /// Sync DB write helper.
     ///
     /// Opens a fresh `ActionDb` connection for the closure.
     pub fn with_db_write<T, F>(&self, f: F) -> Result<T, String>
@@ -1205,7 +1205,7 @@ impl AppState {
         }
 
         // Startup fallback: DbService not yet initialized. Open a fresh
-        // connection directly (I609 -- no persistent sync handle).
+        // connection directly (- no persistent sync handle).
         let db = crate::db::ActionDb::open()
             .map_err(|e| format!("Database unavailable: failed to open DB ({e})"))?;
         f(&db)
@@ -1243,7 +1243,7 @@ impl AppState {
         }
 
         // Startup fallback: DbService not yet initialized. Open a fresh
-        // connection directly (I609 -- no persistent sync handle).
+        // connection directly (- no persistent sync handle).
         let db = crate::db::ActionDb::open()
             .map_err(|e| format!("Database unavailable: failed to open DB ({e})"))?;
         f(&db)
@@ -1297,7 +1297,7 @@ pub fn run_startup_sync(state: &AppState) {
         return;
     }
 
-    // Refresh managed workspace files if version changed (I275)
+    // Refresh managed workspace files if version changed
     if let Err(e) = crate::util::write_managed_workspace_files(workspace) {
         log::warn!(
             "Startup sync: failed to write managed workspace files: {}",
@@ -1332,7 +1332,7 @@ pub fn run_startup_sync(state: &AppState) {
         Err(e) => log::warn!("Startup sync: projects sync failed: {}", e),
     }
 
-    // I644: One-time backfill of dashboard.json narrative fields into DB columns.
+    // One-time backfill of dashboard.json narrative fields into DB columns.
     match db.backfill_dashboard_json_to_db(workspace) {
         Ok(n) if n > 0 => log::info!("Startup sync: backfilled {} dashboard.json → DB", n),
         Ok(_) => {}
@@ -1370,7 +1370,7 @@ pub fn run_startup_sync(state: &AppState) {
         Err(e) => log::warn!("Startup sync: legacy notes migration failed: {}", e),
     }
 
-    // Rebuild search index (I427)
+    // Rebuild search index
     {
         use crate::db::search::SearchDb;
         match db.conn_ref().rebuild_search_index() {
@@ -1551,7 +1551,7 @@ pub fn create_or_update_config(
         }
     }
 
-    // Write to disk (I64: atomic write to prevent corruption on crash)
+    // Write to disk (atomic write to prevent corruption on crash)
     let content = serde_json::to_string_pretty(&config)
         .map_err(|e| format!("Failed to serialize config: {}", e))?;
     crate::util::atomic_write_str(&path, &content)
@@ -1613,7 +1613,7 @@ pub fn initialize_workspace(path: &std::path::Path, entity_mode: &str) -> Result
         }
     }
 
-    // Write managed CLAUDE.md + .claude/settings.json (I275)
+    // Write managed CLAUDE.md.claude/settings.json
     crate::util::write_managed_workspace_files(path)?;
 
     Ok(())

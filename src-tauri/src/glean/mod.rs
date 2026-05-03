@@ -120,7 +120,7 @@ pub async fn get_valid_access_token() -> Result<String, GleanAuthError> {
     // Actually refresh
     match refresh_token(&token).await {
         Ok(access_token) => {
-            // I572: Structured log for audit trail
+            // Structured log for audit trail
             log::info!("[audit:security] oauth_token_refreshed provider=glean");
             Ok(access_token)
         }

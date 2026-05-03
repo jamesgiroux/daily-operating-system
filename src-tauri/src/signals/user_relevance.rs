@@ -1,4 +1,4 @@
-//! User-context-weighted signal scoring (I414).
+//! User-context-weighted signal scoring.
 //!
 //! Multiplies signal relevance by alignment with the user's declared priorities.
 //! When no user entity is configured, returns a neutral weight of 1.0.

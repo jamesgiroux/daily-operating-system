@@ -1,7 +1,7 @@
 /**
  * EphemeralBriefing — editorial rendering of a one-shot account briefing.
  *
- * I495: Renders the result of an ephemeral Glean query in the app's
+ * Renders the result of an ephemeral Glean query in the app's
  * magazine aesthetic. Newsreader serif heading, DM Sans body, section
  * rules between sections. No system vocabulary in the UI (ADR-0083).
  */

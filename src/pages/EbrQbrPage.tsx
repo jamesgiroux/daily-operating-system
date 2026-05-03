@@ -44,7 +44,7 @@ import type { AccountDetail } from "@/types";
 import slides from "./report-slides.module.css";
 
 // Normalize DB data to the current schema — guards against old cached reports
-// whose JSON predates field additions (I397 schema evolution).
+// whose JSON predates field additions (schema evolution).
 function toArr<T>(v: unknown): T[] {
   return Array.isArray(v) ? (v as T[]) : [];
 }

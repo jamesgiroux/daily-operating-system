@@ -1,5 +1,5 @@
--- DOS-310: per-entity claim invalidation primitive (replaces singleton-counter
--- entity_graph_version trigger extension that DOS-7 originally proposed).
+-- per-entity claim invalidation primitive (replaces singleton-counter
+-- entity_graph_version trigger extension that  originally proposed).
 --
 -- Codex round 1 finding 4 + round 2 finding 6: entity_graph_version is a
 -- singleton counter; bumping it on every claim write thrashes unrelated
@@ -23,7 +23,7 @@ ALTER TABLE projects         ADD COLUMN claim_version INTEGER NOT NULL DEFAULT 0
 ALTER TABLE people           ADD COLUMN claim_version INTEGER NOT NULL DEFAULT 0;
 ALTER TABLE meetings ADD COLUMN claim_version INTEGER NOT NULL DEFAULT 0;
 
--- migration_state is shared with DOS-311 (which also writes a 'schema_epoch'
+-- migration_state is shared with (which also writes a 'schema_epoch'
 -- row). CREATE IF NOT EXISTS keeps both migrations independent.
 CREATE TABLE IF NOT EXISTS migration_state (
     key   TEXT PRIMARY KEY,

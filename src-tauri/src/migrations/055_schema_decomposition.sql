@@ -1,4 +1,4 @@
--- 055: Schema decomposition (I511)
+-- 055: Schema decomposition
 -- Splits meetings_history → meetings + meeting_prep + meeting_transcripts
 -- Splits entity_intelligence → entity_assessment (+ adds cols to entity_quality)
 -- Splits entity_people + account_team → account_stakeholders + entity_members

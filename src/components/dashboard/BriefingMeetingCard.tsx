@@ -429,7 +429,7 @@ export function BriefingMeetingCard({
   const prepDiscuss = meeting.prep?.actions ?? meeting.prep?.questions ?? [];
   const prepWatch = meeting.prep?.risks ?? [];
   const prepWins = meeting.prep?.wins ?? [];
-  // DOS-30: "meaningful" prep — anything that would actually render in the panel.
+  // "meaningful" prep — anything that would actually render in the panel.
   // If none of these are present, we still expand but show a graceful empty state
   // with the bridge link as the primary action (rather than an empty panel).
   const hasPrepContent = !!(
@@ -573,7 +573,7 @@ export function BriefingMeetingCard({
                 />
               </>
             ) : (
-              /* DOS-30: graceful empty state — prep not yet generated.
+              /* graceful empty state — prep not yet generated.
                  Bridge link below remains the primary action. */
               <p className={s.expansionNarrative}>No prep available yet.</p>
             )}

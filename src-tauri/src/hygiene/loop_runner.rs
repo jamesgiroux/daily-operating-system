@@ -1,5 +1,5 @@
 //! Background hygiene loop: startup delay, periodic scans, overnight enrichment,
-//! age-based purge (I614), and proactive detection (I260).
+//! age-based purge, and proactive detection.
 
 use std::sync::Arc;
 
@@ -25,7 +25,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
     // Wait for startup to complete
     tokio::time::sleep(std::time::Duration::from_secs(STARTUP_DELAY_SECS)).await;
 
-    // I614: Log DB size at startup and emit warning if needed
+    // Log DB size at startup and emit warning if needed
     let startup_size = crate::db::data_lifecycle::log_db_size_at_startup();
     if startup_size >= 500_000_000 {
         let _ = app.emit("db-size-warning", startup_size);
@@ -33,7 +33,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
 
     log::info!("HygieneLoop: started");
 
-    // I614: Track last purge date to run age-based purge once per day
+    // Track last purge date to run age-based purge once per day
     let mut last_purge_date: Option<chrono::NaiveDate> = None;
 
     loop {
@@ -113,14 +113,14 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
             }
         }
 
-        // Run proactive detection scan after hygiene fixes (I260)
+        // Run proactive detection scan after hygiene fixes
         match crate::proactive::scanner::run_proactive_scan(&state) {
             Ok(n) if n > 0 => log::info!("HygieneLoop: {} proactive insights detected", n),
             Err(e) => log::warn!("HygieneLoop: proactive scan failed: {}", e),
             _ => {}
         }
 
-        // Prune old audit trail files (I297)
+        // Prune old audit trail files
         if let Some(config) = state.config.read().clone() {
             let workspace = std::path::Path::new(&config.workspace_path);
             let pruned = crate::audit::prune_audit_files(workspace);
@@ -129,7 +129,7 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
             }
         }
 
-        // I614: Age-based purge -- runs once per day, not every scan cycle
+        // Age-based purge -- runs once per day, not every scan cycle
         let today = chrono::Local::now().date_naive();
         let should_purge = last_purge_date.is_none_or(|d| d < today);
         if should_purge {

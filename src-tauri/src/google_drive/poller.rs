@@ -1,4 +1,4 @@
-//! Background polling for Google Drive changes (I426).
+//! Background polling for Google Drive changes.
 
 use std::sync::Arc;
 use std::time::Duration;

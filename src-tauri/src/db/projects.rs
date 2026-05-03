@@ -2,7 +2,7 @@ use super::*;
 
 impl ActionDb {
     // =========================================================================
-    // Projects (I50)
+    // Projects
     // =========================================================================
 
     /// Helper: map a row to `DbProject`.
@@ -26,7 +26,7 @@ impl ActionDb {
             keywords: row.get(10).unwrap_or(None),
             keywords_extracted_at: row.get(11).unwrap_or(None),
             metadata: row.get(12).unwrap_or(None),
-            // I644: dashboard.json fields promoted to DB (migration 083)
+            // dashboard.json fields promoted to DB (migration 083)
             description: row.get(13).unwrap_or(None),
             milestones: row.get(14).unwrap_or(None),
             notes: row.get(15).unwrap_or(None),
@@ -172,7 +172,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Get top-level projects (no parent), ordered by name (I388).
+    /// Get top-level projects (no parent), ordered by name.
     pub fn get_top_level_projects(&self) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
@@ -185,7 +185,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Get child projects for a parent, ordered by name (I388).
+    /// Get child projects for a parent, ordered by name.
     pub fn get_child_projects(&self, parent_id: &str) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT id, name, status, milestone, owner, target_date,
@@ -198,7 +198,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Walk the parent_id chain to get all ancestors (I388).
+    /// Walk the parent_id chain to get all ancestors.
     pub fn get_project_ancestors(&self, project_id: &str) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "WITH RECURSIVE ancestors(id) AS (
@@ -218,7 +218,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Get all descendants using recursive CTE with depth limit (I388).
+    /// Get all descendants using recursive CTE with depth limit.
     pub fn get_descendant_projects(&self, ancestor_id: &str) -> Result<Vec<DbProject>, DbError> {
         let mut stmt = self.conn.prepare(
             "WITH RECURSIVE descendants(id, depth) AS (
@@ -241,7 +241,7 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
-    /// Aggregate child project signals for a parent project (I388).
+    /// Aggregate child project signals for a parent project.
     pub fn get_project_parent_aggregate(
         &self,
         parent_id: &str,
@@ -266,7 +266,7 @@ impl ActionDb {
         Ok(row)
     }
 
-    /// Update keywords for a project (I305).
+    /// Update keywords for a project.
     pub fn update_project_keywords(
         &self,
         project_id: &str,
@@ -281,7 +281,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Update keywords for an account (I305).
+    /// Update keywords for an account.
     pub fn update_account_keywords(
         &self,
         account_id: &str,
@@ -296,7 +296,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Remove a keyword from a project's keyword list (I305 — user curation).
+    /// Remove a keyword from a project's keyword list (user curation).
     pub fn remove_project_keyword(&self, project_id: &str, keyword: &str) -> Result<(), DbError> {
         let current: Option<String> = self
             .conn
@@ -322,7 +322,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Remove a keyword from an account's keyword list (I305 — user curation).
+    /// Remove a keyword from an account's keyword list (user curation).
     pub fn remove_account_keyword(&self, account_id: &str, keyword: &str) -> Result<(), DbError> {
         let current: Option<String> = self
             .conn
@@ -348,7 +348,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Invalidate meeting prep data (I305 — prep invalidation on entity correction).
+    /// Invalidate meeting prep data (prep invalidation on entity correction).
     /// NULLs prep columns and returns the old prep_snapshot_path for disk cleanup.
     pub fn invalidate_meeting_prep(&self, meeting_id: &str) -> Result<Option<String>, DbError> {
         let old_path: Option<String> = self
@@ -373,7 +373,7 @@ impl ActionDb {
         Ok(old_path)
     }
 
-    /// Get meetings from last N days with no entity links (I305 — hygiene detection).
+    /// Get meetings from last N days with no entity links (hygiene detection).
     /// Returns (id, title, calendar_event_id, start_time) tuples.
     pub fn get_unlinked_meetings(
         &self,
@@ -479,7 +479,7 @@ impl ActionDb {
         self.link_meeting_entity(meeting_id, project_id, "project")
     }
 
-    /// Link a meeting to any entity in the junction table (I52 generic).
+    /// Link a meeting to any entity in the junction table (generic).
     pub fn link_meeting_entity(
         &self,
         meeting_id: &str,
@@ -494,12 +494,12 @@ impl ActionDb {
         Ok(())
     }
 
-    /// DOS-74: Link a meeting to an entity with per-junction confidence + primary flag.
+    /// Link a meeting to an entity with per-junction confidence + primary flag.
     /// If the link already exists, upgrades `confidence` when the new value is
     /// higher (never downgrades — a later low-confidence sweep should not
     /// stomp a high-confidence manual link).
     ///
-    /// DOS-224: single-primary invariant. When writing a new primary, this
+    /// single-primary invariant. When writing a new primary, this
     /// runs inside a transaction that FIRST demotes any existing
     /// `is_primary = 1` rows with the same `(meeting_id, entity_type)` to
     /// `is_primary = 0`, THEN upserts the new primary. The previous
@@ -564,7 +564,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// DOS-240: Record that the user has dismissed an auto-resolved entity
+    /// Record that the user has dismissed an auto-resolved entity
     /// from a meeting. The dismissal persists across calendar-sync and
     /// resolver sweeps so the entity will not silently re-link on its own.
     /// The accompanying `unlink_meeting_entity` call is the caller's job —
@@ -589,7 +589,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// DOS-240: Remove a dismissal record so the entity can auto-link again
+    /// Remove a dismissal record so the entity can auto-link again
     /// on the next resolver pass. Used by the undo / restore flow.
     pub fn remove_meeting_entity_dismissal(
         &self,
@@ -605,7 +605,7 @@ impl ActionDb {
         Ok(removed > 0)
     }
 
-    /// DOS-240: Is the given (meeting, entity, type) currently dismissed?
+    /// Is the given (meeting, entity, type) currently dismissed?
     /// Used by both calendar-sync and resolver persistence paths to gate
     /// re-insertion.
     pub fn is_meeting_entity_dismissed(
@@ -624,7 +624,7 @@ impl ActionDb {
         Ok(exists)
     }
 
-    /// DOS-240: List all (entity_id, entity_type) pairs dismissed for a
+    /// List all (entity_id, entity_type) pairs dismissed for a
     /// meeting. Used when persisting a batch of resolution outcomes so we
     /// can filter the whole batch in a single query rather than probing
     /// per-entity.
@@ -646,7 +646,7 @@ impl ActionDb {
         Ok(set)
     }
 
-    /// DOS-74: Get all linked entities for a meeting with confidence + primary
+    /// Get all linked entities for a meeting with confidence + primary
     /// flags, ordered by (is_primary DESC, confidence DESC, name ASC) so
     /// `[0]` is the single best primary entity and lower-confidence siblings
     /// trail as suggestions.
@@ -704,7 +704,7 @@ impl ActionDb {
     /// Batch query: get linked entities for multiple meetings at once.
     /// Returns a map from meeting_id → Vec<LinkedEntity>.
     ///
-    /// DOS-74: Results are ordered by confidence DESC within each meeting so
+    /// Results are ordered by confidence DESC within each meeting so
     /// `entities[0]` is always the highest-confidence (primary) link. Low-
     /// confidence siblings (<0.60) are flagged `suggested = true` for muted
     /// UI rendering.
@@ -739,7 +739,7 @@ impl ActionDb {
             let confidence: f64 = row.get(4)?;
             let is_primary: i64 = row.get(5)?;
             let is_primary = is_primary != 0;
-            // DOS-74: suggestion tier is anything below the ResolvedWithFlag
+            // suggestion tier is anything below the ResolvedWithFlag
             // cutoff (0.60) that is also not flagged as primary. UI paints
             // these muted with a "suggested" affordance.
             let suggested = !is_primary && confidence < 0.60;
@@ -824,7 +824,7 @@ impl ActionDb {
         project_id: Option<&str>,
     ) -> Result<usize, DbError> {
         // Route: accounts → account_stakeholders, projects → entity_members
-        // I652: Only auto-add after attendee appears in 2+ meetings with the account
+        // Only auto-add after attendee appears in 2+ meetings with the account
         if let Some(acct_id) = account_id {
             self.conn.execute(
                 "INSERT INTO account_stakeholders (account_id, person_id)

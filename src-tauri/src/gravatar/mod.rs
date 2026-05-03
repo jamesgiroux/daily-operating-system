@@ -1,4 +1,4 @@
-//! Gravatar MCP server integration for avatar and profile enrichment (I229).
+//! Gravatar MCP server integration for avatar and profile enrichment.
 //!
 //! Connects to the `@automattic/mcp-server-gravatar` MCP server via npx to fetch
 //! profile pictures, bios, and inferred interests for people in the database.

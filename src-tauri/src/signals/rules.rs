@@ -1,4 +1,4 @@
-//! Cross-entity propagation rules (I308 — ADR-0080 Phase 4).
+//! Cross-entity propagation rules (ADR-0080 Phase 4).
 //!
 //! Each rule function takes a source `SignalEvent` and DB access, and returns
 //! zero or more `DerivedSignal`s to emit on related entities.
@@ -59,7 +59,7 @@ pub fn rule_person_job_change(signal: &SignalEvent, db: &ActionDb) -> Vec<Derive
 /// When an account's meeting frequency signal indicates a >50% drop,
 /// emit `engagement_warning`.
 ///
-/// I555: Re-activated — `services::meetings::process_transcript` now emits
+/// Re-activated — `services::meetings::process_transcript` now emits
 /// `meeting_frequency` signals after each transcript is processed.
 /// Re-registered in `default_engine()`.
 pub fn rule_meeting_frequency_drop(signal: &SignalEvent, _db: &ActionDb) -> Vec<DerivedSignal> {
@@ -324,7 +324,7 @@ pub fn rule_renewal_engagement_compound(signal: &SignalEvent, db: &ActionDb) -> 
 }
 
 // ---------------------------------------------------------------------------
-// Rule: Person signal → Connected persons (network graph, I391)
+// Rule: Person signal → Connected persons (network graph)
 // ---------------------------------------------------------------------------
 
 /// When a person emits a signal, propagate attenuated copies to connected
@@ -399,7 +399,7 @@ pub fn rule_person_network(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSi
 /// (if one exists) with attenuated confidence. Loop prevention: signals that
 /// originated from hierarchy propagation are not re-propagated.
 ///
-/// I385: 48-hour sibling signal accumulation — if the parent already received
+/// 48-hour sibling signal accumulation — if the parent already received
 /// signals of the same type from other children in the last 48 hours, fuse
 /// them using weighted log-odds combination for a stronger derived confidence.
 pub fn rule_hierarchy_up(signal: &SignalEvent, db: &ActionDb) -> Vec<DerivedSignal> {
@@ -675,7 +675,7 @@ impl ActionDb {
 }
 
 // ---------------------------------------------------------------------------
-// I353 Phase 2: Signal → Hygiene action rules
+// Signal → Hygiene action rules
 // ---------------------------------------------------------------------------
 
 /// Evaluate signal-driven hygiene actions. Called after a signal is emitted.
@@ -866,7 +866,7 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
 }
 
 // ---------------------------------------------------------------------------
-// I535/ADR-0100: Glean-sourced signal propagation rules
+// /ADR-0100: Glean-sourced signal propagation rules
 // ---------------------------------------------------------------------------
 
 /// When Glean detects an org chart change for an account, propagate
@@ -906,7 +906,7 @@ pub fn rule_glean_champion_departed(signal: &SignalEvent, _db: &ActionDb) -> Vec
 }
 
 // ---------------------------------------------------------------------------
-// Rule: Regulatory gap → Account risk (DOS-207)
+// Rule: Regulatory gap → Account risk
 // ---------------------------------------------------------------------------
 
 /// When the strategic_context enrichment detects a regulatory gap
@@ -1491,7 +1491,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // Person Network (I391)
+    // Person Network
     // -----------------------------------------------------------------------
 
     fn setup_person_pair(db: &crate::db::ActionDb) {

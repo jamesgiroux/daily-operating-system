@@ -1,4 +1,4 @@
-//! Multi-signal meeting matcher for inbox documents (I474).
+//! Multi-signal meeting matcher for inbox documents.
 //!
 //! Scores candidate meetings using title similarity, time proximity,
 //! and entity context. Used by the inbox processor to auto-link

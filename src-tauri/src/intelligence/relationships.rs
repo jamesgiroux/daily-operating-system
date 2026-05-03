@@ -1,4 +1,4 @@
-//! I506: Co-attendance relationship inference.
+//! Co-attendance relationship inference.
 //!
 //! Discovers person-to-person relationships by analyzing meeting co-attendance
 //! patterns. People who frequently appear in the same meetings are likely
