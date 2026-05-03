@@ -45,9 +45,9 @@ interface MeetingEntityChipsProps {
 }
 
 const entityColor: Record<string, string> = {
-  account: "var(--color-entity-account)",
-  project: "var(--color-entity-project)",
-  person: "var(--color-entity-person)",
+  account: "var(--color-account)",
+  project: "var(--color-project)",
+  person: "var(--color-person)",
 };
 
 const entityBg: Record<string, string> = {
