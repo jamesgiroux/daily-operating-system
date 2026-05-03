@@ -27,7 +27,7 @@ use serde::{Deserialize, Serialize};
 use crate::abilities::claims::{metadata_for_claim_type, ClaimActorClass};
 use crate::abilities::feedback::{
     feedback_semantics, transition_for_feedback, ClaimFeedbackMetadata, ClaimRenderPolicy,
-    ClaimVerificationState, FeedbackAction,
+    ClaimVerificationState, FeedbackAction, RepairAction,
 };
 use crate::db::claim_invalidation::SubjectRef;
 use crate::db::claims::{
@@ -113,6 +113,7 @@ pub struct ClaimFeedbackOutcome {
     pub action: FeedbackAction,
     pub new_verification_state: ClaimVerificationState,
     pub applied_at_pending: bool,
+    pub repair_job_id: Option<String>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1323,6 +1324,18 @@ pub fn commit_claim(
 // record_claim_feedback
 // ---------------------------------------------------------------------------
 
+const MAX_ACTIVE_REPAIR_JOBS_PER_CLAIM: i64 = 5;
+const MAX_ACTIVE_REPAIR_JOBS_WORKSPACE: i64 = 50;
+
+#[derive(Debug)]
+struct ClaimFeedbackWriteOutcome {
+    outcome: ClaimFeedbackOutcome,
+    signal_entity_type: String,
+    signal_entity_id: String,
+    verification_state_before: String,
+    verification_state_after: String,
+}
+
 pub fn record_claim_feedback(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -1334,11 +1347,15 @@ pub fn record_claim_feedback(
     let metadata = feedback_semantics(input.action);
     validate_feedback_payload(&input, &metadata)?;
 
-    with_claim_transaction(db, |tx| {
+    let write = with_claim_transaction(db, |tx| {
         let now = ctx.clock.now().to_rfc3339();
         let claim = load_claim_by_id(tx.conn_ref(), &input.claim_id)?
             .ok_or_else(|| ClaimError::UnknownClaimId(input.claim_id.clone()))?;
         validate_feedback_actor(&input.actor)?;
+        let subject_value: serde_json::Value = serde_json::from_str(&claim.subject_ref)?;
+        let subject = subject_ref_from_json(&subject_value)?;
+        let (signal_entity_type, signal_entity_id) = signal_target_for_claim(&subject, &claim.id);
+        let verification_state_before = enum_to_db(&claim.verification_state)?;
 
         let feedback_id = uuid::Uuid::new_v4().to_string();
         tx.conn_ref().execute(
@@ -1424,16 +1441,142 @@ pub fn record_claim_feedback(
             (false, false) => {}
         }
 
-        bump_invalidation_for_claim_id(tx, &input.claim_id)?;
+        let repair_job_id =
+            maybe_enqueue_repair_job(tx, &input.claim_id, &feedback_id, &now, metadata.repair)?;
 
-        Ok(ClaimFeedbackOutcome {
-            feedback_id,
-            claim_id: input.claim_id.clone(),
-            action: input.action,
-            new_verification_state,
-            applied_at_pending: true,
+        bump_invalidation_for_claim_id(tx, &input.claim_id)?;
+        let verification_state_after = enum_to_db(&new_verification_state)?;
+
+        Ok(ClaimFeedbackWriteOutcome {
+            outcome: ClaimFeedbackOutcome {
+                feedback_id,
+                claim_id: input.claim_id.clone(),
+                action: input.action,
+                new_verification_state,
+                applied_at_pending: true,
+                repair_job_id,
+            },
+            signal_entity_type,
+            signal_entity_id,
+            verification_state_before,
+            verification_state_after,
         })
+    })?;
+
+    emit_claim_feedback_signals(ctx, db, &write);
+
+    Ok(write.outcome)
+}
+
+fn maybe_enqueue_repair_job(
+    tx: &ActionDb,
+    claim_id: &str,
+    feedback_id: &str,
+    created_at: &str,
+    repair: RepairAction,
+) -> Result<Option<String>, ClaimError> {
+    if matches!(repair, RepairAction::None) {
+        return Ok(None);
+    }
+
+    let per_claim_active: i64 = tx.conn_ref().query_row(
+        "SELECT count(*) FROM claim_repair_job
+         WHERE claim_id = ?1 AND state IN ('pending', 'in_progress')",
+        params![claim_id],
+        |row| row.get(0),
+    )?;
+    if per_claim_active >= MAX_ACTIVE_REPAIR_JOBS_PER_CLAIM {
+        log::warn!(
+            "claim repair job cap reached; claim_id={claim_id} active_jobs={per_claim_active}"
+        );
+        return Ok(None);
+    }
+
+    let workspace_active: i64 = tx.conn_ref().query_row(
+        "SELECT count(*) FROM claim_repair_job
+         WHERE state IN ('pending', 'in_progress')",
+        [],
+        |row| row.get(0),
+    )?;
+    if workspace_active >= MAX_ACTIVE_REPAIR_JOBS_WORKSPACE {
+        log::warn!("workspace claim repair job cap reached; active_jobs={workspace_active}");
+        return Ok(None);
+    }
+
+    let repair_job_id = uuid::Uuid::new_v4().to_string();
+    tx.conn_ref().execute(
+        "INSERT INTO claim_repair_job (id, claim_id, feedback_id, state, attempts, max_attempts, created_at)
+         VALUES (?1, ?2, ?3, 'pending', 0, 3, ?4)",
+        params![&repair_job_id, claim_id, feedback_id, created_at],
+    )?;
+
+    Ok(Some(repair_job_id))
+}
+
+fn signal_target_for_claim(subject: &SubjectRef, claim_id: &str) -> (String, String) {
+    match (subject_kind_label(subject), subject_id_for_lookup(subject)) {
+        (Some(kind), Some(id)) => (kind.to_ascii_lowercase(), id.to_string()),
+        _ => ("claim".to_string(), claim_id.to_string()),
+    }
+}
+
+fn emit_claim_feedback_signals(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    write: &ClaimFeedbackWriteOutcome,
+) {
+    let payload = serde_json::json!({
+        "action": write.outcome.action.as_str(),
+        "claim_id": &write.outcome.claim_id,
+        "verification_state_before": &write.verification_state_before,
+        "verification_state_after": &write.verification_state_after,
     })
+    .to_string();
+
+    if let Err(e) = crate::services::signals::emit(
+        ctx,
+        db,
+        &write.signal_entity_type,
+        &write.signal_entity_id,
+        "claim_feedback_recorded",
+        "user_feedback",
+        Some(&payload),
+        0.9,
+    ) {
+        log::warn!(
+            "post-commit signal emission failed; \
+             repair_target=signals_engine \
+             signal_type=claim_feedback_recorded \
+             claim_id={}: {e}",
+            write.outcome.claim_id
+        );
+    }
+
+    if write.verification_state_before != write.verification_state_after {
+        let payload = serde_json::json!({
+            "from": &write.verification_state_before,
+            "to": &write.verification_state_after,
+        })
+        .to_string();
+        if let Err(e) = crate::services::signals::emit(
+            ctx,
+            db,
+            &write.signal_entity_type,
+            &write.signal_entity_id,
+            "claim_verification_state_changed",
+            "user_feedback",
+            Some(&payload),
+            0.9,
+        ) {
+            log::warn!(
+                "post-commit signal emission failed; \
+                 repair_target=signals_engine \
+                 signal_type=claim_verification_state_changed \
+                 claim_id={}: {e}",
+                write.outcome.claim_id
+            );
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -2151,6 +2294,36 @@ mod tests {
             .expect("read lifecycle columns")
     }
 
+    fn repair_job_count(db: &ActionDb, claim_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_repair_job WHERE claim_id = ?1",
+                params![claim_id],
+                |row| row.get(0),
+            )
+            .expect("count repair jobs")
+    }
+
+    fn signal_count(db: &ActionDb, signal_type: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT count(*) FROM signal_events WHERE signal_type = ?1",
+                params![signal_type],
+                |row| row.get(0),
+            )
+            .expect("count signals")
+    }
+
+    fn first_signal_value(db: &ActionDb, signal_type: &str) -> String {
+        db.conn_ref()
+            .query_row(
+                "SELECT value FROM signal_events WHERE signal_type = ?1 ORDER BY rowid LIMIT 1",
+                params![signal_type],
+                |row| row.get::<_, String>(0),
+            )
+            .expect("read signal value")
+    }
+
     #[test]
     fn compute_dedup_key_is_stable_for_same_inputs() {
         let key_1 = compute_dedup_key("hash", SUBJECT, "risk", Some("health.risk"));
@@ -2703,6 +2876,158 @@ mod tests {
         assert_eq!(state, "contested");
         assert_eq!(reason.as_deref(), Some("cannot_verify"));
         assert_eq!(needs_user_decision_at, None);
+    }
+
+    #[test]
+    fn record_claim_feedback_enqueues_repair_for_cannot_verify() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk needing repair")).unwrap());
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+
+        let repair_job_id = outcome
+            .repair_job_id
+            .as_deref()
+            .expect("repair job id should be returned");
+        let (state, attempts): (String, i64) = db
+            .conn_ref()
+            .query_row(
+                "SELECT state, attempts FROM claim_repair_job WHERE id = ?1",
+                params![repair_job_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read repair job");
+        assert_eq!(repair_job_count(&db, &claim_id), 1);
+        assert_eq!(state, "pending");
+        assert_eq!(attempts, 0);
+    }
+
+    #[test]
+    fn record_claim_feedback_skips_repair_for_confirm_current() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk already confirmed")).unwrap());
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::ConfirmCurrent),
+        )
+        .unwrap();
+
+        assert_eq!(outcome.repair_job_id, None);
+        assert_eq!(repair_job_count(&db, &claim_id), 0);
+    }
+
+    #[test]
+    fn record_claim_feedback_honors_per_claim_cap() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk at repair cap")).unwrap());
+
+        for idx in 0..MAX_ACTIVE_REPAIR_JOBS_PER_CLAIM {
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO claim_repair_job
+                     (id, claim_id, feedback_id, state, attempts, max_attempts, created_at)
+                     VALUES (?1, ?2, NULL, 'pending', 0, 3, ?3)",
+                    params![format!("repair-seed-{idx}"), &claim_id, TS],
+                )
+                .expect("seed repair job");
+        }
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+
+        assert_eq!(outcome.repair_job_id, None);
+        assert_eq!(
+            repair_job_count(&db, &claim_id),
+            MAX_ACTIVE_REPAIR_JOBS_PER_CLAIM
+        );
+    }
+
+    #[test]
+    fn record_claim_feedback_emits_activity_signal() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_text = "Sensitive claim text must not appear in signal payload";
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, proposal(claim_text)).unwrap());
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+
+        assert_eq!(signal_count(&db, "claim_feedback_recorded"), 1);
+        let payload = first_signal_value(&db, "claim_feedback_recorded");
+        let payload_json: serde_json::Value =
+            serde_json::from_str(&payload).expect("signal payload should be JSON");
+        assert_eq!(payload_json["action"], "cannot_verify");
+        assert_eq!(payload_json["claim_id"], claim_id);
+        assert!(
+            !payload.contains(claim_text),
+            "signal payload must not include claim text"
+        );
+    }
+
+    #[test]
+    fn record_claim_feedback_emits_state_change_signal_only_on_transition() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let confirmed_claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Confirmed active risk")).unwrap());
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&confirmed_claim_id, FeedbackAction::ConfirmCurrent),
+        )
+        .unwrap();
+
+        assert_eq!(signal_count(&db, "claim_verification_state_changed"), 0);
+
+        let db = test_db();
+        seed_account(&db);
+        let contested_claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Contested active risk")).unwrap());
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&contested_claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+
+        assert_eq!(signal_count(&db, "claim_verification_state_changed"), 1);
+        let payload = first_signal_value(&db, "claim_verification_state_changed");
+        let payload_json: serde_json::Value =
+            serde_json::from_str(&payload).expect("state-change payload should be JSON");
+        assert_eq!(payload_json["from"], "active");
+        assert_eq!(payload_json["to"], "contested");
     }
 
     #[test]
