@@ -164,3 +164,125 @@ async fn evaluate_mode_replay_provider_never_falls_through_to_live() {
         other => panic!("expected ReplayFixtureMissing, got {:?}", other),
     }
 }
+
+/// L2 cycle-26 (DOS-259) F2 regression: `select_provider` routes Live
+/// to the configured live provider, Evaluate to replay, and Simulate
+/// to fail-closed. Replaces the prior `select_provider_stub` that
+/// always returned `ModeNotSupported` (which left the production
+/// route unable to actually return canned Evaluate completions and
+/// gave callers no way to enforce the no-live-PTY/no-live-HTTP
+/// boundary). The test calls the SELECTOR — not ReplayProvider
+/// directly — closing the codex F2 critique that prior coverage
+/// didn't exercise the routing seam.
+#[tokio::test]
+async fn select_provider_routes_live_evaluate_simulate_per_adr_0104() {
+    use dailyos_lib::intelligence::provider::{select_provider, ExecutionMode};
+
+    let live: Arc<dyn IntelligenceProvider> =
+        Arc::new(ReplayProvider::from_prompt_pairs([("p", "live-response")]));
+    let replay: Arc<dyn IntelligenceProvider> =
+        Arc::new(ReplayProvider::from_prompt_pairs([("p", "replay-response")]));
+
+    // Live mode → live provider returned.
+    let chosen = select_provider(
+        ExecutionMode::Live,
+        Arc::clone(&live),
+        Some(Arc::clone(&replay)),
+        ModelTier::Synthesis,
+    )
+    .expect("Live mode must resolve");
+    let got = chosen
+        .complete(
+            dailyos_lib::intelligence::provider::PromptInput::new("p"),
+            ModelTier::Synthesis,
+        )
+        .await
+        .expect("Live provider returns");
+    assert_eq!(got.text, "live-response");
+
+    // Evaluate mode → replay provider returned.
+    let chosen = select_provider(
+        ExecutionMode::Evaluate,
+        Arc::clone(&live),
+        Some(Arc::clone(&replay)),
+        ModelTier::Synthesis,
+    )
+    .expect("Evaluate mode resolves when replay is configured");
+    let got = chosen
+        .complete(
+            dailyos_lib::intelligence::provider::PromptInput::new("p"),
+            ModelTier::Synthesis,
+        )
+        .await
+        .expect("Replay provider returns");
+    assert_eq!(got.text, "replay-response");
+
+    // Evaluate mode without a replay provider → fail-closed.
+    // Crucially: NEVER falls through to live, even if a live provider
+    // is supplied — the missing fixture is a structural error.
+    let res = select_provider(
+        ExecutionMode::Evaluate,
+        Arc::clone(&live),
+        None,
+        ModelTier::Synthesis,
+    );
+    assert!(matches!(
+        res,
+        Err(dailyos_lib::intelligence::provider::ProviderError::ModeNotSupported)
+    ));
+
+    // Simulate mode → always fail-closed, no provider invoked.
+    let res = select_provider(
+        ExecutionMode::Simulate,
+        Arc::clone(&live),
+        Some(Arc::clone(&replay)),
+        ModelTier::Synthesis,
+    );
+    assert!(matches!(
+        res,
+        Err(dailyos_lib::intelligence::provider::ProviderError::ModeNotSupported)
+    ));
+}
+
+/// L2 cycle-26 (DOS-259) F1 regression: ProviderError must surface
+/// the typed variants ADR-0106 + DOS-259 acceptance call out
+/// (Unavailable, MalformedResponse, TierUnavailable, PromptTooLarge),
+/// not collapse everything into the broad Permanent/Transient/
+/// Timeout/InvalidPrompt bucket. Callers may want to handle these
+/// distinctly: a `MalformedResponse` is the provider's fault,
+/// `PromptTooLarge` is the caller's fault, `TierUnavailable` means
+/// "configure another tier", `Unavailable` means "retry later."
+#[test]
+fn provider_error_carries_dos259_typed_variants() {
+    use dailyos_lib::intelligence::provider::ProviderError;
+
+    let unavailable = ProviderError::Unavailable("glean offline".into());
+    assert!(matches!(unavailable, ProviderError::Unavailable(_)));
+
+    let malformed = ProviderError::MalformedResponse("not JSON".into());
+    assert!(matches!(malformed, ProviderError::MalformedResponse(_)));
+
+    let tier = ProviderError::TierUnavailable {
+        tier: ModelTier::Synthesis,
+        message: "no synthesis model configured".into(),
+    };
+    match tier {
+        ProviderError::TierUnavailable { tier, message } => {
+            assert_eq!(tier, ModelTier::Synthesis);
+            assert!(message.contains("synthesis"));
+        }
+        _ => panic!("expected TierUnavailable"),
+    }
+
+    let too_large = ProviderError::PromptTooLarge {
+        tokens: 200_000,
+        limit: 100_000,
+    };
+    match too_large {
+        ProviderError::PromptTooLarge { tokens, limit } => {
+            assert_eq!(tokens, 200_000);
+            assert_eq!(limit, 100_000);
+        }
+        _ => panic!("expected PromptTooLarge"),
+    }
+}

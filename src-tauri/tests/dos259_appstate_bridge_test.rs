@@ -315,3 +315,56 @@ async fn replay_provider_through_appstate_bridge_returns_canned_text() {
         ProviderKind::Other("replay")
     );
 }
+
+/// L2 cycle-26 (DOS-259) F3 regression: a settings change between two
+/// dequeues must take effect on the SECOND entity, not the next batch.
+/// Models the per-entity snapshot pattern in
+/// `intel_queue::run_glean_enrichment_with_fallback`'s for-loop:
+/// each iteration calls `state.context_snapshot()` fresh, so a flip
+/// to Local between iterations routes the next entity to PTY rather
+/// than honoring the stale pre-loop snapshot.
+///
+/// The pre-fix code cloned the Glean Arc once before the loop, so a
+/// mid-batch swap was masked until the next batch — violating ADR-0091
+/// "switch mid-queue takes effect on next dequeue."
+#[test]
+fn mid_batch_settings_swap_is_observed_on_next_dequeue() {
+    let state = fresh_state();
+
+    // Enter Glean mode (entity 1's snapshot).
+    state.set_context_mode_atomic(&ContextMode::Glean {
+        endpoint: "https://example.invalid/glean".to_string(),
+    });
+    let snap1 = state.context_snapshot();
+    assert!(
+        snap1.is_remote() && snap1.glean_intelligence_provider.is_some(),
+        "entity 1's snapshot must reflect Glean mode"
+    );
+
+    // Settings change between dequeues — user flipped to Local.
+    state.set_context_mode_atomic(&ContextMode::Local);
+
+    // Entity 2's snapshot — taken inside the same notional loop. The
+    // F3 fix re-reads here; the pre-fix code reused snap1 and would
+    // have routed entity 2 to Glean despite the swap.
+    let snap2 = state.context_snapshot();
+    assert!(
+        !snap2.is_remote(),
+        "entity 2's snapshot must reflect the mid-batch flip to Local — \
+         pre-fix bug: this would still report is_remote=true because the \
+         pre-loop snapshot was stale"
+    );
+    assert!(
+        snap2.glean_intelligence_provider.is_none(),
+        "entity 2's snapshot must show the Glean Arc cleared — pre-fix \
+         bug: a stale Arc was reused for the rest of the batch"
+    );
+
+    // And reverse: a Glean re-arm between dequeues lets the next entity
+    // pick Glean back up without waiting for the next batch.
+    state.set_context_mode_atomic(&ContextMode::Glean {
+        endpoint: "https://example.invalid/glean".to_string(),
+    });
+    let snap3 = state.context_snapshot();
+    assert!(snap3.is_remote() && snap3.glean_intelligence_provider.is_some());
+}

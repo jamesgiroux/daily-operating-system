@@ -1539,53 +1539,57 @@ async fn run_glean_enrichment_with_fallback(
         }
     };
 
-    // DOS-259 (W2-B cycle 3): coherent snapshot of context state. Reading
-    // `is_remote` + Glean Arc together under one lock prevents the
-    // settings-race that L2 codex review flagged. If the snapshot shows
-    // Local mode OR a missing Glean Arc when we expected remote, fall
-    // through to PTY for the whole batch (ADR-0091 "next dequeue").
-    let snap = state.context_snapshot();
-    let provider = match snap.glean_intelligence_provider {
-        Some(p) if snap.is_remote() => p,
-        _ => {
-            log::warn!(
-                "IntelProcessor: context-mode snapshot shows is_remote={} / \
-                 Glean Arc={:?}; settings switched between enqueue and dequeue. \
-                 Falling through to PTY for {} entities per ADR-0091.",
-                snap.is_remote(),
-                snap.glean_intelligence_provider.is_some(),
-                inputs.len()
-            );
-            let mut pty_results = Vec::new();
-            for (request, input) in inputs {
-                let input_clone = input.clone();
-                let ai_cfg = ai_config.clone();
-                let usage_context = AiUsageContext::for_tier(ModelTier::Synthesis);
-                match tokio::task::spawn_blocking(move || {
-                    run_enrichment(&input_clone, &ai_cfg, None, usage_context)
-                })
-                .await
-                {
-                    Ok(Ok(parsed)) => pty_results.push((request, input, parsed)),
-                    Ok(Err(e)) => {
-                        log::warn!(
-                            "PTY fallback after Glean bridge miss failed for {}: {}",
-                            request.entity_id,
-                            e
-                        );
-                    }
-                    Err(e) => {
-                        log::error!(
-                            "PTY fallback after Glean bridge miss panicked for {}: {}",
-                            request.entity_id,
-                            e
-                        );
-                    }
+    // L2 cycle-26 (DOS-259) fix #3: provider read at call time, NOT
+    // once before the batch loop. ADR-0091 "switch mid-queue takes
+    // effect on next dequeue" means a settings change between two
+    // entities in the same batch must affect the second entity.
+    // The previous structure cloned the provider Arc once and reused
+    // it across the whole batch — a mid-batch switch to Local or a
+    // Glean disconnect would only take effect on the NEXT batch,
+    // not the next entity. Per-entity snapshot fixes that.
+    //
+    // The pre-loop snapshot remains only for the early-exit case
+    // where Glean is OFF for the whole batch — that's the cold-start
+    // "user has Local mode and no Glean configured" case, which can
+    // skip the per-entity check entirely and run PTY directly.
+    let initial_snap = state.context_snapshot();
+    if !initial_snap.is_remote() || initial_snap.glean_intelligence_provider.is_none() {
+        log::warn!(
+            "IntelProcessor: context-mode snapshot at batch start shows is_remote={} / \
+             Glean Arc={:?}; running PTY for {} entities (no Glean configured).",
+            initial_snap.is_remote(),
+            initial_snap.glean_intelligence_provider.is_some(),
+            inputs.len()
+        );
+        let mut pty_results = Vec::new();
+        for (request, input) in inputs {
+            let input_clone = input.clone();
+            let ai_cfg = ai_config.clone();
+            let usage_context = AiUsageContext::for_tier(ModelTier::Synthesis);
+            match tokio::task::spawn_blocking(move || {
+                run_enrichment(&input_clone, &ai_cfg, None, usage_context)
+            })
+            .await
+            {
+                Ok(Ok(parsed)) => pty_results.push((request, input, parsed)),
+                Ok(Err(e)) => {
+                    log::warn!(
+                        "PTY fallback after Glean bridge miss failed for {}: {}",
+                        request.entity_id,
+                        e
+                    );
+                }
+                Err(e) => {
+                    log::error!(
+                        "PTY fallback after Glean bridge miss panicked for {}: {}",
+                        request.entity_id,
+                        e
+                    );
                 }
             }
-            return pty_results;
         }
-    };
+        return pty_results;
+    }
 
     let mut results = Vec::new();
     let mut pty_fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
@@ -1603,6 +1607,26 @@ async fn run_glean_enrichment_with_fallback(
             );
             break;
         }
+
+        // L2 cycle-26 (DOS-259) fix #3: re-read provider+mode for THIS
+        // entity. If a settings change between dequeues switched to
+        // Local or cleared the Glean Arc, this entity falls back to
+        // PTY rather than honoring the stale pre-loop snapshot.
+        let entity_snap = state.context_snapshot();
+        let provider = match entity_snap.glean_intelligence_provider {
+            Some(p) if entity_snap.is_remote() => p,
+            _ => {
+                log::info!(
+                    "[I535] Mid-batch settings change detected for {} (is_remote={}, \
+                     Glean Arc={:?}); routing this entity to PTY per ADR-0091.",
+                    input.entity_id,
+                    entity_snap.is_remote(),
+                    entity_snap.glean_intelligence_provider.is_some(),
+                );
+                pty_fallback_inputs.push((request, input));
+                continue;
+            }
+        };
 
         // Only try Glean if we have the intelligence context (populated for remote providers)
         if let Some(ref ctx) = input.intelligence_context {
