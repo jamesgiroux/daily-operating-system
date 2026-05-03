@@ -253,9 +253,7 @@ impl ActionDb {
 
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
-        Ok(Self {
-            conn,
-        })
+        Ok(Self { conn })
     }
 
     /// Resolve the default database path: `~/.dailyos/dailyos.db`.
@@ -806,14 +804,20 @@ impl ActionDb {
                             };
                             let notes = result.json.notes;
                             let now = chrono::Utc::now().to_rfc3339();
-                            if let Err(e) = self.conn.execute(
-                                "UPDATE accounts SET company_overview = ?1, strategic_programs = ?2, \
-                                 notes = ?3, updated_at = ?4 WHERE id = ?5",
-                                rusqlite::params![ov_json, prg_json, notes, now, account_id],
-                            ) {
+                            if let Err(e) =
+                                crate::services::derived_state::update_account_ai_columns_projection(
+                                    self,
+                                    account_id,
+                                    ov_json.as_deref(),
+                                    prg_json.as_deref(),
+                                    notes.as_deref(),
+                                    &now,
+                                )
+                            {
                                 log::warn!(
                                     "I644 backfill: failed to update account {}: {}",
-                                    account_id, e
+                                    account_id,
+                                    e
                                 );
                             } else {
                                 count += 1;

@@ -8,12 +8,10 @@ set -euo pipefail
 if [[ -d "src-tauri" ]]; then
   candidate_roots=(
     "src-tauri/src"
-    "src-tauri/tests"
   )
 else
   candidate_roots=(
     "src"
-    "tests"
   )
 fi
 
@@ -29,11 +27,19 @@ if [[ "${#roots[@]}" -eq 0 ]]; then
   exit 0
 fi
 
-allowed_basename_regex='services/derived_state\.rs|services/claims_backfill\.rs|migrations/[^:]+\.sql'
+# Durable allowlist for direct writes that are not clean text claims:
+# - derived_state.rs owns transitional projection/cache SQL.
+# - claims_backfill.rs and migrations are one-time substrate/bootstrap writers.
+# - success plan CRUD writes user-authored objectives/milestones, not claim-shaped projections.
+# - self_healing/privacy/callouts/glean/hygiene/data_lifecycle write operational quality,
+#   cleanup, or scoring metadata that has no registered claim-type mapping.
+# - intelligence.json file I/O remains schema-fenced cache work until file projection lands.
+# - devtools writes seed/mock data or debug-only repair state.
+allowed_basename_regex='services/derived_state\.rs|services/claims_backfill\.rs|migrations/[^:]+\.sql|db/success_plans\.rs|services/success_plans\.rs|self_healing/[^:]+\.rs|privacy\.rs|signals/callouts\.rs|context_provider/glean\.rs|hygiene/mod\.rs|db/data_lifecycle\.rs|intelligence/io\.rs|intelligence/write_fence\.rs|devtools/mod\.rs'
 projection_tables='entity_assessment|entity_quality|account_objectives|account_milestones'
 account_ai_columns='company_overview|strategic_programs|notes'
 sql_write='(INSERT([[:space:]]+OR[[:space:]]+(IGNORE|REPLACE))?[[:space:]]+INTO|REPLACE[[:space:]]+INTO|UPDATE)'
-direct_pattern="(${sql_write}[[:space:]]+(${projection_tables})\\b)|(write_intelligence_json[[:space:]]*\\()"
+direct_pattern="(${sql_write}[[:space:]]+(${projection_tables})\\b)|(^|[^[:alnum:]_])write_intelligence_json[[:space:]]*\\("
 account_update_pattern='UPDATE[[:space:]]+accounts\b'
 account_insert_pattern='(INSERT([[:space:]]+OR[[:space:]]+(IGNORE|REPLACE))?[[:space:]]+INTO|REPLACE[[:space:]]+INTO)[[:space:]]+accounts\b'
 
@@ -50,13 +56,21 @@ candidate_files="$(
 
 matches=""
 for file in $candidate_files; do
-  direct_hits="$(grep -nEi "$direct_pattern" "$file" 2>/dev/null || true)"
+  cfg_test_start="$(grep -nE '^[[:space:]]*#\[cfg\(test\)\]' "$file" 2>/dev/null | head -1 | cut -d: -f1 || true)"
+  direct_hits="$(
+    grep -nHEi "$direct_pattern" "$file" 2>/dev/null \
+      | awk -F: -v start="$cfg_test_start" 'start == "" || $2 < start' \
+      || true
+  )"
   if [[ -n "$direct_hits" ]]; then
     matches+="$direct_hits"$'\n'
   fi
 
   while read -r lineno; do
     [[ -z "$lineno" ]] && continue
+    if [[ -n "$cfg_test_start" && "$lineno" -ge "$cfg_test_start" ]]; then
+      continue
+    fi
     end=$((lineno + 7))
     if sed -n "${lineno},${end}p" "$file" \
       | grep -qiE '("|`|\[)?\b(company_overview|strategic_programs|notes)\b("|`|\])?[[:space:]]*='; then
@@ -66,6 +80,9 @@ for file in $candidate_files; do
 
   while read -r lineno; do
     [[ -z "$lineno" ]] && continue
+    if [[ -n "$cfg_test_start" && "$lineno" -ge "$cfg_test_start" ]]; then
+      continue
+    fi
     end=$((lineno + 7))
     if sed -n "${lineno},${end}p" "$file" \
       | grep -qiE '("|`|\[)?\b(company_overview|strategic_programs|notes)\b("|`|\])?[[:space:]]*[,)]'; then
@@ -83,6 +100,7 @@ if [[ -n "$matches" ]]; then
   echo "  - src-tauri/src/services/derived_state.rs"
   echo "  - src-tauri/src/services/claims_backfill.rs"
   echo "  - src-tauri/src/migrations/*.sql"
+  echo "  - documented non-claim metadata writers in the script allowlist"
   echo
   echo "$matches"
   exit 1

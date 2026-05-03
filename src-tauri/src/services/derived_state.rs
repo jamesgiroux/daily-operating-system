@@ -349,9 +349,12 @@ pub fn project_claim_to_db_legacy_tx(
             ProjectionTarget::EntityIntelligence => {
                 project_entity_intelligence(ctx, tx, claim, &attempted_at)
             }
-            ProjectionTarget::SuccessPlans
-            | ProjectionTarget::AccountsColumns
-            | ProjectionTarget::IntelligenceJson => committed_outcome(target, &attempted_at),
+            ProjectionTarget::AccountsColumns => {
+                project_account_columns(ctx, tx, claim, &attempted_at)
+            }
+            ProjectionTarget::SuccessPlans | ProjectionTarget::IntelligenceJson => {
+                committed_outcome(target, &attempted_at)
+            }
         })
         .collect()
 }
@@ -378,6 +381,26 @@ fn project_entity_intelligence(
             attempted_at,
             error_class,
         ),
+    }
+}
+
+fn project_account_columns(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    attempted_at: &str,
+) -> ProjectionOutcome {
+    if claim.claim_type != "company_context" {
+        return committed_outcome(ProjectionTarget::AccountsColumns, attempted_at);
+    }
+
+    match run_rule_savepoint(tx, "accounts_columns", || {
+        rebuild_account_columns_from_claims(ctx, tx, claim)
+    }) {
+        Ok(()) => committed_outcome(ProjectionTarget::AccountsColumns, attempted_at),
+        Err(error_class) => {
+            failed_outcome(ProjectionTarget::AccountsColumns, attempted_at, error_class)
+        }
     }
 }
 
@@ -558,6 +581,52 @@ fn rebuild_entity_assessment_from_claims(
     Ok(())
 }
 
+fn rebuild_account_columns_from_claims(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+) -> Result<(), ProjectionErrorClass> {
+    let (entity_id, entity_type) = entity_identity_from_subject_ref(&claim.subject_ref)?;
+    if entity_type != "account" {
+        return Err(ProjectionErrorClass::ValidationError);
+    }
+
+    let claims = crate::services::claims::load_claims_active(
+        tx,
+        &claim.subject_ref,
+        Some("company_context"),
+    )
+    .map_err(|_| ProjectionErrorClass::ValidationError)?;
+    let projected = EntityAssessmentProjection::from_claims(&claims).company_context_json;
+    let existing = tx
+        .conn_ref()
+        .query_row(
+            "SELECT company_overview FROM accounts WHERE id = ?1",
+            rusqlite::params![entity_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .optional()
+        .map_err(classify_sql_error)?
+        .flatten();
+
+    if existing == projected {
+        return Ok(());
+    }
+
+    tx.conn_ref()
+        .execute(
+            "UPDATE accounts SET company_overview = ?1, updated_at = ?2 WHERE id = ?3",
+            rusqlite::params![
+                projected.as_deref(),
+                ctx.clock.now().to_rfc3339(),
+                entity_id
+            ],
+        )
+        .map_err(classify_sql_error)?;
+
+    Ok(())
+}
+
 fn existing_entity_assessment_projection(
     tx: &ActionDb,
     entity_id: &str,
@@ -621,54 +690,94 @@ struct EntityAssessmentProjection {
 impl EntityAssessmentProjection {
     fn from_claims(claims: &[IntelligenceClaim]) -> Self {
         let mut projection = Self::default();
-        let mut risks = Vec::new();
-        let mut wins = Vec::new();
-        let mut current_state = Vec::new();
-        let mut stakeholders = Vec::new();
-        let mut values = Vec::new();
-        let mut company_context = Vec::new();
+        let mut risks: Vec<&IntelligenceClaim> = Vec::new();
+        let mut wins: Vec<&IntelligenceClaim> = Vec::new();
+        let mut current_state: Vec<&IntelligenceClaim> = Vec::new();
+        let mut stakeholders: Vec<&IntelligenceClaim> = Vec::new();
+        let mut values: Vec<&IntelligenceClaim> = Vec::new();
+        let mut company_context: Vec<&IntelligenceClaim> = Vec::new();
 
         for claim in claims {
             match claim.claim_type.as_str() {
                 "entity_summary" if projection.executive_assessment.is_none() => {
-                    projection.executive_assessment = Some(claim.text.clone());
+                    projection.executive_assessment = Some(claim_projection_text(claim));
                 }
-                "entity_current_state" => current_state.push(claim.text.clone()),
-                "entity_risk" => risks.push(claim.text.clone()),
-                "entity_win" => wins.push(claim.text.clone()),
-                "stakeholder_engagement" => stakeholders.push(claim.text.clone()),
-                "value_delivered" => values.push(claim.text.clone()),
-                "company_context" => company_context.push(claim.text.clone()),
+                "entity_current_state" => current_state.push(claim),
+                "entity_risk" => risks.push(claim),
+                "entity_win" => wins.push(claim),
+                "stakeholder_engagement" => stakeholders.push(claim),
+                "value_delivered" => values.push(claim),
+                "company_context" => company_context.push(claim),
                 _ => {}
             }
         }
 
-        projection.risks_json = json_array_from_text_claims(&risks, "text");
-        projection.recent_wins_json = json_array_from_text_claims(&wins, "text");
+        projection.risks_json = json_array_from_claims(&risks, "text");
+        projection.recent_wins_json = json_array_from_claims(&wins, "text");
         projection.current_state_json = json_current_state_from_claims(&current_state);
-        projection.stakeholder_insights_json =
-            json_array_from_text_claims(&stakeholders, "engagement");
-        projection.value_delivered_json = json_array_from_text_claims(&values, "statement");
+        projection.stakeholder_insights_json = json_array_from_claims(&stakeholders, "engagement");
+        projection.value_delivered_json = json_array_from_claims(&values, "statement");
         projection.company_context_json = json_company_context_from_claims(&company_context);
         projection
     }
 }
 
-fn json_array_from_text_claims(claim_texts: &[String], text_key: &str) -> Option<String> {
-    if claim_texts.is_empty() {
+fn claim_projection_value(claim: &IntelligenceClaim) -> Option<serde_json::Value> {
+    let metadata = claim.metadata_json.as_deref()?;
+    serde_json::from_str::<serde_json::Value>(metadata)
+        .ok()?
+        .get("legacy_projection_value")
+        .cloned()
+}
+
+fn claim_projection_text(claim: &IntelligenceClaim) -> String {
+    if let Some(value) = claim_projection_value(claim) {
+        if let Some(text) = value.as_str() {
+            return text.to_string();
+        }
+        for key in [
+            "text",
+            "statement",
+            "description",
+            "engagement",
+            "assessment",
+        ] {
+            if let Some(text) = value.get(key).and_then(|v| v.as_str()) {
+                return text.to_string();
+            }
+        }
+    }
+    claim.text.clone()
+}
+
+fn json_array_from_claims(claims: &[&IntelligenceClaim], text_key: &str) -> Option<String> {
+    if claims.is_empty() {
         return None;
     }
-    let values: Vec<serde_json::Value> = claim_texts
+    let values: Vec<serde_json::Value> = claims
         .iter()
-        .map(|text| serde_json::json!({ text_key: text }))
+        .map(|claim| {
+            claim_projection_value(claim)
+                .unwrap_or_else(|| serde_json::json!({ text_key: claim_projection_text(claim) }))
+        })
         .collect();
     serde_json::to_string(&values).ok()
 }
 
-fn json_current_state_from_claims(claim_texts: &[String]) -> Option<String> {
-    if claim_texts.is_empty() {
+fn json_current_state_from_claims(claims: &[&IntelligenceClaim]) -> Option<String> {
+    if claims.is_empty() {
         return None;
     }
+    if let Some(value) = claims
+        .iter()
+        .find_map(|claim| claim_projection_value(claim))
+    {
+        return serde_json::to_string(&value).ok();
+    }
+    let claim_texts: Vec<String> = claims
+        .iter()
+        .map(|claim| claim_projection_text(claim))
+        .collect();
     serde_json::to_string(&serde_json::json!({
         "working": claim_texts,
         "notWorking": [],
@@ -677,15 +786,307 @@ fn json_current_state_from_claims(claim_texts: &[String]) -> Option<String> {
     .ok()
 }
 
-fn json_company_context_from_claims(claim_texts: &[String]) -> Option<String> {
-    if claim_texts.is_empty() {
+fn json_company_context_from_claims(claims: &[&IntelligenceClaim]) -> Option<String> {
+    if claims.is_empty() {
         return None;
     }
+    if let Some(value) = claims
+        .iter()
+        .find_map(|claim| claim_projection_value(claim))
+    {
+        return serde_json::to_string(&value).ok();
+    }
+    let claim_texts: Vec<String> = claims
+        .iter()
+        .map(|claim| claim_projection_text(claim))
+        .collect();
     serde_json::to_string(&serde_json::json!({
         "description": claim_texts.first(),
         "additionalContext": claim_texts.iter().skip(1).cloned().collect::<Vec<_>>().join("\n"),
     }))
     .ok()
+}
+
+/// Compatibility writer for legacy intelligence readers.
+///
+/// Claim-shaped fields should be committed through `commit_claim`, which runs
+/// the projection rules above. The same legacy row also carries snapshot fields
+/// that are not clean claims: enrichment timestamps, source manifests, health
+/// structs, consistency metadata, relationship depth, and UI cache blobs. Those
+/// stay as direct cache writes during the dual-read window, but this module owns
+/// the SQL so callers do not write projection targets from unrelated services.
+pub fn upsert_entity_intelligence_legacy_snapshot(
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+) -> Result<(), rusqlite::Error> {
+    let conn = db.conn_ref();
+
+    let dimensions_json = serde_json::to_string(&intel.dimensions_blob()).ok();
+    conn.execute(
+        "INSERT INTO entity_assessment (
+            entity_id, entity_type, enriched_at, source_file_count,
+            executive_assessment, risks_json, recent_wins_json,
+            current_state_json, stakeholder_insights_json,
+            next_meeting_readiness_json, company_context_json,
+            value_delivered, success_metrics, open_commitments,
+            relationship_depth, health_json, org_health_json, consistency_status,
+            consistency_findings_json, consistency_checked_at,
+            portfolio_json, network_json, user_edits_json, source_manifest_json,
+            dimensions_json, success_plan_signals_json, pull_quote
+        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
+        ON CONFLICT(entity_id) DO UPDATE SET
+            entity_type = excluded.entity_type,
+            enriched_at = excluded.enriched_at,
+            source_file_count = excluded.source_file_count,
+            executive_assessment = excluded.executive_assessment,
+            risks_json = excluded.risks_json,
+            recent_wins_json = excluded.recent_wins_json,
+            current_state_json = excluded.current_state_json,
+            stakeholder_insights_json = excluded.stakeholder_insights_json,
+            next_meeting_readiness_json = excluded.next_meeting_readiness_json,
+            company_context_json = excluded.company_context_json,
+            value_delivered = excluded.value_delivered,
+            success_metrics = excluded.success_metrics,
+            open_commitments = excluded.open_commitments,
+            relationship_depth = excluded.relationship_depth,
+            health_json = excluded.health_json,
+            org_health_json = excluded.org_health_json,
+            consistency_status = excluded.consistency_status,
+            consistency_findings_json = excluded.consistency_findings_json,
+            consistency_checked_at = excluded.consistency_checked_at,
+            portfolio_json = excluded.portfolio_json,
+            network_json = excluded.network_json,
+            user_edits_json = excluded.user_edits_json,
+            source_manifest_json = excluded.source_manifest_json,
+            dimensions_json = excluded.dimensions_json,
+            success_plan_signals_json = excluded.success_plan_signals_json,
+            pull_quote = excluded.pull_quote",
+        rusqlite::params![
+            intel.entity_id,
+            intel.entity_type,
+            intel.enriched_at,
+            intel.source_file_count,
+            intel.executive_assessment,
+            serde_json::to_string(&intel.risks).ok(),
+            serde_json::to_string(&intel.recent_wins).ok(),
+            serde_json::to_string(&intel.current_state).ok(),
+            serde_json::to_string(&intel.stakeholder_insights).ok(),
+            serde_json::to_string(&intel.next_meeting_readiness).ok(),
+            serde_json::to_string(&intel.company_context).ok(),
+            serde_json::to_string(&intel.value_delivered).ok(),
+            serde_json::to_string(&intel.success_metrics).ok(),
+            serde_json::to_string(&intel.open_commitments).ok(),
+            serde_json::to_string(&intel.relationship_depth).ok(),
+            intel.health.as_ref().and_then(|v| serde_json::to_string(v).ok()),
+            intel
+                .org_health
+                .as_ref()
+                .and_then(|v| serde_json::to_string(v).ok()),
+            serde_json::to_string(&intel.consistency_status).ok(),
+            serde_json::to_string(&intel.consistency_findings).ok(),
+            intel.consistency_checked_at,
+            serde_json::to_string(&intel.portfolio).ok(),
+            serde_json::to_string(&intel.network).ok(),
+            serde_json::to_string(&intel.user_edits).ok(),
+            serde_json::to_string(&intel.source_manifest).ok(),
+            dimensions_json,
+            intel
+                .success_plan_signals
+                .as_ref()
+                .and_then(|v| serde_json::to_string(v).ok()),
+            intel.pull_quote,
+        ],
+    )?;
+
+    conn.execute(
+        "DELETE FROM intelligence_feedback WHERE entity_id = ?1 AND entity_type = ?2 \
+         AND field NOT LIKE 'account_field_conflict:%'",
+        rusqlite::params![intel.entity_id, intel.entity_type],
+    )?;
+    conn.execute(
+        "DELETE FROM entity_feedback_events WHERE entity_id = ?1 AND entity_type = ?2 \
+         AND feedback_type IN ('confirmed', 'rejected') \
+         AND COALESCE(source_kind, '') != 'field_conflict'",
+        rusqlite::params![intel.entity_id, intel.entity_type],
+    )?;
+
+    if let Some(health) = intel.health.as_ref() {
+        upsert_entity_health_legacy_projection(db, &intel.entity_id, &intel.entity_type, health)?;
+    }
+
+    emit_enrichment_side_effect_signals(db, intel);
+
+    Ok(())
+}
+
+pub fn upsert_entity_health_legacy_projection(
+    db: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    health: &crate::intelligence::io::AccountHealth,
+) -> Result<(), rusqlite::Error> {
+    db.conn_ref().execute(
+        "INSERT INTO entity_assessment (entity_id, entity_type, health_json)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(entity_id) DO UPDATE SET
+             entity_type = excluded.entity_type,
+             health_json = excluded.health_json",
+        rusqlite::params![entity_id, entity_type, serde_json::to_string(health).ok(),],
+    )?;
+    db.conn_ref().execute(
+        "INSERT INTO entity_quality (entity_id, entity_type, health_score, health_trend)
+         VALUES (?1, ?2, ?3, ?4)
+         ON CONFLICT(entity_id) DO UPDATE SET
+             entity_type = excluded.entity_type,
+             health_score = excluded.health_score,
+             health_trend = excluded.health_trend",
+        rusqlite::params![
+            entity_id,
+            entity_type,
+            health.score,
+            serde_json::to_string(&health.trend).ok(),
+        ],
+    )?;
+    Ok(())
+}
+
+pub fn upsert_health_outlook_signals_legacy_projection(
+    db: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+    signals_json: &str,
+) -> Result<(), rusqlite::Error> {
+    db.conn_ref().execute(
+        "INSERT INTO entity_assessment (entity_id, entity_type, health_outlook_signals_json)
+         VALUES (?1, ?2, ?3)
+         ON CONFLICT(entity_id) DO UPDATE SET
+             entity_type = excluded.entity_type,
+             health_outlook_signals_json = excluded.health_outlook_signals_json",
+        rusqlite::params![entity_id, entity_type, signals_json],
+    )?;
+    Ok(())
+}
+
+pub fn clear_contaminated_enrichment_projection(
+    db: &ActionDb,
+    account_id: &str,
+) -> Result<(), rusqlite::Error> {
+    db.conn_ref().execute(
+        "UPDATE entity_assessment SET executive_assessment = NULL WHERE entity_id = ?1",
+        rusqlite::params![account_id],
+    )?;
+    db.conn_ref().execute(
+        "UPDATE accounts SET company_overview = NULL, strategic_programs = NULL, notes = NULL \
+         WHERE id = ?1",
+        rusqlite::params![account_id],
+    )?;
+    Ok(())
+}
+
+pub fn update_account_ai_field_projection(
+    db: &ActionDb,
+    id: &str,
+    field: &str,
+    value: &str,
+    updated_at: &str,
+) -> Result<(), rusqlite::Error> {
+    match field {
+        "notes" => db.conn_ref().execute(
+            "UPDATE accounts SET notes = CASE WHEN ?1 = '' THEN NULL ELSE ?1 END, \
+             updated_at = ?3 WHERE id = ?2",
+            rusqlite::params![value, id, updated_at],
+        )?,
+        "strategic_programs" => db.conn_ref().execute(
+            "UPDATE accounts SET strategic_programs = ?1, updated_at = ?3 WHERE id = ?2",
+            rusqlite::params![value, id, updated_at],
+        )?,
+        "company_overview" => db.conn_ref().execute(
+            "UPDATE accounts SET company_overview = ?1, updated_at = ?3 WHERE id = ?2",
+            rusqlite::params![value, id, updated_at],
+        )?,
+        _ => return Err(rusqlite::Error::InvalidParameterName(field.to_string())),
+    };
+    Ok(())
+}
+
+pub fn update_account_ai_columns_projection(
+    db: &ActionDb,
+    id: &str,
+    company_overview: Option<&str>,
+    strategic_programs: Option<&str>,
+    notes: Option<&str>,
+    updated_at: &str,
+) -> Result<(), rusqlite::Error> {
+    db.conn_ref().execute(
+        "UPDATE accounts SET company_overview = ?1, strategic_programs = ?2, \
+         notes = ?3, updated_at = ?4 WHERE id = ?5",
+        rusqlite::params![company_overview, strategic_programs, notes, updated_at, id],
+    )?;
+    Ok(())
+}
+
+fn emit_enrichment_side_effect_signals(
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+) {
+    for item in &intel.regulatory_context {
+        if item.status == "gap" {
+            let value = serde_json::json!({
+                "standard": item.standard,
+                "evidence": item.evidence,
+            })
+            .to_string();
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                &intel.entity_type,
+                &intel.entity_id,
+                "regulatory_gap_detected",
+                "enrichment_write",
+                Some(&value),
+                0.9,
+            );
+        } else if item.status == "required" || item.status == "in_progress" {
+            let value = serde_json::json!({
+                "standard": item.standard,
+                "status": item.status,
+            })
+            .to_string();
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                &intel.entity_type,
+                &intel.entity_id,
+                "regulatory_requirement_detected",
+                "enrichment_write",
+                Some(&value),
+                0.85,
+            );
+        }
+    }
+
+    for insight in &intel.stakeholder_insights {
+        if let Some(ref person_id) = insight.person_id {
+            let (signal_type, confidence) = if insight.verified {
+                ("stakeholder_verified", 0.9)
+            } else {
+                ("stakeholder_unverified", 0.7)
+            };
+            let value = serde_json::json!({
+                "person_id": person_id,
+                "name": insight.name,
+                "verified_source": insight.verified_source,
+            })
+            .to_string();
+            let _ = crate::signals::bus::emit_signal(
+                db,
+                &intel.entity_type,
+                &intel.entity_id,
+                signal_type,
+                "enrichment_write",
+                Some(&value),
+                confidence,
+            );
+        }
+    }
 }
 
 #[cfg(test)]

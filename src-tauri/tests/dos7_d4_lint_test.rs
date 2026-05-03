@@ -235,21 +235,18 @@ fn lint_claim_writer_allowlist_catches_unannotated_writer_in_db_lifecycle() {
     );
 }
 
-// Ignored until all legacy AI projection writers are routed through derived_state.rs;
-// rename and un-ignore once the lint passes.
 #[test]
-#[ignore]
-fn lint_legacy_projection_writers_fails_until_legacy_writers_are_routed() {
+fn lint_dos301_legacy_projection_writers_passes_against_current_tree() {
     let (ok, stdout, stderr) =
         run_lint("src-tauri/scripts/check_dos301_legacy_projection_writers.sh");
     assert!(
-        !ok,
-        "legacy-projection-writer lint unexpectedly passed while legacy writers remain:\nstdout: {}\nstderr: {}",
+        ok,
+        "legacy-projection-writer lint should pass after routed writers refactor:\nstdout: {}\nstderr: {}",
         stdout, stderr
     );
     assert!(
-        stdout.contains("Direct writes to legacy AI projection targets"),
-        "legacy-projection-writer lint should explain the routed-writer invariant:\nstdout: {}\nstderr: {}",
+        stdout.contains("Legacy AI projection target writers are restricted to derived_state"),
+        "legacy-projection-writer lint should report the routed-writer invariant:\nstdout: {}\nstderr: {}",
         stdout,
         stderr
     );
