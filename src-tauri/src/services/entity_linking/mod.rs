@@ -245,6 +245,23 @@ pub async fn manual_dismiss(
     entity: EntityRef,
 ) -> Result<LinkOutcome, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    // L2 cycle-23 fix: reject EmailThread owner-type dismissals
+    // until SubjectRef::EmailThread substrate support lands.
+    // Cycle-22 made the shadow-write conditional on owner_type and
+    // skipped EmailThread, but the legacy linking_dismissals row
+    // still got written — leaking a dismissal that PRE-GATE
+    // can't see. Substrate-correct posture: refuse the write
+    // entirely so the UX surfaces "feature not available yet"
+    // rather than silently lose state once claims become
+    // authoritative.
+    if matches!(owner_type, OwnerType::EmailThread) {
+        return Err(
+            "Email-thread link dismissals are not yet supported in the v1.4.0 spine. \
+             Tracked as a follow-up to introduce SubjectRef::EmailThread before \
+             enabling this code path."
+                .to_string(),
+        );
+    }
     let state_for_ctx = state.clone();
     let observed_at = ctx.clock.now().to_rfc3339();
     let entity_for_shadow = entity.clone();
@@ -269,24 +286,20 @@ pub async fn manual_dismiss(
                     &entity.entity_id,
                     &entity.entity_type,
                 )?;
-                // L2 cycle-22 fix: shadow-write the m5 linking_dismissed
-                // tombstone so commit_claim PRE-GATE blocks AI re-link
-                // on the next enrichment. The shadow_write helper
-                // returns SkippedUnsupportedSubjectKind for
-                // OwnerType::EmailThread (no SubjectRef::EmailThread
-                // variant in v1.4.0 spine; tracked in migration 133's
-                // unsupported-kind sweep). Meeting + Email are
-                // supported subjects per cycle-3's substrate work.
+                // L2 cycle-22 + cycle-23: shadow-write the m5
+                // linking_dismissed tombstone. EmailThread is
+                // rejected at the function entry (above), so this
+                // match is exhaustive over the supported subject
+                // kinds. Adding a new OwnerType variant later will
+                // surface as a compile error here, forcing the
+                // substrate-support decision rather than letting it
+                // silently bypass.
                 let subject_kind = match owner_type {
-                    crate::services::entity_linking::types::OwnerType::Meeting => "Meeting",
-                    crate::services::entity_linking::types::OwnerType::Email => "Email",
-                    crate::services::entity_linking::types::OwnerType::EmailThread => {
-                        // Email thread isn't a SubjectRef variant. Skip
-                        // the shadow-write; legacy linking_dismissals
-                        // remains authoritative for this owner_type
-                        // until DOS-XXX introduces SubjectRef::EmailThread.
-                        return Ok(());
-                    }
+                    OwnerType::Meeting => "Meeting",
+                    OwnerType::Email => "Email",
+                    OwnerType::EmailThread => unreachable!(
+                        "EmailThread is rejected at function entry per cycle-23 fix"
+                    ),
                 };
                 let _ = crate::services::claims::shadow_write_tombstone_claim(
                     db,
