@@ -157,7 +157,7 @@ pub fn rekey_backfilled_claims_via_runtime_helpers(
                 // subject_ref normalization preserves meaning.
                 conn.execute(
                     "UPDATE intelligence_claims \
-                     SET dedup_key = ?1, item_hash = ?2, subject_ref = ?3 \
+                     SET dedup_key = ?1, item_hash = ?2, subject_ref = ?3 /* dos7-allowed: rekey canonical subject_ref normalization preserves semantic meaning */ \
                      WHERE id = ?4",
                     params![&next_dedup_key, &next_hash, &next_subject_ref, &row.id],
                 )
