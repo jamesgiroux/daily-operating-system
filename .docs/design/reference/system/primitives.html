@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Primitives · DailyOS Design System</title>
+<title>Primitives - DailyOS Design System</title>
 
 <link rel="stylesheet" href="../_shared/fonts.css">
 <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
@@ -11,20 +11,22 @@
 <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
 <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
 <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
-<link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
+<link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
+<link rel="stylesheet" href="../_shared/styles/AccountHero.module.css">
+<link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
 <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
 <link rel="stylesheet" href="../_shared/styles/editable-inline.module.css">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <link rel="stylesheet" href="../_shared/inspector.css">
 
 <style>
-  .pr-cover {
+  .ref-cover {
     padding-top: var(--space-5xl);
     padding-bottom: var(--space-3xl);
     border-bottom: 1px solid var(--color-rule-heavy);
   }
 
-  .pr-eyebrow {
+  .ref-eyebrow {
     font-family: var(--font-mono);
     font-size: 11px;
     font-weight: 500;
@@ -34,28 +36,28 @@
     margin: 0 0 var(--space-md);
   }
 
-  .pr-title {
+  .ref-title {
     font-family: var(--font-serif);
-    font-size: 76px;
+    font-size: 80px;
     font-weight: 400;
     letter-spacing: 0;
-    line-height: 1;
+    line-height: 1.02;
     color: var(--color-text-primary);
     margin: 0;
   }
 
-  .pr-lede {
+  .ref-lede {
     font-family: var(--font-serif);
     font-style: italic;
     font-weight: 300;
-    font-size: 21px;
-    line-height: 1.55;
+    font-size: 22px;
+    line-height: 1.5;
     color: var(--color-text-secondary);
     max-width: 720px;
     margin: var(--space-lg) 0 0;
   }
 
-  .pr-meta {
+  .ref-summary {
     display: flex;
     gap: var(--space-lg);
     flex-wrap: wrap;
@@ -67,70 +69,69 @@
     color: var(--color-text-tertiary);
   }
 
-  .pr-meta span + span::before {
+  .ref-summary span + span::before {
     content: "/";
     margin-right: var(--space-lg);
     opacity: 0.45;
   }
 
-  .pr-reference-nav {
-    display: flex;
-    gap: var(--space-lg);
-    flex-wrap: wrap;
-    margin-top: var(--space-xl);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  .pr-reference-nav a,
-  .pr-family-nav a,
-  .pr-spec-link {
-    color: var(--color-text-tertiary);
-    text-decoration: none;
-    border-bottom: 1px solid transparent;
-    transition: color var(--transition-normal), border-color var(--transition-normal);
-  }
-
-  .pr-reference-nav a:hover,
-  .pr-family-nav a:hover,
-  .pr-spec-link:hover {
-    color: var(--color-person);
-    border-color: currentColor;
-  }
-
-  .pr-reference-nav .is-active {
-    color: var(--color-person);
-    border-color: currentColor;
-  }
-
-  .pr-family-nav {
+  .tier-nav,
+  .family-nav {
     display: flex;
     gap: var(--space-sm);
     flex-wrap: wrap;
-    padding: var(--space-lg) 0 var(--space-xl);
-    border-bottom: 1px solid var(--color-rule-light);
     font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
   }
 
-  .pr-family-nav a {
+  .tier-nav {
+    margin-top: var(--space-xl);
+  }
+
+  .family-nav {
+    padding: var(--space-lg) 0 var(--space-xl);
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .tier-nav a,
+  .family-nav a,
+  .card-link,
+  .audit-link {
+    color: var(--color-text-tertiary);
+    text-decoration: none;
+    border-bottom: 1px solid transparent;
+    transition: color var(--transition-normal), border-color var(--transition-normal);
+  }
+
+  .tier-nav a:hover,
+  .family-nav a:hover,
+  .card-link:hover,
+  .audit-link:hover {
+    color: var(--color-person);
+    border-color: currentColor;
+  }
+
+  .tier-nav .is-active {
+    color: var(--color-person);
+    border-color: currentColor;
+  }
+
+  .family-nav a {
     padding: 5px 10px;
     border: 1px solid var(--color-rule-light);
     border-radius: 999px;
-    background: rgba(250, 248, 246, 0.58);
+    background: var(--color-paper-warm-white);
   }
 
-  .pr-family {
+  .family-section {
     padding: var(--space-3xl) 0;
     border-bottom: 1px solid var(--color-rule-light);
     scroll-margin-top: 88px;
   }
 
-  .pr-family-header {
+  .family-header {
     display: flex;
     justify-content: space-between;
     align-items: baseline;
@@ -139,7 +140,7 @@
     margin-bottom: var(--space-md);
   }
 
-  .pr-family-title {
+  .family-title {
     font-family: var(--font-serif);
     font-size: 36px;
     font-weight: 400;
@@ -148,7 +149,7 @@
     margin: 0;
   }
 
-  .pr-family-count {
+  .family-count {
     font-family: var(--font-mono);
     font-size: 11px;
     letter-spacing: 0.08em;
@@ -156,7 +157,7 @@
     color: var(--color-text-tertiary);
   }
 
-  .pr-family-lede {
+  .family-lede {
     font-family: var(--font-serif);
     font-size: 17px;
     font-style: italic;
@@ -167,32 +168,32 @@
     margin: 0 0 var(--space-xl);
   }
 
-  .pr-grid {
+  .catalog-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
     gap: var(--space-md);
   }
 
-  .pr-card {
+  .catalog-card {
     display: flex;
     flex-direction: column;
-    min-height: 260px;
+    min-height: 330px;
     padding: var(--space-lg);
-    background: rgba(250, 248, 246, 0.82);
+    background: var(--color-paper-warm-white);
     border: 1px solid var(--color-rule-light);
     border-radius: 8px;
   }
 
-  .pr-card-header {
+  .card-head {
     display: grid;
     grid-template-columns: 1fr auto;
     gap: var(--space-sm) var(--space-md);
-    align-items: baseline;
+    align-items: start;
     padding-bottom: var(--space-md);
     border-bottom: 1px solid var(--color-rule-light);
   }
 
-  .pr-card-title {
+  .card-title {
     font-family: var(--font-serif);
     font-size: 24px;
     font-weight: 400;
@@ -202,11 +203,23 @@
     margin: 0;
   }
 
-  .pr-tier {
+  .tier-label,
+  .status-badge,
+  .variant-line,
+  .card-link,
+  .card-note,
+  .audit-title {
     font-family: var(--font-mono);
+    text-transform: uppercase;
+  }
+
+  .tier-label {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    justify-self: start;
     font-size: 9px;
     letter-spacing: 0.09em;
-    text-transform: uppercase;
     color: var(--color-paper-warm-white);
     background: var(--color-person);
     border-radius: 3px;
@@ -214,7 +227,30 @@
     white-space: nowrap;
   }
 
-  .pr-summary {
+  .status-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 9px;
+    letter-spacing: 0.08em;
+    border-radius: 999px;
+    padding: 4px 8px;
+    white-space: nowrap;
+  }
+
+  .status-canonical {
+    color: var(--color-garden-rosemary);
+    background: var(--color-garden-sage-10);
+    border: 1px solid var(--color-garden-sage-15);
+  }
+
+  .status-needed {
+    color: var(--color-spice-turmeric);
+    background: var(--color-spice-turmeric-10);
+    border: 1px solid var(--color-spice-turmeric-15);
+  }
+
+  .card-summary {
     grid-column: 1 / -1;
     font-family: var(--font-serif);
     font-size: 14px;
@@ -225,15 +261,26 @@
     margin: 0;
   }
 
-  .pr-spec-link {
-    justify-self: start;
+  .card-meta {
     grid-column: 1 / -1;
-    font-family: var(--font-mono);
+    display: grid;
+    gap: 7px;
+  }
+
+  .card-link {
+    justify-self: start;
     font-size: 10px;
     letter-spacing: 0.04em;
   }
 
-  .pr-demo {
+  .variant-line {
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    line-height: 1.45;
+    color: var(--color-text-tertiary);
+  }
+
+  .sample-area {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
@@ -243,328 +290,56 @@
     padding-top: var(--space-lg);
   }
 
-  .pr-demo-stack {
+  .sample-stack {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .pr-pill,
-  .pr-entity-chip,
-  .pr-type-badge,
-  .pr-removable-chip,
-  .pr-confidence-chip,
-  .pr-status-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 26px;
-    border-radius: 999px;
-    padding: 4px 10px;
-    font-family: var(--font-sans);
-    font-size: 12px;
-    line-height: 1.2;
-    white-space: nowrap;
-  }
-
-  .pr-pill {
-    color: var(--tone-fg, var(--color-text-secondary));
-    background: var(--tone-bg, var(--color-desk-charcoal-4));
-  }
-
-  .pr-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-    opacity: 0.75;
-    flex: 0 0 auto;
-  }
-
-  .pr-tone-sage { --tone-bg: var(--color-garden-sage-15); --tone-fg: var(--color-garden-rosemary); }
-  .pr-tone-turmeric { --tone-bg: var(--color-spice-turmeric-15); --tone-fg: var(--color-spice-turmeric); }
-  .pr-tone-terracotta { --tone-bg: var(--color-spice-terracotta-15); --tone-fg: var(--color-spice-chili); }
-  .pr-tone-larkspur { --tone-bg: var(--color-garden-larkspur-15); --tone-fg: var(--color-person); }
-  .pr-tone-neutral { --tone-bg: var(--color-desk-charcoal-4); --tone-fg: var(--color-text-secondary); }
-
-  .pr-entity-chip {
-    border-radius: 4px;
-    font-size: 12px;
-    background: var(--entity-bg);
-    color: var(--entity-fg);
-  }
-
-  .pr-entity-chip[data-entity="account"] { --entity-bg: var(--color-account-8); --entity-fg: var(--color-account); }
-  .pr-entity-chip[data-entity="project"] { --entity-bg: var(--color-project-8); --entity-fg: var(--color-project); }
-  .pr-entity-chip[data-entity="person"] { --entity-bg: var(--color-person-8); --entity-fg: var(--color-person); }
-
-  .pr-entity-mark {
-    width: 7px;
-    height: 7px;
-    border-radius: 2px;
-    border: 1px solid currentColor;
-    opacity: 0.8;
-  }
-
-  .pr-type-badge {
-    min-height: 22px;
-    border-radius: 4px;
-    padding: 3px 9px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  .pr-type-customer { color: var(--color-account); background: var(--color-account-12); }
-  .pr-type-internal { color: var(--color-person); background: var(--color-person-15); }
-  .pr-type-partner { color: var(--color-garden-rosemary); background: var(--color-garden-rosemary-12); }
-
-  .pr-removable-chip {
-    border: 1px solid var(--color-rule-light);
-    background: var(--color-desk-charcoal-4);
-    color: var(--color-text-secondary);
-    padding-right: 6px;
-  }
-
-  .pr-removable-chip button {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    border: 0;
-    border-radius: 50%;
-    background: transparent;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1;
-  }
-
-  .pr-time,
-  .pr-source-line,
-  .pr-provenance-tag,
-  .pr-verification-flag {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--color-text-tertiary);
-  }
-
-  .pr-time[data-staleness="aging"] { opacity: 0.72; }
-  .pr-time[data-staleness="stale"] { color: var(--color-spice-saffron); }
-
-  .pr-provenance-tag {
-    border-bottom: 1px dotted transparent;
-    padding-bottom: 1px;
-  }
-
-  .pr-provenance-tag[data-discrepancy="true"] {
-    color: var(--color-spice-saffron);
-    border-color: currentColor;
-  }
-
-  .pr-source-line[data-empty="true"] {
-    opacity: 0.58;
-  }
-
-  .pr-source-stale {
-    color: var(--color-spice-saffron);
-  }
-
-  .pr-confidence-chip {
-    min-height: 24px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    font-weight: 600;
-    background: var(--tone-bg);
-    color: var(--tone-fg);
-  }
-
-  .pr-verification-flag {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-  }
-
-  .pr-verification-flag[data-status="ok"] { color: var(--color-text-tertiary); }
-  .pr-verification-flag[data-status="corrected"] { color: var(--color-spice-saffron); }
-  .pr-verification-flag[data-status="flagged"] { color: var(--color-spice-chili); }
-
-  .pr-flag-mark {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    border: 1px solid currentColor;
-    font-size: 9px;
-    line-height: 1;
-  }
-
-  .pr-data-gap {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    border-left: 2px solid var(--gap-color, var(--color-text-tertiary));
-    background: var(--gap-bg, var(--color-desk-charcoal-4));
-    color: var(--gap-color, var(--color-text-secondary));
-    padding: 8px 11px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    line-height: 1.35;
-  }
-
-  .pr-data-gap[data-severity="warning"] {
-    --gap-color: var(--color-spice-saffron);
-    --gap-bg: var(--color-spice-saffron-10);
-  }
-
-  .pr-data-gap[data-severity="info"] {
-    --gap-color: var(--color-text-tertiary);
-    --gap-bg: var(--color-desk-charcoal-4);
-  }
-
-  .pr-inline-input {
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    min-width: 240px;
-    padding: 8px 10px;
-    border: 1px dashed var(--color-rule-heavy);
-    border-radius: 4px;
-    background: rgba(250, 248, 246, 0.72);
-  }
-
-  .pr-inline-input .editable-inline_input {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .pr-edit-affordance {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--color-text-tertiary);
-  }
-
-  .pr-switch {
-    position: relative;
-    width: 38px;
-    height: 22px;
-    border: 0;
-    border-radius: 999px;
-    background: var(--color-desk-charcoal-25);
-  }
-
-  .pr-switch[aria-checked="true"] {
-    background: var(--color-garden-sage);
-  }
-
-  .pr-switch span {
-    position: absolute;
-    top: 3px;
-    left: 3px;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--color-paper-warm-white);
-    box-shadow: var(--shadow-sm);
-  }
-
-  .pr-switch[aria-checked="true"] span {
-    left: 19px;
-  }
-
-  .pr-segmented {
-    display: inline-flex;
-    align-items: center;
-    gap: 2px;
-    padding: 3px;
-    border-radius: 8px;
-    background: var(--color-account-8);
-    border: 1px solid var(--color-rule-light);
-  }
-
-  .pr-segmented button {
-    min-height: 30px;
-    border: 0;
-    border-radius: 5px;
-    padding: 0 12px;
-    background: transparent;
-    color: var(--color-text-tertiary);
-    font-family: var(--font-sans);
-    font-size: 12px;
-  }
-
-  .pr-segmented button[aria-pressed="true"] {
-    background: var(--color-account);
-    color: var(--color-desk-charcoal);
-  }
-
-  .pr-glance {
+  .sample-grid {
     display: grid;
-    gap: 6px;
-    min-width: 136px;
-    border-left: 2px solid var(--glance-rule, var(--color-rule-heavy));
-    padding-left: var(--space-md);
+    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    align-items: start;
+    width: 100%;
   }
 
-  .pr-glance[data-status="healthy"] { --glance-rule: var(--color-garden-sage); }
-  .pr-glance[data-status="warn"] { --glance-rule: var(--color-spice-terracotta); }
-
-  .pr-glance-key {
-    font-family: var(--font-mono);
+  .card-note {
+    margin: var(--space-md) 0 0;
+    padding-top: var(--space-sm);
+    border-top: 1px solid var(--color-rule-light);
     font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    line-height: 1.5;
     color: var(--color-text-tertiary);
   }
 
-  .pr-glance-value {
-    display: inline-flex;
-    align-items: center;
-    gap: 7px;
+  .audit-note {
+    padding: var(--space-2xl) 0 var(--space-4xl);
+  }
+
+  .audit-title {
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-sm);
+  }
+
+  .audit-copy {
     font-family: var(--font-serif);
-    font-size: 22px;
-    color: var(--color-text-primary);
-  }
-
-  .pr-glance[data-status="warn"] .pr-glance-value {
-    color: var(--color-spice-terracotta);
-  }
-
-  .pr-status-pill {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    background: var(--tone-bg);
-    color: var(--tone-fg);
-  }
-
-  .pr-finis {
-    text-align: center;
-    padding: var(--space-4xl) 0 var(--space-lg);
-    color: var(--color-person);
-  }
-
-  .pr-finis-mark {
-    font-family: var(--font-mark);
-    font-size: 18px;
-    font-weight: 800;
-    letter-spacing: 0.42em;
-    opacity: 0.62;
+    font-size: 17px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    max-width: 760px;
+    margin: 0;
   }
 
   @media (max-width: 720px) {
-    .pr-title { font-size: 52px; }
-    .pr-family-title { font-size: 28px; }
-    .pr-card { min-height: 0; }
-    .pr-card-header { grid-template-columns: 1fr; }
-    .pr-tier { justify-self: start; }
-    .pr-inline-input { min-width: 100%; }
-    .pr-segmented { width: 100%; }
-    .pr-segmented button { flex: 1; padding-left: 8px; padding-right: 8px; }
+    .ref-title { font-size: 54px; }
+    .family-title { font-size: 28px; }
+    .catalog-card { min-height: 0; }
+    .card-head { grid-template-columns: 1fr; }
+    .status-badge { justify-self: start; }
   }
 </style>
 </head>
@@ -572,24 +347,24 @@
   data-folio-label="Primitives"
   data-folio-crumbs="Reference > Primitives"
   data-tint="larkspur"
-  data-active-page="today"
-  data-chapters="identity:users:Identity|state:activity:State|trust:shield:Trust|controls:settings:Controls|editorial:bookopen:Editorial">
+  data-active-page="today">
 
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
-  <header class="pr-cover">
-    <p class="pr-eyebrow">DailyOS · Design System · Reference</p>
-    <h1 class="pr-title">Primitives</h1>
-    <p class="pr-lede">
-      The smallest reusable units in the system: labels, chips, timestamps, controls, and trust markers that compose cleanly inside higher-order patterns.
+  <header class="ref-cover">
+    <p class="ref-eyebrow">DailyOS / Design System / Reference</p>
+    <h1 class="ref-title">Primitives</h1>
+    <p class="ref-lede">
+      The smallest reusable units in the system: labels, chips, timestamps, controls, and trust markers. This reference only renders promoted demos with scoped canonical classes.
     </p>
-    <div class="pr-meta" aria-label="Primitive inventory summary">
+    <div class="ref-summary" aria-label="Primitive inventory summary">
       <span>18 primitives</span>
       <span>5 families</span>
-      <span>18 visual demos</span>
+      <span>3 canonical module demos</span>
+      <span>15 promotion-needed demos</span>
     </div>
-    <nav class="pr-reference-nav" aria-label="Reference tiers">
+    <nav class="tier-nav" aria-label="Reference tiers">
       <a href="../index.html">Reference home</a>
       <a href="tokens.html">Tokens</a>
       <a href="primitives.html" class="is-active">Primitives</a>
@@ -597,357 +372,460 @@
     </nav>
   </header>
 
-  <nav class="pr-family-nav" aria-label="Primitive families">
-    <a href="#identity">Identity &amp; Marks</a>
+  <nav class="family-nav" aria-label="Primitive families">
+    <a href="#identity">Identity and Marks</a>
     <a href="#state">Intelligence State</a>
     <a href="#trust">Trust UI</a>
     <a href="#controls">Form Controls</a>
     <a href="#editorial">Editorial</a>
   </nav>
 
-  <section class="pr-family" id="identity">
-    <div class="pr-family-header">
-      <h2 class="pr-family-title">Identity &amp; Marks</h2>
-      <span class="pr-family-count">4 primitives</span>
+  <section class="family-section" id="identity">
+    <div class="family-header">
+      <h2 class="family-title">Identity and Marks</h2>
+      <span class="family-count">4 primitives</span>
     </div>
-    <p class="pr-family-lede">
-      Compact labels and entity markers. These are visual primitives first: they identify a thing, category, or removable value without owning workflow.
+    <p class="family-lede">
+      Compact labels and entity markers. These identify a thing, category, or removable value without owning workflow.
     </p>
-    <div class="pr-grid">
+    <div class="catalog-grid">
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">Pill</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">The visual primitive for any inline status, label, or category badge.</p>
-          <a class="pr-spec-link" href="../../primitives/Pill.md">primitives/Pill.md</a>
+      <article class="catalog-card" id="pill">
+        <div class="card-head">
+          <h3 class="card-title">Pill</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">The visual primitive for any inline status, label, or category badge.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/Pill.md">primitives/Pill.md</a>
+            <span class="variant-line">Variants demoed: sage, turmeric, terracotta, larkspur, neutral</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md">
-          <span class="pr-pill pr-tone-sage" data-ds-variant="tone=sage"><span class="pr-dot"></span>Ready</span>
-          <span class="pr-pill pr-tone-turmeric" data-ds-variant="tone=turmeric"><span class="pr-dot"></span>Active</span>
-          <span class="pr-pill pr-tone-terracotta" data-ds-variant="tone=terracotta"><span class="pr-dot"></span>Overdue</span>
-          <span class="pr-pill pr-tone-larkspur" data-ds-variant="tone=larkspur"><span class="pr-dot"></span>Internal</span>
-          <span class="pr-pill pr-tone-neutral" data-ds-variant="tone=neutral"><span class="pr-dot"></span>Draft</span>
+        <div class="sample-area" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md">
+          <span data-ds-variant="tone=sage">Ready</span>
+          <span data-ds-variant="tone=turmeric">Active</span>
+          <span data-ds-variant="tone=terracotta">Overdue</span>
+          <span data-ds-variant="tone=larkspur">Internal</span>
+          <span data-ds-variant="tone=neutral">Draft</span>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - structural demo only until a scoped Pill module exists.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">EntityChip</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render an inline reference to an entity, color-coded by account, project, or person type.</p>
-          <a class="pr-spec-link" href="../../primitives/EntityChip.md">primitives/EntityChip.md</a>
+      <article class="catalog-card" id="entity-chip">
+        <div class="card-head">
+          <h3 class="card-title">EntityChip</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render an inline reference to an entity, color-coded by account, project, or person type.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/EntityChip.md">primitives/EntityChip.md</a>
+            <span class="variant-line">Variants demoed: account, project, person</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md">
-          <span class="pr-entity-chip" data-entity="account" data-ds-variant="entityType=account"><span class="pr-entity-mark"></span>Acme Corp</span>
-          <span class="pr-entity-chip" data-entity="project" data-ds-variant="entityType=project"><span class="pr-entity-mark"></span>Q2 Launch</span>
-          <span class="pr-entity-chip" data-entity="person" data-ds-variant="entityType=person"><span class="pr-entity-mark"></span>Jen Park</span>
+        <div class="sample-area" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md">
+          <span data-ds-variant="entityType=account">Account: Acme Corp</span>
+          <span data-ds-variant="entityType=project">Project: Q2 Launch</span>
+          <span data-ds-variant="entityType=person">Person: Jen Park</span>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - current meeting and email chips are inline-styled source implementations.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">TypeBadge</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render an account-type categorical badge such as Customer, Internal, or Partner.</p>
-          <a class="pr-spec-link" href="../../primitives/TypeBadge.md">primitives/TypeBadge.md</a>
+      <article class="catalog-card" id="type-badge">
+        <div class="card-head">
+          <h3 class="card-title">TypeBadge</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render an account-type categorical badge such as Customer, Internal, or Partner.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/TypeBadge.md">primitives/TypeBadge.md</a>
+            <span class="variant-line">Variants demoed: customer, internal, partner</span>
+          </div>
+          <span class="status-badge status-canonical">Canonical module</span>
         </div>
-        <div class="pr-demo" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md">
-          <span class="pr-type-badge pr-type-customer" data-ds-variant="accountType=customer">Customer</span>
-          <span class="pr-type-badge pr-type-internal" data-ds-variant="accountType=internal">Internal</span>
-          <span class="pr-type-badge pr-type-partner" data-ds-variant="accountType=partner">Partner</span>
+        <div class="sample-area" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md">
+          <span class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_customerBadge" data-ds-variant="accountType=customer">Customer</span>
+          <span class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_internalBadge" data-ds-variant="accountType=internal">Internal</span>
+          <span class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_partnerBadge" data-ds-variant="accountType=partner">Partner</span>
         </div>
+        <p class="card-note">Rendered with AccountHero and EntityHeroBase scoped classes from the current AccountTypeBadge source.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">RemovableChip</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Display a selected or applied item with a built-in removal affordance.</p>
-          <a class="pr-spec-link" href="../../primitives/RemovableChip.md">primitives/RemovableChip.md</a>
+      <article class="catalog-card" id="removable-chip">
+        <div class="card-head">
+          <h3 class="card-title">RemovableChip</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Display a selected or applied item with a built-in removal affordance.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/RemovableChip.md">primitives/RemovableChip.md</a>
+            <span class="variant-line">Variants demoed: default, disabled copy state</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">
-          <span class="pr-removable-chip" data-ds-variant="default">gmail.com<button type="button" aria-label="Remove gmail.com">x</button></span>
-          <span class="pr-removable-chip" data-ds-variant="default">Product<button type="button" aria-label="Remove Product">x</button></span>
+        <div class="sample-area" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">
+          <button type="button" data-ds-variant="default" aria-label="Remove gmail.com">gmail.com x</button>
+          <button type="button" data-ds-variant="default" aria-label="Remove Product">Product x</button>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - Settings mockup chip styles are not in a scoped module.</p>
       </article>
 
     </div>
   </section>
 
-  <section class="pr-family" id="state">
-    <div class="pr-family-header">
-      <h2 class="pr-family-title">Intelligence State</h2>
-      <span class="pr-family-count">5 primitives</span>
+  <section class="family-section" id="state">
+    <div class="family-header">
+      <h2 class="family-title">Intelligence State</h2>
+      <span class="family-count">5 primitives</span>
     </div>
-    <p class="pr-family-lede">
+    <p class="family-lede">
       Small state signals for completeness, timing, and surface readiness. They describe what exists before a user decides how much to rely on it.
     </p>
-    <div class="pr-grid">
+    <div class="catalog-grid">
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">IntelligenceQualityBadge</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render the completeness of intelligence on an entity or meeting prep surface.</p>
-          <a class="pr-spec-link" href="../../primitives/IntelligenceQualityBadge.md">primitives/IntelligenceQualityBadge.md</a>
+      <article class="catalog-card" id="intelligence-quality-badge">
+        <div class="card-head">
+          <h3 class="card-title">IntelligenceQualityBadge</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render the completeness of intelligence on an entity or meeting prep surface.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/IntelligenceQualityBadge.md">primitives/IntelligenceQualityBadge.md</a>
+            <span class="variant-line">Variants demoed: sparse, developing, ready, fresh</span>
+          </div>
+          <span class="status-badge status-canonical">Canonical module</span>
         </div>
-        <div class="pr-demo" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md">
+        <div class="sample-area" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md">
           <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=sparse">
-            <span class="IntelligenceQualityBadge_dot IntelligenceQualityBadge_mutedDot" style="background:var(--color-text-tertiary);"></span>
-            <span class="IntelligenceQualityBadge_label">Sparse</span>
+            <span class="IntelligenceQualityBadge_dot IntelligenceQualityBadge_mutedDot HealthBadge_dotMuted"></span>
+            <span class="IntelligenceQualityBadge_label HealthBadge_scoreMuted">Sparse</span>
           </span>
           <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=developing">
-            <span class="IntelligenceQualityBadge_dot" style="background:var(--color-spice-saffron);"></span>
-            <span class="IntelligenceQualityBadge_label">Developing</span>
+            <span class="IntelligenceQualityBadge_dot HealthBadge_dotYellow"></span>
+            <span class="IntelligenceQualityBadge_label HealthBadge_trendVolatile">Limited</span>
           </span>
           <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=ready">
-            <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage);"></span>
-            <span class="IntelligenceQualityBadge_label">Ready</span>
+            <span class="IntelligenceQualityBadge_dot HealthBadge_dotGreen"></span>
+            <span class="IntelligenceQualityBadge_label HealthBadge_trendImproving">Ready</span>
           </span>
           <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=fresh">
             <span class="IntelligenceQualityBadge_structuredDotShell">
-              <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage);"></span>
+              <span class="IntelligenceQualityBadge_dot HealthBadge_dotGreen"></span>
               <span class="IntelligenceQualityBadge_newSignalDot"></span>
             </span>
-            <span class="IntelligenceQualityBadge_label">Fresh</span>
+            <span class="IntelligenceQualityBadge_label HealthBadge_trendImproving">Fresh</span>
           </span>
         </div>
+        <p class="card-note">Rendered with IntelligenceQualityBadge scoped classes; token color classes come from HealthBadge rather than local CSS.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">TrustBandBadge</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render the v1.4.0 surface trust band on a piece of intelligence.</p>
-          <a class="pr-spec-link" href="../../primitives/TrustBandBadge.md">primitives/TrustBandBadge.md</a>
+      <article class="catalog-card" id="trust-band-badge">
+        <div class="card-head">
+          <h3 class="card-title">TrustBandBadge</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render the v1.4.0 surface trust band on a piece of intelligence.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/TrustBandBadge.md">primitives/TrustBandBadge.md</a>
+            <span class="variant-line">Variants demoed: likely_current, use_with_caution, needs_verification</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md">
-          <span class="pr-pill pr-tone-sage" data-ds-variant="band=likely_current"><span class="pr-dot"></span>Likely current</span>
-          <span class="pr-pill pr-tone-turmeric" data-ds-variant="band=use_with_caution"><span class="pr-dot"></span>Use with caution</span>
-          <span class="pr-pill pr-tone-terracotta" data-ds-variant="band=needs_verification"><span class="pr-dot"></span>Needs verification</span>
+        <div class="sample-area" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md">
+          <span data-ds-variant="band=likely_current">Likely current</span>
+          <span data-ds-variant="band=use_with_caution">Use with caution</span>
+          <span data-ds-variant="band=needs_verification">Needs verification</span>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - no scoped TrustBandBadge module exists.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">FreshnessIndicator</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render raw recency as relative age, absolute time, or both without trust judgment.</p>
-          <a class="pr-spec-link" href="../../primitives/FreshnessIndicator.md">primitives/FreshnessIndicator.md</a>
+      <article class="catalog-card" id="freshness-indicator">
+        <div class="card-head">
+          <h3 class="card-title">FreshnessIndicator</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render raw recency as relative age, absolute time, or both without trust judgment.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/FreshnessIndicator.md">primitives/FreshnessIndicator.md</a>
+            <span class="variant-line">Variants demoed: relative, absolute, both, stale</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo" data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md">
-          <span class="pr-time" data-staleness="fresh" data-ds-variant="format=relative">3h ago</span>
-          <span class="pr-time" data-staleness="aging" data-ds-variant="format=absolute">Apr 22, 10:30am</span>
-          <span class="pr-time" data-staleness="stale" data-ds-variant="format=both">stale 5d · Apr 28 09:00</span>
+        <div class="sample-area sample-stack" data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md">
+          <span data-ds-variant="format=relative">3h ago</span>
+          <span data-ds-variant="format=absolute">Apr 22, 10:30am</span>
+          <span data-ds-variant="format=both">stale 5d / Apr 28 09:00</span>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - closest source is ChapterFreshness, which is a chapter pattern.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">AsOfTimestamp</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render the static as-of timestamp for intelligence in a neutral metadata tone.</p>
-          <a class="pr-spec-link" href="../../primitives/AsOfTimestamp.md">primitives/AsOfTimestamp.md</a>
+      <article class="catalog-card" id="as-of-timestamp">
+        <div class="card-head">
+          <h3 class="card-title">AsOfTimestamp</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render the static as-of timestamp for intelligence in a neutral metadata tone.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/AsOfTimestamp.md">primitives/AsOfTimestamp.md</a>
+            <span class="variant-line">Variants demoed: relative, absolute, both, unavailable</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo pr-demo-stack" data-ds-name="AsOfTimestamp" data-ds-tier="primitive" data-ds-spec="primitives/AsOfTimestamp.md">
-          <span class="pr-time" data-ds-variant="format=relative">As of 3h ago</span>
-          <span class="pr-time" data-ds-variant="format=absolute">As of Apr 22, 10:30am</span>
-          <span class="pr-time" data-ds-variant="format=both">As of 3h ago · Apr 22 10:30</span>
+        <div class="sample-area sample-stack" data-ds-name="AsOfTimestamp" data-ds-tier="primitive" data-ds-spec="primitives/AsOfTimestamp.md">
+          <span data-ds-variant="format=relative">As of 3h ago</span>
+          <span data-ds-variant="format=absolute">As of Apr 22, 10:30am</span>
+          <span data-ds-variant="format=both">As of 3h ago / Apr 22 10:30</span>
+          <span data-ds-variant="unavailable">As of unavailable</span>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - no scoped AsOfTimestamp module exists.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">MeetingStatusPill</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Show the extraction state of a meeting recap in one compact, readable pill.</p>
-          <a class="pr-spec-link" href="../../primitives/MeetingStatusPill.md">primitives/MeetingStatusPill.md</a>
+      <article class="catalog-card" id="meeting-status-pill">
+        <div class="card-head">
+          <h3 class="card-title">MeetingStatusPill</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Show the extraction state of a meeting recap in one compact, readable pill.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/MeetingStatusPill.md">primitives/MeetingStatusPill.md</a>
+            <span class="variant-line">Variants demoed: wrapped, processing, failed</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo pr-demo-stack" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md">
-          <span class="pr-status-pill pr-tone-sage" data-ds-variant="wrapped"><span class="pr-dot"></span>Wrapped 8 min ago · 56 min recorded</span>
-          <span class="pr-status-pill pr-tone-turmeric" data-ds-variant="processing"><span class="pr-dot"></span>Processing transcript</span>
-          <span class="pr-status-pill pr-tone-terracotta" data-ds-variant="failed"><span class="pr-dot"></span>Extraction failed</span>
+        <div class="sample-area sample-stack" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md">
+          <span data-ds-variant="wrapped">Wrapped 8 min ago / 56 min recorded</span>
+          <span data-ds-variant="processing">Processing transcript</span>
+          <span data-ds-variant="failed">Extraction failed</span>
         </div>
-      </article>
-
-    </div>
-  </section>
-
-  <section class="pr-family" id="trust">
-    <div class="pr-family-header">
-      <h2 class="pr-family-title">Trust UI</h2>
-      <span class="pr-family-count">5 primitives</span>
-    </div>
-    <p class="pr-family-lede">
-      Evidence and verification cues. These primitives stay compact so receipt, claim, and inspection patterns can compose them without inventing new trust language.
-    </p>
-    <div class="pr-grid">
-
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">ProvenanceTag</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render a muted source-attribution label when the source is meaningful to users.</p>
-          <a class="pr-spec-link" href="../../primitives/ProvenanceTag.md">primitives/ProvenanceTag.md</a>
-        </div>
-        <div class="pr-demo" data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">
-          <span class="pr-provenance-tag" data-ds-variant="default">from Salesforce</span>
-          <span class="pr-provenance-tag" data-ds-variant="default">from email</span>
-          <span class="pr-provenance-tag" data-discrepancy="true" data-ds-variant="discrepancy">from Glean · disagreement</span>
-        </div>
-      </article>
-
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">SourceCoverageLine</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render a compact line summarizing which source system contributed and how much coverage exists.</p>
-          <a class="pr-spec-link" href="../../primitives/SourceCoverageLine.md">primitives/SourceCoverageLine.md</a>
-        </div>
-        <div class="pr-demo pr-demo-stack" data-ds-name="SourceCoverageLine" data-ds-tier="primitive" data-ds-spec="primitives/SourceCoverageLine.md">
-          <span class="pr-source-line" data-ds-variant="default">Glean · 4 sources</span>
-          <span class="pr-source-line" data-ds-variant="withStaleCount">Salesforce · 8 sources · <span class="pr-source-stale">2 stale</span></span>
-          <span class="pr-source-line" data-empty="true" data-ds-variant="empty">No source coverage</span>
-        </div>
-      </article>
-
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">ConfidenceScoreChip</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render a numerical confidence score in a compact chip while mapping color to trust bands.</p>
-          <a class="pr-spec-link" href="../../primitives/ConfidenceScoreChip.md">primitives/ConfidenceScoreChip.md</a>
-        </div>
-        <div class="pr-demo" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">
-          <span class="pr-confidence-chip pr-tone-sage" data-ds-variant="band=likely_current">94%</span>
-          <span class="pr-confidence-chip pr-tone-turmeric" data-ds-variant="band=use_with_caution">72%</span>
-          <span class="pr-confidence-chip pr-tone-terracotta" data-ds-variant="band=needs_verification">38%</span>
-          <span class="pr-confidence-chip pr-tone-neutral" data-ds-variant="unavailable">--</span>
-        </div>
-      </article>
-
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">VerificationStatusFlag</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render consistency state as a small icon plus mono label for verified, corrected, or flagged claims.</p>
-          <a class="pr-spec-link" href="../../primitives/VerificationStatusFlag.md">primitives/VerificationStatusFlag.md</a>
-        </div>
-        <div class="pr-demo" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md">
-          <span class="pr-verification-flag" data-status="ok" data-ds-variant="status=ok"><span class="pr-flag-mark">OK</span>OK</span>
-          <span class="pr-verification-flag" data-status="corrected" data-ds-variant="status=corrected"><span class="pr-flag-mark">R</span>Corrected</span>
-          <span class="pr-verification-flag" data-status="flagged" data-ds-variant="status=flagged"><span class="pr-flag-mark">!</span>Flagged</span>
-        </div>
-      </article>
-
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">DataGapNotice</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Render an inline notice that intelligence is missing a critical input.</p>
-          <a class="pr-spec-link" href="../../primitives/DataGapNotice.md">primitives/DataGapNotice.md</a>
-        </div>
-        <div class="pr-demo pr-demo-stack" data-ds-name="DataGapNotice" data-ds-tier="primitive" data-ds-spec="primitives/DataGapNotice.md">
-          <span class="pr-data-gap" data-severity="info" data-ds-variant="severity=info">Missing stakeholder roles</span>
-          <span class="pr-data-gap" data-severity="warning" data-ds-variant="severity=warning">No recent meetings on this account</span>
-        </div>
+        <p class="card-note">Canonical CSS not yet promoted - no scoped MeetingStatusPill module exists.</p>
       </article>
 
     </div>
   </section>
 
-  <section class="pr-family" id="controls">
-    <div class="pr-family-header">
-      <h2 class="pr-family-title">Form Controls</h2>
-      <span class="pr-family-count">3 primitives</span>
+  <section class="family-section" id="trust">
+    <div class="family-header">
+      <h2 class="family-title">Trust UI</h2>
+      <span class="family-count">5 primitives</span>
     </div>
-    <p class="pr-family-lede">
-      Quiet, settings-friendly controls. Each one keeps interaction localized and leaves explanatory copy to the surrounding row or pattern.
+    <p class="family-lede">
+      Evidence and verification cues. These stay compact so receipt, claim, and inspection patterns can compose them without inventing new trust language.
     </p>
-    <div class="pr-grid">
+    <div class="catalog-grid">
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">InlineInput</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Let users edit a short piece of text in place without leaving the surrounding settings row.</p>
-          <a class="pr-spec-link" href="../../primitives/InlineInput.md">primitives/InlineInput.md</a>
+      <article class="catalog-card" id="provenance-tag">
+        <div class="card-head">
+          <h3 class="card-title">ProvenanceTag</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render a muted source-attribution label when the source is meaningful to users.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/ProvenanceTag.md">primitives/ProvenanceTag.md</a>
+            <span class="variant-line">Variants demoed: plain, discrepancy</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md">
-          <label class="pr-inline-input" data-ds-variant="font=mono">
-            <input class="editable-inline_input" value="sam@subsidiary.com" aria-label="Profile email">
-            <span class="pr-edit-affordance">edit</span>
-          </label>
+        <div class="sample-area" data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">
+          <span data-ds-variant="plain">from Salesforce</span>
+          <span data-ds-variant="plain">from email</span>
+          <span data-ds-variant="discrepancy">from Glean / disagreement</span>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - current ProvenanceTag uses global classes, not scoped module classes.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">Switch</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Give users a compact on/off control for a single binary setting.</p>
-          <a class="pr-spec-link" href="../../primitives/Switch.md">primitives/Switch.md</a>
+      <article class="catalog-card" id="source-coverage-line">
+        <div class="card-head">
+          <h3 class="card-title">SourceCoverageLine</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render a compact line summarizing which source system contributed and how much coverage exists.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/SourceCoverageLine.md">primitives/SourceCoverageLine.md</a>
+            <span class="variant-line">Variants demoed: default, withStaleCount, empty</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md">
-          <button class="pr-switch" type="button" role="switch" aria-checked="true" aria-label="Daily briefing enabled" data-ds-variant="on"><span></span></button>
-          <button class="pr-switch" type="button" role="switch" aria-checked="false" aria-label="Weekend digest disabled" data-ds-variant="off"><span></span></button>
+        <div class="sample-area sample-stack" data-ds-name="SourceCoverageLine" data-ds-tier="primitive" data-ds-spec="primitives/SourceCoverageLine.md">
+          <span data-ds-variant="default">Glean / 4 sources</span>
+          <span data-ds-variant="withStaleCount">Salesforce / 8 sources / 2 stale</span>
+          <span data-ds-variant="empty">No source coverage</span>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - no scoped SourceCoverageLine module exists.</p>
       </article>
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">Segmented</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Let users choose one value from a small fixed set without opening a menu.</p>
-          <a class="pr-spec-link" href="../../primitives/Segmented.md">primitives/Segmented.md</a>
+      <article class="catalog-card" id="confidence-score-chip">
+        <div class="card-head">
+          <h3 class="card-title">ConfidenceScoreChip</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render a numerical confidence score in a compact chip while mapping color to trust bands.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/ConfidenceScoreChip.md">primitives/ConfidenceScoreChip.md</a>
+            <span class="variant-line">Variants demoed: likely_current, use_with_caution, needs_verification, unavailable</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="pr-demo" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md">
-          <div class="pr-segmented" role="group" aria-label="Density" data-ds-variant="tint=turmeric">
+        <div class="sample-area" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">
+          <span data-ds-variant="band=likely_current">94%</span>
+          <span data-ds-variant="band=use_with_caution">72%</span>
+          <span data-ds-variant="band=needs_verification">38%</span>
+          <span data-ds-variant="unavailable">--</span>
+        </div>
+        <p class="card-note">Canonical CSS not yet promoted - no scoped ConfidenceScoreChip module exists.</p>
+      </article>
+
+      <article class="catalog-card" id="verification-status-flag">
+        <div class="card-head">
+          <h3 class="card-title">VerificationStatusFlag</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render consistency state as a small icon plus mono label for verified, corrected, or flagged claims.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/VerificationStatusFlag.md">primitives/VerificationStatusFlag.md</a>
+            <span class="variant-line">Variants demoed: ok, corrected, flagged</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+        </div>
+        <div class="sample-area" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md">
+          <span data-ds-variant="status=ok">OK</span>
+          <span data-ds-variant="status=corrected">Corrected</span>
+          <span data-ds-variant="status=flagged">Flagged</span>
+        </div>
+        <p class="card-note">Canonical CSS not yet promoted - no scoped VerificationStatusFlag module exists.</p>
+      </article>
+
+      <article class="catalog-card" id="data-gap-notice">
+        <div class="card-head">
+          <h3 class="card-title">DataGapNotice</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render an inline notice that intelligence is missing a critical input.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/DataGapNotice.md">primitives/DataGapNotice.md</a>
+            <span class="variant-line">Variants demoed: info, warning</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+        </div>
+        <div class="sample-area sample-stack" data-ds-name="DataGapNotice" data-ds-tier="primitive" data-ds-spec="primitives/DataGapNotice.md">
+          <span data-ds-variant="severity=info">Missing stakeholder roles</span>
+          <span data-ds-variant="severity=warning">No recent meetings on this account</span>
+        </div>
+        <p class="card-note">Canonical CSS not yet promoted - no scoped DataGapNotice module exists.</p>
+      </article>
+
+    </div>
+  </section>
+
+  <section class="family-section" id="controls">
+    <div class="family-header">
+      <h2 class="family-title">Form Controls</h2>
+      <span class="family-count">3 primitives</span>
+    </div>
+    <p class="family-lede">
+      Quiet, settings-friendly controls. Each keeps interaction localized and leaves explanatory copy to the surrounding row or pattern.
+    </p>
+    <div class="catalog-grid">
+
+      <article class="catalog-card" id="inline-input">
+        <div class="card-head">
+          <h3 class="card-title">InlineInput</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Let users edit a short piece of text in place without leaving the surrounding settings row.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/InlineInput.md">primitives/InlineInput.md</a>
+            <span class="variant-line">Variants demoed: display, placeholder, editing input</span>
+          </div>
+          <span class="status-badge status-canonical">Canonical module</span>
+        </div>
+        <div class="sample-area sample-stack" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md">
+          <span class="editable-inline_display" data-ds-variant="display"><span>James Giroux</span></span>
+          <span class="editable-inline_display" data-ds-variant="placeholder"><span class="editable-inline_placeholder">Add profile URL</span></span>
+          <input class="editable-inline_input" data-ds-variant="editing" value="sam@subsidiary.com" aria-label="Profile email">
+        </div>
+        <p class="card-note">Rendered with the existing editable-inline scoped module used by EditableInline.</p>
+      </article>
+
+      <article class="catalog-card" id="switch">
+        <div class="card-head">
+          <h3 class="card-title">Switch</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Give users a compact on/off control for a single binary setting.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/Switch.md">primitives/Switch.md</a>
+            <span class="variant-line">Variants demoed: on, off, disabled</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+        </div>
+        <div class="sample-area" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md">
+          <button type="button" role="switch" aria-checked="true" data-ds-variant="on">On</button>
+          <button type="button" role="switch" aria-checked="false" data-ds-variant="off">Off</button>
+          <button type="button" role="switch" aria-checked="false" disabled data-ds-variant="disabled">Disabled</button>
+        </div>
+        <p class="card-note">Canonical CSS not yet promoted - current settings toggles are local to NotificationSection, not a Switch module.</p>
+      </article>
+
+      <article class="catalog-card" id="segmented">
+        <div class="card-head">
+          <h3 class="card-title">Segmented</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Let users choose one value from a small fixed set without opening a menu.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/Segmented.md">primitives/Segmented.md</a>
+            <span class="variant-line">Variants demoed: turmeric, eucalyptus, larkspur</span>
+          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+        </div>
+        <div class="sample-area sample-stack" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md">
+          <div role="group" aria-label="Density" data-ds-variant="tint=turmeric">
             <button type="button" aria-pressed="false">Compact</button>
             <button type="button" aria-pressed="true">Regular</button>
             <button type="button" aria-pressed="false">Comfy</button>
           </div>
+          <div role="group" aria-label="Tone" data-ds-variant="tint=larkspur">
+            <button type="button" aria-pressed="true">Calm</button>
+            <button type="button" aria-pressed="false">Direct</button>
+          </div>
         </div>
+        <p class="card-note">Canonical CSS not yet promoted - Settings mockup segmented styles are not in a scoped module.</p>
       </article>
 
     </div>
   </section>
 
-  <section class="pr-family" id="editorial">
-    <div class="pr-family-header">
-      <h2 class="pr-family-title">Editorial</h2>
-      <span class="pr-family-count">1 primitive</span>
+  <section class="family-section" id="editorial">
+    <div class="family-header">
+      <h2 class="family-title">Editorial</h2>
+      <span class="family-count">1 primitive</span>
     </div>
-    <p class="pr-family-lede">
+    <p class="family-lede">
       Primitive-level editorial rhythm: small, scannable facts that slot into mastheads and glance rows without becoming a full analytics pattern.
     </p>
-    <div class="pr-grid">
+    <div class="catalog-grid">
 
-      <article class="pr-card">
-        <div class="pr-card-header">
-          <h3 class="pr-card-title">GlanceCell</h3>
-          <span class="pr-tier">primitive</span>
-          <p class="pr-summary">Present one compact key/value stat for a masthead glance row.</p>
-          <a class="pr-spec-link" href="../../primitives/GlanceCell.md">primitives/GlanceCell.md</a>
-        </div>
-        <div class="pr-demo" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
-          <div class="pr-glance" data-status="healthy" data-ds-variant="status=healthy">
-            <span class="pr-glance-key">Connectors</span>
-            <span class="pr-glance-value"><span class="StatusDot_dot StatusDot_sm StatusDot_connected"></span>6 healthy</span>
+      <article class="catalog-card" id="glance-cell">
+        <div class="card-head">
+          <h3 class="card-title">GlanceCell</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Present one compact key/value stat for a masthead glance row.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/GlanceCell.md">primitives/GlanceCell.md</a>
+            <span class="variant-line">Variants demoed: none, healthy, warn</span>
           </div>
-          <div class="pr-glance" data-status="warn" data-ds-variant="status=warn">
-            <span class="pr-glance-key">Anomalies 24h</span>
-            <span class="pr-glance-value"><span class="StatusDot_dot StatusDot_sm StatusDot_error"></span>2 recovered</span>
-          </div>
+          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
+        <div class="sample-area sample-grid" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
+          <dl data-ds-variant="status=none">
+            <dt>Connectors</dt>
+            <dd>6</dd>
+          </dl>
+          <dl data-ds-variant="status=healthy">
+            <dt>Database</dt>
+            <dd>220.8 MB</dd>
+          </dl>
+          <dl data-ds-variant="status=warn">
+            <dt>AI today</dt>
+            <dd>82%</dd>
+          </dl>
+        </div>
+        <p class="card-note">Canonical CSS not yet promoted - Settings masthead glance cells only exist in mockup CSS.</p>
       </article>
 
     </div>
   </section>
 
-  <section class="pr-finis" aria-label="End of primitive reference">
-    <div class="pr-finis-mark">***</div>
+  <section class="audit-note" id="promotion-audit" aria-label="Promotion audit note">
+    <p class="audit-title">Promotion audit note</p>
+    <p class="audit-copy">
+      Promotion-needed cards intentionally avoid local visual classes. They remain structural examples until the named primitive gets a scoped module in the canonical CSS substrate.
+      <a class="audit-link" href="../../primitives/README.md">Read the primitive index</a>.
+    </p>
   </section>
 
 </main>

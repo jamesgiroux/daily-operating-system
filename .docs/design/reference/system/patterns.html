@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Patterns · DailyOS Design System</title>
+<title>Patterns &middot; DailyOS Design System</title>
 
 <link rel="stylesheet" href="../_shared/fonts.css">
 <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
@@ -11,18 +11,28 @@
 <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
 <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
 <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
+<link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
+<link rel="stylesheet" href="../_shared/styles/editable-inline.module.css">
 <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+<link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
 <link rel="stylesheet" href="../_shared/styles/PostMeetingIntelligence.module.css">
+<link rel="stylesheet" href="../_shared/styles/AboutThisDossier.module.css">
+<link rel="stylesheet" href="../_shared/styles/health.module.css">
+<link rel="stylesheet" href="../_shared/styles/meeting-intel.module.css">
+<link rel="stylesheet" href="../_shared/styles/report-shell.module.css">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <link rel="stylesheet" href="../_shared/inspector.css">
 
 <style>
-  .patterns-cover {
-    padding: var(--space-5xl) 0 var(--space-3xl);
+  /* Showcase-page-only layout. Demo internals use canonical module classes. */
+  .ds-cover {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-3xl);
     border-bottom: 1px solid var(--color-rule-heavy);
   }
 
-  .patterns-eyebrow {
+  .ds-eyebrow {
     margin: 0 0 var(--space-md);
     font-family: var(--font-mono);
     font-size: 11px;
@@ -32,28 +42,28 @@
     color: var(--color-text-tertiary);
   }
 
-  .patterns-title {
+  .ds-title {
     margin: 0;
     font-family: var(--font-serif);
-    font-size: 86px;
+    font-size: 76px;
     font-weight: 400;
-    line-height: 1.02;
-    letter-spacing: -0.025em;
+    letter-spacing: 0;
+    line-height: 1;
     color: var(--color-text-primary);
   }
 
-  .patterns-lede {
-    max-width: 690px;
+  .ds-lede {
+    max-width: 720px;
     margin: var(--space-lg) 0 0;
     font-family: var(--font-serif);
-    font-size: 22px;
+    font-size: 21px;
     font-style: italic;
     font-weight: 300;
-    line-height: 1.5;
+    line-height: 1.55;
     color: var(--color-text-secondary);
   }
 
-  .patterns-summary {
+  .ds-meta {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-lg);
@@ -65,78 +75,82 @@
     color: var(--color-text-tertiary);
   }
 
-  .patterns-summary span + span::before {
-    content: ".";
+  .ds-meta span + span::before {
+    content: "/";
     margin-right: var(--space-lg);
     opacity: 0.45;
   }
 
-  .patterns-anchorNav {
-    display: grid;
-    grid-template-columns: repeat(5, minmax(0, 1fr));
-    gap: var(--space-sm);
-    margin-top: var(--space-2xl);
+  .ds-reference-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-lg);
+    margin-top: var(--space-xl);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
   }
 
-  .patterns-anchorNav a {
-    min-height: 74px;
-    padding: var(--space-md);
-    border: 1px solid var(--color-rule-light);
-    border-radius: var(--radius-editorial-sm);
-    background: var(--color-paper-warm-white);
-    color: inherit;
+  .ds-reference-nav a,
+  .ds-family-nav a,
+  .ds-spec-link {
+    color: var(--color-text-tertiary);
     text-decoration: none;
-    transition: border-color var(--transition-normal), background var(--transition-normal);
+    border-bottom: 1px solid transparent;
+    transition: color var(--transition-normal), border-color var(--transition-normal);
   }
 
-  .patterns-anchorNav a:hover {
-    border-color: var(--color-rule-heavy);
-    background: var(--color-paper-cream);
+  .ds-reference-nav a:hover,
+  .ds-family-nav a:hover,
+  .ds-spec-link:hover {
+    color: var(--color-garden-olive);
+    border-color: currentColor;
   }
 
-  .patterns-anchorNav span {
-    display: block;
-    margin-bottom: var(--space-xs);
+  .ds-family-nav {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-sm);
+    padding: var(--space-lg) 0 var(--space-xl);
+    border-bottom: 1px solid var(--color-rule-light);
     font-family: var(--font-mono);
     font-size: 10px;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: var(--color-garden-olive);
   }
 
-  .patterns-anchorNav strong {
-    display: block;
-    font-family: var(--font-serif);
-    font-size: 18px;
-    font-weight: 400;
-    line-height: 1.2;
-    color: var(--color-text-primary);
+  .ds-family-nav a {
+    padding: 5px 10px;
+    border: 1px solid var(--color-rule-light);
+    border-radius: 999px;
+    background: var(--color-paper-warm-white);
   }
 
-  .patterns-section {
+  .ds-section {
     padding: var(--space-3xl) 0;
     border-bottom: 1px solid var(--color-rule-light);
   }
 
-  .patterns-sectionHeader {
+  .ds-section-header {
     display: flex;
-    justify-content: space-between;
     align-items: baseline;
+    justify-content: space-between;
     gap: var(--space-md);
-    margin-bottom: var(--space-xl);
+    margin-bottom: var(--space-lg);
     flex-wrap: wrap;
   }
 
-  .patterns-sectionTitle {
+  .ds-section-title {
     margin: 0;
     font-family: var(--font-serif);
     font-size: 38px;
     font-weight: 400;
-    letter-spacing: -0.01em;
+    letter-spacing: 0;
     color: var(--color-garden-olive);
   }
 
-  .patterns-sectionMeta {
+  .ds-section-count {
     font-family: var(--font-mono);
     font-size: 11px;
     letter-spacing: 0.08em;
@@ -144,9 +158,9 @@
     color: var(--color-text-tertiary);
   }
 
-  .patterns-sectionLede {
+  .ds-section-lede {
     max-width: 720px;
-    margin: calc(var(--space-md) * -1) 0 var(--space-xl);
+    margin: 0 0 var(--space-xl);
     font-family: var(--font-serif);
     font-size: 17px;
     font-style: italic;
@@ -155,23 +169,23 @@
     color: var(--color-text-secondary);
   }
 
-  .patterns-grid {
+  .ds-grid {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: var(--space-md);
   }
 
-  .patterns-card {
+  .ds-card {
     display: flex;
-    flex-direction: column;
     min-height: 100%;
+    flex-direction: column;
     padding: var(--space-lg);
     border: 1px solid var(--color-rule-light);
     border-radius: var(--radius-editorial-sm);
     background: var(--color-paper-warm-white);
   }
 
-  .patterns-cardHeader {
+  .ds-card-header {
     display: flex;
     align-items: flex-start;
     justify-content: space-between;
@@ -180,11 +194,11 @@
     border-bottom: 1px solid var(--color-rule-light);
   }
 
-  .patterns-nameWrap {
+  .ds-name-wrap {
     min-width: 0;
   }
 
-  .patterns-tier {
+  .ds-tier {
     display: inline-flex;
     margin-bottom: var(--space-xs);
     padding: 2px 7px;
@@ -198,7 +212,7 @@
     text-transform: uppercase;
   }
 
-  .patterns-cardTitle {
+  .ds-card-title {
     margin: 0;
     font-family: var(--font-serif);
     font-size: 24px;
@@ -207,23 +221,7 @@
     color: var(--color-text-primary);
   }
 
-  .patterns-specLink {
-    flex-shrink: 0;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-    text-decoration: none;
-    border-bottom: 1px solid transparent;
-  }
-
-  .patterns-specLink:hover {
-    color: var(--color-garden-olive);
-    border-color: currentColor;
-  }
-
-  .patterns-composition {
+  .ds-composition {
     margin: var(--space-md) 0 0;
     font-family: var(--font-sans);
     font-size: 13px;
@@ -231,19 +229,20 @@
     color: var(--color-text-secondary);
   }
 
-  .patterns-composition strong {
+  .ds-composition strong {
     color: var(--color-text-primary);
     font-weight: 500;
   }
 
-  .patterns-variants {
+  .ds-variants {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-xs);
     margin-top: var(--space-sm);
   }
 
-  .patterns-variants span {
+  .ds-variants span,
+  .ds-promotion {
     display: inline-flex;
     padding: 2px 7px;
     border-radius: 3px;
@@ -255,7 +254,12 @@
     text-transform: uppercase;
   }
 
-  .patterns-demo {
+  .ds-promotion {
+    background: var(--color-spice-saffron-10);
+    color: var(--color-spice-saffron);
+  }
+
+  .ds-demo {
     margin-top: var(--space-md);
     padding: var(--space-md);
     border: 1px solid var(--color-rule-light);
@@ -264,370 +268,40 @@
     overflow: hidden;
   }
 
-  .patterns-demo[data-compact="true"] {
+  .ds-pending p {
+    margin: 0;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+  }
+
+  .ds-pending p + p {
+    margin-top: var(--space-sm);
+  }
+
+  .ds-pending strong {
+    color: var(--color-text-primary);
+    font-weight: 500;
+  }
+
+  .ds-demo-mini {
     padding: var(--space-sm) var(--space-md);
   }
 
-  .patterns-muted {
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-mono {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-  }
-
-  .patterns-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    padding: 3px 8px;
-    border-radius: 999px;
-    background: var(--color-garden-sage-10);
-    color: var(--color-garden-rosemary);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    white-space: nowrap;
-  }
-
-  .patterns-pill[data-tone="caution"] {
-    background: var(--color-spice-saffron-10);
-    color: #8a6f1a;
-  }
-
-  .patterns-pill[data-tone="risk"] {
-    background: var(--color-spice-terracotta-10);
-    color: var(--color-spice-chili);
-  }
-
-  .patterns-dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: currentColor;
-  }
-
-  .patterns-leadEyebrow {
-    margin: 0 0 var(--space-md);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-leadSentence {
-    max-width: 760px;
-    margin: 0;
-    font-family: var(--font-serif);
-    font-size: 38px;
-    font-weight: 400;
-    line-height: 1.08;
-    color: var(--color-text-primary);
-  }
-
-  .patterns-sharp {
-    background: linear-gradient(transparent 62%, var(--color-spice-turmeric-15) 62%);
-  }
-
-  .patterns-marginGrid {
+  .ds-canonical-stack {
     display: grid;
-    grid-template-columns: 100px minmax(0, 1fr);
-    gap: var(--space-xl);
-    align-items: start;
-  }
-
-  .patterns-marginLabel {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.1em;
-    text-align: right;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-marginLabel span {
-    display: block;
-    margin-top: var(--space-xs);
-    color: var(--color-garden-olive);
-  }
-
-  .patterns-serifBody {
-    margin: 0;
-    font-family: var(--font-serif);
-    font-size: 17px;
-    line-height: 1.5;
-    color: var(--color-text-secondary);
-  }
-
-  .patterns-dayChartTicks,
-  .patterns-dayLegend {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: var(--space-sm);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-dayLegend {
-    display: flex;
-    margin-bottom: var(--space-sm);
     gap: var(--space-md);
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
   }
 
-  .patterns-dayBars {
-    position: relative;
-    height: 96px;
-    margin-top: var(--space-sm);
-    border-top: 1px solid var(--color-rule-heavy);
-    border-bottom: 1px solid var(--color-rule-heavy);
-    background: repeating-linear-gradient(to right, transparent 0, transparent calc(16.666% - 1px), var(--color-rule-light) calc(16.666% - 1px), var(--color-rule-light) 16.666%);
-  }
-
-  .patterns-dayBar {
-    position: absolute;
-    top: 18px;
-    height: 56px;
-    padding: 9px 10px;
-    border-radius: 3px;
-    overflow: hidden;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    line-height: 1.35;
-    color: var(--color-text-primary);
-  }
-
-  .patterns-dayBar strong {
-    display: block;
-    font-family: var(--font-serif);
-    font-size: 14px;
-    font-weight: 400;
-    white-space: nowrap;
-  }
-
-  .patterns-nowLine {
-    position: absolute;
-    top: 8px;
-    bottom: 8px;
-    left: 34%;
-    width: 2px;
-    background: var(--color-spice-terracotta);
-  }
-
-  .patterns-nowLine span {
-    position: absolute;
-    top: -16px;
-    left: -22px;
-    font-family: var(--font-mono);
-    font-size: 9px;
-    color: var(--color-spice-terracotta);
-    white-space: nowrap;
-  }
-
-  .patterns-meetingItem {
-    display: grid;
-    grid-template-columns: 76px minmax(0, 1fr);
-    gap: var(--space-lg);
-    padding-bottom: var(--space-sm);
-    border-bottom: 1px solid var(--color-rule-light);
-  }
-
-  .patterns-meetingTime {
-    text-align: right;
-    font-family: var(--font-mono);
-    color: var(--color-text-primary);
-  }
-
-  .patterns-meetingTime strong {
-    display: block;
-    font-size: 18px;
-    font-weight: 500;
-  }
-
-  .patterns-meetingEyebrow {
-    display: flex;
-    align-items: center;
-    gap: var(--space-sm);
-    margin-bottom: var(--space-sm);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.14em;
-    text-transform: uppercase;
-    color: var(--color-spice-turmeric);
-  }
-
-  .patterns-meetingTitle {
-    margin: 0 0 var(--space-sm);
-    font-family: var(--font-serif);
-    font-size: 24px;
-    font-weight: 400;
-    line-height: 1.2;
-  }
-
-  .patterns-meetingContext {
-    margin: 0;
-    font-family: var(--font-serif);
-    font-size: 15px;
-    font-style: italic;
-    line-height: 1.45;
-    color: var(--color-text-secondary);
-  }
-
-  .patterns-portrait {
-    display: grid;
-    grid-template-columns: 180px minmax(0, 1fr);
-    min-height: 190px;
-    border: 1px solid var(--color-rule-light);
-    background: var(--color-paper-warm-white);
-  }
-
-  .patterns-portraitAside {
-    padding: var(--space-lg);
-    background: linear-gradient(180deg, var(--color-spice-turmeric) 0 6px, var(--color-spice-turmeric-8) 6px);
-  }
-
-  .patterns-portraitState {
-    margin: 0 0 var(--space-md);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--color-spice-turmeric);
-  }
-
-  .patterns-portraitName {
-    margin: 0 0 var(--space-lg);
-    font-family: var(--font-serif);
-    font-size: 30px;
-    font-weight: 500;
-    line-height: 1;
-  }
-
-  .patterns-portraitStats {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-sm);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-portraitMain {
-    position: relative;
-    padding: var(--space-lg);
-  }
-
-  .patterns-portraitGlyph {
-    position: absolute;
-    top: 2px;
-    right: 16px;
-    font-family: var(--font-serif);
-    font-size: 100px;
-    font-style: italic;
-    line-height: 1;
-    color: var(--color-spice-turmeric);
-    opacity: 0.1;
-  }
-
-  .patterns-threadList {
-    display: grid;
-    gap: var(--space-sm);
-    margin-top: var(--space-md);
-    font-family: var(--font-serif);
-    font-size: 14px;
-  }
-
-  .patterns-threadLine {
-    display: grid;
-    grid-template-columns: 44px minmax(0, 1fr) auto;
-    gap: var(--space-sm);
-    align-items: baseline;
-  }
-
-  .patterns-threadWhen {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-threadMark {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 6px;
-    border: 0;
-    border-radius: 3px;
-    background: var(--color-spice-turmeric-7);
-    color: var(--color-spice-turmeric);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    cursor: pointer;
-  }
-
-  .patterns-askDock {
-    border: 1px solid var(--color-rule-heavy);
-    border-radius: 10px;
-    background: var(--frosted-glass-nav);
-    overflow: hidden;
-  }
-
-  .patterns-askInput {
-    display: flex;
-    align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-md);
-  }
-
-  .patterns-askInput input {
-    width: 100%;
-    border: 0;
-    outline: 0;
-    background: transparent;
-    font-family: var(--font-serif);
-    font-size: 19px;
-    font-style: italic;
-    color: var(--color-text-secondary);
-  }
-
-  .patterns-chipRow {
+  .ds-canonical-compact {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-sm);
-    padding: 0 var(--space-md) var(--space-md);
+    align-items: center;
   }
 
-  .patterns-chip {
-    padding: 5px 10px;
-    border-radius: 999px;
-    background: var(--color-desk-charcoal-4);
-    font-family: var(--font-sans);
-    font-size: 12px;
-    color: var(--color-text-secondary);
-  }
-
-  .patterns-scope {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--space-md);
-    padding: var(--space-sm) var(--space-md);
-    border-top: 1px solid var(--color-rule-light);
-    background: var(--color-desk-charcoal-4);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-folioDemo .FolioBar_folio {
+  .ds-folio-host .FolioBar_folio {
     position: relative;
     inset: auto;
     z-index: 1;
@@ -636,22 +310,22 @@
     border-radius: var(--radius-editorial-sm);
   }
 
-  .patterns-navDemo .FloatingNavIsland_navIslandContainer {
+  .ds-nav-host .FloatingNavIsland_navIslandContainer {
     position: relative;
-    right: auto;
     top: auto;
-    transform: none;
-    justify-content: center;
+    right: auto;
     z-index: 1;
+    justify-content: center;
+    transform: none;
   }
 
-  .patterns-navDemo .FloatingNavIsland_navIslandItem::after,
-  .patterns-navDemo .FloatingNavIsland_navIslandLocalItem::after,
-  .patterns-navDemo .FloatingNavIsland_navIslandMark::after {
+  .ds-nav-host .FloatingNavIsland_navIslandItem::after,
+  .ds-nav-host .FloatingNavIsland_navIslandLocalItem::after,
+  .ds-nav-host .FloatingNavIsland_navIslandMark::after {
     display: none;
   }
 
-  .patterns-atmosphereDemo .AtmosphereLayer_atmosphere {
+  .ds-atmosphere-host .AtmosphereLayer_atmosphere {
     position: relative;
     z-index: 1;
     height: 180px;
@@ -659,346 +333,111 @@
     border-radius: var(--radius-editorial-sm);
   }
 
-  .patterns-atmosphereDemo .AtmosphereLayer_watermark {
+  .ds-atmosphere-host .AtmosphereLayer_watermark {
     width: 180px;
     height: 180px;
     right: 16px;
   }
 
-  .patterns-trustBand {
-    display: inline-flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: var(--space-sm);
-  }
-
-  .patterns-provenance,
-  .patterns-freshness {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-claim {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-md);
-    align-items: center;
-    padding: var(--space-md) 0;
-    border-bottom: 1px solid var(--color-rule-light);
-  }
-
-  .patterns-claimSubject {
-    margin: 0 0 var(--space-xs);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-claimValue {
-    margin: 0;
-    font-family: var(--font-serif);
-    font-size: 20px;
-    line-height: 1.3;
-    color: var(--color-text-primary);
-  }
-
-  .patterns-callout {
-    padding: var(--space-md);
-    border: 1px solid var(--color-garden-sage-20);
-    border-left: 3px solid var(--color-garden-sage);
-    border-radius: var(--radius-editorial-sm);
-    background: var(--color-paper-warm-white);
-  }
-
-  .patterns-callout[data-tone="caution"] {
-    border-color: var(--color-spice-saffron-12);
-    border-left-color: var(--color-spice-saffron);
-  }
-
-  .patterns-callout[data-tone="risk"] {
-    border-color: var(--color-spice-terracotta-12);
-    border-left-color: var(--color-spice-terracotta);
-  }
-
-  .patterns-calloutTitle {
-    margin: 0 0 var(--space-sm);
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-calloutText {
-    margin: 0;
-    font-family: var(--font-sans);
-    font-size: 13px;
-    line-height: 1.5;
-    color: var(--color-text-secondary);
-  }
-
-  .patterns-sourceRows {
-    display: grid;
-    gap: var(--space-sm);
-    margin-top: var(--space-sm);
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-sourceRows div {
-    display: flex;
-    justify-content: space-between;
-    gap: var(--space-md);
-    padding-top: var(--space-sm);
-    border-top: 1px solid var(--color-rule-light);
-  }
-
-  .patterns-banner {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    gap: var(--space-md);
-    padding: var(--space-md);
-    border-left: 3px solid var(--color-spice-terracotta);
-    background: var(--color-spice-terracotta-8);
-    font-family: var(--font-sans);
-    font-size: 13px;
-    line-height: 1.45;
-    color: var(--color-text-primary);
-  }
-
-  .patterns-button {
-    border: 1px solid var(--color-rule-heavy);
-    border-radius: var(--radius-editorial-sm);
-    background: transparent;
-    padding: 6px 12px;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    font-weight: 600;
-    letter-spacing: 0.05em;
-    text-transform: uppercase;
-    color: var(--color-text-secondary);
-    cursor: pointer;
-  }
-
-  .patterns-button[data-primary="true"] {
-    border-color: var(--color-spice-turmeric);
-    background: var(--color-spice-turmeric);
-    color: var(--color-desk-charcoal);
-  }
-
-  .patterns-masthead {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) auto;
-    gap: var(--space-lg);
-    align-items: start;
-  }
-
-  .patterns-mastheadTitle {
-    margin: var(--space-xs) 0 var(--space-sm);
-    font-family: var(--font-serif);
-    font-size: 40px;
-    font-weight: 400;
-    line-height: 1.1;
-  }
-
-  .patterns-glanceRow {
-    display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: var(--space-md);
-    margin-top: var(--space-md);
-  }
-
-  .patterns-glanceCell {
-    border-left: 2px solid var(--color-rule-heavy);
-    padding-left: var(--space-sm);
-  }
-
-  .patterns-glanceCell[data-state="warn"] {
-    border-left-color: var(--color-spice-terracotta);
-  }
-
-  .patterns-glanceKey {
-    margin: 0 0 var(--space-xs);
-    font-family: var(--font-mono);
-    font-size: 9px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-glanceValue {
-    margin: 0;
-    font-family: var(--font-serif);
-    font-size: 20px;
-    line-height: 1.2;
-  }
-
-  .patterns-formRow {
-    display: grid;
-    grid-template-columns: 220px minmax(0, 1fr) 110px;
-    gap: var(--space-lg);
-    align-items: center;
-    padding: var(--space-md) 0;
-    border-bottom: 1px solid var(--color-rule-light);
-  }
-
-  .patterns-formLabel {
-    margin: 0 0 var(--space-xs);
-    font-family: var(--font-sans);
-    font-size: 14px;
-    color: var(--color-text-primary);
-  }
-
-  .patterns-formHelp {
-    margin: 0;
-    font-family: var(--font-sans);
-    font-size: 12px;
-    line-height: 1.35;
-    color: var(--color-text-tertiary);
-  }
-
-  .patterns-inlineInput {
-    width: 100%;
-    min-height: 36px;
-    border: 1px dashed var(--color-rule-heavy);
-    border-radius: var(--radius-editorial-sm);
-    background: transparent;
-    padding: 0 10px;
-    font-family: var(--font-sans);
-    color: var(--color-text-primary);
-  }
-
-  .patterns-actionsBar {
-    display: flex;
-    justify-content: flex-end;
-    flex-wrap: wrap;
-    gap: var(--space-sm);
-    padding: var(--space-sm);
-    border: 1px solid var(--color-rule-light);
-    border-radius: var(--radius-editorial-sm);
-    background: rgba(250, 248, 246, 0.7);
-  }
-
-  .patterns-triad {
-    display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: var(--space-lg);
-  }
-
   @media (max-width: 920px) {
-    .patterns-anchorNav,
-    .patterns-grid,
-    .patterns-triad {
+    .ds-grid {
       grid-template-columns: 1fr;
     }
 
-    .patterns-title {
+    .ds-title {
       font-size: 58px;
     }
 
-    .patterns-portrait,
-    .patterns-marginGrid,
-    .patterns-meetingItem,
-    .patterns-masthead,
-    .patterns-formRow,
-    .patterns-claim {
-      grid-template-columns: 1fr;
-    }
-
-    .patterns-marginLabel,
-    .patterns-meetingTime {
-      text-align: left;
-    }
-
-    .patterns-glanceRow {
-      grid-template-columns: repeat(2, minmax(0, 1fr));
+    .ds-section-title {
+      font-size: 30px;
     }
   }
 </style>
 </head>
-
 <body
   data-folio-label="Patterns"
   data-folio-crumbs="Reference > Patterns"
   data-tint="olive"
   data-active-page="today"
-  data-nav-base="../surfaces"
-  data-folio-actions="refresh"
-  data-folio-refresh-title="Refresh pattern reference"
   data-chapters="editorial:bookopen:Editorial|chrome:compass:Chrome|trust:shield:Trust UI|forms:wrench:Forms|meeting:target:Meeting">
 
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
-  <section class="patterns-cover">
-    <p class="patterns-eyebrow">DailyOS · Design System · Reference</p>
-    <h1 class="patterns-title">Patterns</h1>
-    <p class="patterns-lede">Composed, opinionated UI contracts. Each pattern below maps back to its markdown spec and shows the primitives it composes.</p>
-    <div class="patterns-summary">
-      <span>31 patterns across 5 categories</span>
-      <span>31 markdown specs enumerated</span>
-      <span>31 visual demos</span>
+  <header class="ds-cover">
+    <p class="ds-eyebrow">DailyOS &middot; Design System &middot; Reference</p>
+    <h1 class="ds-title">Patterns</h1>
+    <p class="ds-lede">Composed, opinionated UI contracts. This strict pass renders promoted demos with canonical scoped module classes only, and marks proposed work where no canonical CSS has been promoted.</p>
+    <div class="ds-meta">
+      <span>31 patterns</span>
+      <span>21 canonical demos</span>
+      <span>10 promotion-needed demos</span>
+      <span>0 showcase-local demo classes</span>
     </div>
-    <nav class="patterns-anchorNav" aria-label="Pattern categories">
-      <a href="#editorial"><span>01 · 8 patterns</span><strong>Editorial Briefing</strong></a>
-      <a href="#chrome"><span>02 · 3 patterns</span><strong>Surface Chrome</strong></a>
-      <a href="#trust"><span>03 · 7 patterns</span><strong>Trust UI</strong></a>
-      <a href="#forms"><span>04 · 3 patterns</span><strong>Forms &amp; Mastheads</strong></a>
-      <a href="#meeting"><span>05 · 10 patterns</span><strong>Meeting Intelligence</strong></a>
+    <nav class="ds-reference-nav" aria-label="Reference sections">
+      <a href="../index.html">Index</a>
+      <a href="tokens.html">Tokens</a>
+      <a href="primitives.html">Primitives</a>
+      <a href="patterns.html">Patterns</a>
     </nav>
-  </section>
+  </header>
 
-  <section id="editorial" class="patterns-section">
-    <div class="patterns-sectionHeader">
-      <h2 class="patterns-sectionTitle">Editorial Briefing</h2>
-      <span class="patterns-sectionMeta">Wave 1 · 8 patterns</span>
+  <nav class="ds-family-nav" aria-label="Pattern categories">
+    <a href="#editorial">Editorial Briefing</a>
+    <a href="#chrome">Surface Chrome</a>
+    <a href="#trust">Trust UI</a>
+    <a href="#forms">Forms &amp; Mastheads</a>
+    <a href="#meeting">Meeting Intelligence</a>
+  </nav>
+
+  <section id="editorial" class="ds-section">
+    <div class="ds-section-header">
+      <h2 class="ds-section-title">Editorial Briefing</h2>
+      <span class="ds-section-count">8 patterns</span>
     </div>
-    <p class="patterns-sectionLede">DailyBriefing and editorial-surface patterns: lead voice, marginalia, day shape, meeting spine, moving entity portraits, and the conversational affordance.</p>
-    <div class="patterns-grid">
-      <article id="Lead" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">Lead</h3></div>
-          <a class="patterns-specLink" href="../../patterns/Lead.md">Spec</a>
+    <p class="ds-section-lede">DailyBriefing and editorial-surface patterns: lead voice, marginalia, day shape, meeting spine, moving entity portraits, and conversational affordances.</p>
+    <div class="ds-grid">
+      <article id="Lead" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">Lead</h3></div>
+          <a class="ds-spec-link" href="../../patterns/Lead.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> mono eyebrow, single serif lead sentence, optional sharp-clause highlight.</p>
-        <div class="patterns-variants"><span>calm</span><span>sharp</span><span>quiet</span></div>
-        <div class="patterns-demo" data-ds-name="Lead" data-ds-tier="pattern" data-ds-spec="patterns/Lead.md">
-          <p class="patterns-leadEyebrow">Today, Thursday Apr 23</p>
-          <p class="patterns-leadSentence">Four meetings today, two with customers; <span class="patterns-sharp">the Acme renewal at 10:00 is the one to nail</span>.</p>
-        </div>
-      </article>
-
-      <article id="MarginGrid" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">MarginGrid</h3></div>
-          <a class="patterns-specLink" href="../../patterns/MarginGrid.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> fixed mono margin label, optional count, content column.</p>
-        <div class="patterns-variants"><span>default</span><span>label-count</span></div>
-        <div class="patterns-demo" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-          <section class="patterns-marginGrid">
-            <div class="patterns-marginLabel">Today<span>4 meetings</span></div>
-            <p class="patterns-serifBody">The right column carries the section content while the left margin keeps the editorial spine visible.</p>
+        <p class="ds-composition"><strong>Composes:</strong> mono context, one large serif sentence, and optional sharp clause emphasis.</p>
+        <div class="ds-variants"><span>calm</span><span>sharp</span><span>quiet</span></div>
+        <div class="ds-demo" data-ds-name="Lead" data-ds-tier="pattern" data-ds-spec="patterns/Lead.md">
+          <section class="editorial-briefing_hero">
+            <h4 class="editorial-briefing_heroHeadline">Four meetings today. The Acme renewal is the one to nail.</h4>
+            <p class="editorial-briefing_heroNarrative">Customer pressure is concentrated before noon; the afternoon is mostly internal cleanup.</p>
+            <p class="editorial-briefing_staleness">Last refreshed 10 minutes ago</p>
           </section>
         </div>
       </article>
 
-      <article id="ChapterHeading" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ChapterHeading</h3></div>
-          <a class="patterns-specLink" href="../../patterns/ChapterHeading.md">Spec</a>
+      <article id="MarginGrid" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MarginGrid</h3></div>
+          <a class="ds-spec-link" href="../../patterns/MarginGrid.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> heavy rule, serif title, optional italic epigraph.</p>
-        <div class="patterns-variants"><span>default</span><span>light</span></div>
-        <div class="patterns-demo" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
+        <p class="ds-composition"><strong>Composes:</strong> fixed mono margin label, optional count, and content column.</p>
+        <div class="ds-variants"><span>default</span><span>label-count</span></div>
+        <div class="ds-demo" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
+          <section class="editorial-briefing_marginGrid">
+            <div class="editorial-briefing_marginLabel">Today<span class="editorial-briefing_marginLabelCount">4 meetings</span></div>
+            <div class="editorial-briefing_marginContent">
+              <p class="editorial-briefing_leadNarrative">The right column carries the chapter content while the left margin keeps the editorial spine visible.</p>
+            </div>
+          </section>
+        </div>
+      </article>
+
+      <article id="ChapterHeading" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ChapterHeading</h3></div>
+          <a class="ds-spec-link" href="../../patterns/ChapterHeading.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> heavy rule, serif title, and optional italic epigraph.</p>
+        <div class="ds-variants"><span>default</span><span>light</span></div>
+        <div class="ds-demo" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
           <div class="ChapterHeading_heading">
             <hr class="ChapterHeading_rule" />
             <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Health &amp; Outlook</h2></div>
@@ -1007,120 +446,106 @@
         </div>
       </article>
 
-      <article id="DayChart" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">DayChart</h3></div>
-          <a class="patterns-specLink" href="../../patterns/DayChart.md">Spec</a>
+      <article id="DayChart" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DayChart</h3></div>
+          <a class="ds-spec-link" href="../../patterns/DayChart.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> legend, hour ticks, positioned meeting bars, NOW indicator.</p>
-        <div class="patterns-variants"><span>default</span><span>no legend</span><span>height</span></div>
-        <div class="patterns-demo" data-ds-name="DayChart" data-ds-tier="pattern" data-ds-spec="patterns/DayChart.md">
-          <div class="patterns-dayLegend"><span>Customer</span><span>Internal</span><span>1:1</span></div>
-          <div class="patterns-dayChartTicks"><span>8 AM</span><span>9</span><span>10</span><span>11</span><span>12 PM</span><span>1</span></div>
-          <div class="patterns-dayBars">
-            <div class="patterns-dayBar" style="left:16%;width:15%;background:var(--color-paper-linen);border:1px solid var(--color-rule-heavy);"><strong>Standup</strong>9:00 · 30m</div>
-            <div class="patterns-dayBar" style="left:33%;width:22%;background:var(--color-spice-turmeric);"><strong>Acme Renewal</strong>10:00 · 45m</div>
-            <div class="patterns-dayBar" style="left:68%;width:18%;background:var(--color-garden-larkspur-12);"><strong>Sara 1:1</strong>12:30 · 30m</div>
-            <div class="patterns-nowLine"><span>NOW · 10:18</span></div>
-          </div>
+        <p class="ds-composition"><strong>Composes:</strong> legend, hour ticks, positioned meeting bars, and NOW indicator.</p>
+        <div class="ds-variants"><span>default</span><span>legend optional</span><span>height</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="DayChart" data-ds-tier="pattern" data-ds-spec="patterns/DayChart.md">
+          <p><strong>DayChart</strong> (canonical CSS not yet promoted)</p>
+          <p>The spec exists, but there is no scoped `DayChart.module.css` or source-module class set in `_shared/styles` to render the bars without local showcase CSS.</p>
         </div>
       </article>
 
-      <article id="MeetingSpineItem" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">MeetingSpineItem</h3></div>
-          <a class="patterns-specLink" href="../../patterns/MeetingSpineItem.md">Spec</a>
+      <article id="MeetingSpineItem" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MeetingSpineItem</h3></div>
+          <a class="ds-spec-link" href="../../patterns/MeetingSpineItem.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> time column, entity eyebrow, serif title, context line, prep footer.</p>
-        <div class="patterns-variants"><span>past</span><span>in_progress</span><span>upcoming</span><span>cancelled</span></div>
-        <div class="patterns-demo" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md">
-          <article class="patterns-meetingItem">
-            <div class="patterns-meetingTime"><strong>10:00</strong><span class="patterns-muted patterns-mono">45m · now</span></div>
-            <div>
-              <div class="patterns-meetingEyebrow"><span class="patterns-dot"></span>Acme Corp · Renewal</div>
-              <h4 class="patterns-meetingTitle">Acme renewal, pricing and tier 3</h4>
-              <p class="patterns-meetingContext">Jen wants the adjusted memo before legal goes deep on MSA.</p>
-            </div>
-          </article>
-        </div>
-      </article>
-
-      <article id="EntityPortraitCard" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">EntityPortraitCard</h3></div>
-          <a class="patterns-specLink" href="../../patterns/EntityPortraitCard.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> entity-tinted aside, state label, key stats, lede, typed thread list.</p>
-        <div class="patterns-variants"><span>account</span><span>project</span><span>person</span><span>at_risk</span></div>
-        <div class="patterns-demo" data-ds-name="EntityPortraitCard" data-ds-tier="pattern" data-ds-spec="patterns/EntityPortraitCard.md">
-          <article class="patterns-portrait">
-            <aside class="patterns-portraitAside">
-              <p class="patterns-portraitState">Renewing up</p>
-              <h4 class="patterns-portraitName">Acme Corp</h4>
-              <div class="patterns-portraitStats"><span>Health<br>71 up</span><span>Stage<br>Renewal</span><span>Owner<br>You</span><span>Conf<br>82%</span></div>
-            </aside>
-            <div class="patterns-portraitMain">
-              <span class="patterns-portraitGlyph">&ldquo;</span>
-              <p class="patterns-serifBody">Legal review is starting. The adjusted pricing memo goes to Jen in two hours.</p>
-              <div class="patterns-threadList">
-                <div class="patterns-threadLine"><span class="patterns-threadWhen">10:00</span><span>Pricing alignment in progress</span><button class="patterns-threadMark">talk</button></div>
-                <div class="patterns-threadLine"><span class="patterns-threadWhen">2d</span><span>Adjusted memo overdue</span><button class="patterns-threadMark">talk</button></div>
+        <p class="ds-composition"><strong>Composes:</strong> time column, entity row body, status pill, title, and context subtitle.</p>
+        <div class="ds-variants"><span>past</span><span>in progress</span><span>upcoming</span><span>cancelled</span></div>
+        <div class="ds-demo" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md">
+          <div class="editorial-briefing_scheduleRows">
+            <article class="editorial-briefing_scheduleRow editorial-briefing_scheduleRowCustomer editorial-briefing_scheduleRowActive editorial-briefing_scheduleRowExpandable">
+              <time class="editorial-briefing_scheduleTime">10:00<span class="editorial-briefing_scheduleTimeDuration">45m</span></time>
+              <div class="editorial-briefing_scheduleContent">
+                <div class="editorial-briefing_scheduleTitleRow">
+                  <h4 class="editorial-briefing_scheduleTitle">Acme renewal, pricing and tier 3</h4>
+                  <span class="editorial-briefing_nowPill">Now</span>
+                  <span class="editorial-briefing_expandHint">prep</span>
+                </div>
+                <div class="editorial-briefing_scheduleSubtitle">Jen wants the adjusted memo before legal goes deep on MSA.</div>
               </div>
-            </div>
-          </article>
-        </div>
-      </article>
-
-      <article id="ThreadMark" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ThreadMark</h3></div>
-          <a class="patterns-specLink" href="../../patterns/ThreadMark.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> small hook-arrow affordance, mono label, context seed target.</p>
-        <div class="patterns-variants"><span>hover-only</span><span>persistent</span></div>
-        <div class="patterns-demo" data-compact="true" data-ds-name="ThreadMark" data-ds-tier="pattern" data-ds-spec="patterns/ThreadMark.md">
-          <button class="patterns-threadMark" type="button">-&gt; talk</button>
-        </div>
-      </article>
-
-      <article id="AskAnythingDock" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">AskAnythingDock</h3></div>
-          <a class="patterns-specLink" href="../../patterns/AskAnythingDock.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> editorial input row, suggestion chips, scoped-source footer.</p>
-        <div class="patterns-variants"><span>inline</span><span>fixed-bottom</span><span>chips</span></div>
-        <div class="patterns-demo" data-ds-name="AskAnythingDock" data-ds-tier="pattern" data-ds-spec="patterns/AskAnythingDock.md">
-          <div class="patterns-askDock">
-            <div class="patterns-askInput"><span class="patterns-muted">?</span><input value="What is slipping on Acme this week?" aria-label="Ask anything demo" readonly><span class="patterns-pill" data-tone="caution">Cmd K</span></div>
-            <div class="patterns-chipRow"><span class="patterns-chip">Show Northwind's last 5 emails</span><span class="patterns-chip">Who should I check on?</span></div>
-            <div class="patterns-scope"><span>Mail · Calendar · CRM · Slack</span><span>Writes back to briefing</span></div>
+            </article>
           </div>
+        </div>
+      </article>
+
+      <article id="EntityPortraitCard" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EntityPortraitCard</h3></div>
+          <a class="ds-spec-link" href="../../patterns/EntityPortraitCard.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> entity-tinted aside, state label, stats, lede, and threaded events.</p>
+        <div class="ds-variants"><span>account</span><span>project</span><span>person</span><span>at risk</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="EntityPortraitCard" data-ds-tier="pattern" data-ds-spec="patterns/EntityPortraitCard.md">
+          <p><strong>EntityPortraitCard</strong> (canonical CSS not yet promoted)</p>
+          <p>The spec points to a future dashboard component; no promoted scoped module exists for the portrait-card layout yet.</p>
+        </div>
+      </article>
+
+      <article id="ThreadMark" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ThreadMark</h3></div>
+          <a class="ds-spec-link" href="../../patterns/ThreadMark.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> hook-arrow affordance, mono label, and context seed target.</p>
+        <div class="ds-variants"><span>hover-only</span><span>persistent</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-demo-mini ds-pending" data-ds-name="ThreadMark" data-ds-tier="pattern" data-ds-spec="patterns/ThreadMark.md">
+          <p><strong>ThreadMark</strong> (canonical CSS not yet promoted)</p>
+          <p>No scoped module has been promoted for the `talk` affordance.</p>
+        </div>
+      </article>
+
+      <article id="AskAnythingDock" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AskAnythingDock</h3></div>
+          <a class="ds-spec-link" href="../../patterns/AskAnythingDock.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> editorial input row, suggestion chips, and scoped-source footer.</p>
+        <div class="ds-variants"><span>inline</span><span>fixed-bottom</span><span>chips</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="AskAnythingDock" data-ds-tier="pattern" data-ds-spec="patterns/AskAnythingDock.md">
+          <p><strong>AskAnythingDock</strong> (canonical CSS not yet promoted)</p>
+          <p>The spec is still backed by mockup substrate classes; a scoped module is required before the reference can render it canonically.</p>
         </div>
       </article>
     </div>
   </section>
 
-  <section id="chrome" class="patterns-section">
-    <div class="patterns-sectionHeader">
-      <h2 class="patterns-sectionTitle">Surface Chrome</h2>
-      <span class="patterns-sectionMeta">Wave 1 · 3 patterns</span>
+  <section id="chrome" class="ds-section">
+    <div class="ds-section-header">
+      <h2 class="ds-section-title">Surface Chrome</h2>
+      <span class="ds-section-count">3 patterns</span>
     </div>
-    <p class="patterns-sectionLede">The substrate patterns that make a DailyOS page feel like a magazine surface: folio, floating navigation, and ambient tint.</p>
-    <div class="patterns-grid">
-      <article id="FolioBar" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FolioBar</h3></div>
-          <a class="patterns-specLink" href="../../patterns/FolioBar.md">Spec</a>
+    <p class="ds-section-lede">The substrate patterns that make a DailyOS page feel like a magazine surface: folio, floating navigation, and ambient tint.</p>
+    <div class="ds-grid">
+      <article id="FolioBar" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FolioBar</h3></div>
+          <a class="ds-spec-link" href="../../patterns/FolioBar.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> brand mark, publication label or breadcrumbs, optional center status, action set.</p>
-        <div class="patterns-variants"><span>default</span><span>live status</span><span>reports/tools</span></div>
-        <div class="patterns-demo patterns-folioDemo" data-ds-name="FolioBar" data-ds-tier="pattern" data-ds-spec="patterns/FolioBar.md">
+        <p class="ds-composition"><strong>Composes:</strong> brand mark, breadcrumbs, optional center status, and action set.</p>
+        <div class="ds-variants"><span>default</span><span>live status</span><span>reports/tools</span></div>
+        <div class="ds-demo ds-folio-host" data-ds-name="FolioBar" data-ds-tier="pattern" data-ds-spec="patterns/FolioBar.md">
           <header class="FolioBar_folio">
             <div class="FolioBar_folioLeft">
               <span class="FolioBar_folioMark">*</span>
               <nav class="FolioBar_folioBreadcrumbs" aria-label="Demo breadcrumb">
-                <span class="FolioBar_folioBreadcrumbLabel">Reference</span><span class="FolioBar_folioBreadcrumbSeparator">/</span><span class="FolioBar_folioBreadcrumbCurrent">Patterns</span>
+                <span class="FolioBar_folioBreadcrumbLabel">Reference</span>
+                <span class="FolioBar_folioBreadcrumbSeparator">/</span>
+                <span class="FolioBar_folioBreadcrumbCurrent">Patterns</span>
               </nav>
             </div>
             <div class="FolioBar_folioCenter">PATTERN REFERENCE</div>
@@ -1129,14 +554,14 @@
         </div>
       </article>
 
-      <article id="FloatingNavIsland" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FloatingNavIsland</h3></div>
-          <a class="patterns-specLink" href="../../patterns/FloatingNavIsland.md">Spec</a>
+      <article id="FloatingNavIsland" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FloatingNavIsland</h3></div>
+          <a class="ds-spec-link" href="../../patterns/FloatingNavIsland.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> global app-nav pill, optional local chapter pill, active tint states.</p>
-        <div class="patterns-variants"><span>dual-pill</span><span>chapter-only</span><span>per-tint</span></div>
-        <div class="patterns-demo patterns-navDemo" data-ds-name="FloatingNavIsland" data-ds-tier="pattern" data-ds-spec="patterns/FloatingNavIsland.md">
+        <p class="ds-composition"><strong>Composes:</strong> global app-nav pill, optional local chapter pill, and active tint states.</p>
+        <div class="ds-variants"><span>dual-pill</span><span>chapter-only</span><span>per-tint</span></div>
+        <div class="ds-demo ds-nav-host" data-ds-name="FloatingNavIsland" data-ds-tier="pattern" data-ds-spec="patterns/FloatingNavIsland.md">
           <div class="FloatingNavIsland_navIslandContainer">
             <nav class="FloatingNavIsland_navIslandLocal FloatingNavIsland_colorOlive" aria-label="Demo chapter navigation">
               <button class="FloatingNavIsland_navIslandLocalItem FloatingNavIsland_activeOlive" type="button">1</button>
@@ -1153,14 +578,14 @@
         </div>
       </article>
 
-      <article id="AtmosphereLayer" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">AtmosphereLayer</h3></div>
-          <a class="patterns-specLink" href="../../patterns/AtmosphereLayer.md">Spec</a>
+      <article id="AtmosphereLayer" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AtmosphereLayer</h3></div>
+          <a class="ds-spec-link" href="../../patterns/AtmosphereLayer.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> fixed full-viewport radial gradient layer and tinted watermark.</p>
-        <div class="patterns-variants"><span>turmeric</span><span>larkspur</span><span>terracotta</span><span>olive</span><span>eucalyptus</span></div>
-        <div class="patterns-demo patterns-atmosphereDemo" data-ds-name="AtmosphereLayer" data-ds-tier="pattern" data-ds-spec="patterns/AtmosphereLayer.md">
+        <p class="ds-composition"><strong>Composes:</strong> full-viewport radial atmosphere layer and tinted watermark.</p>
+        <div class="ds-variants"><span>turmeric</span><span>larkspur</span><span>terracotta</span><span>olive</span><span>eucalyptus</span></div>
+        <div class="ds-demo ds-atmosphere-host" data-ds-name="AtmosphereLayer" data-ds-tier="pattern" data-ds-spec="patterns/AtmosphereLayer.md">
           <div class="AtmosphereLayer_atmosphere AtmosphereLayer_olive">
             <div class="AtmosphereLayer_watermark AtmosphereLayer_watermarkOlive">*</div>
           </div>
@@ -1169,197 +594,205 @@
     </div>
   </section>
 
-  <section id="trust" class="patterns-section">
-    <div class="patterns-sectionHeader">
-      <h2 class="patterns-sectionTitle">Trust UI</h2>
-      <span class="patterns-sectionMeta">Wave 2 · 7 patterns</span>
+  <section id="trust" class="ds-section">
+    <div class="ds-section-header">
+      <h2 class="ds-section-title">Trust UI</h2>
+      <span class="ds-section-count">7 patterns</span>
     </div>
-    <p class="patterns-sectionLede">The claim, provenance, freshness, correction, and receipt layer. These patterns answer whether intelligence can be trusted and why.</p>
-    <div class="patterns-grid">
-      <article id="TrustBand" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">TrustBand</h3></div>
-          <a class="patterns-specLink" href="../../patterns/TrustBand.md">Spec</a>
+    <p class="ds-section-lede">The claim, provenance, freshness, correction, and receipt layer. These patterns answer whether intelligence can be trusted and why.</p>
+    <div class="ds-grid">
+      <article id="TrustBand" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">TrustBand</h3></div>
+          <a class="ds-spec-link" href="../../patterns/TrustBand.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> TrustBandBadge, ProvenanceTag, FreshnessIndicator.</p>
-        <div class="patterns-variants"><span>compact</span><span>default</span><span>expanded</span><span>inline</span><span>row</span></div>
-        <div class="patterns-demo" data-ds-name="TrustBand" data-ds-tier="pattern" data-ds-spec="patterns/TrustBand.md">
-          <div class="patterns-trustBand"><span class="patterns-pill"><span class="patterns-dot"></span>Likely current</span><span class="patterns-provenance">salesforce</span><span class="patterns-freshness">3h ago</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> TrustBandBadge, ProvenanceTag, and FreshnessIndicator.</p>
+        <div class="ds-variants"><span>compact</span><span>default</span><span>expanded</span><span>inline</span><span>row</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="TrustBand" data-ds-tier="pattern" data-ds-spec="patterns/TrustBand.md">
+          <p><strong>TrustBand</strong> (canonical CSS not yet promoted)</p>
+          <p>The composed primitives are specified, but no scoped `TrustBand.module.css` is available in `_shared/styles`.</p>
         </div>
       </article>
 
-      <article id="ClaimRow" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ClaimRow</h3></div>
-          <a class="patterns-specLink" href="../../patterns/ClaimRow.md">Spec</a>
+      <article id="ClaimRow" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ClaimRow</h3></div>
+          <a class="ds-spec-link" href="../../patterns/ClaimRow.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> subject prefix, claim value, TrustBand, optional ReceiptCallout.</p>
-        <div class="patterns-variants"><span>compact</span><span>default</span><span>rich</span><span>expandable</span></div>
-        <div class="patterns-demo" data-ds-name="ClaimRow" data-ds-tier="pattern" data-ds-spec="patterns/ClaimRow.md">
-          <div class="patterns-claim">
-            <div><p class="patterns-claimSubject">Acme Corp · renewal_date</p><p class="patterns-claimValue">June 15, 2026</p></div>
-            <div class="patterns-trustBand"><span class="patterns-pill"><span class="patterns-dot"></span>Likely current</span><span class="patterns-provenance">CRM · 3h</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> subject prefix, claim value, TrustBand, and optional ReceiptCallout.</p>
+        <div class="ds-variants"><span>compact</span><span>default</span><span>rich</span><span>expandable</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="ClaimRow" data-ds-tier="pattern" data-ds-spec="patterns/ClaimRow.md">
+          <p><strong>ClaimRow</strong> (canonical CSS not yet promoted)</p>
+          <p>The spec points to a future intelligence component. The old local mock classes were removed instead of pretending a canonical module exists.</p>
+        </div>
+      </article>
+
+      <article id="ReceiptCallout" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ReceiptCallout</h3></div>
+          <a class="ds-spec-link" href="../../patterns/ReceiptCallout.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> ClaimRow, resolver confidence, consistency finding, provenance detail, freshness chain, and actions.</p>
+        <div class="ds-variants"><span>collapsed</span><span>expanded</span><span>inline</span><span>drawer</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="ReceiptCallout" data-ds-tier="pattern" data-ds-spec="patterns/ReceiptCallout.md">
+          <p><strong>ReceiptCallout</strong> (canonical CSS not yet promoted)</p>
+          <p>The receipt inspection contract is specified, but no scoped source module has been promoted for the callout shell.</p>
+        </div>
+      </article>
+
+      <article id="AboutThisIntelligencePanel" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AboutThisIntelligencePanel</h3></div>
+          <a class="ds-spec-link" href="../../patterns/AboutThisIntelligencePanel.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> trust summary, freshness copy, source coverage, and optional gaps.</p>
+        <div class="ds-variants"><span>neutral</span><span>caution</span><span>incomplete</span><span>compact</span></div>
+        <div class="ds-demo" data-ds-name="AboutThisIntelligencePanel" data-ds-tier="pattern" data-ds-spec="patterns/AboutThisIntelligencePanel.md">
+          <div class="health_metaCard">
+            <div class="health_metaCardLabel">Our data capture gap</div>
+            <div class="health_metaCardText">Salesforce is current, but meeting notes are incomplete. Last enrichment ran 2 hours ago.</div>
+            <div class="health_metaCardSubsection">
+              <div class="health_metaCardSubLabel">Glean</div>
+              <div class="health_metaCardText">Upstream enrichment contributed champion risk, product usage, and 3 quotes.</div>
+            </div>
           </div>
         </div>
       </article>
 
-      <article id="ReceiptCallout" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ReceiptCallout</h3></div>
-          <a class="patterns-specLink" href="../../patterns/ReceiptCallout.md">Spec</a>
+      <article id="DossierSourceCoveragePanel" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DossierSourceCoveragePanel</h3></div>
+          <a class="ds-spec-link" href="../../patterns/DossierSourceCoveragePanel.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> ClaimRow, resolver confidence, ConsistencyFindingBanner, provenance detail, freshness chain, actions.</p>
-        <div class="patterns-variants"><span>collapsed</span><span>expanded</span><span>inline</span><span>drawer</span></div>
-        <div class="patterns-demo" data-ds-name="ReceiptCallout" data-ds-tier="pattern" data-ds-spec="patterns/ReceiptCallout.md">
-          <div class="patterns-callout">
-            <p class="patterns-calloutTitle">Receipt · Acme Corp · renewal_date</p>
-            <p class="patterns-calloutText">Resolver 0.94 · consistency ok · source Salesforce opportunity field · fetched 3h ago · verified today.</p>
-            <div class="patterns-variants"><span>Confirm</span><span>Correct</span><span>Dismiss</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> AsOfTimestamp, source coverage rows, and dossier-level gap notices.</p>
+        <div class="ds-variants"><span>account</span><span>project</span><span>person</span><span>compact</span></div>
+        <div class="ds-demo" data-ds-name="DossierSourceCoveragePanel" data-ds-tier="pattern" data-ds-spec="patterns/DossierSourceCoveragePanel.md">
+          <section class="AboutThisDossier_section">
+            <div class="AboutThisDossier_eyebrow">About this dossier</div>
+            <div class="AboutThisDossier_card">
+              <div class="AboutThisDossier_cardLabel">Source coverage</div>
+              <div class="AboutThisDossier_cardText">Synthesized from <strong>14</strong> source files - 7 transcripts, 4 emails, and 3 pdfs. Relationship-fabric fields still require manual capture.</div>
+            </div>
+            <div class="AboutThisDossier_card">
+              <div class="AboutThisDossier_cardLabel">Freshness</div>
+              <div class="AboutThisDossier_cardText">6 meetings on record. Last full dossier enrichment: May 2.</div>
+            </div>
+          </section>
+        </div>
+      </article>
+
+      <article id="ConsistencyFindingBanner" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ConsistencyFindingBanner</h3></div>
+          <a class="ds-spec-link" href="../../patterns/ConsistencyFindingBanner.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> verification status, finding text, and inspect/correct/dismiss affordances.</p>
+        <div class="ds-variants"><span>corrected</span><span>flagged</span><span>low</span><span>medium</span><span>high</span></div>
+        <div class="ds-demo" data-ds-name="ConsistencyFindingBanner" data-ds-tier="pattern" data-ds-spec="patterns/ConsistencyFindingBanner.md">
+          <div class="meeting-intel_consistencyBanner meeting-intel_consistencyBannerFlagged">
+            <span>Flagged: renewal risk conflicts with the latest meeting note.</span>
+            <span class="meeting-intel_consistencyCount">Inspect</span>
           </div>
         </div>
       </article>
 
-      <article id="AboutThisIntelligencePanel" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">AboutThisIntelligencePanel</h3></div>
-          <a class="patterns-specLink" href="../../patterns/AboutThisIntelligencePanel.md">Spec</a>
+      <article id="StaleReportBanner" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">StaleReportBanner</h3></div>
+          <a class="ds-spec-link" href="../../patterns/StaleReportBanner.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> TrustBandBadge, AsOfTimestamp, SourceCoverageLine list, optional DataGapNotice list.</p>
-        <div class="patterns-variants"><span>neutral</span><span>caution</span><span>incomplete</span><span>compact</span></div>
-        <div class="patterns-demo" data-ds-name="AboutThisIntelligencePanel" data-ds-tier="pattern" data-ds-spec="patterns/AboutThisIntelligencePanel.md">
-          <div class="patterns-callout" data-tone="caution">
-            <p class="patterns-calloutTitle">About this intelligence</p>
-            <p class="patterns-calloutText">Salesforce is current, but meeting notes are incomplete. Last enriched 2h ago.</p>
-            <div class="patterns-sourceRows"><div><span>Salesforce</span><span>covered</span></div><div><span>Glean</span><span>partial · 3 docs</span></div></div>
-          </div>
-        </div>
-      </article>
-
-      <article id="DossierSourceCoveragePanel" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">DossierSourceCoveragePanel</h3></div>
-          <a class="patterns-specLink" href="../../patterns/DossierSourceCoveragePanel.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> AsOfTimestamp, SourceCoverageLine rows, DataGapNotice for dossier gaps.</p>
-        <div class="patterns-variants"><span>account</span><span>project</span><span>person</span><span>compact</span></div>
-        <div class="patterns-demo" data-ds-name="DossierSourceCoveragePanel" data-ds-tier="pattern" data-ds-spec="patterns/DossierSourceCoveragePanel.md">
-          <div class="patterns-callout">
-            <p class="patterns-calloutTitle">Account source coverage · as of 08:00</p>
-            <div class="patterns-sourceRows"><div><span>CRM fields</span><span>covered</span></div><div><span>Recent meetings</span><span>partial</span></div><div><span>Stakeholders</span><span>2 need characterization</span></div></div>
-          </div>
-        </div>
-      </article>
-
-      <article id="ConsistencyFindingBanner" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ConsistencyFindingBanner</h3></div>
-          <a class="patterns-specLink" href="../../patterns/ConsistencyFindingBanner.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> VerificationStatusFlag, finding text, Inspect/Correct/Dismiss actions.</p>
-        <div class="patterns-variants"><span>corrected</span><span>flagged</span><span>low</span><span>medium</span><span>high</span></div>
-        <div class="patterns-demo" data-ds-name="ConsistencyFindingBanner" data-ds-tier="pattern" data-ds-spec="patterns/ConsistencyFindingBanner.md">
-          <div class="patterns-banner"><span>Flagged: renewal risk conflicts with the latest meeting note.</span><button class="patterns-button" type="button">Inspect</button></div>
-        </div>
-      </article>
-
-      <article id="StaleReportBanner" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">StaleReportBanner</h3></div>
-          <a class="patterns-specLink" href="../../patterns/StaleReportBanner.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> FreshnessIndicator, AsOfTimestamp, regenerate or refresh action.</p>
-        <div class="patterns-variants"><span>info</span><span>warning</span><span>regenerate</span><span>refresh</span></div>
-        <div class="patterns-demo" data-ds-name="StaleReportBanner" data-ds-tier="pattern" data-ds-spec="patterns/StaleReportBanner.md">
-          <div class="patterns-banner"><span>Underlying intelligence changed since this report was generated 4 days ago.</span><button class="patterns-button" data-primary="true" type="button">Regenerate</button></div>
-        </div>
-      </article>
-    </div>
-  </section>
-
-  <section id="forms" class="patterns-section">
-    <div class="patterns-sectionHeader">
-      <h2 class="patterns-sectionTitle">Forms &amp; Mastheads</h2>
-      <span class="patterns-sectionMeta">Wave 3 · 3 patterns</span>
-    </div>
-    <p class="patterns-sectionLede">Settings and non-briefing surface openers: structured mastheads, at-a-glance stats, and predictable settings rows.</p>
-    <div class="patterns-grid">
-      <article id="SurfaceMasthead" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">SurfaceMasthead</h3></div>
-          <a class="patterns-specLink" href="../../patterns/SurfaceMasthead.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> mono eyebrow, serif title, lede, accessory slot, optional GlanceRow slot.</p>
-        <div class="patterns-variants"><span>compact</span><span>default</span><span>rich</span><span>accessory</span><span>glance</span></div>
-        <div class="patterns-demo" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
-          <div class="patterns-masthead">
-            <div><p class="patterns-mono patterns-muted">Settings · Last edited 4 minutes ago</p><h4 class="patterns-mastheadTitle">Settings</h4><p class="patterns-serifBody">A quiet morning, all systems steady.</p></div>
-            <span class="patterns-pill">Healthy</span>
-          </div>
-        </div>
-      </article>
-
-      <article id="GlanceRow" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">GlanceRow</h3></div>
-          <a class="patterns-specLink" href="../../patterns/GlanceRow.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> GlanceCell instances in a horizontal masthead stat row.</p>
-        <div class="patterns-variants"><span>default</span><span>compact</span><span>wrap</span></div>
-        <div class="patterns-demo" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
-          <div class="patterns-glanceRow">
-            <div class="patterns-glanceCell"><p class="patterns-glanceKey">Connectors</p><p class="patterns-glanceValue">6 healthy</p></div>
-            <div class="patterns-glanceCell"><p class="patterns-glanceKey">Database</p><p class="patterns-glanceValue">220 MB</p></div>
-            <div class="patterns-glanceCell" data-state="warn"><p class="patterns-glanceKey">AI today</p><p class="patterns-glanceValue">82%</p></div>
-            <div class="patterns-glanceCell" data-state="warn"><p class="patterns-glanceKey">Anomalies</p><p class="patterns-glanceValue">2 recovered</p></div>
-          </div>
-        </div>
-      </article>
-
-      <article id="FormRow" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FormRow</h3></div>
-          <a class="patterns-specLink" href="../../patterns/FormRow.md">Spec</a>
-        </div>
-        <p class="patterns-composition"><strong>Composes:</strong> label/help block, control slot, optional right-aligned aux slot.</p>
-        <div class="patterns-variants"><span>default</span><span>dense</span><span>stacked</span><span>readonly</span></div>
-        <div class="patterns-demo" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md">
-          <div class="patterns-formRow">
-            <div><p class="patterns-formLabel">Display name</p><p class="patterns-formHelp">Shown in briefings and shared exports.</p></div>
-            <input class="patterns-inlineInput" value="Sam Chen" aria-label="Display name demo" readonly>
-            <span class="patterns-muted patterns-mono">Saved</span>
+        <p class="ds-composition"><strong>Composes:</strong> FreshnessIndicator, AsOfTimestamp, and regenerate or refresh action.</p>
+        <div class="ds-variants"><span>info</span><span>warning</span><span>regenerate</span><span>refresh</span></div>
+        <div class="ds-demo" data-ds-name="StaleReportBanner" data-ds-tier="pattern" data-ds-spec="patterns/StaleReportBanner.md">
+          <div class="report-shell_staleBanner">
+            <span>Underlying intelligence changed since this report was generated 4 days ago.</span>
+            <button class="report-shell_staleBannerButton" type="button">Regenerate</button>
           </div>
         </div>
       </article>
     </div>
   </section>
 
-  <section id="meeting" class="patterns-section">
-    <div class="patterns-sectionHeader">
-      <h2 class="patterns-sectionTitle">Meeting Intelligence</h2>
-      <span class="patterns-sectionMeta">Wave 4 · 10 patterns</span>
+  <section id="forms" class="ds-section">
+    <div class="ds-section-header">
+      <h2 class="ds-section-title">Forms &amp; Mastheads</h2>
+      <span class="ds-section-count">3 patterns</span>
     </div>
-    <p class="patterns-sectionLede">Post-meeting and meeting-detail patterns: plans versus outcomes, behavior signals, findings, champion health, commitments, suggestions, and role changes.</p>
-    <div class="patterns-grid">
-      <article id="FolioActions" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FolioActions</h3></div>
-          <a class="patterns-specLink" href="../../patterns/FolioActions.md">Spec</a>
+    <p class="ds-section-lede">Settings and non-briefing surface openers: structured mastheads, at-a-glance stats, and predictable settings rows.</p>
+    <div class="ds-grid">
+      <article id="SurfaceMasthead" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SurfaceMasthead</h3></div>
+          <a class="ds-spec-link" href="../../patterns/SurfaceMasthead.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> compact Button instances for document-level actions below FolioBar.</p>
-        <div class="patterns-variants"><span>meeting-detail</span><span>loading</span><span>disabled</span></div>
-        <div class="patterns-demo" data-ds-name="FolioActions" data-ds-tier="pattern" data-ds-spec="patterns/FolioActions.md">
-          <div class="patterns-actionsBar"><button class="patterns-button" type="button">Copy</button><button class="patterns-button" type="button">Share</button><button class="patterns-button" data-primary="true" type="button">Send Recap</button><button class="patterns-button" type="button">Re-extract</button></div>
+        <p class="ds-composition"><strong>Composes:</strong> mono eyebrow, serif title, lede, accessory slot, and optional GlanceRow slot.</p>
+        <div class="ds-variants"><span>compact</span><span>default</span><span>rich</span><span>accessory</span><span>glance</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
+          <p><strong>SurfaceMasthead</strong> (canonical CSS not yet promoted)</p>
+          <p>The pattern consolidates Settings and MeetingDetail mastheads, but no shared scoped module exists yet.</p>
         </div>
       </article>
 
-      <article id="AgendaThreadList" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">AgendaThreadList</h3></div>
-          <a class="patterns-specLink" href="../../patterns/AgendaThreadList.md">Spec</a>
+      <article id="GlanceRow" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">GlanceRow</h3></div>
+          <a class="ds-spec-link" href="../../patterns/GlanceRow.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> status icon markers, item text, detail metadata in a vertical list.</p>
-        <div class="patterns-variants"><span>confirmed</span><span>open</span><span>new</span><span>overdue</span></div>
-        <div class="patterns-demo" data-ds-name="AgendaThreadList" data-ds-tier="pattern" data-ds-spec="patterns/AgendaThreadList.md">
+        <p class="ds-composition"><strong>Composes:</strong> GlanceCell instances in a horizontal masthead stat row.</p>
+        <div class="ds-variants"><span>default</span><span>compact</span><span>wrap</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
+          <p><strong>GlanceRow</strong> (canonical CSS not yet promoted)</p>
+          <p>The spec points to future layout components; the reference will render it once `GlanceRow.module.css` is promoted.</p>
+        </div>
+      </article>
+
+      <article id="FormRow" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FormRow</h3></div>
+          <a class="ds-spec-link" href="../../patterns/FormRow.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> label/help block, control slot, and optional right-aligned aux slot.</p>
+        <div class="ds-variants"><span>default</span><span>dense</span><span>stacked</span><span>readonly</span><span class="ds-promotion">promotion needed</span></div>
+        <div class="ds-demo ds-pending" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md">
+          <p><strong>FormRow</strong> (canonical CSS not yet promoted)</p>
+          <p>Settings uses local substrate today; a scoped module is needed before this can be demoed canonically.</p>
+        </div>
+      </article>
+    </div>
+  </section>
+
+  <section id="meeting" class="ds-section">
+    <div class="ds-section-header">
+      <h2 class="ds-section-title">Meeting Intelligence</h2>
+      <span class="ds-section-count">10 patterns</span>
+    </div>
+    <p class="ds-section-lede">Post-meeting and meeting-detail patterns: plans versus outcomes, behavior signals, findings, champion health, commitments, suggestions, and role changes.</p>
+    <div class="ds-grid">
+      <article id="FolioActions" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FolioActions</h3></div>
+          <a class="ds-spec-link" href="../../patterns/FolioActions.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> compact document-level buttons below FolioBar.</p>
+        <div class="ds-variants"><span>meeting-detail</span><span>loading</span><span>disabled</span></div>
+        <div class="ds-demo" data-ds-name="FolioActions" data-ds-tier="pattern" data-ds-spec="patterns/FolioActions.md">
+          <div class="meeting-intel_folioActions">
+            <button class="meeting-intel_folioBtn" type="button">Copy</button>
+            <button class="meeting-intel_folioBtn" type="button">Share</button>
+            <button class="meeting-intel_folioBtn meeting-intel_folioBtnInline" type="button">Send recap</button>
+            <button class="meeting-intel_folioBtn meeting-intel_folioBtnDisabled" type="button">Re-extract</button>
+          </div>
+        </div>
+      </article>
+
+      <article id="AgendaThreadList" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AgendaThreadList</h3></div>
+          <a class="ds-spec-link" href="../../patterns/AgendaThreadList.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> status markers, item text, and detail metadata in a vertical list.</p>
+        <div class="ds-variants"><span>confirmed</span><span>open</span><span>new</span><span>overdue</span></div>
+        <div class="ds-demo" data-ds-name="AgendaThreadList" data-ds-tier="pattern" data-ds-spec="patterns/AgendaThreadList.md">
           <ul class="PostMeetingIntelligence_threadList">
             <li class="PostMeetingIntelligence_threadItem"><span class="PostMeetingIntelligence_threadIcon PostMeetingIntelligence_threadIconConfirmed">OK</span><span>Pricing pressure raised first <span class="PostMeetingIntelligence_threadDetail">18 min spent</span></span></li>
             <li class="PostMeetingIntelligence_threadItem"><span class="PostMeetingIntelligence_threadIcon PostMeetingIntelligence_threadIconOpen">O</span><span>Audit-log export owner <span class="PostMeetingIntelligence_threadDetail">carried over</span></span></li>
@@ -1368,120 +801,134 @@
         </div>
       </article>
 
-      <article id="PredictionsVsRealityGrid" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">PredictionsVsRealityGrid</h3></div>
-          <a class="patterns-specLink" href="../../patterns/PredictionsVsRealityGrid.md">Spec</a>
+      <article id="PredictionsVsRealityGrid" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">PredictionsVsRealityGrid</h3></div>
+          <a class="ds-spec-link" href="../../patterns/PredictionsVsRealityGrid.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> risk and win columns, section labels, dot markers, finding title and impact text.</p>
-        <div class="patterns-variants"><span>default</span><span>comfortable</span><span>compact</span><span>empty</span></div>
-        <div class="patterns-demo" data-ds-name="PredictionsVsRealityGrid" data-ds-tier="pattern" data-ds-spec="patterns/PredictionsVsRealityGrid.md">
-          <div class="patterns-triad" style="grid-template-columns:1fr 1fr;">
-            <div class="PostMeetingIntelligence_predictionGroup"><p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelTerracotta">Risks</p><div class="PostMeetingIntelligence_predictionItem PostMeetingIntelligence_predictionItemConfirmed"><span class="PostMeetingIntelligence_predictionIcon PostMeetingIntelligence_predictionIconConfirmed">OK</span><span>Procurement-led pricing compression confirmed.</span></div></div>
-            <div class="PostMeetingIntelligence_predictionGroup"><p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelSage">Wins</p><div class="PostMeetingIntelligence_predictionItem PostMeetingIntelligence_predictionItemSurprise"><span class="PostMeetingIntelligence_predictionIcon PostMeetingIntelligence_predictionIconSurprise">+</span><span>Helpline adoption landed as a reference candidate.</span></div></div>
+        <p class="ds-composition"><strong>Composes:</strong> risk and win groups, section labels, status icons, and match copy.</p>
+        <div class="ds-variants"><span>default</span><span>comfortable</span><span>compact</span><span>empty</span></div>
+        <div class="ds-demo" data-ds-name="PredictionsVsRealityGrid" data-ds-tier="pattern" data-ds-spec="patterns/PredictionsVsRealityGrid.md">
+          <div class="PostMeetingIntelligence_predictionGroup">
+            <p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelTerracotta">Risks</p>
+            <div class="PostMeetingIntelligence_predictionItem PostMeetingIntelligence_predictionItemConfirmed"><span class="PostMeetingIntelligence_predictionIcon PostMeetingIntelligence_predictionIconConfirmed">OK</span><span>Procurement-led pricing compression confirmed.</span></div>
+            <p class="PostMeetingIntelligence_predictionMatch">Matched the pre-meeting warning about discount pressure.</p>
+          </div>
+          <div class="PostMeetingIntelligence_predictionGroup">
+            <p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelSage">Wins</p>
+            <div class="PostMeetingIntelligence_predictionItem PostMeetingIntelligence_predictionItemSurprise"><span class="PostMeetingIntelligence_predictionIcon PostMeetingIntelligence_predictionIconSurprise">+</span><span>Helpline adoption landed as a reference candidate.</span></div>
           </div>
         </div>
       </article>
 
-      <article id="SignalGrid" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">SignalGrid</h3></div>
-          <a class="patterns-specLink" href="../../patterns/SignalGrid.md">Spec</a>
+      <article id="SignalGrid" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SignalGrid</h3></div>
+          <a class="ds-spec-link" href="../../patterns/SignalGrid.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> four mono signal keys and concise tone-aware values in a compact grid.</p>
-        <div class="patterns-variants"><span>neutral</span><span>positive</span><span>caution</span></div>
-        <div class="patterns-demo" data-ds-name="SignalGrid" data-ds-tier="pattern" data-ds-spec="patterns/SignalGrid.md">
+        <p class="ds-composition"><strong>Composes:</strong> four mono signal keys and concise tone-aware values.</p>
+        <div class="ds-variants"><span>neutral</span><span>positive</span><span>caution</span></div>
+        <div class="ds-demo" data-ds-name="SignalGrid" data-ds-tier="pattern" data-ds-spec="patterns/SignalGrid.md">
           <div class="PostMeetingIntelligence_signalGrid">
             <span class="PostMeetingIntelligence_signalKey">Question density</span><span class="PostMeetingIntelligence_signalValue">High (1.4/min)</span>
-            <span class="PostMeetingIntelligence_signalKey">Decision maker</span><span class="PostMeetingIntelligence_signalValue">Marco · yes</span>
+            <span class="PostMeetingIntelligence_signalKey">Decision maker</span><span class="PostMeetingIntelligence_signalValue">Marco - yes</span>
             <span class="PostMeetingIntelligence_signalKey">Forward looking</span><span class="PostMeetingIntelligence_signalValue">62%</span>
-            <span class="PostMeetingIntelligence_signalKey">Monologue risk</span><span class="PostMeetingIntelligence_signalValue">Yes · minute 18-24</span>
+            <span class="PostMeetingIntelligence_signalKey">Monologue risk</span><span class="PostMeetingIntelligence_signalValue">Yes - minute 18-24</span>
           </div>
         </div>
       </article>
 
-      <article id="EscalationQuote" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">EscalationQuote</h3></div>
-          <a class="patterns-specLink" href="../../patterns/EscalationQuote.md">Spec</a>
+      <article id="EscalationQuote" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EscalationQuote</h3></div>
+          <a class="ds-spec-link" href="../../patterns/EscalationQuote.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> highlighted serif quote, attribution line, optional transcript timestamp link.</p>
-        <div class="patterns-variants"><span>default</span><span>deep-link</span></div>
-        <div class="patterns-demo" data-ds-name="EscalationQuote" data-ds-tier="pattern" data-ds-spec="patterns/EscalationQuote.md">
+        <p class="ds-composition"><strong>Composes:</strong> highlighted serif quote, attribution line, and optional transcript timestamp.</p>
+        <div class="ds-variants"><span>default</span><span>deep-link</span></div>
+        <div class="ds-demo" data-ds-name="EscalationQuote" data-ds-tier="pattern" data-ds-spec="patterns/EscalationQuote.md">
           <div class="PostMeetingIntelligence_escalationBlock">
             <p class="PostMeetingIntelligence_escalationQuote">&ldquo;We need to see what flexibility looks like before we sign anything.&rdquo;</p>
-            <p class="PostMeetingIntelligence_escalationAttribution">Aoife Murphy · Procurement Lead · 11:14 AM</p>
+            <p class="PostMeetingIntelligence_escalationAttribution">Aoife Murphy &middot; Procurement Lead &middot; 11:14 AM</p>
           </div>
         </div>
       </article>
 
-      <article id="FindingsTriad" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">FindingsTriad</h3></div>
-          <a class="patterns-specLink" href="../../patterns/FindingsTriad.md">Spec</a>
+      <article id="FindingsTriad" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FindingsTriad</h3></div>
+          <a class="ds-spec-link" href="../../patterns/FindingsTriad.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> Wins, Risks, Decisions columns with finding dots, impact copy, evidence quote, attribution.</p>
-        <div class="patterns-variants"><span>wins</span><span>risks</span><span>decisions</span><span>with evidence</span></div>
-        <div class="patterns-demo" data-ds-name="FindingsTriad" data-ds-tier="pattern" data-ds-spec="patterns/FindingsTriad.md">
-          <div class="patterns-triad">
-            <div class="PostMeetingIntelligence_findingsGroup"><p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelSage">Wins</p><div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotSage"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Case-study quote ask</p><p class="PostMeetingIntelligence_findingImpact">Public reference candidate.</p></div></div></div>
-            <div class="PostMeetingIntelligence_findingsGroup"><p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelTerracotta">Risks</p><div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotTerracotta"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Procurement floor</p><p class="PostMeetingIntelligence_findingImpact">Pricing pressure is explicit.</p></div></div></div>
-            <div class="PostMeetingIntelligence_findingsGroup"><p class="PostMeetingIntelligence_monoLabel">Decisions</p><div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotCharcoal"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Apr 24 follow-up</p><p class="PostMeetingIntelligence_findingImpact">Joint review scheduled.</p></div></div></div>
+        <p class="ds-composition"><strong>Composes:</strong> wins, risks, decisions, finding dots, impact copy, evidence, and attribution.</p>
+        <div class="ds-variants"><span>wins</span><span>risks</span><span>decisions</span><span>with evidence</span></div>
+        <div class="ds-demo" data-ds-name="FindingsTriad" data-ds-tier="pattern" data-ds-spec="patterns/FindingsTriad.md">
+          <div class="PostMeetingIntelligence_findingsGroup">
+            <p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelSage">Wins</p>
+            <div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotSage"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Case-study quote ask <span class="PostMeetingIntelligence_findingBadge PostMeetingIntelligence_badgeValue">value</span></p><p class="PostMeetingIntelligence_findingImpact">Public reference candidate.</p></div></div>
+          </div>
+          <div class="PostMeetingIntelligence_findingsGroup">
+            <p class="PostMeetingIntelligence_monoLabel PostMeetingIntelligence_monoLabelTerracotta">Risks</p>
+            <div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotTerracotta"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Procurement floor <span class="PostMeetingIntelligence_findingBadge PostMeetingIntelligence_badgeRed">risk</span></p><p class="PostMeetingIntelligence_findingImpact">Pricing pressure is explicit.</p><div class="PostMeetingIntelligence_evidenceBlock PostMeetingIntelligence_evidenceBlockRed"><p class="PostMeetingIntelligence_evidenceText">&ldquo;Per-seat math has to come down.&rdquo;</p><div class="PostMeetingIntelligence_attribution">Marco &middot; 11:52</div></div></div></div>
+          </div>
+          <div class="PostMeetingIntelligence_findingsGroup">
+            <p class="PostMeetingIntelligence_monoLabel">Decisions</p>
+            <div class="PostMeetingIntelligence_findingItem"><span class="PostMeetingIntelligence_findingDot PostMeetingIntelligence_findingDotCharcoal"></span><div class="PostMeetingIntelligence_findingContent"><p class="PostMeetingIntelligence_findingTitle">Apr 24 follow-up</p><p class="PostMeetingIntelligence_findingImpact">Joint review scheduled.</p></div></div>
           </div>
         </div>
       </article>
 
-      <article id="ChampionHealthBlock" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">ChampionHealthBlock</h3></div>
-          <a class="patterns-specLink" href="../../patterns/ChampionHealthBlock.md">Spec</a>
+      <article id="ChampionHealthBlock" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ChampionHealthBlock</h3></div>
+          <a class="ds-spec-link" href="../../patterns/ChampionHealthBlock.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> champion name, status pill, evidence quote, attribution, risk paragraph.</p>
-        <div class="patterns-variants"><span>strengthening</span><span>steady</span><span>weakening</span><span>lost</span></div>
-        <div class="patterns-demo" data-ds-name="ChampionHealthBlock" data-ds-tier="pattern" data-ds-spec="patterns/ChampionHealthBlock.md">
-          <div class="PostMeetingIntelligence_championHeader"><span class="PostMeetingIntelligence_championName">Marco Devine</span><span class="PostMeetingIntelligence_championBadge PostMeetingIntelligence_championBadgeWeak">Still champion · weakening</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> champion name, status badge, evidence quote, attribution, and risk paragraph.</p>
+        <div class="ds-variants"><span>strengthening</span><span>steady</span><span>weakening</span><span>lost</span></div>
+        <div class="ds-demo" data-ds-name="ChampionHealthBlock" data-ds-tier="pattern" data-ds-spec="patterns/ChampionHealthBlock.md">
+          <div class="PostMeetingIntelligence_championHeader"><span class="PostMeetingIntelligence_championName">Marco Devine</span><span class="PostMeetingIntelligence_championBadge PostMeetingIntelligence_championBadgeWeak">Still champion - weakening</span></div>
           <p class="PostMeetingIntelligence_championEvidence">&ldquo;I'll go to bat for Helpline, but the per-seat math has to come down.&rdquo;</p>
           <p class="PostMeetingIntelligence_championRisk">Risk: Marco is now using procurement as cover.</p>
         </div>
       </article>
 
-      <article id="CommitmentRow" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">CommitmentRow</h3></div>
-          <a class="patterns-specLink" href="../../patterns/CommitmentRow.md">Spec</a>
+      <article id="CommitmentRow" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">CommitmentRow</h3></div>
+          <a class="ds-spec-link" href="../../patterns/CommitmentRow.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> ownership pill, commitment body, optional list divider.</p>
-        <div class="patterns-variants"><span>yours</span><span>theirs</span><span>captured</span><span>pending</span><span>complete</span></div>
-        <div class="patterns-demo" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
-          <div class="PostMeetingIntelligence_commitmentItem"><span class="PostMeetingIntelligence_commitmentIcon">-&gt;</span><span>Send three pricing scenarios for the Apr 24 follow-up.<span class="PostMeetingIntelligence_commitmentTag">Yours</span></span></div>
-          <div class="PostMeetingIntelligence_commitmentItem"><span class="PostMeetingIntelligence_commitmentIcon">-&gt;</span><span>Aoife will confirm procurement's approval path.<span class="PostMeetingIntelligence_commitmentTag">Theirs</span></span></div>
+        <p class="ds-composition"><strong>Composes:</strong> ownership tag, commitment body, and optional list divider.</p>
+        <div class="ds-variants"><span>yours</span><span>theirs</span><span>captured</span><span>pending</span><span>complete</span></div>
+        <div class="ds-demo" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
+          <div class="PostMeetingIntelligence_commitmentsList">
+            <div class="PostMeetingIntelligence_commitmentItem"><span class="PostMeetingIntelligence_commitmentIcon">-&gt;</span><span>Send three pricing scenarios for the Apr 24 follow-up.<span class="PostMeetingIntelligence_commitmentTag">Yours</span></span></div>
+            <div class="PostMeetingIntelligence_commitmentItem"><span class="PostMeetingIntelligence_commitmentIcon">-&gt;</span><span>Aoife will confirm procurement's approval path.<span class="PostMeetingIntelligence_commitmentTag">Theirs</span></span></div>
+          </div>
         </div>
       </article>
 
-      <article id="SuggestedActionRow" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">SuggestedActionRow</h3></div>
-          <a class="patterns-specLink" href="../../patterns/SuggestedActionRow.md">Spec</a>
+      <article id="SuggestedActionRow" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SuggestedActionRow</h3></div>
+          <a class="ds-spec-link" href="../../patterns/SuggestedActionRow.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> suggested pill, serif action title, mono metadata, optional context quote, Accept and Dismiss buttons.</p>
-        <div class="patterns-variants"><span>meeting</span><span>work</span><span>suggested</span><span>pending</span><span>accepted</span><span>dismissed</span></div>
-        <div class="patterns-demo" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
+        <p class="ds-composition"><strong>Composes:</strong> suggested pill, action title, mono metadata, context quote, and controls.</p>
+        <div class="ds-variants"><span>meeting</span><span>work</span><span>suggested</span><span>pending</span><span>accepted</span><span>dismissed</span></div>
+        <div class="ds-demo" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
           <div class="PostMeetingIntelligence_actionItem PostMeetingIntelligence_actionItemSuggested">
             <span class="PostMeetingIntelligence_suggestedPill">Suggested</span>
-            <div class="PostMeetingIntelligence_actionText">Schedule the Apr 24 renewal-pricing meeting <span class="PostMeetingIntelligence_actionMeta PostMeetingIntelligence_priorityP1">Urgent · due Apr 19</span><span class="PostMeetingIntelligence_actionContext">&ldquo;Apr 24 at 1pm works for us.&rdquo; · Aoife, 11:54</span></div>
+            <div class="PostMeetingIntelligence_actionText">Schedule the Apr 24 renewal-pricing meeting <span class="PostMeetingIntelligence_actionMeta PostMeetingIntelligence_priorityP1">Urgent &middot; due Apr 19</span><span class="PostMeetingIntelligence_actionContext">&ldquo;Apr 24 at 1pm works for us.&rdquo; &middot; Aoife, 11:54</span></div>
             <div class="PostMeetingIntelligence_actionControls"><button class="PostMeetingIntelligence_actionBtn PostMeetingIntelligence_btnAccept" type="button">Accept</button><button class="PostMeetingIntelligence_actionBtn PostMeetingIntelligence_btnDismiss" type="button">Dismiss</button></div>
           </div>
         </div>
       </article>
 
-      <article id="RoleTransitionRow" class="patterns-card">
-        <div class="patterns-cardHeader">
-          <div class="patterns-nameWrap"><span class="patterns-tier">pattern</span><h3 class="patterns-cardTitle">RoleTransitionRow</h3></div>
-          <a class="patterns-specLink" href="../../patterns/RoleTransitionRow.md">Spec</a>
+      <article id="RoleTransitionRow" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">RoleTransitionRow</h3></div>
+          <a class="ds-spec-link" href="../../patterns/RoleTransitionRow.md">Spec</a>
         </div>
-        <p class="patterns-composition"><strong>Composes:</strong> person name, before-status pill, transition arrow, after-status pill, optional evidence quote.</p>
-        <div class="patterns-variants"><span>default</span><span>strengthening</span><span>weakening</span></div>
-        <div class="patterns-demo" data-ds-name="RoleTransitionRow" data-ds-tier="pattern" data-ds-spec="patterns/RoleTransitionRow.md">
+        <p class="ds-composition"><strong>Composes:</strong> person name, before/after status pills, transition arrow, and evidence quote.</p>
+        <div class="ds-variants"><span>default</span><span>strengthening</span><span>weakening</span></div>
+        <div class="ds-demo" data-ds-name="RoleTransitionRow" data-ds-tier="pattern" data-ds-spec="patterns/RoleTransitionRow.md">
           <div class="PostMeetingIntelligence_roleChange">
             <div class="PostMeetingIntelligence_roleHeader"><span class="PostMeetingIntelligence_roleName">Aoife Murphy</span><span class="PostMeetingIntelligence_roleTransition"><span class="PostMeetingIntelligence_roleStatus">No relationship</span><span class="PostMeetingIntelligence_roleArrow">-&gt;</span><span class="PostMeetingIntelligence_roleStatus">Procurement gatekeeper</span></span></div>
             <div class="PostMeetingIntelligence_roleEvidenceBlock"><p class="PostMeetingIntelligence_roleEvidence">&ldquo;Our CFO will need to see the pricing walk before approval.&rdquo;</p></div>
