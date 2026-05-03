@@ -60,12 +60,26 @@
   --color-rule-heavy: rgba(30, 37, 48, 0.12); /* Primary dividers, section rules */
   --color-rule-light: rgba(30, 37, 48, 0.06); /* Secondary dividers, soft separators */
 
-  /* Entity color aliases intentionally omitted (DOS-61).
-     ADR-0076 defines entity colors, but the semantic layer was never adopted
-     across ~20 call sites that reference the underlying palette tokens
-     directly (e.g., `var(--color-spice-turmeric)` for Account accents).
-     Deleting rather than expanding scope to avoid unrelated churn. If the
-     semantic layer is revived, redefine here and refactor call sites together. */
+  /* ─────────────────────────────────────────────────────────────────────────
+     ENTITY COLOR ALIASES — Semantic layer (DOS-357, design system D1)
+     ADR-0076 entity color semantics. Reintroduced after DOS-61 removal so
+     the design system has one canonical token vocabulary for entity identity.
+
+     Use these when the rendered element represents an entity in context
+     (an account hero, a person card, the user's own surface, etc.).
+     Direct uses of underlying paint tokens (--color-spice-turmeric, etc.)
+     remain valid where the meaning is "the turmeric paint color" rather
+     than "the account entity color" — e.g., warm-emphasis prose styling,
+     prep-state indicators, status warnings.
+
+     Migration of existing direct entity-color references happens gradually
+     as Wave 1 surface specs land (see .docs/design/surfaces/).
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-entity-account: var(--color-spice-turmeric);
+  --color-entity-project: var(--color-garden-olive);
+  --color-entity-person: var(--color-garden-larkspur);
+  --color-entity-action: var(--color-spice-terracotta);
+  --color-entity-user: var(--color-garden-eucalyptus);
 
   /* ─────────────────────────────────────────────────────────────────────────
      OPACITY VARIANTS — Tinted backgrounds, borders, hover states

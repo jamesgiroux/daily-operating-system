@@ -27,9 +27,9 @@ interface EmailEntityChipProps {
 }
 
 const entityColor: Record<string, string> = {
-  account: "var(--color-spice-turmeric)",
-  project: "var(--color-garden-olive)",
-  person: "var(--color-sky-larkspur)",
+  account: "var(--color-entity-account)",
+  project: "var(--color-entity-project)",
+  person: "var(--color-entity-person)",
 };
 
 const entityBg: Record<string, string> = {
