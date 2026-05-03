@@ -6,6 +6,8 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 
 ## Index
 
+### Wave 1 (v1.4.3 substrate, 0.1.0)
+
 | Name | Status | Job (one line) | Source |
 |---|---|---|---|
 | [`Pill`](./Pill.md) | canonical | Visual primitive for inline status / label / category badges | `_shared/.pill` |
@@ -16,11 +18,31 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 | [`EntityChip`](./EntityChip.md) | canonical | Entity reference with entity-type color | `src/components/ui/{meeting,email}-entity-chip.tsx` |
 | [`TypeBadge`](./TypeBadge.md) | canonical | Account-type categorical (Customer / Internal / Partner) | `_shared/.type-badge` + AccountHero |
 
-_Wave 2 will add: FreshnessChip (consolidate with FreshnessIndicator), SourceCoverageLine, ConfidenceScoreChip, VerificationStatusFlag, DataGapNotice, AsOfTimestamp._
+### Wave 2 (v1.4.4 trust UI, 0.2.0)
 
-_Wave 3 will add: InlineInput, Switch, Segmented, RemovableChip, GlanceCell._
+| Name | Status | Job (one line) | Source |
+|---|---|---|---|
+| [`SourceCoverageLine`](./SourceCoverageLine.md) | proposed | Compact line summarizing source coverage (e.g., "Glean · 4 sources · 2 stale") | new |
+| [`ConfidenceScoreChip`](./ConfidenceScoreChip.md) | proposed | Numerical confidence score chip with threshold-based tone | new |
+| [`VerificationStatusFlag`](./VerificationStatusFlag.md) | proposed | Consistency state per v1.4.0 (`ok` / `corrected` / `flagged`) | new |
+| [`DataGapNotice`](./DataGapNotice.md) | proposed | Inline warning that intelligence is missing critical inputs | new |
+| [`AsOfTimestamp`](./AsOfTimestamp.md) | proposed | Static "as of" timestamp label (companion to FreshnessIndicator) | new |
 
-_Wave 4 will add: MeetingStatusPill._
+### Wave 3 (Settings substrate, 0.3.0)
+
+| Name | Status | Job (one line) | Source |
+|---|---|---|---|
+| [`InlineInput`](./InlineInput.md) | proposed | Click-to-edit text input with pencil affordance | mockup `settings/parts.jsx` |
+| [`Switch`](./Switch.md) | proposed | Aria-checked toggle button | mockup `settings/parts.jsx` |
+| [`Segmented`](./Segmented.md) | proposed | Tinted button group with `aria-pressed` state | mockup `settings/parts.jsx` |
+| [`RemovableChip`](./RemovableChip.md) | proposed | Chip with × removal affordance (distinct from `Pill`) | mockup `settings/parts.jsx` |
+| [`GlanceCell`](./GlanceCell.md) | proposed | Single key/value stat cell (composed in `GlanceRow`) | mockup `settings/app.jsx` masthead |
+
+### Wave 4 (Meeting Detail substrate, 0.4.0)
+
+| Name | Status | Job (one line) | Source |
+|---|---|---|---|
+| [`MeetingStatusPill`](./MeetingStatusPill.md) | proposed | Meeting status (wrapped / processing / failed) for MeetingHero accessory | mockup `meeting/current/after.html` |
 
 ## Conventions
 

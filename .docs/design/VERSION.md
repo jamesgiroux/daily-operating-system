@@ -1,6 +1,6 @@
 # Design System Version
 
-**Current:** `0.1.0` — Wave 1 (v1.4.3 substrate)
+**Current:** `0.4.0` — Waves 1-4 substrate (v1.4.3 briefing, v1.4.4 trust UI, Settings, Meeting Detail)
 
 **Stability statement:** Pre-stable. Expect breaking changes until 1.0.0. Pre-1.0, treat any minor bump as potentially breaking (standard semver-zero convention).
 
