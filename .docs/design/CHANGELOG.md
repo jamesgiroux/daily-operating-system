@@ -22,6 +22,60 @@ Format:
 
 ---
 
+## [0.4.0] — 2026-05-03
+
+### Added
+
+**Wave 4 — Meeting Detail substrate (DOS-356):**
+- 1 primitive: `MeetingStatusPill` (wrapped / processing / failed)
+- 11 patterns: `SuggestedActionRow`, `FolioActions`, `AgendaThreadList`, `EscalationQuote`, `RoleTransitionRow`, `PredictionsVsRealityGrid`, `SignalGrid`, `FindingsTriad`, `ChampionHealthBlock`, `CommitmentRow`
+- 1 surface: `MeetingDetail` (chapters: 7 sections via FloatingNavIsland)
+
+### Notes
+
+- `MeetingHero` subsumed into `SurfaceMasthead` (Wave 3); MeetingDetail composes SurfaceMasthead with `MeetingStatusPill` accessory rather than introducing a separate hero pattern.
+- `FolioActions` is documented as a separate pattern from `FloatingNavIsland` per D2: actions toolbar, not navigation.
+- All `cur-pm-*` and `cur-folio-*` prefixed mockup classes consolidated into the canonical patterns above; do not promote mockup class names.
+
+---
+
+## [0.3.0] — 2026-05-03
+
+### Added
+
+**Wave 3 — Settings substrate (DOS-355):**
+- 5 primitives: `InlineInput`, `Switch`, `Segmented`, `RemovableChip`, `GlanceCell`
+- 3 patterns: `SurfaceMasthead`, `FormRow`, `GlanceRow`
+- 1 surface: `Settings` (chapters: Identity / Connectors / Briefing / Data / Activity / System / Diagnostics via FloatingNavIsland)
+
+### Notes
+
+- `SectionTabbar` (mockup proposal) explicitly NOT introduced as a separate pattern — Settings provides chapters to `FloatingNavIsland` per D2; the numbered labels (`01 You / 02 Connectors / …`) live in the chapter labels rendered by FloatingNavIsland's local pill.
+- `SurfaceMasthead` (Wave 3) generalizes from Settings' masthead AND MeetingDetail's hero — used in both Wave 3 and Wave 4 surfaces.
+- `RemovableChip` is intentionally distinct from `Pill` (different interaction — × removal vs. labeled state).
+
+---
+
+## [0.2.0] — 2026-05-03
+
+### Added
+
+**Wave 2 — Trust UI substrate (DOS-354):**
+- 5 primitives: `SourceCoverageLine`, `ConfidenceScoreChip`, `VerificationStatusFlag`, `DataGapNotice`, `AsOfTimestamp`
+- 7 patterns: `TrustBand`, `ClaimRow`, `ReceiptCallout`, `AboutThisIntelligencePanel`, `DossierSourceCoveragePanel`, `StaleReportBanner`, `ConsistencyFindingBanner`
+
+### Changed
+
+- `FreshnessIndicator` (Wave 1 primitive) updated: `FreshnessChip` (Wave 2 audit candidate) consolidated into FreshnessIndicator. Single canonical name; FreshnessChip dropped from spec scope.
+
+### Notes
+
+- Wave 2 establishes the v1.4.4 inspection layer: `TrustBand` for the surface-level trust render, `ClaimRow` for the unit-of-claim API, `ReceiptCallout` for inspection drill-in.
+- Resolver-band primitive (`ResolverConfidenceBadge`, `Resolved / ResolvedWithFlag / Suggestion / NoMatch`) deferred from this wave; surfaces inside `ReceiptCallout` for the receipt/inspection experience but not yet specified — file separately when v1.4.4 implementation reveals concrete need.
+- `MeetingHero` reconciliation tracked into Wave 4 (subsumed into Wave 3's `SurfaceMasthead`).
+
+---
+
 ## [0.1.0] — 2026-05-02
 
 ### Added

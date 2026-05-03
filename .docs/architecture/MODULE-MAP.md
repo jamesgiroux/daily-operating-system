@@ -38,7 +38,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0 (I397). |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (I406–I410). |
-| `services/` | 53 | 318 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 53 | 322 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 20 | 53 | Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -73,12 +73,12 @@
 | `focus_prioritization.rs` | 398 | 1 | — |
 | `google.rs` | 1731 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 492 | 12 | — |
-| `intel_queue.rs` | 3772 | 5 | Background intelligence enrichment queue (I132). |
+| `intel_queue.rs` | 3796 | 5 | Background intelligence enrichment queue (I132). |
 | `json_loader.rs` | 426 | 1 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics (I197). |
-| `lib.rs` | 995 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 1053 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 1023 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 2355 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 2370 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 252 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (I51 / ADR-0047). |
@@ -98,7 +98,7 @@
 | Module | Depends On |
 |--------|-----------|
 | `commands/` |                     intel_queue,         intel_queue,     context_provider,     db,     glean,     intelligence,     processor,     services, services, types |
-| `services/` |         intelligence,     db,     google_api,     intel_queue,     intelligence,     reports,     signals,     state, action_status, commands, db, embeddings, google_api, intel_queue, intelligence, json_loader, linear, parser, pty, reports, signals, state, types |
+| `services/` |         db,         intelligence,     db,     google_api,     intel_queue,     intelligence,     reports,     signals,     state, action_status, commands, db, embeddings, google_api, intel_queue, intelligence, json_loader, linear, parser, pty, reports, signals, state, types |
 | `signals/` |             db,         presets,     db,     google_api,     state, db, embeddings, entity, helpers, prepare, types |
 | `intelligence/` |         intel_queue,     db,     services,     signals,     types, accounts, context_provider, db, embeddings, error, helpers, presets, pty, pub pty, signals, state, types, util |
 | `prepare/` |     db,     entity,     helpers, db, embeddings, entity, error, google_api, helpers, presets, pty, signals, state, types |

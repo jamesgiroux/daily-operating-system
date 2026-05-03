@@ -6,12 +6,12 @@ Full screens. The user-visible products built on top of patterns and primitives.
 
 | Canonical name | Current src name | Status | Spec |
 |---|---|---|---|
-| [`DailyBriefing`](./DailyBriefing.md) | `Dashboard.tsx` | Redesigning (v1.4.3) | ✓ |
+| [`DailyBriefing`](./DailyBriefing.md) | `Dashboard.tsx` | Redesigning (v1.4.3) | ✓ Wave 1 (0.1.0) |
+| [`Settings`](./Settings.md) | `src/features/settings-ui/` | Redesigning (separate project) | ✓ Wave 3 (0.3.0) |
+| [`MeetingDetail`](./MeetingDetail.md) | _verify_ | Redesigning | ✓ Wave 4 (0.4.0) |
 | `AccountDetail` | `AccountDetailPage.tsx` | Canonical (recent v1.4.2 redesign) | _Wave 5 / surface pass_ |
 | `ProjectDetail` | `ProjectDetailEditorial.tsx` | In v1.4.2 scope | _Wave 5 / surface pass_ |
 | `PersonDetail` | `PersonDetailEditorial.tsx` | In v1.4.2 scope | _Wave 5 / surface pass_ |
-| `MeetingDetail` | _verify_ | Redesigning | _Wave 4_ |
-| `Settings` | _verify_ | Redesigning (separate project) | _Wave 3_ |
 
 ## What a surface spec captures
 
