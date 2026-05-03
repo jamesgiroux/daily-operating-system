@@ -74,6 +74,10 @@ jobs:
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh
 
+      - name: Track legacy AI projection writers
+        continue-on-error: true
+        run: src-tauri/scripts/check_dos301_legacy_projection_writers.sh
+
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
 
