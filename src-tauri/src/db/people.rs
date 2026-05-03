@@ -659,10 +659,13 @@ impl ActionDb {
             .unwrap_or(false);
 
         if is_account {
+            // stakeholder-cache-skip: service person-entity mutators emit stakeholders_changed in the caller transaction.
             self.conn.execute(
-                "INSERT INTO account_stakeholders (account_id, person_id)
-                 VALUES (?1, ?2)
-                 ON CONFLICT(account_id, person_id) DO NOTHING",
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
+                 VALUES (?1, ?2, 'user')
+                 ON CONFLICT(account_id, person_id) DO UPDATE SET
+                    status = 'active',
+                    data_source = excluded.data_source",
                 params![entity_id, person_id],
             )?;
             self.conn.execute(
@@ -672,6 +675,7 @@ impl ActionDb {
                 params![entity_id, person_id, rel],
             )?;
         } else {
+            // stakeholder-cache-skip: service person-entity mutators emit stakeholders_changed in the caller transaction.
             self.conn.execute(
                 "INSERT OR IGNORE INTO entity_members (entity_id, person_id, relationship_type)
                  VALUES (?1, ?2, ?3)",
@@ -688,6 +692,7 @@ impl ActionDb {
         person_id: &str,
         entity_id: &str,
     ) -> Result<(), DbError> {
+        // stakeholder-cache-skip: service person-entity mutators emit stakeholders_changed in the caller transaction.
         self.conn.execute(
             "DELETE FROM account_stakeholder_roles WHERE account_id = ?1 AND person_id = ?2",
             params![entity_id, person_id],
@@ -1193,6 +1198,7 @@ impl ActionDb {
                 .map_err(|e| e.to_string())?;
 
             // 2. Transfer account_stakeholders links
+            // stakeholder-cache-skip: merge_people emits stakeholders_changed for each affected entity.
             tx.conn
                 .execute(
                     "INSERT OR IGNORE INTO account_stakeholders (account_id, person_id, data_source)
@@ -1222,6 +1228,7 @@ impl ActionDb {
                 .map_err(|e| e.to_string())?;
 
             // 2b. Transfer entity_members links
+            // stakeholder-cache-skip: merge_people emits stakeholders_changed for each affected entity.
             tx.conn
                 .execute(
                     "INSERT OR IGNORE INTO entity_members (entity_id, person_id, relationship_type)
@@ -1344,6 +1351,7 @@ impl ActionDb {
                     params![person_id],
                 )
                 .map_err(|e| e.to_string())?;
+            // stakeholder-cache-skip: delete_person emits stakeholders_changed for each affected entity.
             tx.conn
                 .execute(
                     "DELETE FROM account_stakeholders WHERE person_id = ?1",

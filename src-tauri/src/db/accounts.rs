@@ -759,10 +759,13 @@ impl ActionDb {
         let role = role.trim().to_lowercase();
         let now = Utc::now().to_rfc3339();
         // Ensure the person-account link exists
+        // stakeholder-cache-skip: low-level helper; service mutators emit stakeholders_changed in the caller transaction.
         self.conn.execute(
             "INSERT INTO account_stakeholders (account_id, person_id, data_source, created_at)
              VALUES (?1, ?2, 'user', ?3)
-             ON CONFLICT(account_id, person_id) DO UPDATE SET data_source = 'user'",
+             ON CONFLICT(account_id, person_id) DO UPDATE SET
+                data_source = 'user',
+                status = 'active'",
             params![account_id, person_id, now],
         )?;
         // Insert the role with user provenance
@@ -843,6 +846,7 @@ impl ActionDb {
     ) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         // Ensure the person-account link exists
+        // stakeholder-cache-skip: low-level helper; service mutators emit stakeholders_changed in the caller transaction.
         self.conn.execute(
             "INSERT INTO account_stakeholders (account_id, person_id, data_source, last_seen_in_glean, created_at)
              VALUES (?1, ?2, ?3, ?4, ?4)
@@ -873,6 +877,7 @@ impl ActionDb {
         _role: &str,
     ) -> Result<(), DbError> {
         // Roles cascade via FK, but be explicit
+        // stakeholder-cache-skip: low-level helper; service mutators emit stakeholders_changed in the caller transaction.
         self.conn.execute(
             "DELETE FROM account_stakeholder_roles
              WHERE account_id = ?1 AND person_id = ?2",
@@ -2568,6 +2573,7 @@ impl ActionDb {
             )
             .map_err(|e| e.to_string())?;
             // Reassign account_stakeholders (ignore dupes)
+            // stakeholder-cache-skip: merge_accounts emits stakeholders_changed for both source and target accounts.
             conn.execute(
                 "UPDATE OR IGNORE account_stakeholders SET account_id = ?2
                  WHERE account_id = ?1",

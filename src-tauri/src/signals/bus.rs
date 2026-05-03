@@ -209,6 +209,37 @@ pub fn emit_signal(
     Ok(id)
 }
 
+/// Emit a signal row inside the caller's active transaction.
+///
+/// This helper only appends to `signal_events`; it does not run propagation,
+/// evaluation, or meeting refresh side effects. Synchronous derived-state
+/// subscribers are invoked by the service facade after this insert succeeds.
+pub fn emit_signal_in_active_tx(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    payload: &serde_json::Value,
+) -> Result<String, DbError> {
+    let id = format!("sig-{}", Uuid::new_v4());
+    let half_life = default_half_life(source);
+    let value = payload.to_string();
+    db.insert_signal_event(&InsertSignalRow {
+        id: &id,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value: Some(&value),
+        confidence: 1.0,
+        decay_half_life_days: half_life,
+        source_context: None,
+    })?;
+
+    Ok(id)
+}
+
 /// Emit a signal and run propagation rules, returning the original signal ID
 /// and any derived signal IDs.
 #[allow(clippy::too_many_arguments)]
@@ -398,10 +429,7 @@ impl ActionDb {
     }
 
     /// Insert a signal event row.
-    pub fn insert_signal_event(
-        &self,
-        row: &InsertSignalRow<'_>,
-    ) -> Result<(), DbError> {
+    pub fn insert_signal_event(&self, row: &InsertSignalRow<'_>) -> Result<(), DbError> {
         self.conn_ref().execute(
             "INSERT INTO signal_events
                 (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, source_context)

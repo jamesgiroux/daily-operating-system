@@ -377,9 +377,7 @@ fn project_entity_intelligence(
             entity_identity_from_subject_ref(&claim.subject_ref),
             Ok((_, "person"))
         ) {
-        run_rule_savepoint(tx, "stakeholder_insights_cache", || {
-            rebuild_stakeholder_insights_cache_from_claims(ctx, tx, claim)
-        })
+        rebuild_stakeholder_insights_cache_from_claims(ctx, tx, claim)
     } else {
         run_rule_savepoint(tx, "entity_intelligence", || {
             rebuild_entity_assessment_from_claims(ctx, tx, claim)
@@ -606,7 +604,7 @@ fn rebuild_stakeholder_insights_cache_from_claims(
 ) -> Result<(), ProjectionErrorClass> {
     let person_id = person_id_from_subject_ref(&claim.subject_ref)?;
     for membership in stakeholder_cache_memberships(tx, &person_id)? {
-        rebuild_stakeholder_insights_cache_for_entity(
+        rebuild_stakeholder_insights_cache_for_entity_in_savepoint(
             ctx,
             tx,
             &membership.entity_id,
@@ -653,18 +651,24 @@ fn stakeholder_cache_memberships(
     Ok(memberships)
 }
 
-/// Rebuilds the stakeholder_insights_cache for an entity from active stakeholders' engagement claims.
-///
-/// **Caller contract:**
-/// - From projection rules (commit_claim path): wrap in `run_rule_savepoint` so
-///   transient SQL errors are classified and recorded without rolling back the
-///   parent claim insert.
-/// - From service mutators (post-mutation invalidation): do not wrap in a
-///   savepoint. Let errors propagate to the outer transaction and roll back the
-///   user's mutation. Use
-///   `.map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?`
-///   at the call site.
-pub(crate) fn rebuild_stakeholder_insights_cache_for_entity(
+/// Projection-rule entry point for rebuilding stakeholder_insights_cache.
+/// The savepoint keeps projection failure classified without rolling back the
+/// parent claim commit.
+pub(crate) fn rebuild_stakeholder_insights_cache_for_entity_in_savepoint(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+) -> Result<(), ProjectionErrorClass> {
+    run_rule_savepoint(tx, "stakeholder_insights_cache", || {
+        rebuild_stakeholder_insights_cache_for_entity_inner(ctx, tx, entity_id, entity_type)
+    })
+}
+
+/// Rebuilds the stakeholder_insights_cache for an entity from active
+/// stakeholders' engagement claims. This is called by sync in-transaction
+/// invalidation subscribers, so errors propagate to the user's transaction.
+pub(crate) fn rebuild_stakeholder_insights_cache_for_entity_inner(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     entity_id: &str,
@@ -1824,6 +1828,147 @@ mod tests {
         .unwrap();
 
         assert_cache_contains(&db, account_id, "confirmed engagement visible");
+    }
+
+    #[test]
+    fn stakeholders_changed_signal_rebuilds_cache_for_account_and_project() {
+        let db = test_db();
+        let account_id = "acct-signal-rebuild";
+        let account_person_id = "person-signal-account";
+        let project_id = "project-signal-rebuild";
+        let project_person_id = "person-signal-project";
+        seed_account_person(
+            &db,
+            account_id,
+            account_person_id,
+            "Signal Account Stakeholder",
+        );
+        seed_account_stakeholder(&db, account_id, account_person_id, "active");
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO entities (id, name, entity_type, updated_at)
+                 VALUES (?1, 'Signal Project', 'project', ?2)",
+                params![project_id, TS],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT OR IGNORE INTO people (id, email, name, relationship, updated_at)
+                 VALUES (?1, ?2, 'Signal Project Stakeholder', 'external', ?3)",
+                params![project_person_id, "project-signal@example.test", TS],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_members (entity_id, person_id, relationship_type)
+                 VALUES (?1, ?2, 'member')",
+                params![project_id, project_person_id],
+            )
+            .unwrap();
+        seed_claim_with_type(
+            &db,
+            "claim-signal-account",
+            &format!(r#"{{"kind":"person","id":"{account_person_id}"}}"#),
+            "stakeholder_engagement",
+            "account signal engagement visible",
+            TS,
+        );
+        seed_claim_with_type(
+            &db,
+            "claim-signal-project",
+            &format!(r#"{{"kind":"person","id":"{project_person_id}"}}"#),
+            "stakeholder_engagement",
+            "project signal engagement visible",
+            TS,
+        );
+
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+        for (entity_id, entity_type) in [(account_id, "account"), (project_id, "project")] {
+            db.with_transaction(|tx| {
+                crate::services::signals::emit_in_transaction(
+                    &ctx,
+                    tx,
+                    entity_type,
+                    entity_id,
+                    crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                    "test_signal_rebuild",
+                    serde_json::json!({
+                        "entity_id": entity_id,
+                        "entity_type": entity_type,
+                        "mutation_source": "test_signal_rebuild",
+                    }),
+                )?;
+                Ok(())
+            })
+            .expect("emit stakeholders_changed");
+        }
+
+        assert_cache_contains(&db, account_id, "account signal engagement visible");
+        assert_cache_contains(&db, project_id, "project signal engagement visible");
+        let payload_has_source: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE signal_type = 'stakeholders_changed'
+                   AND value LIKE '%test_signal_rebuild%'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(payload_has_source, 2);
+    }
+
+    #[test]
+    fn stakeholders_changed_signal_failure_rolls_back_user_mutation() {
+        let db = test_db();
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+
+        let result = db.with_transaction(|tx| {
+            tx.conn_ref()
+                .execute(
+                    "INSERT INTO accounts (id, name, updated_at)
+                     VALUES ('acct-rollback-signal', 'Rollback Signal', ?1)",
+                    params![TS],
+                )
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_in_transaction(
+                &ctx,
+                tx,
+                "account",
+                "acct-rollback-signal",
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                "rollback_test",
+                serde_json::json!({
+                    "entity_type": "account",
+                    "mutation_source": "rollback_test",
+                }),
+            )?;
+            Ok(())
+        });
+
+        assert!(result.is_err());
+        let account_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM accounts WHERE id = 'acct-rollback-signal'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let signal_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events
+                 WHERE entity_id = 'acct-rollback-signal'
+                   AND signal_type = 'stakeholders_changed'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(account_count, 0);
+        assert_eq!(signal_count, 0);
     }
 
     #[test]

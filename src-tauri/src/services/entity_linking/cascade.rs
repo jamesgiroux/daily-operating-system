@@ -3,7 +3,7 @@
 use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
 
-use super::types::{Candidate, EntityRef, LinkTier, LinkOutcome, LinkingContext, OwnerType};
+use super::types::{Candidate, EntityRef, LinkOutcome, LinkTier, LinkingContext, OwnerType};
 
 /// Personal-email providers whose domains must never be merged into
 /// account_domains. A stakeholder confirmation for jane@gmail.com doesn't
@@ -100,14 +100,9 @@ pub fn run_cascade(
     db: &ActionDb,
 ) -> Result<LinkOutcome, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    let mut related: Vec<EntityRef> = phase3_related
-        .iter()
-        .map(|c| c.entity.clone())
-        .collect();
+    let mut related: Vec<EntityRef> = phase3_related.iter().map(|c| c.entity.clone()).collect();
 
-    let primary_entity = primary_candidate
-        .as_ref()
-        .map(|c| c.entity.clone());
+    let primary_entity = primary_candidate.as_ref().map(|c| c.entity.clone());
 
     // C1 — Related chips already written to DB in phases.rs; just collect for outcome.
 
@@ -188,9 +183,7 @@ pub fn run_cascade(
     // C5 — Tier mapping.
     let tier = c5_tier(link_ctx, &primary_entity);
 
-    let applied_rule = primary_candidate
-        .as_ref()
-        .map(|c| c.rule_id.clone());
+    let applied_rule = primary_candidate.as_ref().map(|c| c.rule_id.clone());
 
     Ok(LinkOutcome {
         owner: link_ctx.owner.clone(),
@@ -210,10 +203,7 @@ fn c2_suggest_stakeholders(ctx: &LinkingContext, account_id: &str, db: &ActionDb
     let account_domains = get_account_domains(db, account_id);
 
     for p in ctx.external_participants() {
-        let p_domain = p
-            .email
-            .rsplit_once('@')
-            .map(|(_, d)| d.to_lowercase());
+        let p_domain = p.email.rsplit_once('@').map(|(_, d)| d.to_lowercase());
 
         let domain_matches = p_domain
             .as_deref()
@@ -281,7 +271,11 @@ fn c6_backfill_account_domains(
         // Filter out user's own domains — matches the old
         // extract_domains_from_attendees semantics. Without this the CSM's
         // domain would attach to every customer account.
-        if link_ctx.user_domains.iter().any(|ud| ud.eq_ignore_ascii_case(&domain)) {
+        if link_ctx
+            .user_domains
+            .iter()
+            .any(|ud| ud.eq_ignore_ascii_case(&domain))
+        {
             continue;
         }
         if PERSONAL_EMAIL_DOMAINS.contains(&domain.as_str()) {
@@ -335,49 +329,66 @@ fn c3_promote_trusted_stakeholders(
     // User explicitly chose this account — domain-matching attendees become active stakeholders.
     let account_domains = get_account_domains(db, account_id);
 
-    for p in link_ctx.external_participants() {
-        let domain = p
-            .email
-            .rsplit_once('@')
-            .map(|(_, d)| d.to_lowercase());
-        let domain_matches = domain
-            .as_deref()
-            .map(|d| account_domains.iter().any(|ad| ad.eq_ignore_ascii_case(d)))
-            .unwrap_or(false);
+    db.with_transaction(|tx| {
+        let mut promoted_any = false;
+        for p in link_ctx.external_participants() {
+            let domain = p.email.rsplit_once('@').map(|(_, d)| d.to_lowercase());
+            let domain_matches = domain
+                .as_deref()
+                .map(|d| account_domains.iter().any(|ad| ad.eq_ignore_ascii_case(d)))
+                .unwrap_or(false);
 
-        if !domain_matches {
-            continue;
+            if !domain_matches {
+                continue;
+            }
+
+            let person_id = match &p.person_id {
+                Some(id) => id,
+                None => continue,
+            };
+
+            let already = tx
+                .is_stakeholder_on_account(account_id, person_id)
+                .unwrap_or(false);
+            if already {
+                continue;
+            }
+
+            // Insert directly as active (trusted because user chose the account).
+            tx.suggest_stakeholder_pending(account_id, person_id, "user_set_primary", 1.0)?;
+            tx.confirm_stakeholder(account_id, person_id)?;
+            promoted_any = true;
+
+            // Tier 3: self-healing — a confirmed stakeholder's external
+            // domain is evidence the account owns that domain. Merge it into
+            // account_domains so future P4 domain evidence fires without a
+            // second manual confirmation.
+            let _ = backfill_account_domain_from_person(
+                ctx,
+                tx,
+                account_id,
+                &p.email,
+                &link_ctx.user_domains,
+            );
         }
 
-        let person_id = match &p.person_id {
-            Some(id) => id,
-            None => continue,
-        };
-
-        let already = db
-            .is_stakeholder_on_account(account_id, person_id)
-            .unwrap_or(false);
-        if already {
-            continue;
+        if promoted_any {
+            crate::services::signals::emit_in_transaction(
+                ctx,
+                tx,
+                "account",
+                account_id,
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                "manual_set_primary",
+                serde_json::json!({
+                    "entity_id": account_id,
+                    "entity_type": "account",
+                    "mutation_source": "manual_set_primary",
+                }),
+            )?;
         }
-
-        // Insert directly as active (trusted because user chose the account).
-        let _ = db.suggest_stakeholder_pending(account_id, person_id, "user_set_primary", 1.0);
-        let _ = db.confirm_stakeholder(account_id, person_id);
-
-        // Tier 3: self-healing — a confirmed stakeholder's external
-        // domain is evidence the account owns that domain. Merge it into
-        // account_domains so future P4 domain evidence fires without a
-        // second manual confirmation.
-        let _ = backfill_account_domain_from_person(
-            ctx,
-            db,
-            account_id,
-            &p.email,
-            &link_ctx.user_domains,
-        );
-    }
-    Ok(())
+        Ok(())
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -414,11 +425,9 @@ fn get_account_domains(db: &ActionDb, account_id: &str) -> Vec<String> {
         Ok(s) => s,
         Err(_) => return vec![],
     };
-    stmt.query_map(rusqlite::params![account_id], |row| {
-        row.get::<_, String>(0)
-    })
-    .map(|rows| rows.filter_map(|r| r.ok()).collect())
-    .unwrap_or_default()
+    stmt.query_map(rusqlite::params![account_id], |row| row.get::<_, String>(0))
+        .map(|rows| rows.filter_map(|r| r.ok()).collect())
+        .unwrap_or_default()
 }
 
 fn get_project_account_id(db: &ActionDb, project_id: &str) -> Option<String> {
@@ -566,8 +575,14 @@ mod tests {
             make_participant("someone@gmail.com", ParticipantRole::Attendee),
         ]);
 
-        run_cascade(&service_ctx, &ctx, &account_primary("acc-2", "P7"), &[], &db)
-            .expect("cascade");
+        run_cascade(
+            &service_ctx,
+            &ctx,
+            &account_primary("acc-2", "P7"),
+            &[],
+            &db,
+        )
+        .expect("cascade");
 
         let domains = get_account_domains(&db, "acc-2");
         assert!(
@@ -606,7 +621,11 @@ mod tests {
         // No account was the primary, so account_domains must remain empty
         // for any account.
         let domains = get_account_domains(&db, "acc-3");
-        assert!(domains.is_empty(), "expected no domains written, got {:?}", domains);
+        assert!(
+            domains.is_empty(),
+            "expected no domains written, got {:?}",
+            domains
+        );
     }
 
     #[test]
@@ -628,8 +647,14 @@ mod tests {
             owner_id: "email-1".to_string(),
         };
 
-        run_cascade(&service_ctx, &ctx, &account_primary("acc-4", "P7"), &[], &db)
-            .expect("cascade");
+        run_cascade(
+            &service_ctx,
+            &ctx,
+            &account_primary("acc-4", "P7"),
+            &[],
+            &db,
+        )
+        .expect("cascade");
 
         let domains = get_account_domains(&db, "acc-4");
         assert!(
@@ -703,8 +728,16 @@ mod backfill_tests {
         )
         .expect("backfill");
         assert!(inserted, "expected domain insert");
-        assert_eq!(count_domains(&db, "acc-jane"), 1, "example.test should be registered");
-        assert_eq!(count_signal(&db, "acc-jane"), 1, "one audit signal expected");
+        assert_eq!(
+            count_domains(&db, "acc-jane"),
+            1,
+            "example.test should be registered"
+        );
+        assert_eq!(
+            count_signal(&db, "acc-jane"),
+            1,
+            "one audit signal expected"
+        );
     }
 
     #[test]
@@ -786,6 +819,9 @@ mod backfill_tests {
         .expect("second backfill");
         assert!(!second, "re-run must report nothing inserted");
         let signals_after_second = count_signal(&db, "acc-x");
-        assert_eq!(signals_after_second, 1, "idempotent — signal must not double-emit");
+        assert_eq!(
+            signals_after_second, 1,
+            "idempotent — signal must not double-emit"
+        );
     }
 }

@@ -139,13 +139,19 @@ pub fn apply_repair(db: &ActionDb, opts: &RepairOptions) -> Result<RepairReport,
         let ext = crate::services::context::ExternalClients::default();
         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
         for account_id in affected_accounts {
-            crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            crate::services::signals::emit_in_transaction(
                 &ctx,
                 tx,
-                &account_id,
                 "account",
-            )
-            .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+                &account_id,
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                "apply_repair",
+                serde_json::json!({
+                    "entity_id": account_id,
+                    "entity_type": "account",
+                    "mutation_source": "apply_repair",
+                }),
+            )?;
         }
 
         // L2 cycle-22 fix: snapshot the (person_id, role) tuples
