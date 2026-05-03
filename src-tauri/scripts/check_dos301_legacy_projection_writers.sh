@@ -68,7 +68,7 @@ for file in $candidate_files; do
     [[ -z "$lineno" ]] && continue
     end=$((lineno + 7))
     if sed -n "${lineno},${end}p" "$file" \
-      | grep -qiE '\b(company_overview|strategic_programs|notes)\b'; then
+      | grep -qiE '("|`|\[)?\b(company_overview|strategic_programs|notes)\b("|`|\])?[[:space:]]*[,)]'; then
       matches+="${file}:${lineno}: INSERT accounts includes legacy AI projection column within 7-line window"$'\n'
     fi
   done < <(grep -nEi "$account_insert_pattern" "$file" 2>/dev/null | cut -d: -f1 || true)

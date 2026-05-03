@@ -119,6 +119,70 @@ fn lint_no_let_underscore_writer_paths_catches_silent_execute() {
 }
 
 #[test]
+fn lint_no_let_underscore_writer_paths_catches_multiline_chain() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file_dir = tmp.path().join("src/services");
+    std::fs::create_dir_all(&file_dir).expect("mkdir writer path");
+    let execute_call = "execute";
+    let bad_rs = format!(
+        "fn bad(db: &ActionDb) {{\n\
+         let _ = db\n\
+         .conn_ref()\n\
+         .{execute_call}(\n\
+         \"UPDATE entity_quality SET quality_score = 1 WHERE entity_id = ?1\",\n\
+         params,\n\
+         );\n\
+         }}\n"
+    );
+    std::fs::write(file_dir.join("new_writer.rs"), bad_rs).expect("write bad fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_no_let_underscore_in_writer_paths.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on multiline let-underscore SQL execute. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_no_let_underscore_writer_paths_catches_subtree_violation() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file_dir = tmp.path().join("src/services");
+    std::fs::create_dir_all(&file_dir).expect("mkdir writer path");
+    let execute_call = "execute";
+    let bad_rs = format!(
+        "fn bad(db: &ActionDb) {{\n\
+         let _ = db.conn_ref().{execute_call}(\n\
+         \"UPDATE entity_quality SET quality_score = 1 WHERE entity_id = ?1\",\n\
+         params,\n\
+         );\n\
+         }}\n"
+    );
+    std::fs::write(file_dir.join("future_writer.rs"), bad_rs).expect("write bad fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_no_let_underscore_in_writer_paths.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on a new services/*.rs writer path. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
 fn lint_claim_writer_allowlist_catches_insert_or_ignore_claim_writer() {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(tmp.path().join("src/services")).expect("mkdir src");
@@ -139,6 +203,33 @@ fn lint_claim_writer_allowlist_catches_insert_or_ignore_claim_writer() {
     assert!(
         !output.status.success(),
         "lint must FAIL on INSERT OR IGNORE claim writer outside allowlist. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_claim_writer_allowlist_catches_unannotated_writer_in_db_lifecycle() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/db")).expect("mkdir src");
+    let table = "intelligence".to_string() + "_" + "claims";
+    let bad_sql = format!(
+        "fn bad(conn: &Connection) {{\n\
+         conn.execute(\"INSERT INTO {table} (id) VALUES (?1)\", params).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/db/data_lifecycle.rs"), bad_sql)
+        .expect("write bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_writer_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on unannotated claim writer in db/data_lifecycle.rs. stdout: {}, stderr: {}",
         String::from_utf8_lossy(&output.stdout),
         String::from_utf8_lossy(&output.stderr),
     );

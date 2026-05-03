@@ -499,20 +499,24 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         // them.
                         let now = mutation_now.clone();
                         let version = db.get_entity_graph_version().unwrap_or(0);
-                        let _ = db.conn_ref().execute(
-                            "DELETE FROM linked_entities_raw \
-                             WHERE owner_type = 'meeting' AND owner_id = ?1 \
-                               AND source != 'user_dismissed'",
-                            rusqlite::params![&meeting_id],
-                        );
+                        db.conn_ref()
+                            .execute(
+                                "DELETE FROM linked_entities_raw \
+                                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                                   AND source != 'user_dismissed'",
+                                rusqlite::params![&meeting_id],
+                            )
+                            .map_err(|e| e.to_string())?;
                         if let Some(ref eid) = entity_id {
-                            let _ = db.conn_ref().execute(
-                                "INSERT OR REPLACE INTO linked_entities_raw \
-                                 (owner_type, owner_id, entity_id, entity_type, role, source, \
-                                  rule_id, confidence, graph_version, created_at) \
-                                 VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
-                                rusqlite::params![&meeting_id, eid, &entity_type, version, &now],
-                            );
+                            db.conn_ref()
+                                .execute(
+                                    "INSERT OR REPLACE INTO linked_entities_raw \
+                                     (owner_type, owner_id, entity_id, entity_type, role, source, \
+                                      rule_id, confidence, graph_version, created_at) \
+                                     VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
+                                    rusqlite::params![&meeting_id, eid, &entity_type, version, &now],
+                                )
+                                .map_err(|e| e.to_string())?;
                         }
 
                         let (cascade_account, cascade_project) =
@@ -579,19 +583,23 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         // primary; preserves user dismissals.
                         let now = mutation_now.clone();
                         let version = db.get_entity_graph_version().unwrap_or(0);
-                        let _ = db.conn_ref().execute(
-                            "DELETE FROM linked_entities_raw \
-                             WHERE owner_type = 'meeting' AND owner_id = ?1 \
-                               AND role = 'primary' AND source != 'user_dismissed'",
-                            rusqlite::params![&meeting_id],
-                        );
-                        let _ = db.conn_ref().execute(
-                            "INSERT OR REPLACE INTO linked_entities_raw \
-                             (owner_type, owner_id, entity_id, entity_type, role, source, \
-                              rule_id, confidence, graph_version, created_at) \
-                             VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
-                            rusqlite::params![&meeting_id, &entity_id, &entity_type, version, &now],
-                        );
+                        db.conn_ref()
+                            .execute(
+                                "DELETE FROM linked_entities_raw \
+                                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                                   AND role = 'primary' AND source != 'user_dismissed'",
+                                rusqlite::params![&meeting_id],
+                            )
+                            .map_err(|e| e.to_string())?;
+                        db.conn_ref()
+                            .execute(
+                                "INSERT OR REPLACE INTO linked_entities_raw \
+                                 (owner_type, owner_id, entity_id, entity_type, role, source, \
+                                  rule_id, confidence, graph_version, created_at) \
+                                 VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
+                                rusqlite::params![&meeting_id, &entity_id, &entity_type, version, &now],
+                            )
+                            .map_err(|e| e.to_string())?;
 
                         let (cascade_account, cascade_project) =
                             cascade_targets(Some(entity_id.as_str()), &entity_type);
@@ -622,12 +630,14 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         // and mark the raw row user_dismissed so the view
                         // filters it out immediately.
                         let now = mutation_now.clone();
-                        let _ = db.conn_ref().execute(
-                            "INSERT OR IGNORE INTO linking_dismissals \
-                             (owner_type, owner_id, entity_id, entity_type, created_at) \
-                             VALUES ('meeting', ?1, ?2, ?3, ?4)",
-                            rusqlite::params![&meeting_id, &entity_id, &entity_type, &now],
-                        );
+                        db.conn_ref()
+                            .execute(
+                                "INSERT OR IGNORE INTO linking_dismissals \
+                                 (owner_type, owner_id, entity_id, entity_type, created_at) \
+                                 VALUES ('meeting', ?1, ?2, ?3, ?4)",
+                                rusqlite::params![&meeting_id, &entity_id, &entity_type, &now],
+                            )
+                            .map_err(|e| e.to_string())?;
                         // Shadow-write the
                         // mechanism-5 (linking_dismissals) write so
                         // commit_claim PRE-GATE blocks re-surfacing.
@@ -645,12 +655,14 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                                 expires_at: None,
                             },
                         );
-                        let _ = db.conn_ref().execute(
-                            "UPDATE linked_entities_raw SET source = 'user_dismissed' \
-                             WHERE owner_type = 'meeting' AND owner_id = ?1 \
-                               AND entity_id = ?2 AND entity_type = ?3",
-                            rusqlite::params![&meeting_id, &entity_id, &entity_type],
-                        );
+                        db.conn_ref()
+                            .execute(
+                                "UPDATE linked_entities_raw SET source = 'user_dismissed' \
+                                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                                   AND entity_id = ?2 AND entity_type = ?3",
+                                rusqlite::params![&meeting_id, &entity_id, &entity_type],
+                            )
+                            .map_err(|e| e.to_string())?;
 
                         result.entities_to_refresh.push((entity_id, entity_type));
                     }
@@ -1801,25 +1813,31 @@ pub async fn link_meeting_entity_with_prep_queue(
             // Legacy write (meeting_entities table) — kept during cutover window.
             db.link_meeting_entity(&meeting_id_s, &entity_id_s, &entity_type_s)
                 .map_err(|e| e.to_string())?;
-            let _ = db.conn_ref().execute(
-                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
-                rusqlite::params![meeting_id_s],
-            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                    rusqlite::params![meeting_id_s],
+                )
+                .map_err(|e| e.to_string())?;
             // Entity-linking dual-write: record user override in linked_entities_raw (P1 source).
             let now = linked_at;
             let version = db.get_entity_graph_version().unwrap_or(0);
-            let _ = db.conn_ref().execute(
-                "DELETE FROM linked_entities_raw \
-                 WHERE owner_type = 'meeting' AND owner_id = ?1 AND role = 'primary'",
-                rusqlite::params![meeting_id_s],
-            );
-            let _ = db.conn_ref().execute(
-                "INSERT OR REPLACE INTO linked_entities_raw \
-                 (owner_type, owner_id, entity_id, entity_type, role, source, \
-                  rule_id, confidence, graph_version, created_at) \
-                 VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
-                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, version, now],
-            );
+            db.conn_ref()
+                .execute(
+                    "DELETE FROM linked_entities_raw \
+                     WHERE owner_type = 'meeting' AND owner_id = ?1 AND role = 'primary'",
+                    rusqlite::params![meeting_id_s],
+                )
+                .map_err(|e| e.to_string())?;
+            db.conn_ref()
+                .execute(
+                    "INSERT OR REPLACE INTO linked_entities_raw \
+                     (owner_type, owner_id, entity_id, entity_type, role, source, \
+                      rule_id, confidence, graph_version, created_at) \
+                     VALUES ('meeting', ?1, ?2, ?3, 'primary', 'user', 'P1', 1.0, ?4, ?5)",
+                    rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, version, now],
+                )
+                .map_err(|e| e.to_string())?;
             Ok(())
         })
         .await?;
@@ -1870,18 +1888,28 @@ pub async fn dismiss_meeting_entity(
             .map_err(|e| e.to_string())?;
             db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
                 .map_err(|e| e.to_string())?;
-            let _ = db.conn_ref().execute(
-                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
-                rusqlite::params![meeting_id_s],
-            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                    rusqlite::params![meeting_id_s],
+                )
+                .map_err(|e| e.to_string())?;
             // Entity-linking dual-write: tombstone in linking_dismissals + mark raw row.
             let now = dismissed_at;
-            let _ = db.conn_ref().execute(
-                "INSERT OR IGNORE INTO linking_dismissals \
-                 (owner_type, owner_id, entity_id, entity_type, dismissed_by, created_at) \
-                 VALUES ('meeting', ?1, ?2, ?3, ?4, ?5)",
-                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, dismissed_by_s, now],
-            );
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO linking_dismissals \
+                     (owner_type, owner_id, entity_id, entity_type, dismissed_by, created_at) \
+                     VALUES ('meeting', ?1, ?2, ?3, ?4, ?5)",
+                    rusqlite::params![
+                        meeting_id_s,
+                        entity_id_s,
+                        entity_type_s,
+                        dismissed_by_s,
+                        now
+                    ],
+                )
+                .map_err(|e| e.to_string())?;
             // Shadow-write the dismissal as an
             // intelligence_claims tombstone for both mechanism 4
             // (meeting_entity_dismissals) and mechanism 5
@@ -1915,12 +1943,14 @@ pub async fn dismiss_meeting_entity(
                     expires_at: None,
                 },
             );
-            let _ = db.conn_ref().execute(
-                "UPDATE linked_entities_raw SET source = 'user_dismissed' \
-                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
-                   AND entity_id = ?2 AND entity_type = ?3",
-                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
-            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE linked_entities_raw SET source = 'user_dismissed' \
+                     WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                       AND entity_id = ?2 AND entity_type = ?3",
+                    rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
+                )
+                .map_err(|e| e.to_string())?;
             Ok(())
         })
         .await?;
@@ -1956,51 +1986,53 @@ pub async fn restore_meeting_entity(
     let entity_type_s = entity_type.to_string();
     let removed = state
         .db_write(move |db| {
-            // Legacy write — kept during cutover window.
-            let r = db
-                .remove_meeting_entity_dismissal(&meeting_id_s, &entity_id_s, &entity_type_s)
-                .map_err(|e| e.to_string())?;
-            // Entity-linking dual-write: remove linking_dismissals tombstone.
-            let _ = db.conn_ref().execute(
-                "DELETE FROM linking_dismissals \
-                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
-                   AND entity_id = ?2 AND entity_type = ?3",
-                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
-            );
-            // L2 cycle-24 fix #1: withdraw the shadow tombstone claims
-            // (m4 meeting_entity_dismissed + m5 linking_dismissed) for
-            // this (Meeting, entity_type, entity_id) tuple. Without
-            // this, the legacy tables say "restored" but the claim
-            // substrate still records the dismissal — PRE-GATE +
-            // claim-backed readers continue treating the link as
-            // dismissed even though the user just undid it.
-            // dos7-allowed: cycle-24 restore semantics — claim_state +
-            // retraction_reason are lifecycle columns (lint allows).
-            let _ = db.conn_ref().execute(
-                "UPDATE intelligence_claims \
-                 SET claim_state = 'withdrawn', \
-                     surfacing_state = 'dormant', \
-                     retraction_reason = 'restored_by_user' \
-                 WHERE id IN ( \
-                     SELECT ic.id FROM intelligence_claims ic \
-                     WHERE ic.claim_state = 'tombstoned' \
-                       AND json_valid(ic.subject_ref) = 1 \
-                       AND lower(json_extract(ic.subject_ref, '$.kind')) = 'meeting' \
-                       AND json_extract(ic.subject_ref, '$.id') = ?1 \
-                       AND ic.claim_type IN ('meeting_entity_dismissed', 'linking_dismissed') \
-                       AND coalesce(ic.field_path, '') = coalesce(?2, '') \
-                       AND ic.text = ?3 \
-                 )",
-                rusqlite::params![meeting_id_s, entity_type_s, entity_id_s],
-            );
-            let _ = db.conn_ref().execute(
-                "UPDATE linked_entities_raw SET source = 'rule:restored' \
-                 WHERE owner_type = 'meeting' AND owner_id = ?1 \
-                   AND entity_id = ?2 AND entity_type = ?3 \
-                   AND source = 'user_dismissed'",
-                rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
-            );
-            Ok(r)
+            db.with_transaction(|db| {
+                // Legacy write — kept during cutover window.
+                let r = db
+                    .remove_meeting_entity_dismissal(&meeting_id_s, &entity_id_s, &entity_type_s)
+                    .map_err(|e| e.to_string())?;
+                // Entity-linking dual-write: remove linking_dismissals tombstone.
+                db.conn_ref()
+                    .execute(
+                        "DELETE FROM linking_dismissals \
+                         WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                           AND entity_id = ?2 AND entity_type = ?3",
+                        rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
+                    )
+                    .map_err(|e| e.to_string())?;
+                // Restore must withdraw the shadow tombstone claims so PRE-GATE /
+                // claim-backed readers don't keep suppressing the entity.
+                // dos7-allowed: claim lifecycle column update — claim_state/surfacing_state/retraction_reason are restore-flow lifecycle writes.
+                db.conn_ref()
+                    .execute(
+                        "UPDATE intelligence_claims /* dos7-allowed: claim lifecycle column update */ \
+                         SET claim_state = 'withdrawn', \
+                             surfacing_state = 'dormant', \
+                             retraction_reason = 'restored_by_user' \
+                         WHERE id IN ( \
+                             SELECT ic.id FROM intelligence_claims ic \
+                             WHERE ic.claim_state = 'tombstoned' \
+                               AND json_valid(ic.subject_ref) = 1 \
+                               AND lower(json_extract(ic.subject_ref, '$.kind')) = 'meeting' \
+                               AND json_extract(ic.subject_ref, '$.id') = ?1 \
+                               AND ic.claim_type IN ('meeting_entity_dismissed', 'linking_dismissed') \
+                               AND coalesce(ic.field_path, '') = coalesce(?2, '') \
+                               AND ic.text = ?3 \
+                         )",
+                        rusqlite::params![meeting_id_s, entity_type_s, entity_id_s],
+                    )
+                    .map_err(|e| e.to_string())?;
+                db.conn_ref()
+                    .execute(
+                        "UPDATE linked_entities_raw SET source = 'rule:restored' \
+                         WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                           AND entity_id = ?2 AND entity_type = ?3 \
+                           AND source = 'user_dismissed'",
+                        rusqlite::params![meeting_id_s, entity_id_s, entity_type_s],
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(r)
+            })
         })
         .await?;
     log::info!(
@@ -2052,18 +2084,22 @@ pub async fn unlink_meeting_entity_with_prep_queue(
             // Legacy write — kept during cutover window.
             db.unlink_meeting_entity(&meeting_id_s, &entity_id_s)
                 .map_err(|e| e.to_string())?;
-            let _ = db.conn_ref().execute(
-                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
-                rusqlite::params![meeting_id_s],
-            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                    rusqlite::params![meeting_id_s],
+                )
+                .map_err(|e| e.to_string())?;
             // Entity-linking dual-write: unlink = dismiss in the new model.
             let now = unlinked_at;
-            let _ = db.conn_ref().execute(
-                "INSERT OR IGNORE INTO linking_dismissals \
-                 (owner_type, owner_id, entity_id, entity_type, created_at) \
-                 VALUES ('meeting', ?1, ?2, ?3, ?4)",
-                rusqlite::params![meeting_id_s, entity_id_s, entity_type, now],
-            );
+            db.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO linking_dismissals \
+                     (owner_type, owner_id, entity_id, entity_type, created_at) \
+                     VALUES ('meeting', ?1, ?2, ?3, ?4)",
+                    rusqlite::params![meeting_id_s, entity_id_s, entity_type, now],
+                )
+                .map_err(|e| e.to_string())?;
             // Shadow-write the unlink-as-dismiss
             // so commit_claim PRE-GATE blocks re-linking on the next pass.
             crate::services::claims::shadow_write_tombstone_claim(
@@ -2080,11 +2116,13 @@ pub async fn unlink_meeting_entity_with_prep_queue(
                     expires_at: None,
                 },
             );
-            let _ = db.conn_ref().execute(
-                "UPDATE linked_entities_raw SET source = 'user_dismissed' \
-                 WHERE owner_type = 'meeting' AND owner_id = ?1 AND entity_id = ?2",
-                rusqlite::params![meeting_id_s, entity_id_s],
-            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE linked_entities_raw SET source = 'user_dismissed' \
+                     WHERE owner_type = 'meeting' AND owner_id = ?1 AND entity_id = ?2",
+                    rusqlite::params![meeting_id_s, entity_id_s],
+                )
+                .map_err(|e| e.to_string())?;
             Ok(())
         })
         .await?;
@@ -2304,10 +2342,12 @@ pub async fn persist_and_invalidate_entity_links(
                 .unwrap_or(false);
 
             if prep_exists && count > 0 {
-                let _ = db.conn_ref().execute(
-                    "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
-                    rusqlite::params![meeting_id_s],
-                );
+                db.conn_ref()
+                    .execute(
+                        "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                        rusqlite::params![meeting_id_s],
+                    )
+                    .map_err(|e| e.to_string())?;
             }
 
             Ok::<(usize, bool), String>((count, prep_exists && count > 0))
@@ -2465,10 +2505,12 @@ pub fn persist_and_invalidate_entity_links_sync_scored(
             .unwrap_or(false);
 
         if prep_exists {
-            let _ = db.conn_ref().execute(
-                "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
-                rusqlite::params![meeting_id],
-            );
+            db.conn_ref()
+                .execute(
+                    "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
+                    rusqlite::params![meeting_id],
+                )
+                .map_err(|e| e.to_string())?;
             prep_queue.enqueue(crate::meeting_prep_queue::PrepRequest::new(
                 meeting_id.to_string(),
                 crate::meeting_prep_queue::PrepPriority::Background,
@@ -3481,10 +3523,12 @@ pub async fn refresh_meeting_preps(
                 .map_err(|e| format!("Failed to query future meetings: {}", e))?;
 
             for mid in &meeting_ids {
-                let _ = db.conn_ref().execute(
-                    "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
-                    rusqlite::params![mid],
-                );
+                db.conn_ref()
+                    .execute(
+                        "UPDATE meeting_prep SET prep_frozen_json = NULL, prep_frozen_at = NULL WHERE meeting_id = ?1",
+                        rusqlite::params![mid],
+                    )
+                    .map_err(|e| e.to_string())?;
             }
 
             Ok(meeting_ids)
@@ -3967,11 +4011,13 @@ pub async fn attach_meeting_transcript(
 
 #[cfg(test)]
 mod tests {
-    use super::plan_refresh_completion;
     use super::persist_classification_entities_scored;
+    use super::plan_refresh_completion;
+    use super::restore_meeting_entity;
     use crate::db::test_utils::test_db;
     use crate::google_api::classify::ResolvedMeetingEntity;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use crate::state::AppState;
     use chrono::TimeZone;
 
     fn test_ctx<'a>(
@@ -4050,6 +4096,126 @@ mod tests {
         assert!(
             !still_linked,
             "meeting_entities must remain empty for the dismissed (meeting, entity) pair",
+        );
+    }
+
+    #[tokio::test]
+    async fn restore_meeting_entity_propagates_claim_tombstone_failure() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("restore-rollback.db");
+        let svc = crate::db_service::DbService::open_at_unencrypted(db_path)
+            .await
+            .expect("open test db service");
+        let state = AppState::new();
+        {
+            let mut guard = state.db_service.write().await;
+            *guard = Some(svc);
+        }
+
+        let meeting_id = "mtg-restore-rollback";
+        let entity_id = "acct-restore-rollback";
+        let entity_type = "account";
+
+        // dos7-allowed: restore rollback fixture seeds legacy dismissal tables directly.
+        state
+            .db_write(move |db| {
+                db.record_meeting_entity_dismissal(meeting_id, entity_id, entity_type, Some("user"))
+                    .map_err(|e| e.to_string())?;
+                db.conn_ref()
+                    .execute(
+                        "INSERT INTO linking_dismissals \
+                         (owner_type, owner_id, entity_id, entity_type, dismissed_by, created_at) \
+                         VALUES ('meeting', ?1, ?2, ?3, 'user', ?4)",
+                        rusqlite::params![
+                            meeting_id,
+                            entity_id,
+                            entity_type,
+                            "2026-05-03T00:00:00Z"
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
+                db.conn_ref()
+                    .execute(
+                        "INSERT INTO intelligence_claims /* dos7-allowed: test seed for restore rollback */ \
+                         (id, subject_ref, claim_type, field_path, text, dedup_key, actor, \
+                          data_source, observed_at, provenance_json, claim_state, \
+                          surfacing_state, retraction_reason) \
+                         VALUES (?1, ?2, 'meeting_entity_dismissed', ?3, ?4, ?5, 'user', \
+                                 'user_feedback', ?6, '{}', 'tombstoned', 'dormant', \
+                                 'user_removal')",
+                        rusqlite::params![
+                            "claim-restore-rollback",
+                            serde_json::json!({
+                                "kind": "Meeting",
+                                "id": meeting_id,
+                            })
+                            .to_string(),
+                            entity_type,
+                            entity_id,
+                            "dedup-restore-rollback",
+                            "2026-05-03T00:00:00Z",
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
+                db.conn_ref()
+                    .execute_batch(
+                        "CREATE TRIGGER fail_restore_claim_tombstone_update \
+                         BEFORE UPDATE OF claim_state ON intelligence_claims \
+                         WHEN OLD.claim_type = 'meeting_entity_dismissed' \
+                         BEGIN \
+                           SELECT RAISE(ABORT, 'restore claim tombstone failure'); \
+                         END;",
+                    )
+                    .map_err(|e| e.to_string())?;
+                Ok(())
+            })
+            .await
+            .expect("seed restore rollback fixture");
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(7);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let result =
+            restore_meeting_entity(&ctx, &state, meeting_id, entity_id, entity_type).await;
+        assert!(
+            result
+                .as_ref()
+                .is_err_and(|err| err.contains("restore claim tombstone failure")),
+            "restore should surface the claim tombstone write failure, got {result:?}",
+        );
+
+        let legacy_row_remains = state
+            .db_read(move |db| {
+                db.is_meeting_entity_dismissed(meeting_id, entity_id, entity_type)
+                    .map_err(|e| e.to_string())
+            })
+            .await
+            .expect("read legacy dismissal");
+        assert!(
+            legacy_row_remains,
+            "legacy dismissal row must roll back when claim tombstone withdrawal fails",
+        );
+
+        let linking_row_remains = state
+            .db_read(move |db| {
+                db.conn_ref()
+                    .prepare(
+                        "SELECT 1 FROM linking_dismissals \
+                         WHERE owner_type = 'meeting' AND owner_id = ?1 \
+                           AND entity_id = ?2 AND entity_type = ?3",
+                    )
+                    .and_then(|mut stmt| {
+                        stmt.exists(rusqlite::params![meeting_id, entity_id, entity_type])
+                    })
+                    .map_err(|e| e.to_string())
+            })
+            .await
+            .expect("read linking dismissal");
+        assert!(
+            linking_row_remains,
+            "linking dismissal row must roll back with the restore transaction",
         );
     }
 

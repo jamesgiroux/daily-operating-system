@@ -212,7 +212,7 @@ fn load_legacy_claim_rows(tx: &ActionDb) -> Result<Vec<LegacyClaimRow>, Backfill
 
 fn lift_source_asof(tx: &ActionDb, claim_id: &str, source_asof: &str) -> Result<(), BackfillError> {
     tx.conn_ref().execute(
-        "UPDATE intelligence_claims \
+        "UPDATE intelligence_claims /* dos7-allowed: source-asof cutover lifts legacy timestamp audit value */ \
          SET source_asof = ?1 /* dos7-allowed: source-asof cutover lifts legacy timestamp audit value */ \
          WHERE id = ?2",
         params![source_asof, claim_id],
@@ -237,7 +237,7 @@ fn lift_implausible_source_asof(
         .map_err(|e| BackfillError::Mode(format!("serialize metadata_json: {e}")))?;
 
     tx.conn_ref().execute(
-        "UPDATE intelligence_claims \
+        "UPDATE intelligence_claims /* dos7-allowed: source-asof cutover flags implausible audit value */ \
          SET source_asof = ?1 /* dos7-allowed: source-asof cutover lifts implausible audit value */, \
              metadata_json = ?2 \
          WHERE id = ?3",
@@ -248,7 +248,7 @@ fn lift_implausible_source_asof(
 
 fn mark_legacy_unattributed(tx: &ActionDb, claim_id: &str) -> Result<(), BackfillError> {
     tx.conn_ref().execute(
-        "UPDATE intelligence_claims \
+        "UPDATE intelligence_claims /* dos7-allowed: source-asof cutover marks legacy unattributed rows */ \
          SET data_source = 'legacy_unattributed' \
          WHERE id = ?1",
         params![claim_id],
@@ -627,7 +627,7 @@ mod tests {
         let metadata_json = metadata.to_string();
         db.conn_ref()
             .execute(
-                "INSERT INTO intelligence_claims (
+                "INSERT INTO intelligence_claims /* dos7-allowed: source-asof backfill test seed */ (
                     id, subject_ref, claim_type, field_path, text, dedup_key, item_hash,
                     actor, data_source, observed_at, created_at,
                     provenance_json, metadata_json,

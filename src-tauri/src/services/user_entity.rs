@@ -405,10 +405,12 @@ pub async fn delete_user_context_entry(
 
             // Clean up associated embedding if it exists
             if let Some(ref emb_id) = embedding_id {
-                let _ = db.conn_ref().execute(
-                    "DELETE FROM content_embeddings WHERE id = ?1",
-                    rusqlite::params![emb_id],
-                );
+                db.conn_ref()
+                    .execute(
+                        "DELETE FROM content_embeddings WHERE id = ?1",
+                        rusqlite::params![emb_id],
+                    )
+                    .map_err(|e| format!("Failed to delete context embedding: {}", e))?;
             }
 
             Ok(())

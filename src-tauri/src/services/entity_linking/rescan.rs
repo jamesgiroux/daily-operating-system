@@ -104,7 +104,7 @@ pub async fn rescan_stale_weak_primaries(
     // Record that a sweep happened so the one-shot upgrade sweep doesn't
     // re-fire. Periodic rescans overwrite the timestamp harmlessly.
     let now = ctx.clock.now().to_rfc3339();
-    let _ = state
+    if let Err(err) = state
         .db_write(move |db| {
             db.conn_ref()
                 .execute(
@@ -114,7 +114,10 @@ pub async fn rescan_stale_weak_primaries(
                 .map(|_| ())
                 .map_err(|e| format!("update last_migration_sweep_at: {e}"))
         })
-        .await;
+        .await
+    {
+        log::warn!("entity linking rescan marker update failed: {}", err);
+    }
 
     Ok(attempts)
 }

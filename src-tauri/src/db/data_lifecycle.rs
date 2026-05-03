@@ -215,7 +215,7 @@ pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
             // mid-purge and roll the whole transaction back. The
             // valid-rows subquery materializes the safe set first.
             conn.execute(
-                "UPDATE intelligence_claims \
+                "UPDATE intelligence_claims /* dos7-allowed: lifecycle column update for Email-subject purge */ \
                  SET claim_state = 'withdrawn', \
                      retraction_reason = coalesce(retraction_reason, 'subject_purged') \
                  WHERE id IN ( \
@@ -252,6 +252,7 @@ pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
             Ok(deleted)
         }
         Err(e) => {
+            // best-effort: preserve the original purge error if rollback itself fails.
             let _ = conn.execute_batch("ROLLBACK");
             Err(e)
         }
@@ -574,7 +575,7 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                         // whose subject_ref is valid JSON. See
                         // purge_aged_emails for the same pattern.
                         tx.conn_ref().execute(
-                            "UPDATE intelligence_claims \
+                            "UPDATE intelligence_claims /* dos7-allowed: lifecycle column update for data-source purge */ \
                              SET claim_state = 'withdrawn', \
                                  retraction_reason = coalesce(retraction_reason, 'subject_purged') \
                              WHERE id IN ( \
@@ -601,12 +602,17 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                         .map_err(|e| format!("purge email_signals failed: {e}"))?;
                 }
                 if table_exists(tx, "email_threads") {
-                    let _ = tx.conn_ref().execute("DELETE FROM email_threads", []);
+                    tx.conn_ref()
+                        .execute("DELETE FROM email_threads", [])
+                        .map_err(|e| format!("purge email_threads failed: {e}"))?;
                 }
                 if table_exists(tx, "meetings") {
-                    let _ = tx
-                        .conn_ref()
-                        .execute("UPDATE meetings SET description = NULL WHERE description IS NOT NULL", []);
+                    tx.conn_ref()
+                        .execute(
+                            "UPDATE meetings SET description = NULL WHERE description IS NOT NULL",
+                            [],
+                        )
+                        .map_err(|e| format!("purge meeting descriptions failed: {e}"))?;
                 }
             }
             DataSource::Gravatar => {
@@ -943,7 +949,7 @@ mod tests {
         // directly so hard-delete behavior can be asserted in isolation.
         db.conn_ref()
             .execute(
-                "INSERT INTO intelligence_claims \
+                "INSERT INTO intelligence_claims /* dos7-allowed: test seed for Email-subject purge */ \
                  (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
                   actor, data_source, observed_at, created_at, provenance_json, \
                   claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity) \
@@ -1016,7 +1022,7 @@ mod tests {
         // directly to assert the purge path skips invalid subject JSON.
         db.conn_ref()
             .execute(
-                "INSERT INTO intelligence_claims \
+                "INSERT INTO intelligence_claims /* dos7-allowed: test seed for malformed Email-subject purge */ \
                  (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
                   actor, data_source, observed_at, created_at, provenance_json, \
                   claim_state, surfacing_state, retraction_reason, temporal_scope, sensitivity) \

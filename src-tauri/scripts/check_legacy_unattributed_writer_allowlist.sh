@@ -74,4 +74,4 @@ if [[ -n "$matches" ]]; then
   exit 1
 fi
 
-echo "LegacyUnattributed writers are restricted to the cutover/backfill allowlist."
+echo "OK: no LegacyUnattributed writers outside allowlist."

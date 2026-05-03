@@ -129,6 +129,7 @@ pub fn migrate_to_encrypted(plaintext_path: &std::path::Path, hex_key: &str) -> 
         .map_err(|e| format!("Failed to open plaintext DB: {e}"))?;
 
     // Checkpoint WAL to ensure all data is in the main file
+    // best-effort: encryption export reads the main DB and handles an absent/empty WAL.
     let _ = plain_conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
 
     // Attach encrypted target

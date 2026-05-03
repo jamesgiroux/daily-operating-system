@@ -402,16 +402,20 @@ pub async fn set_user_profile(
     }
 
     // Write identity fields to user_entity table only (AC2: no dual storage)
-    let _ = state.db_write(move |db| {
+    state.db_write(move |db| {
         // Upsert: create row if missing, then update
-        let _ = db.conn_ref().execute(
-            "INSERT INTO user_entity (id) VALUES (1) ON CONFLICT(id) DO NOTHING",
-            [],
-        );
-        let _ = db.conn_ref().execute(
-            "UPDATE user_entity SET name = ?1, company = ?2, title = ?3, focus = ?4, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
-            rusqlite::params![uname, ucompany, utitle, ufocus],
-        );
+        db.conn_ref()
+            .execute(
+                "INSERT INTO user_entity (id) VALUES (1) ON CONFLICT(id) DO NOTHING",
+                [],
+            )
+            .map_err(|e| e.to_string())?;
+        db.conn_ref()
+            .execute(
+                "UPDATE user_entity SET name = ?1, company = ?2, title = ?3, focus = ?4, updated_at = CURRENT_TIMESTAMP WHERE id = 1",
+                rusqlite::params![uname, ucompany, utitle, ufocus],
+            )
+            .map_err(|e| e.to_string())?;
 
         // Sync company name to internal root account entity if it changed
         if let Some(ref company_name) = ucompany {
@@ -422,7 +426,7 @@ pub async fn set_user_profile(
             }
         }
         Ok(())
-    }).await;
+    }).await?;
 
     Ok("ok".to_string())
 }
