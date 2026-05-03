@@ -224,6 +224,80 @@ fn lint_legacy_dismissal_pairing_catches_account_stakeholder_role_dismissal() {
     );
 }
 
+/// L2 cycle-22 regression: prove the pairing lint catches a
+/// MULTILINE `UPDATE account_stakeholder_roles ... SET ...
+/// dismissed_at = ...` shape that splits across source lines via
+/// Rust string-literal line continuation. Cycle-20's single-line
+/// regex missed this; cycle-22 added a 7-line lookahead.
+#[test]
+fn lint_legacy_dismissal_pairing_catches_multiline_update_dismissed_at() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let dismissed_field = "dismissed".to_string() + "_at";
+    // Multi-line UPDATE: `UPDATE` on one line, `SET ... dismissed_at`
+    // on a later line. No shadow-write.
+    let bad_sql = format!(
+        "fn evil() {{\n\
+         let _ = conn.execute(\n\
+         \"UPDATE account_stakeholder_roles \\\n\
+          SET data_source = 'repair', {dismissed_field} = ?1 \\\n\
+          WHERE account_id = ?2\",\n\
+         params,\n\
+         );\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_multiline.rs"), bad_sql)
+        .expect("write fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_legacy_dismissal_shadow_write_pairing.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on multiline UPDATE ... dismissed_at without shadow-write. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+/// L2 cycle-22 regression: prove the pairing lint catches a
+/// helper-call site (e.g. `db.upsert_linking_dismissal(...)`)
+/// without a shadow-write nearby. Cycle-22 added direct
+/// helper-name patterns since these calls bypass raw-SQL detection.
+#[test]
+fn lint_legacy_dismissal_pairing_catches_helper_call_without_shadow() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let helper = "upsert".to_string() + "_" + "linking" + "_" + "dismissal";
+    let bad_rs = format!(
+        "fn evil(db: &ActionDb) {{\n\
+         db.{helper}(owner_type, owner_id, entity_id, entity_type, None).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_helper.rs"), bad_rs)
+        .expect("write fixture");
+
+    let lint_path =
+        repo_root().join("src-tauri/scripts/check_legacy_dismissal_shadow_write_pairing.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on db.upsert_linking_dismissal call without shadow-write. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 #[test]
 fn lint_legacy_dismissal_shadow_write_pairing_passes_against_current_tree() {
     let (ok, stdout, stderr) =

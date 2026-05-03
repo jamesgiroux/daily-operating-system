@@ -3973,7 +3973,8 @@ mod tests {
 
         // Simulate the chip X: record a dismissal + unlink. This mirrors
         // what `services::meetings::dismiss_meeting_entity` does inside its
-        // db_write closure.
+        // db_write closure. dos7-allowed: #[cfg(test)] fixture; the
+        // production path pairs the shadow_write_tombstone_claim.
         db.record_meeting_entity_dismissal(meeting_id, entity_id, entity_type, Some("user"))
             .expect("record dismissal");
         db.unlink_meeting_entity(meeting_id, entity_id)
