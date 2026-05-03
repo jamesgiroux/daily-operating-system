@@ -1521,8 +1521,8 @@ pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
         }
     }
 
-    let mut intel: IntelligenceJson =
-        serde_json::from_value(value).map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
+    let mut intel: IntelligenceJson = serde_json::from_value(value)
+        .map_err(|e| format!("Failed to parse {}: {}", path.display(), e))?;
     normalize_legacy_intelligence_refs(&mut intel);
     Ok(intel)
 }
@@ -1884,8 +1884,7 @@ pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &Intellig
         let field_path = normalize_legacy_intelligence_path(&edit.field_path);
         // Array-indexed paths like "stakeholderInsights[0].role" break when
         // enrichment reorders the array. Match by identity ("name") instead of index.
-        if let Some(resolved) =
-            resolve_array_path_by_identity(&existing_val, &new_val, &field_path)
+        if let Some(resolved) = resolve_array_path_by_identity(&existing_val, &new_val, &field_path)
         {
             // Read the user-edited value from existing at the original path
             if let Some(val) = get_json_path(&existing_val, &field_path) {
@@ -2103,181 +2102,7 @@ impl ActionDb {
         &self,
         intel: &IntelligenceJson,
     ) -> Result<(), rusqlite::Error> {
-        let conn = self.conn_ref();
-
-        // 1. entity_assessment — all assessment/prose columns
-        let dimensions_json = serde_json::to_string(&intel.dimensions_blob()).ok();
-        conn.execute(
-            "INSERT INTO entity_assessment (
-                entity_id, entity_type, enriched_at, source_file_count,
-                executive_assessment, risks_json, recent_wins_json,
-                current_state_json, stakeholder_insights_json,
-                next_meeting_readiness_json, company_context_json,
-                value_delivered, success_metrics, open_commitments,
-                relationship_depth, health_json, org_health_json, consistency_status,
-                consistency_findings_json, consistency_checked_at,
-                portfolio_json, network_json, user_edits_json, source_manifest_json,
-                dimensions_json, success_plan_signals_json, pull_quote
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26, ?27)
-            ON CONFLICT(entity_id) DO UPDATE SET
-                entity_type = excluded.entity_type,
-                enriched_at = excluded.enriched_at,
-                source_file_count = excluded.source_file_count,
-                executive_assessment = excluded.executive_assessment,
-                risks_json = excluded.risks_json,
-                recent_wins_json = excluded.recent_wins_json,
-                current_state_json = excluded.current_state_json,
-                stakeholder_insights_json = excluded.stakeholder_insights_json,
-                next_meeting_readiness_json = excluded.next_meeting_readiness_json,
-                company_context_json = excluded.company_context_json,
-                value_delivered = excluded.value_delivered,
-                success_metrics = excluded.success_metrics,
-                open_commitments = excluded.open_commitments,
-                relationship_depth = excluded.relationship_depth,
-                health_json = excluded.health_json,
-                org_health_json = excluded.org_health_json,
-                consistency_status = excluded.consistency_status,
-                consistency_findings_json = excluded.consistency_findings_json,
-                consistency_checked_at = excluded.consistency_checked_at,
-                portfolio_json = excluded.portfolio_json,
-                network_json = excluded.network_json,
-                user_edits_json = excluded.user_edits_json,
-                source_manifest_json = excluded.source_manifest_json,
-                dimensions_json = excluded.dimensions_json,
-                success_plan_signals_json = excluded.success_plan_signals_json,
-                pull_quote = excluded.pull_quote",
-            rusqlite::params![
-                intel.entity_id,
-                intel.entity_type,
-                intel.enriched_at,
-                intel.source_file_count,
-                intel.executive_assessment,
-                serde_json::to_string(&intel.risks).ok(),
-                serde_json::to_string(&intel.recent_wins).ok(),
-                serde_json::to_string(&intel.current_state).ok(),
-                serde_json::to_string(&intel.stakeholder_insights).ok(),
-                serde_json::to_string(&intel.next_meeting_readiness).ok(),
-                serde_json::to_string(&intel.company_context).ok(),
-                serde_json::to_string(&intel.value_delivered).ok(),
-                serde_json::to_string(&intel.success_metrics).ok(),
-                serde_json::to_string(&intel.open_commitments).ok(),
-                serde_json::to_string(&intel.relationship_depth).ok(),
-                intel.health.as_ref().and_then(|v| serde_json::to_string(v).ok()),
-                intel
-                    .org_health
-                    .as_ref()
-                    .and_then(|v| serde_json::to_string(v).ok()),
-                serde_json::to_string(&intel.consistency_status).ok(),
-                serde_json::to_string(&intel.consistency_findings).ok(),
-                intel.consistency_checked_at,
-                serde_json::to_string(&intel.portfolio).ok(),
-                serde_json::to_string(&intel.network).ok(),
-                serde_json::to_string(&intel.user_edits).ok(),
-                serde_json::to_string(&intel.source_manifest).ok(),
-                dimensions_json,
-                intel.success_plan_signals.as_ref().and_then(|v| serde_json::to_string(v).ok()),
-                intel.pull_quote,
-            ],
-        )?;
-
-        // 1b. Clear stale feedback — feedback is keyed by field path (e.g.
-        // "riskFactors[0]"), which is positional. Re-enrichment produces new content
-        // at the same positions, so old votes don't apply to new analysis.
-        // Preserve field conflict dismissals (account_field_conflict:*) — those are
-        // user decisions about data source conflicts, not positional analysis votes.
-        conn.execute(
-            "DELETE FROM intelligence_feedback WHERE entity_id = ?1 AND entity_type = ?2 \
-             AND field NOT LIKE 'account_field_conflict:%'",
-            rusqlite::params![intel.entity_id, intel.entity_type],
-        )?;
-        conn.execute(
-            "DELETE FROM entity_feedback_events WHERE entity_id = ?1 AND entity_type = ?2 \
-             AND feedback_type IN ('confirmed', 'rejected') \
-             AND COALESCE(source_kind, '') != 'field_conflict'",
-            rusqlite::params![intel.entity_id, intel.entity_type],
-        )?;
-
-        // 2. entity_quality — keep scalar health mirrors for transitional compatibility.
-        if let Some(health) = intel.health.as_ref() {
-            conn.execute(
-                "INSERT INTO entity_quality (entity_id, entity_type, health_score, health_trend)
-                 VALUES (?1, ?2, ?3, ?4)
-                 ON CONFLICT(entity_id) DO UPDATE SET
-                     health_score = excluded.health_score,
-                     health_trend = excluded.health_trend",
-                rusqlite::params![
-                    intel.entity_id,
-                    intel.entity_type,
-                    health.score,
-                    serde_json::to_string(&health.trend).ok(),
-                ],
-            )?;
-        }
-
-        // Emit regulatory_gap_detected and stakeholder_verified
-        // signals so the Intelligence Loop (callouts, propagation rules,
-        // health scoring) can react without waiting for the next enrichment.
-        // The 24-hour callout window dedupes repeat emissions of the same gap.
-        for item in &intel.regulatory_context {
-            if item.status == "gap" {
-                let value = serde_json::json!({
-                    "standard": item.standard,
-                    "evidence": item.evidence,
-                })
-                .to_string();
-                let _ = crate::signals::bus::emit_signal(
-                    self,
-                    &intel.entity_type,
-                    &intel.entity_id,
-                    "regulatory_gap_detected",
-                    "enrichment_write",
-                    Some(&value),
-                    0.9,
-                );
-            } else if item.status == "required" || item.status == "in_progress" {
-                let value = serde_json::json!({
-                    "standard": item.standard,
-                    "status": item.status,
-                })
-                .to_string();
-                let _ = crate::signals::bus::emit_signal(
-                    self,
-                    &intel.entity_type,
-                    &intel.entity_id,
-                    "regulatory_requirement_detected",
-                    "enrichment_write",
-                    Some(&value),
-                    0.85,
-                );
-            }
-        }
-
-        for insight in &intel.stakeholder_insights {
-            if let Some(ref person_id) = insight.person_id {
-                let (signal_type, confidence) = if insight.verified {
-                    ("stakeholder_verified", 0.9)
-                } else {
-                    ("stakeholder_unverified", 0.7)
-                };
-                let value = serde_json::json!({
-                    "person_id": person_id,
-                    "name": insight.name,
-                    "verified_source": insight.verified_source,
-                })
-                .to_string();
-                let _ = crate::signals::bus::emit_signal(
-                    self,
-                    &intel.entity_type,
-                    &intel.entity_id,
-                    signal_type,
-                    "enrichment_write",
-                    Some(&value),
-                    confidence,
-                );
-            }
-        }
-
-        Ok(())
+        crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(self, intel)
     }
 
     /// Get cached entity intelligence (from entity_assessment + entity_quality).
@@ -3073,7 +2898,6 @@ mod tests {
                 discrepancy: None,
 
                 ..Default::default()
-
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),
@@ -3599,7 +3423,6 @@ mod tests {
                 discrepancy: None,
 
                 ..Default::default()
-
             }],
             value_delivered: vec![ValueItem {
                 date: Some("2026-01-15".to_string()),

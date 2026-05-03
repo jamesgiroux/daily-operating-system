@@ -654,14 +654,17 @@ impl ActionDb {
                 data_source_assessment: row.get(15)?,
             };
 
-            let role = row.get::<_, Option<String>>(16)?.map(|role| {
-                Ok::<_, rusqlite::Error>(StakeholderRole {
-                    role,
-                    data_source: row
-                        .get::<_, Option<String>>(17)?
-                        .unwrap_or_else(|| "unknown".to_string()),
+            let role = row
+                .get::<_, Option<String>>(16)?
+                .map(|role| {
+                    Ok::<_, rusqlite::Error>(StakeholderRole {
+                        role,
+                        data_source: row
+                            .get::<_, Option<String>>(17)?
+                            .unwrap_or_else(|| "unknown".to_string()),
+                    })
                 })
-            }).transpose()?;
+                .transpose()?;
 
             Ok((stakeholder, role))
         })?;
@@ -1290,6 +1293,16 @@ impl ActionDb {
             }
             return Ok(());
         }
+        if matches!(field, "notes" | "strategic_programs" | "company_overview") {
+            // These are legacy AI projection columns. User/API edits are not
+            // agent-authored claims, so they stay as direct cache writes owned
+            // by derived_state during the dual-read window.
+            crate::services::derived_state::update_account_ai_field_projection(
+                self, id, field, value, &now,
+            )
+            .map_err(DbError::Sqlite)?;
+            return Ok(());
+        }
         let sql = match field {
             "name" => "UPDATE accounts SET name = ?1, updated_at = ?3 WHERE id = ?2",
             "health" => "UPDATE accounts SET health = ?1, updated_at = ?3 WHERE id = ?2",
@@ -1313,15 +1326,6 @@ impl ActionDb {
             }
             "tracker_path" => {
                 "UPDATE accounts SET tracker_path = ?1, updated_at = ?3 WHERE id = ?2"
-            }
-            "notes" => {
-                "UPDATE accounts SET notes = CASE WHEN ?1 = '' THEN NULL ELSE ?1 END, updated_at = ?3 WHERE id = ?2"
-            }
-            "strategic_programs" => {
-                "UPDATE accounts SET strategic_programs = ?1, updated_at = ?3 WHERE id = ?2"
-            }
-            "company_overview" => {
-                "UPDATE accounts SET company_overview = ?1, updated_at = ?3 WHERE id = ?2"
             }
             _ => {
                 return Err(DbError::Sqlite(rusqlite::Error::InvalidParameterName(

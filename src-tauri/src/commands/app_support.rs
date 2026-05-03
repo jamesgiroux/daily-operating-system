@@ -1662,19 +1662,8 @@ pub async fn devtools_clear_contaminated_enrichment(
     let aid = account_id.clone();
     state
         .db_write(move |db| {
-            db.conn_ref()
-                .execute(
-                    "UPDATE entity_assessment SET executive_assessment = NULL WHERE entity_id = ?1",
-                    rusqlite::params![&aid],
-                )
-                .map_err(|e| format!("clear executive_assessment: {e}"))?;
-            db.conn_ref()
-                .execute(
-                    "UPDATE accounts SET company_overview = NULL, \
-                     strategic_programs = NULL, notes = NULL WHERE id = ?1",
-                    rusqlite::params![&aid],
-                )
-                .map_err(|e| format!("clear account narrative fields: {e}"))?;
+            crate::services::derived_state::clear_contaminated_enrichment_projection(db, &aid)
+                .map_err(|e| format!("clear contaminated enrichment fields: {e}"))?;
             log::warn!(
                 "[DOS-287] cleared contaminated enrichment fields for account {}",
                 aid

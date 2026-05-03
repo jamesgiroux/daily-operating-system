@@ -55,6 +55,241 @@ fn merge_user_confirmed_values(
     new_intel.value_delivered = merged;
 }
 
+fn subject_ref_for_entity(entity_type: &str, entity_id: &str) -> Result<String, String> {
+    match entity_type {
+        "account" | "project" | "person" | "meeting" => Ok(serde_json::json!({
+            "kind": entity_type,
+            "id": entity_id,
+        })
+        .to_string()),
+        other => Err(format!("Unsupported claim projection subject: {other}")),
+    }
+}
+
+fn projection_metadata(value: serde_json::Value) -> Option<String> {
+    serde_json::to_string(&serde_json::json!({
+        "legacy_projection_value": value,
+    }))
+    .ok()
+}
+
+fn non_empty_join(parts: impl IntoIterator<Item = String>) -> Option<String> {
+    let joined = parts
+        .into_iter()
+        .filter(|part| !part.trim().is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    if joined.trim().is_empty() {
+        None
+    } else {
+        Some(joined)
+    }
+}
+
+fn current_state_projection_text(state: &crate::intelligence::io::CurrentState) -> Option<String> {
+    non_empty_join(
+        [
+            (!state.working.is_empty()).then(|| format!("Working: {}", state.working.join("; "))),
+            (!state.not_working.is_empty())
+                .then(|| format!("Not working: {}", state.not_working.join("; "))),
+            (!state.unknowns.is_empty())
+                .then(|| format!("Unknowns: {}", state.unknowns.join("; "))),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+fn company_context_projection_text(
+    context: &crate::intelligence::io::CompanyContext,
+) -> Option<String> {
+    non_empty_join(
+        [
+            context.description.clone(),
+            context.industry.as_ref().map(|v| format!("Industry: {v}")),
+            context.size.as_ref().map(|v| format!("Size: {v}")),
+            context
+                .headquarters
+                .as_ref()
+                .map(|v| format!("Headquarters: {v}")),
+            context.additional_context.clone(),
+        ]
+        .into_iter()
+        .flatten(),
+    )
+}
+
+struct ProjectionClaimInput<'a> {
+    subject_ref: &'a str,
+    actor: &'a str,
+    data_source: &'a str,
+    source_asof: Option<&'a str>,
+    claim_type: &'a str,
+    field_path: &'a str,
+    text: &'a str,
+    legacy_value: serde_json::Value,
+}
+
+fn commit_projection_claim(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    input: ProjectionClaimInput<'_>,
+) -> Result<(), String> {
+    if input.text.trim().is_empty() {
+        return Ok(());
+    }
+    crate::services::claims::commit_claim(
+        ctx,
+        db,
+        crate::services::claims::ClaimProposal {
+            subject_ref: input.subject_ref.to_string(),
+            claim_type: input.claim_type.to_string(),
+            field_path: Some(input.field_path.to_string()),
+            topic_key: None,
+            text: input.text.to_string(),
+            actor: input.actor.to_string(),
+            data_source: input.data_source.to_string(),
+            source_ref: None,
+            source_asof: input.source_asof.map(str::to_string),
+            observed_at: ctx.clock.now().to_rfc3339(),
+            provenance_json: "{}".to_string(),
+            metadata_json: projection_metadata(input.legacy_value),
+            thread_id: None,
+            temporal_scope: None,
+            sensitivity: None,
+            tombstone: None,
+        },
+    )
+    .map(|_| ())
+    .map_err(|e| format!("commit {} projection claim failed: {e}", input.claim_type))
+}
+
+fn commit_claim_shaped_intelligence_projection(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    intel: &crate::intelligence::IntelligenceJson,
+    actor: &str,
+    data_source: &str,
+) -> Result<(), String> {
+    let subject_ref = subject_ref_for_entity(&intel.entity_type, &intel.entity_id)?;
+    let source_asof = (!intel.enriched_at.trim().is_empty()).then_some(intel.enriched_at.as_str());
+
+    if let Some(summary) = intel.executive_assessment.as_deref() {
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "entity_summary",
+                field_path: "executiveAssessment",
+                text: summary,
+                legacy_value: serde_json::Value::String(summary.to_string()),
+            },
+        )?;
+    }
+
+    for (idx, risk) in intel.risks.iter().enumerate() {
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "entity_risk",
+                field_path: &format!("risks[{idx}]"),
+                text: &risk.text,
+                legacy_value: serde_json::to_value(risk)
+                    .unwrap_or_else(|_| serde_json::json!({ "text": &risk.text })),
+            },
+        )?;
+    }
+
+    for (idx, win) in intel.recent_wins.iter().enumerate() {
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "entity_win",
+                field_path: &format!("recentWins[{idx}]"),
+                text: &win.text,
+                legacy_value: serde_json::to_value(win)
+                    .unwrap_or_else(|_| serde_json::json!({ "text": &win.text })),
+            },
+        )?;
+    }
+
+    if let Some(state) = intel.current_state.as_ref() {
+        if let Some(text) = current_state_projection_text(state) {
+            commit_projection_claim(
+                ctx,
+                db,
+                ProjectionClaimInput {
+                    subject_ref: &subject_ref,
+                    actor,
+                    data_source,
+                    source_asof,
+                    claim_type: "entity_current_state",
+                    field_path: "currentState",
+                    text: &text,
+                    legacy_value: serde_json::to_value(state)
+                        .unwrap_or_else(|_| serde_json::json!({ "text": text.clone() })),
+                },
+            )?;
+        }
+    }
+
+    for (idx, value) in intel.value_delivered.iter().enumerate() {
+        commit_projection_claim(
+            ctx,
+            db,
+            ProjectionClaimInput {
+                subject_ref: &subject_ref,
+                actor,
+                data_source,
+                source_asof,
+                claim_type: "value_delivered",
+                field_path: &format!("valueDelivered[{idx}]"),
+                text: &value.statement,
+                legacy_value: serde_json::to_value(value)
+                    .unwrap_or_else(|_| serde_json::json!({ "statement": &value.statement })),
+            },
+        )?;
+    }
+
+    if intel.entity_type == "account" {
+        if let Some(context) = intel.company_context.as_ref() {
+            if let Some(text) = company_context_projection_text(context) {
+                commit_projection_claim(
+                    ctx,
+                    db,
+                    ProjectionClaimInput {
+                        subject_ref: &subject_ref,
+                        actor,
+                        data_source,
+                        source_asof,
+                        claim_type: "company_context",
+                        field_path: "companyContext",
+                        text: &text,
+                        legacy_value: serde_json::to_value(context)
+                            .unwrap_or_else(|_| serde_json::json!({ "description": text.clone() })),
+                    },
+                )?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
 fn stage_failure_message(stage: &str) -> &str {
     match stage {
         "context_gather" => "context gather",
@@ -577,7 +812,14 @@ pub fn upsert_assessment_from_enrichment(
         merge_user_confirmed_values(&mut intel, &existing);
     }
     db.with_transaction(|tx| {
-        tx.upsert_entity_intelligence(&intel)
+        commit_claim_shaped_intelligence_projection(
+            ctx,
+            tx,
+            &intel,
+            "agent:intelligence",
+            "ai_enrichment",
+        )?;
+        crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(tx, &intel)
             .map_err(|e| e.to_string())?;
         crate::services::signals::emit_and_propagate(
             ctx,
@@ -641,8 +883,14 @@ pub fn upsert_assessment_snapshot(
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    // Write intelligence snapshot
-    db.upsert_entity_intelligence(intel)
+    commit_claim_shaped_intelligence_projection(
+        ctx,
+        db,
+        intel,
+        "agent:intel_queue",
+        "ai_enrichment_progressive",
+    )?;
+    crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(db, intel)
         .map_err(|e| e.to_string())?;
 
     // Path 2c: Store domains from Glean enrichment (if present).
@@ -688,28 +936,19 @@ pub fn upsert_health_outlook_signals(
         .map_err(|e| format!("Failed to serialize health_outlook_signals: {e}"))?;
 
     db.with_transaction(|tx| {
-        // INSERT OR IGNORE ensures a row exists before the UPDATE so
-        // that Glean leading-signals writes that race the main enrichment write
-        // are not silently dropped. entity_type is required NOT NULL.
-        tx.conn_ref()
-            .execute(
-                "INSERT OR IGNORE INTO entity_assessment (entity_id, entity_type) VALUES (?1, ?2)",
-                rusqlite::params![entity_id, entity_type],
-            )
-            .map_err(|e| format!("Failed to ensure entity_assessment row: {e}"))?;
-
-        tx.conn_ref()
-            .execute(
-                "UPDATE entity_assessment SET health_outlook_signals_json = ?1 WHERE entity_id = ?2",
-                rusqlite::params![&blob, entity_id],
-            )
-            .map_err(|e| format!("Failed to upsert health_outlook_signals_json: {e}"))?;
+        crate::services::derived_state::upsert_health_outlook_signals_legacy_projection(
+            tx,
+            entity_id,
+            entity_type,
+            &blob,
+        )
+        .map_err(|e| format!("Failed to upsert health_outlook_signals_json: {e}"))?;
 
         let derived = signals.derive_signals();
 
         if let Some(payload) = derived.champion_at_risk {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 engine,
                 entity_type,
@@ -724,7 +963,7 @@ pub fn upsert_health_outlook_signals(
 
         if let Some(payload) = derived.sentiment_divergence {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 engine,
                 entity_type,
@@ -739,7 +978,7 @@ pub fn upsert_health_outlook_signals(
 
         for payload in derived.competitor_decision_relevant {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 engine,
                 entity_type,
@@ -754,7 +993,7 @@ pub fn upsert_health_outlook_signals(
 
         if let Some(payload) = derived.budget_cycle_locked {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 engine,
                 entity_type,
@@ -1133,23 +1372,13 @@ pub async fn update_stakeholders(
                             intel.org_health.as_ref(),
                             active_preset.as_ref(),
                         );
-                        let health_json = serde_json::to_string(&health).ok();
-                        tx.conn.execute(
-                            "UPDATE entity_assessment SET health_json = ?1 WHERE entity_id = ?2",
-                            rusqlite::params![health_json, entity_id],
-                        ).ok();
-                        tx.conn.execute(
-                            "INSERT INTO entity_quality (entity_id, entity_type, health_score, health_trend)
-                             VALUES (?1, 'account', ?2, ?3)
-                             ON CONFLICT(entity_id) DO UPDATE SET
-                                 health_score = excluded.health_score,
-                                 health_trend = excluded.health_trend",
-                            rusqlite::params![
-                                entity_id,
-                                health.score,
-                                serde_json::to_string(&health.trend).ok(),
-                            ],
-                        ).ok();
+                        crate::services::derived_state::upsert_entity_health_legacy_projection(
+                            tx,
+                            &entity_id,
+                            "account",
+                            &health,
+                        )
+                        .ok();
                     }
                 }
 
@@ -1442,7 +1671,7 @@ pub fn recompute_entity_health_with_preset(
     };
 
     // Get existing intelligence
-    let mut intel = match db.get_entity_intelligence(entity_id).ok().flatten() {
+    let intel = match db.get_entity_intelligence(entity_id).ok().flatten() {
         Some(i) => i,
         None => return Ok(()), // No intelligence yet, nothing to recompute
     };
@@ -1457,27 +1686,14 @@ pub fn recompute_entity_health_with_preset(
         preset,
     );
 
-    intel.health = Some(health.clone());
-
-    // Write to DB
-    db.upsert_entity_intelligence(&intel)
-        .map_err(|e| e.to_string())?;
-
-    // Also update entity_quality for dashboard queries
-    db.conn_ref()
-        .execute(
-            "INSERT INTO entity_quality (entity_id, entity_type, health_score, health_trend)
-             VALUES (?1, 'account', ?2, ?3)
-             ON CONFLICT(entity_id) DO UPDATE SET
-                 health_score = excluded.health_score,
-                 health_trend = excluded.health_trend",
-            rusqlite::params![
-                entity_id,
-                health.score,
-                serde_json::to_string(&health.trend).ok(),
-            ],
-        )
-        .ok();
+    // Health is a computed snapshot, not a clean text claim.
+    crate::services::derived_state::upsert_entity_health_legacy_projection(
+        db,
+        entity_id,
+        entity_type,
+        &health,
+    )
+    .map_err(|e| e.to_string())?;
 
     // Note: disk write (for MCP sidecar) is skipped here because we don't have
     // workspace access. The DB is the primary source; disk catches up on next
