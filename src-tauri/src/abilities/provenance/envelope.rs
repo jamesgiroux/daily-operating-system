@@ -550,4 +550,63 @@ mod tests {
         assert_eq!(a.children[0].composition_id, CompositionId::new("b"));
         assert_eq!(a.children[0].provenance.children[0].composition_id, CompositionId::new("c"));
     }
+
+    #[test]
+    fn provenance_default_thread_ids_serializes_as_empty_array() {
+        // Substrate-only allowance: a Provenance with no thread
+        // assignments must serialize `thread_ids: []`, not omit the
+        // field. Future consumers see an empty list rather than a
+        // missing key, matching the additive forward-compat contract.
+        let provenance = fixture_provenance();
+        assert!(provenance.thread_ids.is_empty());
+        let value = serde_json::to_value(&provenance).unwrap();
+        let arr = value
+            .get("thread_ids")
+            .expect("thread_ids must serialize even when empty")
+            .as_array()
+            .expect("thread_ids must serialize as a JSON array");
+        assert!(arr.is_empty(), "thread_ids must round-trip as []");
+    }
+
+    #[test]
+    fn provenance_thread_ids_roundtrip_two_ids() {
+        let mut provenance = fixture_provenance();
+        provenance
+            .thread_ids
+            .push(ThreadId::new("renewal-q4-strategy"));
+        provenance.thread_ids.push(ThreadId::new("acme-onboarding"));
+
+        let value = serde_json::to_value(&provenance).unwrap();
+        let decoded: Provenance = serde_json::from_value(value).unwrap();
+        assert_eq!(decoded.thread_ids.len(), 2);
+        assert_eq!(decoded.thread_ids[0].0, "renewal-q4-strategy");
+        assert_eq!(decoded.thread_ids[1].0, "acme-onboarding");
+        assert_eq!(decoded, provenance);
+    }
+
+    #[test]
+    fn provenance_missing_thread_ids_deserializes_to_empty_vec() {
+        // A Provenance JSON written before the thread_ids field
+        // existed must still parse — the additive contract requires
+        // missing keys to default to empty.
+        let provenance = fixture_provenance();
+        let mut value = serde_json::to_value(&provenance).unwrap();
+        let obj = value.as_object_mut().unwrap();
+        obj.remove("thread_ids");
+        let decoded: Provenance = serde_json::from_value(value).unwrap();
+        assert!(decoded.thread_ids.is_empty());
+    }
+
+    #[test]
+    fn provenance_schema_version_remains_one_with_thread_ids() {
+        // The thread_ids addition is additive + default-empty; it
+        // does NOT bump provenance_schema_version. A bump here would
+        // signal a breaking change to consumers who already accept
+        // the empty-default form.
+        let provenance = fixture_provenance();
+        assert_eq!(provenance.provenance_schema_version, 1);
+        let mut with_threads = provenance.clone();
+        with_threads.thread_ids.push(ThreadId::new("topic-1"));
+        assert_eq!(with_threads.provenance_schema_version, 1);
+    }
 }
