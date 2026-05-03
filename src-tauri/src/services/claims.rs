@@ -786,6 +786,33 @@ pub fn commit_claim(
     if proposal.claim_type.trim().is_empty() {
         return Err(ClaimError::UnknownClaimType("empty".to_string()));
     }
+    // Closed-set validation: the claim_type string MUST be in the
+    // registry, AND the subject kind MUST be one the registry permits
+    // for this claim type. The latter is the cross-subject bleed
+    // guard — a stakeholder_role on an Account is rejected because
+    // the registry pins it to Person only.
+    let kind = crate::abilities::claims::ClaimType::try_from_db_str(&proposal.claim_type)
+        .map_err(|e| ClaimError::UnknownClaimType(e.0))?;
+    // subject_kind_label returns PascalCase; the registry compares
+    // against lowercase form (matches canonical_subject_ref output).
+    let subject_kind_lc = match &subject {
+        SubjectRef::Account { .. } => "account",
+        SubjectRef::Meeting { .. } => "meeting",
+        SubjectRef::Person { .. } => "person",
+        SubjectRef::Project { .. } => "project",
+        SubjectRef::Email { .. } => "email",
+        SubjectRef::Multi(_) | SubjectRef::Global => {
+            return Err(ClaimError::SubjectRef(
+                "Multi/Global subjects are rejected at the v1.4.0 spine".to_string(),
+            ));
+        }
+    };
+    if !crate::abilities::claims::subject_kind_is_canonical_for(kind, subject_kind_lc) {
+        return Err(ClaimError::SubjectRef(format!(
+            "claim_type {} not permitted on subject kind {}",
+            proposal.claim_type, subject_kind_lc
+        )));
+    }
 
     let canonical_text = canonicalize_for_dos280(&proposal.text);
     let computed_hash = item_hash(item_kind_for_claim_type(&proposal.claim_type), &canonical_text);
