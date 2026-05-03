@@ -668,6 +668,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 137,
         sql: include_str!("migrations/136_dos_299_source_asof_quarantine.sql"),
     },
+    // Opaque thread metadata substrate; creation and assignment semantics land later.
+    Migration {
+        version: 138,
+        sql: include_str!("migrations/138_thread_metadata.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -2388,10 +2393,10 @@ mod tests {
         let conn = mem_db();
         run_migrations(&conn).expect("apply all migrations");
         conn.execute(
-            "DELETE FROM schema_version WHERE version IN (128, 129, 130, 131, 132, 133, 134, 135, 136, 137)",
+            "DELETE FROM schema_version WHERE version IN (128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138)",
             [],
         )
-        .expect("make v128 through v137 pending");
+        .expect("make v128 through v138 pending");
         conn.execute(
             "INSERT INTO suppression_tombstones_quarantine \
              (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason, resolved_at) \
@@ -2402,8 +2407,8 @@ mod tests {
 
         let applied = run_migrations(&conn).expect("post-126 migration should not be gated");
 
-        assert_eq!(applied, 10);
-        assert_eq!(current_version(&conn).expect("version query"), 137);
+        assert_eq!(applied, 11);
+        assert_eq!(current_version(&conn).expect("version query"), 138);
     }
 
     #[test]
@@ -2411,10 +2416,10 @@ mod tests {
         let conn = mem_db();
         run_migrations(&conn).expect("apply all migrations");
         conn.execute(
-            "DELETE FROM schema_version WHERE version IN (126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137)",
+            "DELETE FROM schema_version WHERE version IN (126, 127, 128, 129, 130, 131, 132, 133, 134, 135, 136, 137, 138)",
             [],
         )
-        .expect("make v126 through v137 pending");
+        .expect("make v126 through v138 pending");
         conn.execute(
             "INSERT INTO suppression_tombstones_quarantine \
              (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason) \

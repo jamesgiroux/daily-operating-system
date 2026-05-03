@@ -4,6 +4,7 @@ pub mod claims;
 pub mod feedback;
 pub mod provenance;
 pub mod registry;
+pub mod threads;
 
 pub use claims::{
     metadata_for_claim_type, metadata_for_name, subject_kind_is_canonical_for,
@@ -19,3 +20,4 @@ pub use registry::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind,
     AbilityRegistry, AbilityResult, Actor, ConfirmationToken,
 };
+pub use threads::{create_thread, ThreadMetadata};
