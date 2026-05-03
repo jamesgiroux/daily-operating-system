@@ -68,12 +68,11 @@ pub fn delete_person(
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Person not found: {}", person_id))?;
 
-    // Perform DB delete
-    db.delete_person(person_id).map_err(|e| e.to_string())?;
+    delete_person_with_stakeholder_cache_rebuild(ctx, db, person_id)?;
 
     // Emit deletion signal
     let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "person",
@@ -102,6 +101,54 @@ pub fn delete_person(
     }
 
     Ok(())
+}
+
+pub(crate) fn delete_person_with_stakeholder_cache_rebuild(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    person_id: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        let affected_entities = affected_stakeholder_entities_for_person(tx, person_id)?;
+        tx.delete_person(person_id).map_err(|e| e.to_string())?;
+        for (entity_id, entity_type) in affected_entities {
+            crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+                ctx,
+                tx,
+                &entity_id,
+                &entity_type,
+            )
+            .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        }
+        Ok(())
+    })
+}
+
+fn affected_stakeholder_entities_for_person(
+    db: &ActionDb,
+    person_id: &str,
+) -> Result<Vec<(String, String)>, String> {
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT account_id, 'account' AS entity_type
+             FROM account_stakeholders
+             WHERE person_id = ?1
+             UNION
+             SELECT em.entity_id, COALESCE(e.entity_type, 'project') AS entity_type
+             FROM entity_members em
+             LEFT JOIN entities e ON e.id = em.entity_id
+             WHERE em.person_id = ?1
+             ORDER BY 1, 2",
+        )
+        .map_err(|e| format!("prepare affected stakeholder entities: {e}"))?;
+    let rows = stmt
+        .query_map(rusqlite::params![person_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
+        .map_err(|e| format!("query affected stakeholder entities: {e}"))?;
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("read affected stakeholder entity: {e}"))
 }
 
 /// Get full detail for a person (person + signals + entities + recent meetings).
@@ -213,7 +260,7 @@ pub fn update_person_field(
 
     // Emit field update signal + self-healing evaluation
     let _ = crate::services::signals::emit_propagate_and_evaluate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "person",
@@ -282,7 +329,7 @@ pub fn link_person_entity(
 
     // Emit person linked signal
     let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         relationship_type,
@@ -320,7 +367,7 @@ pub fn unlink_person_entity(
 
     // Emit person unlinked signal
     let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "entity",
@@ -428,7 +475,7 @@ pub fn archive_person(
         "entity_unarchived"
     };
     let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "person",

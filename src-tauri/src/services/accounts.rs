@@ -909,7 +909,7 @@ pub fn ensure_account_lifecycle_state(
                 inferred_stage.as_deref().unwrap_or("")
             );
             let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 db,
                 engine,
                 "account",
@@ -986,7 +986,7 @@ pub fn confirm_lifecycle_change(
         .map_err(|e| e.to_string())?;
     let _ = db.upsert_signal_weight(&change.source, "account", "lifecycle_transition", 1.0, 0.0);
     crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         engine,
         "account",
@@ -1017,7 +1017,7 @@ pub fn correct_account_product(
         .map_err(|e| e.to_string())?;
     let _ = db.upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0);
     crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         engine,
         "account",
@@ -1093,8 +1093,8 @@ pub fn accept_account_field_conflict(
     // enqueues cross-entity intel work via engine.propagate) runs AFTER
     // the transaction commits — a downstream propagation failure cannot
     // roll back the user's accept intent.
-    let accepted_signal_id_holder: Option<String> = signal_id
-        .map(|_| format!("account-field-conflict-accepted-{}", uuid::Uuid::new_v4()));
+    let accepted_signal_id_holder: Option<String> =
+        signal_id.map(|_| format!("account-field-conflict-accepted-{}", uuid::Uuid::new_v4()));
 
     db.with_transaction(|tx| -> Result<(), String> {
         if matches!(field, "arr" | "lifecycle" | "contract_end" | "nps") {
@@ -1102,7 +1102,8 @@ pub fn accept_account_field_conflict(
                 .map_err(|e| format!("set_account_field_provenance: {e}"))?;
         }
 
-        if let (Some(sig_id), Some(accepted_id)) = (signal_id, accepted_signal_id_holder.as_deref()) {
+        if let (Some(sig_id), Some(accepted_id)) = (signal_id, accepted_signal_id_holder.as_deref())
+        {
             crate::signals::bus::supersede_signal(tx, sig_id, accepted_id)
                 .map_err(|e| format!("supersede_signal: {e}"))?;
         }
@@ -1145,7 +1146,7 @@ pub fn accept_account_field_conflict(
     })
     .to_string();
     if let Err(e) = crate::services::signals::emit_propagate_and_evaluate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1258,7 +1259,7 @@ pub fn dismiss_account_field_conflict(
     })
     .to_string();
     if let Err(e) = crate::services::signals::emit_propagate_and_evaluate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1319,255 +1320,252 @@ pub fn build_account_detail_result(
     // which takes `&account_id` referring to a `String` — still borrows as
     // `&String` (coerces to `&str`). Keeps the diff minimal on extract.
     let account_id: String = account_id.to_string();
-            let account = db
-                .get_account(&account_id)
-                .map_err(|e| e.to_string())?
-                .ok_or_else(|| format!("Account not found: {}", account_id))?;
+    let account = db
+        .get_account(&account_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-            // Read narrative fields from DB columns (promoted from dashboard.json).
-            let overview: Option<crate::accounts::CompanyOverview> = account
-                .company_overview
-                .as_ref()
-                .and_then(|json| serde_json::from_str(json).ok());
-            let programs: Vec<crate::accounts::StrategicProgram> = account
-                .strategic_programs
-                .as_ref()
-                .and_then(|json| serde_json::from_str(json).ok())
-                .unwrap_or_default();
-            let notes = account.notes.clone();
-            // Intelligence from DB only — no filesystem fallback.
-            let mut intelligence = db.get_entity_intelligence(&account_id).ok().flatten();
+    // Read narrative fields from DB columns (promoted from dashboard.json).
+    let overview: Option<crate::accounts::CompanyOverview> = account
+        .company_overview
+        .as_ref()
+        .and_then(|json| serde_json::from_str(json).ok());
+    let programs: Vec<crate::accounts::StrategicProgram> = account
+        .strategic_programs
+        .as_ref()
+        .and_then(|json| serde_json::from_str(json).ok())
+        .unwrap_or_default();
+    let notes = account.notes.clone();
+    // Intelligence from DB only — no filesystem fallback.
+    let mut intelligence = db.get_entity_intelligence(&account_id).ok().flatten();
 
-            // Filter stale items from active display using relevance windows.
-            if let Some(ref mut intel) = intelligence {
-                intel.risks.retain(|risk| {
-                    let sourced = risk.item_source.as_ref().map(|s| s.sourced_at.as_str());
-                    match sourced {
-                        Some(ts) => crate::intelligence::timeliness::is_within_relevance_window(
-                            "active_blocker",
-                            ts,
-                        ),
-                        None => true,
-                    }
-                });
-                intel.recent_wins.retain(|win| {
-                    let sourced = win.item_source.as_ref().map(|s| s.sourced_at.as_str());
-                    match sourced {
-                        Some(ts) => crate::intelligence::timeliness::is_within_relevance_window(
-                            "call_theme",
-                            ts,
-                        ),
-                        None => true,
-                    }
-                });
+    // Filter stale items from active display using relevance windows.
+    if let Some(ref mut intel) = intelligence {
+        intel.risks.retain(|risk| {
+            let sourced = risk.item_source.as_ref().map(|s| s.sourced_at.as_str());
+            match sourced {
+                Some(ts) => crate::intelligence::timeliness::is_within_relevance_window(
+                    "active_blocker",
+                    ts,
+                ),
+                None => true,
             }
+        });
+        intel.recent_wins.retain(|win| {
+            let sourced = win.item_source.as_ref().map(|s| s.sourced_at.as_str());
+            match sourced {
+                Some(ts) => {
+                    crate::intelligence::timeliness::is_within_relevance_window("call_theme", ts)
+                }
+                None => true,
+            }
+        });
+    }
 
-            let open_actions = db
-                .get_account_actions(&account_id)
-                .map_err(|e| e.to_string())?;
+    let open_actions = db
+        .get_account_actions(&account_id)
+        .map_err(|e| e.to_string())?;
 
-            let upcoming_meetings: Vec<MeetingSummary> = db
-                .get_upcoming_meetings_for_account(&account_id, 5)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|m| MeetingSummary {
-                    id: m.id,
-                    title: m.title,
-                    start_time: m.start_time,
-                    meeting_type: m.meeting_type,
-                })
-                .collect();
+    let upcoming_meetings: Vec<MeetingSummary> = db
+        .get_upcoming_meetings_for_account(&account_id, 5)
+        .unwrap_or_default()
+        .into_iter()
+        .map(|m| MeetingSummary {
+            id: m.id,
+            title: m.title,
+            start_time: m.start_time,
+            meeting_type: m.meeting_type,
+        })
+        .collect();
 
-            // totals are COUNT(*) without a LIMIT so
-            // active accounts don't stall at 10 meetings / transcripts in
-            // the About-this-dossier chapter.
-            let meeting_total_count = db
-                .get_total_meeting_count_for_account(&account_id)
-                .unwrap_or(0);
-            let transcript_total_count = db
-                .get_total_transcript_count_for_account(&account_id)
-                .unwrap_or(0);
+    // totals are COUNT(*) without a LIMIT so
+    // active accounts don't stall at 10 meetings / transcripts in
+    // the About-this-dossier chapter.
+    let meeting_total_count = db
+        .get_total_meeting_count_for_account(&account_id)
+        .unwrap_or(0);
+    let transcript_total_count = db
+        .get_total_transcript_count_for_account(&account_id)
+        .unwrap_or(0);
 
-            let recent_meetings: Vec<MeetingPreview> =
-                db.get_meetings_for_account_with_prep(&account_id, 10)
-                    .map_err(|e| e.to_string())?
-                    .into_iter()
-                    .map(|m| {
-                        let prep_context = m.prep_context_json.as_ref().and_then(|json_str| {
-                            serde_json::from_str::<PrepContext>(json_str).ok()
-                        });
-                        MeetingPreview {
-                            id: m.id,
-                            title: m.title,
-                            start_time: m.start_time,
-                            meeting_type: m.meeting_type,
-                            prep_context,
-                        }
-                    })
-                    .collect();
-
-            let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
-            let account_team = db
-                .get_account_team_internal(&account_id)
-                .unwrap_or_default();
-            let account_team_import_notes = db
-                .get_account_team_import_notes(&account_id)
-                .unwrap_or_default();
-
-            let signals = db.get_stakeholder_signals(&account_id).ok();
-
-            let recent_captures = db
-                .get_captures_for_account(&account_id, 90)
-                .unwrap_or_default();
-            // Use direct-only query for The Record display (precision over recall).
-            // Propagated person→account signals caused 14.6x fan-out noise.
-            let recent_email_signals = db
-                .list_direct_email_signals_for_entity(&account_id, 12)
-                .unwrap_or_default();
-
-            // Resolve parent name for child accounts, children for parent accounts
-            let parent_name = account
-                .parent_id
+    let recent_meetings: Vec<MeetingPreview> = db
+        .get_meetings_for_account_with_prep(&account_id, 10)
+        .map_err(|e| e.to_string())?
+        .into_iter()
+        .map(|m| {
+            let prep_context = m
+                .prep_context_json
                 .as_ref()
-                .and_then(|pid| db.get_account(pid).ok().flatten().map(|a| a.name));
+                .and_then(|json_str| serde_json::from_str::<PrepContext>(json_str).ok());
+            MeetingPreview {
+                id: m.id,
+                title: m.title,
+                start_time: m.start_time,
+                meeting_type: m.meeting_type,
+                prep_context,
+            }
+        })
+        .collect();
 
-            let child_accounts = db.get_child_accounts(&account.id).unwrap_or_default();
-            let parent_aggregate = if !child_accounts.is_empty() {
-                db.get_parent_aggregate(&account.id).ok()
-            } else {
-                None
-            };
-            let objectives = db
-                .get_account_objectives(&account.id)
-                .map_err(|e: crate::db::DbError| e.to_string())?;
-            let renewal_stage = db
-                .get_account_renewal_stage(&account.id)
-                .map_err(|e| e.to_string())?;
-            let lifecycle_changes = db
-                .get_account_lifecycle_changes(&account.id, 12)
-                .map_err(|e| e.to_string())?;
-            let field_provenance = db
-                .get_account_field_provenance(&account.id)
-                .map_err(|e| e.to_string())?;
-            let field_conflicts =
-                build_account_field_conflicts(db, &account, intelligence.as_ref());
-            let products = build_account_products(db, &account.id, intelligence.as_ref());
-            let children: Vec<AccountChildSummary> = child_accounts
-                .iter()
-                .map(|child| {
-                    let open_action_count = db
-                        .get_account_actions(&child.id)
-                        .map(|a| a.len())
-                        .unwrap_or(0);
-                    AccountChildSummary {
-                        id: child.id.clone(),
-                        name: child.name.clone(),
-                        health: child.health.clone(),
-                        arr: child.arr,
-                        open_action_count,
-                        account_type: child.account_type.as_db_str().to_string(),
-                    }
-                })
-                .collect();
+    let linked_people = db.get_people_for_entity(&account_id).unwrap_or_default();
+    let account_team = db
+        .get_account_team_internal(&account_id)
+        .unwrap_or_default();
+    let account_team_import_notes = db
+        .get_account_team_import_notes(&account_id)
+        .unwrap_or_default();
 
-            // Acceptance criterion: auto-completed milestones for timeline display (last 90 days)
-            let auto_completed_milestones = db
-                .get_auto_completed_milestones(&account.id, 90)
-                .unwrap_or_default();
+    let signals = db.get_stakeholder_signals(&account_id).ok();
 
-            // Technical footprint
-            let technical_footprint = db
-                .get_account_technical_footprint(&account.id)
-                .unwrap_or(None);
+    let recent_captures = db
+        .get_captures_for_account(&account_id, 90)
+        .unwrap_or_default();
+    // Use direct-only query for The Record display (precision over recall).
+    // Propagated person→account signals caused 14.6x fan-out noise.
+    let recent_email_signals = db
+        .list_direct_email_signals_for_entity(&account_id, 12)
+        .unwrap_or_default();
 
-            // DB-first stakeholder read model: all stakeholders with provenance
-            let stakeholders_full = db
-                .get_account_stakeholders_full(&account.id)
-                .unwrap_or_default();
+    // Resolve parent name for child accounts, children for parent accounts
+    let parent_name = account
+        .parent_id
+        .as_ref()
+        .and_then(|pid| db.get_account(pid).ok().flatten().map(|a| a.name));
 
-            // Source references for promoted account facts
-            let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
+    let child_accounts = db.get_child_accounts(&account.id).unwrap_or_default();
+    let parent_aggregate = if !child_accounts.is_empty() {
+        db.get_parent_aggregate(&account.id).ok()
+    } else {
+        None
+    };
+    let objectives = db
+        .get_account_objectives(&account.id)
+        .map_err(|e: crate::db::DbError| e.to_string())?;
+    let renewal_stage = db
+        .get_account_renewal_stage(&account.id)
+        .map_err(|e| e.to_string())?;
+    let lifecycle_changes = db
+        .get_account_lifecycle_changes(&account.id, 12)
+        .map_err(|e| e.to_string())?;
+    let field_provenance = db
+        .get_account_field_provenance(&account.id)
+        .map_err(|e| e.to_string())?;
+    let field_conflicts = build_account_field_conflicts(db, &account, intelligence.as_ref());
+    let products = build_account_products(db, &account.id, intelligence.as_ref());
+    let children: Vec<AccountChildSummary> = child_accounts
+        .iter()
+        .map(|child| {
+            let open_action_count = db
+                .get_account_actions(&child.id)
+                .map(|a| a.len())
+                .unwrap_or(0);
+            AccountChildSummary {
+                id: child.id.clone(),
+                name: child.name.clone(),
+                health: child.health.clone(),
+                arr: child.arr,
+                open_action_count,
+                account_type: child.account_type.as_db_str().to_string(),
+            }
+        })
+        .collect();
 
-            // Regression guard: current risk-briefing job status for UI progress
-            // and retry affordance.
-            let risk_briefing_job = db.get_risk_briefing_job(&account.id).ok().flatten();
+    // Acceptance criterion: auto-completed milestones for timeline display (last 90 days)
+    let auto_completed_milestones = db
+        .get_auto_completed_milestones(&account.id, 90)
+        .unwrap_or_default();
 
-            // Sentiment journal + sparkline (last 90 days).
-            let sentiment_history = db
-                .get_sentiment_history(&account.id, 90)
-                .unwrap_or_default();
-            let sentiment_note = db
-                .get_latest_sentiment_note(&account.id)
-                .ok()
-                .flatten()
-                .map(|(note, _)| note);
-            let health_sparkline = db
-                .get_health_score_sparkline(&account.id, 90)
-                .unwrap_or_default();
+    // Technical footprint
+    let technical_footprint = db
+        .get_account_technical_footprint(&account.id)
+        .unwrap_or(None);
 
-            // Glean leading-signal enrichment bundle — nullable.
-            let glean_signals: Option<
-                crate::intelligence::glean_leading_signals::HealthOutlookSignals,
-            > = db
-                .conn_ref()
-                .query_row(
-                    "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
-                    rusqlite::params![&account.id],
-                    |row| row.get::<_, Option<String>>(0),
-                )
-                .ok()
-                .flatten()
-                .and_then(|json| serde_json::from_str(&json).ok());
+    // DB-first stakeholder read model: all stakeholders with provenance
+    let stakeholders_full = db
+        .get_account_stakeholders_full(&account.id)
+        .unwrap_or_default();
 
-            Ok(AccountDetailResult {
-                id: account.id,
-                name: account.name,
-                lifecycle: account.lifecycle,
-                arr: account.arr,
-                health: account.health,
-                nps: account.nps,
-                renewal_date: account.contract_end,
-                renewal_stage,
-                commercial_stage: account.commercial_stage,
-                contract_start: account.contract_start,
-                company_overview: overview,
-                strategic_programs: programs,
-                notes,
-                open_actions,
-                upcoming_meetings,
-                recent_meetings,
-                meeting_total_count,
-                transcript_total_count,
-                linked_people,
-                account_team,
-                account_team_import_notes,
-                signals,
-                recent_captures,
-                recent_email_signals,
-                parent_id: account.parent_id,
-                parent_name,
-                children,
-                parent_aggregate,
-                account_type: account.account_type.clone(),
-                archived: account.archived,
-                objectives,
-                lifecycle_changes,
-                products,
-                field_provenance,
-                field_conflicts,
-                intelligence,
-                auto_completed_milestones,
-                technical_footprint,
-                stakeholders_full,
-                source_refs,
-                user_health_sentiment: account.user_health_sentiment,
-                sentiment_set_at: account.sentiment_set_at,
-                sentiment_note,
-                sentiment_history,
-                health_sparkline,
-                glean_signals,
-                risk_briefing_job,
-            })
+    // Source references for promoted account facts
+    let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
+
+    // Regression guard: current risk-briefing job status for UI progress
+    // and retry affordance.
+    let risk_briefing_job = db.get_risk_briefing_job(&account.id).ok().flatten();
+
+    // Sentiment journal + sparkline (last 90 days).
+    let sentiment_history = db
+        .get_sentiment_history(&account.id, 90)
+        .unwrap_or_default();
+    let sentiment_note = db
+        .get_latest_sentiment_note(&account.id)
+        .ok()
+        .flatten()
+        .map(|(note, _)| note);
+    let health_sparkline = db
+        .get_health_score_sparkline(&account.id, 90)
+        .unwrap_or_default();
+
+    // Glean leading-signal enrichment bundle — nullable.
+    let glean_signals: Option<crate::intelligence::glean_leading_signals::HealthOutlookSignals> =
+        db.conn_ref()
+            .query_row(
+                "SELECT health_outlook_signals_json FROM entity_assessment WHERE entity_id = ?1",
+                rusqlite::params![&account.id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten()
+            .and_then(|json| serde_json::from_str(&json).ok());
+
+    Ok(AccountDetailResult {
+        id: account.id,
+        name: account.name,
+        lifecycle: account.lifecycle,
+        arr: account.arr,
+        health: account.health,
+        nps: account.nps,
+        renewal_date: account.contract_end,
+        renewal_stage,
+        commercial_stage: account.commercial_stage,
+        contract_start: account.contract_start,
+        company_overview: overview,
+        strategic_programs: programs,
+        notes,
+        open_actions,
+        upcoming_meetings,
+        recent_meetings,
+        meeting_total_count,
+        transcript_total_count,
+        linked_people,
+        account_team,
+        account_team_import_notes,
+        signals,
+        recent_captures,
+        recent_email_signals,
+        parent_id: account.parent_id,
+        parent_name,
+        children,
+        parent_aggregate,
+        account_type: account.account_type.clone(),
+        archived: account.archived,
+        objectives,
+        lifecycle_changes,
+        products,
+        field_provenance,
+        field_conflicts,
+        intelligence,
+        auto_completed_milestones,
+        technical_footprint,
+        stakeholders_full,
+        source_refs,
+        user_health_sentiment: account.user_health_sentiment,
+        sentiment_set_at: account.sentiment_set_at,
+        sentiment_note,
+        sentiment_history,
+        health_sparkline,
+        glean_signals,
+        risk_briefing_job,
+    })
 }
 
 /// Update a single structured field on an account.
@@ -1641,7 +1639,7 @@ fn update_account_field_inner(
 
     // Emit field update signal + self-healing evaluation
     crate::services::signals::emit_propagate_and_evaluate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1718,25 +1716,14 @@ fn update_account_field_inner(
                             new_dir.display()
                         );
                         // Update tracker_path in DB
-                        let new_tracker = format!(
-                            "Accounts/{}",
-                            new_dir_name
-                        );
-                        let _ = db.update_account_field(
-                            account_id,
-                            "tracker_path",
-                            &new_tracker,
-                        );
+                        let new_tracker = format!("Accounts/{}", new_dir_name);
+                        let _ = db.update_account_field(account_id, "tracker_path", &new_tracker);
                     }
                 }
             }
 
             // Re-fetch account after potential tracker_path update
-            let account = db
-                .get_account(account_id)
-                .ok()
-                .flatten()
-                .unwrap_or(account);
+            let account = db.get_account(account_id).ok().flatten().unwrap_or(account);
             let _ = crate::accounts::write_account_json(workspace, &account, None, db);
             let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
         }
@@ -1780,7 +1767,7 @@ pub fn update_technical_footprint_field(
     // Emit field-update signal + self-healing evaluation so the rest of
     // the Intelligence Loop picks up the user correction.
     crate::services::signals::emit_propagate_and_evaluate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1816,8 +1803,7 @@ pub fn set_user_health_sentiment(
     note: Option<&str>,
 ) -> Result<AccountDetailResult, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    const VALID_SENTIMENTS: &[&str] =
-        &["strong", "on_track", "concerning", "at_risk", "critical"];
+    const VALID_SENTIMENTS: &[&str] = &["strong", "on_track", "concerning", "at_risk", "critical"];
     if !VALID_SENTIMENTS.contains(&sentiment) {
         return Err(format!(
             "Invalid sentiment '{}'. Must be one of: {}",
@@ -1864,7 +1850,7 @@ pub fn set_user_health_sentiment(
 
     // Emit field_updated signal with high confidence (user-initiated)
     crate::services::signals::emit_propagate_and_evaluate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "account",
@@ -1943,12 +1929,13 @@ pub fn update_latest_sentiment_note(
             .map_err(|e| e.to_string())?
             .map(|acct| {
                 let preset_guard = state.active_preset.read();
-                let health = crate::intelligence::health_scoring::compute_account_health_with_preset(
-                    db,
-                    &acct,
-                    None,
-                    preset_guard.as_ref(),
-                );
+                let health =
+                    crate::intelligence::health_scoring::compute_account_health_with_preset(
+                        db,
+                        &acct,
+                        None,
+                        preset_guard.as_ref(),
+                    );
                 (Some(health.band), Some(health.score))
             })
             .unwrap_or((None, None));
@@ -1964,7 +1951,7 @@ pub fn update_latest_sentiment_note(
 
     // Emit annotation-level signal (user augmented their journal entry).
     crate::services::signals::emit_propagate_and_evaluate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "account",
@@ -2091,7 +2078,7 @@ pub fn resolve_triage_item(
     // Best-effort signal emit — triage resolution is user-intent evidence
     // the card was accurate + actioned. Failure should not rollback.
     let _ = crate::services::signals::emit_propagate_and_evaluate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         entity_type,
@@ -2215,10 +2202,7 @@ fn spawn_risk_briefing_lifecycle(
         }
 
         match outcome {
-            Ok(_) => log::info!(
-                "DOS-27: risk briefing generated for account {}",
-                account_id
-            ),
+            Ok(_) => log::info!("DOS-27: risk briefing generated for account {}", account_id),
             Err(e) => log::warn!(
                 "DOS-27: risk briefing generation failed for account {}: {}",
                 account_id,
@@ -2328,7 +2312,7 @@ pub fn update_account_notes(
 
     // Emit field update signal
     crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "account",
@@ -2382,7 +2366,7 @@ pub fn update_account_programs(
 
     // Emit field update signal
     crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         &state.signals.engine,
         "account",
@@ -2585,6 +2569,10 @@ pub fn add_account_team_member(
     db.with_transaction(|tx| {
         tx.add_account_team_member(account_id, person_id, &role)
             .map_err(|e| e.to_string())?;
+        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            ctx, tx, account_id, "account",
+        )
+        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -2700,6 +2688,10 @@ pub fn remove_account_team_member(
     db.with_transaction(|tx| {
         tx.remove_account_team_member(account_id, person_id, role)
             .map_err(|e| e.to_string())?;
+        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            ctx, tx, account_id, "account",
+        )
+        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -2757,7 +2749,7 @@ pub fn record_account_event(
             .map_err(|e| e.to_string())?;
         for completed in auto_completed.milestones {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 &state.signals.engine,
                 "account",
@@ -2774,7 +2766,7 @@ pub fn record_account_event(
         }
         for completed in auto_completed.objectives {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 &state.signals.engine,
                 "account",
@@ -3207,7 +3199,8 @@ pub async fn create_child_account_cmd(
         })
         .await?;
 
-    let _ = state        .intel_queue
+    let _ = state
+        .intel_queue
         .enqueue(crate::intel_queue::IntelRequest::new(
             child_id.clone(),
             "account".to_string(),
@@ -4156,7 +4149,10 @@ mod tests {
             )
             .unwrap();
         assert_eq!(economic.0, 1, "New 'economic' role should be present");
-        assert_eq!(economic.1, "user", "New 'economic' role should be user-owned");
+        assert_eq!(
+            economic.1, "user",
+            "New 'economic' role should be user-owned"
+        );
     }
 
     /// L2 cycle-2 fix #4: the service-level set_team_member_role
@@ -4198,8 +4194,7 @@ mod tests {
 
         let temp = tempfile::tempdir().expect("tempdir");
         let state = test_state_with_workspace(temp.path());
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
@@ -4335,7 +4330,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(tombstone_exists, 1, "soft-delete should leave a tombstone row");
+        assert_eq!(
+            tombstone_exists, 1,
+            "soft-delete should leave a tombstone row"
+        );
 
         // Simulate the user re-adding the role (`add_stakeholder_role`'s
         // INSERT ON CONFLICT path). dismissed_at MUST clear on reactivate.
@@ -4365,7 +4363,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert!(dismissed_cleared.is_none(), "re-adding should clear dismissed_at");
+        assert!(
+            dismissed_cleared.is_none(),
+            "re-adding should clear dismissed_at"
+        );
     }
 
     #[test]
@@ -4508,8 +4509,8 @@ mod tests {
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
 
-        let created =
-            super::bulk_create_accounts(&ctx, &db, workspace, &names).expect("bulk_create_accounts");
+        let created = super::bulk_create_accounts(&ctx, &db, workspace, &names)
+            .expect("bulk_create_accounts");
 
         // First call: 2 unique accounts created, duplicate skipped
         assert_eq!(created.len(), 2, "Should create 2 unique accounts");
@@ -4724,8 +4725,7 @@ mod tests {
         db.upsert_account(&account).unwrap();
 
         // Baseline: no sentiment set.
-        let before = super::build_account_detail_result(&db, "acc-dos229")
-            .expect("baseline build");
+        let before = super::build_account_detail_result(&db, "acc-dos229").expect("baseline build");
         assert!(before.user_health_sentiment.is_none());
         assert!(before.sentiment_set_at.is_none());
 
@@ -4739,8 +4739,8 @@ mod tests {
 
         // Re-assembling the detail on the SAME connection must reflect the
         // write — this is the invariant  depends on.
-        let after = super::build_account_detail_result(&db, "acc-dos229")
-            .expect("post-write build");
+        let after =
+            super::build_account_detail_result(&db, "acc-dos229").expect("post-write build");
         assert_eq!(after.user_health_sentiment.as_deref(), Some("at_risk"));
         assert_eq!(after.sentiment_set_at.as_deref(), Some(ts.as_str()));
     }
@@ -4760,8 +4760,7 @@ mod tests {
         // Simulate the order production code now enforces:
         db.upsert_risk_briefing_job_enqueued("acc-w0eb-1", "attempt-xyz")
             .expect("enqueue on writer");
-        let result = super::build_account_detail_result(&db, "acc-w0eb-1")
-            .expect("build");
+        let result = super::build_account_detail_result(&db, "acc-w0eb-1").expect("build");
 
         let job = result
             .risk_briefing_job

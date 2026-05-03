@@ -34,7 +34,9 @@ pub async fn evaluate(
     mut ctx: LinkingContext,
     trigger: Trigger,
 ) -> Result<LinkOutcome, String> {
-    svc_ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    svc_ctx
+        .check_mutation_allowed()
+        .map_err(|e| e.to_string())?;
     let state_for_ctx = state.clone();
     state
         .db_write(move |db| {
@@ -103,7 +105,10 @@ fn build_manual_context(
             };
             let attendee_count = participants.len();
             LinkingContext {
-                owner: OwnerRef { owner_type, owner_id },
+                owner: OwnerRef {
+                    owner_type,
+                    owner_id,
+                },
                 participants,
                 title,
                 attendee_count,
@@ -125,7 +130,10 @@ fn build_manual_context(
                             ctx
                         }
                         Err(_) => LinkingContext {
-                            owner: OwnerRef { owner_type, owner_id },
+                            owner: OwnerRef {
+                                owner_type,
+                                owner_id,
+                            },
                             participants: vec![],
                             title: None,
                             attendee_count: 0,
@@ -137,7 +145,10 @@ fn build_manual_context(
                     }
                 }
                 _ => LinkingContext {
-                    owner: OwnerRef { owner_type, owner_id },
+                    owner: OwnerRef {
+                        owner_type,
+                        owner_id,
+                    },
                     participants: vec![],
                     title: None,
                     attendee_count: 0,
@@ -155,8 +166,8 @@ fn build_manual_context(
 /// Participant rows. Mirrors calendar_adapter::build_context but reads from
 /// the persisted meeting row rather than a live CalendarEvent.
 fn parse_meeting_attendees(attendees_str: &str) -> Vec<Participant> {
-    let emails: Vec<String> = serde_json::from_str::<Vec<String>>(attendees_str)
-        .unwrap_or_else(|_| {
+    let emails: Vec<String> =
+        serde_json::from_str::<Vec<String>>(attendees_str).unwrap_or_else(|_| {
             attendees_str
                 .split(',')
                 .map(|s| s.trim().to_string())
@@ -297,9 +308,9 @@ pub async fn manual_dismiss(
                 let subject_kind = match owner_type {
                     OwnerType::Meeting => "Meeting",
                     OwnerType::Email => "Email",
-                    OwnerType::EmailThread => unreachable!(
-                        "EmailThread is rejected at function entry per cycle-23 fix"
-                    ),
+                    OwnerType::EmailThread => {
+                        unreachable!("EmailThread is rejected at function entry per cycle-23 fix")
+                    }
                 };
                 let _ = crate::services::claims::shadow_write_tombstone_claim(
                     db,
@@ -423,20 +434,37 @@ pub async fn confirm_stakeholder_suggestion(
     state
         .db_write(move |db| {
             let service_ctx = state_for_ctx.live_service_context();
-            db.confirm_stakeholder(&account_id, &person_id)?;
-            if let Err(e) = stakeholder_domains::backfill_domains_for_account(
+            confirm_stakeholder_suggestion_inner(
                 &service_ctx,
                 db,
                 &account_id,
+                &person_id,
                 &user_domains,
-            ) {
-                log::warn!(
-                    "stakeholder_domains: confirm backfill for {account_id} failed: {e}"
-                );
-            }
-            Ok(())
+            )
         })
         .await
+}
+
+pub(crate) fn confirm_stakeholder_suggestion_inner(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    account_id: &str,
+    person_id: &str,
+    user_domains: &[String],
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.confirm_stakeholder(account_id, person_id)?;
+        if let Err(e) =
+            stakeholder_domains::backfill_domains_for_account(ctx, tx, account_id, user_domains)
+        {
+            log::warn!("stakeholder_domains: confirm backfill for {account_id} failed: {e}");
+        }
+        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            ctx, tx, account_id, "account",
+        )
+        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        Ok(())
+    })
 }
 
 pub async fn dismiss_stakeholder_suggestion(
@@ -446,9 +474,29 @@ pub async fn dismiss_stakeholder_suggestion(
     person_id: String,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let state_for_ctx = state.clone();
     state
-        .db_write(move |db| db.dismiss_stakeholder_suggestion(&account_id, &person_id))
+        .db_write(move |db| {
+            let service_ctx = state_for_ctx.live_service_context();
+            dismiss_stakeholder_suggestion_inner(&service_ctx, db, &account_id, &person_id)
+        })
         .await
+}
+
+pub(crate) fn dismiss_stakeholder_suggestion_inner(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    account_id: &str,
+    person_id: &str,
+) -> Result<(), String> {
+    db.with_transaction(|tx| {
+        tx.dismiss_stakeholder_suggestion(account_id, person_id)?;
+        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            ctx, tx, account_id, "account",
+        )
+        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        Ok(())
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -476,8 +524,7 @@ mod tests {
             start_time: now.clone(),
             end_time: None,
             attendees: Some(
-                r#"["alice@customer.com","bob@customer.com","carol@subsidiary.com"]"#
-                    .to_string(),
+                r#"["alice@customer.com","bob@customer.com","carol@subsidiary.com"]"#.to_string(),
             ),
             notes_path: None,
             summary: None,
@@ -502,11 +549,7 @@ mod tests {
         };
         db.upsert_meeting(&meeting).expect("upsert meeting");
 
-        let ctx = build_manual_context(
-            &db,
-            OwnerType::Meeting,
-            "mtg-dos258".to_string(),
-        );
+        let ctx = build_manual_context(&db, OwnerType::Meeting, "mtg-dos258".to_string());
 
         assert_eq!(ctx.participants.len(), 3, "should load all 3 attendees");
         assert_eq!(ctx.attendee_count, 3);
@@ -522,11 +565,7 @@ mod tests {
     #[test]
     fn manual_context_handles_unknown_owner_gracefully() {
         let db = crate::db::test_utils::test_db();
-        let ctx = build_manual_context(
-            &db,
-            OwnerType::Meeting,
-            "does-not-exist".to_string(),
-        );
+        let ctx = build_manual_context(&db, OwnerType::Meeting, "does-not-exist".to_string());
         assert!(ctx.participants.is_empty());
         assert_eq!(ctx.attendee_count, 0);
     }
