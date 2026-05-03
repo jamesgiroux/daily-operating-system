@@ -1226,6 +1226,15 @@ pub struct ShadowTombstoneClaim<'a> {
     pub actor: &'a str,
     pub source_scope: Option<&'a str>,
     pub observed_at: &'a str,
+    /// L2 cycle-25 fix #3: optional finite expiry for time-bound
+    /// dismissals (e.g. triage_snoozes.snoozed_until). When None,
+    /// the tombstone is permanent (the typical user_removal case).
+    /// When Some, PRE-GATE / suppression honor the expiry exactly
+    /// like the SQL backfill (m8 mechanism preserves snoozed_until
+    /// in expires_at). Without this field, runtime snoozes became
+    /// permanent claim tombstones even though the legacy snooze
+    /// expired — causing indefinite suppression of triage cards.
+    pub expires_at: Option<&'a str>,
 }
 
 /// L2 cycle-2 fix #1: normalize the caller-supplied subject_kind into
@@ -1283,6 +1292,7 @@ pub fn shadow_write_tombstone_claim(
         actor,
         source_scope,
         observed_at,
+        expires_at,
     } = args;
 
     let Some(normalized_kind) = normalize_subject_kind_for_claim(subject_kind) else {
@@ -1333,7 +1343,7 @@ pub fn shadow_write_tombstone_claim(
         sensitivity: ClaimSensitivity::Internal,
         tombstone: Some(TombstoneSpec {
             retraction_reason: "user_removal".to_string(),
-            expires_at: None,
+            expires_at: expires_at.map(|s| s.to_string()),
         }),
     };
 
@@ -2376,6 +2386,7 @@ mod tests {
                     actor: "user",
                     source_scope: None,
                     observed_at: TS,
+                    expires_at: None,
                 },
             );
             assert_eq!(
@@ -2415,6 +2426,7 @@ mod tests {
                 actor: "user",
                 source_scope: None,
                 observed_at: TS,
+                expires_at: None,
             },
         );
         assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
@@ -2464,6 +2476,7 @@ mod tests {
                 actor: "user",
                 source_scope: Some("scope-with-\"quote\"-and-\\backslash"),
                 observed_at: TS,
+                expires_at: None,
             },
         );
         assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
@@ -2515,6 +2528,7 @@ mod tests {
                 actor: "user",
                 source_scope: None,
                 observed_at: TS,
+                expires_at: None,
             },
         );
         assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
@@ -2544,5 +2558,77 @@ mod tests {
             )
             .unwrap();
         assert_eq!(claim_version, 1);
+    }
+
+    /// L2 cycle-25 fix #3: shadow_write_tombstone_claim must propagate
+    /// `expires_at` into the persisted claim row when supplied. Without
+    /// this, runtime triage_snooze tombstones became permanent (snoozed
+    /// items would never resurface even after the legacy snoozed_until
+    /// expired). Asymmetric pair with the m8 SQL backfill which already
+    /// preserves snoozed_until → expires_at.
+    #[test]
+    fn shadow_write_propagates_expires_at_for_finite_dismissals() {
+        let db = test_db();
+        seed_account(&db);
+
+        let until = "2026-05-20T12:00:00+00:00";
+        let outcome = shadow_write_tombstone_claim(
+            &db,
+            ShadowTombstoneClaim {
+                subject_kind: "Account",
+                subject_id: "acct-1",
+                claim_type: "triage_snooze",
+                field_path: Some("account"),
+                text: "no_health_signals",
+                actor: "user",
+                source_scope: None,
+                observed_at: TS,
+                expires_at: Some(until),
+            },
+        );
+        assert_eq!(outcome, ShadowTombstoneOutcome::Committed);
+
+        let expires_at: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT expires_at FROM intelligence_claims \
+                 WHERE claim_state = 'tombstoned' \
+                   AND claim_type = 'triage_snooze' \
+                   AND text = 'no_health_signals'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            expires_at.as_deref(),
+            Some(until),
+            "snooze expiry must round-trip into intelligence_claims.expires_at"
+        );
+
+        // Sanity: a None-expiry sibling still produces a permanent (NULL) row.
+        let _ = shadow_write_tombstone_claim(
+            &db,
+            ShadowTombstoneClaim {
+                subject_kind: "Account",
+                subject_id: "acct-1",
+                claim_type: "risk",
+                field_path: Some("risks"),
+                text: "permanent_dismiss",
+                actor: "user",
+                source_scope: None,
+                observed_at: TS,
+                expires_at: None,
+            },
+        );
+        let null_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM intelligence_claims \
+                 WHERE text = 'permanent_dismiss' AND expires_at IS NULL",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(null_count, 1, "permanent dismissals must leave expires_at NULL");
     }
 }

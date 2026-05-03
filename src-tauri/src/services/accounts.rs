@@ -1231,6 +1231,7 @@ pub fn dismiss_account_field_conflict(
                 actor: "user",
                 source_scope: Some(source),
                 observed_at: &observed_at,
+                expires_at: None,
             },
         );
 
@@ -2017,7 +2018,8 @@ pub fn snooze_triage_item(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let days = days.max(1);
     let until = ctx.clock.now() + chrono::Duration::days(days);
-    db.snooze_triage_item(entity_type, entity_id, triage_key, &until.to_rfc3339())
+    let until_str = until.to_rfc3339();
+    db.snooze_triage_item(entity_type, entity_id, triage_key, &until_str)
         .map_err(|e| e.to_string())?;
 
     // DOS-7 L2 cycle-1 fix #5: shadow-write the snooze as an
@@ -2025,6 +2027,12 @@ pub fn snooze_triage_item(
     // retraction_reason='system_snooze' via shadow_write helper's
     // default user_removal mapping) so PRE-GATE shadows the snoozed
     // card across enrichment passes.
+    //
+    // L2 cycle-25 fix #3: pass the snooze expiry into expires_at so
+    // the claim tombstone honors the same finite TTL as the legacy
+    // triage_snoozes.snoozed_until column. Without this, runtime
+    // snoozes became permanent claim tombstones — indefinitely
+    // suppressing the triage card even after the snooze expired.
     let now = ctx.clock.now().to_rfc3339();
     let kind = capitalize_entity_kind(entity_type);
     crate::services::claims::shadow_write_tombstone_claim(
@@ -2038,6 +2046,7 @@ pub fn snooze_triage_item(
             actor: "user",
             source_scope: None,
             observed_at: &now,
+            expires_at: Some(&until_str),
         },
     );
     Ok(())
@@ -2074,6 +2083,8 @@ pub fn resolve_triage_item(
             actor: "user",
             source_scope: None,
             observed_at: &now,
+            // L2 cycle-25 fix #3: resolve is permanent — no expiry.
+            expires_at: None,
         },
     );
 
@@ -2652,6 +2663,7 @@ pub fn set_team_member_role(
                     actor: "user",
                     source_scope: Some("team_member_role_change"),
                     observed_at: &observed_at,
+                    expires_at: None,
                 },
             );
         }
@@ -3403,6 +3415,30 @@ fn add_stakeholder_role_inner(
                 rusqlite::params![account_id, person_id, role, now],
             )
             .map_err(|e| e.to_string())?;
+        // L2 cycle-25 fix #2: re-adding a role clears the legacy
+        // dismissed_at, but the cycle-21 + cycle-2-fix-#4 shadow
+        // m2 tombstone claim from a prior remove/swap is still
+        // active. Without withdrawing it, the substrate records
+        // user_removal for the same (Person, role) tuple while
+        // the legacy UI shows the role as re-pinned — PRE-GATE
+        // can keep blocking AI re-recognition of the role.
+        // dos7-allowed: cycle-25 re-pin restore semantics.
+        let _ = tx.conn_ref().execute(
+            "UPDATE intelligence_claims /* dos7-allowed: cycle-25 re-pin restore semantics */ \
+             SET claim_state = 'withdrawn', \
+                 surfacing_state = 'dormant', \
+                 retraction_reason = 'restored_by_user' \
+             WHERE id IN ( \
+                 SELECT ic.id FROM intelligence_claims ic \
+                 WHERE ic.claim_state = 'tombstoned' \
+                   AND ic.claim_type = 'stakeholder_role' /* dos7-allowed: WHERE-filter, not SET */ \
+                   AND json_valid(ic.subject_ref) = 1 \
+                   AND lower(json_extract(ic.subject_ref, '$.kind')) = 'person' \
+                   AND json_extract(ic.subject_ref, '$.id') = ?1 \
+                   AND ic.text = ?2 /* dos7-allowed: WHERE-filter, not SET */ \
+             )",
+            rusqlite::params![person_id, role],
+        );
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -3487,6 +3523,7 @@ fn remove_stakeholder_role_inner(
                 actor: "user",
                 source_scope: Some("stakeholder_role_removed"),
                 observed_at: &observed_at,
+                expires_at: None,
             },
         );
         crate::services::signals::emit_and_propagate(

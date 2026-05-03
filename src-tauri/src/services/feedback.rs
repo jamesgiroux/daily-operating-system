@@ -463,6 +463,7 @@ pub fn submit_intelligence_correction(
                 actor: "user",
                 source_scope: prior_source.as_deref(),
                 observed_at: &observed_at,
+                expires_at: None,
             },
         );
     }
