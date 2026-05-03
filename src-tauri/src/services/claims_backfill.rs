@@ -792,6 +792,7 @@ pub fn run_dos7_cutover(
         match crate::services::source_asof_backfill::backfill_source_asof_for_legacy_claims(
             ctx,
             db,
+            workspace_root,
             ctx.clock.now(),
         ) {
             Ok(summary) => summary,
@@ -1839,7 +1840,6 @@ mod tests {
         assert_eq!(row_count, 1);
     }
 
-    #[test]
     /// L2 cycle-18 fix: rekey must canonicalize the stored
     /// subject_ref column (not just dedup_key + item_hash) so
     /// runtime readers that match via `json_extract($.kind)` and
@@ -2116,7 +2116,6 @@ mod tests {
     /// unsupported subject_kind so they don't pollute PRE-GATE /
     /// suppression. After migration, the row's claim_state is
     /// 'withdrawn' and retraction_reason is 'unsupported_subject_kind'.
-    #[test]
     /// L2 cycle-15 fix #2: migration 133 must withdraw unsupported
     /// kinds across m6/m7/m8 too, not just m5. Those mechanisms
     /// (briefing_callouts, nudge_dismissals, triage_snoozes) all

@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# Claim projection lint: legacy AI projection tables are written only by
+# Claim projection lint: legacy AI projection targets are written only by
 # services/derived_state.rs during the dual-projection window.
 
 set -euo pipefail
@@ -30,7 +30,10 @@ if [[ "${#roots[@]}" -eq 0 ]]; then
 fi
 
 allowed_basename_regex='services/derived_state\.rs|services/claims_backfill\.rs|migrations/[^:]+\.sql'
-pattern='(INSERT([[:space:]]+OR[[:space:]]+(IGNORE|REPLACE))?[[:space:]]+INTO|REPLACE[[:space:]]+INTO|UPDATE)[[:space:]]+(entity_assessment|entity_quality)\b'
+projection_tables='entity_assessment|entity_quality|account_objectives|account_milestones'
+account_ai_columns='company_overview|strategic_programs|notes'
+sql_write='(INSERT([[:space:]]+OR[[:space:]]+(IGNORE|REPLACE))?[[:space:]]+INTO|REPLACE[[:space:]]+INTO|UPDATE)'
+pattern="(${sql_write}[[:space:]]+(${projection_tables})\\b)|(${sql_write}[[:space:]]+accounts\\b.*\\b(${account_ai_columns})\\b)|(write_intelligence_json[[:space:]]*\\()"
 
 matches="$(
   grep -rEni --include='*.rs' --include='*.sql' "$pattern" "${roots[@]}" 2>/dev/null \
@@ -39,7 +42,7 @@ matches="$(
 )"
 
 if [[ -n "$matches" ]]; then
-  echo "Direct writes to legacy AI projection tables are restricted to derived_state."
+  echo "Direct writes to legacy AI projection targets are restricted to derived_state."
   echo
   echo "Allowed files:"
   echo "  - src-tauri/src/services/derived_state.rs"
@@ -50,4 +53,4 @@ if [[ -n "$matches" ]]; then
   exit 1
 fi
 
-echo "Legacy AI projection table writers are restricted to derived_state."
+echo "Legacy AI projection target writers are restricted to derived_state."

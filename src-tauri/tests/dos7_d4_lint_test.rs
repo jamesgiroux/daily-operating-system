@@ -20,7 +20,11 @@ fn repo_root() -> PathBuf {
 fn run_lint(script_rel_path: &str) -> (bool, String, String) {
     let root = repo_root();
     let script = root.join(script_rel_path);
-    assert!(script.is_file(), "lint script missing: {}", script.display());
+    assert!(
+        script.is_file(),
+        "lint script missing: {}",
+        script.display()
+    );
     let output = Command::new("bash")
         .arg(&script)
         .current_dir(&root)
@@ -53,8 +57,7 @@ fn lint_claim_writer_allowlist_passes_against_current_tree() {
 
 #[test]
 fn lint_claim_immutability_passes_against_current_tree() {
-    let (ok, stdout, stderr) =
-        run_lint("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let (ok, stdout, stderr) = run_lint("src-tauri/scripts/check_claim_immutability_allowlist.sh");
     assert!(
         ok,
         "claim-immutability lint failed:\nstdout: {}\nstderr: {}",
@@ -73,16 +76,23 @@ fn lint_legacy_unattributed_writer_allowlist_passes_against_current_tree() {
     );
 }
 
-// v1.4.1 follow-up: route legacy AI writers through derived_state
+// Ignored until all legacy AI projection writers are routed through derived_state.rs;
+// rename and un-ignore once the lint passes.
 #[test]
 #[ignore]
-fn lint_legacy_projection_writers_passes_against_current_tree() {
+fn lint_legacy_projection_writers_fails_until_legacy_writers_are_routed() {
     let (ok, stdout, stderr) =
         run_lint("src-tauri/scripts/check_dos301_legacy_projection_writers.sh");
     assert!(
-        ok,
-        "legacy-projection-writer lint failed:\nstdout: {}\nstderr: {}",
+        !ok,
+        "legacy-projection-writer lint unexpectedly passed while legacy writers remain:\nstdout: {}\nstderr: {}",
         stdout, stderr
+    );
+    assert!(
+        stdout.contains("Direct writes to legacy AI projection targets"),
+        "legacy-projection-writer lint should explain the routed-writer invariant:\nstdout: {}\nstderr: {}",
+        stdout,
+        stderr
     );
 }
 
@@ -117,8 +127,7 @@ fn lint_immutability_catches_multi_column_subject_ref_set() {
          params,\n\
          );\n"
     );
-    std::fs::write(tmp.path().join("src/bad_fixture.rs"), bad_sql)
-        .expect("write bad fixture");
+    std::fs::write(tmp.path().join("src/bad_fixture.rs"), bad_sql).expect("write bad fixture");
 
     let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
     let output = std::process::Command::new("bash")
@@ -157,8 +166,7 @@ fn lint_immutability_catches_quoted_subject_ref_in_multi_column_set() {
     std::fs::write(tmp.path().join("src/bad_quoted.rs"), bad_sql)
         .expect("write quoted bad fixture");
 
-    let lint_path =
-        repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
     let output = std::process::Command::new("bash")
         .arg(&lint_path)
         .current_dir(tmp.path())
@@ -229,8 +237,7 @@ fn lint_legacy_dismissal_pairing_catches_account_stakeholder_role_dismissal() {
          );\n\
          }}\n"
     );
-    std::fs::write(tmp.path().join("src/bad_role_dismiss.rs"), bad_sql)
-        .expect("write fixture");
+    std::fs::write(tmp.path().join("src/bad_role_dismiss.rs"), bad_sql).expect("write fixture");
 
     let lint_path =
         repo_root().join("src-tauri/scripts/check_legacy_dismissal_shadow_write_pairing.sh");
@@ -270,8 +277,7 @@ fn lint_legacy_dismissal_pairing_catches_multiline_update_dismissed_at() {
          );\n\
          }}\n"
     );
-    std::fs::write(tmp.path().join("src/bad_multiline.rs"), bad_sql)
-        .expect("write fixture");
+    std::fs::write(tmp.path().join("src/bad_multiline.rs"), bad_sql).expect("write fixture");
 
     let lint_path =
         repo_root().join("src-tauri/scripts/check_legacy_dismissal_shadow_write_pairing.sh");
@@ -303,8 +309,7 @@ fn lint_legacy_dismissal_pairing_catches_helper_call_without_shadow() {
          db.{helper}(owner_type, owner_id, entity_id, entity_type, None).unwrap();\n\
          }}\n"
     );
-    std::fs::write(tmp.path().join("src/bad_helper.rs"), bad_rs)
-        .expect("write fixture");
+    std::fs::write(tmp.path().join("src/bad_helper.rs"), bad_rs).expect("write fixture");
 
     let lint_path =
         repo_root().join("src-tauri/scripts/check_legacy_dismissal_shadow_write_pairing.sh");

@@ -1,3 +1,5 @@
+use std::path::Path;
+
 use chrono::{DateTime, Utc};
 use rusqlite::params;
 use serde_json::Value;
@@ -7,6 +9,7 @@ use crate::abilities::provenance::source_time::{
     SourceTimestampStatus,
 };
 use crate::db::ActionDb;
+use crate::intelligence::io::{read_intelligence_json, IntelligenceJson, ItemSource};
 use crate::services::context::ServiceContext;
 
 #[derive(Debug, Default, Clone, PartialEq)]
@@ -58,6 +61,7 @@ struct LegacyClaimRow {
 pub fn backfill_source_asof_for_legacy_claims(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
+    workspace_root: &Path,
     now: DateTime<Utc>,
 ) -> Result<BackfillSummary, BackfillError> {
     ctx.check_mutation_allowed()
@@ -65,7 +69,7 @@ pub fn backfill_source_asof_for_legacy_claims(
 
     let mut typed_result: Option<Result<BackfillSummary, BackfillError>> = None;
     let transaction_result = db.with_transaction(|tx| {
-        let result = backfill_source_asof_for_legacy_claims_tx(tx, now);
+        let result = backfill_source_asof_for_legacy_claims_tx(tx, workspace_root, now);
         let transaction_return = match &result {
             Ok(_) => Ok(()),
             Err(error) => Err(error.to_string()),
@@ -106,6 +110,7 @@ pub fn backfill_source_asof_for_legacy_claims(
 
 fn backfill_source_asof_for_legacy_claims_tx(
     tx: &ActionDb,
+    workspace_root: &Path,
     now: DateTime<Utc>,
 ) -> Result<BackfillSummary, BackfillError> {
     let rows = load_legacy_claim_rows(tx)?;
@@ -119,14 +124,13 @@ fn backfill_source_asof_for_legacy_claims_tx(
         let metadata = parse_optional_json_object(row.metadata_json.as_deref(), "metadata_json")?;
         let provenance = parse_required_json_object(&row.provenance_json, "provenance_json")?;
         let mechanism = backfill_mechanism(&metadata, &provenance);
-        let raw_sourced_at = read_string(&metadata, "raw_sourced_at");
-        let candidate = if raw_sourced_at.is_some() {
-            raw_sourced_at.clone()
-        } else if metadata_indicates_known_timestamp_source(mechanism.as_deref(), &metadata) {
-            Some(row.observed_at.clone())
-        } else {
-            None
-        };
+        let candidate = source_timestamp_candidate(
+            &row,
+            &metadata,
+            &provenance,
+            mechanism.as_deref(),
+            workspace_root,
+        );
 
         let Some(candidate_raw) = candidate else {
             summary.missing_item_source += 1;
@@ -155,7 +159,14 @@ fn backfill_source_asof_for_legacy_claims_tx(
                 )?;
                 summary.malformed_quarantined += 1;
             }
-            SourceTimestampStatus::Missing => {}
+            SourceTimestampStatus::Missing => {
+                debug_assert!(
+                    false,
+                    "source timestamp parser returned Missing for Some input"
+                );
+                summary.missing_item_source += 1;
+                mark_legacy_unattributed(tx, &row.id)?;
+            }
         }
     }
 
@@ -330,6 +341,164 @@ fn metadata_indicates_known_timestamp_source(mechanism: Option<&str>, metadata: 
     )
 }
 
+fn source_timestamp_candidate(
+    row: &LegacyClaimRow,
+    metadata: &Value,
+    provenance: &Value,
+    mechanism: Option<&str>,
+    workspace_root: &Path,
+) -> Option<String> {
+    if is_dismissed_item_json(mechanism, provenance) {
+        return m9_item_source_sourced_at(row, metadata, workspace_root);
+    }
+
+    read_string(metadata, "raw_sourced_at").or_else(|| {
+        metadata_indicates_known_timestamp_source(mechanism, metadata)
+            .then(|| row.observed_at.clone())
+    })
+}
+
+fn is_dismissed_item_json(mechanism: Option<&str>, provenance: &Value) -> bool {
+    matches!(mechanism, Some("dismissed_item_json"))
+        || read_string(provenance, "source_table").as_deref() == Some("intelligence.json")
+}
+
+fn m9_item_source_sourced_at(
+    row: &LegacyClaimRow,
+    metadata: &Value,
+    workspace_root: &Path,
+) -> Option<String> {
+    let field = read_string(metadata, "field").or_else(|| row.field_path.clone())?;
+    let content = read_string(metadata, "content")?;
+    let (subject_kind, subject_id) = subject_kind_and_id(row, metadata)?;
+    let intel = read_subject_intelligence_json(workspace_root, &subject_kind, &subject_id)?;
+    sourced_at_for_dismissed_content(&intel, &field, &content)
+}
+
+fn subject_kind_and_id(row: &LegacyClaimRow, metadata: &Value) -> Option<(String, String)> {
+    let subject = serde_json::from_str::<Value>(&row.subject_ref).ok();
+    let kind = subject
+        .as_ref()
+        .and_then(|value| read_string(value, "kind"))
+        .or_else(|| read_string(metadata, "entity_type"))?;
+    let id = subject
+        .as_ref()
+        .and_then(|value| read_string(value, "id"))
+        .or_else(|| read_string(metadata, "entity_id"))?;
+    Some((kind.to_ascii_lowercase(), id))
+}
+
+fn read_subject_intelligence_json(
+    workspace_root: &Path,
+    subject_kind: &str,
+    subject_id: &str,
+) -> Option<IntelligenceJson> {
+    let dir_name = match subject_kind {
+        "account" | "accounts" => "Accounts",
+        "person" | "people" => "People",
+        "project" | "projects" => "Projects",
+        _ => return None,
+    };
+    let kind_root = workspace_root.join(dir_name);
+    let direct = kind_root.join(subject_id);
+    if direct.join("intelligence.json").is_file() {
+        if let Ok(intel) = read_intelligence_json(&direct) {
+            return Some(intel);
+        }
+    }
+
+    let entries = std::fs::read_dir(kind_root).ok()?;
+    for entry in entries.flatten() {
+        let entity_dir = entry.path();
+        if !entity_dir.join("intelligence.json").is_file() {
+            continue;
+        }
+        let Ok(intel) = read_intelligence_json(&entity_dir) else {
+            continue;
+        };
+        if intel.entity_id == subject_id
+            || entity_dir
+                .file_name()
+                .and_then(|name| name.to_str())
+                .is_some_and(|name| name == subject_id)
+        {
+            return Some(intel);
+        }
+    }
+    None
+}
+
+fn sourced_at_for_dismissed_content(
+    intel: &IntelligenceJson,
+    field: &str,
+    content: &str,
+) -> Option<String> {
+    match field {
+        "risks" => intel
+            .risks
+            .iter()
+            .find(|item| text_matches_dismissed_content(&item.text, content))
+            .and_then(|item| sourced_at(item.item_source.as_ref())),
+        "recentWins" | "recent_wins" => intel
+            .recent_wins
+            .iter()
+            .find(|item| text_matches_dismissed_content(&item.text, content))
+            .and_then(|item| sourced_at(item.item_source.as_ref())),
+        "stakeholderInsights" | "stakeholder_insights" => intel
+            .stakeholder_insights
+            .iter()
+            .find(|item| text_matches_dismissed_content(&item.name, content))
+            .and_then(|item| sourced_at(item.item_source.as_ref())),
+        "valueDelivered" | "value_delivered" => intel
+            .value_delivered
+            .iter()
+            .find(|item| text_matches_dismissed_content(&item.statement, content))
+            .and_then(|item| sourced_at(item.item_source.as_ref())),
+        "competitiveContext" | "competitive_context" => intel
+            .competitive_context
+            .iter()
+            .find(|item| text_matches_dismissed_content(&item.competitor, content))
+            .and_then(|item| sourced_at(item.item_source.as_ref())),
+        "organizationalChanges" | "organizational_changes" => intel
+            .organizational_changes
+            .iter()
+            .find(|item| text_matches_dismissed_content(&item.person, content))
+            .and_then(|item| sourced_at(item.item_source.as_ref())),
+        "expansionSignals" | "expansion_signals" => intel
+            .expansion_signals
+            .iter()
+            .find(|item| text_matches_dismissed_content(&item.opportunity, content))
+            .and_then(|item| sourced_at(item.item_source.as_ref())),
+        "openCommitments" | "open_commitments" => intel
+            .open_commitments
+            .as_deref()
+            .unwrap_or_default()
+            .iter()
+            .find(|item| text_matches_dismissed_content(&item.description, content))
+            .and_then(|item| sourced_at(item.item_source.as_ref())),
+        _ => None,
+    }
+}
+
+fn text_matches_dismissed_content(candidate: &str, content: &str) -> bool {
+    let candidate = candidate.trim();
+    let content = content.trim();
+    if candidate.is_empty() || content.is_empty() {
+        return false;
+    }
+    candidate.eq_ignore_ascii_case(content)
+        || candidate
+            .to_ascii_lowercase()
+            .contains(&content.to_ascii_lowercase())
+}
+
+fn sourced_at(source: Option<&ItemSource>) -> Option<String> {
+    source
+        .map(|source| source.sourced_at.trim())
+        .filter(|value| !value.is_empty())
+        .map(ToOwned::to_owned)
+}
+
 fn claim_source(mechanism: Option<&str>) -> String {
     let Some(mechanism) = mechanism else {
         return "unknown_legacy_backfill".to_string();
@@ -433,6 +602,24 @@ mod tests {
         mechanism: Option<&str>,
         metadata: Value,
     ) {
+        seed_claim_for_subject(
+            db,
+            id,
+            r#"{"kind":"Account","id":"acct-1"}"#,
+            observed_at,
+            mechanism,
+            metadata,
+        );
+    }
+
+    fn seed_claim_for_subject(
+        db: &ActionDb,
+        id: &str,
+        subject_ref: &str,
+        observed_at: &str,
+        mechanism: Option<&str>,
+        metadata: Value,
+    ) {
         let provenance_json = mechanism
             .map(|mechanism| serde_json::json!({ "backfill_mechanism": mechanism }))
             .unwrap_or_else(|| serde_json::json!({}))
@@ -447,37 +634,76 @@ mod tests {
                     claim_state, surfacing_state, retraction_reason,
                     temporal_scope, sensitivity
                  ) VALUES (
-                    ?1, '{\"kind\":\"Account\",\"id\":\"acct-1\"}', 'risk', 'risks',
+                    ?1, ?2, 'risk', 'risks',
                     'risk text', ?1, 'hash-1', 'system_backfill', 'legacy_dismissal',
-                    ?2, ?2, ?3, ?4, 'tombstoned', 'active', 'user_removal',
+                    ?3, ?3, ?4, ?5, 'tombstoned', 'active', 'user_removal',
                     'state', 'internal'
                  )",
-                params![id, observed_at, provenance_json, metadata_json],
+                params![id, subject_ref, observed_at, provenance_json, metadata_json],
             )
             .unwrap();
     }
 
-    fn run(db: &ActionDb) -> Result<BackfillSummary, BackfillError> {
+    fn run_with_workspace(
+        db: &ActionDb,
+        workspace_root: &Path,
+    ) -> Result<BackfillSummary, BackfillError> {
         let clock = FixedClock::new(now());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = fixture_ctx(&clock, &rng, &ext);
-        backfill_source_asof_for_legacy_claims(&ctx, db, now())
+        backfill_source_asof_for_legacy_claims(&ctx, db, workspace_root, now())
+    }
+
+    fn run(db: &ActionDb) -> Result<BackfillSummary, BackfillError> {
+        let workspace = tempfile::tempdir().expect("workspace");
+        run_with_workspace(db, workspace.path())
     }
 
     #[test]
     fn backfill_lifts_item_source_sourced_at_to_source_asof() {
         let conn = fresh_db();
         let db = ActionDb::from_conn(&conn);
-        seed_claim(
+        let workspace = tempfile::tempdir().expect("workspace");
+        let entity_dir = workspace.path().join("Accounts").join("Account Fixture");
+        std::fs::create_dir_all(&entity_dir).unwrap();
+        std::fs::write(
+            entity_dir.join("intelligence.json"),
+            serde_json::json!({
+                "version": 1,
+                "entityId": "account-fixture",
+                "entityType": "account",
+                "risks": [{
+                    "text": "Renewal blocker",
+                    "itemSource": {
+                        "source": "meeting",
+                        "confidence": 0.8,
+                        "sourcedAt": "2026-04-10T09:30:00Z"
+                    }
+                }],
+                "dismissedItems": [{
+                    "field": "risks",
+                    "content": "Renewal blocker",
+                    "dismissedAt": "2026-04-15T00:00:00Z"
+                }]
+            })
+            .to_string(),
+        )
+        .unwrap();
+        seed_claim_for_subject(
             db,
             "m1-1",
+            r#"{"kind":"Account","id":"account-fixture"}"#,
             "2026-04-15T00:00:00Z",
-            Some("suppression_tombstones"),
-            serde_json::json!({ "raw_sourced_at": "2026-04-10T09:30:00Z" }),
+            Some("dismissed_item_json"),
+            serde_json::json!({
+                "field": "risks",
+                "content": "Renewal blocker",
+                "dismissed_at": "2026-04-15T00:00:00Z"
+            }),
         );
 
-        let summary = run(db).unwrap();
+        let summary = run_with_workspace(db, workspace.path()).unwrap();
 
         assert_eq!(summary.accepted, 1);
         assert_eq!(summary.coverage_pct, 1.0);
