@@ -1,11 +1,11 @@
 #!/usr/bin/env bash
 #
-# DOS-7 D4-2 lint: no `DELETE FROM intelligence_claims` anywhere in the
+# Claims-substrate lint: no `DELETE FROM intelligence_claims` anywhere in the
 # codebase. Claims are append-only; lifecycle transitions go through
 # claim_state column updates via services/claims.rs allowlist.
 #
-# Plan §6 + Linear DOS-7 acceptance: "No-DELETE invariant test for
-# intelligence_claims, claim_corroborations, claim_contradictions."
+# Claims plan acceptance: no-DELETE invariant test for intelligence_claims,
+# claim_corroborations, and claim_contradictions.
 
 set -euo pipefail
 

@@ -1,4 +1,4 @@
-//! Output validation and anomaly detection for AI responses (I470).
+//! Output validation and anomaly detection for AI responses.
 //!
 //! Validates that AI responses conform to expected schemas and flags
 //! potential injection artifacts. Anomalies are logged at WARN level

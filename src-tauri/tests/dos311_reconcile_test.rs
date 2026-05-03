@@ -1,6 +1,6 @@
-//! DOS-311 W1 close-out: tombstone-resurrection reconcile fixtures.
+//! Tombstone-resurrection reconcile fixtures.
 //!
-//! The 3 named fixtures from the live DOS-311 ticket:
+//! The 3 named reconcile fixtures:
 //!   - tombstoned-correctly-hidden     → 0 findings (clean)
 //!   - tombstoned-with-new-evidence    → 0 findings (newer evidence wins)
 //!   - tombstoned-resurrected          → 2 findings (1 dedup_key match + 1 item_hash fallback match)
@@ -9,10 +9,10 @@
 //! scaffolding schema in `dos311_fixtures/schema.sql`) and runs the
 //! reconcile SQL from `scripts/reconcile_ghost_resurrection.sql`. The
 //! production `intelligence_claims` table + `legacy_projection_state`
-//! view ship with DOS-7 (W3); these fixtures use the W1-time scaffolding
-//! that mirrors the live ticket's column shapes.
+//! view ship with (W3); these fixtures use the W1-time scaffolding
+//! that mirrors the reconcile fixture column shapes.
 //!
-//! When DOS-7 lands the production schema, this test should re-run
+//! When  lands the production schema, this test should re-run
 //! against that schema (the fixture SQL might need column-name updates;
 //! the reconcile SQL is shared).
 

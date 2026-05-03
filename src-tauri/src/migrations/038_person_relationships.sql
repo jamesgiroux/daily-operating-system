@@ -1,4 +1,4 @@
--- I390: Person-to-person relationship graph (ADR-0088).
+-- Person-to-person relationship graph (ADR-0088).
 CREATE TABLE IF NOT EXISTS person_relationships (
     id TEXT PRIMARY KEY,
     from_person_id TEXT NOT NULL,

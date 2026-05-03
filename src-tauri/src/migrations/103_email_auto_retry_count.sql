@@ -1,7 +1,7 @@
--- DOS-31: Track how many times the stale-failed auto-retry has fired for a
+-- Track how many times the stale-failed auto-retry has fired for a
 -- given email row, capped so we don't auto-retry forever.
 --
--- Background: pre-DOS-31, an enrichment failure left a row in `failed` and it
+-- Background: pre-, an enrichment failure left a row in `failed` and it
 -- stayed there until the user manually clicked Retry. Failed rows piled up.
 --
 -- New behaviour: every refresh promotes `failed` rows older than 24h back to
@@ -14,7 +14,7 @@
 -- auto-retry so `get_pending_enrichment`'s `attempts < 3` filter actually
 -- selects the row. Cumulative attempt history lives in `auto_retry_count`.
 --
--- DOS-29 reads this column to compute the `permanently_failed` count: rows
+--  reads this column to compute the `permanently_failed` count: rows
 -- with `auto_retry_count >= STALE_FAILED_MAX_AUTO_RETRIES` are the ones the
 -- system has stopped fixing on its own and need user intervention.
 

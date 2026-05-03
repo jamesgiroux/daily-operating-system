@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 
 /**
- * DOS-41: Consolidated intelligence correction action.
+ * Consolidated intelligence correction action.
  *
  * - `confirmed` — user agrees with the AI output (rewards the source)
  * - `rejected` — user disagrees but does not want the item hidden
@@ -48,7 +48,7 @@ export interface UseIntelligenceCorrectionResult {
 }
 
 /**
- * DOS-41 hook — wraps the `submit_intelligence_correction` Tauri command.
+ *  hook — wraps the `submit_intelligence_correction` Tauri command.
  *
  * Component placement (`IntelligenceCorrection.tsx`) lands in Wave 1; this
  * hook is the stable backend surface that component will consume.

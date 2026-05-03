@@ -1,10 +1,10 @@
-//! Entity feedback events and suppression tombstones (I645).
+//! Entity feedback events and suppression tombstones.
 
 use super::types::{DbError, FeedbackEvent, SuppressionTombstone};
 use super::ActionDb;
 use rusqlite::params;
 
-/// DOS-41: Correction actions a user can take on an AI-surfaced intelligence field.
+/// Correction actions a user can take on an AI-surfaced intelligence field.
 ///
 /// Persisted in `entity_feedback_events.feedback_type` as a snake_case string.
 /// Each action has distinct downstream semantics in `services::feedback`:

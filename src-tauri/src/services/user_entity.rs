@@ -1,4 +1,4 @@
-// User entity service — I411 (ADR-0089/0090)
+// User entity service — (ADR-0089/0090)
 // Business logic for the user's professional identity and context entries.
 
 use crate::db::ActionDb;
@@ -133,7 +133,7 @@ pub async fn update_user_entity_field(
         ));
     }
 
-    // Validate objections and differentiators as arrays of strings (I411 AC8)
+    // Validate objections and differentiators as arrays of strings (AC8)
     if (field == "objections" || field == "differentiators") && !value.is_empty() {
         serde_json::from_str::<Vec<String>>(value)
             .map_err(|e| format!("Field '{}' must be a JSON array of strings: {}", field, e))?;
@@ -287,7 +287,7 @@ pub async fn get_user_context_entries(state: &AppState) -> Result<Vec<UserContex
         .await
 }
 
-/// Create a new user context entry and generate its embedding (I417).
+/// Create a new user context entry and generate its embedding.
 pub async fn create_user_context_entry(
     ctx: &crate::services::context::ServiceContext<'_>,
     title: &str,
@@ -336,7 +336,7 @@ pub async fn create_user_context_entry(
         .await
 }
 
-/// Update an existing user context entry and regenerate its embedding (I417).
+/// Update an existing user context entry and regenerate its embedding.
 pub async fn update_user_context_entry(
     ctx: &crate::services::context::ServiceContext<'_>,
     id: &str,

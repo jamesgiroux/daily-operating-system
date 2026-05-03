@@ -61,9 +61,9 @@
   --color-rule-light: rgba(30, 37, 48, 0.06); /* Secondary dividers, soft separators */
 
   /* ─────────────────────────────────────────────────────────────────────────
-     ENTITY COLOR ALIASES — Semantic layer (DOS-357, design system D1)
-     ADR-0076 entity color semantics. Reintroduced after DOS-61 removal so
-     the design system has one canonical token vocabulary for entity identity.
+     ENTITY COLOR ALIASES — Semantic layer
+     ADR-0076 entity color semantics. These tokens provide one canonical
+     vocabulary for entity identity.
 
      Use these when the rendered element represents an entity in context
      (an account hero, a person card, the user's own surface, etc.).
@@ -73,7 +73,7 @@
      prep-state indicators, status warnings.
 
      Migration of existing direct entity-color references happens gradually
-     as Wave 1 surface specs land (see .docs/design/surfaces/).
+     as surface specs land.
      ───────────────────────────────────────────────────────────────────────── */
   --color-entity-account: var(--color-spice-turmeric);
   --color-entity-project: var(--color-garden-olive);
@@ -217,7 +217,7 @@
   --z-atmosphere: 0; /* Background layer */
   --z-page-content: 1; /* Main content, above atmosphere */
   --z-app-shell: 100; /* Folio bar, nav island, top-level UI */
-  --z-lock: 1000; /* App lock overlay — above everything (I465) */
+  --z-lock: 1000; /* App lock overlay — above everything */
 }
 
 /* ─────────────────────────────────────────────────────────────────────────

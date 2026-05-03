@@ -1,4 +1,4 @@
--- I228: Clay integration — contact & company enrichment
+-- Clay integration — contact & company enrichment
 
 -- New columns on people for Clay enrichment data
 ALTER TABLE people ADD COLUMN linkedin_url TEXT;

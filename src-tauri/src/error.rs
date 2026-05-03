@@ -47,7 +47,7 @@ pub enum ExecutionError {
     #[error("Claude subscription limit reached. Try again later")]
     ClaudeSubscriptionLimit,
 
-    /// DOS-279: Daily AI token budget exhausted.
+    /// Daily AI token budget exhausted.
     ///
     /// Emitted by the preflight gate in `PtyManager::spawn_claude` when the
     /// configured daily token budget has been consumed. No new AI calls start

@@ -1,7 +1,7 @@
 /**
  * Per-preset playbook configurations for the /me page.
  * Each preset defines which playbook fields to render,
- * their labels, and placeholder text. I446.
+ * their labels, and placeholder text.
  */
 
 export interface PresetPlaybook {

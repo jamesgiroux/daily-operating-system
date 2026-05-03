@@ -3,9 +3,9 @@
  * Renders current state data from intelligence.
  * Generalized: already entity-generic (only uses EntityIntelligence).
  *
- * I261: Optional onUpdateField prop enables click-to-edit on state items.
- * I261: List truncation (5 per section) + empty section collapse.
- * I550: Per-item dismiss and feedback controls.
+ * Optional onUpdateField prop enables click-to-edit on state items.
+ * List truncation (5 per section) + empty section collapse.
+ * Per-item dismiss and feedback controls.
  */
 import { useState } from "react";
 import type { ReactNode } from "react";
@@ -20,7 +20,7 @@ interface StateOfPlayProps {
   chapterTitle?: string;
   /** When provided, items become editable. Called with (fieldPath, newValue). */
   onUpdateField?: (fieldPath: string, value: string) => void;
-  /** I529: Optional feedback controls for chapter heading */
+  /** Optional feedback controls for chapter heading */
   feedbackSlot?: ReactNode;
   /** Per-item feedback value getter. Field path like "currentState.working[0]". */
   getItemFeedback?: (fieldPath: string) => "positive" | "negative" | null;

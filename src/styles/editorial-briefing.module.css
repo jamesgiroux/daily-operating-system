@@ -734,7 +734,7 @@
   gap: 6px;
 }
 
-/* .schedulePrepDot and .schedulePrepDotMuted removed — I329: hasPrep fallback eliminated */
+/*.schedulePrepDot and.schedulePrepDotMuted removed — hasPrep fallback eliminated */
 
 .prepFlag {
   font-family: var(--font-mono);
@@ -1265,7 +1265,7 @@
   margin: 0;
 }
 
-/* I395: Score reason metadata */
+/* Score reason metadata */
 .emailScoreReason {
   font-family: var(--font-mono);
   font-size: 10px;
@@ -1275,7 +1275,7 @@
   margin-top: 2px;
 }
 
-/* I395: Score band group headers */
+/* Score band group headers */
 .emailScoreBandLabel {
   font-family: var(--font-mono);
   font-size: 10px;

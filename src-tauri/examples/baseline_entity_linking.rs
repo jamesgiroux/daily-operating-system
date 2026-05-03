@@ -1,4 +1,4 @@
-//! DOS-258 baseline capture.
+//!  baseline capture.
 //!
 //! Dumps the current (legacy) entity linking state to JSON so Lane D/E can
 //! diff the new deterministic service output against it.

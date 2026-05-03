@@ -1,4 +1,4 @@
-//! Proactive intelligence maintenance (I145 -- ADR-0058).
+//! Proactive intelligence maintenance (- ADR-0058).
 //!
 //! The hygiene scanner detects data quality gaps across entity types and data
 //! sources, then applies mechanical fixes (free, instant) before enqueuing
@@ -76,13 +76,13 @@ pub struct HygieneReport {
     pub unsummarized_files: usize,
     pub duplicate_people: usize,
     pub abandoned_quill_syncs: usize,
-    /// Meetings with low-confidence entity matches (I305).
+    /// Meetings with low-confidence entity matches.
     pub low_confidence_entity_matches: usize,
     /// Empty shell accounts (no meetings, no actions, no people after 30d).
     pub empty_shell_accounts: usize,
-    /// Entities with quality_score below 0.45 (I406).
+    /// Entities with quality_score below 0.45.
     pub low_quality_entities: usize,
-    /// Entities blocked by coherence circuit breaker (I410).
+    /// Entities blocked by coherence circuit breaker.
     pub coherence_blocked_entities: usize,
     pub fixes: MechanicalFixes,
     pub fix_details: Vec<HygieneFixDetail>,
@@ -103,7 +103,7 @@ pub struct MechanicalFixes {
     pub renewals_rolled_over: usize,
     pub ai_enrichments_enqueued: usize,
     pub quill_syncs_retried: usize,
-    /// Entity suggestions created from low-confidence matches (I305).
+    /// Entity suggestions created from low-confidence matches.
     pub entity_suggestions_created: usize,
     /// Phantom accounts archived (structural folders bootstrapped as accounts).
     pub phantom_accounts_archived: usize,
@@ -237,7 +237,7 @@ pub fn run_hygiene_scan(
         }
     }
 
-    // --- Phase 2b: Low-confidence entity match detection (removed by DOS-258) ---
+    // --- Phase 2b: Low-confidence entity match detection (removed by) ---
     // The legacy fuzzy/keyword resolver produced suggestion-tier matches for
     // hygiene review. The deterministic entity linking engine (see
     // services::entity_linking) either links confidently or not at all, so there
@@ -245,7 +245,7 @@ pub fn run_hygiene_scan(
     report.fixes.entity_suggestions_created = 0;
     report.low_confidence_entity_matches = 0;
 
-    // --- Phase 2c: Attendee group pattern mining (I307) ---
+    // --- Phase 2c: Attendee group pattern mining  ---
     match crate::signals::patterns::mine_attendee_patterns(db) {
         Ok(count) if count > 0 => {
             log::info!("Hygiene: mined {} attendee group pattern updates", count);
@@ -256,7 +256,7 @@ pub fn run_hygiene_scan(
         _ => {}
     }
 
-    // --- Phase 2d: Self-healing intelligence (I342) ---
+    // --- Phase 2d: Self-healing intelligence  ---
     match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let (count, details) = matcher::fix_auto_merge_duplicates(db);
         report.fixes.people_auto_merged = count;
@@ -279,7 +279,7 @@ pub fn run_hygiene_scan(
         }
     }
 
-    // --- Phase 2e: Email cadence monitoring (I319) ---
+    // --- Phase 2e: Email cadence monitoring  ---
     let cadence_anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies(db);
     if !cadence_anomalies.is_empty() {
         log::info!(

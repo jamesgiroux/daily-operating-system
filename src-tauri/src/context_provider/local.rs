@@ -67,7 +67,7 @@ impl ContextProvider for LocalContextProvider {
             embedding,
         );
 
-        // I500: Load org_health from DB if available (may have been stored by a prior Glean enrichment)
+        // Load org_health from DB if available (may have been stored by a prior Glean enrichment)
         if entity_type == "account" {
             if let Ok(Some(json)) = db.conn_ref().query_row(
                 "SELECT org_health_json FROM entity_assessment WHERE entity_id = ?1",
@@ -79,7 +79,7 @@ impl ContextProvider for LocalContextProvider {
                 }
             }
 
-            // DOS-15 IL-check-3: Surface prior Glean leading signals so the next
+            //  IL-check-3: Surface prior Glean leading signals so the next
             // enrichment pass can detect drift and update stale signals.
             // Only inject the high-signal fields (champion_risk, channel_sentiment,
             // commercial_signals) — not the full blob — to stay within token budget.

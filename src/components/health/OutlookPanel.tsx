@@ -1,5 +1,5 @@
 /**
- * OutlookPanel — renewal outlook (DOS-203).
+ * OutlookPanel — renewal outlook.
  *
  * Compact 3-cell grid per mockup: Confidence / Benchmark / Recommended start.
  * Matches `.docs/mockups/account-health-outlook-globex.html` lines 888-913.
@@ -8,7 +8,7 @@
  *   - Confidence cell: `outlook.confidence` ("high"/"moderate"/"low"), detail
  *     summarises up to three `outlook.riskFactors`.
  *   - Benchmark cell: peer-cohort renewal rate — NOT wired yet. Cell is
- *     suppressed until the backend field lands (DOS-204); the grid collapses
+ *     suppressed until the backend field lands; the grid collapses
  *     to 2-col via the `.outlookGridTwoCol` modifier class (no inline styles).
  *   - Recommended start cell: prefers the AI-emitted
  *     `outlook.recommendedStart` (e.g. "2026-08-01" → "Aug 1"); falls back
@@ -192,7 +192,7 @@ function recommendedStartCell(
 }
 
 /**
- * DOS-204: Build the Benchmark cell from a `PeerBenchmark` payload.
+ * Build the Benchmark cell from a `PeerBenchmark` payload.
  *
  * The cell shows the band (Above / At / Below) as the headline, the
  * narrative as the detail, and a "Drawn from N Glean source(s)" footer.
@@ -240,7 +240,7 @@ export function OutlookPanel({ intelligence }: OutlookPanelProps) {
     intelligence?.contractContext?.renewalDate,
   );
 
-  // DOS-204: Peer benchmark cell sits between Confidence and Recommended start
+  // Peer benchmark cell sits between Confidence and Recommended start
   // when the backend supplies a recognised band + narrative. Otherwise the
   // grid collapses to 2-col via .outlookGridTwoCol — no half-empty cell.
   const benchmark = benchmarkCell(outlook.peerBenchmark);
@@ -248,8 +248,8 @@ export function OutlookPanel({ intelligence }: OutlookPanelProps) {
 
   const gridClassName = `${styles.outlookGrid} ${hasBenchmark ? "" : styles.outlookGridTwoCol}`;
 
-  // DOS-249: Pull-quote narrative — prefer `renewalNarrative` (dedicated field
-  // added in DOS-249). Fall back to `expansionPotential` for backward compat with
+  // Pull-quote narrative — prefer `renewalNarrative` (dedicated field
+  // added in). Fall back to `expansionPotential` for backward compat with
   // accounts enriched before the field was added.
   const pullQuote = (outlook.renewalNarrative ?? outlook.expansionPotential ?? "").trim();
 

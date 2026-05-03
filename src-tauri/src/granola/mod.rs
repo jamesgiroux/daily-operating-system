@@ -1,4 +1,4 @@
-//! Granola integration for local cache transcript sync (I226).
+//! Granola integration for local cache transcript sync.
 //!
 //! Reads meeting data from Granola's local cache file at
 //! `~/Library/Application Support/Granola/cache-v*.json`.

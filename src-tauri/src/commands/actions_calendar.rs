@@ -62,7 +62,7 @@ pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Resul
         .await
 }
 
-/// Accept a suggested action, moving it to pending (I256).
+/// Accept a suggested action, moving it to pending.
 #[tauri::command]
 pub async fn accept_suggested_action(
     id: String,
@@ -78,7 +78,7 @@ pub async fn accept_suggested_action(
         .await
 }
 
-/// Reject a suggested action by archiving it (I256).
+/// Reject a suggested action by archiving it.
 #[tauri::command]
 pub async fn reject_suggested_action(
     id: String,
@@ -141,7 +141,7 @@ pub async fn dismiss_suggested_action(
 }
 
 // =============================================================================
-// I579: Per-email triage actions
+// Per-email triage actions
 // =============================================================================
 
 /// Archive an email — sets resolved_at locally + archives in Gmail. Returns email ID for undo.
@@ -174,7 +174,7 @@ pub async fn unarchive_email(
     Ok(())
 }
 
-/// DOS-242: rescue an email previously suppressed by the noise filter.
+/// rescue an email previously suppressed by the noise filter.
 /// Clears `is_noise = 0`, causing the email to surface in inbox/Records again.
 /// Emits `emails-updated` so all pages refresh.
 #[tauri::command]
@@ -214,7 +214,7 @@ pub async fn pin_email(
 }
 
 // =============================================================================
-// I580: Commitment -> Action promotion
+// Commitment -> Action promotion
 // =============================================================================
 
 /// Promote an email commitment to a tracked action.
@@ -305,7 +305,7 @@ pub async fn list_dismissed_email_items(
         .await
 }
 
-/// Reset all email dismissal learning data (I374).
+/// Reset all email dismissal learning data.
 /// Truncates the email_dismissals table so classification starts fresh.
 #[tauri::command]
 pub async fn reset_email_preferences(
@@ -326,7 +326,7 @@ pub async fn reset_email_preferences(
         .await
 }
 
-/// Resolve a decision: clear the needs_decision flag and emit signal (DOS-17).
+/// Resolve a decision: clear the needs_decision flag and emit signal.
 #[tauri::command]
 pub async fn resolve_decision(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
@@ -446,12 +446,12 @@ pub struct MeetingHistoryDetail {
     pub attendees: Vec<String>,
     pub captures: Vec<crate::db::DbCapture>,
     pub actions: Vec<crate::db::DbAction>,
-    /// Parsed prep context from enrichment (I181).
+    /// Parsed prep context from enrichment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub prep_context: Option<PrepContext>,
 }
 
-/// Enriched pre-meeting prep context persisted from daily briefing (I181).
+/// Enriched pre-meeting prep context persisted from daily briefing.
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PrepContext {
@@ -479,7 +479,7 @@ pub async fn get_meeting_history_detail(
 }
 
 // =============================================================================
-// Meeting Search (I183)
+// Meeting Search
 // =============================================================================
 
 /// A meeting search result with minimal metadata.
@@ -494,7 +494,7 @@ pub struct MeetingSearchResult {
     pub match_snippet: Option<String>,
 }
 
-/// Search meetings by title, summary, or prep context (I183).
+/// Search meetings by title, summary, or prep context.
 #[tauri::command]
 pub async fn search_meetings(
     query: String,
@@ -816,7 +816,7 @@ pub fn set_capture_delay(
 
 // =============================================================================
 // =============================================================================
-// Transcript Intake & Meeting Outcomes (I44 / I45 / ADR-0044)
+// Transcript Intake & Meeting Outcomes (ADR-0044)
 // =============================================================================
 
 /// Attach and process a transcript for a specific meeting.
@@ -943,7 +943,7 @@ pub async fn get_meeting_outcomes(
 }
 
 /// Get post-meeting intelligence: interaction dynamics, champion health,
-/// role changes, and enriched captures (I555/I558).
+/// role changes, and enriched captures.
 #[tauri::command]
 pub async fn get_meeting_post_intelligence(
     meeting_id: String,
@@ -957,7 +957,7 @@ pub async fn get_meeting_post_intelligence(
         .await
 }
 
-/// Update the content of a capture (win/risk/decision) — I45 inline editing.
+/// Update the content of a capture (win/risk/decision) — inline editing.
 #[tauri::command]
 pub async fn update_capture(
     id: String,
@@ -974,7 +974,7 @@ pub async fn update_capture(
         .await
 }
 
-/// Cycle an action's priority (P1→P2→P3→P1) — I45 interaction.
+/// Cycle an action's priority (P1→P2→P3→P1) — interaction.
 #[tauri::command]
 pub async fn update_action_priority(
     id: String,
@@ -999,7 +999,7 @@ pub async fn update_action_priority(
 }
 
 // =============================================================================
-// Manual Action CRUD (I127 / I128)
+// Manual Action CRUD
 // =============================================================================
 
 /// Create a new action manually (not from briefing/transcript/inbox).
@@ -1032,7 +1032,7 @@ pub async fn create_action(
     crate::services::actions::create_action(&ctx, request, &app_state).await
 }
 
-/// Update arbitrary fields on an existing action (I128).
+/// Update arbitrary fields on an existing action.
 ///
 /// Only provided fields are updated; `None` means "don't touch".
 /// To clear a nullable field, pass the corresponding `clear_*` flag.
@@ -1067,11 +1067,11 @@ pub async fn update_action(
 }
 
 // =============================================================================
-// Meeting Intelligence (I635 + I637)
+// Meeting Intelligence
 // =============================================================================
 
 /// Get meeting-to-meeting continuity thread: what changed between this meeting
-/// and the previous one with the same entity (I637).
+/// and the previous one with the same entity.
 #[tauri::command]
 pub async fn get_meeting_continuity_thread(
     meeting_id: String,
@@ -1132,7 +1132,7 @@ pub async fn get_meeting_continuity_thread(
         .await
 }
 
-/// I635: Get prediction scorecard — compare pre-meeting prep predictions against
+/// Get prediction scorecard — compare pre-meeting prep predictions against
 /// transcript outcomes. Returns `None` when no prep data or no captures.
 ///
 /// ADR-0101: Reads prep via `load_meeting_prep_from_sources` (DB-first) instead

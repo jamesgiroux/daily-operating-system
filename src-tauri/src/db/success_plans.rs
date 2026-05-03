@@ -591,7 +591,7 @@ impl ActionDb {
         )
     }
 
-    /// Get recently auto-completed milestones (I628 AC5) for timeline display.
+    /// Get recently auto-completed milestones (AC5) for timeline display.
     /// Returns milestones with `completed_by IS NOT NULL` completed within the last N days.
     pub fn get_auto_completed_milestones(
         &self,
@@ -620,7 +620,7 @@ impl ActionDb {
     }
 
     /// Find pending milestones that match a completion trigger, returning (id, title) pairs.
-    /// Used for sub-0.8 confidence notation (I628 AC3) — notes the match without completing.
+    /// Used for sub-0.8 confidence notation (AC3) — notes the match without completing.
     pub fn find_milestones_for_trigger(
         &self,
         account_id: &str,

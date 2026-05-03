@@ -1,4 +1,4 @@
-//! I321: Email commitment and action extraction from email bodies.
+//! Email commitment and action extraction from email bodies.
 //!
 //! Runs high-priority email bodies through Claude (via PTY, Extraction tier)
 //! to extract commitments, requests, and deadlines. Creates proposed actions.

@@ -1,4 +1,4 @@
--- DOS-240: Persistent meeting-entity dismissal dictionary.
+-- Persistent meeting-entity dismissal dictionary.
 --
 -- Prior behavior: when a user unlinked an auto-resolved entity from a
 -- meeting (e.g., the resolver wrongly linked "Acme Corp" to an internal

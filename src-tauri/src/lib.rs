@@ -1,4 +1,4 @@
-// I149: Suppress dead_code — serde struct fields appear unused to the compiler but
+// Suppress dead_code — serde struct fields appear unused to the compiler but
 // are required for forward-compatible JSON deserialization. Parser/notification
 // functions are reserved for future use.
 #![allow(dead_code)]
@@ -110,7 +110,7 @@ pub fn run() {
             let state = Arc::new(AppState::new());
             state.set_app_handle(app.handle().clone());
 
-            // One-time filesystem hardening: permissions + Time Machine exclusion (I463)
+            // One-time filesystem hardening: permissions + Time Machine exclusion
             if let Some(home) = dirs::home_dir() {
                 let dailyos_dir = home.join(".dailyos");
                 if dailyos_dir.is_dir() {
@@ -134,7 +134,7 @@ pub fn run() {
                         log::warn!("DbService init failed: {e}. Falling back to sync mutex.");
                     } else {
                         log::info!("DbService initialized (1 writer + 2 readers)");
-                        // DOS-228 Wave 0e Fix 3: drain persisted
+                        // drain persisted
                         // health_recompute_pending markers that survived a
                         // prior crash. Runs once on startup; failures leave
                         // markers in place for the next attempt.
@@ -144,7 +144,7 @@ pub fn run() {
                         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                         crate::services::health_debouncer::drain_pending(&ctx, &init_state).await;
 
-                        // DOS-7 L2 cycle-1 fix #3: run the DOS-7 cutover (rekey
+                        // Run the claims cutover (rekey
                         // m1-m8 to runtime dedup_key shape + JSON-blob
                         // mechanism 9 backfill + reconcile) once after the
                         // SQL migrations 129-131 land. Idempotent — guarded
@@ -264,7 +264,7 @@ pub fn run() {
             // Start inbox file watcher
             watcher::start_watcher(state.clone(), app.handle().clone());
 
-            // Spawn calendar poller (Phase 3A) — supervised (I616)
+            // Spawn calendar poller (Phase 3A) — supervised
             let poller_state = state.clone();
             let poller_handle = app.handle().clone();
             task_supervisor::spawn_supervised("CalendarPoller", move || {
@@ -273,7 +273,7 @@ pub fn run() {
                 async move { google::run_calendar_poller(s, h).await }
             });
 
-            // Spawn email poller — supervised (I616)
+            // Spawn email poller — supervised
             let email_poller_state = state.clone();
             let email_poller_handle = app.handle().clone();
             task_supervisor::spawn_supervised("EmailPoller", move || {
@@ -282,7 +282,7 @@ pub fn run() {
                 async move { google::run_email_poller(s, h).await }
             });
 
-            // Spawn capture detection loop (Phase 3B) — supervised (I616)
+            // Spawn capture detection loop (Phase 3B) — supervised
             let capture_state = state.clone();
             let capture_handle = app.handle().clone();
             task_supervisor::spawn_supervised("CaptureLoop", move || {
@@ -291,7 +291,7 @@ pub fn run() {
                 async move { capture::run_capture_loop(s, h).await }
             });
 
-            // Spawn intelligence enrichment processor (I132) — supervised (I616)
+            // Spawn intelligence enrichment processor  — supervised
             let intel_state = state.clone();
             let intel_handle = app.handle().clone();
             task_supervisor::spawn_supervised("IntelProcessor", move || {
@@ -300,7 +300,7 @@ pub fn run() {
                 async move { intel_queue::run_intel_processor(s, h).await }
             });
 
-            // Spawn meeting prep queue processor — supervised (I616)
+            // Spawn meeting prep queue processor — supervised
             let prep_state = state.clone();
             let prep_handle = app.handle().clone();
             task_supervisor::spawn_supervised("MeetingPrepProcessor", move || {
@@ -309,7 +309,7 @@ pub fn run() {
                 async move { meeting_prep_queue::run_meeting_prep_processor(s, h).await }
             });
 
-            // Spawn background embedding processor (Sprint 26) — supervised (I616)
+            // Spawn background embedding processor (Sprint 26) — supervised
             let embedding_state = state.clone();
             let embedding_handle = app.handle().clone();
             task_supervisor::spawn_supervised("EmbeddingProcessor", move || {
@@ -320,7 +320,7 @@ pub fn run() {
                 }
             });
 
-            // Spawn hygiene scanner loop (I145 — ADR-0058) — supervised (I616)
+            // Spawn hygiene scanner loop (ADR-0058) — supervised
             let hygiene_state = state.clone();
             let hygiene_handle = app.handle().clone();
             task_supervisor::spawn_supervised("HygieneLoop", move || {
@@ -329,7 +329,7 @@ pub fn run() {
                 async move { hygiene::run_hygiene_loop(s, h).await }
             });
 
-            // Spawn Quill transcript poller — supervised (I616)
+            // Spawn Quill transcript poller — supervised
             let quill_state = state.clone();
             let quill_handle = app.handle().clone();
             task_supervisor::spawn_supervised("QuillPoller", move || {
@@ -338,7 +338,7 @@ pub fn run() {
                 async move { quill::poller::run_quill_poller(s, h).await }
             });
 
-            // Spawn Granola transcript poller (I226) — supervised (I616)
+            // Spawn Granola transcript poller  — supervised
             let granola_state = state.clone();
             let granola_handle = app.handle().clone();
             task_supervisor::spawn_supervised("GranolaPoller", move || {
@@ -347,32 +347,32 @@ pub fn run() {
                 async move { granola::poller::run_granola_poller(s, h).await }
             });
 
-            // Spawn unified enrichment processor (Clay + Gravatar) — supervised (I616)
+            // Spawn unified enrichment processor (Clay + Gravatar) — supervised
             let enrichment_state = state.clone();
             task_supervisor::spawn_supervised("EnrichmentProcessor", move || {
                 let s = enrichment_state.clone();
                 async move { enrichment::run_enrichment_processor(s).await }
             });
 
-            // Spawn Linear sync poller (I346) — supervised (I616)
+            // Spawn Linear sync poller  — supervised
             let linear_state = state.clone();
             task_supervisor::spawn_supervised("LinearPoller", move || {
                 let s = linear_state.clone();
                 async move { linear::poller::run_linear_poller(s).await }
             });
 
-            // Spawn Google Drive poller (I426) — supervised (I616)
+            // Spawn Google Drive poller  — supervised
             let drive_state = state.clone();
             task_supervisor::spawn_supervised("DrivePoller", move || {
                 let s = drive_state.clone();
                 async move { google_drive::poller::run_drive_poller(s).await }
             });
 
-            // DOS-258: legacy entity resolution trigger removed. Entity
+            // legacy entity resolution trigger removed. Entity
             // linking now runs on every calendar poll via
             // `services::entity_linking::calendar_adapter::evaluate_meeting`.
 
-            // DOS-258 Tier 4: one-shot post-upgrade sweep that self-corrects
+            // Tier 4: one-shot post-upgrade sweep that self-corrects
             // weak-primary entity links (rule:P5 / rule:P11) whose graph
             // version has drifted since the evidence-hierarchy fix shipped.
             // Gated by entity_graph_version.last_migration_sweep_at so it
@@ -397,7 +397,7 @@ pub fn run() {
                 }
             });
 
-            // DOS-258: meeting-type reclassification runs on every boot so
+            // meeting-type reclassification runs on every boot so
             // existing meetings get re-labelled whenever attendee evidence
             // changes (stakeholder added, domain registered, relationship
             // flipped). Ungated — the entity-linking one-shot sweep above
@@ -421,7 +421,7 @@ pub fn run() {
                 }
             });
 
-            // DOS-258: stakeholder-derived domain backfill runs on every boot so
+            // stakeholder-derived domain backfill runs on every boot so
             // new users AND existing users self-heal any account whose stakeholder
             // graph has domains that aren't yet registered. Idempotent — repeat
             // runs on unchanged data are cheap. Spawned ~40s after init to avoid
@@ -505,7 +505,7 @@ pub fn run() {
                 })
                 .build(app)?;
 
-            // Handle window close: hide instead of quit + track focus for lock (I465)
+            // Handle window close: hide instead of quit + track focus for lock
             if let Some(window) = app.get_webview_window("main") {
                 let window_clone = window.clone();
                 let activity_tracker = state.clone();
@@ -524,7 +524,7 @@ pub fn run() {
                 });
             }
 
-            // Spawn app lock idle timer (I465)
+            // Spawn app lock idle timer
             let lock_state_timer = state.clone();
             let lock_handle_timer = app.handle().clone();
             tauri::async_runtime::spawn(async move {
@@ -543,7 +543,7 @@ pub fn run() {
                         continue; // Disabled
                     }
 
-                    // I610: Single lock acquisition for read + conditional write
+                    // Single lock acquisition for read + conditional write
                     let should_lock = {
                         let ls = lock_state_timer.lock_state.lock();
                         if ls.is_locked {
@@ -587,7 +587,7 @@ pub fn run() {
             commands::get_emails_enriched,
             commands::get_email_sync_status,
             commands::update_email_entity,
-            // DOS-258: entity linking read + manual overrides + admin
+            // entity linking read + manual overrides + admin
             commands::get_linked_entities_for_owner,
             commands::rebuild_account_domains,
             commands::set_entity_link_primary,
@@ -663,30 +663,30 @@ pub fn run() {
             commands::get_week_data,
             commands::get_live_proactive_suggestions,
             commands::refresh_meeting_preps,
-            // I44/I45: Transcript Intake & Meeting Outcomes
+            // Transcript Intake & Meeting Outcomes
             commands::attach_meeting_transcript,
             commands::reprocess_meeting_transcript,
             commands::get_meeting_outcomes,
             commands::get_meeting_post_intelligence,
             commands::update_capture,
             commands::update_action_priority,
-            // I127/I128: Manual Action CRUD
+            // Manual Action CRUD
             commands::create_action,
             commands::update_action,
-            // I42: Executive Intelligence
+            // Executive Intelligence
             commands::get_executive_intelligence,
             // I6: Processing History
             commands::get_processing_history,
-            // I20: Email Refresh
+            // Email Refresh
             commands::refresh_emails,
             commands::sync_email_inbox_presence,
-            // I144: Archive low-priority emails
+            // Archive low-priority emails
             commands::archive_low_priority_emails,
             commands::retry_failed_emails,
-            // DOS-29: actionable failure UX
+            // actionable failure UX
             commands::list_permanently_failed_emails,
             commands::skip_failed_emails,
-            // Onboarding / Demo / App State (I56/I57)
+            // Onboarding / Demo / App State
             commands::install_demo_data,
             commands::clear_demo_data,
             commands::get_app_state,
@@ -695,7 +695,7 @@ pub fn run() {
             commands::set_wizard_step,
             commands::populate_workspace,
             commands::set_user_profile,
-            // I411: User Entity
+            // User Entity
             commands::get_user_entity,
             commands::update_user_entity_field,
             commands::get_user_context_entries,
@@ -728,28 +728,28 @@ pub fn run() {
             commands::dev_clean_artifacts,
             commands::dev_set_auth_override,
             commands::dev_onboarding_scenario,
-            // DOS-287: Cross-entity contamination audit + cleanup
+            // Cross-entity contamination audit + cleanup
             commands::devtools_audit_cross_contamination,
             commands::devtools_clear_contaminated_enrichment,
-            // I52: Meeting-Entity M2M
+            // Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,
-            // DOS-240: meeting entity dismissal dictionary
+            // meeting entity dismissal dictionary
             commands::dismiss_meeting_entity,
             commands::restore_meeting_entity,
             commands::get_meeting_entities,
             commands::update_meeting_entity,
-            // I184: Additive multi-entity link/unlink
+            // Additive multi-entity link/unlink
             commands::add_meeting_entity,
             commands::remove_meeting_entity,
-            // I305: Entity keyword management
+            // Entity keyword management
             commands::remove_project_keyword,
             commands::remove_account_keyword,
-            // I129: Person Creation
+            // Person Creation
             commands::create_person,
             commands::merge_people,
             commands::delete_person,
-            // I51: People
+            // People
             commands::get_people,
             commands::get_person_detail,
             commands::search_people,
@@ -758,10 +758,10 @@ pub fn run() {
             commands::unlink_person_entity,
             commands::get_people_for_entity,
             commands::get_meeting_attendees,
-            // I74/I136: Entity Enrichment
+            // Entity Enrichment
             commands::enrich_account,
             commands::enrich_person,
-            // I124: Content Index
+            // Content Index
             commands::get_entity_files,
             commands::index_entity_files,
             commands::reveal_in_finder,
@@ -770,7 +770,7 @@ pub fn run() {
             commands::chat_search_content,
             commands::chat_get_briefing,
             commands::chat_list_entities,
-            // I72: Account Dashboards
+            // Account Dashboards
             commands::get_accounts_list,
             commands::get_accounts_for_picker,
             commands::get_child_accounts_list,
@@ -795,7 +795,7 @@ pub fn run() {
             commands::add_account_team_member,
             commands::set_team_member_role,
             commands::remove_account_team_member,
-            // I652 Phase 2: Person-first stakeholder commands
+            // Person-first stakeholder commands
             commands::get_person_stakeholder_roles,
             commands::update_stakeholder_engagement,
             commands::update_stakeholder_assessment,
@@ -804,7 +804,7 @@ pub fn run() {
             commands::get_stakeholder_suggestions,
             commands::accept_stakeholder_suggestion,
             commands::dismiss_stakeholder_suggestion,
-            // DOS-258 Lane F: pending stakeholder review queue
+            // pending stakeholder review queue
             commands::get_pending_stakeholder_suggestions,
             commands::confirm_pending_stakeholder,
             commands::dismiss_pending_stakeholder,
@@ -812,7 +812,7 @@ pub fn run() {
             commands::create_child_account,
             commands::create_team,
             commands::backfill_internal_meeting_associations,
-            // I50: Project Dashboards
+            // Project Dashboards
             commands::get_projects_list,
             commands::get_project_detail,
             commands::get_child_projects_list,
@@ -821,7 +821,7 @@ pub fn run() {
             commands::update_project_field,
             commands::update_project_notes,
             commands::enrich_project,
-            // I76: Database Backup & Rebuild
+            // Database Backup & Rebuild
             commands::backup_database,
             commands::rebuild_database,
             commands::get_database_recovery_status,
@@ -830,31 +830,31 @@ pub fn run() {
             commands::start_fresh_database,
             commands::export_database_copy,
             commands::get_database_info,
-            // I148: Hygiene
+            // Hygiene
             commands::get_hygiene_report,
             commands::get_intelligence_hygiene_status,
             commands::get_hygiene_narrative,
             commands::run_hygiene_scan_now,
-            // I172: Duplicate People Detection
+            // Duplicate People Detection
             commands::get_duplicate_people,
             commands::get_duplicate_people_for_person,
-            // I176: Archive / Unarchive Entities
+            // Archive / Unarchive Entities
             commands::archive_account,
             commands::archive_project,
             commands::archive_person,
             commands::get_archived_accounts,
             commands::get_archived_projects,
             commands::get_archived_people,
-            // I198: Account Merge
+            // Account Merge
             commands::merge_accounts,
-            // I199: Account Recovery
+            // Account Recovery
             commands::restore_account,
-            // I171: Multi-Domain Config
+            // Multi-Domain Config
             commands::set_user_domains,
-            // I162: Bulk Entity Creation
+            // Bulk Entity Creation
             commands::bulk_create_accounts,
             commands::bulk_create_projects,
-            // I143: Account Events
+            // Account Events
             commands::record_account_event,
             commands::get_account_events,
             commands::create_objective,
@@ -875,7 +875,7 @@ pub fn run() {
             commands::create_objective_from_suggestion,
             commands::list_success_plan_templates,
             commands::apply_success_plan_template,
-            // I194: User Agenda + Notes (ADR-0065)
+            // User Agenda + Notes (ADR-0065)
             commands::apply_meeting_prep_prefill,
             commands::generate_meeting_agenda_message_draft,
             commands::update_meeting_user_agenda,
@@ -884,18 +884,18 @@ pub fn run() {
             // Risk Briefing
             commands::generate_risk_briefing,
             commands::get_risk_briefing,
-            // DOS-228 Fix 3: Risk briefing retry (surfaces failed jobs)
+            // Regression guard: Risk briefing retry (surfaces failed jobs)
             commands::retry_risk_briefing,
             // Reports (v0.15.0)
             commands::generate_report,
             commands::get_report,
             commands::get_reports_for_entity,
             commands::save_report,
-            // I261: Intelligence Field Editing
+            // Intelligence Field Editing
             commands::update_intelligence_field,
             commands::dismiss_intelligence_item,
             commands::update_stakeholders,
-            // DOS-13: Recommended Actions from Intelligence
+            // Recommended Actions from Intelligence
             commands::track_recommendation,
             commands::dismiss_recommendation,
             commands::mark_commitment_done,
@@ -914,21 +914,21 @@ pub fn run() {
             commands::set_quill_poll_interval,
             commands::start_quill_backfill,
             commands::trigger_quill_sync_for_meeting,
-            // Granola Integration (I226)
+            // Granola Integration
             commands::get_granola_status,
             commands::trigger_granola_sync_for_meeting,
             commands::set_granola_enabled,
             commands::set_granola_poll_interval,
             commands::start_granola_backfill,
             commands::test_granola_cache,
-            // Gravatar MCP Integration (I229)
+            // Gravatar MCP Integration
             commands::get_gravatar_status,
             commands::set_gravatar_enabled,
             commands::set_gravatar_api_key,
             commands::fetch_gravatar,
             commands::bulk_fetch_gravatars,
             commands::get_person_avatar,
-            // Clay Integration (I228) via Smithery Connect
+            // Clay Integration  via Smithery Connect
             commands::get_clay_status,
             commands::set_clay_enabled,
             commands::set_clay_api_key,
@@ -943,7 +943,7 @@ pub fn run() {
             commands::set_smithery_connection,
             commands::disconnect_smithery,
             commands::get_smithery_status,
-            // Linear Integration (I346)
+            // Linear Integration
             commands::get_linear_status,
             commands::set_linear_enabled,
             commands::set_linear_api_key,
@@ -955,25 +955,25 @@ pub fn run() {
             commands::create_linear_entity_link,
             commands::run_linear_auto_link,
             commands::delete_linear_entity_link,
-            // DOS-50/51: Push Action to Linear
+            // /51: Push Action to Linear
             commands::get_linear_teams,
             commands::push_action_to_linear,
-            // I309: Role Presets
+            // Role Presets
             commands::set_role,
             commands::get_active_preset,
             commands::get_available_presets,
-            // I311: Entity Metadata
+            // Entity Metadata
             commands::update_entity_metadata,
             commands::get_entity_metadata,
-            // I323: Email Disposition Correction
+            // Email Disposition Correction
             commands::correct_email_disposition,
-            // I330: Meeting Timeline
+            // Meeting Timeline
             commands::get_meeting_timeline,
-            // I390: Person Relationships (ADR-0088)
+            // Person Relationships (ADR-0088)
             commands::upsert_person_relationship,
             commands::delete_person_relationship,
             commands::get_person_relationships,
-            // I426: Google Drive Connector
+            // Google Drive Connector
             commands::get_google_access_token,
             commands::get_google_client_id,
             commands::get_google_drive_status,
@@ -983,10 +983,10 @@ pub fn run() {
             commands::add_google_drive_watch,
             commands::remove_google_drive_watch,
             commands::get_google_drive_watches,
-            // I464: iCloud Workspace Warning
+            // iCloud Workspace Warning
             commands::check_icloud_warning,
             commands::dismiss_icloud_warning,
-            // I465: App Lock
+            // App Lock
             commands::get_lock_status,
             commands::get_encryption_key_status,
             commands::lock_app,
@@ -994,7 +994,7 @@ pub fn run() {
             commands::set_lock_timeout,
             commands::signal_user_activity,
             commands::signal_window_focus,
-            // I471: Audit Log
+            // Audit Log
             commands::get_audit_log_records,
             commands::export_audit_log,
             commands::verify_audit_log_integrity,
@@ -1005,44 +1005,44 @@ pub fn run() {
             commands::get_glean_auth_status,
             commands::get_glean_token_health,
             commands::disconnect_glean,
-            // I559: Glean Agent Validation Spike (temporary dev exploration)
+            // Glean Agent Validation Spike (temporary dev exploration)
             commands::dev_explore_glean_tools,
-            // I535 Step 9: Discover accounts from Glean
+            // Discover accounts from Glean
             commands::discover_accounts_from_glean,
             commands::import_account_from_glean,
-            // I561: Onboarding — Three Connectors
+            // Onboarding — Three Connectors
             commands::onboarding_import_accounts,
             commands::onboarding_prefill_profile,
             commands::onboarding_enrichment_status,
-            // I495: Ephemeral Account Query via Glean
+            // Ephemeral Account Query via Glean
             commands::query_ephemeral_account,
-            // I427: Global Search
+            // Global Search
             commands::search_global,
             commands::rebuild_search_index,
-            // I428: Connectivity
+            // Connectivity
             commands::get_sync_freshness,
-            // I429: Data Export
+            // Data Export
             commands::export_all_data,
-            // I430: Privacy Controls
+            // Privacy Controls
             commands::get_data_summary,
             commands::clear_intelligence,
             commands::delete_all_data,
-            // I537: Feature Flags
+            // Feature Flags
             commands::get_feature_flags,
-            // I614: DB Growth Monitoring
+            // DB Growth Monitoring
             commands::get_db_growth_report,
-            // I633: Health Scoring Recalibration
+            // Health Scoring Recalibration
             commands::bulk_recompute_health,
-            // I635 + I637: Meeting Intelligence
+            // Meeting Intelligence
             commands::get_prediction_scorecard,
             commands::get_meeting_continuity_thread,
-            // I529: Intelligence Quality Feedback
+            // Intelligence Quality Feedback
             commands::submit_intelligence_feedback,
             commands::get_entity_feedback,
             commands::get_entity_suppressions,
-            // DOS-41: Consolidated intelligence correction
+            // Consolidated intelligence correction
             commands::submit_intelligence_correction,
-            // I645: Feedback & Suppression Diagnostics
+            // Feedback & Suppression Diagnostics
             commands::get_feedback_diagnostics,
         ])
         .run(tauri::generate_context!())

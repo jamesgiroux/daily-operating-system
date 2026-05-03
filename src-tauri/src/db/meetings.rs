@@ -51,7 +51,7 @@ impl ActionDb {
     // Meetings
     // =========================================================================
 
-    /// Count meetings linked to an account within the last `days` days (I555).
+    /// Count meetings linked to an account within the last `days` days.
     pub fn count_account_meetings_in_days(
         &self,
         account_id: &str,
@@ -71,7 +71,7 @@ impl ActionDb {
     }
 
     /// Count meetings linked to an account within a period ending `offset_days` ago,
-    /// spanning `days` before that offset (I555). Used for previous-period comparison.
+    /// spanning `days` before that offset. Used for previous-period comparison.
     pub fn count_account_meetings_in_period(
         &self,
         account_id: &str,
@@ -94,7 +94,7 @@ impl ActionDb {
         Ok(count)
     }
 
-    /// Get the champion's person_id for an account from account_stakeholders (I555).
+    /// Get the champion's person_id for an account from account_stakeholders.
     pub fn get_champion_person_id(&self, account_id: &str) -> Result<Option<String>, DbError> {
         let result = self.conn.query_row(
             "SELECT person_id FROM account_stakeholders
@@ -582,7 +582,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Get recent meetings as matching candidates with entity context (I474).
+    /// Get recent meetings as matching candidates with entity context.
     ///
     /// Returns meetings from the last `days_back` days with their primary
     /// linked entity_id (if any). Used by the inbox processor to match
@@ -652,7 +652,7 @@ impl ActionDb {
     /// Get meetings in a date range [start, end) as lightweight tuples.
     ///
     /// Returns (id, title, meeting_type, start_time, end_time, prep_frozen_json IS NOT NULL).
-    /// Used by I513 to build WeekOverview from DB instead of JSON files.
+    /// Used by to build WeekOverview from DB instead of JSON files.
     pub fn get_meetings_in_range(
         &self,
         start: &str,
@@ -761,7 +761,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Look up a meeting by its Google Calendar event ID (I168).
+    /// Look up a meeting by its Google Calendar event ID.
     pub fn get_meeting_by_calendar_event_id(
         &self,
         calendar_event_id: &str,
@@ -901,7 +901,7 @@ impl ActionDb {
         Ok(map)
     }
 
-    // ─── I555: Interaction dynamics, champion health, role changes ────────
+    // ─── Interaction dynamics, champion health, role changes ────────
 
     /// Store interaction dynamics for a meeting.
     pub fn upsert_interaction_dynamics(
@@ -1174,7 +1174,7 @@ impl ActionDb {
         rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
     }
 
-    /// Find the most recent meeting linked to an entity before a given date (I637).
+    /// Find the most recent meeting linked to an entity before a given date.
     pub fn get_previous_meeting_for_entity(
         &self,
         entity_id: &str,
@@ -1199,7 +1199,7 @@ impl ActionDb {
         }
     }
 
-    /// Build a continuity thread between two meetings for the same entity (I637).
+    /// Build a continuity thread between two meetings for the same entity.
     ///
     /// Shows actions completed/open, health score delta, and new attendees
     /// between the previous and current meetings.
@@ -1313,7 +1313,7 @@ impl ActionDb {
         })
     }
 
-    /// Get post-meeting intelligence bundle (I558).
+    /// Get post-meeting intelligence bundle.
     pub fn get_meeting_post_intelligence(
         &self,
         meeting_id: &str,

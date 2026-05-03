@@ -1,5 +1,5 @@
 /**
- * usePendingStakeholders — DOS-258 Lane F
+ * usePendingStakeholders — Lane F
  *
  * Fetches account_stakeholders rows with status='pending_review' and exposes
  * confirm/dismiss mutations with optimistic removal. The queue refetches after

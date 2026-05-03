@@ -1,4 +1,4 @@
--- I334: Capture rejection signals for correction learning (I307).
+-- Capture rejection signals for correction learning.
 --
 -- When a user rejects a proposed action, store when and where so the
 -- system can learn which AI suggestions to suppress in future.

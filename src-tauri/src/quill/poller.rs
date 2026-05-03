@@ -486,7 +486,7 @@ async fn process_sync_row(
             crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, &state);
     }
 
-    // Re-run entity linking with the post-transcript context (DOS-258).
+    // Re-run entity linking with the post-transcript context.
     // The calendar poller already linked entities at meeting creation, but
     // the transcript can refine attendee/title context. Best-effort —
     // never fails the sync.

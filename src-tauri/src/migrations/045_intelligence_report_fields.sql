@@ -1,4 +1,4 @@
--- I396: Intelligence report fields for CS health tracking
+-- Intelligence report fields for CS health tracking
 ALTER TABLE entity_intelligence ADD COLUMN health_score REAL;
 ALTER TABLE entity_intelligence ADD COLUMN health_trend TEXT;
 ALTER TABLE entity_intelligence ADD COLUMN value_delivered TEXT;

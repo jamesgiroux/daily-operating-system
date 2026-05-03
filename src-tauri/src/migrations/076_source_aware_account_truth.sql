@@ -1,4 +1,4 @@
--- I644: Source-aware account truth — source references + commercial stage separation
+-- Source-aware account truth — source references + commercial stage separation
 
 CREATE TABLE IF NOT EXISTS account_source_refs (
   id TEXT PRIMARY KEY,

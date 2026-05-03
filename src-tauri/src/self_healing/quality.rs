@@ -1,4 +1,4 @@
-//! Beta distribution quality scoring for entity intelligence (I406).
+//! Beta distribution quality scoring for entity intelligence.
 //!
 //! Each entity has a Beta(alpha, beta) distribution where:
 //! - alpha increments on enrichment success

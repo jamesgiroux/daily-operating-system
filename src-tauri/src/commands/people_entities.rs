@@ -175,7 +175,7 @@ pub async fn get_meeting_attendees(
 }
 
 // =========================================================================
-// Meeting-Entity M2M (I52)
+// Meeting-Entity M2M
 // =========================================================================
 
 /// Link a meeting to an entity (account/project) via the junction table.
@@ -220,7 +220,7 @@ pub async fn unlink_meeting_entity(
     .await
 }
 
-/// DOS-240: Dismiss an auto-resolved meeting entity. Unlinks it AND records
+/// Dismiss an auto-resolved meeting entity. Unlinks it AND records
 /// a persistent dismissal so future calendar-sync / resolver sweeps do not
 /// re-link the same (meeting, entity, type) tuple.
 #[tauri::command]
@@ -243,7 +243,7 @@ pub async fn dismiss_meeting_entity(
     .await
 }
 
-/// DOS-240: Undo a previous dismissal. Removes the dismissal record so the
+/// Undo a previous dismissal. Removes the dismissal record so the
 /// entity can auto-link again on the next calendar-sync or resolver pass.
 #[tauri::command]
 pub async fn restore_meeting_entity(
@@ -265,7 +265,7 @@ pub async fn restore_meeting_entity(
 }
 
 // =========================================================================
-// DOS-258: entity linking manual overrides
+// entity linking manual overrides
 // =========================================================================
 
 /// Set (or clear) the primary entity for a meeting or email.
@@ -368,7 +368,7 @@ pub async fn get_meeting_entities(
 
 /// Reassign a meeting's entity with full cascade to actions, captures, and intelligence.
 /// Clears existing entity links, sets the new one, and cascades to related tables.
-/// Emits `prep-ready` event on successful rebuild (I477).
+/// Emits `prep-ready` event on successful rebuild.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn update_meeting_entity(
@@ -401,12 +401,12 @@ pub async fn update_meeting_entity(
 }
 
 // =========================================================================
-// Additive Meeting-Entity Link/Unlink (I184 multi-entity)
+// Additive Meeting-Entity Link/Unlink (multi-entity)
 // =========================================================================
 
 /// Add an entity link to a meeting with full cascade (people, intelligence).
 /// Unlike `update_meeting_entity` which clears-and-replaces, this is additive.
-/// Emits `prep-ready` event on successful rebuild (I477).
+/// Emits `prep-ready` event on successful rebuild.
 #[allow(clippy::too_many_arguments)]
 #[tauri::command]
 pub async fn add_meeting_entity(
@@ -439,7 +439,7 @@ pub async fn add_meeting_entity(
 }
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
-/// Emits `prep-ready` event on successful rebuild (I477).
+/// Emits `prep-ready` event on successful rebuild.
 #[tauri::command]
 pub async fn remove_meeting_entity(
     meeting_id: String,
@@ -460,7 +460,7 @@ pub async fn remove_meeting_entity(
 }
 
 // =========================================================================
-// Entity Keyword Management (I305)
+// Entity Keyword Management
 // =========================================================================
 
 /// Remove a keyword from a project's auto-extracted keyword list.
@@ -496,7 +496,7 @@ pub async fn remove_account_keyword(
 }
 
 // =========================================================================
-// Person Creation (I129)
+// Person Creation
 // =========================================================================
 
 /// Create a new person manually. Returns the generated person ID.
@@ -564,7 +564,7 @@ pub async fn delete_person(
 }
 
 /// Enrich a person with intelligence assessment (relationship intelligence).
-/// Uses split-lock pattern (I173) — DB lock held only briefly during gather/write.
+/// Uses split-lock pattern  — DB lock held only briefly during gather/write.
 #[tauri::command]
 pub async fn enrich_person(
     app_handle: tauri::AppHandle,
@@ -584,7 +584,7 @@ pub async fn enrich_person(
 }
 
 // =========================================================================
-// I529: Intelligence Quality Feedback
+// Intelligence Quality Feedback
 // =========================================================================
 
 /// Submit feedback (positive/negative) on an intelligence field for an entity.
@@ -597,7 +597,7 @@ pub async fn submit_intelligence_feedback(
     context: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    // DOS-209 (W2-A): construct ServiceContext at the command boundary
+    //  construct ServiceContext at the command boundary
     // and pass it into the service mutator. Arc-clone state so the
     // closure can build the context inside the db_write lane.
     let state_for_ctx = Arc::clone(&state);
@@ -617,7 +617,7 @@ pub async fn submit_intelligence_feedback(
         .await
 }
 
-/// DOS-41: Submit a consolidated intelligence correction.
+/// Submit a consolidated intelligence correction.
 ///
 /// Replaces the legacy thumbs up/down + separate "replaced" paths with a
 /// single command that handles all supported user actions:
@@ -647,7 +647,7 @@ pub async fn submit_intelligence_correction(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let parsed = crate::db::feedback::CorrectionAction::parse(&request.action)?;
-    // DOS-209 (W2-A): construct ServiceContext at the command boundary.
+    //  construct ServiceContext at the command boundary.
     let state_for_ctx = Arc::clone(&state);
     state
         .db_write(move |db| {
@@ -682,7 +682,7 @@ pub async fn get_entity_feedback(
 }
 
 // =========================================================================
-// DOS-258: read linked entities from the new view
+// read linked entities from the new view
 // =========================================================================
 
 #[derive(Debug, serde::Serialize)]
@@ -696,7 +696,7 @@ pub struct LinkedEntityDto {
     pub applied_rule: Option<String>,
 }
 
-/// Read linked entities from the DOS-258 linked_entities view.
+/// Read linked entities from the linked_entities view.
 ///
 /// Returns primary + related entities from `linked_entities_raw` (excluding
 /// user_dismissed rows). Falls back to empty when no entries exist yet.
@@ -751,7 +751,7 @@ pub async fn get_linked_entities_for_owner(
         .await
 }
 
-/// Purge inferred account_domains before DOS-258 flag flip (admin/devtools).
+/// Purge inferred account_domains before  flag flip (admin/devtools).
 ///
 /// Removes all rows where source='inferred'. User-entered ('user') and
 /// enrichment-sourced ('enrichment') domains are preserved.

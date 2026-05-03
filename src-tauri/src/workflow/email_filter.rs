@@ -1,4 +1,4 @@
-//! Three-gate email filtering and deduplication logic (I652 Phase 2).
+//! Three-gate email filtering and deduplication logic.
 //!
 //! This module implements intelligent filtering to prevent over-enrichment of emails:
 //!

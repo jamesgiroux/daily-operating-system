@@ -1,4 +1,4 @@
-//! I635: Prep prediction scorecard — compare pre-meeting predictions against outcomes.
+//! Prep prediction scorecard — compare pre-meeting predictions against outcomes.
 //!
 //! Extracts risks/wins from `prep_frozen_json` (pre-meeting predictions) and
 //! `enriched_captures` (post-meeting outcomes), then classifies each item as:

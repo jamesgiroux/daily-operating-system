@@ -80,7 +80,7 @@ export default function EmailsPage() {
   const [dismissedSignals, setDismissedSignals] = useState<Set<number>>(new Set());
   const [dismissedQuiet, setDismissedQuiet] = useState<Set<string>>(new Set());
   const [dismissedFailedCount, setDismissedFailedCount] = useState<number | null>(null);
-  // DOS-29: actionable failure UX state. `failurePreviews` populates the
+  // actionable failure UX state. `failurePreviews` populates the
   // "View details" expansion lazily so we don't pay the IPC round-trip on
   // every load — only when the user opts in.
   const [failureDetailsOpen, setFailureDetailsOpen] = useState(false);
@@ -190,7 +190,7 @@ export default function EmailsPage() {
     }
   }, []);
 
-  // I581: Dismiss gone-quiet cadence alert
+  // Dismiss gone-quiet cadence alert
   const handleDismissQuiet = useCallback(async (entityId: string) => {
     setDismissedQuiet((prev) => new Set(prev).add(entityId));
     try {
@@ -293,7 +293,7 @@ export default function EmailsPage() {
     return { allCommitments: commitments, allQuestions: questions };
   }, [data, dismissed]);
 
-  // I395: "Priority" derived from scored, unread, enriched emails.
+  // "Priority" derived from scored, unread, enriched emails.
   // Only show emails with intelligence (summary) that are still unread.
   const yourMoveEmails = useMemo(() => {
     if (!data) return [];
@@ -305,7 +305,7 @@ export default function EmailsPage() {
       .slice(0, 5);
   }, [data]);
 
-  // I577/I578: Reply debt data is still computed by the backend for future use,
+  // Reply debt data is still computed by the backend for future use,
   // but the section is hidden until email classification can distinguish real
   // conversations from calendar invites/notifications.
 
@@ -322,7 +322,7 @@ export default function EmailsPage() {
     }, 0);
   }, [entityThreads]);
 
-  // I581: Gone-quiet accounts — filtered by user dismissals
+  // Gone-quiet accounts — filtered by user dismissals
   const goneQuietAccounts = useMemo(() => {
     if (!data?.goneQuiet) return [];
     return data.goneQuiet.filter((a) => !dismissedQuiet.has(a.entityId));
@@ -336,7 +336,7 @@ export default function EmailsPage() {
     [goneQuietAccounts]
   );
 
-  // All emails with intelligence for the correspondence section (I395: sorted by relevance score)
+  // All emails with intelligence for the correspondence section (sorted by relevance score)
   // Excludes locally-archived emails so archive propagates across all sections instantly.
   const allEnrichedEmails = useMemo(() => {
     if (!data) return [];
@@ -345,7 +345,7 @@ export default function EmailsPage() {
       .sort(compareEmailRank);
   }, [data, archivedIds]);
 
-  // I395: Group by score bands (only when scores have been computed)
+  // Group by score bands (only when scores have been computed)
   const hasScores = useMemo(() =>
     allEnrichedEmails.some(e => e.relevanceScore != null),
     [allEnrichedEmails]
@@ -437,7 +437,7 @@ export default function EmailsPage() {
           </div>
         )}
 
-        {/* Sync status (I373) */}
+        {/* Sync status  */}
         {syncStats && (
           <div className={e.syncStatus}>
             {syncStats.lastFetchAt && (
@@ -473,7 +473,7 @@ export default function EmailsPage() {
                   className={e.syncRetryButton}
                   disabled={failureActionInFlight}
                   onClick={async () => {
-                    // DOS-226: retry is rollback-safe on the backend — if
+                    // retry is rollback-safe on the backend — if
                     // the Gmail refresh fails, rows stay in `failed` and
                     // this notice reappears on the next stats load.
                     setFailureActionInFlight(true);
@@ -501,7 +501,7 @@ export default function EmailsPage() {
                   className={e.syncRetryButton}
                   disabled={failureActionInFlight}
                   onClick={async () => {
-                    // DOS-29: Skip = mark resolved so they leave the
+                    // Skip = mark resolved so they leave the
                     // failed-count entirely. The Gmail message stays in the
                     // inbox; we just stop trying to enrich it.
                     setFailureActionInFlight(true);
@@ -540,7 +540,7 @@ export default function EmailsPage() {
                   className={e.syncRetryButton}
                   disabled={failureActionInFlight}
                   onClick={async () => {
-                    // DOS-29: lazily load + toggle the per-email preview.
+                    // lazily load + toggle the per-email preview.
                     if (failureDetailsOpen) {
                       setFailureDetailsOpen(false);
                       return;
@@ -615,7 +615,7 @@ export default function EmailsPage() {
 
       <div className={s.sectionRule} />
 
-      {/* EMPTY STATE — DOS-246: distinguish "Gmail disconnected" from "connected but no emails yet" */}
+      {/* EMPTY STATE — distinguish "Gmail disconnected" from "connected but no emails yet" */}
       {isEmpty && (() => {
         const reallyDisconnected =
           googleAuth.status === "notconfigured" || googleAuth.status === "tokenexpired";
@@ -656,7 +656,7 @@ export default function EmailsPage() {
         </section>
       )}
 
-      {/* I577/I578: Reply debt section REMOVED — "user_is_last_sender = 0" doesn't
+      {/* Reply debt section REMOVED — "user_is_last_sender = 0" doesn't
          distinguish genuine reply-debt conversations from calendar invites, newsletters,
          notifications, etc. The INBOX PRIORITY/MONITORING bands serve this purpose better.
          Reply debt will return when email classification can filter to real conversations. */}
@@ -724,7 +724,7 @@ export default function EmailsPage() {
         </section>
       )}
 
-      {/* === GONE QUIET -- Accounts with declining email cadence (I581) === */}
+      {/* === GONE QUIET -- Accounts with declining email cadence  === */}
       {standaloneGoneQuietAccounts.length > 0 && (
         <section className={e.sectionSpacing}>
           <div className={s.marginGrid}>
@@ -866,8 +866,8 @@ export default function EmailsPage() {
 }
 
 // =============================================================================
-// Email Intel Item -- Extracted component for grouped INBOX rendering (I395)
-// With triage actions (I579), commitment promotion (I580), meeting linkage (I582)
+// Email Intel Item -- Extracted component for grouped INBOX rendering
+// With triage actions, commitment promotion, meeting linkage
 // =============================================================================
 
 function GoneQuietItem({
@@ -1186,7 +1186,7 @@ function EmailIntelItem({
         )}
         {email.subject && <span>{email.subject.length > 40 ? email.subject.slice(0, 40) + "\u2026" : email.subject}</span>}
       </div>
-      {/* I582: Meeting linkage badge */}
+      {/* Meeting linkage badge */}
       {email.meetingLinked && (
         <button
           className={e.meetingLinkBadge}
@@ -1205,7 +1205,7 @@ function EmailIntelItem({
         return reason ? <div className={s.emailScoreReason}>{reason}</div> : null;
       })()}
 
-      {/* I580: Inline commitments with Track button */}
+      {/* Inline commitments with Track button */}
       {commitments.length > 0 && (
         <div className={e.inlineCommitments}>
           <span className={e.inlineCommitmentsLabel}>COMMITMENTS</span>
@@ -1233,7 +1233,7 @@ function EmailIntelItem({
         </div>
       )}
 
-      {/* I579: Triage action bar */}
+      {/* Triage action bar */}
       <div className={e.triageBar}>
         <button
           onClick={handleArchive}

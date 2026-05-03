@@ -1,6 +1,6 @@
 //! P4c — Group meeting where ≥2 external participants share exactly one account_of.
 //!
-//! DOS-258 evidence-hierarchy fix: renamed from P4b.
+//! Evidence-hierarchy fix: renamed from P4b.
 
 use std::collections::HashMap;
 

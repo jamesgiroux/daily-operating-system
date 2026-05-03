@@ -1,4 +1,4 @@
-//! DOS-209 (W2-A) regression tests — minimum §9 evidence set.
+//! ServiceContext regression tests — minimum §9 evidence set.
 //!
 //! Covers three of the required invariants:
 //!   1. Zero raw `crate::signals::bus::emit_signal*` calls under src/services/ — the

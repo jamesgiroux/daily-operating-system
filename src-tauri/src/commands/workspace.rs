@@ -103,7 +103,7 @@ pub async fn process_inbox_file(
     let profile = config.profile.clone();
     let entity_id = entity_id.clone();
 
-    // Validate filename before processing (I60: path traversal guard)
+    // Validate filename before processing (path traversal guard)
     let workspace = Path::new(&workspace_path);
     crate::util::validate_inbox_path(workspace, &filename)?;
 
@@ -178,7 +178,7 @@ pub async fn enrich_inbox_file(
     let profile = config.profile.clone();
     let entity_id = entity_id.clone();
 
-    // Validate filename before enriching (I60: path traversal guard)
+    // Validate filename before enriching (path traversal guard)
     let workspace = Path::new(&workspace_path);
     crate::util::validate_inbox_path(workspace, &filename)?;
 
@@ -476,9 +476,9 @@ pub async fn get_emails_enriched(
     crate::services::emails::get_emails_enriched(&ctx, &app_state).await
 }
 
-/// Update the entity assignment for an email (I395 — user correction).
+/// Update the entity assignment for an email (user correction).
 /// Cascades to email_signals and emits a signal bus event for relevance learning.
-/// DOS-258: also writes a user-override row to linked_entities_raw (P1 source).
+/// also writes a user-override row to linked_entities_raw (P1 source).
 #[tauri::command]
 pub async fn update_email_entity(
     state: State<'_, Arc<AppState>>,
@@ -505,7 +505,7 @@ pub async fn update_email_entity(
         })
         .await?;
 
-    // DOS-258 path: write user-override to linked_entities_raw so the new
+    //  path: write user-override to linked_entities_raw so the new
     // engine treats this as a P1 user override on the next evaluate() call.
     let entity_ref = entity_id.map(|id| crate::services::entity_linking::EntityRef {
         entity_id: id,
@@ -542,7 +542,7 @@ pub async fn dismiss_email_signal(
         .await
 }
 
-/// Mark an email as replied to (I577 reply debt).
+/// Mark an email as replied to (reply debt).
 /// Sets `user_is_last_sender = 1` and emits a `reply_debt_cleared` signal.
 #[tauri::command]
 pub async fn mark_reply_sent(
@@ -561,7 +561,7 @@ pub async fn mark_reply_sent(
     Ok(())
 }
 
-/// Dismiss a gone-quiet cadence alert for an account (I581).
+/// Dismiss a gone-quiet cadence alert for an account.
 /// Emits a signal via propagation that feeds the engagement dimension.
 #[tauri::command]
 pub async fn dismiss_gone_quiet(
@@ -578,7 +578,7 @@ pub async fn dismiss_gone_quiet(
         .await
 }
 
-/// Get email sync status: last fetch time, enrichment progress, failure count (I373).
+/// Get email sync status: last fetch time, enrichment progress, failure count.
 #[tauri::command]
 pub async fn get_email_sync_status(
     state: State<'_, Arc<AppState>>,
@@ -588,7 +588,7 @@ pub async fn get_email_sync_status(
         .await
 }
 
-/// Get emails linked to a specific entity for entity detail pages (I368 AC5).
+/// Get emails linked to a specific entity for entity detail pages (AC5).
 #[tauri::command]
 pub async fn get_entity_emails(
     state: State<'_, Arc<AppState>>,
@@ -600,7 +600,7 @@ pub async fn get_entity_emails(
         .await
 }
 
-/// Refresh emails independently without re-running the full /today pipeline (I20).
+/// Refresh emails independently without re-running the full /today pipeline.
 #[tauri::command]
 pub async fn refresh_emails(
     state: State<'_, Arc<AppState>>,
@@ -623,7 +623,7 @@ pub async fn sync_email_inbox_presence(
     crate::services::emails::sync_email_inbox_presence(&ctx, &app_state, app_handle).await
 }
 
-/// Archive low-priority emails in Gmail and remove them from local data (I144).
+/// Archive low-priority emails in Gmail and remove them from local data.
 #[tauri::command]
 pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     let app_state = state.inner().clone();
@@ -631,9 +631,9 @@ pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Res
     crate::services::emails::archive_low_priority_emails(&ctx, &app_state).await
 }
 
-/// Reset failed email enrichments and trigger re-enrichment (DOS-195, DOS-226).
+/// Reset failed email enrichments and trigger re-enrichment.
 ///
-/// DOS-226: This command previously mutated the DB directly (`failed -> pending`
+/// This command previously mutated the DB directly (`failed -> pending`
 /// with attempts=0) *before* calling `refresh_emails`, meaning a Gmail refresh
 /// failure would leave rows looking healthy while enrichment had never re-run,
 /// silently dismissing the user-visible Retry notice. The retry semantics now
@@ -651,7 +651,7 @@ pub async fn retry_failed_emails(
     crate::services::emails::retry_failed_emails(&ctx, &app_state, app_handle).await
 }
 
-/// DOS-29: List the permanently-failed emails (above the auto-retry cap)
+/// List the permanently-failed emails (above the auto-retry cap)
 /// for the "View details" affordance on the EmailsPage failure UX. Capped
 /// at 20 rows to keep the payload bounded — if a user has more than 20
 /// permanently-failed emails the right action is to triage in batch, not
@@ -671,7 +671,7 @@ pub async fn list_permanently_failed_emails(
         .await
 }
 
-/// DOS-29: User-initiated "Skip" action for the failure UX. Marks the
+/// User-initiated "Skip" action for the failure UX. Marks the
 /// supplied permanently-failed email IDs as resolved so they leave the
 /// failed-count entirely. The Gmail message stays in the inbox; we just
 /// stop trying to enrich it. Returns the number of rows skipped.
@@ -776,7 +776,7 @@ pub async fn set_developer_mode(
         .ok_or_else(|| "No configuration loaded".to_string())
 }
 
-/// Check if workspace is under iCloud sync and warning hasn't been dismissed (I464).
+/// Check if workspace is under iCloud sync and warning hasn't been dismissed.
 #[tauri::command]
 pub fn check_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<Option<String>, String> {
     let config = state
@@ -797,7 +797,7 @@ pub fn check_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<Option<St
     }
 }
 
-/// Dismiss the iCloud workspace warning permanently (I464).
+/// Dismiss the iCloud workspace warning permanently.
 #[tauri::command]
 pub fn dismiss_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     crate::state::create_or_update_config(&state, |config| {
@@ -807,7 +807,7 @@ pub fn dismiss_icloud_warning(state: State<'_, Arc<AppState>>) -> Result<(), Str
 }
 
 // =============================================================================
-// App Lock (I465)
+// App Lock
 // =============================================================================
 
 /// Get whether the app is currently locked.
@@ -816,7 +816,7 @@ pub fn get_lock_status(state: State<'_, Arc<AppState>>) -> bool {
     state.lock_state.lock().is_locked
 }
 
-/// Check if the encryption key is missing (I462 recovery screen).
+/// Check if the encryption key is missing (recovery screen).
 #[tauri::command]
 pub fn get_encryption_key_status(state: State<'_, Arc<AppState>>) -> bool {
     state
@@ -844,7 +844,7 @@ pub async fn unlock_app(
     state: State<'_, Arc<AppState>>,
     app: tauri::AppHandle,
 ) -> Result<(), String> {
-    // I610: All lock state operations go through a single mutex acquisition.
+    // All lock state operations go through a single mutex acquisition.
     // Check cooldown: 30s after 3 consecutive failures
     {
         let mut ls = state.lock_state.lock();
@@ -1041,7 +1041,7 @@ pub fn set_personality(
     })
 }
 
-/// Set UI text scale percentage (DOS-45)
+/// Set UI text scale percentage
 #[tauri::command]
 pub fn set_text_scale(percent: u32, state: State<'_, Arc<AppState>>) -> Result<Config, String> {
     let ctx = state.live_service_context();
@@ -1082,7 +1082,7 @@ pub fn set_google_poll_settings(
     )
 }
 
-/// Set hygiene configuration (I271).
+/// Set hygiene configuration.
 ///
 /// Note: the `ai_budget` parameter is deprecated and silently ignored.
 /// Use `set_daily_ai_budget` to configure the daily AI token budget.
@@ -1103,7 +1103,7 @@ pub fn set_hygiene_config(
     )
 }
 
-/// Set the daily AI token budget (DOS-279).
+/// Set the daily AI token budget.
 ///
 /// Valid tiers: 50000, 100000, 250000.
 #[tauri::command]
@@ -1167,7 +1167,7 @@ pub async fn set_user_profile(
 }
 
 // =============================================================================
-// User Entity Commands (I411 — ADR-0089/0090)
+// User Entity Commands (ADR-0089/0090)
 // =============================================================================
 
 /// Get the user entity (creates from config on first call).

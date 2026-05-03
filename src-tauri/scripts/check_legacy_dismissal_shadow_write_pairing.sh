@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DOS-7 L2 cycle-1 fix #5: every runtime write to a legacy dismissal
+# Every runtime write to a legacy dismissal
 # table must be paired with a shadow_write_tombstone_claim call so the
 # claim substrate stays in parity with legacy storage. This is the
 # load-bearing invariant that lets commit_claim PRE-GATE block the AI
@@ -28,7 +28,7 @@ fi
 
 # Files that legitimately write legacy dismissal tables WITHOUT needing
 # a shadow_write pair: backfill code (mechanism owners), migrations
-# (schema setup + DOS-258 transitional dual-write), DB modules (raw
+# (schema setup + transitional dual-write), DB modules (raw
 # SQL methods called from services that pair the shadow-write
 # externally), and tests/fixtures.
 allowed_basename_regex='services/claims_backfill\.rs|services/claims\.rs|migrations/|migrations\.rs|db/intelligence_feedback\.rs|db/feedback\.rs|db/signals\.rs|db/projects\.rs|db/accounts\.rs|db/entity_linking\.rs|db/mod_tests\.rs|tests/dos7_d3a1_backfill_test\.rs|tests/dos7_d3a2_backfill_test\.rs|tests/dos7_d1_schema_test\.rs|tests/dos7_d4_lint_test\.rs|tests/dos7_d5_ghost_resurrection_test\.rs|tests/dos309_lint_regex_test\.rs|tests/dos311_fixtures/|intel_queue\.rs|demo\.rs|signals/rules\.rs|devtools/'
@@ -38,7 +38,7 @@ allowed_basename_regex='services/claims_backfill\.rs|services/claims\.rs|migrati
 # in commands/ delegate to services, which pair internally.
 #
 # We deliberately do NOT match `INSERT INTO suppression_tombstones_quarantine`
-# (DOS-308 audit trail) or generic `account_stakeholder_roles`
+# (audit trail) or generic `account_stakeholder_roles`
 # inserts without `dismissed_at` (those create roles, not dismissals).
 #
 # L2 cycle-20 fix #2: previously matched only

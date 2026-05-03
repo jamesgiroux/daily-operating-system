@@ -109,7 +109,7 @@ pub fn reopen_action(
     Ok(())
 }
 
-/// Accept a suggested action, moving it to pending (I256).
+/// Accept a suggested action, moving it to pending.
 pub fn accept_suggested_action(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -161,7 +161,7 @@ pub fn accept_suggested_action(
     Ok(())
 }
 
-/// Reject a suggested action by archiving it (I256).
+/// Reject a suggested action by archiving it.
 pub fn reject_suggested_action(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -174,7 +174,7 @@ pub fn reject_suggested_action(
     db.reject_suggested_action_with_source(id, source)
         .map_err(|e| e.to_string())?;
 
-    // Emit rejection signal for correction learning (I307)
+    // Emit rejection signal for correction learning
     if let Some(ref action) = action {
         let (entity_type, entity_id) = action_entity_info(action, id);
         let _ = crate::services::signals::emit_and_propagate(
@@ -193,7 +193,7 @@ pub fn reject_suggested_action(
             0.3,
         );
 
-        // Record rejection patterns for future suppression (DOS-18)
+        // Record rejection patterns for future suppression
         if let Err(e) = db.record_rejection_pattern(action) {
             log::warn!("Failed to record rejection pattern: {}", e);
         }
@@ -333,7 +333,7 @@ pub enum ActionsResult {
     Error { message: String },
 }
 
-/// Get all actions with full context from SQLite (I513 — DB is sole source).
+/// Get all actions with full context from SQLite (DB is sole source).
 pub async fn get_all_actions(state: &AppState) -> ActionsResult {
     // Load all pending actions from DB
     let actions: Vec<Action> = state
@@ -479,10 +479,10 @@ pub async fn create_action(
                 1.0,
             );
 
-            // DOS-17: Scan for decision-indicating keywords after creation
+            // Scan for decision-indicating keywords after creation
             let _ = db.scan_and_flag_decisions();
 
-            // DOS-15: Best-effort auto-link to matching objectives
+            // Best-effort auto-link to matching objectives
             if let Some(ref acct_id) = action.account_id {
                 if let Err(e) =
                     auto_link_action_to_objectives(&ctx, db, &action.id, &action.title, acct_id)
@@ -496,7 +496,7 @@ pub async fn create_action(
         .await
 }
 
-/// DOS-15: Auto-link a newly created action to objectives with similar titles.
+/// Auto-link a newly created action to objectives with similar titles.
 ///
 /// Uses Jaccard word similarity (threshold 0.6) to find matching objectives
 /// for the action's account. Emits an `action_auto_linked` signal per match.
@@ -552,7 +552,7 @@ fn auto_link_action_to_objectives(
     Ok(())
 }
 
-/// Update arbitrary fields on an existing action (I128).
+/// Update arbitrary fields on an existing action.
 pub async fn update_action(
     ctx: &ServiceContext<'_>,
     request: UpdateActionRequest,
@@ -724,7 +724,7 @@ pub fn get_actions_from_db(db: &ActionDb, days_ahead: i32) -> Result<Vec<ActionL
     Ok(items)
 }
 
-/// Get all suggested (AI-suggested) actions (I256).
+/// Get all suggested (AI-suggested) actions.
 ///
 /// Unfiltered. Use `get_suggested_actions_for_user` in the command layer so
 /// the user only sees their own commitments + unassigned items by default —
@@ -791,7 +791,7 @@ pub fn get_account_recently_landed(
         .map_err(|e| e.to_string())
 }
 
-/// Resolve a decision: clear needs_decision flag and emit signal (DOS-17).
+/// Resolve a decision: clear needs_decision flag and emit signal.
 pub fn resolve_decision(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -823,7 +823,7 @@ pub fn resolve_decision(
     Ok(())
 }
 
-/// DOS-53: Count actions approaching the 30-day auto-archive threshold.
+/// Count actions approaching the 30-day auto-archive threshold.
 ///
 /// Returns the number of actions that are older than 14 days but not yet 30 days,
 /// in backlog/unstarted status, with priority > 1 and not waiting on anyone.
@@ -843,7 +843,7 @@ pub fn get_aging_action_count(db: &ActionDb) -> Result<i64, String> {
         .map_err(|e| e.to_string())
 }
 
-/// Scan unstarted/backlog actions for decision-indicating keywords and flag them (DOS-17).
+/// Scan unstarted/backlog actions for decision-indicating keywords and flag them.
 ///
 /// Called after action creation and from the scheduler.
 pub fn scan_and_flag_decisions(db: &ActionDb) -> Result<usize, String> {

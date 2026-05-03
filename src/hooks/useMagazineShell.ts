@@ -32,7 +32,7 @@ export interface MagazineShellConfig {
   folioStatusText?: string;
 }
 
-/** I563: Volatile folio state that changes frequently (enrichment progress, save status).
+/** Volatile folio state that changes frequently (enrichment progress, save status).
  * Delivered via ref so updates don't re-trigger shell registration.
  * _pageKey ties volatile state to the page that wrote it — stale data from a
  * previous page is automatically discarded when useFolioVolatile() reads it. */
@@ -53,9 +53,9 @@ interface MagazineShellContextValue {
   config: MagazineShellConfig | null;
   register: (config: MagazineShellConfig) => void;
   unregister: () => void;
-  /** I563: Ref for volatile folio state — reads don't trigger re-renders. */
+  /** Ref for volatile folio state — reads don't trigger re-renders. */
   volatileRef: React.MutableRefObject<FolioVolatileState>;
-  /** I563: Bump counter to request a folio repaint without re-registering config. */
+  /** Bump counter to request a folio repaint without re-registering config. */
   requestFolioRepaint: () => void;
   folioPaintCount: number;
   /** Current page key derived from registered config — used to invalidate stale volatile state. */
@@ -84,7 +84,7 @@ export function useMagazineShellProvider() {
     setConfig(c);
     pageKeyRef.current = derivePageKey(c);
   }, []);
-  // I563: unregister clears config only. Volatile ref is NOT wiped here because
+  // unregister clears config only. Volatile ref is NOT wiped here because
   // during same-route navigation (Account A → B), React's effect cleanup ordering
   // means the old page's cleanup runs AFTER the new render's synchronous ref write.
   // Wiping volatile in cleanup would destroy the new page's already-written actions.
@@ -122,7 +122,7 @@ export function useRegisterMagazineShell(config: MagazineShellConfig) {
 }
 
 /**
- * I563: Hook for pages to update volatile folio state (actions, status text)
+ * Hook for pages to update volatile folio state (actions, status text)
  * without triggering shell re-registration. Updates are ref-based for performance.
  *
  * The ref write is immediate (every render), but MagazinePageLayout won't
@@ -180,7 +180,7 @@ export function useMagazineShellConfig(): MagazineShellConfig | null {
 }
 
 /**
- * I563: Hook for MagazinePageLayout to read volatile folio state.
+ * Hook for MagazinePageLayout to read volatile folio state.
  * Returns empty state if the volatile ref was written by a different page
  * (stale data from a previous navigation).
  */

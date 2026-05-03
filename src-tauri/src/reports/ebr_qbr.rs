@@ -1,4 +1,4 @@
-//! EBR/QBR report (I400) — Executive Business Review / Quarterly Business Review.
+//! EBR/QBR report  — Executive Business Review / Quarterly Business Review.
 //!
 //! Flagship customer-facing report. Full intelligence context + user entity
 //! context. 8 structured sections. Value Delivered must cite real event IDs.

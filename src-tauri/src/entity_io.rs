@@ -1,4 +1,4 @@
-//! Shared entity I/O helpers (I290).
+//! Shared entity I/O helpers.
 //!
 //! Generic file operations common to accounts, projects, and other entities
 //! that follow the workspace directory pattern:

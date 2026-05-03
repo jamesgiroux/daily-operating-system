@@ -16,20 +16,20 @@ import styles from "./AccountTechnicalFootprint.module.css";
 
 interface AccountTechnicalFootprintProps {
   /**
-   * DOS-18: chapter variant accepts null so the chapter can always render
+   * chapter variant accepts null so the chapter can always render
    * with all-gap rows when the account has no captured technical footprint.
    * Inline variant still requires a populated footprint (guarded below).
    */
   footprint: TechnicalFootprintData | null;
-  /** DOS-18: render as a full chapter surface — ref-grid with gap rows + feature list. */
+  /** render as a full chapter surface — ref-grid with gap rows + feature list. */
   variant?: "inline" | "chapter";
-  /** DOS-18: feature list from productAdoption.featureAdoption (chapter variant only). */
+  /** feature list from productAdoption.featureAdoption (chapter variant only). */
   featureAdoption?: string[];
   /**
    * Products owned by the account, rendered as a dotted list alongside
    * Feature adoption. Dot color reflects status (active / trial / churned).
    * Chapter variant only. Full edit UX (status dropdown, product-level
-   * Bayesian feedback) is tracked in DOS-251 for v1.2.2.
+   * Bayesian feedback) is tracked in for v1.2.2.
    */
   products?: AccountProduct[];
   onCaptureGap?: (field: string) => void;

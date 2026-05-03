@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 /**
- * IntelligenceCorrection tests — DOS-41.
+ * IntelligenceCorrection tests —.
  *
  * Covers both variants:
  *   dismiss (default) — binary Yes / No → confirmed / dismissed

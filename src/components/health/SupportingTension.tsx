@@ -1,5 +1,5 @@
 /**
- * SupportingTension — computed score vs signal trend + dimension bars (DOS-203).
+ * SupportingTension — computed score vs signal trend + dimension bars.
  *
  * Three parts per mockup (lines 915-973 of account-health-outlook-globex.html):
  *   1. Two-block row: Computed score vs Signal trend
@@ -53,7 +53,7 @@ function bandForScore(score: number): "green" | "yellow" | "red" {
   return "red";
 }
 
-/** DOS-177: maps camelCase RelationshipDimensions keys → snake_case preset keys + fallback labels. */
+/** maps camelCase RelationshipDimensions keys → snake_case preset keys + fallback labels. */
 const DIMENSION_LABELS: Array<{
   key: keyof RelationshipDimensions;
   presetKey: string;
@@ -100,7 +100,7 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
   const bandLabel = health.band ? health.band[0].toUpperCase() + health.band.slice(1) : "Unknown";
   const dir = health.trend?.direction;
   const timeframe = health.trend?.timeframe ?? "";
-  // DOS-249: `delta` is now a typed field on `IntelligenceHealthTrend`.
+  // `delta` is now a typed field on `IntelligenceHealthTrend`.
   const delta = health.trend?.delta ?? null;
   const deltaStr = formatScoreDelta(delta);
   const rationale =
@@ -121,7 +121,7 @@ export function SupportingTension({ intelligence, gleanSignals }: SupportingTens
   }
   const scoreMeta = sufficient ? scoreMetaParts.join(" · ") : "Insufficient data";
 
-  // Trend meta: render structured tags when the backend emits them (DOS-249).
+  // Trend meta: render structured tags when the backend emits them.
   // Format: "Label ▲ · Label · Label ▼" — matches mockup style.
   // Falls back to empty string when no tags are present.
   const tags = health.trend?.tags ?? [];

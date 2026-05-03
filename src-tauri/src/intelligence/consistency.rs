@@ -1,4 +1,4 @@
-//! Deterministic consistency checks for intelligence output (I527).
+//! Deterministic consistency checks for intelligence output.
 //!
 //! This module detects contradictions between AI-generated intelligence text
 //! and verifiable local facts (meeting attendance + recent signal activity).
@@ -502,7 +502,7 @@ pub fn check_consistency(intel: &IntelligenceJson, facts: &FactContext) -> Consi
         }
     }
 
-    // DOS-83: Check text fields for cross-entity content contamination.
+    // Check text fields for cross-entity content contamination.
     check_text_entity_bleed(intel, facts, &mut findings, &mut seen);
 
     ConsistencyReport { findings }

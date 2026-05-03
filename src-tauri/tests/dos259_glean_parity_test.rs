@@ -1,7 +1,7 @@
-//! DOS-259 (W2-B) integration test: Glean provider byte-identical parity.
+//! Glean provider byte-identical parity integration test.
 //!
 //! Mirror of dos259_pty_parity_test for the Glean trait surface. The
-//! W2-B refactor moves Glean construction from inline
+//! The provider refactor moves Glean construction from inline
 //! `GleanIntelligenceProvider::new(endpoint)` to AppState-Arc bridge per
 //! ADR-0091. The parser (`parse_intelligence_response`) is shared between
 //! PTY and Glean response paths and is unchanged. This test asserts the

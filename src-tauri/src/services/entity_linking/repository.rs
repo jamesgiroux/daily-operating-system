@@ -1,7 +1,7 @@
 //! Raw migration/backfill API. NOT for runtime callers.
 //! Production code importing this module fails the pre-commit grep hook.
 
-/// Purge inferred account domains before the DOS-258 cutover.
+/// Purge inferred account domains before the account-domain rebuild cutover.
 ///
 /// The old entity resolver accumulated domain → account mappings from meeting
 /// attendee emails. Many of these are wrong (shared-domain consultants, joint
@@ -13,7 +13,7 @@
 ///   source = 'user'        — user explicitly entered on the account page
 ///   source = 'enrichment'  — Clay/Glean enrichment providers
 ///
-/// Run this function once, then perform the dry-run diff (DOS-258 step 5)
+/// Run this function once, then perform the dry-run diff
 /// before flipping the entity_linking_v2 feature flag.
 pub fn raw_rebuild_account_domains(
     ctx: &crate::services::context::ServiceContext<'_>,

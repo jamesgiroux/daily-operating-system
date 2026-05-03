@@ -1,4 +1,4 @@
--- DOS-258 Lane A: account_stakeholders status + confidence columns + queue index.
+-- account_stakeholders status + confidence columns + queue index.
 --
 -- The C2 cascade writes auto-suggested stakeholders from meeting attendance
 -- and email correspondence with status='pending_review'. Users confirm or

@@ -1,4 +1,4 @@
--- I555: Captures metadata enrichment + interaction dynamics persistence
+-- Captures metadata enrichment + interaction dynamics persistence
 -- Adds urgency/sub_type/impact/evidence_quote/speaker columns to captures.
 -- Creates per-meeting tables for interaction dynamics, champion health, and role changes.
 -- Note: captured_commitments and success_plan_signals_json already exist from migration 068.

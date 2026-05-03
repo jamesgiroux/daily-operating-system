@@ -1,4 +1,4 @@
-//! DOS-7 D3b-1: backfill mechanism 9 — DismissedItem entries from
+//! Claims backfill D3b-1: backfill mechanism 9 — DismissedItem entries from
 //! workspace intelligence.json files into intelligence_claims tombstone rows.
 //!
 //! D3a (mechanisms 1-8) handled SQL-resident dismissal mechanisms via a
@@ -35,7 +35,7 @@ pub struct DismissedItemBackfillReport {
     pub items_by_kind: std::collections::BTreeMap<String, usize>,
 }
 
-/// Report for the DOS-7 L2 rekey pass over SQL-backfilled m1-m8 claims.
+/// Report for the claims rekey pass over SQL-backfilled m1-m8 claims.
 #[derive(Debug, Default, Clone)]
 pub struct RekeyReport {
     pub rows_examined: usize,
@@ -456,12 +456,12 @@ fn sanitize_id_segment(s: &str) -> String {
 }
 
 // ---------------------------------------------------------------------------
-// DOS-7 D3b-2: cutover orchestration hook
+// Claims cutover orchestration hook
 // ---------------------------------------------------------------------------
 
 use std::time::Duration;
 
-/// Aggregated report of the full DOS-7 cutover orchestration.
+/// Aggregated report of the full claims cutover orchestration.
 #[derive(Debug, Default, Clone)]
 pub struct CutoverReport {
     pub schema_epoch_before: i64,
@@ -475,7 +475,7 @@ pub struct CutoverReport {
     pub completed_at: chrono::DateTime<chrono::Utc>,
 }
 
-/// DOS-7 D5-1: post-migration reconcile pass.
+/// Post-migration reconcile pass.
 ///
 /// For each of the 8 SQL-resident dismissal mechanisms, count the legacy
 /// source rows that the migration WHERE filter would have backfilled and
@@ -657,7 +657,7 @@ fn read_schema_epoch(db: &ActionDb) -> Result<i64, String> {
         .map_err(|e| format!("read schema_epoch: {e}"))
 }
 
-/// Run the full DOS-7 cutover sequence atomically. Returns Err if any
+/// Run the full claims cutover sequence atomically. Returns Err if any
 /// step fails so the caller can roll back from the pre-migration backup
 /// (created by the migration runner before any version applies).
 ///
@@ -718,7 +718,7 @@ pub fn run_dos7_cutover(
         report.drain_in_flight_remaining
     );
 
-    // Step 4: run pending migrations. Migrations 131+132 (DOS-7 SQL
+    // Step 4: run pending migrations. Migrations 131+132 (claims SQL
     // backfills) plus any newer registered versions are applied here.
     let applied = crate::migrations::run_migrations(db.conn_ref())
         .map_err(|e| format!("DOS-7 cutover: migrations failed: {e}"))?;
@@ -739,7 +739,7 @@ pub fn run_dos7_cutover(
     );
 
     // Step 5.5: rekey ALL backfilled claims (m1-m9) to the runtime
-    // DOS-280 shape.
+    // canonical runtime shape.
     //
     // L2 cycle-2 fix #2: per-row failures are fatal to cutover. The
     // previous "warn-and-continue" behavior left rows under their
@@ -812,11 +812,11 @@ const DOS7_CUTOVER_STARTED_AT_KEY: &str = "dos7_cutover_started_at";
 /// 30 minutes covers the worst-case JSON-blob workspace size.
 const DOS7_CUTOVER_STALE_AFTER_SECS: i64 = 30 * 60;
 
-/// L2 cycle-1 fix #3: idempotently run the DOS-7 cutover (rekey + JSON-blob
+/// Idempotently run the claims cutover (rekey + JSON-blob
 /// backfill + reconcile) on startup.
 ///
 /// The cutover MUST run after migrations 130/131 apply, otherwise:
-///   - JSON-blob (mechanism 9) backfill never runs: pre-DOS-7 dismissed
+///   - JSON-blob (mechanism 9) backfill never runs: legacy dismissed
 ///     items stored in workspace `intelligence.json` files don't get
 ///     promoted into intelligence_claims tombstones.
 ///   - The rekey pass never normalizes m1-m8 dedup_keys to the runtime
@@ -835,7 +835,7 @@ pub fn run_dos7_cutover_if_pending(
     db: &ActionDb,
     workspace_root: &Path,
 ) -> Result<Option<CutoverReport>, String> {
-    // Only run when the DOS-7 schema has been applied (migration 130 → SQL
+    // Only run when the claims schema has been applied (migration 130 → SQL
     // version 130). On a fresh DB before migrations, this is a no-op.
     let claims_table_exists: bool = db
         .conn_ref()
@@ -1779,7 +1779,7 @@ mod tests {
         assert_eq!(first.claims_inserted, 1);
 
         // Simulate rekey rewriting the dedup_key + item_hash to the
-        // runtime DOS-280 shape. The claim_id stays the same; only
+        // runtime canonical shape. The claim_id stays the same; only
         // the lifecycle/identity columns change (allowed by the
         // immutability lint).
         db.conn_ref()
@@ -2588,7 +2588,7 @@ mod tests {
     }
 
     /// L2 cycle-1 fix #3: when the claims schema has not been applied
-    /// yet (pre-DOS-7 DB), the startup hook must be a no-op rather than
+    /// yet (legacy DB), the startup hook must be a no-op rather than
     /// erroring. Production startup runs migrations FIRST and the hook
     /// later, but the hook can be invoked on legacy DBs where migration
     /// 130 hasn't applied yet (e.g. fresh test fixtures).

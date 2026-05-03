@@ -1,4 +1,4 @@
-//! Tamper-evident audit log for enterprise observability (I471, ADR-0094).
+//! Tamper-evident audit log for enterprise observability (ADR-0094).
 //!
 //! Appends JSON-lines to `~/.dailyos/audit.log` with a SHA-256 hash chain.
 //! Each record links to the previous via `prev_hash`, making deletions or

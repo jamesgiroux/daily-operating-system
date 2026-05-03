@@ -1,4 +1,4 @@
-//! DOS-259 (W2-B) integration test: provider selection is single-source per tier.
+//! Provider selection integration test: provider selection is single-source per tier.
 //!
 //! Asserts the structural invariant that a tier resolves to exactly one
 //! production provider implementation when configured. This guards against
@@ -132,7 +132,7 @@ async fn completion_via_replay_provider_carries_required_fingerprint_fields() {
     // The Completion struct returned by ReplayProvider must populate the
     // ADR-0106 §3 required fields — provider/model/temperature — even
     // for the smallest from_prompt_pairs constructor. Anything less
-    // would break DOS-213's canonical hash consumer.
+    // would break the canonical hash consumer.
     let provider = ReplayProvider::from_prompt_pairs([("p", "r")]);
     let prompt = dailyos_lib::intelligence::provider::PromptInput::new("p");
     let got: Completion = provider
@@ -149,7 +149,7 @@ async fn completion_via_replay_provider_carries_required_fingerprint_fields() {
 
 #[tokio::test]
 async fn evaluate_mode_replay_provider_never_falls_through_to_live() {
-    // ADR-0104 / DOS-259 §4 invariant: Evaluate-mode replay must structurally
+    // ADR-0104 invariant: Evaluate-mode replay must structurally
     // refuse to invoke any live path. Modeled by ReplayProvider returning a
     // typed error rather than ever calling network/PTY when fixture missing.
     let provider: Arc<dyn IntelligenceProvider> =
@@ -165,7 +165,7 @@ async fn evaluate_mode_replay_provider_never_falls_through_to_live() {
     }
 }
 
-/// L2 cycle-26 (DOS-259) F2 regression: `select_provider` routes Live
+/// Regression: `select_provider` routes Live
 /// to the configured live provider, Evaluate to replay, and Simulate
 /// to fail-closed. Replaces the prior `select_provider_stub` that
 /// always returned `ModeNotSupported` (which left the production
@@ -244,8 +244,8 @@ async fn select_provider_routes_live_evaluate_simulate_per_adr_0104() {
     ));
 }
 
-/// L2 cycle-26 (DOS-259) F1 regression: ProviderError must surface
-/// the typed variants ADR-0106 + DOS-259 acceptance call out
+/// Regression: ProviderError must surface
+/// the typed variants ADR-0106 calls out
 /// (Unavailable, MalformedResponse, TierUnavailable, PromptTooLarge),
 /// not collapse everything into the broad Permanent/Transient/
 /// Timeout/InvalidPrompt bucket. Callers may want to handle these

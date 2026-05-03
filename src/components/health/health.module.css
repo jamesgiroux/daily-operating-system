@@ -1,5 +1,5 @@
 /**
- * Health & Outlook chapter styles (DOS-203).
+ * Health & Outlook chapter styles.
  *
  * Mirrors `.docs/mockups/account-health-outlook-globex.html` and
  * `.docs/mockups/account-health-fine-globex.html`.
@@ -225,7 +225,7 @@
   cursor: pointer;
   white-space: nowrap;
 }
-/* DOS-269 CSS de-conflict: scope the default hover to non-primary buttons so
+/*  CSS de-conflict: scope the default hover to non-primary buttons so
    it doesn't fight the primary hover rule below (previously the generic
    `color: var(--color-text-primary)` override was winning for primary buttons
    and painting the label black on hover). Specificity now matches; primary
@@ -245,7 +245,7 @@
   color: var(--color-paper-cream);
 }
 
-/* DOS-269: "Still accurate?" confirm-feedback link on triage / divergence
+/* "Still accurate?" confirm-feedback link on triage / divergence
    cards. Mono uppercase matches the mockup's per-card feedback row. */
 .triageConfirmLink {
   font-family: var(--font-mono);
@@ -305,7 +305,7 @@
   box-shadow: var(--shadow-md);
   margin-top: var(--space-lg, 24px);
 }
-/* 2-col fallback while the Benchmark cohort is unwired (DOS-204). Swap out
+/* 2-col fallback while the Benchmark cohort is unwired. Swap out
    the CSSProperties inline style previously doing this; CSS-module only. */
 .outlookGridTwoCol {
   grid-template-columns: repeat(2, 1fr);

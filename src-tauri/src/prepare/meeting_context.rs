@@ -1,10 +1,10 @@
 //! Rich meeting context gathering (ported from ops/meeting_prep.py).
 //!
 //! Builds context bundles for each meeting that needs prep:
-//! - Entity-generic context assembly (I337: accounts, projects, people)
+//! - Entity-generic context assembly (accounts, projects, people)
 //! - Account dashboard data
 //! - Recent meeting history (SQLite)
-//! - Recent captures (wins/risks from post-meeting, I33)
+//! - Recent captures (wins / risks from post-meeting)
 //! - Open actions for entity
 //! - File references (entity tracker, summaries, archive)
 
@@ -18,10 +18,10 @@ use crate::presets::loader::canonical_role_id;
 use crate::presets::schema::RolePreset;
 
 // ---------------------------------------------------------------------------
-// Entity context match (I337)
+// Entity context match
 // ---------------------------------------------------------------------------
 
-/// Resolved entity for context assembly (I337).
+/// Resolved entity for context assembly.
 ///
 /// Produced by `resolve_primary_entity()`, consumed by type-specific
 /// context gathering functions (`gather_account_context`, etc.).
@@ -46,7 +46,7 @@ pub fn gather_all_meeting_contexts(
 ) -> Vec<Value> {
     let mut contexts = Vec::new();
     for meeting in classified {
-        // I328: Use intelligence_tier when available, fall back to type-based skip
+        // Use intelligence_tier when available, fall back to type-based skip
         let should_skip = match meeting.get("intelligence_tier").and_then(|v| v.as_str()) {
             Some("skip") => true,
             Some(_) => false,
@@ -70,10 +70,10 @@ pub fn gather_all_meeting_contexts(
 }
 
 // ---------------------------------------------------------------------------
-// Primary entity resolution (I337)
+// Primary entity resolution
 // ---------------------------------------------------------------------------
 
-/// Resolve the primary entity for a meeting by reading the DOS-258
+/// Resolve the primary entity for a meeting by reading the
 /// `linked_entities` view.
 ///
 /// Replaces the legacy fuzzy/keyword signal cascade with a direct lookup of
@@ -95,7 +95,7 @@ fn resolve_primary_entity(
     let db = db?;
     let meeting_type = meeting.get("type").and_then(|v| v.as_str()).unwrap_or("");
 
-    // DOS-258: read from the `linked_entities` view (a filtered view over
+    // read from the `linked_entities` view (a filtered view over
     // `linked_entities_raw`, excluding user_dismissed rows). The calendar
     // adapter writes links keyed by the meeting DB id, which is the event id
     // with '@' substituted — mirror that derivation here.
@@ -244,7 +244,7 @@ fn resolve_primary_entity(
         _ => return None,
     };
 
-    // I353 Phase 2: Emit entity_resolved signal for hygiene feedback loop
+    // Emit entity_resolved signal for hygiene feedback loop
     if confidence >= 0.70 {
         let _ = crate::signals::bus::emit_signal(
             db,
@@ -268,7 +268,7 @@ fn resolve_primary_entity(
 }
 
 // ---------------------------------------------------------------------------
-// Type-specific context assembly (I337)
+// Type-specific context assembly
 // ---------------------------------------------------------------------------
 
 /// Gather account-specific context into the meeting context JSON.
@@ -321,7 +321,7 @@ fn gather_account_context(
     ctx["recent_captures"] = get_captures_for_account(db, &entity_match.entity_id, 14);
     ctx["open_actions"] = get_account_actions(db, &entity_match.entity_id);
 
-    // DOS-53: Include actions pushed to Linear in meeting prep context
+    // Include actions pushed to Linear in meeting prep context
     {
         let linear_actions: Vec<Value> = (|| {
             let conn = db.conn_ref();
@@ -386,7 +386,7 @@ fn gather_account_context(
         }
     }
 
-    // I647: Source-verified facts from account_source_refs
+    // Source-verified facts from account_source_refs
     if let Ok(refs) = db.get_account_source_refs(&entity_match.entity_id) {
         let fact_refs: Vec<_> = refs.iter().filter(|r| r.source_kind == "fact").collect();
         if !fact_refs.is_empty() {
@@ -407,7 +407,7 @@ fn gather_account_context(
         }
     }
 
-    // I649: Technical footprint
+    // Technical footprint
     if let Ok(Some(tf)) = db.get_account_technical_footprint(&entity_match.entity_id) {
         ctx["technicalFootprint"] = json!({
             "usageTier": tf.usage_tier,
@@ -422,7 +422,7 @@ fn gather_account_context(
         });
     }
 
-    // DOS-15 IL-check-3: Inject Glean leading signals into meeting prep context.
+    //  IL-check-3: Inject Glean leading signals into meeting prep context.
     // Champion risk, channel divergence, and commercial signals inform pre-meeting
     // positioning — include only high-signal fields to stay within token budget.
     if let Ok(Some(signals_json)) = db.conn_ref().query_row(
@@ -477,7 +477,7 @@ fn gather_account_context(
     }
 }
 
-/// Gather project-specific context into the meeting context JSON (I337).
+/// Gather project-specific context into the meeting context JSON.
 fn gather_project_context(
     db: &crate::db::ActionDb,
     workspace: &Path,
@@ -562,7 +562,7 @@ fn gather_project_context(
     }
 }
 
-/// Gather person-specific context into the meeting context JSON (I337).
+/// Gather person-specific context into the meeting context JSON.
 fn gather_person_context(
     db: &crate::db::ActionDb,
     workspace: &Path,
@@ -656,7 +656,7 @@ pub fn gather_meeting_context_single(
 
 /// Build rich context for a single meeting prep.
 ///
-/// I337: Entity-first dispatch. Resolves the primary entity (account, project,
+/// Entity-first dispatch. Resolves the primary entity (account, project,
 /// or person) and delegates to type-specific context assembly. Falls back to
 /// title/archive heuristics when no entity is resolved.
 fn gather_meeting_context(
@@ -691,7 +691,7 @@ fn gather_meeting_context(
         ctx["description"] = json!(description);
     }
 
-    // Skip meetings that don't benefit from prep (I328: check tier first)
+    // Skip meetings that don't benefit from prep (check tier first)
     let tier = meeting
         .get("intelligence_tier")
         .and_then(|v| v.as_str())
@@ -704,7 +704,7 @@ fn gather_meeting_context(
 
     let archive_dir = workspace.join("_archive");
 
-    // --- I337: Entity-first dispatch ---
+    // --- Entity-first dispatch ---
     let entity_match = resolve_primary_entity(db, event_id, meeting, workspace, embedding_model);
 
     if let Some(ref em) = entity_match {
@@ -736,12 +736,12 @@ fn gather_meeting_context(
             }
         }
 
-        // I425: Inject linked Linear issues for entity context
+        // Inject linked Linear issues for entity context
         if let Some(db) = db {
             inject_linear_issues(db, &em.entity_id, &mut ctx);
         }
 
-        // I135: Entity-generic intelligence injection (I513: DB-first)
+        // Entity-generic intelligence injection (DB-first)
         inject_entity_intelligence(db, Some(&em.entity_id), &mut ctx);
     } else {
         // No entity resolved — type-based fallbacks
@@ -829,7 +829,7 @@ fn gather_meeting_context(
             }
         }
 
-        // I455: 1:1 person resolution fallback — when no entity is linked,
+        // 1:1 person resolution fallback — when no entity is linked,
         // resolve the non-user attendee as a person and inject person context.
         if meeting_type == "one_on_one" || is_two_person_meeting(meeting) {
             if let Some(db) = db {
@@ -864,7 +864,7 @@ fn gather_meeting_context(
         {
             inject_recent_email_signals(db, &entity_id, &mut ctx);
 
-            // I306: Inject pre-meeting email context from signal bus
+            // Inject pre-meeting email context from signal bus
             let attendees: Vec<String> = meeting
                 .get("attendees")
                 .and_then(|v| v.as_array())
@@ -889,17 +889,17 @@ fn gather_meeting_context(
 }
 
 // ---------------------------------------------------------------------------
-// Entity intelligence injection (I135)
+// Entity intelligence injection
 // ---------------------------------------------------------------------------
 
-/// Read entity intelligence from DB (I513) and inject relevant
+/// Read entity intelligence from DB  and inject relevant
 /// fields into the meeting context for prep enrichment.
 fn inject_entity_intelligence(
     db: Option<&crate::db::ActionDb>,
     entity_id: Option<&str>,
     ctx: &mut Value,
 ) {
-    // I513: DB is the sole source for entity intelligence — no file fallback.
+    // DB is the sole source for entity intelligence — no file fallback.
     let intel = if let (Some(db), Some(eid)) = (db, entity_id) {
         db.get_entity_intelligence(eid).ok().flatten()
     } else {
@@ -910,7 +910,7 @@ fn inject_entity_intelligence(
         None => return,
     };
 
-    // I645: Filter stale items from meeting prep context using relevance windows.
+    // Filter stale items from meeting prep context using relevance windows.
     intel.risks.retain(|risk| {
         let sourced = risk.item_source.as_ref().map(|s| s.sourced_at.as_str());
         match sourced {
@@ -945,7 +945,7 @@ fn inject_entity_intelligence(
         }
     }
 
-    // I652: Read stakeholders from DB (person-first architecture) instead of intel JSON.
+    // Read stakeholders from DB (person-first architecture) instead of intel JSON.
     if let (Some(db), Some(eid)) = (db, entity_id) {
         let stakeholders = db.get_account_stakeholders_full(eid).unwrap_or_default();
         if !stakeholders.is_empty() {
@@ -970,14 +970,14 @@ fn inject_entity_intelligence(
         ctx["consistency_findings"] = json!(intel.consistency_findings);
     }
 
-    // I651: Product classification from Glean
+    // Product classification from Glean
     if let Some(ref classification) = intel.product_classification {
         if !classification.products.is_empty() {
             ctx["products"] = json!(classification.products);
         }
     }
 
-    // DOS-12: Include persisted value delivered in meeting prep context
+    // Include persisted value delivered in meeting prep context
     if !intel.value_delivered.is_empty() {
         ctx["value_delivered"] = json!(intel
             .value_delivered
@@ -994,7 +994,7 @@ fn inject_entity_intelligence(
     }
 }
 
-/// I425: Inject active Linear issues linked to this entity via linear_entity_links.
+/// Inject active Linear issues linked to this entity via linear_entity_links.
 fn inject_linear_issues(db: &crate::db::ActionDb, entity_id: &str, ctx: &mut Value) {
     let issues: Vec<Value> = (|| {
         let conn = db.conn_ref();
@@ -1029,7 +1029,7 @@ fn inject_linear_issues(db: &crate::db::ActionDb, entity_id: &str, ctx: &mut Val
 }
 
 // ---------------------------------------------------------------------------
-// 1:1 meeting person resolution (I455)
+// 1:1 meeting person resolution
 // ---------------------------------------------------------------------------
 
 /// Check if a meeting has exactly 2 attendees (a 1:1 regardless of classification).
@@ -1602,7 +1602,7 @@ fn search_archive(query: &str, archive_dir: &Path, max_results: usize) -> Vec<st
 }
 
 // ---------------------------------------------------------------------------
-// Dashboard parsing (I33)
+// Dashboard parsing
 // ---------------------------------------------------------------------------
 
 /// Best-effort extraction of Quick View data from account dashboard markdown.
@@ -2217,7 +2217,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // I337 Entity-generic context building tests
+    //  Entity-generic context building tests
     // -----------------------------------------------------------------------
 
     /// Helper: set up a DB with an entity + meeting + junction link.
@@ -2344,7 +2344,7 @@ mod tests {
         db.link_meeting_entity(event_id, entity_id, entity_type.as_str())
             .expect("link meeting entity");
 
-        // DOS-258: resolve_primary_entity reads from the linked_entities view.
+        // resolve_primary_entity reads from the linked_entities view.
         // Seed a primary row so the deterministic reader finds the entity.
         db.conn_ref()
             .execute(

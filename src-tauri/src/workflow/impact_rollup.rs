@@ -1,4 +1,4 @@
-//! Daily impact rollup for CS Extension (I36 / ADR-0041)
+//! Daily impact rollup for CS Extension (ADR-0041)
 //!
 //! Aggregates post-meeting captures (wins/risks) from SQLite into the weekly
 //! impact markdown file at:
@@ -128,7 +128,7 @@ pub fn rollup_daily_impact(
         }
     };
 
-    // 7. Write file (I64: atomic write)
+    // 7. Write file (atomic write)
     crate::util::atomic_write_str(&file_path, &final_content)
         .map_err(|e| format!("Failed to write impact file: {}", e))?;
 

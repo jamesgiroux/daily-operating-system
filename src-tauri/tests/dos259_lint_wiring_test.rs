@@ -1,4 +1,4 @@
-//! DOS-259 (W2-B follow-up): wire the provider clock/RNG lint into `cargo test`.
+//! Provider clock/RNG lint wiring into `cargo test`.
 //!
 //! Per L2 codex review 2026-04-30 finding #4: a standalone bash script
 //! is not part of the merge gate (`cargo clippy && cargo test && pnpm
@@ -54,7 +54,7 @@ fn dos259_provider_clock_rng_lint_catches_unmarked_violation() {
     std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
     let fixture = tmp_dir.join("synthetic_unmarked_provider.rs");
     let synthetic = "\
-//! Synthetic provider-module fixture for the DOS-259 lint test.
+//! Synthetic provider-module fixture for the clock/RNG lint test.
 //! Contains an UNMARKED `chrono::Utc::now()` call — the lint must trip.
 fn timestamp() -> String {
     chrono::Utc::now().to_rfc3339()

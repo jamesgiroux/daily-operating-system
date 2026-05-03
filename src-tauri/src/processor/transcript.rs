@@ -1,4 +1,4 @@
-//! Meeting-scoped transcript processing (I44 / ADR-0044).
+//! Meeting-scoped transcript processing (ADR-0044).
 //!
 //! Processes a transcript file with full meeting context, extracting outcomes
 //! (summary, wins, risks, decisions, actions) and routing the file to its
@@ -215,7 +215,7 @@ pub fn process_transcript_with_kind(
     let slug = slugify(&meeting.title);
     let dest_filename = format!("{}-{}-transcript.md", date, slug);
 
-    // I631+I661: Priority-ordered routing with domain fallback
+    // Priority-ordered routing with domain fallback
     let (destination, routing_method) = resolve_transcript_destination(
         meeting,
         db,
@@ -268,7 +268,7 @@ pub fn process_transcript_with_kind(
     let default_config = AiModelConfig::default();
     let effective_config = ai_config.unwrap_or(&default_config);
 
-    // I535 Step 10: Inject Gong call summaries as supplementary context when in Glean mode
+    // Inject Gong call summaries as supplementary context when in Glean mode
     let gong_context = build_gong_pre_context(db, meeting);
 
     // ── Phase 1: Core extraction (summary, discussion, analysis, actions) ──
@@ -309,7 +309,7 @@ pub fn process_transcript_with_kind(
         }
     };
 
-    // Audit trail (I297) — Phase 1
+    // Audit trail  — Phase 1
     let _ =
         crate::audit::write_audit_entry(workspace, "transcript-p1", &meeting.id, &phase1_output);
 
@@ -867,7 +867,7 @@ pub fn process_transcript_with_kind(
         }
     }
 
-    // I636: Generate structured meeting record markdown
+    // Generate structured meeting record markdown
     if let Some(db) = db {
         generate_and_persist_meeting_record(
             workspace,
@@ -1185,7 +1185,7 @@ fn prediction_category_symbol(
     }
 }
 
-/// I636: Generate a structured meeting record markdown file.
+/// Generate a structured meeting record markdown file.
 ///
 /// Data needed to generate a meeting record markdown file.
 struct MeetingRecordData<'a> {
@@ -1386,7 +1386,7 @@ fn generate_meeting_record_markdown(data: &MeetingRecordData<'_>) -> String {
     md
 }
 
-/// I636: Determine the meeting record destination path, mirroring transcript
+/// Determine the meeting record destination path, mirroring transcript
 /// routing (account > project > person > domain fallback > archive).
 fn compute_meeting_record_path(
     workspace: &Path,
@@ -1415,7 +1415,7 @@ fn compute_meeting_record_path(
     path
 }
 
-/// I636: Generate, write, persist, and index the meeting record.
+/// Generate, write, persist, and index the meeting record.
 fn generate_and_persist_meeting_record(workspace: &Path, data: &MeetingRecordData<'_>) {
     let record_path = compute_meeting_record_path(workspace, data.meeting, data.db);
 
@@ -1928,7 +1928,7 @@ fn extract_transcript_actions(
         }
     }
 
-    // DOS-17: Scan newly inserted actions for decision-indicating keywords
+    // Scan newly inserted actions for decision-indicating keywords
     if written > 0 {
         let flagged = db.scan_and_flag_decisions().unwrap_or(0);
         if flagged > 0 {
@@ -1948,7 +1948,7 @@ fn extract_transcript_actions(
     );
 }
 
-/// Persist I555 enriched transcript data (interaction dynamics, champion health,
+/// Persist  enriched transcript data (interaction dynamics, champion health,
 /// role changes, commitments) to their respective tables.
 ///
 /// Phase 3 enrichment data to persist.
@@ -2072,7 +2072,7 @@ fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTra
             }
         }
 
-        // DOS-16: After persisting commitments, match them to milestones
+        // After persisting commitments, match them to milestones
         if let Some(acct_id) = account_id {
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
@@ -2960,7 +2960,7 @@ pub fn enrich_meeting_from_db(meeting: &mut CalendarEvent, db: &ActionDb) {
     }
 }
 
-/// I631+I661: Shared routing logic for transcripts and meeting records.
+//: Shared routing logic for transcripts and meeting records.
 ///
 /// Priority: account (classification) > project (linked) > person (1:1 linked)
 /// > account (attendee domain fallback) > account (source frontmatter) > archive.
@@ -3040,7 +3040,7 @@ pub fn resolve_transcript_destination(
         }
     }
 
-    // 4. I661: Attendee domain fallback — match attendee emails against account_domains
+    // 4. Attendee domain fallback — match attendee emails against account_domains
     if let Some(db) = db {
         let external_domains: Vec<String> = meeting
             .attendees
@@ -3094,7 +3094,7 @@ pub fn resolve_transcript_destination(
         }
     }
 
-    // 5. I661: Source file frontmatter fallback
+    // 5. Source file frontmatter fallback
     // If the source transcript already has an account field in its YAML frontmatter
     // (e.g., from a previous processing attempt or from the transcription service),
     // use it to route the file.
@@ -3197,7 +3197,7 @@ fn build_frontmatter(meeting: &CalendarEvent, date: &str) -> String {
 
 /// Append wins to the impact log file.
 ///
-/// Uses `OpenOptions::append` to avoid read-modify-write race conditions (I65).
+/// Uses `OpenOptions::append` to avoid read-modify-write race conditions.
 fn append_to_impact_log(workspace: &Path, meeting: &CalendarEvent, wins: &[String]) {
     let impact_log = workspace.join("_today").join("90-impact-log.md");
     let mut content = String::new();
@@ -3230,7 +3230,7 @@ fn append_to_impact_log(workspace: &Path, meeting: &CalendarEvent, wins: &[Strin
 use crate::util::slugify;
 
 // =============================================================================
-// Sentiment & Interaction Dynamics Parsing (I509)
+// Sentiment & Interaction Dynamics Parsing
 // =============================================================================
 
 /// Extract the text between `start` and `end` markers from a response.
@@ -3312,7 +3312,7 @@ pub fn parse_sentiment_block(response: &str) -> Option<TranscriptSentiment> {
                     "no" => champion_engaged = Some(false),
                     _ => {} // "n/a" or invalid → None
                 },
-                // I554: Expanded sentiment markers
+                // Expanded sentiment markers
                 "ownership_language" => {
                     let v = value.to_lowercase();
                     if ["customer", "vendor", "mixed"].contains(&v.as_str()) {
@@ -3511,7 +3511,7 @@ pub fn parse_interaction_dynamics(response: &str) -> Option<InteractionDynamics>
 }
 
 // =============================================================================
-// I554 — Champion Health, Role Changes, Commitments Parsing
+// Champion Health, Role Changes, Commitments Parsing
 // =============================================================================
 
 /// Parse the CHAMPION_HEALTH block from AI transcript response.
@@ -3740,7 +3740,7 @@ pub fn sanitize_account_dir(name: &str) -> String {
         .join("-")
 }
 
-/// I631: Route transcript to a project entity directory if a linked project exists.
+/// Route transcript to a project entity directory if a linked project exists.
 fn route_to_project(
     meeting: &CalendarEvent,
     db: Option<&ActionDb>,
@@ -3776,7 +3776,7 @@ fn route_to_project(
     }
 }
 
-/// I631: Route transcript to a person entity directory for 1:1 meetings.
+/// Route transcript to a person entity directory for 1:1 meetings.
 fn route_to_person(
     meeting: &CalendarEvent,
     db: Option<&ActionDb>,
@@ -3839,7 +3839,7 @@ impl Default for TranscriptResult {
     }
 }
 
-/// I535 Step 10: Build Gong call history context block for transcript processing.
+/// Build Gong call history context block for transcript processing.
 ///
 /// When in Glean mode and the meeting's account has existing intelligence with
 /// `gong_call_summaries`, format the most recent summaries (max 5, newest first)
@@ -4023,7 +4023,7 @@ mod tests {
         let meeting = test_meeting();
         let prompt = build_transcript_prompt(&meeting, "Hello world transcript");
 
-        // Title is base64-encoded (I469 high-risk field)
+        // Title is base64-encoded (high-risk field)
         assert!(prompt.contains("<user_data encoding=\"base64\">"));
         // Account name is sanitize_external_field wrapped
         assert!(prompt.contains("<user_data>Acme Corp</user_data>"));
@@ -4032,28 +4032,28 @@ mod tests {
         assert!(prompt.contains("DECISIONS:"));
         assert!(prompt.contains("DISCUSSION:"));
         assert!(prompt.contains("ANALYSIS:"));
-        // I509 — sentiment and interaction dynamics sections
+        // sentiment and interaction dynamics sections
         assert!(prompt.contains("SENTIMENT:"));
         assert!(prompt.contains("END_SENTIMENT"));
         assert!(prompt.contains("INTERACTION_DYNAMICS:"));
         assert!(prompt.contains("END_INTERACTION_DYNAMICS"));
-        // I554 — new extraction sections
+        // new extraction sections
         assert!(prompt.contains("CHAMPION_HEALTH:"));
         assert!(prompt.contains("END_CHAMPION_HEALTH"));
         assert!(prompt.contains("ROLE_CHANGES:"));
         assert!(prompt.contains("END_ROLE_CHANGES"));
         assert!(prompt.contains("COMMITMENTS:"));
         assert!(prompt.contains("END_COMMITMENTS"));
-        // I554 — win sub-types
+        // win sub-types
         assert!(prompt.contains("ADOPTION:"));
         assert!(prompt.contains("EXPANSION:"));
         assert!(prompt.contains("VALUE_REALIZED:"));
         assert!(prompt.contains("[SUB_TYPE]"));
-        // I554 — risk urgency tiers
+        // risk urgency tiers
         assert!(prompt.contains("RED (critical"));
         assert!(prompt.contains("YELLOW (moderate"));
         assert!(prompt.contains("GREEN_WATCH (early"));
-        // I554 — expanded sentiment markers
+        // expanded sentiment markers
         assert!(prompt.contains("ownership_language:"));
         assert!(prompt.contains("past_tense_references:"));
         assert!(prompt.contains("data_export_interest:"));
@@ -4088,7 +4088,7 @@ mod tests {
         meeting.title = "".to_string();
         let prompt = build_transcript_prompt(&meeting, "Some transcript");
 
-        // "Untitled meeting" is now base64-encoded (I469)
+        // "Untitled meeting" is now base64-encoded
         assert!(prompt.contains("<user_data encoding=\"base64\">"));
         // Account line should be omitted entirely
         assert!(!prompt.contains("Account:"));
@@ -4686,7 +4686,7 @@ mod tests {
     }
 
     // =========================================================================
-    // I509 — Sentiment & Interaction Dynamics Parsing
+    // Sentiment & Interaction Dynamics Parsing
     // =========================================================================
 
     #[test]
@@ -4930,7 +4930,7 @@ END_DECISIONS";
     }
 
     // =========================================================================
-    // I554 — Champion Health, Role Changes, Commitments, Expanded Sentiment
+    // Champion Health, Role Changes, Commitments, Expanded Sentiment
     // =========================================================================
 
     #[test]
@@ -5096,7 +5096,7 @@ END_SENTIMENT";
 
     #[test]
     fn test_parse_sentiment_backwards_compat_no_new_fields() {
-        // Old-format sentiment without I554 fields should still parse
+        // Old-format sentiment without  fields should still parse
         let input = "\
 SENTIMENT:
 - overall: positive
@@ -5159,7 +5159,7 @@ END_DECISIONS";
 
         let parsed = parse_enrichment_response(output);
         assert_eq!(parsed.wins.len(), 2);
-        // Sub-type tags are stored as-is in the text (I555 will parse metadata)
+        // Sub-type tags are stored as-is in the text (will parse metadata)
         assert!(parsed.wins[0].starts_with("[ADOPTION]"));
         assert!(parsed.wins[1].starts_with("[VALUE_REALIZED]"));
         assert_eq!(parsed.risks.len(), 3);
@@ -5168,7 +5168,7 @@ END_DECISIONS";
         assert!(parsed.risks[2].starts_with("[GREEN_WATCH]"));
     }
 
-    // ── DOS-46: ProcessingProfile tests ──
+    // ── ProcessingProfile tests ──
 
     #[test]
     fn test_profile_from_meeting_types() {
@@ -5313,7 +5313,7 @@ END_DECISIONS";
 }
 
 // ==========================================================================
-// I619 — Prompt Evaluation Suite: transcript extraction quality tests
+// Prompt Evaluation Suite: transcript extraction quality tests
 // ==========================================================================
 
 #[cfg(test)]
@@ -5441,7 +5441,7 @@ mod eval_tests {
             "Sentiment must have engagement level"
         );
 
-        // I554 expanded markers
+        //  expanded markers
         assert!(
             s.ownership_language.is_some(),
             "Sentiment must have ownership_language (I554)"

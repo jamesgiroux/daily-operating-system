@@ -232,7 +232,7 @@ export default function InboxPage() {
               const now = Date.now();
               const previous = lastDropRef.current;
 
-              // Ignore burst-duplicate drop events from the webview bridge (I203).
+              // Ignore burst-duplicate drop events from the webview bridge.
               if (
                 previous &&
                 previous.signature === signature &&

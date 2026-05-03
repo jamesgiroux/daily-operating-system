@@ -1,10 +1,10 @@
--- DOS-258 follow-up: add source provenance to account_domains.
+-- add source provenance to account_domains.
 --
 -- Before this migration, account_domains had no provenance — we couldn't
 -- distinguish "user explicitly typed this domain" from "the old resolver
 -- inferred this from a meeting attendee email and it was wrong."
 --
--- raw_rebuild_account_domains (DOS-258 repository.rs) uses this column to
+-- raw_rebuild_account_domains (repository.rs) uses this column to
 -- purge inferred domains before the new linking engine goes live.
 --
 -- Sources:

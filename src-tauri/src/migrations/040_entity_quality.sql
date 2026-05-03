@@ -1,4 +1,4 @@
--- Migration 040: Entity quality scoring for self-healing intelligence (I406-I410)
+-- Migration 040: Entity quality scoring for self-healing intelligence
 
 CREATE TABLE IF NOT EXISTS entity_quality (
     entity_id TEXT PRIMARY KEY,

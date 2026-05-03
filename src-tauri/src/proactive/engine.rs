@@ -1,4 +1,4 @@
-//! Proactive detection engine (I260).
+//! Proactive detection engine.
 //!
 //! Manages a registry of pattern detectors, runs them against the database,
 //! deduplicates insights by fingerprint, and emits signals into the signal bus.

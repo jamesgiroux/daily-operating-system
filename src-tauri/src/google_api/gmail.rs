@@ -300,7 +300,7 @@ async fn fetch_message_metadata(
 }
 
 // ============================================================================
-// Full message body fetch (I321)
+// Full message body fetch
 // ============================================================================
 
 #[derive(Debug, Deserialize)]
@@ -411,7 +411,7 @@ fn decode_url_safe_base64(data: &str) -> Option<String> {
 }
 
 // ============================================================================
-// Sent message thread IDs (I370)
+// Sent message thread IDs
 // ============================================================================
 
 /// Fetch thread IDs from recent sent messages (last 24 hours).

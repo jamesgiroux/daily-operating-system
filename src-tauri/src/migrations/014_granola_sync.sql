@@ -1,5 +1,5 @@
 -- Migration 014: Add source column to quill_sync_state for multi-provider transcript sync.
--- Granola integration (I226) reuses the same sync state table with source='granola'.
+-- Granola integration  reuses the same sync state table with source='granola'.
 -- Must recreate the table to remove the inline UNIQUE constraint on meeting_id,
 -- replacing it with a composite unique index on (meeting_id, source).
 

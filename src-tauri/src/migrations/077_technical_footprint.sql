@@ -1,4 +1,4 @@
--- I649: Technical footprint, adoption, and service-delivery intelligence
+-- Technical footprint, adoption, and service-delivery intelligence
 
 CREATE TABLE IF NOT EXISTS account_technical_footprint (
   account_id TEXT PRIMARY KEY,

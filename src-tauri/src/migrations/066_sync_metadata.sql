@@ -1,4 +1,4 @@
--- I428: Sync metadata for connectivity/freshness tracking
+-- Sync metadata for connectivity/freshness tracking
 CREATE TABLE IF NOT EXISTS sync_metadata (
     source TEXT PRIMARY KEY,
     last_success_at TEXT,

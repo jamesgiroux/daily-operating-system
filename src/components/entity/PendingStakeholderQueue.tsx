@@ -1,5 +1,5 @@
 /**
- * PendingStakeholderQueue — DOS-258 Lane F
+ * PendingStakeholderQueue — Lane F
  *
  * Renders a review queue for account_stakeholders rows with
  * status='pending_review'. Each card shows the person's name, email,

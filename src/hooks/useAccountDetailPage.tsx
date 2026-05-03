@@ -220,10 +220,10 @@ export function useAccountDetailPage(accountId: string | undefined) {
       .catch(() => setMetadataValues({}));
   }, [accountId]);
 
-  // DOS-231 Codex fix: persist a single gap-row field on
+  // persist a single gap-row field on
   // `account_technical_footprint` and refresh the account. Prompts the user
   // for the value inline so v1.2.1 doesn't need to ship a full structured
-  // editor — the full editor lands with DOS-207.
+  // editor — the full editor lands with.
   const captureTechnicalFootprintField = async (field: string) => {
     if (!accountId) return;
     const labelMap: Record<string, string> = {

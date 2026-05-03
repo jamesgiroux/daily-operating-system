@@ -2,7 +2,7 @@
  * WatchList — Color-accented section cards for Risks, Wins, Unknowns.
  * Each section gets a colored left accent bar + subtle tinted background.
  *
- * I261: Optional onUpdateField prop enables click-to-edit on risk/win/unknown text.
+ * Optional onUpdateField prop enables click-to-edit on risk/win/unknown text.
  * Per-item dismiss (x) and feedback (thumbs up/down) on single row hover.
  */
 import { useState } from "react";

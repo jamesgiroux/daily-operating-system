@@ -230,7 +230,7 @@ export default function SettingsPage() {
 
   return (
     <div className={s.container}>
-      {/* Setup incomplete banner (I57) */}
+      {/* Setup incomplete banner  */}
       {!appState.wizardCompletedAt && (
         <div className={s.banner}>
           <span className={s.bannerText}>

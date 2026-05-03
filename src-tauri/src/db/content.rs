@@ -2,7 +2,7 @@ use super::*;
 
 impl ActionDb {
     // =========================================================================
-    // Content Index (I124)
+    // Content Index
     // =========================================================================
 
     /// Upsert a content file record. Preserves existing `extracted_at` / `summary`

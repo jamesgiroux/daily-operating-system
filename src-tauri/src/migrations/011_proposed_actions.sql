@@ -1,4 +1,4 @@
--- I256: Add 'proposed' and 'archived' status values to the actions table.
+-- Add 'proposed' and 'archived' status values to the actions table.
 --
 -- SQLite cannot ALTER CHECK constraints, so we recreate the table using
 -- the copy-drop-create-reinsert pattern. The new CHECK constraint adds

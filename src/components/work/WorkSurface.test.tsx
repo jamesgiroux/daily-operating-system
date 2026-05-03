@@ -5,7 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 import { CommitmentCard, NudgeLeaveAsIs, NudgeRow, SuggestionCard, WorkButton } from "./WorkSurface";
 
 /**
- * Wave 0e / DOS-13: Work tab CTA wiring regression tests.
+ * Wave 0e / Work tab CTA wiring regression tests.
  *
  * These tests lock in that CommitmentCard and SuggestionCard actually
  * call back to the handlers the page wires up. Prior to Wave 0e the page

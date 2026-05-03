@@ -1,4 +1,4 @@
-//! DOS-259 (W2-B cycle 3, L2 finding #2): exercise `PtyClaudeCode::complete_blocking`
+//!  exercise `PtyClaudeCode::complete_blocking`
 //! and `complete()` end-to-end through the `PtySpawnAdapter` test seam.
 //!
 //! The original parity tests used `ReplayProvider` only and never invoked

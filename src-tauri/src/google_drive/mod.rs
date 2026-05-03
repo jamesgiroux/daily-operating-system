@@ -1,4 +1,4 @@
-//! Google Drive integration for DailyOS (I426).
+//! Google Drive integration for DailyOS.
 //!
 //! Provides Drive document import and continuous sync via Changes API.
 //! Files imported via Google Picker land in entity Documents/ folders

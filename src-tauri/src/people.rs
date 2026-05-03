@@ -1,4 +1,4 @@
-//! People workspace file I/O (I51 / ADR-0047).
+//! People workspace file I/O (ADR-0047).
 //!
 //! Each person gets a directory under `People/` in the workspace:
 //!   People/{Name}/person.json  — canonical data (app + external tools write here)
@@ -52,7 +52,7 @@ pub struct PersonStructured {
     pub role: Option<String>,
     #[serde(default = "default_relationship")]
     pub relationship: String,
-    // Clay enrichment fields (I228)
+    // Clay enrichment fields
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub linkedin_url: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -75,7 +75,7 @@ fn default_relationship() -> String {
     "unknown".to_string()
 }
 
-/// Dashboard JSON for person entities (I338 — three-file pattern).
+/// Dashboard JSON for person entities (three-file pattern).
 ///
 /// Mechanical facts + cadence, analogous to `AccountJson` for accounts.
 /// Written to `People/{Name}/dashboard.json`.
@@ -132,7 +132,7 @@ pub fn infer_cadence(freq_30d: i32, freq_90d: i32) -> &'static str {
     }
 }
 
-/// Write `dashboard.json` for a person (I338 — three-file pattern).
+/// Write `dashboard.json` for a person (three-file pattern).
 ///
 /// Queries signals from SQLite, infers cadence, and writes via `entity_io::write_entity_json`.
 pub fn write_person_dashboard_json(
@@ -173,7 +173,7 @@ pub fn write_person_dashboard_json(
 
 /// Resolve the directory for a person's workspace files.
 ///
-/// I337: Uses `entity_dir()` for consistent filesystem name sanitization.
+/// Uses `entity_dir` for consistent filesystem name sanitization.
 pub fn person_dir(workspace: &Path, name: &str) -> PathBuf {
     crate::entity_io::entity_dir(workspace, "People", name)
 }
@@ -257,7 +257,7 @@ pub fn write_person_markdown(
         }
     }
 
-    // === Intelligence sections (I136 — from DB, I513) ===
+    // === Intelligence sections (from DB) ===
     if let Some(intel) = db.get_entity_intelligence(&person.id).ok().flatten() {
         let intel_md = crate::intelligence::format_intelligence_markdown(&intel);
         if !intel_md.is_empty() {
@@ -615,7 +615,7 @@ mod tests {
         let dir = person_dir(workspace.path(), &person.name);
         std::fs::create_dir_all(&dir).expect("create dir");
 
-        // Write intelligence to DB (I513: DB as sole source of truth)
+        // Write intelligence to DB (DB as sole source of truth)
         let intel = crate::intelligence::IntelligenceJson {
             version: 1,
             entity_id: person.id.clone(),

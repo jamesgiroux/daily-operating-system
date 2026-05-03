@@ -1,7 +1,7 @@
 /**
  * ProjectAppendix — Appendix section for project detail editorial page.
  * Milestones (full list), description, notes, files.
- * Actions moved to TheWork chapter (I351).
+ * Actions moved to TheWork chapter.
  * Simpler than AccountAppendix (no lifecycle events, BUs, portfolio, company context).
  */
 import React from "react";

@@ -30,7 +30,7 @@ export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
   const [installError, setInstallError] = useState<string | null>(null);
   const [isDevMode, setIsDevMode] = useState(false);
 
-  // Listen for install progress events from the backend (DOS-65)
+  // Listen for install progress events from the backend
   useEffect(() => {
     const unlisten = listen<{ step: string; status: string; message: string }>(
       "install-claude-progress",
@@ -217,7 +217,7 @@ export function ClaudeCode({ workspacePath, onNext, onSkip }: ClaudeCodeProps) {
         </div>
       )}
 
-      {/* Node not available — auto-install Node.js + Claude Code (DOS-65) */}
+      {/* Node not available — auto-install Node.js + Claude Code  */}
       {status && !status.installed && !status.nodeInstalled && (
         <div className={`${styles.flexCol} ${styles.gap12}`}>
           <div className={styles.ruleSection}>

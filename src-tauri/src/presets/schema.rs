@@ -3,8 +3,8 @@ use std::collections::HashMap;
 use serde::{Deserialize, Serialize};
 
 /// Role-specific intelligence configuration: AI system role framing, dimension
-/// weights and vocabulary (DOS-178), signal keywords, email signal types, and
-/// email priority keywords (DOS-176). Merged with base lists at `set_role` time.
+/// weights and vocabulary, signal keywords, email signal types, and
+/// email priority keywords. Merged with base lists at `set_role` time.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct PresetIntelligenceConfig {
@@ -74,7 +74,7 @@ pub struct RolePreset {
     pub prioritization: PresetPrioritization,
     /// Role-specific intelligence configuration: system role framing, dimension
     /// weights, signal keywords, email signal types, and prompt vocabulary.
-    /// Merged with base lists at `set_role` time (DOS-176).
+    /// Merged with base lists at `set_role` time.
     #[serde(default)]
     pub intelligence: PresetIntelligenceConfig,
     pub briefing_emphasis: String,

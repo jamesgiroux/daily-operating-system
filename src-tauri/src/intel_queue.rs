@@ -1,4 +1,4 @@
-//! Background intelligence enrichment queue (I132).
+//! Background intelligence enrichment queue.
 //!
 //! Provides a priority queue for intelligence enrichment requests with
 //! deduplication and debounce. A background processor drains the queue
@@ -39,23 +39,23 @@ const DIMENSION_ENRICHMENT_TIMEOUT_SECS: u64 = 240;
 /// How often the background processor checks for work.
 const POLL_INTERVAL_SECS: u64 = 5;
 
-/// Maximum retry attempts for entities that fail validation (I470).
+/// Maximum retry attempts for entities that fail validation.
 const MAX_VALIDATION_RETRIES: u8 = 2;
 
-/// TTL for enrichment results — skip entities enriched within this window (I287).
+/// TTL for enrichment results — skip entities enriched within this window.
 const ENRICHMENT_TTL_SECS: u64 = 7200;
 
 /// Priority levels for intelligence enrichment requests.
 /// Higher numeric value = higher priority.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
 pub enum IntelPriority {
-    /// Background maintenance — lowest priority, budget-gated (I146 — ADR-0058).
+    /// Background maintenance — lowest priority, budget-gated (ADR-0058).
     ProactiveHygiene = 0,
     /// Triggered by content file changes in the entity directory.
     ContentChange = 1,
     /// Triggered by calendar changes affecting this entity's meetings.
     CalendarChange = 2,
-    /// Onboarding batch import — higher than content, lower than manual (I561).
+    /// Onboarding batch import — higher than content, lower than manual.
     Onboarding = 3,
     /// User clicked "Refresh Intelligence" manually.
     Manual = 4,
@@ -68,7 +68,7 @@ pub struct IntelRequest {
     pub entity_type: String,
     pub priority: IntelPriority,
     pub requested_at: Instant,
-    /// Number of times this entity has been retried after validation failure (I470).
+    /// Number of times this entity has been retried after validation failure.
     pub retry_count: u8,
 }
 
@@ -87,8 +87,8 @@ impl IntelRequest {
 
 /// Thread-safe intelligence enrichment queue with deduplication and debounce.
 ///
-/// DOS-311: also exposes pause/drain/resume primitives consumed by the
-/// schema-epoch migration sequence (DOS-7's W3 cutover). When paused, new
+/// also exposes pause/drain/resume primitives consumed by the
+/// schema-epoch migration sequence. When paused, new
 /// enqueues return `false` so the caller can surface a user-visible
 /// "operation interrupted by migration; retry" message rather than
 /// silently dropping work. Background-priority enqueues (`ContentChange`,
@@ -97,13 +97,13 @@ impl IntelRequest {
 pub struct IntelligenceQueue {
     queue: Mutex<VecDeque<IntelRequest>>,
     last_enqueued: Mutex<HashMap<String, Instant>>,
-    /// DOS-311: when true, `enqueue` rejects user-visible (Manual) requests
+    /// when true, `enqueue` rejects user-visible (Manual) requests
     /// with `false` and silently drops background requests. The processor
     /// loop checks this flag at dequeue-time to honor the pause.
     paused: std::sync::atomic::AtomicBool,
 }
 
-/// Default drain timeout (configurable per-call). DOS-311 acceptance:
+/// Default drain timeout for schema-epoch migrations.
 /// "drain timeout configurable; default 60s."
 pub const DEFAULT_DRAIN_TIMEOUT_SECS: u64 = 60;
 
@@ -122,7 +122,7 @@ pub enum EnqueueOutcome {
 /// discard via `let _ = ...` since the change trigger will refire.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnqueueError {
-    /// A schema-epoch migration is draining the queue (DOS-311). New
+    /// A schema-epoch migration is draining the queue. New
     /// work is rejected; the user-facing call should surface a retry
     /// prompt rather than silently dropping.
     Paused,
@@ -179,7 +179,7 @@ impl IntelligenceQueue {
         }
     }
 
-    /// DOS-311: pause new enqueues + dequeues. Used by the schema-epoch
+    /// pause new enqueues + dequeues. Used by the schema-epoch
     /// migration to drain in-flight work before bumping the epoch.
     pub fn pause(&self) {
         self.paused
@@ -187,21 +187,21 @@ impl IntelligenceQueue {
         log::info!("IntelQueue: paused (DOS-311 schema-epoch migration)");
     }
 
-    /// DOS-311: resume normal processing after a migration completes.
+    /// resume normal processing after a migration completes.
     pub fn resume(&self) {
         self.paused
             .store(false, std::sync::atomic::Ordering::SeqCst);
         log::info!("IntelQueue: resumed");
     }
 
-    /// DOS-311: whether the queue is currently paused. The processor loop
+    /// whether the queue is currently paused. The processor loop
     /// checks this at every dequeue to skip work during a migration.
     pub fn is_paused(&self) -> bool {
         self.paused.load(std::sync::atomic::Ordering::SeqCst)
     }
 
-    /// DOS-311: drain pending requests. Returns the items so DOS-7's
-    /// migration sequence can re-enqueue them at step 5 (after backfill).
+    /// drain pending requests. Returns the items so the migration sequence
+    /// can re-enqueue them after backfill.
     /// In-flight workers are out of scope here — they self-abort on epoch
     /// mismatch via the WriteFence.
     pub fn drain_pending(&self) -> Vec<IntelRequest> {
@@ -219,7 +219,7 @@ impl IntelligenceQueue {
 
     /// Enqueue an enrichment request.
     ///
-    /// DOS-311: returns `Ok(EnqueueOutcome::Accepted)` for new entries,
+    /// returns `Ok(EnqueueOutcome::Accepted)` for new entries,
     /// `Ok(EnqueueOutcome::Coalesced)` when an existing higher-or-equal
     /// queued entry was preserved (priority upgraded if applicable),
     /// `Err(EnqueueError::Paused)` while a schema-epoch migration is
@@ -232,14 +232,14 @@ impl IntelligenceQueue {
     ///
     /// `#[must_use]` so silent discard is a compile-time error caught by
     /// `clippy::let_underscore_must_use` once the workspace lint lands
-    /// (DOS-342).
+    //.
     ///
     /// Deduplicates by entity_id: if the same entity is already queued,
     /// the higher priority wins. Debounces content changes by
     /// `CONTENT_DEBOUNCE_SECS`.
     #[must_use = "enqueue returns a Result; manual-priority callers must surface Paused to the user"]
     pub fn enqueue(&self, request: IntelRequest) -> EnqueueResult {
-        // DOS-311: refuse new work during a migration drain.
+        // refuse new work during a migration drain.
         if self.is_paused() {
             log::warn!(
                 "IntelQueue: rejected enqueue for {} (migration in progress)",
@@ -311,7 +311,7 @@ impl IntelligenceQueue {
         queue.remove(best_idx)
     }
 
-    /// Dequeue up to `max` highest-priority requests (I289).
+    /// Dequeue up to `max` highest-priority requests.
     ///
     /// Returns items sorted by descending priority so the highest-priority
     /// entity appears first in the batch.
@@ -352,7 +352,7 @@ impl IntelligenceQueue {
         self.len() == 0
     }
 
-    /// Remove all queued requests for a given entity (DOS-286).
+    /// Remove all queued requests for a given entity.
     ///
     /// Called when an entity is archived so pending enrichments don't run
     /// against a now-archived target. Also clears the debounce tracker so
@@ -378,7 +378,7 @@ impl IntelligenceQueue {
     /// Remove stale entries from the `last_enqueued` debounce tracker.
     ///
     /// Entries older than `CONTENT_DEBOUNCE_SECS * 10` (5 minutes) are pruned
-    /// to prevent unbounded memory growth over long-running sessions (I234).
+    /// to prevent unbounded memory growth over long-running sessions.
     pub fn prune_stale_entries(&self) {
         let stale_threshold_secs = CONTENT_DEBOUNCE_SECS * 10;
         let mut last = self.last_enqueued.lock();
@@ -432,7 +432,7 @@ fn usage_context_for_priority(priority: IntelPriority) -> AiUsageContext {
         .with_background(background)
 }
 
-/// DOS-15: surface a failed leading-signals enrichment pass to the audit log
+/// surface a failed leading-signals enrichment pass to the audit log
 /// and the frontend. Mirrors the main-enrichment degraded/fallback pattern so
 /// users see *why* Health triage cards are activity-sourced instead of
 /// Glean-sourced on accounts where Glean is configured.
@@ -511,7 +511,7 @@ pub struct IntelligenceUpdatedPayload {
     pub entity_type: String,
 }
 
-/// I575: Progressive enrichment progress event payload.
+/// Progressive enrichment progress event payload.
 ///
 /// Emitted after each dimension completes and is written to DB,
 /// so the frontend can show incremental progress and refresh data.
@@ -525,7 +525,7 @@ pub struct EnrichmentProgress {
     pub last_dimension: String,
 }
 
-/// I575: Progressive enrichment completion event payload.
+/// Progressive enrichment completion event payload.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct EnrichmentComplete {
@@ -538,7 +538,7 @@ pub struct EnrichmentComplete {
 }
 
 /// Context gathered from the DB (held briefly, then released before PTY).
-/// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+/// Public so manual enrichment commands can reuse the split-lock pattern.
 #[derive(Clone)]
 pub struct EnrichmentInput {
     pub workspace: PathBuf,
@@ -548,16 +548,16 @@ pub struct EnrichmentInput {
     pub prompt: String,
     pub file_manifest: Vec<SourceManifestEntry>,
     pub file_count: usize,
-    /// I499: Pre-computed algorithmic health for accounts.
+    /// Pre-computed algorithmic health for accounts.
     pub computed_health: Option<crate::intelligence::io::AccountHealth>,
-    /// I535: Entity name for Glean-first enrichment.
+    /// Entity name for Glean-first enrichment.
     pub entity_name: String,
-    /// I535: Relationship type for Glean prompt (e.g., "customer", "partner").
+    /// Relationship type for Glean prompt (e.g., "customer", "partner").
     pub relationship: Option<String>,
-    /// I535: Intelligence context for Glean-first enrichment.
+    /// Intelligence context for Glean-first enrichment.
     /// Preserved from gather phase so Glean can inject local context into its prompt.
     pub intelligence_context: Option<crate::intelligence::prompts::IntelligenceContext>,
-    /// DOS-178: Active role preset captured during the gather phase.
+    /// Active role preset captured during the gather phase.
     pub active_preset: Option<RolePreset>,
 }
 
@@ -597,14 +597,14 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
-        // DOS-311: skip processing entirely while a schema-epoch migration
+        // skip processing entirely while a schema-epoch migration
         // drains the queue. Pending items remain in `queue` (not destroyed)
-        // so DOS-7's migration sequence can drain → backfill → re-enqueue.
+        // so the migration sequence can drain, backfill, and re-enqueue.
         if state.intel_queue.is_paused() {
             continue;
         }
 
-        // Periodic pruning of stale debounce entries (I234)
+        // Periodic pruning of stale debounce entries
         polls_since_prune += 1;
         if polls_since_prune >= prune_interval {
             state.intel_queue.prune_stale_entries();
@@ -618,7 +618,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
-        // DOS-311: capture FenceCycle for the entire batch lifetime. RAII
+        // capture FenceCycle for the entire batch lifetime. RAII
         // (Drop on scope exit) keeps IN_FLIGHT_CYCLES > 0 through PTY/Glean
         // enrichment + write-back, so a concurrent migration's
         // drain_with_timeout waits for this batch to complete (or times
@@ -651,7 +651,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             entity_names,
         );
 
-        // TTL check: filter out entities enriched recently unless manually requested (I287)
+        // TTL check: filter out entities enriched recently unless manually requested
         let batch: Vec<IntelRequest> = batch
             .into_iter()
             .filter(|request| {
@@ -676,7 +676,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             continue;
         }
 
-        // I571: Emit background work status for frontend indicator only when
+        // Emit background work status for frontend indicator only when
         // the batch survives TTL/background guards and will do real work.
         let display_names: Vec<String> = if let Ok(db) = crate::db::ActionDb::open() {
             batch
@@ -765,24 +765,24 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             .map(|c| c.ai_models.clone())
             .unwrap_or_default();
 
-        // Track original requests so we can detect failures and re-enqueue (I470)
+        // Track original requests so we can detect failures and re-enqueue
         let original_requests: Vec<IntelRequest> = inputs.iter().map(|(r, _)| r.clone()).collect();
 
-        // Track error categories for failed entities (I472)
+        // Track error categories for failed entities
         let mut error_categories: HashMap<String, &str> = HashMap::new();
 
         let enrichment_start = Instant::now();
         let results: Vec<(IntelRequest, EnrichmentInput, EnrichmentParseResult)> =
             if state.context_provider().is_remote() {
-                // I535/ADR-0100: Glean-first path — use chat MCP tool for enrichment.
+                // /ADR-0100: Glean-first path — use chat MCP tool for enrichment.
                 // Falls back to PTY on failure (per entity).
                 run_glean_enrichment_with_fallback(inputs, &ai_config, &state, &app).await
             } else {
-                // I574: Per-entity enrichment (tries parallel fan-out, falls back to legacy)
-                // I564: Run PTY enrichment on blocking threads to avoid stalling Tokio workers.
+                // Per-entity enrichment (tries parallel fan-out, falls back to legacy)
+                // Run PTY enrichment on blocking threads to avoid stalling Tokio workers.
                 let mut entity_results = Vec::new();
                 for (request, input) in inputs {
-                    // DOS-311: per-entity checkpoint inside the PTY batch loop.
+                    // per-entity checkpoint inside the PTY batch loop.
                     // Symmetric to the Glean path — abort early when a
                     // schema-epoch migration starts mid-batch.
                     if state.intel_queue.is_paused() {
@@ -825,7 +825,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             };
         let enrichment_duration_ms = enrichment_start.elapsed().as_millis() as u64;
 
-        // I470: Re-enqueue entities that failed validation (up to MAX_VALIDATION_RETRIES)
+        // Re-enqueue entities that failed validation (up to MAX_VALIDATION_RETRIES)
         {
             let succeeded: std::collections::HashSet<&str> = results
                 .iter()
@@ -849,7 +849,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         retry_count: original.retry_count + 1,
                     });
                 } else if !succeeded.contains(original.entity_id.as_str()) {
-                    // I428: Record claude_code sync failure
+                    // Record claude_code sync failure
                     if let Ok(db) = crate::db::ActionDb::open() {
                         let _ = crate::connectivity::record_sync_failure(
                             db.conn_ref(),
@@ -865,7 +865,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         original.entity_id,
                         original.retry_count,
                     );
-                    // Track schema validation failures for dropped entities (I472)
+                    // Track schema validation failures for dropped entities
                     error_categories
                         .entry(original.entity_id.clone())
                         .or_insert("schema_validation");
@@ -921,7 +921,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         // Phase 3 + 4: Write results and emit events for each entity
         for (request, input, parsed) in &results {
             let intel = &parsed.intel;
-            // Check for anomalies in the enrichment output (I472)
+            // Check for anomalies in the enrichment output
             if let Ok(serialized) = serde_json::to_string(intel) {
                 let anomalies = crate::intelligence::validation::detect_anomalies(&serialized);
                 if !anomalies.is_empty() {
@@ -960,7 +960,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             };
 
-            // I535: Emit tiered Glean signals after successful enrichment
+            // Emit tiered Glean signals after successful enrichment
             if state.context_provider().is_remote() {
                 if let Ok(db) = crate::db::ActionDb::open() {
                     crate::intelligence::glean_provider::emit_glean_signals(
@@ -974,13 +974,13 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            // DOS-15: Supplemental leading-signals enrichment for Health & Outlook.
+            // Supplemental leading-signals enrichment for Health & Outlook.
             // Runs only for accounts and only when Glean is configured. Failures
             // are isolated (the main dimension enrichment already landed) but
             // no longer silent — we emit an audit event + Tauri event so the
             // frontend can surface a toast and we can see why Health triage
             // fell back to activity-sourced cards.
-            // DOS-259 (W2-B cycle 3): single coherent snapshot of context
+            //  single coherent snapshot of context
             // state — `is_remote` and the Glean Arc are both read under one
             // lock acquisition. Avoids the L2 codex race where a Local
             // switch between separate getters could let a remote call slip.
@@ -996,7 +996,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     let engine = std::sync::Arc::clone(&state.signals.engine);
                     let state_for_spawn = std::sync::Arc::clone(&state);
                     let app_for_spawn = app.clone();
-                    // DOS-287: Pass disambiguators through so Glean's retrieval is
+                    // Pass disambiguators through so Glean's retrieval is
                     // biased toward this account's known identifiers. Cloned from
                     // the intelligence_context populated by build_intelligence_context.
                     let disambiguators_for_spawn = input
@@ -1007,7 +1007,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     // user-visible toast on scheduled work, keep audit log.
                     let is_background = is_background_priority(request.priority);
                     tauri::async_runtime::spawn(async move {
-                        // DOS-259 (W2-B cycle 3): re-snapshot at dequeue
+                        //  re-snapshot at dequeue
                         // time so a settings switch between enqueue and
                         // dequeue takes effect on the next read (per
                         // ADR-0091). Atomic transition guarantees the
@@ -1091,7 +1091,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                             }
                         }
 
-                        // DOS-204: Peer-cohort renewal benchmark — separate Glean chat pass that
+                        // Peer-cohort renewal benchmark — separate Glean chat pass that
                         // populates AgreementOutlook.peer_benchmark. Glean uses its own org-wide
                         // context (tier, ARR, package, industry) to identify the cohort, so we
                         // only need to pass the account name. Failures (timeout / unparseable /
@@ -1197,7 +1197,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             // intelligence.json changed → meeting briefings that consume it need regeneration.
             invalidate_and_requeue_meeting_preps(&state, &request.entity_id);
 
-            // Self-healing: record success + post-enrichment coherence check (I409/I410)
+            // Self-healing: record success + post-enrichment coherence check
             {
                 if let Ok(db) = crate::db::ActionDb::open() {
                     crate::self_healing::feedback::record_enrichment_success(
@@ -1215,7 +1215,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            // I428: Record successful claude_code sync
+            // Record successful claude_code sync
             if let Ok(db) = crate::db::ActionDb::open() {
                 let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
             }
@@ -1228,7 +1228,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             );
         }
 
-        // I571: Emit completion status for frontend indicator
+        // Emit completion status for frontend indicator
         let _ = app.emit(
             "background-work-status",
             serde_json::json!({
@@ -1241,7 +1241,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
     }
 }
 
-/// Check whether an `enriched_at` RFC 3339 timestamp is within the TTL window (I287).
+/// Check whether an `enriched_at` RFC 3339 timestamp is within the TTL window.
 ///
 /// Returns `Some(message)` if the entity should be skipped (enriched recently),
 /// `None` if enrichment should proceed.
@@ -1265,7 +1265,7 @@ fn enrichment_age_check(enriched_at: &str, entity_id: &str) -> Option<String> {
     }
 }
 
-/// Check if an entity was enriched recently enough to skip (I287).
+/// Check if an entity was enriched recently enough to skip.
 ///
 /// Resolves the entity directory and reads `intelligence.json` to check the
 /// `enriched_at` timestamp. Returns `Some(message)` if the entity should be
@@ -1285,7 +1285,7 @@ fn check_enrichment_ttl(_state: &AppState, request: &IntelRequest) -> Option<Str
 /// Phase 1: Open own DB connection to gather all context needed for enrichment.
 /// Uses `ActionDb::open()` instead of `state.db.lock()` to avoid blocking
 /// foreground IPC commands while background enrichment runs.
-/// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+/// Public so manual enrichment commands can reuse the split-lock pattern.
 pub fn gather_enrichment_input(
     state: &AppState,
     request: &IntelRequest,
@@ -1339,7 +1339,7 @@ pub fn gather_enrichment_input(
         _ => return Err(format!("Unsupported entity type: {}", request.entity_type)),
     };
 
-    // Read prior intelligence from DB (I513)
+    // Read prior intelligence from DB
     let prior = db
         .get_entity_intelligence(&request.entity_id)
         .ok()
@@ -1401,7 +1401,7 @@ pub fn gather_enrichment_input(
     // Read active preset once for prompt language and preset-aware health scoring.
     let active_preset = state.active_preset.read().clone();
 
-    // I499: Compute algorithmic health for accounts before prompt building.
+    // Compute algorithmic health for accounts before prompt building.
     // This populates ctx.computed_health so the prompt uses narrative-only health schema.
     let mut ctx = ctx;
     let computed_health = if request.entity_type == "account" {
@@ -1418,7 +1418,7 @@ pub fn gather_enrichment_input(
     };
     ctx.computed_health = computed_health.clone();
 
-    // I506: Compute and persist co-attendance relationships for account entities
+    // Compute and persist co-attendance relationships for account entities
     if request.entity_type == "account" {
         match crate::intelligence::relationships::compute_co_attendance(
             &db,
@@ -1456,12 +1456,12 @@ pub fn gather_enrichment_input(
 
     // Build prompt (pure function, but easier to do here while we have the data)
     // Extract relationship for person entities so the prompt adapts framing.
-    // For accounts, pass account_type so prompts can adapt for partner vs customer (I382).
+    // For accounts, pass account_type so prompts can adapt for partner vs customer.
     let relationship = person
         .as_ref()
         .map(|p| p.relationship.as_str())
         .or_else(|| account.as_ref().map(|a| a.account_type.as_db_str()));
-    // Read active preset for domain-specific prompt language (I313)
+    // Read active preset for domain-specific prompt language
     let prompt = build_intelligence_prompt_with_preset(
         &entity_name,
         &request.entity_type,
@@ -1473,7 +1473,7 @@ pub fn gather_enrichment_input(
     let file_manifest = ctx.file_manifest.clone();
     let file_count = file_manifest.len();
 
-    // I574: Always preserve context — needed for parallel dimension fan-out (local)
+    // Always preserve context — needed for parallel dimension fan-out (local)
     // and Glean-first enrichment (remote).
     let preserved_ctx = Some(ctx);
 
@@ -1494,7 +1494,7 @@ pub fn gather_enrichment_input(
     })
 }
 
-/// I535/ADR-0100: Glean-first enrichment with PTY fallback.
+/// /ADR-0100: Glean-first enrichment with PTY fallback.
 ///
 /// For each entity, tries the Glean `chat` MCP tool first. If that fails
 /// (timeout, auth, parse error), falls back to the PTY path for that entity.
@@ -1517,7 +1517,7 @@ async fn run_glean_enrichment_with_fallback(
             log::warn!("[I535] Glean mode active but no endpoint found, falling back to PTY");
             let mut fallback_results = Vec::new();
             for (request, input) in inputs {
-                // I564: PTY calls on blocking threads
+                // PTY calls on blocking threads
                 let ai_cfg = ai_config.clone();
                 let input_clone = input.clone();
                 let usage_context = usage_context_for_priority(request.priority);
@@ -1539,14 +1539,12 @@ async fn run_glean_enrichment_with_fallback(
         }
     };
 
-    // L2 cycle-26 (DOS-259) fix #3: provider read at call time, NOT
-    // once before the batch loop. ADR-0091 "switch mid-queue takes
-    // effect on next dequeue" means a settings change between two
-    // entities in the same batch must affect the second entity.
-    // The previous structure cloned the provider Arc once and reused
-    // it across the whole batch — a mid-batch switch to Local or a
-    // Glean disconnect would only take effect on the NEXT batch,
-    // not the next entity. Per-entity snapshot fixes that.
+    // Read the provider at call time, not once before the batch loop.
+    // ADR-0091 "switch mid-queue takes effect on next dequeue" means a
+    // settings change between two entities in the same batch must affect
+    // the second entity. The previous structure cloned the provider Arc
+    // once and reused it across the whole batch, so a mid-batch switch to
+    // Local or a Glean disconnect would only take effect on the next batch.
     //
     // The pre-loop snapshot remains only for the early-exit case
     // where Glean is OFF for the whole batch — that's the cold-start
@@ -1595,7 +1593,7 @@ async fn run_glean_enrichment_with_fallback(
     let mut pty_fallback_inputs: Vec<(IntelRequest, EnrichmentInput)> = Vec::new();
 
     for (request, input) in inputs {
-        // DOS-311: per-entity checkpoint inside the Glean batch loop.
+        // per-entity checkpoint inside the Glean batch loop.
         // If a migration started while we were processing earlier entities,
         // abort the rest of the batch — unprocessed entities are dropped
         // (the change-trigger that originally enqueued them will refire
@@ -1608,8 +1606,8 @@ async fn run_glean_enrichment_with_fallback(
             break;
         }
 
-        // L2 cycle-26 (DOS-259) fix #3: re-read provider+mode for THIS
-        // entity. If a settings change between dequeues switched to
+        // Re-read provider+mode for this entity. If a settings change
+        // between dequeues switched to
         // Local or cleared the Glean Arc, this entity falls back to
         // PTY rather than honoring the stale pre-loop snapshot.
         let entity_snap = state.context_snapshot();
@@ -1698,7 +1696,7 @@ async fn run_glean_enrichment_with_fallback(
     }
 
     // Run PTY enrichment for all entities that Glean failed on
-    // I564: PTY calls on blocking threads
+    // PTY calls on blocking threads
     if !pty_fallback_inputs.is_empty() {
         log::info!(
             "[I535] Running PTY fallback for {} entities",
@@ -1727,7 +1725,7 @@ async fn run_glean_enrichment_with_fallback(
     results
 }
 
-/// Categorize an enrichment error for audit logging (I472).
+/// Categorize an enrichment error for audit logging.
 fn categorize_enrichment_error(error: &str) -> &'static str {
     let lower = error.to_lowercase();
     if lower.contains("timed out") || lower.contains("timeout") {
@@ -1743,12 +1741,12 @@ fn categorize_enrichment_error(error: &str) -> &'static str {
 }
 
 /// Step 2: Run PTY enrichment (no DB lock held).
-/// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+/// Public so manual enrichment commands can reuse the split-lock pattern.
 ///
-/// I574: Tries parallel per-dimension fan-out first (if `intelligence_context` is available),
+/// Tries parallel per-dimension fan-out first (if `intelligence_context` is available),
 /// then falls back to the legacy monolithic prompt path.
 ///
-/// I575: When `app_handle` is provided, emits `enrichment-progress` and
+/// When `app_handle` is provided, emits `enrichment-progress` and
 /// `enrichment-complete` events for progressive frontend updates.
 pub fn run_enrichment(
     input: &EnrichmentInput,
@@ -1774,13 +1772,13 @@ pub fn run_enrichment(
     run_enrichment_legacy(input, ai_config, &usage_context)
 }
 
-/// I574: Parallel per-dimension enrichment engine.
+/// Parallel per-dimension enrichment engine.
 ///
 /// Fans out 6 dimension-specific PTY calls in parallel threads (30s each),
 /// then merges successful dimension results into a single `IntelligenceJson`.
 /// Returns Err only if ALL 6 dimensions fail (caller falls back to legacy).
 ///
-/// I575: Uses a channel pattern so each dimension result is written to DB and
+/// Uses a channel pattern so each dimension result is written to DB and
 /// emitted as a progress event as soon as it completes, rather than waiting
 /// for all 6 to finish. This enables progressive frontend updates.
 fn run_parallel_enrichment(
@@ -1826,7 +1824,7 @@ fn run_parallel_enrichment(
         std::thread::spawn(move || {
             let dim_start = Instant::now();
 
-            // DOS-259 (W2-B): route through PtyClaudeCode trait surface (sync
+            //  route through PtyClaudeCode trait surface (sync
             // helper) instead of constructing PtyManager inline. Behavior
             // parity preserved — same tier/timeout/nice_priority/usage_context.
             // The sync helper bridges async-trait callers; ReplayProvider
@@ -1897,7 +1895,7 @@ fn run_parallel_enrichment(
                     all_raw_output.push_str(&raw_output);
                     all_raw_output.push('\n');
 
-                    // I575: Per-dimension DB write + event emission
+                    // Per-dimension DB write + event emission
                     if let Some(handle) = app_handle {
                         write_progressive_dimension(
                             &input.entity_id,
@@ -1938,7 +1936,7 @@ fn run_parallel_enrichment(
         total_ms
     );
 
-    // I575: Emit completion event
+    // Emit completion event
     if let Some(handle) = app_handle {
         let _ = handle.emit(
             "enrichment-complete",
@@ -1960,7 +1958,7 @@ fn run_parallel_enrichment(
     // Extract inferred relationships from the combined raw output
     let inferred_relationships = extract_inferred_relationships(&all_raw_output);
 
-    // I305: Extract and persist keywords from the combined raw output
+    // Extract and persist keywords from the combined raw output
     if let Some(keywords_json) =
         crate::intelligence::extract_keywords_from_response(&all_raw_output)
     {
@@ -1986,7 +1984,7 @@ fn run_parallel_enrichment(
         }
     }
 
-    // DOS-249: Stamp enriched_at and source_manifest on the combined result.
+    // Stamp enriched_at and source_manifest on the combined result.
     // The parallel fan-out initialises `combined` as IntelligenceJson::default(),
     // and `merge_dimension_into` only copies dimension-specific fields — it never
     // propagates the manifest or enrichment timestamp.  Without this, every account
@@ -2004,7 +2002,7 @@ fn run_parallel_enrichment(
     })
 }
 
-/// I575: Write the current progressive state of intelligence to DB after a dimension completes.
+/// Write the current progressive state of intelligence to DB after a dimension completes.
 ///
 /// Opens a short-lived DB connection, reads existing entity_assessment, merges the
 /// new combined state, and writes back. Non-fatal on error — the final write in
@@ -2061,7 +2059,7 @@ fn run_enrichment_legacy(
     ai_config: &AiModelConfig,
     usage_context: &AiUsageContext,
 ) -> Result<EnrichmentParseResult, String> {
-    // DOS-259 (W2-B): legacy synthesis path migrated through PtyClaudeCode
+    //  legacy synthesis path migrated through PtyClaudeCode
     // sync helper. Behavior parity preserved (same Synthesis tier + 240s
     // timeout from PtyClaudeCode::timeout_for_tier(Synthesis)).
     let pty_provider = crate::intelligence::pty_provider::PtyClaudeCode::new(
@@ -2079,7 +2077,7 @@ fn run_enrichment_legacy(
         exit_code: 0,
     };
 
-    // I305: Extract and persist keywords from the raw AI response
+    // Extract and persist keywords from the raw AI response
     if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
     {
         if let Ok(db) = crate::db::ActionDb::open() {
@@ -2147,7 +2145,7 @@ fn run_background_enrichment(
     })
 }
 
-/// I527: One-shot repair retry when deterministic checks still report
+/// One-shot repair retry when deterministic checks still report
 /// high-severity contradictions after local repairs.
 fn run_consistency_repair_retry(
     input: &EnrichmentInput,
@@ -2180,24 +2178,24 @@ fn run_consistency_repair_retry(
 
 /// Phase 3: Write enrichment results to disk and DB.
 /// Opens own DB connection to avoid blocking foreground IPC commands.
-/// DOS-308 suppression filtering is fail-closed: if the feedback DB cannot
+///  suppression filtering is fail-closed: if the feedback DB cannot
 /// open, risks/wins are dropped for that round and the rest of the write continues.
-/// Public so manual enrichment commands can reuse the split-lock pattern (I173).
+/// Public so manual enrichment commands can reuse the split-lock pattern.
 pub fn write_enrichment_results(
     state: &AppState,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
     ai_config: Option<&AiModelConfig>,
 ) -> Result<IntelligenceJson, String> {
-    // I576: Source-aware reconciliation + preserve user-edited fields (I261)
+    // Source-aware reconciliation + preserve user-edited fields
     let mut final_intel = intel.clone();
     let existing_intel = crate::db::ActionDb::open()
         .ok()
         .and_then(|db| db.get_entity_intelligence(&input.entity_id).ok().flatten());
     if let Some(existing) = existing_intel.as_ref() {
-        // I576: Apply source-aware reconciliation (preserves user corrections,
+        // Apply source-aware reconciliation (preserves user corrections,
         // non-refreshed source items, and dismissed tombstones).
-        // I652: stakeholder_insights reconciliation is skipped in reconcile_enrichment —
+        // stakeholder_insights reconciliation is skipped in reconcile_enrichment —
         // protection is now structural via data_source columns on account_stakeholders.
         final_intel = crate::intelligence::glean_provider::reconcile_enrichment(
             existing.clone(),
@@ -2205,7 +2203,7 @@ pub fn write_enrichment_results(
             &["pty_synthesis"],
         );
 
-        // I261: Also preserve field-level user edits (granular JSON-path edits)
+        // Also preserve field-level user edits (granular JSON-path edits)
         if !existing.user_edits.is_empty() {
             crate::intelligence::preserve_user_edits(&mut final_intel, existing);
             log::info!(
@@ -2216,7 +2214,7 @@ pub fn write_enrichment_results(
         }
     }
 
-    // I652: Route AI stakeholder insights to DB columns or suggestions table.
+    // Route AI stakeholder insights to DB columns or suggestions table.
     // Person-first architecture: enrichment never overwrites user-designated data.
     // AI can update columns it previously wrote (data_source='ai'), and new
     // discoveries go to stakeholder_suggestions for user review.
@@ -2349,7 +2347,7 @@ pub fn write_enrichment_results(
     // usable narrative, keep prior core fields until enrichment recovers.
     merge_missing_core_fields_from_existing(&mut final_intel, existing_intel.as_ref());
 
-    // I527: Deterministic contradiction checks + balanced repair pass.
+    // Deterministic contradiction checks + balanced repair pass.
     if input.entity_type == "account" || input.entity_type == "project" {
         if let Ok(db_for_consistency) = crate::db::ActionDb::open() {
             if let Ok(facts) = crate::intelligence::build_fact_context(
@@ -2398,7 +2396,7 @@ pub fn write_enrichment_results(
         }
     }
 
-    // I645 + DOS-308: Filter suppressed risks/wins before writing.
+    // Filter suppressed risks/wins before writing.
     // Fail-closed: if we cannot open the feedback DB to check suppression,
     // drop risks/wins for this round rather than writing potentially-tombstoned
     // items. One lost enrichment round is recoverable; tombstone resurrection is not.
@@ -2507,14 +2505,14 @@ pub fn write_enrichment_results(
                 final_intel.risks.len(),
                 final_intel.recent_wins.len(),
             );
-            // TODO(DOS-308): add integration coverage once DB-open failure is injectable.
-            // TODO(DOS-7): emit durable audit event so operator sees this.
+            // TODO: add integration coverage once DB-open failure is injectable.
+            // TODO: emit durable audit event so operator sees this.
             final_intel.risks.clear();
             final_intel.recent_wins.clear();
         }
     }
 
-    // I499: Merge computed health dimensions with LLM narrative.
+    // Merge computed health dimensions with LLM narrative.
     // The algorithmic engine provides score/band/dimensions/confidence;
     // the LLM provides only narrative + recommended_actions.
     if let Some(ref computed) = input.computed_health {
@@ -2558,7 +2556,7 @@ pub fn write_enrichment_results(
         }
     }
 
-    // DOS-287: Cross-entity contamination check — second-line defense against
+    // Cross-entity contamination check — second-line defense against
     // Glean/PTY bleeding a different customer's content into this account's
     // narrative fields. Runs before any persistence. On hit + RejectOnHit, we
     // emit a signal + Tauri event and refuse to write. Shadow mode logs only.
@@ -2654,11 +2652,10 @@ pub fn write_enrichment_results(
         }
     }
 
-    // DOS-311: capture schema_epoch + write through the fence. Migration
-    // sequence (DOS-7 W3) drains in-flight workers via the FenceCycle RAII
+    // capture schema_epoch + write through the fence. Migration
+    // sequences drain in-flight workers via the FenceCycle RAII
     // counter before bumping the epoch; EpochAdvanced here means a migration
-    // ran mid-cycle and we must skip the write so DOS-7's backfill stays
-    // canonical.
+    // ran mid-cycle and we must skip the write so the migration backfill stays canonical.
     let fence_cycle = crate::intelligence::write_fence::FenceCycle::capture(&db)
         .map_err(|e| format!("schema_epoch capture failed for {}: {e}", input.entity_id))?;
     if let Err(e) = crate::intelligence::write_fence::fenced_write_intelligence_json(
@@ -2695,16 +2692,16 @@ pub fn write_enrichment_results(
         &final_intel,
     )?;
 
-    // Invalidate cached reports when entity intelligence is refreshed (I397)
+    // Invalidate cached reports when entity intelligence is refreshed
     let _ = crate::reports::invalidation::mark_reports_stale(&db, &input.entity_id);
 
-    // I535 Step 11: Dual-write commitments from Glean enrichment to captured_commitments
+    // Dual-write commitments from Glean enrichment to captured_commitments
     if input.entity_type == "account" {
         dual_write_enrichment_commitments(&db, &input.entity_id, &final_intel);
         dual_write_enrichment_products(&db, &input.entity_id, &final_intel);
     }
 
-    // I338: Regenerate person files after intelligence enrichment
+    // Regenerate person files after intelligence enrichment
     if input.entity_type == "person" {
         if let Ok(Some(person)) = db.get_person(&input.entity_id) {
             let _ = crate::people::write_person_markdown(&input.workspace, &person, &db);
@@ -2712,7 +2709,7 @@ pub fn write_enrichment_results(
         }
     }
 
-    // I384/I388: After writing a child entity's enrichment, enqueue the parent for
+    // After writing a child entity's enrichment, enqueue the parent for
     // portfolio intelligence refresh. This ensures parent portfolio views stay
     // current when any child's intelligence updates.
     if input.entity_type == "account" {
@@ -2796,7 +2793,7 @@ fn is_sparse_intelligence(intel: &IntelligenceJson) -> bool {
         || has_metrics)
 }
 
-/// I652: Parameters for writing a stakeholder suggestion.
+/// Parameters for writing a stakeholder suggestion.
 struct StakeholderSuggestionParams<'a> {
     db: &'a crate::db::ActionDb,
     account_id: &'a str,
@@ -2805,7 +2802,7 @@ struct StakeholderSuggestionParams<'a> {
     source: &'a str,
 }
 
-/// I652: Write a stakeholder suggestion to the `stakeholder_suggestions` table.
+/// Write a stakeholder suggestion to the `stakeholder_suggestions` table.
 /// Skips if a pending suggestion for the same person+account already exists.
 fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
     let StakeholderSuggestionParams {
@@ -2816,7 +2813,7 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
         source,
     } = params;
 
-    // I652: Skip suggestions for internal team members (by person_id OR name match)
+    // Skip suggestions for internal team members (by person_id OR name match)
     if let Some(pid) = person_id {
         let is_internal: bool = db
             .conn_ref()
@@ -3039,7 +3036,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
     );
 }
 
-/// I535 Step 11: Dual-write commitments from Glean enrichment to `captured_commitments`.
+/// Dual-write commitments from Glean enrichment to `captured_commitments`.
 ///
 /// Writes `open_commitments` and `success_plan_signals.stated_objectives` from the
 /// intelligence output, mirroring the pattern in `transcript.rs:556-598`.
@@ -3184,7 +3181,7 @@ fn dual_write_enrichment_products(
             upserted,
             entity_id,
         );
-        // Intelligence Loop: every mutation emits a signal (I624 AC7)
+        // Intelligence Loop: every mutation emits a signal (AC7)
         let _ = crate::signals::bus::emit_signal(
             db,
             "account",
@@ -3267,8 +3264,8 @@ mod tests {
 
     #[test]
     fn dos311_paused_then_drained_then_resumed_recovers() {
-        // Simulates DOS-7's migration sequence shape: pause → drain →
-        // (run migration) → re-enqueue drained → resume.
+        // Simulates the migration sequence shape: pause → drain →
+        // run migration → re-enqueue drained → resume.
         let q = IntelligenceQueue::new();
         assert_eq!(
             q.enqueue(IntelRequest::new(
@@ -3340,7 +3337,7 @@ mod tests {
 
     #[test]
     fn dos311_default_drain_timeout_is_60s() {
-        // Live ticket acceptance: "drain timeout configurable; default 60s."
+        // Drain timeout remains configurable with a 60s default.
         // The constant lives in this module; the migration script consumes it.
         assert_eq!(DEFAULT_DRAIN_TIMEOUT_SECS, 60);
     }
@@ -3409,7 +3406,7 @@ mod tests {
 
     #[test]
     fn test_intel_queue_remove_by_entity_id() {
-        // DOS-286: archiving an entity should drop all of its pending queue
+        // archiving an entity should drop all of its pending queue
         // entries regardless of priority, and should not touch other entities.
         let queue = IntelligenceQueue::new();
 
@@ -3441,7 +3438,7 @@ mod tests {
 
     #[test]
     fn test_intel_queue_remove_clears_debounce_tracker() {
-        // DOS-286: removal must clear the debounce tracker so an
+        // removal must clear the debounce tracker so an
         // unarchive → re-enqueue can proceed without the debounce delay.
         let queue = IntelligenceQueue::new();
 
@@ -3662,7 +3659,7 @@ mod tests {
     }
 
     // =========================================================================
-    // Batch dequeue tests (I289)
+    // Batch dequeue tests
     // =========================================================================
 
     #[test]
@@ -3741,7 +3738,7 @@ mod tests {
     }
 
     // =========================================================================
-    // TTL tests (I287)
+    // TTL tests
     // =========================================================================
 
     #[test]

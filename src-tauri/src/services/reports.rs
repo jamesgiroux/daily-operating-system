@@ -12,7 +12,7 @@ use crate::state::AppState;
 /// Generate a report for an entity.
 /// Blocks for ~60-300s (PTY call). Returns the stored report row.
 ///
-/// I547: For `book_of_business`, uses parallel section generation with
+/// For `book_of_business`, uses parallel section generation with
 /// optional Glean pre-fetch. Falls back to monolithic on failure.
 pub async fn generate_report(
     ctx: &crate::services::context::ServiceContext<'_>,
@@ -116,7 +116,7 @@ pub async fn generate_report(
             }
         };
 
-        // Phase 1.5: Inject relevant user context into prompt (I413).
+        // Phase 1.5: Inject relevant user context into prompt.
         if let Ok(db_ctx) = crate::db::ActionDb::open() {
             crate::reports::prompts::append_user_context(
                 &mut input.prompt,
@@ -235,7 +235,7 @@ fn generate_swot_report(
         .ok_or_else(|| format!("Report {} not found after insert", report_id))
 }
 
-/// I547: Parallel Book of Business generation pipeline.
+/// Parallel Book of Business generation pipeline.
 ///
 /// Phase 1: Gather data (DB lock)
 /// Step 2: Glean pre-fetch (no lock, when connected)
@@ -270,7 +270,7 @@ fn generate_book_of_business(
         )?
     };
 
-    // Phase 1.5: Pre-compute user context block (I413 semantic search).
+    // Phase 1.5: Pre-compute user context block (semantic search).
     // Fresh DB connection so the Phase 1 lock is already released.
     if let Ok(db_ctx) = crate::db::ActionDb::open() {
         let mut ctx_buf = String::new();
@@ -384,7 +384,7 @@ pub fn get_all_reports_for_entity(
     get_reports_for_entity(db, entity_id, entity_type)
 }
 
-/// Auto-generate monthly wrapped on 1st of month if not already done this month (I419).
+/// Auto-generate monthly wrapped on 1st of month if not already done this month.
 pub async fn generate_monthly_wrapped_if_needed(
     state: &std::sync::Arc<crate::state::AppState>,
 ) -> Result<(), String> {
@@ -449,7 +449,7 @@ pub fn save_report(
     crate::reports::save_report_content(db, entity_id, entity_type, report_type, content_json)
 }
 
-/// Auto-generate weekly impact on Monday if not already done this week (I418).
+/// Auto-generate weekly impact on Monday if not already done this week.
 pub async fn generate_weekly_impact_if_needed(
     state: &std::sync::Arc<crate::state::AppState>,
 ) -> Result<(), String> {

@@ -23,7 +23,7 @@ interface AccountHeroProps {
   setEditLifecycle?: (value: string) => void;
   onSave?: () => void;
   onSaveField?: (field: string, value: string) => void;
-  /** I550: Slot for vitals strip, rendered between name and lede */
+  /** Slot for vitals strip, rendered between name and lede */
   vitalsSlot?: React.ReactNode;
   provenanceSlot?: React.ReactNode;
 }
@@ -44,7 +44,7 @@ export function AccountHero({
   provenanceSlot,
 }: AccountHeroProps) {
   // NOTE: Executive assessment narrative moved to AccountExecutiveSummary
-  // component, rendered in the Context view. See DOS-48 refactor.
+  // component, rendered in the Context view.
 
   return (
     <div className={styles.hero}>

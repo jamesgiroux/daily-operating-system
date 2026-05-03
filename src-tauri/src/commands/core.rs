@@ -651,7 +651,7 @@ pub(crate) fn backfill_db_prep_contexts(
     Ok(counts)
 }
 
-/// One-time semantic backfill for prep payloads (I196).
+/// One-time semantic backfill for prep payloads.
 ///
 /// Targets:
 /// - `_today/data/preps/*.json`

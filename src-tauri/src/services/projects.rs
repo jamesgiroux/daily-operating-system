@@ -1,4 +1,4 @@
-// Projects service — extracted from commands.rs (I450)
+// Projects service — extracted from commands.rs
 // Business logic for project CRUD, list assembly, and workspace file management.
 
 use std::path::Path;
@@ -60,7 +60,7 @@ pub async fn get_projects_list(state: &AppState) -> Result<Vec<ProjectListItem>,
         .await
 }
 
-/// Get child projects for a parent project (I388).
+/// Get child projects for a parent project.
 pub async fn get_child_projects_list(
     parent_id: &str,
     state: &AppState,
@@ -112,9 +112,9 @@ pub async fn get_child_projects_list(
 
 /// Get full detail for a project by ID.
 ///
-/// I644: All data from DB — no filesystem reads on the detail page path.
+/// All data from DB — no filesystem reads on the detail page path.
 /// Fetches actions, meetings, people, signals, captures, and email signals.
-/// I388: Also resolves parent/child hierarchy.
+/// Also resolves parent/child hierarchy.
 pub async fn get_project_detail(
     project_id: &str,
     state: &AppState,
@@ -127,7 +127,7 @@ pub async fn get_project_detail(
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Project not found: {}", project_id))?;
 
-            // I644: Read narrative fields from DB columns (promoted from dashboard.json).
+            // Read narrative fields from DB columns (promoted from dashboard.json).
             let description = project.description.clone();
             let milestones: Vec<crate::projects::ProjectMilestone> = project
                 .milestones
@@ -135,7 +135,7 @@ pub async fn get_project_detail(
                 .and_then(|json| serde_json::from_str(json).ok())
                 .unwrap_or_default();
             let notes = project.notes.clone();
-            // I644: Intelligence from DB only — no filesystem fallback.
+            // Intelligence from DB only — no filesystem fallback.
             let intelligence = db.get_entity_intelligence(&project_id).ok().flatten();
 
             let open_actions = db
@@ -166,7 +166,7 @@ pub async fn get_project_detail(
                 .list_recent_email_signals_for_entity(&project_id, 12)
                 .unwrap_or_default();
 
-            // I388: Resolve parent name for child projects, children for parent projects
+            // Resolve parent name for child projects, children for parent projects
             let parent_name = project
                 .parent_id
                 .as_ref()
@@ -273,7 +273,7 @@ pub async fn create_project(
                 let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
             }
 
-            // Self-healing: initialize quality row for new entity (I406)
+            // Self-healing: initialize quality row for new entity
             crate::self_healing::quality::ensure_quality_row(db, &id_clone, "project");
 
             Ok(id_clone)
@@ -320,7 +320,7 @@ pub async fn update_project_field(
                 0.8,
             );
 
-            // Self-healing: event-driven trigger evaluation (I410)
+            // Self-healing: event-driven trigger evaluation
             let _ = crate::self_healing::scheduler::evaluate_on_signal(
                 db,
                 &project_id,
@@ -328,7 +328,7 @@ pub async fn update_project_field(
                 &intel_queue,
             );
 
-            // Self-healing: record user correction for enrichable fields (I409)
+            // Self-healing: record user correction for enrichable fields
             if matches!(
                 field.as_str(),
                 "status" | "milestone" | "owner" | "target_date"
@@ -488,7 +488,7 @@ pub fn bulk_create_projects(
 
 /// Archive or restore a project with signal emission.
 ///
-/// DOS-286: when archiving, drops any pending intel queue entries for this
+/// when archiving, drops any pending intel queue entries for this
 /// project and its cascaded children so already-queued enrichments don't run
 /// against a now-archived target.
 pub fn archive_project(
@@ -499,7 +499,7 @@ pub fn archive_project(
     archived: bool,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    // DOS-286: collect child project IDs before archiving so we can drop their
+    // collect child project IDs before archiving so we can drop their
     // queued enrichments too (cascade archives children).
     let child_ids: Vec<String> = if archived {
         db.conn_ref()
@@ -534,7 +534,7 @@ pub fn archive_project(
         0.9,
     );
 
-    // DOS-286: drop any in-flight enrichments for the archived project and its children.
+    // drop any in-flight enrichments for the archived project and its children.
     if archived {
         state.intel_queue.remove_by_entity_id(id);
         for child_id in &child_ids {

@@ -1,4 +1,4 @@
--- DOS-258 Lane A: linking_dismissals table.
+-- linking_dismissals table.
 --
 -- Replaces the meeting-surface-only meeting_entity_dismissals with a
 -- cross-surface dismissal store keyed on (owner_type, owner_id, entity_id,

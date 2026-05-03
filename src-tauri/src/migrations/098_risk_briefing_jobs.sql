@@ -1,4 +1,4 @@
--- DOS-228 Fix 3: Persist risk-briefing job lifecycle so the UI can surface
+-- Regression guard: Persist risk-briefing job lifecycle so the UI can surface
 -- failures instead of silently dropping them into the log stream.
 --
 -- Previous behavior: `set_user_health_sentiment` spawned a fire-and-forget

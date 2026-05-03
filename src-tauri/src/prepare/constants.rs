@@ -24,7 +24,7 @@ pub const PERSONAL_EMAIL_DOMAINS: &[&str] = &[
 /// High-priority email subject keywords (role-neutral base list).
 ///
 /// CS-specific keywords (`churn`, `cancellation`, `cancel`) have been moved to the
-/// CS preset's `intelligence.emailPriorityKeywords` (DOS-176). This base list
+/// CS preset's `intelligence.emailPriorityKeywords`. This base list
 /// contains only terms that are high-signal across all roles.
 pub const HIGH_PRIORITY_SUBJECT_KEYWORDS: &[&str] = &[
     // Urgency signals (universal)
@@ -72,13 +72,13 @@ pub const LOW_PRIORITY_SIGNALS: &[&str] = &[
     "mailer-daemon",
 ];
 
-/// Bulk/marketing sender domains (I21: FYI classification expansion).
+/// Bulk/marketing sender domains (FYI classification expansion).
 ///
-/// DOS-242: Expanded with SaaS notification senders (LinkedIn, Slack, GitHub,
+/// Expanded with SaaS notification senders (LinkedIn, Slack, GitHub,
 /// Notion, AWS, etc.) that should be hard-suppressed from inbox/Records,
 /// not merely demoted to priority='low'.
 pub const BULK_SENDER_DOMAINS: &[&str] = &[
-    // ESP / marketing platforms (I21 baseline)
+    // ESP / marketing platforms
     "mailchimp.com",
     "sendgrid.net",
     "mandrillapp.com",
@@ -90,7 +90,7 @@ pub const BULK_SENDER_DOMAINS: &[&str] = &[
     "mailgun.org",
     "postmarkapp.com",
     "amazonses.com",
-    // SaaS notification senders (DOS-242)
+    // SaaS notification senders
     "linkedin.com",
     "slack.com",
     "github.com",
@@ -108,7 +108,7 @@ pub const BULK_SENDER_DOMAINS: &[&str] = &[
     "figma.com",
 ];
 
-/// Subject substrings that signal automated/transactional/digest mail (DOS-242).
+/// Subject substrings that signal automated/transactional/digest mail.
 /// Matched case-insensitively against the email subject.
 pub const NOISE_SUBJECT_PATTERNS: &[&str] = &[
     "your receipt",
@@ -136,7 +136,7 @@ pub const NOISE_SUBJECT_PATTERNS: &[&str] = &[
     "your invitation",
 ];
 
-/// Noreply local-part patterns (I21).
+/// Noreply local-part patterns.
 pub const NOREPLY_LOCAL_PARTS: &[&str] = &[
     "noreply",
     "no-reply",

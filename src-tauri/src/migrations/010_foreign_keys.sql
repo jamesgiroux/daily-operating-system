@@ -1,4 +1,4 @@
--- Migration 010: Add foreign key constraints to existing tables (I285)
+-- Migration 010: Add foreign key constraints to existing tables
 --
 -- SQLite does not support ALTER TABLE ADD CONSTRAINT, so we use the
 -- copy → drop → create-with-FKs → re-insert → recreate-indexes pattern.

@@ -3,7 +3,7 @@ import { invoke } from '@tauri-apps/api/core';
 
 /**
  * Recovery screen shown when the encryption key is missing from the
- * macOS Keychain but an encrypted database exists (I462).
+ * macOS Keychain but an encrypted database exists.
  *
  * Renders INSTEAD of the app — no data is accessible without the key.
  */

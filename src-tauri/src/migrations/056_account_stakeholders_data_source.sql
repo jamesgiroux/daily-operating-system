@@ -1,4 +1,4 @@
--- 056: Add data_source provenance to account_stakeholders (I511 follow-up hardening)
+-- 056: Add data_source provenance to account_stakeholders (hardening)
 -- Tracks stakeholder link origin for purge-on-revocation workflows (ADR-0098).
 
 PRAGMA foreign_keys = OFF;

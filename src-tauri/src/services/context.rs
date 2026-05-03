@@ -1,4 +1,4 @@
-//! DOS-209 (W2-A): `ServiceContext` substrate per ADR-0104.
+//!  `ServiceContext` substrate per ADR-0104.
 //!
 //! ## What this module owns
 //!
@@ -22,7 +22,7 @@
 //!
 //! - The 228-mutator catalogue (`src-tauri/tests/dos209_mutation_catalog.txt`)
 //!   ships alongside the per-mutator `check_mutation_allowed()?` migration.
-//! - The `IntelligenceProvider` seam — W2-B / DOS-259 owns that on
+//! - The `IntelligenceProvider` seam — W2-B /  owns that on
 //!   `AbilityContext`, not `ServiceContext`.
 //! - DB plumbing — `with_transaction_async` lands in a follow-up phase
 //!   once the mutator migration starts.
@@ -41,7 +41,7 @@ pub enum ExecutionMode {
     /// Developer simulation — replay fixtures stand in for external
     /// services; DB writes blocked; signals route to in-memory ring buffer.
     Simulate,
-    /// Evaluation harness (DOS-216 / ADR-0110) — fixture DB; live writes
+    /// Evaluation harness (ADR-0110) — fixture DB; live writes
     /// + LLM calls structurally forbidden; replay-only providers.
     Evaluate,
 }
@@ -206,7 +206,7 @@ impl GleanClientHandle {
 }
 
 /// Mode-aware Slack client wrapper. Placeholder — Slack integration
-/// lands in DOS-340+; the seam reserves the API surface so abilities
+/// lands in; the seam reserves the API surface so abilities
 /// can call it without re-plumbing later.
 #[derive(Default, Clone)]
 pub struct SlackClientHandle;

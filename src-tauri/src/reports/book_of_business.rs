@@ -1,10 +1,10 @@
-//! Book of Business report (I547).
+//! Book of Business report.
 //!
 //! Cross-account portfolio report. Gathers all active accounts with health,
 //! ARR, renewal data, and activity metrics. AI generates narrative analysis;
 //! metrics and snapshot are pre-computed from DB data.
 //!
-//! I547: Parallel generation — 6 Wave 1 sections + sequential executiveSummary.
+//! Parallel generation — 6 Wave 1 sections + sequential executiveSummary.
 //! Optional Glean pre-fetch injects enterprise context into section prompts.
 
 use std::path::PathBuf;
@@ -357,7 +357,7 @@ pub struct BookMetrics {
 }
 
 // =============================================================================
-// I547: Structured gather output for parallel generation
+// Structured gather output for parallel generation
 // =============================================================================
 
 /// Raw data gathered from DB — used to build per-section prompts.
@@ -379,13 +379,13 @@ pub struct BookGatherOutput {
     pub email_signals: String,
     pub captures: String,
     pub spotlight_ids: Vec<String>,
-    /// Pre-computed user context block (I413 semantic search results).
+    /// Pre-computed user context block (semantic search results).
     /// Injected into every section prompt so the parallel path matches
     /// the monolithic path's user context quality.
     pub user_context_block: String,
 }
 
-/// I547: Glean pre-fetched portfolio context. Each field is `None` on
+/// Glean pre-fetched portfolio context. Each field is `None` on
 /// timeout/error (non-fatal). Sections generate from local DB data only
 /// when Glean context is unavailable.
 #[derive(Debug, Clone, Default)]
@@ -395,7 +395,7 @@ pub struct GleanPortfolioContext {
     pub themes: Option<String>,
 }
 
-/// I547: Progressive event emitted per section completion.
+/// Progressive event emitted per section completion.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BobSectionProgress {
@@ -707,7 +707,7 @@ fn find_biggest_upside(expansion_accounts: &[ExpansionRow]) -> Option<BiggestIte
 }
 
 // =============================================================================
-// Data gathering (Phase 1) — I547 refactored
+// Data gathering (Phase 1) — refactored
 // =============================================================================
 
 /// Internal struct to hold raw account data from the DB before building snapshot rows.
@@ -734,7 +734,7 @@ pub struct RawAccountRow {
     pub current_state_json: Option<String>,
 }
 
-/// I547: Gather raw portfolio data from DB. Returns structured output
+/// Gather raw portfolio data from DB. Returns structured output
 /// that can be used to build per-section prompts for parallel generation.
 pub fn gather_book_of_business_data(
     workspace: &std::path::Path,
@@ -1085,7 +1085,7 @@ pub fn gather_book_of_business_input(
 }
 
 // =============================================================================
-// I547: Shared prompt building blocks
+// Shared prompt building blocks
 // =============================================================================
 
 /// Build the shared preamble + portfolio context block used by all sections.
@@ -1474,7 +1474,7 @@ fn append_spotlight_instructions(prompt: &mut String, gather: &BookGatherOutput,
 }
 
 // =============================================================================
-// I547: Per-section prompt builders (Step 2)
+// Per-section prompt builders (Step 2)
 // =============================================================================
 
 /// Progress phases emitted during generation.
@@ -1570,7 +1570,7 @@ fn build_synthesis_prompt(
         }
     }
 
-    // User context (I413)
+    // User context
     if !gather.user_context_block.is_empty() {
         prompt.push_str(&gather.user_context_block);
     }
@@ -1792,7 +1792,7 @@ fn build_executive_summary_prompt(
 ) -> String {
     let mut prompt = build_portfolio_context_block(gather);
 
-    // User context (I413)
+    // User context
     if !gather.user_context_block.is_empty() {
         prompt.push_str(&gather.user_context_block);
     }
@@ -1839,7 +1839,7 @@ fn build_executive_summary_prompt(
 }
 
 // =============================================================================
-// I547: Parallel execution engine (Step 3)
+// Parallel execution engine (Step 3)
 // =============================================================================
 
 /// Run BoB generation: mechanical sections (instant) + one synthesis PTY call.
@@ -1956,7 +1956,7 @@ pub fn run_bob_generation(
 }
 
 // =============================================================================
-// I547: Glean pre-fetch (Step 4)
+// Glean pre-fetch (Step 4)
 // =============================================================================
 
 /// Pre-fetch enterprise context from Glean for portfolio-level insights.

@@ -1,16 +1,16 @@
 #!/usr/bin/env bash
 #
-# DOS-7 migration walkthrough — produces a per-mechanism before/after
+# Claims migration walkthrough — produces a per-mechanism before/after
 # diff report on a copy of the user's dev DB.
 #
 # Read-only mode (default): snapshots the legacy dismissal tables and
 # prints to stdout. Does NOT modify the input DB.
 #
 # Apply mode (--apply): copies the input DB into a tempfile, applies
-# the DOS-7 SQL backfills (mechanisms 1-8) directly via sqlite3, and
+# the claims SQL backfills (mechanisms 1-8) directly via sqlite3, and
 # writes a markdown diff report. Mechanism 9 (DismissedItem JSON-blob
 # entries) is NOT applied here because it requires the Rust runtime;
-# operators run that via the in-app cutover when DOS-7 ships. The
+# operators run that via the in-app cutover when the claims cutover ships. The
 # report explicitly notes the m9 gap.
 #
 # Usage:

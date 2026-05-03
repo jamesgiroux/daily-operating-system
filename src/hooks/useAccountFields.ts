@@ -11,7 +11,7 @@ export function useAccountFields(
   reload: () => Promise<void>,
   setError: (e: string | null) => void,
   /**
-   * DOS-229 Wave 0e Fix 5: direct-apply for AccountDetailResult returns.
+   * direct-apply for AccountDetailResult returns.
    * update_account_field now returns the fresh detail assembled on the
    * writer connection; the hook consumes it via this callback instead of
    * issuing a follow-up reload that hits a different pool reader.
@@ -59,7 +59,7 @@ export function useAccountFields(
       if (editRenewal !== (detail.renewalDate ?? "")) fieldUpdates.push(["contract_end", editRenewal]);
       if (editParentId !== (detail.parentId ?? "")) fieldUpdates.push(["parent_id", editParentId]);
 
-      // DOS-229 Wave 0e Fix 5: each update_account_field returns the
+      // each update_account_field returns the
       // refreshed AccountDetail from the writer connection. Apply the LAST
       // response directly — dropping the follow-up reload that hits a
       // different pool reader whose WAL snapshot can lag.

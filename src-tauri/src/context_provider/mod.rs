@@ -94,7 +94,7 @@ pub trait ContextProvider: Send + Sync {
     /// Whether this provider makes network calls (affects error handling strategy).
     fn is_remote(&self) -> bool;
 
-    /// I535: MCP endpoint URL for remote providers. Returns None for local providers.
+    /// MCP endpoint URL for remote providers. Returns None for local providers.
     fn remote_endpoint(&self) -> Option<&str> {
         None
     }

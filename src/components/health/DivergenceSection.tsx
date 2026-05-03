@@ -1,9 +1,9 @@
 /**
- * DivergenceSection — saffron sub-header + divergence cards (DOS-203).
+ * DivergenceSection — saffron sub-header + divergence cards.
  *
  * "The story doesn't match the data — usually the highest-signal thing on the page."
  *
- * Pulls from existing `intelligence.consistencyFindings` (deterministic I527
+ * Pulls from existing `intelligence.consistencyFindings` (deterministic
  * contradictions) and from Glean's `channelSentiment.divergenceDetected` flag
  * when present. Returns `null` when empty so the caller can switch to fine state.
  *
@@ -21,12 +21,12 @@ import styles from "./health.module.css";
 interface DivergenceSectionProps {
   findings: ConsistencyFinding[];
   gleanSignals: HealthOutlookSignals | null;
-  /** DOS-269: account id for DOS-41 confirm-feedback attribution. */
+  /** account id for confirm-feedback attribution. */
   accountId?: string;
 }
 
 /**
- * DOS-249: Map deterministic consistency finding codes to specific human labels.
+ * Map deterministic consistency finding codes to specific human labels.
  * Specific labels match the mockup ("CRM vs reality", "Our pitch vs their authority",
  * "Channel divergence") rather than the generic "Data · major mismatch" fallback.
  */
