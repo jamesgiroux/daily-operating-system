@@ -459,10 +459,19 @@ pub(crate) fn confirm_stakeholder_suggestion_inner(
         {
             log::warn!("stakeholder_domains: confirm backfill for {account_id} failed: {e}");
         }
-        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
-            ctx, tx, account_id, "account",
-        )
-        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        crate::services::signals::emit_in_transaction(
+            ctx,
+            tx,
+            "account",
+            account_id,
+            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+            "confirm_stakeholder_suggestion",
+            serde_json::json!({
+                "entity_id": account_id,
+                "entity_type": "account",
+                "mutation_source": "confirm_stakeholder_suggestion",
+            }),
+        )?;
         Ok(())
     })
 }
@@ -491,10 +500,19 @@ pub(crate) fn dismiss_stakeholder_suggestion_inner(
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
         tx.dismiss_stakeholder_suggestion(account_id, person_id)?;
-        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
-            ctx, tx, account_id, "account",
-        )
-        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        crate::services::signals::emit_in_transaction(
+            ctx,
+            tx,
+            "account",
+            account_id,
+            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+            "dismiss_stakeholder_suggestion",
+            serde_json::json!({
+                "entity_id": account_id,
+                "entity_type": "account",
+                "mutation_source": "dismiss_stakeholder_suggestion",
+            }),
+        )?;
         Ok(())
     })
 }

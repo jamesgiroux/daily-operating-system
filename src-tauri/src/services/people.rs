@@ -111,13 +111,19 @@ pub(crate) fn delete_person_with_stakeholder_cache_rebuild(
         let affected_entities = affected_stakeholder_entities_for_person(tx, person_id)?;
         tx.delete_person(person_id).map_err(|e| e.to_string())?;
         for (entity_id, entity_type) in affected_entities {
-            crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            crate::services::signals::emit_in_transaction(
                 ctx,
                 tx,
-                &entity_id,
                 &entity_type,
-            )
-            .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+                &entity_id,
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                "delete_person",
+                serde_json::json!({
+                    "entity_id": entity_id,
+                    "entity_type": entity_type,
+                    "mutation_source": "delete_person",
+                }),
+            )?;
         }
         Ok(())
     })
@@ -139,13 +145,19 @@ pub(crate) fn merge_people_with_stakeholder_cache_rebuild(
             .map_err(|e| e.to_string())?;
 
         for (entity_id, entity_type) in affected_entities {
-            crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+            crate::services::signals::emit_in_transaction(
                 ctx,
                 tx,
-                &entity_id,
                 &entity_type,
-            )
-            .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+                &entity_id,
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                "merge_people",
+                serde_json::json!({
+                    "entity_id": entity_id,
+                    "entity_type": entity_type,
+                    "mutation_source": "merge_people",
+                }),
+            )?;
         }
         Ok(())
     })
@@ -161,13 +173,19 @@ pub(crate) fn link_person_to_entity_with_stakeholder_cache_rebuild(
     let entity_type = stakeholder_entity_type_for_id(tx, entity_id)?;
     tx.link_person_to_entity(person_id, entity_id, relationship_type)
         .map_err(|e| e.to_string())?;
-    crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+    crate::services::signals::emit_in_transaction(
         ctx,
         tx,
-        entity_id,
         &entity_type,
-    )
-    .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        entity_id,
+        crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+        "link_person_entity",
+        serde_json::json!({
+            "entity_id": entity_id,
+            "entity_type": &entity_type,
+            "mutation_source": "link_person_entity",
+        }),
+    )?;
     Ok(entity_type)
 }
 
@@ -180,13 +198,19 @@ pub(crate) fn unlink_person_from_entity_with_stakeholder_cache_rebuild(
     let entity_type = stakeholder_entity_type_for_id(tx, entity_id)?;
     tx.unlink_person_from_entity(person_id, entity_id)
         .map_err(|e| e.to_string())?;
-    crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+    crate::services::signals::emit_in_transaction(
         ctx,
         tx,
-        entity_id,
         &entity_type,
-    )
-    .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        entity_id,
+        crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+        "unlink_person_entity",
+        serde_json::json!({
+            "entity_id": entity_id,
+            "entity_type": &entity_type,
+            "mutation_source": "unlink_person_entity",
+        }),
+    )?;
     Ok(entity_type)
 }
 
@@ -641,11 +665,27 @@ pub fn create_person_from_stakeholder(
         enrichment_sources: None,
     };
 
-    db.upsert_person(&person).map_err(|e| e.to_string())?;
+    db.with_transaction(|tx| {
+        tx.upsert_person(&person).map_err(|e| e.to_string())?;
 
-    // Link to the parent entity
-    db.link_person_to_entity(&id, entity_id, "associated")
-        .map_err(|e| e.to_string())?;
+        // Link to the parent entity
+        tx.link_person_to_entity(&id, entity_id, "associated")
+            .map_err(|e| e.to_string())?;
+        crate::services::signals::emit_in_transaction(
+            ctx,
+            tx,
+            entity_type,
+            entity_id,
+            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+            "create_person_from_stakeholder",
+            serde_json::json!({
+                "entity_id": entity_id,
+                "entity_type": entity_type,
+                "mutation_source": "create_person_from_stakeholder",
+            }),
+        )?;
+        Ok(())
+    })?;
 
     // Write person files to workspace
     let config = state.config.read();

@@ -79,21 +79,37 @@ pub fn create_child_account_record(
         ..Default::default()
     };
 
-    db.upsert_account(&account).map_err(|e| e.to_string())?;
-    db.copy_account_domains(&parent.id, &account.id)
-        .map_err(|e| e.to_string())?;
-
-    if let Some(owner_id) = owner_person_id {
-        db.link_person_to_entity(owner_id, &account.id, "owner")
+    db.with_transaction(|tx| {
+        tx.upsert_account(&account).map_err(|e| e.to_string())?;
+        tx.copy_account_domains(&parent.id, &account.id)
             .map_err(|e| e.to_string())?;
-    }
 
-    if let Some(desc) = description {
-        let trimmed = desc.trim();
-        if !trimmed.is_empty() {
-            let _ = db.update_account_field(&account.id, "notes", trimmed);
+        if let Some(owner_id) = owner_person_id {
+            tx.link_person_to_entity(owner_id, &account.id, "owner")
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_in_transaction(
+                ctx,
+                tx,
+                "account",
+                &account.id,
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                "create_child_account",
+                serde_json::json!({
+                    "entity_id": &account.id,
+                    "entity_type": "account",
+                    "mutation_source": "create_child_account",
+                }),
+            )?;
         }
-    }
+
+        if let Some(desc) = description {
+            let trimmed = desc.trim();
+            if !trimmed.is_empty() {
+                let _ = tx.update_account_field(&account.id, "notes", trimmed);
+            }
+        }
+        Ok(())
+    })?;
 
     let account = db
         .get_account(&account.id)
@@ -2524,10 +2540,21 @@ pub fn merge_accounts(
         let result = tx
             .merge_accounts(from_id, into_id)
             .map_err(|e| e.to_string())?;
-        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
-            ctx, tx, into_id, "account",
-        )
-        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        for account_id in [from_id, into_id] {
+            crate::services::signals::emit_in_transaction(
+                ctx,
+                tx,
+                "account",
+                account_id,
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                "merge_accounts",
+                serde_json::json!({
+                    "entity_id": account_id,
+                    "entity_type": "account",
+                    "mutation_source": "merge_accounts",
+                }),
+            )?;
+        }
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -2600,10 +2627,19 @@ pub(crate) fn add_team_member_with_cache_rebuild(
 ) -> Result<(), String> {
     tx.add_account_team_member(account_id, person_id, role)
         .map_err(|e| e.to_string())?;
-    crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
-        ctx, tx, account_id, "account",
-    )
-    .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+    crate::services::signals::emit_in_transaction(
+        ctx,
+        tx,
+        "account",
+        account_id,
+        crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+        "add_account_team_member",
+        serde_json::json!({
+            "entity_id": account_id,
+            "entity_type": "account",
+            "mutation_source": "add_account_team_member",
+        }),
+    )?;
     Ok(())
 }
 
@@ -2617,10 +2653,19 @@ pub(crate) fn link_person_to_account_with_source_with_cache_rebuild(
 ) -> Result<(), String> {
     tx.link_person_to_account_with_source(account_id, person_id, role, data_source)
         .map_err(|e| e.to_string())?;
-    crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
-        ctx, tx, account_id, "account",
-    )
-    .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+    crate::services::signals::emit_in_transaction(
+        ctx,
+        tx,
+        "account",
+        account_id,
+        crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+        "link_person_to_account_with_source",
+        serde_json::json!({
+            "entity_id": account_id,
+            "entity_type": "account",
+            "mutation_source": "link_person_to_account_with_source",
+        }),
+    )?;
     Ok(())
 }
 
@@ -2720,10 +2765,19 @@ pub fn remove_account_team_member(
     db.with_transaction(|tx| {
         tx.remove_account_team_member(account_id, person_id, role)
             .map_err(|e| e.to_string())?;
-        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
-            ctx, tx, account_id, "account",
-        )
-        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+        crate::services::signals::emit_in_transaction(
+            ctx,
+            tx,
+            "account",
+            account_id,
+            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+            "remove_account_team_member",
+            serde_json::json!({
+                "entity_id": account_id,
+                "entity_type": "account",
+                "mutation_source": "remove_account_team_member",
+            }),
+        )?;
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -3135,6 +3189,24 @@ pub async fn create_internal_organization(
                         }
                     }
 
+                    if !created_people.is_empty() || !existing_person_ids.is_empty() {
+                        for account_id in [&root_account.id, &initial_team.id] {
+                            crate::services::signals::emit_in_transaction(
+                                &ctx,
+                                db,
+                                "account",
+                                account_id,
+                                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                                "create_internal_organization",
+                                serde_json::json!({
+                                    "entity_id": account_id,
+                                    "entity_type": "account",
+                                    "mutation_source": "create_internal_organization",
+                                }),
+                            )?;
+                        }
+                    }
+
                     Ok((root_account, initial_team, created_people, updated_people))
                 })?;
 
@@ -3271,8 +3343,29 @@ pub fn backfill_internal_meeting_associations(
         else {
             continue;
         };
-        let _ = db.link_meeting_entity(&meeting_id, &account.id, "account");
-        let _ = db.cascade_meeting_entity_to_people(&meeting_id, Some(&account.id), None);
+        db.with_transaction(|tx| {
+            tx.link_meeting_entity(&meeting_id, &account.id, "account")
+                .map_err(|e| e.to_string())?;
+            let linked = tx
+                .cascade_meeting_entity_to_people(&meeting_id, Some(&account.id), None)
+                .map_err(|e| e.to_string())?;
+            if linked > 0 {
+                crate::services::signals::emit_in_transaction(
+                    ctx,
+                    tx,
+                    "account",
+                    &account.id,
+                    crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                    "link_internal_meetings_to_account",
+                    serde_json::json!({
+                        "entity_id": &account.id,
+                        "entity_type": "account",
+                        "mutation_source": "link_internal_meetings_to_account",
+                    }),
+                )?;
+            }
+            Ok(())
+        })?;
         updated += 1;
     }
 
@@ -3307,6 +3400,7 @@ fn update_stakeholder_engagement_inner(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
+        // stakeholder-cache-skip: engagement edits do not change stakeholder membership; health signals handle downstream scoring.
         tx.conn_ref()
             .execute(
                 "UPDATE account_stakeholders
@@ -3366,6 +3460,7 @@ fn update_stakeholder_assessment_inner(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
+        // stakeholder-cache-skip: assessment edits do not change stakeholder membership; health signals handle downstream scoring.
         tx.conn_ref()
             .execute(
                 "UPDATE account_stakeholders
@@ -3641,6 +3736,7 @@ pub fn accept_stakeholder_suggestion(
         };
 
         // Ensure stakeholder link exists
+        // stakeholder-cache-skip: grouped suggestion writes emit stakeholders_changed below before commit.
         let now = ctx.clock.now().to_rfc3339();
         tx.conn_ref()
             .execute(
@@ -3690,13 +3786,19 @@ pub fn accept_stakeholder_suggestion(
             )
             .map_err(|e| e.to_string())?;
 
-        crate::services::derived_state::rebuild_stakeholder_insights_cache_for_entity(
+        crate::services::signals::emit_in_transaction(
             ctx,
             tx,
-            &suggestion.account_id,
             "account",
-        )
-        .map_err(|e| format!("stakeholder cache rebuild failed: {}", e.as_str()))?;
+            &suggestion.account_id,
+            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+            "accept_stakeholder_suggestion",
+            serde_json::json!({
+                "entity_id": &suggestion.account_id,
+                "entity_type": "account",
+                "mutation_source": "accept_stakeholder_suggestion",
+            }),
+        )?;
 
         crate::services::signals::emit_and_propagate(
             ctx,
@@ -3826,6 +3928,42 @@ mod tests {
         let state = AppState::new();
         *state.config.write() = Some(test_config(workspace_path));
         state
+    }
+
+    #[test]
+    fn add_account_team_member_promotes_dismissed_to_active() {
+        let db = test_db();
+        db.upsert_account(&make_account("acc-promote-active", "Promote Active Corp"))
+            .expect("upsert account");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at)
+                 VALUES ('p-promote-active', 'promote@example.test', 'Promote Me', '2026-01-01')",
+                [],
+            )
+            .expect("insert person");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status)
+                 VALUES ('acc-promote-active', 'p-promote-active', 'ai', 'dismissed')",
+                [],
+            )
+            .expect("insert dismissed stakeholder");
+
+        db.add_account_team_member("acc-promote-active", "p-promote-active", "champion")
+            .expect("add team member");
+
+        let (status, data_source): (String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT status, data_source FROM account_stakeholders
+                 WHERE account_id = 'acc-promote-active' AND person_id = 'p-promote-active'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read stakeholder");
+        assert_eq!(status, "active");
+        assert_eq!(data_source, "user");
     }
 
     #[test]
@@ -3999,8 +4137,7 @@ mod tests {
 
         // Add team member via DB transaction (mirrors add_account_team_member without AppState)
         db.with_transaction(|tx| {
-            tx.add_account_team_member("acc-tm", "p-tm", "csm")
-                .map_err(|e| e.to_string())?;
+            super::add_team_member_with_cache_rebuild(&ctx, tx, "acc-tm", "p-tm", "csm")?;
             crate::services::signals::emit_and_propagate(
                 &ctx,
                 tx,
@@ -4030,6 +4167,15 @@ mod tests {
             signal_count(&db, "acc-tm", "team_member_added") > 0,
             "Expected team_member_added signal"
         );
+        assert_eq!(
+            signal_count(
+                &db,
+                "acc-tm",
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL
+            ),
+            1,
+            "Expected one stakeholders_changed signal for add"
+        );
         let source: String = db
             .conn_ref()
             .query_row(
@@ -4045,6 +4191,19 @@ mod tests {
         db.with_transaction(|tx| {
             tx.remove_account_team_member("acc-tm", "p-tm", "csm")
                 .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_in_transaction(
+                &ctx,
+                tx,
+                "account",
+                "acc-tm",
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                "remove_account_team_member",
+                serde_json::json!({
+                    "entity_id": "acc-tm",
+                    "entity_type": "account",
+                    "mutation_source": "remove_account_team_member",
+                }),
+            )?;
             crate::services::signals::emit_and_propagate(
                 &ctx,
                 tx,
@@ -4073,6 +4232,15 @@ mod tests {
         assert!(
             signal_count(&db, "acc-tm", "team_member_removed") > 0,
             "Expected team_member_removed signal"
+        );
+        assert_eq!(
+            signal_count(
+                &db,
+                "acc-tm",
+                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL
+            ),
+            2,
+            "Expected one stakeholders_changed signal for add and one for remove"
         );
     }
 

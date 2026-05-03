@@ -4,9 +4,10 @@
 //! `crate::signals::bus` directly.  Infrastructure callers that only have
 //! a raw `db` handle (prepare/, processor/, gravatar/) stay direct.
 
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::db::ActionDb;
@@ -14,6 +15,21 @@ use crate::embeddings::EmbeddingModel;
 use crate::signals::bus::{self, SignalEvent};
 use crate::signals::callouts::BriefingCallout;
 use crate::signals::propagation::PropagationEngine;
+
+pub const STAKEHOLDERS_CHANGED_SIGNAL: &str = "stakeholders_changed";
+
+/// Internal stakeholder-cache invalidation signal.
+///
+/// This is a sync, in-transaction signal only: it is not exposed through MCP or
+/// Tauri, and it does not run async propagation/evaluation. `mutation_source`
+/// is required so cache rebuilds can be traced back to the mutator that changed
+/// stakeholder membership.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StakeholdersChangedPayload {
+    pub entity_id: String,
+    pub entity_type: String,
+    pub mutation_source: String,
+}
 
 /// Emit a signal event (no propagation). Convenience wrapper around bus::emit_signal.
 // ServiceContext adds one arg; signal facade mirrors bus shape.
@@ -39,6 +55,35 @@ pub fn emit(
         confidence,
     )
     .map_err(|e| e.to_string())
+}
+
+/// Emit a signal inside the active transaction and run sync derived-state
+/// subscribers for that signal type.
+///
+/// Errors propagate to the caller, causing `ActionDb::with_transaction` to
+/// roll back the source mutation, signal row, and derived-state writes.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_in_transaction(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    tx: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    payload: Value,
+) -> Result<String, String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let signal_id =
+        bus::emit_signal_in_active_tx(tx, entity_type, entity_id, signal_type, source, &payload)
+            .map_err(|e| e.to_string())?;
+
+    for subscriber in crate::signals::derived_state_subscribers::registry() {
+        if subscriber.signal_type() == signal_type {
+            subscriber.apply(ctx, tx, &payload)?;
+        }
+    }
+
+    Ok(signal_id)
 }
 
 /// Emit a signal and run cross-entity propagation rules.

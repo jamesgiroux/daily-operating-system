@@ -826,6 +826,7 @@ impl ActionDb {
         // Route: accounts → account_stakeholders, projects → entity_members
         // Only auto-add after attendee appears in 2+ meetings with the account
         if let Some(acct_id) = account_id {
+            // stakeholder-cache-skip: service cascade callers emit stakeholders_changed after this helper reports inserted links.
             self.conn.execute(
                 "INSERT INTO account_stakeholders (account_id, person_id)
                  SELECT ?1, ma.person_id
@@ -853,6 +854,7 @@ impl ActionDb {
         }
 
         if let Some(proj_id) = project_id {
+            // stakeholder-cache-skip: service cascade callers emit stakeholders_changed after this helper reports inserted links.
             let count = self.conn.execute(
                 "INSERT OR IGNORE INTO entity_members (entity_id, person_id, relationship_type)
                  SELECT ?1, ma.person_id, 'attendee'

@@ -478,6 +478,21 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
 
     db.with_transaction(|tx| {
         let source_str = source.as_str();
+        let affected_accounts = {
+            let mut stmt = tx
+                .conn_ref()
+                .prepare(
+                    "SELECT DISTINCT account_id
+                     FROM account_stakeholders
+                     WHERE data_source = ?1",
+                )
+                .map_err(|e| format!("select purged stakeholder accounts failed: {e}"))?;
+            let rows = stmt
+                .query_map([source_str], |row| row.get::<_, String>(0))
+                .map_err(|e| format!("query purged stakeholder accounts failed: {e}"))?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|e| format!("collect purged stakeholder accounts failed: {e}"))?
+        };
 
         tx.conn_ref()
             .execute(
@@ -492,6 +507,30 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                 [source_str],
             )
             .map_err(|e| format!("purge account_stakeholders failed: {e}"))?;
+
+        if !affected_accounts.is_empty() {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            let mutation_source = format!("purge_source:{source_str}");
+            for account_id in affected_accounts {
+                crate::services::signals::emit_in_transaction(
+                    &ctx,
+                    tx,
+                    "account",
+                    &account_id,
+                    crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                    "purge_source",
+                    serde_json::json!({
+                        "entity_id": account_id,
+                        "entity_type": "account",
+                        "mutation_source": &mutation_source,
+                    }),
+                )
+                .map_err(|e| format!("emit stakeholder purge signal failed: {e}"))?;
+            }
+        }
 
         let signals_deleted = if source == DataSource::Glean {
             tx.conn_ref()

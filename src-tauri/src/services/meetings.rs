@@ -454,6 +454,14 @@ async fn mutate_meeting_entities_and_refresh_briefing(
             let mutation = mutation.clone();
             let mutation_now = mutation_now.clone();
             move |db| {
+                let signal_clock = crate::services::context::SystemClock;
+                let signal_rng = crate::services::context::SystemRng;
+                let signal_ext = crate::services::context::ExternalClients::default();
+                let signal_ctx = crate::services::context::ServiceContext::new_live(
+                    &signal_clock,
+                    &signal_rng,
+                    &signal_ext,
+                );
                 let mut result = MeetingEntityMutationOutcome {
                     old_entity_ids: db
                         .get_meeting_entities(&meeting_id)
@@ -533,12 +541,30 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                             cascade_project,
                         )
                         .map_err(|e| e.to_string())?;
-                        db.cascade_meeting_entity_to_people(
+                        let linked_people = db
+                            .cascade_meeting_entity_to_people(
                             &meeting_id,
                             cascade_account,
                             cascade_project,
                         )
                         .map_err(|e| e.to_string())?;
+                        if linked_people > 0 {
+                            if let Some(ref eid) = entity_id {
+                                crate::services::signals::emit_in_transaction(
+                                    &signal_ctx,
+                                    db,
+                                    &entity_type,
+                                    eid,
+                                    crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                                    "cascade_meeting_entity_to_people",
+                                    serde_json::json!({
+                                        "entity_id": eid,
+                                        "entity_type": &entity_type,
+                                        "mutation_source": "cascade_meeting_entity_to_people",
+                                    }),
+                                )?;
+                            }
+                        }
 
                         result
                             .entities_to_refresh
@@ -603,12 +629,28 @@ async fn mutate_meeting_entities_and_refresh_briefing(
 
                         let (cascade_account, cascade_project) =
                             cascade_targets(Some(entity_id.as_str()), &entity_type);
-                        db.cascade_meeting_entity_to_people(
+                        let linked_people = db
+                            .cascade_meeting_entity_to_people(
                             &meeting_id,
                             cascade_account,
                             cascade_project,
                         )
                         .map_err(|e| e.to_string())?;
+                        if linked_people > 0 {
+                            crate::services::signals::emit_in_transaction(
+                                &signal_ctx,
+                                db,
+                                &entity_type,
+                                &entity_id,
+                                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
+                                "cascade_meeting_entity_to_people",
+                                serde_json::json!({
+                                    "entity_id": &entity_id,
+                                    "entity_type": &entity_type,
+                                    "mutation_source": "cascade_meeting_entity_to_people",
+                                }),
+                            )?;
+                        }
 
                         result.entities_to_refresh.push((entity_id, entity_type));
                     }
@@ -723,7 +765,8 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     entities_to_refresh.dedup();
     if !entities_to_refresh.is_empty() {
         for (entity_id, entity_type) in entities_to_refresh {
-            let _ = state                .intel_queue
+            let _ = state
+                .intel_queue
                 .enqueue(crate::intel_queue::IntelRequest::new(
                     entity_id,
                     entity_type,
@@ -766,7 +809,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                     false
                 }
             }
-        },
+        }
         Err(err) => {
             log::warn!(
                 "mutate_meeting_entities_and_refresh_briefing: prep rebuild inputs failed for {}: {}",
@@ -2258,7 +2301,8 @@ pub fn persist_classification_entities_scored(
 
     let mut linked = 0usize;
     for entity in &filtered {
-        let is_primary = primary_ids.contains(&(entity.entity_id.clone(), entity.entity_type.clone()));
+        let is_primary =
+            primary_ids.contains(&(entity.entity_id.clone(), entity.entity_type.clone()));
         let confidence = entity.confidence.clamp(0.0, 1.0);
         match db.link_meeting_entity_with_confidence(
             meeting_id,
@@ -2801,7 +2845,7 @@ pub fn update_meeting_prep_field(
                 _ => continue,
             };
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 &state.signals.engine,
                 entity_type_str,
@@ -2820,7 +2864,7 @@ pub fn update_meeting_prep_field(
         // Attendee assessment edits: also target the specific person entity
         if let Some(person_id) = target_person_id {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 &state.signals.engine,
                 "person",
@@ -3366,7 +3410,7 @@ pub async fn refresh_meeting_briefing_full(
                     false
                 }
             }
-        },
+        }
         Err(err) => {
             log::warn!(
                 "refresh_meeting_briefing_full: prep rebuild inputs failed for {}: {}",
@@ -4177,8 +4221,7 @@ mod tests {
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
 
-        let result =
-            restore_meeting_entity(&ctx, &state, meeting_id, entity_id, entity_type).await;
+        let result = restore_meeting_entity(&ctx, &state, meeting_id, entity_id, entity_type).await;
         assert!(
             result
                 .as_ref()
