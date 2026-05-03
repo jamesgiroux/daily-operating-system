@@ -24,7 +24,7 @@ use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
 
-use crate::abilities::claims::{metadata_for_name, ClaimActorClass};
+use crate::abilities::claims::{metadata_for_claim_type, metadata_for_name, ClaimActorClass};
 use crate::abilities::feedback::{
     feedback_semantics, transition_for_feedback, ClaimFeedbackMetadata, ClaimVerificationState,
     FeedbackAction,
@@ -44,7 +44,8 @@ use crate::services::context::ServiceContext;
 
 /// Caller-supplied input to `commit_claim`. The service computes
 /// dedup_key, canonical text, item_hash, and identity fields; the caller
-/// supplies semantics + provenance.
+/// supplies semantics + provenance, with registry defaults applied for
+/// omitted scope/sensitivity values.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ClaimProposal {
     pub subject_ref: String,
@@ -60,8 +61,8 @@ pub struct ClaimProposal {
     pub provenance_json: String,
     pub metadata_json: Option<String>,
     pub thread_id: Option<String>,
-    pub temporal_scope: TemporalScope,
-    pub sensitivity: ClaimSensitivity,
+    pub temporal_scope: Option<TemporalScope>,
+    pub sensitivity: Option<ClaimSensitivity>,
     /// If this commit is creating a tombstone, caller signals so via this
     /// enum + retraction_reason text.
     pub tombstone: Option<TombstoneSpec>,
@@ -993,6 +994,15 @@ pub fn commit_claim(
             proposal.claim_type, subject_kind_lc
         )));
     }
+    let metadata = metadata_for_claim_type(kind);
+    let effective_temporal_scope = proposal
+        .temporal_scope
+        .clone()
+        .unwrap_or_else(|| metadata.default_temporal_scope.clone());
+    let effective_sensitivity = proposal
+        .sensitivity
+        .clone()
+        .unwrap_or_else(|| metadata.default_sensitivity.clone());
 
     let canonical_text = canonicalize_for_dos280(&proposal.text);
     let computed_hash = item_hash(item_kind_for_claim_type(&proposal.claim_type), &canonical_text);
@@ -1099,8 +1109,8 @@ pub fn commit_claim(
                     trust_computed_at: None,
                     trust_version: None,
                     thread_id: proposal.thread_id.clone(),
-                    temporal_scope: proposal.temporal_scope.clone(),
-                    sensitivity: proposal.sensitivity.clone(),
+                    temporal_scope: effective_temporal_scope.clone(),
+                    sensitivity: effective_sensitivity.clone(),
                     verification_state: ClaimVerificationState::Active,
                     verification_reason: None,
                     needs_user_decision_at: None,
@@ -1166,8 +1176,8 @@ pub fn commit_claim(
             trust_computed_at: None,
             trust_version: None,
             thread_id: proposal.thread_id.clone(),
-            temporal_scope: proposal.temporal_scope.clone(),
-            sensitivity: proposal.sensitivity.clone(),
+            temporal_scope: effective_temporal_scope.clone(),
+            sensitivity: effective_sensitivity.clone(),
             verification_state: ClaimVerificationState::Active,
             verification_reason: None,
             needs_user_decision_at: None,
@@ -1620,8 +1630,8 @@ pub fn shadow_write_tombstone_claim(
         provenance_json: r#"{"runtime":"dos7_d4_1a_shadow"}"#.to_string(),
         metadata_json,
         thread_id: None,
-        temporal_scope: TemporalScope::State,
-        sensitivity: ClaimSensitivity::Internal,
+        temporal_scope: Some(TemporalScope::State),
+        sensitivity: Some(ClaimSensitivity::Internal),
         tombstone: Some(TombstoneSpec {
             retraction_reason: "user_removal".to_string(),
             expires_at: expires_at.map(|s| s.to_string()),
@@ -1780,8 +1790,8 @@ mod tests {
             provenance_json: "{}".to_string(),
             metadata_json: None,
             thread_id: None,
-            temporal_scope: TemporalScope::State,
-            sensitivity: ClaimSensitivity::Internal,
+            temporal_scope: Some(TemporalScope::State),
+            sensitivity: Some(ClaimSensitivity::Internal),
             tombstone: None,
         }
     }
@@ -1795,6 +1805,25 @@ mod tests {
             .expect("seed account");
     }
 
+    fn seed_meeting(db: &ActionDb) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at) \
+                 VALUES (?1, ?2, 'sync', ?3, ?3)",
+                params!["meeting-1", "Meeting 1", TS],
+            )
+            .expect("seed meeting");
+    }
+
+    fn seed_person(db: &ActionDb) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES (?1, ?2, ?3, ?4)",
+                params!["person-1", "person-1@example.com", "Person 1", TS],
+            )
+            .expect("seed person");
+    }
+
     fn read_account_claim_version(db: &ActionDb) -> i64 {
         db.conn_ref()
             .query_row(
@@ -1803,6 +1832,26 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("read claim_version")
+    }
+
+    fn read_claim_temporal_scope(db: &ActionDb, claim_id: &str) -> String {
+        db.conn_ref()
+            .query_row(
+                "SELECT temporal_scope FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| row.get(0),
+            )
+            .expect("read temporal_scope")
+    }
+
+    fn read_claim_sensitivity(db: &ActionDb, claim_id: &str) -> String {
+        db.conn_ref()
+            .query_row(
+                "SELECT sensitivity FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| row.get(0),
+            )
+            .expect("read sensitivity")
     }
 
     fn insert_fixture_claim(
@@ -1998,6 +2047,57 @@ mod tests {
         assert_eq!(claim.surfacing_state, SurfacingState::Active);
         assert_eq!(claim.trust_score, None);
         assert_eq!(claim.item_hash, Some(item_hash(ItemKind::Risk, &claim.text)));
+    }
+
+    #[test]
+    fn commit_claim_substitutes_registry_default_temporal_scope_when_omitted() {
+        let db = test_db();
+        seed_meeting(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut p = proposal("Meeting included a renewal-risk note");
+        p.subject_ref = r#"{"kind":"meeting","id":"meeting-1"}"#.to_string();
+        p.claim_type = "meeting_event_note".to_string();
+        p.field_path = None;
+        p.temporal_scope = None;
+
+        let id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+        assert_eq!(read_claim_temporal_scope(&db, &id), "point_in_time");
+    }
+
+    #[test]
+    fn commit_claim_preserves_explicit_temporal_scope() {
+        let db = test_db();
+        seed_meeting(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut p = proposal("Meeting note should stay state-scoped");
+        p.subject_ref = r#"{"kind":"meeting","id":"meeting-1"}"#.to_string();
+        p.claim_type = "meeting_event_note".to_string();
+        p.field_path = None;
+        p.temporal_scope = Some(TemporalScope::State);
+
+        let id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+        assert_eq!(read_claim_temporal_scope(&db, &id), "state");
+    }
+
+    #[test]
+    fn commit_claim_substitutes_registry_default_sensitivity_when_omitted() {
+        let db = test_db();
+        seed_person(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut p = proposal("Stakeholder is privately assessing renewal risk");
+        p.subject_ref = r#"{"kind":"person","id":"person-1"}"#.to_string();
+        p.claim_type = "stakeholder_assessment".to_string();
+        p.field_path = None;
+        p.sensitivity = None;
+
+        let id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+        assert_eq!(read_claim_sensitivity(&db, &id), "confidential");
     }
 
     #[test]

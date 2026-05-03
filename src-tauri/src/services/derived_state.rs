@@ -685,8 +685,8 @@ mod tests {
             provenance_json: "{}".to_string(),
             metadata_json: None,
             thread_id: None,
-            temporal_scope: TemporalScope::State,
-            sensitivity: ClaimSensitivity::Internal,
+            temporal_scope: Some(TemporalScope::State),
+            sensitivity: Some(ClaimSensitivity::Internal),
             tombstone: None,
         }
     }

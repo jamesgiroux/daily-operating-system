@@ -181,6 +181,27 @@ CREATE TABLE IF NOT EXISTS claim_repair_job (
 CREATE INDEX IF NOT EXISTS idx_repair_pending
     ON claim_repair_job(state, created_at)
     WHERE state IN ('pending', 'in_progress');
+
+CREATE TABLE IF NOT EXISTS claim_projection_status (
+    claim_id            TEXT NOT NULL REFERENCES intelligence_claims(id),
+    projection_target   TEXT NOT NULL
+                                CHECK (projection_target IN (
+                                    'entity_intelligence',
+                                    'success_plans',
+                                    'accounts_columns',
+                                    'intelligence_json'
+                                )),
+    status              TEXT NOT NULL
+                                CHECK (status IN ('committed', 'failed', 'repaired')),
+    error_message       TEXT,
+    attempted_at        TEXT NOT NULL,
+    succeeded_at        TEXT,
+    PRIMARY KEY (claim_id, projection_target)
+);
+
+CREATE INDEX IF NOT EXISTS idx_claim_projection_status_failed
+    ON claim_projection_status(projection_target, status)
+    WHERE status = 'failed';
 "#;
 
 // The live invalidation migration does not create a `claim_invalidation` table; it adds
@@ -284,8 +305,8 @@ fn claim_proposal(
         provenance_json: "{}".to_string(),
         metadata_json: None,
         thread_id: None,
-        temporal_scope: TemporalScope::State,
-        sensitivity: ClaimSensitivity::Internal,
+        temporal_scope: Some(TemporalScope::State),
+        sensitivity: Some(ClaimSensitivity::Internal),
         tombstone: is_dismissal.then(|| TombstoneSpec {
             retraction_reason: "user_removal".to_string(),
             expires_at: None,
