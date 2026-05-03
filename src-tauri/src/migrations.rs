@@ -932,7 +932,12 @@ fn is_no_such_actions_table_error(err: &SqliteError) -> bool {
         _ => return false,
     };
 
-    msg.contains("no such table: actions")
+    // rusqlite 0.31/libsqlite3-sys 0.28 does not expose SQLite's newer
+    // missing-table extended code, so this fresh-database probe keeps the
+    // unavoidable message fallback constrained to the exact table it owns.
+    msg.trim()
+        .to_ascii_lowercase()
+        .starts_with("no such table: actions")
 }
 
 fn probe_actions_table(conn: &Connection) -> Result<bool, String> {
@@ -1046,7 +1051,9 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
     // than no backup — it creates false confidence. Fail loudly so the user
     // knows migrations did not run with a real safety net.
     let source_size = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
-    let backup_size = std::fs::metadata(&backup_path).map(|m| m.len()).unwrap_or(0);
+    let backup_size = std::fs::metadata(&backup_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
     if source_size > 128 * 1024 && backup_size < 64 * 1024 {
         let _ = std::fs::remove_file(&backup_path);
         return Err(format!(
@@ -1170,8 +1177,7 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
                 // (PR #11: multi-statement migrations with CREATE/INSERT/DROP
                 // must not silently swallow this error).
                 let is_dup_column = msg.contains("duplicate column name");
-                let is_benign_alter =
-                    is_single_alter && msg.contains("no such column");
+                let is_benign_alter = is_single_alter && msg.contains("no such column");
                 if is_dup_column || is_benign_alter {
                     log::warn!(
                         "Migration v{}: benign schema conflict ({}), continuing",
@@ -1298,10 +1304,8 @@ mod tests {
                 "no such table: missing_dependency",
             ),
         ] {
-            let err = SqliteError::SqliteFailure(
-                rusqlite::ffi::Error::new(code),
-                Some(msg.to_string()),
-            );
+            let err =
+                SqliteError::SqliteFailure(rusqlite::ffi::Error::new(code), Some(msg.to_string()));
             assert!(
                 !is_no_such_actions_table_error(&err),
                 "only missing actions table should classify as fresh DB: {msg}"
@@ -1792,7 +1796,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("linked_entities view should be queryable");
-        assert_eq!(view_count, 1, "linked_entities view should hide user_dismissed rows");
+        assert_eq!(
+            view_count, 1,
+            "linked_entities view should hide user_dismissed rows"
+        );
 
         // linking_dismissals table
         conn.execute(
@@ -2366,31 +2373,57 @@ mod tests {
 
         // Second run of run_migrations is a no-op because schema_version is populated.
         let applied_again = run_migrations(&conn).expect("second run");
-        assert_eq!(applied_again, 0, "re-running migrations should apply zero new ones");
+        assert_eq!(
+            applied_again, 0,
+            "re-running migrations should apply zero new ones"
+        );
 
         // Legacy-labelled row is untouched (no rows matched on the first apply,
         // since it was inserted *after* the migration ran).
-        let (rid, src): (String, String) = conn.query_row(
-            "SELECT rule_id, source FROM linked_entities_raw WHERE owner_id = 'm-dos258'",
-            [],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-        ).expect("fetch row");
-        assert_eq!(rid, "P4a", "post-migration inserts keep their literal identifier");
+        let (rid, src): (String, String) = conn
+            .query_row(
+                "SELECT rule_id, source FROM linked_entities_raw WHERE owner_id = 'm-dos258'",
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .expect("fetch row");
+        assert_eq!(
+            rid, "P4a",
+            "post-migration inserts keep their literal identifier"
+        );
         assert_eq!(src, "rule:P4a");
 
         // Now simulate running the rename SQL directly on a DB that still has
         // pre-migration rows: a legacy row inserted BEFORE the migration would
         // shift forward. We emulate by running the UPDATE pair manually.
-        conn.execute("UPDATE linked_entities_raw SET rule_id = '_P4a' WHERE rule_id = 'P4a'", []).expect("pass1a");
-        conn.execute("UPDATE linked_entities_raw SET source  = '_rule:P4a' WHERE source = 'rule:P4a'", []).expect("pass1b");
-        conn.execute("UPDATE linked_entities_raw SET rule_id = 'P4b' WHERE rule_id = '_P4a'", []).expect("pass2a");
-        conn.execute("UPDATE linked_entities_raw SET source  = 'rule:P4b' WHERE source = '_rule:P4a'", []).expect("pass2b");
-
-        let (rid, src): (String, String) = conn.query_row(
-            "SELECT rule_id, source FROM linked_entities_raw WHERE owner_id = 'm-dos258'",
+        conn.execute(
+            "UPDATE linked_entities_raw SET rule_id = '_P4a' WHERE rule_id = 'P4a'",
             [],
-            |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
-        ).expect("fetch row");
+        )
+        .expect("pass1a");
+        conn.execute(
+            "UPDATE linked_entities_raw SET source  = '_rule:P4a' WHERE source = 'rule:P4a'",
+            [],
+        )
+        .expect("pass1b");
+        conn.execute(
+            "UPDATE linked_entities_raw SET rule_id = 'P4b' WHERE rule_id = '_P4a'",
+            [],
+        )
+        .expect("pass2a");
+        conn.execute(
+            "UPDATE linked_entities_raw SET source  = 'rule:P4b' WHERE source = '_rule:P4a'",
+            [],
+        )
+        .expect("pass2b");
+
+        let (rid, src): (String, String) = conn
+            .query_row(
+                "SELECT rule_id, source FROM linked_entities_raw WHERE owner_id = 'm-dos258'",
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .expect("fetch row");
         assert_eq!(rid, "P4b", "P4a shifted forward to P4b");
         assert_eq!(src, "rule:P4b", "rule:P4a shifted forward to rule:P4b");
     }

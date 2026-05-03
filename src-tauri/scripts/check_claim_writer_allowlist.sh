@@ -21,27 +21,20 @@ else
   roots=("src" "tests")
 fi
 
-# Allowed-by-design files (full or trailing path match). The backfill
+# Allowed-by-design files (full or trailing path match). Backfill
 # migrations are the cutover mechanism; the claims service is the
-# canonical writer; the claims_backfill module wraps cutover orchestration
-# + JSON-blob backfill writes. Tests intentionally seed legacy tables and
-# re-run backfill SQL via execute_batch — they're scoped to dos7_d3a*.
-# db/intelligence_feedback.rs is exempt because the only INSERTs in that
-# file live inside `#[cfg(test)] mod tests` to seed the D5-2 parity tests
-# (see fn seed_pair); production reads from the file are read-only.
-# db/data_lifecycle.rs is exempt for the L2 cycle-4 fix #2 cascade:
-# when emails are hard-deleted (purge_aged_emails or DataSource::Google
-# full purge), the corresponding Email-subject claim rows must be
-# transitioned from active/tombstoned/dormant to `withdrawn` so the
-# substrate doesn't carry stale suppression for a re-imported email.
-# Only claim_state + retraction_reason are touched (both in the
-# UPDATE-allowed list per check_claim_immutability_allowlist.sh).
-# services/source_asof_backfill.rs is exempt because the cutover must
-# lift knowable source timestamps into legacy rows before trust freshness
+# canonical writer; claims_backfill wraps cutover orchestration and
+# JSON-blob backfill writes that cannot be expressed as live proposals.
+# Tests intentionally seed legacy tables and re-run backfill SQL through
+# execute_batch. db/intelligence_feedback.rs is read-only in production;
+# its claim INSERTs live in test parity fixtures. db/data_lifecycle.rs
+# seeds Email-subject claims in cascade tests and performs lifecycle-only
+# UPDATEs during hard-delete purges. services/source_asof_backfill.rs
+# lifts knowable source timestamps into legacy rows before freshness
 # scoring reads the substrate.
 allowed_basename_regex='services/claims\.rs|services/claims_backfill\.rs|services/source_asof_backfill\.rs|services/meetings\.rs|migrations/130_dos_7_claims_backfill_a1\.sql|migrations/131_dos_7_claims_backfill_a2\.sql|migrations/129_dos_7_claims_schema\.sql|migrations/133_dos_7_withdraw_unsupported_m5_kinds\.sql|migrations/136_dos_299_source_asof_quarantine\.sql|db/intelligence_feedback\.rs|db/data_lifecycle\.rs|tests/dos7_d3a1_backfill_test\.rs|tests/dos7_d3a2_backfill_test\.rs|tests/dos7_d1_schema_test\.rs|tests/dos7_d5_ghost_resurrection_test\.rs|tests/dos7_d4_lint_test\.rs|tests/dos311_fixtures/'
 
-pattern='(INSERT[[:space:]]+INTO|UPDATE)[[:space:]]+(intelligence_claims|claim_corroborations|claim_contradictions)\b'
+pattern='(INSERT([[:space:]]+OR[[:space:]]+(IGNORE|REPLACE))?[[:space:]]+INTO|REPLACE[[:space:]]+INTO|UPDATE)[[:space:]]+(intelligence_claims|claim_corroborations|claim_contradictions)\b'
 
 matches="$(
   grep -rEni --include='*.rs' --include='*.sql' "$pattern" "${roots[@]}" 2>/dev/null \

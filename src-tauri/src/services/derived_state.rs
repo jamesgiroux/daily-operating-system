@@ -23,6 +23,10 @@
 //!   so backfill and tests get deterministic ordering.
 //! - `succeeded_at` is set only on `committed` / `repaired` rows;
 //!   `failed` rows leave it NULL.
+//! - Projection rules should read the existing target row, build the
+//!   candidate projection, and skip the write when the projected value
+//!   is unchanged. This preserves target timestamps and avoids
+//!   repeatedly re-stamping rows on idempotent repair passes.
 
 use crate::abilities::claims::metadata_for_name;
 use crate::db::claim_invalidation::SubjectRef;
@@ -47,6 +51,31 @@ const ENTITY_INTELLIGENCE_CLAIM_TYPES: [&str; 7] = [
     "value_delivered",
     "stakeholder_engagement",
 ];
+
+const SQLITE_ABORT_PREFIX: &str = "DOS:";
+const SQLITE_ABORT_FENCE_ADVANCED: &str = "DOS:fence_advanced";
+const SQLITE_ABORT_VALIDATION_ERROR: &str = "DOS:validation_error";
+
+/// Return `None` when a target projection is unchanged, or `Some(new)`
+/// when the caller should write the new value.
+///
+/// ```rust
+/// # fn skip_if_unchanged<T: PartialEq>(existing: Option<T>, new: T) -> Option<T> {
+/// #     match existing {
+/// #         Some(existing) if existing == new => None,
+/// #         _ => Some(new),
+/// #     }
+/// # }
+/// assert_eq!(skip_if_unchanged(Some("same"), "same"), None);
+/// assert_eq!(skip_if_unchanged(Some("old"), "new"), Some("new"));
+/// assert_eq!(skip_if_unchanged::<i32>(None, 7), Some(7));
+/// ```
+pub(crate) fn skip_if_unchanged<T: PartialEq>(existing: Option<T>, new: T) -> Option<T> {
+    match existing {
+        Some(existing) if existing == new => None,
+        _ => Some(new),
+    }
+}
 
 /// Projection targets for the v1.4.0 dual-projection window. The
 /// label values are stable wire-format strings — repair tooling and
@@ -398,13 +427,13 @@ fn run_rule_savepoint(
                 .conn_ref()
                 .execute_batch(&format!("ROLLBACK TO SAVEPOINT {name}"))
             {
-                log::warn!("savepoint rollback failed: {}", e);
+                log::warn!("savepoint {name} rollback failed: {e}");
             }
             if let Err(e) = tx
                 .conn_ref()
                 .execute_batch(&format!("RELEASE SAVEPOINT {name}"))
             {
-                log::warn!("savepoint release failed: {}", e);
+                log::warn!("savepoint {name} release failed: {e}");
             }
             Err(error_class)
         }
@@ -412,11 +441,10 @@ fn run_rule_savepoint(
 }
 
 fn classify_sql_error(error: rusqlite::Error) -> ProjectionErrorClass {
-    let message = error.to_string().to_ascii_lowercase();
-    if message.contains("fence") {
-        return ProjectionErrorClass::FenceAdvanced;
+    if let Some(error_class) = classify_stable_sql_abort(&error) {
+        return error_class;
     }
-    if message.contains("no such column") || message.contains("no such table") {
+    if is_missing_schema_object_error(&error) {
         return ProjectionErrorClass::RegistryMismatch;
     }
 
@@ -441,6 +469,38 @@ fn classify_sql_error(error: rusqlite::Error) -> ProjectionErrorClass {
     }
 }
 
+fn classify_stable_sql_abort(error: &rusqlite::Error) -> Option<ProjectionErrorClass> {
+    let message = sqlite_error_message(error)?.trim();
+    if !message.starts_with(SQLITE_ABORT_PREFIX) {
+        return None;
+    }
+    Some(match message {
+        SQLITE_ABORT_FENCE_ADVANCED => ProjectionErrorClass::FenceAdvanced,
+        SQLITE_ABORT_VALIDATION_ERROR => ProjectionErrorClass::ValidationError,
+        _ => ProjectionErrorClass::Unknown,
+    })
+}
+
+fn sqlite_error_message(error: &rusqlite::Error) -> Option<&str> {
+    match error {
+        rusqlite::Error::SqliteFailure(_, Some(message)) => Some(message.as_str()),
+        rusqlite::Error::SqlInputError { msg, .. } => Some(msg.as_str()),
+        _ => None,
+    }
+}
+
+fn is_missing_schema_object_error(error: &rusqlite::Error) -> bool {
+    let Some(message) = sqlite_error_message(error) else {
+        return false;
+    };
+    let normalized = message.trim().to_ascii_lowercase();
+    // rusqlite 0.31/libsqlite3-sys 0.28 does not expose SQLite's newer
+    // missing-table or missing-column extended codes. Keep the unavoidable
+    // message parsing in one named helper so callers do not grow ad hoc
+    // substring checks.
+    normalized.starts_with("no such column:") || normalized.starts_with("no such table:")
+}
+
 fn rebuild_entity_assessment_from_claims(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
@@ -453,7 +513,9 @@ fn rebuild_entity_assessment_from_claims(
     if let Some((existing_entity_type, existing_projected)) =
         existing_entity_assessment_projection(tx, &entity_id)?
     {
-        if existing_entity_type == entity_type && existing_projected == projected {
+        if existing_entity_type == entity_type
+            && skip_if_unchanged(Some(existing_projected), projected.clone()).is_none()
+        {
             return Ok(());
         }
     }
@@ -1002,12 +1064,12 @@ mod tests {
                 "CREATE TRIGGER fail_entity_assessment_insert
                  BEFORE INSERT ON entity_assessment
                  BEGIN
-                   SELECT RAISE(ABORT, 'projection validation failure');
+                   SELECT RAISE(ABORT, 'DOS:validation_error');
                  END;
                  CREATE TRIGGER fail_entity_assessment_update
                  BEFORE UPDATE ON entity_assessment
                  BEGIN
-                   SELECT RAISE(ABORT, 'projection validation failure');
+                   SELECT RAISE(ABORT, 'DOS:validation_error');
                  END;",
             )
             .unwrap();
@@ -1084,13 +1146,30 @@ mod tests {
             ProjectionErrorClass::TargetTableLocked
         );
         assert_eq!(
-            classify_sql_error(sqlite_error(rusqlite::ffi::SQLITE_ERROR, "fence advanced")),
+            classify_sql_error(sqlite_error(
+                rusqlite::ffi::SQLITE_ERROR,
+                SQLITE_ABORT_FENCE_ADVANCED
+            )),
             ProjectionErrorClass::FenceAdvanced
         );
         assert_eq!(
             classify_sql_error(sqlite_error(
                 rusqlite::ffi::SQLITE_ERROR,
+                SQLITE_ABORT_VALIDATION_ERROR
+            )),
+            ProjectionErrorClass::ValidationError
+        );
+        assert_eq!(
+            classify_sql_error(sqlite_error(
+                rusqlite::ffi::SQLITE_ERROR,
                 "no such column: x"
+            )),
+            ProjectionErrorClass::RegistryMismatch
+        );
+        assert_eq!(
+            classify_sql_error(sqlite_error(
+                rusqlite::ffi::SQLITE_ERROR,
+                "no such table: entity_assessment"
             )),
             ProjectionErrorClass::RegistryMismatch
         );
@@ -1104,6 +1183,13 @@ mod tests {
             ))),
             ProjectionErrorClass::IoError
         );
+    }
+
+    #[test]
+    fn skip_if_unchanged_signals_skip_only_for_equal_existing_value() {
+        assert_eq!(skip_if_unchanged(Some("same"), "same"), None);
+        assert_eq!(skip_if_unchanged(Some("old"), "new"), Some("new"));
+        assert_eq!(skip_if_unchanged::<i32>(None, 42), Some(42));
     }
 
     #[test]

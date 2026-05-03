@@ -19,13 +19,19 @@ pub fn record_enrichment_correction(
     quality::ensure_quality_row(db, entity_id, entity_type);
     quality::increment_beta(db, entity_id);
 
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "UPDATE entity_quality SET correction_count = correction_count + 1 WHERE entity_id = ?1",
         rusqlite::params![entity_id],
-    );
+    ) {
+        log::warn!("increment enrichment correction count failed for {entity_id}: {e}");
+    }
 
     // Penalize source in Thompson Sampling weights (beta_delta = 1.0)
-    let _ = db.upsert_signal_weight(source, entity_type, "enrichment_quality", 0.0, 1.0);
+    if let Err(e) = db.upsert_signal_weight(source, entity_type, "enrichment_quality", 0.0, 1.0) {
+        log::warn!(
+            "record enrichment quality source penalty failed for {entity_type}:{source}: {e}"
+        );
+    }
 }
 
 /// Record successful enrichment for an entity.
@@ -33,21 +39,25 @@ pub fn record_enrichment_correction(
 /// Increments alpha (raises quality score) and updates last_enrichment_at.
 pub fn record_enrichment_success(db: &ActionDb, entity_id: &str) {
     // Ensure the row exists (entities may not have been initialized yet)
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "INSERT OR IGNORE INTO entity_quality (entity_id, entity_type)
          SELECT entity_id, entity_type FROM entity_assessment WHERE entity_id = ?1
          UNION ALL
          SELECT ?1, 'unknown' WHERE NOT EXISTS (SELECT 1 FROM entity_assessment WHERE entity_id = ?1)
          LIMIT 1",
         rusqlite::params![entity_id],
-    );
+    ) {
+        log::warn!("ensure enrichment success quality row failed for {entity_id}: {e}");
+    }
 
     quality::increment_alpha(db, entity_id);
 
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "UPDATE entity_quality SET last_enrichment_at = datetime('now') WHERE entity_id = ?1",
         rusqlite::params![entity_id],
-    );
+    ) {
+        log::warn!("stamp last enrichment timestamp failed for {entity_id}: {e}");
+    }
 }
 
 #[cfg(test)]

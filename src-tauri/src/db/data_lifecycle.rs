@@ -939,7 +939,8 @@ mod tests {
             .unwrap();
 
         // Seed an Email-subject tombstone claim for each email.
-        // dos7-allowed: cycle-4 fix #2 cascade test seed
+        // dos7-allowed: cascade tests seed Email-subject claim rows
+        // directly so hard-delete behavior can be asserted in isolation.
         db.conn_ref()
             .execute(
                 "INSERT INTO intelligence_claims \
@@ -1011,7 +1012,8 @@ mod tests {
             .unwrap();
 
         // Seed a valid Email-subject claim AND a malformed-JSON claim.
-        // dos7-allowed: cycle-6 regression-test seed
+        // dos7-allowed: cascade tests seed malformed historical rows
+        // directly to assert the purge path skips invalid subject JSON.
         db.conn_ref()
             .execute(
                 "INSERT INTO intelligence_claims \
@@ -1031,8 +1033,8 @@ mod tests {
             )
             .unwrap();
 
-        let purged = purge_aged_emails(&db, 60)
-            .expect("malformed subject_ref must NOT abort the cascade");
+        let purged =
+            purge_aged_emails(&db, 60).expect("malformed subject_ref must NOT abort the cascade");
         assert_eq!(purged, 1);
 
         // Valid claim was withdrawn.

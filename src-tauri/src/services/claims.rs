@@ -948,42 +948,82 @@ fn verification_update_for_feedback(
     (next_state, reason, needs_user_decision_at)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct LifecycleUpdate {
+    claim_state: ClaimState,
+    surfacing_state: SurfacingState,
+    demotion_reason: Option<String>,
+    retraction_reason: Option<String>,
+}
+
+impl LifecycleUpdate {
+    fn from_claim(claim: &IntelligenceClaim) -> Self {
+        Self {
+            claim_state: claim.claim_state.clone(),
+            surfacing_state: claim.surfacing_state.clone(),
+            demotion_reason: claim.demotion_reason.clone(),
+            retraction_reason: claim.retraction_reason.clone(),
+        }
+    }
+}
+
+fn expected_lifecycle_render_policy(action: FeedbackAction) -> ClaimRenderPolicy {
+    match action {
+        FeedbackAction::ConfirmCurrent => ClaimRenderPolicy::DefaultWithUserCorroboration,
+        FeedbackAction::MarkOutdated => ClaimRenderPolicy::HiddenFromCurrent,
+        FeedbackAction::MarkFalse => ClaimRenderPolicy::SuppressedExceptAudit,
+        FeedbackAction::WrongSubject => ClaimRenderPolicy::SuppressedOnAssertedSubject,
+        FeedbackAction::WrongSource => ClaimRenderPolicy::QualifiedBySourceCaveat,
+        FeedbackAction::CannotVerify => ClaimRenderPolicy::QualifiedNeedsCorroboration,
+        FeedbackAction::NeedsNuance => ClaimRenderPolicy::RenderSuperseder,
+        FeedbackAction::SurfaceInappropriate => ClaimRenderPolicy::HiddenOnNamedSurface,
+        FeedbackAction::NotRelevantHere => ClaimRenderPolicy::DeprioritizedInContext,
+    }
+}
+
 fn lifecycle_update_for_feedback(
     claim: &IntelligenceClaim,
     action: FeedbackAction,
     render: ClaimRenderPolicy,
-) -> (ClaimState, SurfacingState, Option<String>, Option<String>) {
-    match (action, render) {
-        (FeedbackAction::MarkOutdated, ClaimRenderPolicy::HiddenFromCurrent) => (
-            claim.claim_state.clone(),
-            SurfacingState::Dormant,
-            Some("outdated".to_string()),
-            claim.retraction_reason.clone(),
-        ),
-        (FeedbackAction::MarkFalse, ClaimRenderPolicy::SuppressedExceptAudit) => (
-            ClaimState::Withdrawn,
-            SurfacingState::Dormant,
-            claim.demotion_reason.clone(),
-            Some("user_marked_false".to_string()),
-        ),
-        (FeedbackAction::WrongSubject, ClaimRenderPolicy::SuppressedOnAssertedSubject) => (
-            ClaimState::Tombstoned,
-            SurfacingState::Dormant,
-            claim.demotion_reason.clone(),
-            Some("wrong_subject".to_string()),
-        ),
-        (FeedbackAction::NeedsNuance, ClaimRenderPolicy::RenderSuperseder) => (
-            claim.claim_state.clone(),
-            SurfacingState::Dormant,
-            Some("superseded".to_string()),
-            claim.retraction_reason.clone(),
-        ),
-        _ => (
-            claim.claim_state.clone(),
-            claim.surfacing_state.clone(),
-            claim.demotion_reason.clone(),
-            claim.retraction_reason.clone(),
-        ),
+) -> LifecycleUpdate {
+    let expected = expected_lifecycle_render_policy(action);
+    debug_assert_eq!(
+        render,
+        expected,
+        "feedback render policy drift for {}",
+        action.as_str()
+    );
+
+    match action {
+        FeedbackAction::MarkOutdated => LifecycleUpdate {
+            claim_state: claim.claim_state.clone(),
+            surfacing_state: SurfacingState::Dormant,
+            demotion_reason: Some("outdated".to_string()),
+            retraction_reason: claim.retraction_reason.clone(),
+        },
+        FeedbackAction::MarkFalse => LifecycleUpdate {
+            claim_state: ClaimState::Withdrawn,
+            surfacing_state: SurfacingState::Dormant,
+            demotion_reason: claim.demotion_reason.clone(),
+            retraction_reason: Some("user_marked_false".to_string()),
+        },
+        FeedbackAction::WrongSubject => LifecycleUpdate {
+            claim_state: ClaimState::Tombstoned,
+            surfacing_state: SurfacingState::Dormant,
+            demotion_reason: claim.demotion_reason.clone(),
+            retraction_reason: Some("wrong_subject".to_string()),
+        },
+        FeedbackAction::NeedsNuance => LifecycleUpdate {
+            claim_state: claim.claim_state.clone(),
+            surfacing_state: SurfacingState::Dormant,
+            demotion_reason: Some("superseded".to_string()),
+            retraction_reason: claim.retraction_reason.clone(),
+        },
+        FeedbackAction::ConfirmCurrent
+        | FeedbackAction::WrongSource
+        | FeedbackAction::CannotVerify
+        | FeedbackAction::SurfaceInappropriate
+        | FeedbackAction::NotRelevantHere => LifecycleUpdate::from_claim(claim),
     }
 }
 
@@ -1319,29 +1359,70 @@ pub fn record_claim_feedback(
 
         let (new_verification_state, verification_reason, needs_user_decision_at) =
             verification_update_for_feedback(&claim, input.action, &now);
-        let (new_claim_state, new_surfacing_state, demotion_reason, retraction_reason) =
-            lifecycle_update_for_feedback(&claim, input.action, metadata.render);
-        tx.conn_ref().execute(
-            "UPDATE intelligence_claims
-             SET verification_state = ?1,
-                 verification_reason = ?2,
-                 needs_user_decision_at = ?3,
-                 claim_state = ?4,
-                 surfacing_state = ?5,
-                 demotion_reason = ?6,
-                 retraction_reason = ?7
-             WHERE id = ?8",
-            params![
-                enum_to_db(&new_verification_state)?,
-                verification_reason.as_deref(),
-                needs_user_decision_at.as_deref(),
-                enum_to_db(&new_claim_state)?,
-                enum_to_db(&new_surfacing_state)?,
-                demotion_reason.as_deref(),
-                retraction_reason.as_deref(),
-                &input.claim_id,
-            ],
-        )?;
+        let lifecycle_update = lifecycle_update_for_feedback(&claim, input.action, metadata.render);
+        let lifecycle_changed = lifecycle_update != LifecycleUpdate::from_claim(&claim);
+        let verification_changed = new_verification_state != claim.verification_state
+            || verification_reason != claim.verification_reason
+            || needs_user_decision_at != claim.needs_user_decision_at;
+
+        match (verification_changed, lifecycle_changed) {
+            (true, true) => {
+                tx.conn_ref().execute(
+                    "UPDATE intelligence_claims
+                     SET verification_state = ?1,
+                         verification_reason = ?2,
+                         needs_user_decision_at = ?3,
+                         claim_state = ?4,
+                         surfacing_state = ?5,
+                         demotion_reason = ?6,
+                         retraction_reason = ?7
+                     WHERE id = ?8",
+                    params![
+                        enum_to_db(&new_verification_state)?,
+                        verification_reason.as_deref(),
+                        needs_user_decision_at.as_deref(),
+                        enum_to_db(&lifecycle_update.claim_state)?,
+                        enum_to_db(&lifecycle_update.surfacing_state)?,
+                        lifecycle_update.demotion_reason.as_deref(),
+                        lifecycle_update.retraction_reason.as_deref(),
+                        &input.claim_id,
+                    ],
+                )?;
+            }
+            (true, false) => {
+                tx.conn_ref().execute(
+                    "UPDATE intelligence_claims
+                     SET verification_state = ?1,
+                         verification_reason = ?2,
+                         needs_user_decision_at = ?3
+                     WHERE id = ?4",
+                    params![
+                        enum_to_db(&new_verification_state)?,
+                        verification_reason.as_deref(),
+                        needs_user_decision_at.as_deref(),
+                        &input.claim_id,
+                    ],
+                )?;
+            }
+            (false, true) => {
+                tx.conn_ref().execute(
+                    "UPDATE intelligence_claims
+                     SET claim_state = ?1,
+                         surfacing_state = ?2,
+                         demotion_reason = ?3,
+                         retraction_reason = ?4
+                     WHERE id = ?5",
+                    params![
+                        enum_to_db(&lifecycle_update.claim_state)?,
+                        enum_to_db(&lifecycle_update.surfacing_state)?,
+                        lifecycle_update.demotion_reason.as_deref(),
+                        lifecycle_update.retraction_reason.as_deref(),
+                        &input.claim_id,
+                    ],
+                )?;
+            }
+            (false, false) => {}
+        }
 
         bump_invalidation_for_claim_id(tx, &input.claim_id)?;
 
@@ -2189,37 +2270,35 @@ mod tests {
     }
 
     #[test]
-    fn commit_claim_substitutes_registry_default_sensitivity_when_omitted() {
+    fn commit_claim_explicit_some_sensitivity_wins_over_registry_default() {
         let db = test_db();
         seed_person(&db);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at) VALUES (?1, ?2, ?3, ?4)",
+                params!["person-2", "person-2@example.com", "Person 2", TS],
+            )
+            .expect("seed second person");
         let (clock, rng, external) = ctx_parts();
         let ctx = live_ctx(&clock, &rng, &external);
 
-        let mut p = proposal("Stakeholder is privately assessing renewal risk");
-        p.subject_ref = r#"{"kind":"person","id":"person-1"}"#.to_string();
-        p.claim_type = "stakeholder_assessment".to_string();
-        p.field_path = None;
-        p.sensitivity = None;
+        let mut explicit = proposal("Stakeholder assessment stays internal");
+        explicit.subject_ref = r#"{"kind":"person","id":"person-1"}"#.to_string();
+        explicit.claim_type = "stakeholder_assessment".to_string();
+        explicit.field_path = None;
+        explicit.sensitivity = Some(ClaimSensitivity::Internal);
 
-        let id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
-        assert_eq!(read_claim_sensitivity(&db, &id), "confidential");
-    }
+        let explicit_id = inserted_claim_id(commit_claim(&ctx, &db, explicit).unwrap());
+        assert_eq!(read_claim_sensitivity(&db, &explicit_id), "internal");
 
-    #[test]
-    fn commit_claim_preserves_explicit_sensitivity_when_provided() {
-        let db = test_db();
-        seed_person(&db);
-        let (clock, rng, external) = ctx_parts();
-        let ctx = live_ctx(&clock, &rng, &external);
+        let mut omitted = proposal("Stakeholder is privately assessing renewal risk");
+        omitted.subject_ref = r#"{"kind":"person","id":"person-2"}"#.to_string();
+        omitted.claim_type = "stakeholder_assessment".to_string();
+        omitted.field_path = None;
+        omitted.sensitivity = None;
 
-        let mut p = proposal("Stakeholder assessment stays internal");
-        p.subject_ref = r#"{"kind":"person","id":"person-1"}"#.to_string();
-        p.claim_type = "stakeholder_assessment".to_string();
-        p.field_path = None;
-        p.sensitivity = Some(ClaimSensitivity::Internal);
-
-        let id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
-        assert_eq!(read_claim_sensitivity(&db, &id), "internal");
+        let omitted_id = inserted_claim_id(commit_claim(&ctx, &db, omitted).unwrap());
+        assert_eq!(read_claim_sensitivity(&db, &omitted_id), "confidential");
     }
 
     #[test]
@@ -2733,6 +2812,45 @@ mod tests {
         .unwrap();
 
         assert_eq!(outcome.claim_id, claim_id);
+    }
+
+    #[test]
+    fn record_claim_feedback_skips_claim_update_when_feedback_has_no_column_delta() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk already current")).unwrap());
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TABLE claim_update_log (id INTEGER);
+                 CREATE TRIGGER claim_update_log_after_update
+                 AFTER UPDATE ON intelligence_claims
+                 BEGIN
+                   INSERT INTO claim_update_log (id) VALUES (1);
+                 END;",
+            )
+            .unwrap();
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::ConfirmCurrent),
+        )
+        .unwrap();
+
+        let update_count: i64 = db
+            .conn_ref()
+            .query_row("SELECT count(*) FROM claim_update_log", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            update_count, 0,
+            "feedback row should persist without re-writing unchanged claim columns"
+        );
     }
 
     #[test]

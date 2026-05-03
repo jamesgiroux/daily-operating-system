@@ -37,18 +37,39 @@ impl AbilityVersion {
 #[serde(transparent)]
 pub struct SchemaVersion(pub u32);
 
-#[derive(
-    Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
-)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 #[serde(transparent)]
-pub struct InvocationId(pub String);
+pub struct InvocationId(pub uuid::Uuid);
 
 impl InvocationId {
-    pub fn new(value: impl Into<String>) -> Self {
-        Self(value.into())
+    pub fn new(value: uuid::Uuid) -> Self {
+        Self(value)
+    }
+
+    pub fn parse(s: &str) -> Result<Self, uuid::Error> {
+        Ok(Self(uuid::Uuid::parse_str(s)?))
     }
 }
 
+impl JsonSchema for InvocationId {
+    fn schema_name() -> String {
+        "InvocationId".into()
+    }
+
+    fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
+        let mut schema = SchemaObject {
+            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
+            ..Default::default()
+        };
+        schema.format = Some("uuid".to_string());
+        Schema::Object(schema)
+    }
+}
+
+/// Composition identifiers are stable child labels within a composed
+/// provenance graph. They are intentionally string-shaped because values
+/// such as `lookup`, `account_lookup`, or an ability name describe an edge,
+/// not a runtime UUID.
 #[derive(Debug, Clone)]
 pub struct CompositionId(CompositionIdValue);
 
@@ -476,7 +497,9 @@ pub fn provenance_for_test(
         ability_name: ability_name.into(),
         ability_version: AbilityVersion::new(1, 0),
         ability_schema_version: SchemaVersion(1),
-        invocation_id: InvocationId::new("invocation-fixture"),
+        invocation_id: InvocationId::new(
+            uuid::Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap(),
+        ),
         produced_at,
         inputs_snapshot: InputsSnapshot::default(),
         actor: Actor::System {
@@ -541,11 +564,43 @@ mod tests {
 
     #[test]
     fn schemars_schema_for_thread_id_is_uuid_string() {
-        let schema = schemars::schema_for!(Provenance);
-        let rendered = serde_json::to_value(schema).unwrap().to_string();
+        let schema = serde_json::to_value(schemars::schema_for!(ThreadId)).unwrap();
+        assert_eq!(
+            schema,
+            serde_json::json!({
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "title": "ThreadId",
+                "type": "string",
+                "format": "uuid"
+            })
+        );
+    }
 
-        assert!(rendered.contains("\"ThreadId\""));
-        assert!(rendered.contains("\"format\":\"uuid\""));
+    #[test]
+    fn schemars_schema_for_invocation_id_is_uuid_string() {
+        let schema = serde_json::to_value(schemars::schema_for!(InvocationId)).unwrap();
+        assert_eq!(
+            schema,
+            serde_json::json!({
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "title": "InvocationId",
+                "type": "string",
+                "format": "uuid"
+            })
+        );
+    }
+
+    #[test]
+    fn schemars_schema_for_composition_id_is_plain_string_label() {
+        let schema = serde_json::to_value(schemars::schema_for!(CompositionId)).unwrap();
+        assert_eq!(
+            schema,
+            serde_json::json!({
+                "$schema": "http://json-schema.org/draft-07/schema#",
+                "title": "CompositionId",
+                "type": "string"
+            })
+        );
     }
 
     #[test]
@@ -673,6 +728,29 @@ mod tests {
         assert_eq!(
             id.0,
             uuid::Uuid::parse_str("11111111-1111-4111-8111-111111111111").unwrap()
+        );
+    }
+
+    #[test]
+    fn invocation_id_rejects_non_uuid_string() {
+        let bad = "\"invocation-fixture\"";
+        let res: Result<InvocationId, _> = serde_json::from_str(bad);
+        assert!(
+            res.is_err(),
+            "non-UUID string must fail InvocationId deserialization"
+        );
+
+        let parse = InvocationId::parse("not-a-uuid");
+        assert!(parse.is_err());
+    }
+
+    #[test]
+    fn invocation_id_accepts_well_formed_uuid_string() {
+        let good = "\"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa\"";
+        let id: InvocationId = serde_json::from_str(good).unwrap();
+        assert_eq!(
+            id.0,
+            uuid::Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap()
         );
     }
 

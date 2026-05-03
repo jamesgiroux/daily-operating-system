@@ -113,10 +113,7 @@ impl ActionDb {
     /// Insert or replace an intelligence feedback record.
     /// Uses ON CONFLICT on the UNIQUE(entity_id, entity_type, field) constraint
     /// so changing a vote replaces the previous one (AC16).
-    pub fn insert_intelligence_feedback(
-        &self,
-        input: &FeedbackInput<'_>,
-    ) -> Result<(), String> {
+    pub fn insert_intelligence_feedback(&self, input: &FeedbackInput<'_>) -> Result<(), String> {
         self.conn_ref()
             .execute(
                 "INSERT INTO intelligence_feedback \
@@ -168,20 +165,16 @@ impl ActionDb {
         item_hash: Option<&str>,
         sourced_at: Option<&str>,
     ) -> SuppressionDecision {
-        let candidates = match self.fetch_suppression_candidates(
-            entity_id,
-            field_key,
-            item_key,
-            item_hash,
-        ) {
-            Ok(candidates) => candidates,
-            Err(err) => {
-                return SuppressionDecision::Malformed {
-                    record_id: TombstoneId("database".to_string()),
-                    reason: MalformedReason::DatabaseError(err.to_string()),
-                };
-            }
-        };
+        let candidates =
+            match self.fetch_suppression_candidates(entity_id, field_key, item_key, item_hash) {
+                Ok(candidates) => candidates,
+                Err(err) => {
+                    return SuppressionDecision::Malformed {
+                        record_id: TombstoneId("database".to_string()),
+                        reason: MalformedReason::DatabaseError(err.to_string()),
+                    };
+                }
+            };
 
         let now = Utc::now();
 
@@ -196,12 +189,9 @@ impl ActionDb {
 
         if item_key.is_some() {
             let tier = candidates.exact.iter();
-            if let Some(decision) = resolve_suppression_tier(
-                tier,
-                SuppressionReason::ExactTextMatch,
-                sourced_at,
-                now,
-            ) {
+            if let Some(decision) =
+                resolve_suppression_tier(tier, SuppressionReason::ExactTextMatch, sourced_at, now)
+            {
                 return decision;
             }
         }
@@ -235,12 +225,9 @@ impl ActionDb {
         item_hash: Option<&str>,
         sourced_at: Option<&str>,
     ) -> SuppressionDecision {
-        let candidates = match self.fetch_suppression_claim_candidates(
-            entity_id,
-            field_key,
-            item_key,
-            item_hash,
-        ) {
+        let candidates = match self
+            .fetch_suppression_claim_candidates(entity_id, field_key, item_key, item_hash)
+        {
             Ok(candidates) => candidates,
             Err(err) => {
                 return SuppressionDecision::Malformed {
@@ -263,12 +250,9 @@ impl ActionDb {
 
         if item_key.is_some() {
             let tier = candidates.exact.iter();
-            if let Some(decision) = resolve_suppression_tier(
-                tier,
-                SuppressionReason::ExactTextMatch,
-                sourced_at,
-                now,
-            ) {
+            if let Some(decision) =
+                resolve_suppression_tier(tier, SuppressionReason::ExactTextMatch, sourced_at, now)
+            {
                 return decision;
             }
         }
@@ -362,8 +346,7 @@ impl ActionDb {
         // Also: json_valid(subject_ref)=1 guard prevents malformed
         // historical rows from raising "malformed JSON" mid-query
         // (same hazard cycle-7 fix #2 closed for PRE-GATE).
-        const KIND_ID_PREDICATE: &str =
-            "json_valid(subject_ref) = 1 \
+        const KIND_ID_PREDICATE: &str = "json_valid(subject_ref) = 1 \
              AND lower(json_extract(subject_ref, '$.kind')) = 'account' \
              AND json_extract(subject_ref, '$.id') = ?1";
 
@@ -629,8 +612,7 @@ fn evaluate_candidate(
         Ok(value) => value,
         Err(reason) => return RowEvaluation::Malformed(reason),
     };
-    let expires_at = match parse_optional_timestamp(candidate.expires_at.as_deref(), "expires_at")
-    {
+    let expires_at = match parse_optional_timestamp(candidate.expires_at.as_deref(), "expires_at") {
         Ok(value) => value,
         Err(reason) => return RowEvaluation::Malformed(reason),
     };
@@ -669,9 +651,7 @@ fn parse_optional_timestamp(
     value: Option<&str>,
     field: &'static str,
 ) -> Result<Option<DateTime<Utc>>, MalformedReason> {
-    value
-        .map(|raw| parse_timestamp(raw, field))
-        .transpose()
+    value.map(|raw| parse_timestamp(raw, field)).transpose()
 }
 
 fn parse_timestamp(raw: &str, field: &'static str) -> Result<DateTime<Utc>, MalformedReason> {
@@ -695,9 +675,7 @@ fn parse_timestamp(raw: &str, field: &'static str) -> Result<DateTime<Utc>, Malf
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        MalformedReason, SuppressionDecision, SuppressionReason, TombstoneId,
-    };
+    use super::{MalformedReason, SuppressionDecision, SuppressionReason, TombstoneId};
     use crate::db::test_utils::test_db;
     use crate::db::ActionDb;
     use crate::intelligence::canonicalization::{item_hash, ItemKind};
@@ -764,14 +742,8 @@ mod tests {
         let db = ActionDb::from_conn(conn);
         let tombstone_id = insert_tombstone(db, tombstone);
         let claim_id = format!("m1-{}", tombstone_id.0);
-        let source_id = tombstone_id
-            .0
-            .parse::<i64>()
-            .expect("numeric tombstone id");
-        let subject_ref = format!(
-            r#"{{"kind":"Account","id":"{}"}}"#,
-            tombstone.entity_id
-        );
+        let source_id = tombstone_id.0.parse::<i64>().expect("numeric tombstone id");
+        let subject_ref = format!(r#"{{"kind":"Account","id":"{}"}}"#, tombstone.entity_id);
         let text = tombstone.item_key.unwrap_or("<keyless>");
         let dedup_item = tombstone
             .item_hash
@@ -796,6 +768,9 @@ mod tests {
         })
         .to_string();
 
+        // dos7-allowed: parity tests seed legacy-dismissal claim rows
+        // directly so the legacy reader and claims-backed reader can
+        // be compared without invoking the runtime writer service.
         conn.execute(
             "INSERT INTO intelligence_claims \
              (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
@@ -824,10 +799,7 @@ mod tests {
         tombstone_id
     }
 
-    fn assert_decision_parity(
-        legacy: SuppressionDecision,
-        via_claims: SuppressionDecision,
-    ) {
+    fn assert_decision_parity(legacy: SuppressionDecision, via_claims: SuppressionDecision) {
         match (legacy, via_claims) {
             (
                 SuppressionDecision::Suppressed {
@@ -907,13 +879,7 @@ mod tests {
             Tombstone::exact("Champion went dark", "2026-01-01T00:00:00Z"),
         );
 
-        let decision = db.is_suppressed(
-            "acct-1",
-            "risks",
-            Some("Champion went dark"),
-            None,
-            None,
-        );
+        let decision = db.is_suppressed("acct-1", "risks", Some("Champion went dark"), None, None);
 
         assert_eq!(
             assert_suppressed_reason(decision, SuppressionReason::ExactTextMatch),
@@ -1180,13 +1146,7 @@ mod tests {
             },
         );
 
-        let decision = db.is_suppressed(
-            "acct-1",
-            "risks",
-            Some("ARR at risk"),
-            Some(&hash),
-            None,
-        );
+        let decision = db.is_suppressed("acct-1", "risks", Some("ARR at risk"), Some(&hash), None);
 
         assert_suppressed_reason(decision, SuppressionReason::HashMatch);
     }
@@ -1229,10 +1189,8 @@ mod tests {
     #[test]
     fn is_suppressed_more_than_32_keyless_does_not_evict_exact_match() {
         let db = test_db();
-        let expected_id = insert_tombstone(
-            &db,
-            Tombstone::exact("Exact risk", "2026-01-01T00:00:00Z"),
-        );
+        let expected_id =
+            insert_tombstone(&db, Tombstone::exact("Exact risk", "2026-01-01T00:00:00Z"));
 
         for minute in 0..35 {
             let dismissed_at = format!("2026-02-01T00:{minute:02}:00Z");
@@ -1277,13 +1235,8 @@ mod tests {
             }
         }
 
-        let decision = db.is_suppressed(
-            "acct-1",
-            "risks",
-            Some("Hash tier risk"),
-            Some(&hash),
-            None,
-        );
+        let decision =
+            db.is_suppressed("acct-1", "risks", Some("Hash tier risk"), Some(&hash), None);
 
         assert_eq!(
             assert_suppressed_reason(decision, SuppressionReason::HashMatch),
@@ -1339,10 +1292,7 @@ mod tests {
     #[test]
     fn is_suppressed_different_field_key_returns_not_suppressed() {
         let db = test_db();
-        insert_tombstone(
-            &db,
-            Tombstone::exact("Field risk", "2026-01-01T00:00:00Z"),
-        );
+        insert_tombstone(&db, Tombstone::exact("Field risk", "2026-01-01T00:00:00Z"));
 
         let decision = db.is_suppressed("acct-1", "recentWins", Some("Field risk"), None, None);
 
@@ -1375,10 +1325,8 @@ mod tests {
     fn is_suppressed_iterates_past_malformed_within_tier() {
         let db = test_db();
         insert_tombstone(&db, Tombstone::exact("Mixed date", "not-a-date"));
-        let expected_id = insert_tombstone(
-            &db,
-            Tombstone::exact("Mixed date", "2026-01-01T00:00:00Z"),
-        );
+        let expected_id =
+            insert_tombstone(&db, Tombstone::exact("Mixed date", "2026-01-01T00:00:00Z"));
 
         let decision = db.is_suppressed("acct-1", "risks", Some("Mixed date"), None, None);
 
@@ -1643,10 +1591,18 @@ mod tests {
         // via json_object so quotes/backslashes are escaped).
         let db = ActionDb::from_conn(&conn);
         let tombstone_id = db
-            .create_suppression_tombstone(evil_id, "risks", Some("dismissed text"), None, None, None)
+            .create_suppression_tombstone(
+                evil_id,
+                "risks",
+                Some("dismissed text"),
+                None,
+                None,
+                None,
+            )
             .expect("seed legacy tombstone");
         let claim_id = format!("m1-{}", tombstone_id);
-        // dos7-allowed: cycle-11 parity-regression seed
+        // dos7-allowed: parity test seed uses json_object to prove
+        // escaped subject identifiers match the claims-backed reader.
         conn.execute(
             "INSERT INTO intelligence_claims \
              (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \

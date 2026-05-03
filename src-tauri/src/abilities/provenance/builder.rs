@@ -38,7 +38,9 @@ impl ProvenanceBuilderConfig {
             ability_name: ability_name.into(),
             ability_version: AbilityVersion::new(1, 0),
             ability_schema_version: SchemaVersion(1),
-            invocation_id: InvocationId::new("invocation-fixture"),
+            invocation_id: InvocationId::new(
+                uuid::Uuid::parse_str("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa").unwrap(),
+            ),
             produced_at,
             inputs_snapshot: InputsSnapshot::default(),
             actor: Actor::System {
@@ -102,10 +104,11 @@ impl ProvenanceBuilder {
     pub fn add_source(&mut self, source: SourceAttribution) -> SourceIndex {
         let index = SourceIndex(self.sources.len());
         if source.source_asof.is_none() {
-            self.warnings.push(ProvenanceWarning::SourceTimestampUnknown {
-                source_index: index,
-                fallback: SourceTimestampFallback::ObservedAt,
-            });
+            self.warnings
+                .push(ProvenanceWarning::SourceTimestampUnknown {
+                    source_index: index,
+                    fallback: SourceTimestampFallback::ObservedAt,
+                });
         }
         self.sources.push(source);
         index
@@ -117,7 +120,10 @@ impl ProvenanceBuilder {
         child: Provenance,
     ) -> Result<&mut Self, ProvenanceError> {
         if !self.config.declared_composition_ids.is_empty()
-            && !self.config.declared_composition_ids.contains(&composition_id)
+            && !self
+                .config
+                .declared_composition_ids
+                .contains(&composition_id)
         {
             return Err(ProvenanceError::InvalidCompositionId { composition_id });
         }
@@ -165,7 +171,10 @@ impl ProvenanceBuilder {
     /// attribution before returning `AbilityOutput<T>`.
     pub fn finalize<T: Serialize>(mut self, data: T) -> Result<AbilityOutput<T>, ProvenanceError> {
         let serialized = serde_json::to_value(&data).map_err(ProvenanceError::SerializeData)?;
-        let subject = self.subject.clone().ok_or(ProvenanceError::MissingSubject)?;
+        let subject = self
+            .subject
+            .clone()
+            .ok_or(ProvenanceError::MissingSubject)?;
 
         self.apply_subtree_attributions(&serialized)?;
         self.validate_leaf_coverage(&serialized)?;
@@ -284,9 +293,7 @@ impl ProvenanceBuilder {
                             });
                         }
                     }
-                    SourceRef::Child {
-                        composition_id, ..
-                    } => {
+                    SourceRef::Child { composition_id, .. } => {
                         if !child_ids.contains(composition_id) {
                             return Err(ProvenanceError::InvalidCompositionId {
                                 composition_id: composition_id.clone(),
@@ -384,7 +391,10 @@ fn deepest_child_path(provenance: &Provenance) -> Option<Vec<usize>> {
         for (index, child) in provenance.children.iter().enumerate() {
             let mut path = prefix.clone();
             path.push(index);
-            if best.as_ref().is_none_or(|candidate| path.len() > candidate.len()) {
+            if best
+                .as_ref()
+                .is_none_or(|candidate| path.len() > candidate.len())
+            {
                 *best = Some(path.clone());
             }
             walk(&child.provenance, path, best);
@@ -457,7 +467,9 @@ pub enum ProvenanceError {
     MissingFieldAttribution { field_path: FieldPath },
     #[error("field attribution invariant failed: {0}")]
     Field(FieldAttributionError),
-    #[error("field attribution references invalid source index {source_index:?} at {field_path:?}")]
+    #[error(
+        "field attribution references invalid source index {source_index:?} at {field_path:?}"
+    )]
     InvalidSourceIndex {
         field_path: FieldPath,
         source_index: SourceIndex,

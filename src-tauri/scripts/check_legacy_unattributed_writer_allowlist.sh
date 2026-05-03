@@ -31,13 +31,36 @@ if [[ "${#roots[@]}" -eq 0 ]]; then
 fi
 
 allowed_basename_regex='services/source_asof_backfill\.rs|services/claims_backfill\.rs|migrations/[^:]+\.sql'
-pattern="data_source[[:space:]]*=[[:space:]]*'legacy_unattributed'|DataSource::LegacyUnattributed"
+direct_pattern="data_source[[:space:]]*=[[:space:]]*'legacy_unattributed'|DataSource::LegacyUnattributed|'legacy_unattributed'|\"legacy_unattributed\""
+assignment_pattern='data_source[[:space:]]*='
 
-matches="$(
-  grep -rEn --include='*.rs' --include='*.sql' "$pattern" "${roots[@]}" 2>/dev/null \
+candidate_files="$(
+  {
+    grep -rEli --include='*.rs' --include='*.sql' "$direct_pattern" "${roots[@]}" 2>/dev/null
+    grep -rEli --include='*.rs' --include='*.sql' "$assignment_pattern" "${roots[@]}" 2>/dev/null
+  } \
+    | sort -u \
     | grep -Ev "($allowed_basename_regex)" \
     || true
 )"
+
+matches=""
+for file in $candidate_files; do
+  direct_hits="$(grep -nE "$direct_pattern" "$file" 2>/dev/null || true)"
+  if [[ -n "$direct_hits" ]]; then
+    matches+="$direct_hits"$'\n'
+  fi
+
+  while read -r lineno; do
+    [[ -z "$lineno" ]] && continue
+    end=$((lineno + 3))
+    if sed -n "${lineno},${end}p" "$file" | grep -qE 'legacy_unattributed'; then
+      matches+="${file}:${lineno}: data_source assignment writes legacy_unattributed within 3-line window"$'\n'
+    fi
+  done < <(grep -nE "$assignment_pattern" "$file" 2>/dev/null | cut -d: -f1 || true)
+done
+
+matches="$(printf '%s\n' "$matches" | sort -u | sed '/^$/d')"
 
 if [[ -n "$matches" ]]; then
   echo "LegacyUnattributed writers are restricted to the cutover/backfill allowlist."

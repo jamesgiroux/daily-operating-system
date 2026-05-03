@@ -26,10 +26,12 @@ pub struct EntityQuality {
 
 /// Ensure a quality row exists for the given entity. INSERT OR IGNORE with Beta(1,1) defaults.
 pub fn ensure_quality_row(db: &ActionDb, entity_id: &str, entity_type: &str) {
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "INSERT OR IGNORE INTO entity_quality (entity_id, entity_type) VALUES (?1, ?2)",
         rusqlite::params![entity_id, entity_type],
-    );
+    ) {
+        log::warn!("ensure entity quality row failed for {entity_type}:{entity_id}: {e}");
+    }
 }
 
 /// Get the full quality row for an entity.
@@ -61,26 +63,30 @@ pub fn get_quality(db: &ActionDb, entity_id: &str) -> Option<EntityQuality> {
 
 /// Record enrichment success: alpha += 1.0, recompute score.
 pub fn increment_alpha(db: &ActionDb, entity_id: &str) {
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "UPDATE entity_quality
          SET quality_alpha = quality_alpha + 1.0,
              quality_score = (quality_alpha + 1.0) / (quality_alpha + 1.0 + quality_beta),
              updated_at = datetime('now')
          WHERE entity_id = ?1",
         rusqlite::params![entity_id],
-    );
+    ) {
+        log::warn!("increment entity quality alpha failed for {entity_id}: {e}");
+    }
 }
 
 /// Record user correction: beta += 1.0, recompute score.
 pub fn increment_beta(db: &ActionDb, entity_id: &str) {
-    let _ = db.conn_ref().execute(
+    if let Err(e) = db.conn_ref().execute(
         "UPDATE entity_quality
          SET quality_beta = quality_beta + 1.0,
              quality_score = quality_alpha / (quality_alpha + quality_beta + 1.0),
              updated_at = datetime('now')
          WHERE entity_id = ?1",
         rusqlite::params![entity_id],
-    );
+    ) {
+        log::warn!("increment entity quality beta failed for {entity_id}: {e}");
+    }
 }
 
 /// Get entities below a quality threshold, returning (entity_id, entity_type, score).
@@ -107,14 +113,16 @@ pub fn get_entities_below_quality_threshold(
 /// Bulk-initialize quality rows for all known entities. Idempotent (INSERT OR IGNORE).
 pub fn initialize_quality_scores(db: &ActionDb) {
     // Accounts
-    let _ = db.conn_ref().execute_batch(
+    if let Err(e) = db.conn_ref().execute_batch(
         "INSERT OR IGNORE INTO entity_quality (entity_id, entity_type)
          SELECT id, 'account' FROM accounts WHERE archived = 0;
          INSERT OR IGNORE INTO entity_quality (entity_id, entity_type)
          SELECT id, 'project' FROM projects WHERE archived = 0;
          INSERT OR IGNORE INTO entity_quality (entity_id, entity_type)
          SELECT id, 'person' FROM people;",
-    );
+    ) {
+        log::warn!("initialize entity quality rows failed: {e}");
+    }
 }
 
 /// Count entities with quality_score below 0.45.

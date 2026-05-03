@@ -342,9 +342,10 @@ impl Executor {
                                         let rng = crate::services::context::SystemRng;
                                         let ext =
                                             crate::services::context::ExternalClients::default();
-                                        let ctx = crate::services::context::ServiceContext::new_live(
-                                            &clock, &rng, &ext,
-                                        );
+                                        let ctx =
+                                            crate::services::context::ServiceContext::new_live(
+                                                &clock, &rng, &ext,
+                                            );
                                         let display_name = sender_email.as_deref().and_then(|e| {
                                             // Extract display name from "Name <email>" format
                                             let trimmed = e.trim();
@@ -399,7 +400,11 @@ impl Executor {
                     Ok(count)
                 }
                 Err(e) => {
-                    let _ = db.conn_ref().execute_batch("ROLLBACK");
+                    if let Err(rollback_error) = db.conn_ref().execute_batch("ROLLBACK") {
+                        log::warn!(
+                            "email enrichment transaction rollback failed: {rollback_error}"
+                        );
+                    }
                     Err(e)
                 }
             }

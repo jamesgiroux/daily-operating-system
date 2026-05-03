@@ -81,7 +81,9 @@ fn read_schema_version(path: &Path) -> Option<i64> {
     // Schema reads must not create Keychain entries as a side effect.
     if !crate::db::encryption::is_database_plaintext(path) {
         if let Ok(hex_key) = crate::db::encryption::get_existing_db_key() {
-            let _ = conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key));
+            if let Err(e) = conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key)) {
+                log::warn!("apply encryption key while reading backup schema failed: {e}");
+            }
         }
     }
     conn.pragma_query_value(None, "user_version", |row| row.get(0))
@@ -185,7 +187,9 @@ fn prune_restore_snapshots(db_path: &Path, keep: usize) -> Result<(), String> {
     }
     let to_delete = snapshots.len() - keep;
     for path in snapshots.into_iter().take(to_delete) {
-        let _ = fs::remove_file(path);
+        if let Err(e) = fs::remove_file(&path) {
+            log::warn!("remove old restore point {} failed: {e}", path.display());
+        }
     }
     Ok(())
 }
@@ -305,7 +309,12 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
             .unwrap_or("dailyos.db")
     ));
     let restore_attempt = (|| -> Result<(), String> {
-        let _ = fs::remove_file(&temp_restore);
+        if let Err(e) = fs::remove_file(&temp_restore) {
+            log::warn!(
+                "remove stale restore temp file {} failed: {e}",
+                temp_restore.display()
+            );
+        }
         fs::copy(&backup_path, &temp_restore)
             .map_err(|e| format!("Failed to stage backup restore: {e}"))?;
 
@@ -317,19 +326,53 @@ fn restore_database_from_backup_for_path(db_path: &Path, backup_path: &Path) -> 
         fs::rename(&temp_restore, db_path)
             .map_err(|e| format!("Failed to activate restored database: {e}"))?;
 
-        let _ = fs::remove_file(wal_path(db_path));
-        let _ = fs::remove_file(shm_path(db_path));
+        let wal = wal_path(db_path);
+        if let Err(e) = fs::remove_file(&wal) {
+            log::warn!(
+                "remove restored database WAL file {} failed: {e}",
+                wal.display()
+            );
+        }
+        let shm = shm_path(db_path);
+        if let Err(e) = fs::remove_file(&shm) {
+            log::warn!(
+                "remove restored database SHM file {} failed: {e}",
+                shm.display()
+            );
+        }
         crate::db::hardening::set_file_permissions(db_path);
         prune_restore_snapshots(db_path, 5)?;
         Ok(())
     })();
 
     if let Err(err) = restore_attempt {
-        let _ = fs::remove_file(&temp_restore);
+        if let Err(e) = fs::remove_file(&temp_restore) {
+            log::warn!(
+                "remove failed restore temp file {} failed: {e}",
+                temp_restore.display()
+            );
+        }
         if snapshot_created {
-            let _ = fs::copy(&snapshot_path, db_path);
-            let _ = fs::remove_file(wal_path(db_path));
-            let _ = fs::remove_file(shm_path(db_path));
+            if let Err(e) = fs::copy(&snapshot_path, db_path) {
+                log::warn!(
+                    "restore pre-restore snapshot {} failed: {e}",
+                    snapshot_path.display()
+                );
+            }
+            let wal = wal_path(db_path);
+            if let Err(e) = fs::remove_file(&wal) {
+                log::warn!(
+                    "remove WAL after failed restore {} failed: {e}",
+                    wal.display()
+                );
+            }
+            let shm = shm_path(db_path);
+            if let Err(e) = fs::remove_file(&shm) {
+                log::warn!(
+                    "remove SHM after failed restore {} failed: {e}",
+                    shm.display()
+                );
+            }
         }
         return Err(format!("Database restore failed: {err}"));
     }
