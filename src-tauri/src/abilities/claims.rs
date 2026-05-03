@@ -1,0 +1,572 @@
+//! Claim anatomy substrate primitives per ADR-0125.
+//!
+//! Three closed-set primitives gate every `intelligence_claims` row:
+//!
+//! - `ClaimType` — the canonical taxonomy of what a claim asserts.
+//!   Mirrors the ADR-0115 Signal Policy Registry pattern: an enum + a
+//!   `const` slice so registry-completeness is compile-time exhaustive
+//!   and a non-test `match` proves coverage.
+//! - `CanonicalSubjectType` — the subject kinds a claim type is
+//!   permitted to attach to. The cross-tenant / wrong-entity bleed
+//!   guard: `commit_claim` rejects a `stakeholder_role` on an `Account`
+//!   subject because the registry pins it to `Person`.
+//! - `ClaimTypeMetadata` — what the registry stores per claim type:
+//!   the canonical persisted name, allowed subjects, and default
+//!   `TemporalScope` / `ClaimSensitivity`.
+//!
+//! Render policy (sensitivity ceilings), freshness math (temporal
+//! decay), and supersession-by-scope are deliberately out of scope —
+//! they consume this metadata in later versions but are not active
+//! gates here.
+
+use serde::{Deserialize, Serialize};
+
+use crate::db::claims::{ClaimSensitivity, TemporalScope};
+
+/// Subject kinds a claim may attach to. Matches the runtime
+/// `SubjectRef` set (Account, Meeting, Person, Project, Email).
+/// `Global` and `Multi` are deliberately absent: the v1.4.0 spine
+/// rejects them at commit per ADR-0091.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum CanonicalSubjectType {
+    Account,
+    Meeting,
+    Person,
+    Project,
+    Email,
+}
+
+impl CanonicalSubjectType {
+    /// Lowercase form matching `SubjectRef.kind`'s normalized JSON.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Account => "account",
+            Self::Meeting => "meeting",
+            Self::Person => "person",
+            Self::Project => "project",
+            Self::Email => "email",
+        }
+    }
+}
+
+/// Closed set of claim types. The string form is the canonical persisted
+/// name; the enum gives the writer-side closed-match contract.
+///
+/// Two cohorts coexist:
+/// - **Production / lifecycle types** are the names current writers and
+///   backfills use today. They cover dismissal, role, and entity-field
+///   correction lifecycles.
+/// - **Pilot context types** are the v1.4.0 W5 pilot ability outputs
+///   (entity context, meeting brief). Pilots set `temporal_scope` and
+///   `sensitivity` explicitly per claim; the registry default is the
+///   conservative fallback for backfill.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimType {
+    // --- Production / lifecycle -------------------------------------
+    Risk,
+    Win,
+    StakeholderRole,
+    LinkingDismissed,
+    EmailDismissed,
+    IntelligenceFieldDismissed,
+    FeedbackFieldDismissed,
+    TriageSnooze,
+    MeetingEntityDismissed,
+    AccountFieldCorrection,
+    // --- Pilot context (W5 abilities) -------------------------------
+    EntityIdentity,
+    EntitySummary,
+    EntityCurrentState,
+    EntityRisk,
+    EntityWin,
+    StakeholderEngagement,
+    StakeholderAssessment,
+    ValueDelivered,
+    MeetingReadiness,
+    CompanyContext,
+    OpenLoop,
+    MeetingTopic,
+    MeetingEventNote,
+    AttendeeContext,
+    MeetingChangeMarker,
+    SuggestedOutcome,
+}
+
+impl ClaimType {
+    /// Canonical persisted string. The registry's `name` field is this
+    /// value; DB rows store this string in `intelligence_claims.claim_type`.
+    pub fn as_str(&self) -> &'static str {
+        metadata_for_claim_type(*self).name
+    }
+
+    /// Parse the persisted-string form. Unknown strings return `Err` so
+    /// `commit_claim` can fail closed before insert.
+    pub fn try_from_db_str(s: &str) -> Result<Self, UnknownClaimTypeError> {
+        for entry in CLAIM_TYPE_REGISTRY {
+            if entry.name == s {
+                return Ok(entry.kind);
+            }
+        }
+        Err(UnknownClaimTypeError(s.to_string()))
+    }
+}
+
+/// Returned when a string does not correspond to any registered claim
+/// type. Carried by `services::claims::ClaimError::UnknownClaimType`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct UnknownClaimTypeError(pub String);
+
+impl std::fmt::Display for UnknownClaimTypeError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "unknown claim_type: {}", self.0)
+    }
+}
+
+impl std::error::Error for UnknownClaimTypeError {}
+
+/// Per-claim-type metadata. The registry stores one of these per
+/// `ClaimType` variant. Defaults apply when a `ClaimProposal` leaves
+/// `temporal_scope` / `sensitivity` at the conservative fallback;
+/// pilot abilities override per-claim because dynamic scopes
+/// (`PointInTime`, `Trend`) need claim-specific timestamps.
+#[derive(Debug, Clone)]
+pub struct ClaimTypeMetadata {
+    pub kind: ClaimType,
+    /// Canonical persisted string. MUST be unique across the registry
+    /// (enforced by `claim_type_registry_has_unique_names`).
+    pub name: &'static str,
+    pub default_temporal_scope: TemporalScope,
+    pub default_sensitivity: ClaimSensitivity,
+    /// Subjects this claim type may attach to. `commit_claim` rejects
+    /// rows whose `subject_ref.kind` is not in this slice.
+    pub canonical_subject_types: &'static [CanonicalSubjectType],
+}
+
+/// Compile-time exhaustive lookup. Adding a new `ClaimType` variant
+/// without a registry entry is a build error because this match is
+/// exhaustive.
+pub const fn metadata_for_claim_type(kind: ClaimType) -> &'static ClaimTypeMetadata {
+    match kind {
+        ClaimType::Risk => &CLAIM_TYPE_REGISTRY[0],
+        ClaimType::Win => &CLAIM_TYPE_REGISTRY[1],
+        ClaimType::StakeholderRole => &CLAIM_TYPE_REGISTRY[2],
+        ClaimType::LinkingDismissed => &CLAIM_TYPE_REGISTRY[3],
+        ClaimType::EmailDismissed => &CLAIM_TYPE_REGISTRY[4],
+        ClaimType::IntelligenceFieldDismissed => &CLAIM_TYPE_REGISTRY[5],
+        ClaimType::FeedbackFieldDismissed => &CLAIM_TYPE_REGISTRY[6],
+        ClaimType::TriageSnooze => &CLAIM_TYPE_REGISTRY[7],
+        ClaimType::MeetingEntityDismissed => &CLAIM_TYPE_REGISTRY[8],
+        ClaimType::AccountFieldCorrection => &CLAIM_TYPE_REGISTRY[9],
+        ClaimType::EntityIdentity => &CLAIM_TYPE_REGISTRY[10],
+        ClaimType::EntitySummary => &CLAIM_TYPE_REGISTRY[11],
+        ClaimType::EntityCurrentState => &CLAIM_TYPE_REGISTRY[12],
+        ClaimType::EntityRisk => &CLAIM_TYPE_REGISTRY[13],
+        ClaimType::EntityWin => &CLAIM_TYPE_REGISTRY[14],
+        ClaimType::StakeholderEngagement => &CLAIM_TYPE_REGISTRY[15],
+        ClaimType::StakeholderAssessment => &CLAIM_TYPE_REGISTRY[16],
+        ClaimType::ValueDelivered => &CLAIM_TYPE_REGISTRY[17],
+        ClaimType::MeetingReadiness => &CLAIM_TYPE_REGISTRY[18],
+        ClaimType::CompanyContext => &CLAIM_TYPE_REGISTRY[19],
+        ClaimType::OpenLoop => &CLAIM_TYPE_REGISTRY[20],
+        ClaimType::MeetingTopic => &CLAIM_TYPE_REGISTRY[21],
+        ClaimType::MeetingEventNote => &CLAIM_TYPE_REGISTRY[22],
+        ClaimType::AttendeeContext => &CLAIM_TYPE_REGISTRY[23],
+        ClaimType::MeetingChangeMarker => &CLAIM_TYPE_REGISTRY[24],
+        ClaimType::SuggestedOutcome => &CLAIM_TYPE_REGISTRY[25],
+    }
+}
+
+/// Common subject-type slices to keep registry rows compact.
+const SUBJECTS_ACCOUNT: &[CanonicalSubjectType] = &[CanonicalSubjectType::Account];
+const SUBJECTS_PERSON: &[CanonicalSubjectType] = &[CanonicalSubjectType::Person];
+const SUBJECTS_MEETING: &[CanonicalSubjectType] = &[CanonicalSubjectType::Meeting];
+const SUBJECTS_EMAIL: &[CanonicalSubjectType] = &[CanonicalSubjectType::Email];
+const SUBJECTS_ANY_ENTITY: &[CanonicalSubjectType] = &[
+    CanonicalSubjectType::Account,
+    CanonicalSubjectType::Project,
+    CanonicalSubjectType::Person,
+];
+const SUBJECTS_ENTITY_OR_MEETING: &[CanonicalSubjectType] = &[
+    CanonicalSubjectType::Account,
+    CanonicalSubjectType::Project,
+    CanonicalSubjectType::Person,
+    CanonicalSubjectType::Meeting,
+];
+const SUBJECTS_TRIAGE: &[CanonicalSubjectType] = &[
+    CanonicalSubjectType::Account,
+    CanonicalSubjectType::Project,
+    CanonicalSubjectType::Person,
+    CanonicalSubjectType::Meeting,
+    CanonicalSubjectType::Email,
+];
+
+/// Closed registry of claim types. Index order MUST match the
+/// `metadata_for_claim_type` match arms above; the
+/// `claim_type_registry_indices_align_with_enum` test catches drift.
+pub const CLAIM_TYPE_REGISTRY: &[ClaimTypeMetadata] = &[
+    // --- Production / lifecycle -------------------------------------
+    ClaimTypeMetadata {
+        kind: ClaimType::Risk,
+        name: "risk",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ANY_ENTITY,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::Win,
+        name: "win",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ANY_ENTITY,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::StakeholderRole,
+        name: "stakeholder_role",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_PERSON,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::LinkingDismissed,
+        name: "linking_dismissed",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::EmailDismissed,
+        name: "email_dismissed",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_EMAIL,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::IntelligenceFieldDismissed,
+        name: "intelligence_field_dismissed",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::FeedbackFieldDismissed,
+        name: "feedback_field_dismissed",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::TriageSnooze,
+        name: "triage_snooze",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_TRIAGE,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::MeetingEntityDismissed,
+        name: "meeting_entity_dismissed",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::AccountFieldCorrection,
+        name: "account_field_correction",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ACCOUNT,
+    },
+    // --- Pilot context (W5 abilities) -------------------------------
+    ClaimTypeMetadata {
+        kind: ClaimType::EntityIdentity,
+        name: "entity_identity",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ANY_ENTITY,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::EntitySummary,
+        name: "entity_summary",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ANY_ENTITY,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::EntityCurrentState,
+        name: "entity_current_state",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ANY_ENTITY,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::EntityRisk,
+        name: "entity_risk",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ANY_ENTITY,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::EntityWin,
+        name: "entity_win",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ANY_ENTITY,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::StakeholderEngagement,
+        name: "stakeholder_engagement",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_PERSON,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::StakeholderAssessment,
+        name: "stakeholder_assessment",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Confidential,
+        canonical_subject_types: SUBJECTS_PERSON,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::ValueDelivered,
+        name: "value_delivered",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ANY_ENTITY,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::MeetingReadiness,
+        name: "meeting_readiness",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::CompanyContext,
+        name: "company_context",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ACCOUNT,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::OpenLoop,
+        name: "open_loop",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_ENTITY_OR_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::MeetingTopic,
+        name: "meeting_topic",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::MeetingEventNote,
+        name: "meeting_event_note",
+        // PointInTime per ADR-0125 — pilots supply occurred_at via the
+        // ClaimProposal; the registry default is overridden per claim.
+        default_temporal_scope: TemporalScope::PointInTime,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::AttendeeContext,
+        name: "attendee_context",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_PERSON,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::MeetingChangeMarker,
+        name: "meeting_change_marker",
+        default_temporal_scope: TemporalScope::PointInTime,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_MEETING,
+    },
+    ClaimTypeMetadata {
+        kind: ClaimType::SuggestedOutcome,
+        name: "suggested_outcome",
+        default_temporal_scope: TemporalScope::State,
+        default_sensitivity: ClaimSensitivity::Internal,
+        canonical_subject_types: SUBJECTS_MEETING,
+    },
+];
+
+/// Look up a metadata row by canonical persisted name. Returns `None`
+/// for unknown strings; `commit_claim` maps that to
+/// `ClaimError::UnknownClaimType`.
+pub fn metadata_for_name(name: &str) -> Option<&'static ClaimTypeMetadata> {
+    CLAIM_TYPE_REGISTRY.iter().find(|m| m.name == name)
+}
+
+/// True when a claim of `kind` is permitted on a subject of `subject_kind`
+/// (lowercase string). Used by `commit_claim` as the cross-subject bleed
+/// guard. Unknown subject_kind returns false (fail closed).
+pub fn subject_kind_is_canonical_for(kind: ClaimType, subject_kind: &str) -> bool {
+    let meta = metadata_for_claim_type(kind);
+    meta.canonical_subject_types
+        .iter()
+        .any(|s| s.as_str() == subject_kind)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn claim_type_registry_has_unique_names() {
+        let mut seen = std::collections::HashSet::new();
+        for entry in CLAIM_TYPE_REGISTRY {
+            assert!(
+                seen.insert(entry.name),
+                "duplicate registry name: {}",
+                entry.name
+            );
+        }
+    }
+
+    #[test]
+    fn claim_type_registry_indices_align_with_enum() {
+        // Drift guard: the metadata_for_claim_type match indexes
+        // CLAIM_TYPE_REGISTRY by position. Reordering the registry
+        // without updating the match silently mis-routes lookups.
+        let cases = [
+            (ClaimType::Risk, "risk"),
+            (ClaimType::Win, "win"),
+            (ClaimType::StakeholderRole, "stakeholder_role"),
+            (ClaimType::LinkingDismissed, "linking_dismissed"),
+            (ClaimType::EmailDismissed, "email_dismissed"),
+            (
+                ClaimType::IntelligenceFieldDismissed,
+                "intelligence_field_dismissed",
+            ),
+            (ClaimType::FeedbackFieldDismissed, "feedback_field_dismissed"),
+            (ClaimType::TriageSnooze, "triage_snooze"),
+            (ClaimType::MeetingEntityDismissed, "meeting_entity_dismissed"),
+            (ClaimType::AccountFieldCorrection, "account_field_correction"),
+            (ClaimType::EntityIdentity, "entity_identity"),
+            (ClaimType::EntitySummary, "entity_summary"),
+            (ClaimType::EntityCurrentState, "entity_current_state"),
+            (ClaimType::EntityRisk, "entity_risk"),
+            (ClaimType::EntityWin, "entity_win"),
+            (ClaimType::StakeholderEngagement, "stakeholder_engagement"),
+            (ClaimType::StakeholderAssessment, "stakeholder_assessment"),
+            (ClaimType::ValueDelivered, "value_delivered"),
+            (ClaimType::MeetingReadiness, "meeting_readiness"),
+            (ClaimType::CompanyContext, "company_context"),
+            (ClaimType::OpenLoop, "open_loop"),
+            (ClaimType::MeetingTopic, "meeting_topic"),
+            (ClaimType::MeetingEventNote, "meeting_event_note"),
+            (ClaimType::AttendeeContext, "attendee_context"),
+            (ClaimType::MeetingChangeMarker, "meeting_change_marker"),
+            (ClaimType::SuggestedOutcome, "suggested_outcome"),
+        ];
+        for (kind, expected) in cases {
+            let m = metadata_for_claim_type(kind);
+            assert_eq!(m.kind, kind);
+            assert_eq!(m.name, expected, "registry index mismatch for {kind:?}");
+        }
+        assert_eq!(
+            cases.len(),
+            CLAIM_TYPE_REGISTRY.len(),
+            "registry size diverged from coverage list"
+        );
+    }
+
+    #[test]
+    fn try_from_db_str_roundtrip() {
+        for entry in CLAIM_TYPE_REGISTRY {
+            let parsed = ClaimType::try_from_db_str(entry.name).unwrap();
+            assert_eq!(parsed, entry.kind);
+            assert_eq!(parsed.as_str(), entry.name);
+        }
+    }
+
+    #[test]
+    fn try_from_db_str_rejects_unknown() {
+        let err = ClaimType::try_from_db_str("not_a_real_type").unwrap_err();
+        assert_eq!(err.0, "not_a_real_type");
+    }
+
+    #[test]
+    fn subject_kind_canonical_check_accepts_registered_subject() {
+        assert!(subject_kind_is_canonical_for(
+            ClaimType::StakeholderRole,
+            "person"
+        ));
+        assert!(subject_kind_is_canonical_for(
+            ClaimType::AccountFieldCorrection,
+            "account"
+        ));
+        assert!(subject_kind_is_canonical_for(
+            ClaimType::EmailDismissed,
+            "email"
+        ));
+    }
+
+    #[test]
+    fn subject_kind_canonical_check_rejects_off_subject() {
+        // Cross-subject bleed guard: stakeholder_role on an account
+        // is rejected because the registry pins it to person only.
+        assert!(!subject_kind_is_canonical_for(
+            ClaimType::StakeholderRole,
+            "account"
+        ));
+        // Unknown subject_kind fails closed.
+        assert!(!subject_kind_is_canonical_for(
+            ClaimType::Risk,
+            "globaaaal"
+        ));
+    }
+
+    #[test]
+    fn registry_never_includes_global_subject_in_spine() {
+        // ADR-0091 spine restriction: no v1.4.0 claim type may be
+        // committed on a Global subject. The CanonicalSubjectType
+        // enum doesn't have a Global variant, so this is structural —
+        // but assert it explicitly so future enum widening doesn't
+        // silently lose the restriction.
+        for entry in CLAIM_TYPE_REGISTRY {
+            for s in entry.canonical_subject_types {
+                let label = s.as_str();
+                assert_ne!(label, "global", "registry must not allow Global subject");
+                assert_ne!(label, "multi", "registry must not allow Multi subject");
+            }
+        }
+    }
+
+    #[test]
+    fn defaults_are_conservative_state_internal() {
+        // ADR-0125: every claim type defaults to State + Internal
+        // unless a pilot specifically needs PointInTime semantics.
+        // Two pilot types (meeting_event_note, meeting_change_marker)
+        // legitimately default to PointInTime; everything else is
+        // State. Sensitivity defaults to Internal except where
+        // claim content carries personal context (stakeholder_assessment
+        // → Confidential).
+        for entry in CLAIM_TYPE_REGISTRY {
+            match entry.kind {
+                ClaimType::MeetingEventNote | ClaimType::MeetingChangeMarker => {
+                    assert!(matches!(
+                        entry.default_temporal_scope,
+                        TemporalScope::PointInTime
+                    ));
+                }
+                _ => assert!(matches!(entry.default_temporal_scope, TemporalScope::State)),
+            }
+            match entry.kind {
+                ClaimType::StakeholderAssessment => {
+                    assert!(matches!(
+                        entry.default_sensitivity,
+                        ClaimSensitivity::Confidential
+                    ));
+                }
+                _ => assert!(matches!(
+                    entry.default_sensitivity,
+                    ClaimSensitivity::Internal
+                )),
+            }
+        }
+    }
+}
