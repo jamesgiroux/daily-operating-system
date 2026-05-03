@@ -24,26 +24,27 @@ else
   roots=("src" "tests")
 fi
 
-# L2 cycle-19 fix: catch forbidden columns ANYWHERE in the SET clause,
-# not just immediately after `SET`. The previous regex
-# `SET[[:space:]]+(forbidden)` matched only the FIRST SET target,
-# so a multi-column UPDATE like
-#   `UPDATE intelligence_claims SET dedup_key = ?, subject_ref = ?`
-# bypassed the gate because `dedup_key` was matched first and
-# `subject_ref` slipped past as a non-leading column.
+# L2 cycle-19 + cycle-20 fix: catch forbidden columns ANYWHERE in
+# the SET clause AND in any quoted-identifier shape SQLite accepts.
 #
-# New approach: get a window of context lines after each
-# `UPDATE intelligence_claims` (covers multi-line UPDATEs), then
-# scan each line in the window for `<forbidden_col>[[:space:]]*=`
-# regardless of position. The dos7-allowed marker still exempts
-# legitimate canonicalization rewrites (rekey path).
+# Previous regex `SET[[:space:]]+(forbidden)` matched only the FIRST
+# SET target, so `SET dedup_key = ?, subject_ref = ?` bypassed.
+# Cycle-19 broadened to scan a 7-line context window for any
+# `<forbidden>[[:space:]]*=`, but only matched bare identifiers.
+# SQLite also accepts quoted forms:
+#   "subject_ref"   (SQL standard double-quote)
+#   `subject_ref`   (MySQL-style backtick)
+#   [subject_ref]   (SQL Server-style brackets)
+# Cycle-20 fix: regex now matches any of those wrappings before
+# the column name.
 #
-# 7 lines covers the longest UPDATE in the codebase plus margin.
+# The dos7-allowed marker still exempts legitimate canonicalization
+# rewrites (rekey path).
 matches="$(
   grep -rEni --include='*.rs' --include='*.sql' -A 7 \
     "UPDATE[[:space:]]+intelligence_claims" "${roots[@]}" 2>/dev/null \
-    | grep -E "\b(text|claim_type|subject_ref|source_asof|created_at)[[:space:]]*=" \
-    | grep -Ev "(text|claim_type|subject_ref|source_asof|created_at)[[:space:]]*=[[:space:]]*=" \
+    | grep -E '("|`|\[)?\b(text|claim_type|subject_ref|source_asof|created_at)\b("|`|\])?[[:space:]]*=' \
+    | grep -Ev '(text|claim_type|subject_ref|source_asof|created_at)("|`|\])?[[:space:]]*=[[:space:]]*=' \
     | grep -v 'dos7-allowed:' \
     || true
 )"
