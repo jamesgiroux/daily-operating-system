@@ -1,0 +1,54 @@
+/* Local fonts — matches src/styles/fonts.css. Eliminates FOUT. */
+
+@font-face {
+  font-family: 'DM Sans';
+  font-style: normal;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url('../../../fonts/dm-sans-normal-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'DM Sans';
+  font-style: italic;
+  font-weight: 100 1000;
+  font-display: swap;
+  src: url('../../../fonts/dm-sans-italic-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Newsreader';
+  font-style: normal;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../../../fonts/newsreader-normal-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'Newsreader';
+  font-style: italic;
+  font-weight: 200 800;
+  font-display: swap;
+  src: url('../../../fonts/newsreader-italic-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('../../../fonts/jetbrains-mono-normal-latin.woff2') format('woff2');
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: italic;
+  font-weight: 100 800;
+  font-display: swap;
+  src: url('../../../fonts/jetbrains-mono-italic-latin.woff2') format('woff2');
+}
+
+@font-face {
+  font-family: 'Montserrat';
+  font-style: normal;
+  font-weight: 800;
+  font-display: swap;
+  src: url('../../../fonts/montserrat-800-latin.woff2') format('woff2');
+}

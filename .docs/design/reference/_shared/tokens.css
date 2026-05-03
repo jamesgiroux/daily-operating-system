@@ -1,0 +1,157 @@
+/* =============================================================================
+   SURFACES LIBRARY — design tokens
+   Direct lift from src/styles/design-tokens.css. Single source of truth.
+   ============================================================================= */
+
+@import url('./fonts.css');
+
+:root {
+  /* Paper */
+  --color-paper-cream: #f5f2ef;
+  --color-paper-linen: #e8e2d9;
+  --color-paper-warm-white: #faf8f6;
+
+  /* Desk */
+  --color-desk-charcoal: #1e2530;
+  --color-desk-ink: #2a2b3d;
+  --color-desk-espresso: #3d2e27;
+
+  /* Spice */
+  --color-spice-turmeric: #c9a227;
+  --color-spice-saffron: #deb841;
+  --color-spice-terracotta: #c4654a;
+  --color-spice-chili: #9b3a2a;
+
+  /* Garden */
+  --color-garden-sage: #7eaa7b;
+  --color-garden-olive: #6b7c52;
+  --color-garden-rosemary: #4a6741;
+  --color-garden-larkspur: #8fa3c4;
+  --color-garden-eucalyptus: #6ba8a4;
+
+  /* Text */
+  --color-text-primary: var(--color-desk-charcoal);
+  --color-text-secondary: #5a6370;
+  --color-text-tertiary: #6b7280;
+
+  /* Rules */
+  --color-rule-heavy: rgba(30, 37, 48, 0.12);
+  --color-rule-light: rgba(30, 37, 48, 0.06);
+
+  /* Entity */
+  --color-entity-account: var(--color-spice-turmeric);
+  --color-entity-project: var(--color-garden-olive);
+  --color-entity-person: var(--color-garden-larkspur);
+  --color-entity-action: var(--color-spice-terracotta);
+  --color-entity-user: var(--color-garden-eucalyptus);
+
+  /* Tints */
+  --color-spice-turmeric-5:  rgba(201, 162, 39, 0.05);
+  --color-spice-turmeric-8:  rgba(201, 162, 39, 0.08);
+  --color-spice-turmeric-10: rgba(201, 162, 39, 0.10);
+  --color-spice-turmeric-12: rgba(201, 162, 39, 0.12);
+  --color-spice-turmeric-15: rgba(201, 162, 39, 0.15);
+  --color-spice-turmeric-25: rgba(201, 162, 39, 0.25);
+  --color-spice-turmeric-30: rgba(201, 162, 39, 0.30);
+
+  --color-spice-saffron-10:  rgba(222, 184, 65, 0.10);
+  --color-spice-saffron-15:  rgba(222, 184, 65, 0.15);
+
+  --color-spice-terracotta-10: rgba(196, 101, 74, 0.10);
+  --color-spice-terracotta-15: rgba(196, 101, 74, 0.15);
+
+  --color-garden-sage-10: rgba(126, 170, 123, 0.10);
+  --color-garden-sage-12: rgba(126, 170, 123, 0.12);
+  --color-garden-sage-15: rgba(126, 170, 123, 0.15);
+  --color-garden-sage-25: rgba(126, 170, 123, 0.25);
+
+  --color-garden-olive-10:  rgba(107, 124, 82, 0.10);
+  --color-garden-olive-12:  rgba(107, 124, 82, 0.12);
+
+  --color-garden-larkspur-10: rgba(143, 163, 196, 0.10);
+  --color-garden-larkspur-12: rgba(143, 163, 196, 0.12);
+  --color-garden-larkspur-15: rgba(143, 163, 196, 0.15);
+
+  --color-garden-rosemary-12: rgba(74, 103, 65, 0.12);
+  --color-garden-rosemary-14: rgba(74, 103, 65, 0.14);
+
+  --color-garden-eucalyptus-10: rgba(107, 168, 164, 0.10);
+  --color-garden-eucalyptus-15: rgba(107, 168, 164, 0.15);
+
+  --color-desk-charcoal-4:  rgba(30, 37, 48, 0.04);
+  --color-desk-charcoal-8:  rgba(30, 37, 48, 0.08);
+  --color-desk-charcoal-25: rgba(30, 37, 48, 0.25);
+  --color-desk-ink-12:      rgba(42, 43, 61, 0.12);
+  --color-desk-ink-55:      rgba(42, 43, 61, 0.55);
+
+  /* Type */
+  --font-serif: 'Newsreader', Georgia, serif;
+  --font-sans:  'DM Sans', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  --font-mono:  'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+  --font-mark:  'Montserrat', sans-serif;
+
+  /* Spacing */
+  --space-xs:  4px;
+  --space-sm:  8px;
+  --space-md:  16px;
+  --space-lg:  24px;
+  --space-xl:  32px;
+  --space-2xl: 48px;
+  --space-3xl: 56px;
+  --space-4xl: 72px;
+  --space-5xl: 80px;
+
+  /* Layout */
+  --folio-height: 40px;
+  --page-padding-horizontal: 120px;
+  --page-padding-bottom: 160px;
+  --page-margin-top: 40px;
+  --page-max-width: 1100px;
+  --page-content-width-standard: 900px;
+  --page-content-width-reading: 760px;
+  --nav-island-right: 28px;
+
+  /* Radii */
+  --radius-sm: 4px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+
+  /* Shadows */
+  --shadow-sm: 0 2px 8px rgba(30, 37, 48, 0.1);
+  --shadow-md: 0 2px 12px rgba(30, 37, 48, 0.06), 0 0 0 1px rgba(30, 37, 48, 0.04);
+  --shadow-lg: 0 4px 12px rgba(0, 0, 0, 0.08);
+  --shadow-xl: 0 4px 16px rgba(0, 0, 0, 0.12);
+
+  /* Transitions */
+  --transition-fast: 0.12s ease;
+  --transition-normal: 0.15s ease;
+
+  /* Glass */
+  --frosted-glass-background: rgba(245, 242, 239, 0.85);
+  --frosted-glass-nav: rgba(250, 248, 246, 0.8);
+
+  /* Z */
+  --z-atmosphere: 0;
+  --z-page-content: 1;
+  --z-app-shell: 100;
+}
+
+/* Reset + body */
+* { box-sizing: border-box; margin: 0; padding: 0; }
+html, body {
+  font-family: var(--font-sans);
+  background: var(--color-paper-cream);
+  color: var(--color-text-primary);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+body { min-height: 100vh; }
+button { font: inherit; color: inherit; cursor: pointer; }
+a { color: inherit; }
+
+/* Atmosphere — page-tinted radial */
+@keyframes atmosphere-breathe {
+  0%, 100% { opacity: 0.9; }
+  50%      { opacity: 1; }
+}

@@ -1,0 +1,239 @@
+/* =============================================================================
+   SURFACES LIBRARY — chrome
+   FolioBar (top), FloatingNavIsland (right), AtmosphereLayer (behind),
+   page container, watermark, finis marker.
+   ============================================================================= */
+
+/* ── Atmosphere ─────────────────────────────────────────────────────────── */
+.atmosphere {
+  position: fixed; inset: 0;
+  z-index: var(--z-atmosphere);
+  pointer-events: none;
+  background:
+    radial-gradient(ellipse 900px 700px at 20% 15%, var(--atm-color-1, rgba(201,162,39,0.09)), transparent 60%),
+    radial-gradient(ellipse 700px 500px at 85% 70%, var(--atm-color-2, rgba(201,162,39,0.06)), transparent 55%);
+  animation: atmosphere-breathe 14s ease-in-out infinite;
+}
+.atmosphere[data-tint="larkspur"] {
+  --atm-color-1: rgba(143, 163, 196, 0.10);
+  --atm-color-2: rgba(143, 163, 196, 0.06);
+}
+.atmosphere[data-tint="terracotta"] {
+  --atm-color-1: rgba(196, 101, 74, 0.09);
+  --atm-color-2: rgba(196, 101, 74, 0.05);
+}
+.atmosphere[data-tint="eucalyptus"] {
+  --atm-color-1: rgba(107, 168, 164, 0.10);
+  --atm-color-2: rgba(107, 168, 164, 0.06);
+}
+.atmosphere[data-tint="sage"] {
+  --atm-color-1: rgba(126, 170, 123, 0.10);
+  --atm-color-2: rgba(126, 170, 123, 0.06);
+}
+.atmosphere[data-tint="olive"] {
+  --atm-color-1: rgba(107, 124, 82, 0.10);
+  --atm-color-2: rgba(107, 124, 82, 0.06);
+}
+
+/* ── FolioBar ───────────────────────────────────────────────────────────── */
+.folio {
+  position: fixed; top: 0; left: 0; right: 0;
+  height: var(--folio-height);
+  background: var(--frosted-glass-background);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border-bottom: 1px solid var(--color-rule-light);
+  z-index: var(--z-app-shell);
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0 var(--space-lg) 0 var(--space-2xl);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-left  { display: flex; align-items: center; gap: var(--space-md); }
+.folio-right { display: flex; align-items: center; gap: var(--space-sm); }
+.folio-mark {
+  font-family: var(--font-mark); font-weight: 800; font-size: 18px;
+  color: var(--color-spice-turmeric);
+  line-height: 1; letter-spacing: 0;
+}
+.folio-mark.pulsing { animation: mark-pulse 1.4s ease-in-out infinite; }
+@keyframes mark-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.4; }
+}
+.folio-label {
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+.folio-crumbs { display: flex; align-items: center; gap: 6px; }
+.folio-crumbs a {
+  color: inherit; text-decoration: none;
+  border-bottom: 1px dotted transparent;
+  transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+.folio-crumbs a:hover {
+  color: var(--color-text-secondary);
+  border-bottom-color: var(--color-text-secondary);
+}
+.folio-crumbs .sep { opacity: 0.5; }
+.folio-status-dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+.folio-action {
+  background: transparent;
+  border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 4px 10px;
+  border-radius: var(--radius-sm);
+  display: inline-flex; align-items: center; gap: 6px;
+}
+.folio-action:hover { background: var(--color-desk-charcoal-4); color: var(--color-text-primary); }
+.folio-action.accent {
+  border-color: var(--color-spice-turmeric-30);
+  color: var(--color-spice-turmeric);
+}
+.folio-action.accent:hover { background: var(--color-spice-turmeric-10); }
+.folio-search {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+}
+.folio-status-text {
+  font-family: var(--font-mono); font-size: 10px;
+  font-style: italic; text-transform: none; letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Floating nav island ────────────────────────────────────────────────── */
+.nav-island {
+  position: fixed;
+  top: 50%; right: var(--nav-island-right);
+  transform: translateY(-50%);
+  z-index: var(--z-app-shell);
+  background: var(--frosted-glass-nav);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-xl);
+  padding: var(--space-sm);
+  display: flex; flex-direction: column; gap: 2px;
+  box-shadow: var(--shadow-md);
+}
+.nav-island-item {
+  width: 36px; height: 36px;
+  border-radius: var(--radius-md);
+  background: transparent;
+  border: none;
+  display: flex; align-items: center; justify-content: center;
+  color: var(--color-text-tertiary);
+  transition: background var(--transition-fast), color var(--transition-fast);
+}
+.nav-island-item:hover { background: var(--color-desk-charcoal-4); color: var(--color-text-secondary); }
+.nav-island-item[aria-current="page"] {
+  background: var(--color-spice-turmeric-10);
+  color: var(--color-spice-turmeric);
+}
+.nav-island-item[data-tint="larkspur"][aria-current="page"]   { background: var(--color-garden-larkspur-10); color: var(--color-garden-larkspur); }
+.nav-island-item[data-tint="terracotta"][aria-current="page"] { background: var(--color-spice-terracotta-10); color: var(--color-spice-terracotta); }
+.nav-island-item[data-tint="eucalyptus"][aria-current="page"] { background: var(--color-garden-eucalyptus-10); color: var(--color-garden-eucalyptus); }
+.nav-island-item[data-tint="olive"][aria-current="page"]      { background: var(--color-garden-olive-10); color: var(--color-garden-olive); }
+.nav-island-item[data-tint="sage"][aria-current="page"]       { background: var(--color-garden-sage-10); color: var(--color-garden-sage); }
+.nav-island-item svg { width: 18px; height: 18px; stroke-width: 1.8; }
+.nav-island-rule {
+  height: 1px;
+  background: var(--color-rule-light);
+  margin: 4px 6px;
+}
+
+/* ── Page container ─────────────────────────────────────────────────────── */
+.page {
+  position: relative;
+  z-index: var(--z-page-content);
+  max-width: var(--page-max-width);
+  margin: 0 auto;
+  padding: var(--page-margin-top) var(--page-padding-horizontal) var(--page-padding-bottom);
+}
+.page.bare {
+  /* Used when "chrome off" — still keep horizontal rhythm */
+  padding-top: 0;
+}
+
+/* ── Asterisk watermark ─────────────────────────────────────────────────── */
+.hero-watermark-wrap { position: relative; }
+.hero-watermark {
+  position: absolute; top: -120px; right: -40px;
+  font-family: var(--font-mark); font-weight: 800; font-size: 420px;
+  color: var(--color-spice-turmeric);
+  opacity: 0.07; line-height: 1;
+  transform: rotate(12deg);
+  z-index: -1; pointer-events: none; user-select: none;
+}
+.hero-watermark[data-tint="larkspur"]   { color: var(--color-garden-larkspur); }
+.hero-watermark[data-tint="terracotta"] { color: var(--color-spice-terracotta); }
+.hero-watermark[data-tint="eucalyptus"] { color: var(--color-garden-eucalyptus); }
+.hero-watermark[data-tint="olive"]      { color: var(--color-garden-olive); }
+
+/* ── Finis marker ───────────────────────────────────────────────────────── */
+.finis {
+  text-align: center;
+  padding: var(--space-4xl) 0 var(--space-2xl);
+  color: var(--color-text-tertiary);
+}
+.finis-mark {
+  font-family: var(--font-mark); font-weight: 800; font-size: 14px;
+  color: var(--color-spice-turmeric); opacity: 0.45;
+  letter-spacing: 0.5em;
+}
+.finis-date {
+  font-family: var(--font-mono); font-size: 10px;
+  text-transform: uppercase; letter-spacing: 0.08em;
+  margin-top: var(--space-sm);
+}
+.finis-caption {
+  font-family: var(--font-serif); font-style: italic; font-weight: 300;
+  font-size: 14px; color: var(--color-text-tertiary);
+  margin-top: var(--space-sm);
+  max-width: 360px;
+  margin-left: auto; margin-right: auto;
+}
+
+/* ── Chrome toggle (mockup-only control) ────────────────────────────────── */
+.chrome-toggle {
+  position: fixed; bottom: 16px; left: 16px;
+  z-index: 200;
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  font-family: var(--font-mono); font-size: 10px;
+  letter-spacing: 0.08em; text-transform: uppercase;
+  padding: 6px 12px;
+  border-radius: 100px;
+  border: none;
+  display: inline-flex; align-items: center; gap: 8px;
+  opacity: 0.85;
+  transition: opacity var(--transition-fast);
+  box-shadow: var(--shadow-md);
+}
+.chrome-toggle:hover { opacity: 1; }
+.chrome-toggle .dot {
+  width: 6px; height: 6px; border-radius: 50%;
+  background: var(--color-garden-sage);
+}
+.chrome-toggle.off .dot { background: var(--color-text-tertiary); opacity: 0.5; }
+
+/* When chrome is off, hide top + side chrome but keep page content */
+body[data-chrome="off"] .folio,
+body[data-chrome="off"] .nav-island,
+body[data-chrome="off"] .atmosphere {
+  display: none;
+}
+body[data-chrome="off"] .page { padding-top: 0; }
+body[data-chrome="off"] { background: var(--color-paper-warm-white); }
