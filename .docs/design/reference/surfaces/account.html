@@ -1,231 +1,948 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Acme Corp · DailyOS Reference</title>
-<link rel="stylesheet" href="../_shared/tokens.css">
-<link rel="stylesheet" href="../_shared/chrome.css">
-<link rel="stylesheet" href="../_shared/primitives.css">
-<link rel="stylesheet" href="../_shared/inspector.css">
-<style>
-  .account-view-switcher {
-    position: sticky;
-    bottom: 24px;
-    margin: 56px auto 0;
-    width: fit-content;
-    background: var(--color-desk-charcoal);
-    border-radius: 999px;
-    padding: 4px;
-    display: inline-flex;
-    gap: 4px;
-    box-shadow: var(--shadow-modal);
-    z-index: 50;
-  }
-  .account-view-switcher button {
-    background: transparent;
-    color: var(--color-paper-cream);
-    opacity: 0.6;
-    border: none;
-    padding: 8px 18px;
-    border-radius: 999px;
-    font-family: var(--font-mono);
-    font-size: 11px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    cursor: pointer;
-    transition: opacity 0.15s, background 0.15s;
-  }
-  .account-view-switcher button[aria-current="page"] {
-    background: var(--color-spice-turmeric);
-    color: var(--color-desk-charcoal);
-    opacity: 1;
-  }
-  .triage-card {
-    border-left: 3px solid var(--color-spice-terracotta);
-    padding: 14px 0 14px 18px;
-    margin-bottom: 18px;
-  }
-  .triage-card .tone-mono {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.08em;
-    color: var(--color-spice-terracotta);
-    margin-bottom: 6px;
-  }
-  .triage-card .triage-title {
-    font-family: var(--font-serif);
-    font-size: 18px;
-    color: var(--color-text-primary);
-    margin-bottom: 4px;
-  }
-  .triage-card .triage-impact {
-    font-family: var(--font-sans);
-    font-size: 14px;
-    color: var(--color-text-secondary);
-    line-height: 1.5;
-  }
-  .triage-card.warm { border-left-color: var(--color-spice-saffron); }
-  .triage-card.warm .tone-mono { color: var(--color-spice-saffron); }
-  .triage-card.cool { border-left-color: var(--color-garden-larkspur); }
-  .triage-card.cool .tone-mono { color: var(--color-garden-larkspur); }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Acme Corp · DailyOS Reference</title>
 
-  .vitals-row .vital { padding: 0 14px; border-right: 1px solid var(--color-rule-light); }
-  .vitals-row .vital:last-child { border-right: none; }
-</style>
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../_shared/styles/entity-detail.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AccountHero.module.css">
+  <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../_shared/styles/VitalsStrip.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AccountDetailPage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AccountViewSwitcher.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+  <link rel="stylesheet" href="../_shared/styles/SentimentHero.module.css">
+  <link rel="stylesheet" href="../_shared/styles/health.module.css">
+  <link rel="stylesheet" href="../_shared/styles/IntelligenceCorrection.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AccountDetailEditorial.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StakeholderGrid.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StrategicLandscape.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ValueCommitments.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AccuracyPrompt.module.css">
+  <link rel="stylesheet" href="../_shared/styles/QuoteWall.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ReferenceGrid.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AccountTechnicalFootprint.module.css">
+  <link rel="stylesheet" href="../_shared/styles/RelationshipFabric.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AboutThisDossier.module.css">
+  <link rel="stylesheet" href="../_shared/styles/WorkSurface.module.css">
+  <link rel="stylesheet" href="../_shared/styles/UnifiedTimeline.module.css">
+  <link rel="stylesheet" href="../_shared/styles/TimelineEntry.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AddToRecord.module.css">
+
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
   data-folio-label="Account"
-  data-folio-crumbs="Accounts > Acme Corp"
-  data-folio-status="Live · briefed 6:00a"
-  data-folio-actions="refresh,reports,tools,search"
-  data-folio-mark="pulsing"
+  data-folio-crumbs="Accounts>Acme Corp>Health"
   data-tint="turmeric"
   data-active-page="accounts"
-  data-nav-base=".">
+  data-nav-base="."
+  data-folio-actions="refresh,reports,tools"
+  data-folio-refresh-title="Refresh"
+  data-chapters="your-assessment:notebookpen:Your Assessment|needs-attention:alerttriangle:Needs Attention|outlook:compass:Outlook|relationship-health:hearthandshake:Relationship Health|about-intelligence:filetext:About Intelligence">
 
-<main class="page" data-ds-name="AccountDetail" data-ds-tier="surface" data-ds-spec="surfaces/AccountDetail.md">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
 
-<header class="hero" data-ds-name="AccountHero" data-ds-tier="pattern" data-ds-spec="patterns/AccountHero.md">
-  <a href="accounts.html" class="hero-parent-link">← Accounts</a>
-  <div class="hero-eyebrow">
-    <span class="quality-dot"></span>
-    Customer · Renewal cycle · Health 71 ↑
-  </div>
-  <span class="type-badge customer" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md">Customer<span class="chev">▾</span></span>
-  <h1 class="hero-title">Acme Corp</h1>
-  <p class="hero-lede">Mid-market enterprise customer in renewal cycle. Tier 3 pricing decisions outstanding; legal review starting this week. Sentiment trending up since the Q1 product update landed.</p>
-
-  <div class="vitals" data-ds-name="VitalsStrip" data-ds-tier="pattern" data-ds-spec="patterns/VitalsStrip.md">
-    <div class="vitals-row">
-      <div class="vital">
-        <span class="vital-text" data-highlight="turmeric">Health 71 ↑ 3</span>
-        <span class="vital-source">last 30 days</span>
+  <section id="headline" class="entity-detail_chapterHeadline">
+    <div class="AccountHero_hero EntityHeroBase_hero">
+      <div class="AccountHero_heroDate EntityHeroBase_heroDate AccountHero_heroDateLayout">
+        <span class="IntelligenceQualityBadge_root" title="Fresh — Last updated: 4/22/2026, 9:00:00 AM">
+          <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage)"></span>
+        </span>
+        Last updated Today
+        <div class="AccountHero_typeBadgeWrapper">
+          <button class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_customerBadge AccountHero_typeBadgeButton">
+            Customer
+            <svg class="AccountHero_typeBadgeChevron" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+          </button>
+        </div>
       </div>
-      <div class="vital">
-        <span class="vital-text">Stage Renewal</span>
-        <span class="vital-source">closes Jun 15</span>
+
+      <h1 class="AccountHero_name EntityHeroBase_heroTitle">
+        <span class="EditableText_editable" title="Click to edit" data-editable-text>Acme Corp</span>
+      </h1>
+
+      <div class="VitalsStrip_strip">
+        <div class="VitalsStrip_items">
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-spice-turmeric)">$620K ARR</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-spice-saffron)">Yellow Health</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">Renewal</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-garden-olive)">Stage: business review</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-garden-larkspur)">Opp: proposal</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-spice-saffron)">Renewal in 54d</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">NPS 42</span>
+            </span>
+          </span>
+          <span class="VitalsStrip_item">
+            <span class="VitalsStrip_separatorDot"></span>
+            <span class="VitalsStrip_fieldStack">
+              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">6 meetings / 30d</span>
+            </span>
+          </span>
+        </div>
       </div>
-      <div class="vital">
-        <span class="vital-text">Confidence 82%</span>
-        <span class="vital-source">3 sources</span>
-      </div>
-      <div class="vital">
-        <span class="vital-text">Owner You</span>
-        <span class="vital-source">since Jan 2025</span>
-      </div>
-      <div class="vital">
-        <span class="vital-text" data-highlight="larkspur">Champion Jen Park</span>
-        <span class="vital-source">CTO · still active</span>
-      </div>
     </div>
-  </div>
-</header>
+  </section>
 
-<!-- Health & Outlook view (active) -->
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Sentiment<span class="margin-label-count">trending up</span></div>
-  <div class="margin-content">
-    <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Sentiment</h2>
-      <p class="chapter-epigraph">What you've felt about this account, with deltas.</p>
-    </div>
-    <div data-ds-name="SentimentHero" data-ds-tier="pattern" data-ds-spec="patterns/SentimentHero.md">
-      <p style="font-family:var(--font-serif); font-size:21px; line-height:1.5; color:var(--color-text-primary); max-width:640px;">
-        Renewal momentum returning. Jen Park is engaged again after the March pause; pricing is the only blocker.
-      </p>
-      <p style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.06em; color:var(--color-text-tertiary); text-transform:uppercase; margin-top:8px;">
-        Logged 2d ago · trend ↑ since Mar 12 · 14 captures
-      </p>
-    </div>
-  </div>
-</section>
+  <div class="AccountDetailPage_view" style="display:block">
+    <section id="your-assessment">
+      <section class="SentimentHero_hero">
+        <div class="SentimentHero_label">Your Assessment</div>
+        <div class="SentimentHero_setRow">
+          <span class="SentimentHero_value SentimentHero_valueOnTrack">On Track</span>
+          <div class="SentimentHero_sparkline" aria-label="Computed health over last 90 days">
+            <div class="SentimentHero_sparkBar SentimentHero_sparkGood SentimentHero_sparkBarH12"></div>
+            <div class="SentimentHero_sparkBar SentimentHero_sparkGood SentimentHero_sparkBarH16"></div>
+            <div class="SentimentHero_sparkBar SentimentHero_sparkGood SentimentHero_sparkBarH16"></div>
+            <div class="SentimentHero_sparkBar SentimentHero_sparkMid SentimentHero_sparkBarH16"></div>
+            <div class="SentimentHero_sparkBar SentimentHero_sparkGood SentimentHero_sparkBarH20"></div>
+            <div class="SentimentHero_sparkBar SentimentHero_sparkGood SentimentHero_sparkBarH20"></div>
+            <div class="SentimentHero_sparkBar SentimentHero_sparkGood SentimentHero_sparkBarH16"></div>
+          </div>
+          <span class="SentimentHero_sparklineLabel">90d</span>
+          <button type="button" class="SentimentHero_updateButton">Update</button>
+        </div>
+        <div class="SentimentHero_meta">Set today · 2 notes</div>
+        <blockquote class="SentimentHero_pullquote">
+          “Jen is engaged again and the renewal feels orderly. Pricing still needs a crisp answer before legal starts.”
+          <span class="SentimentHero_pullquoteAttr">— Your note, Apr 22</span>
+        </blockquote>
+      </section>
+    </section>
 
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Triage<span class="margin-label-count">3 needs</span></div>
-  <div class="margin-content">
-    <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Needs attention</h2>
-      <p class="chapter-epigraph">Items with active impact on the renewal timeline.</p>
-    </div>
-
-    <div class="triage-card" data-ds-name="HealthTriageCard" data-ds-tier="pattern" data-ds-spec="patterns/HealthTriageCard.md">
-      <div class="tone-mono">Risk · Pricing</div>
-      <div class="triage-title">Adjusted pricing memo overdue 2 days</div>
-      <div class="triage-impact">Jen Park is waiting on the tier 3 numbers before legal can finalize MSA. Every day this slips delays Jun 15 close. <strong>You</strong> own this.</div>
-    </div>
-
-    <div class="triage-card warm" data-ds-name="HealthTriageCard" data-ds-tier="pattern" data-ds-spec="patterns/HealthTriageCard.md">
-      <div class="tone-mono">Watch · Legal</div>
-      <div class="triage-title">Legal flagged 3 MSA clauses · Dan Mitchell reviewing</div>
-      <div class="triage-impact">Standard SOC2/SLA pushback. Dan has historically resolved these in 2-3 days. No escalation needed yet.</div>
-    </div>
-
-    <div class="triage-card cool" data-ds-name="HealthTriageCard" data-ds-tier="pattern" data-ds-spec="patterns/HealthTriageCard.md">
-      <div class="tone-mono">New stakeholder</div>
-      <div class="triage-title">Sara Wu (VP Eng) added to renewal thread</div>
-      <div class="triage-impact">First time Sara's been on a deal thread for Acme. Likely sponsoring the architecture review. Worth a 1:1 before the Apr 24 call.</div>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Outlook<span class="margin-label-count">renewal</span></div>
-  <div class="margin-content">
-    <div class="chapter">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Renewal outlook</h2>
-      <p class="chapter-epigraph">Confidence + benchmark + recommended next move.</p>
-    </div>
-
-    <div data-ds-name="OutlookPanel" data-ds-tier="pattern" data-ds-spec="patterns/OutlookPanel.md" style="display:grid; grid-template-columns:200px 1fr; gap:32px; align-items:start;">
-      <div>
-        <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary); margin-bottom:6px;">Confidence</div>
-        <div style="font-family:var(--font-serif); font-size:36px; font-weight:500; color:var(--color-garden-rosemary);">82%</div>
-        <div style="font-family:var(--font-mono); font-size:10px; letter-spacing:0.04em; color:var(--color-text-tertiary); margin-top:6px;">Strong · 3 corroborating sources</div>
-      </div>
-      <div>
-        <p class="pull-quote-left" data-ds-name="PullQuote" data-ds-tier="primitive" data-ds-spec="primitives/PullQuote.md">
-          <span class="pq-label">Recommended next move</span>
-          <span style="font-family:var(--font-serif); font-style:italic; font-size:18px; line-height:1.5; color:var(--color-text-primary);">Send the adjusted memo today. If Jen has it before her Wed exec sync, the Jun 15 close holds. Otherwise it slips a quarter.</span>
+    <div id="on-track" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">On<br>Track</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow">
+            <h2 class="ChapterHeading_title">On track</h2>
+          </div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>Nothing active needs your attention</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+        </div>
+        <p class="health_ontrackBody">
+          No active friction. No divergences surfacing. No stakeholder changes.
+          Support quiet, engagement stable. You're in a maintenance window — a good
+          time to invest in the relationship rather than react to it.
         </p>
+        <div class="health_peerStrip">
+          <div class="health_peerNumber">—</div>
+          <div class="health_peerLabel">Peer benchmark · coming in a later pass</div>
+          <div class="health_peerContext">
+            Peer cohort benchmarking isn't wired yet. When it lands, this strip will
+            show how accounts similar to <strong>Renewal</strong> have trended over the
+            last twelve months. For now: steady is the story.
+          </div>
+        </div>
+        <span class="IntelligenceCorrection_wrapper">
+          <span class="IntelligenceCorrection_prompt">Is this accurate?</span>
+          <span class="IntelligenceCorrection_choices">
+            <button type="button" class="IntelligenceCorrection_choice">Yes</button>
+            <button type="button" class="IntelligenceCorrection_choice">Partially</button>
+            <button type="button" class="IntelligenceCorrection_choice">No</button>
+          </span>
+        </span>
       </div>
     </div>
-  </div>
-</section>
 
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">About<span class="margin-label-count">data</span></div>
-  <div class="margin-content">
-    <div class="chapter">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">About this intelligence</h2>
+    <div id="outlook" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Outlook</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow">
+            <h2 class="ChapterHeading_title">The Call: Expansion</h2>
+          </div>
+        </div>
+        <div class="health_outlookGrid">
+          <div>
+            <div class="health_outlookBlockLabel">Confidence</div>
+            <div class="health_outlookBlockValue health_outlookValueHigh">High</div>
+            <div class="health_outlookBlockDetail">High. Risk factors: pricing memo timing; legal review; Sara Wu's architecture sign-off.</div>
+          </div>
+          <div>
+            <div class="health_outlookBlockLabel">Benchmark</div>
+            <div class="health_outlookBlockValue health_outlookValueHigh">Above</div>
+            <div class="health_outlookBlockDetail">
+              Similar enterprise renewals with an active champion and live executive sponsor closed above baseline.
+              <br>
+              Drawn from 6 Glean sources.
+            </div>
+          </div>
+          <div>
+            <div class="health_outlookBlockLabel">Recommended start</div>
+            <div class="health_outlookBlockValue health_outlookValuePrep">Apr 22</div>
+            <div class="health_outlookBlockDetail">Window opens today — begin the renewal conversation now.</div>
+          </div>
+        </div>
+        <blockquote class="health_outlookPullQuote">
+          Expansion is credible if the pricing memo lands before Jen Park's executive sync. Treat the renewal as a platform-fee conversation, not a seat-count concession.
+        </blockquote>
+        <span class="IntelligenceCorrection_wrapper">
+          <span class="IntelligenceCorrection_prompt">Is this accurate?</span>
+          <span class="IntelligenceCorrection_choices">
+            <button type="button" class="IntelligenceCorrection_choice">Yes</button>
+            <button type="button" class="IntelligenceCorrection_choice">Partially</button>
+            <button type="button" class="IntelligenceCorrection_choice">No</button>
+          </span>
+        </span>
+      </div>
     </div>
-    <div data-ds-name="AboutThisIntelligencePanel" data-ds-tier="pattern" data-ds-spec="patterns/AboutThisIntelligencePanel.md" style="font-family:var(--font-sans); font-size:14px; line-height:1.6; color:var(--color-text-secondary); max-width:640px;">
-      <p>Health and outlook are derived from <strong>14 captures</strong> across Mail, Calendar, Meetings, and CRM since Jan 2025. Last enriched <strong>2 hours ago</strong>. Sources: Glean (8), Salesforce (4), manual (2).</p>
-      <p>Confidence math: subject_fit 0.88 · freshness 0.94 · cross-entity coherence 0.78 · provenance 0.85 · agent trust 0.79. Geometric mean 0.82.</p>
+
+    <div id="relationship-health" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">The Read</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow">
+            <h2 class="ChapterHeading_title">Health Score vs. Signals</h2>
+          </div>
+        </div>
+        <div class="health_supportingTension">
+          <div>
+            <div class="health_tensionBlockLabel">Computed score</div>
+            <div class="health_tensionBlockValue health_tensionValueGreen">78</div>
+            <div class="health_tensionBlockMeta">Green · ▲ +8 in 30d · 'improving'</div>
+          </div>
+          <div>
+            <div class="health_tensionBlockLabel">Update trend (from Glean)</div>
+            <div class="health_tensionBlockValue health_tensionValueGreen">Strengthening</div>
+            <div class="health_tensionBlockMeta">Champion active ▲ · Usage stable · Legal queued</div>
+          </div>
+        </div>
+        <p class="health_tensionNote">The score is healthy because Jen Park re-opened the renewal motion and product usage has stabilized. The open risk is timing, not relationship quality.</p>
+        <div class="health_dimensions">
+          <div class="health_dim">
+            <div class="health_dimName"><span>Meeting Cadence</span><span class="health_dimScore">84</span></div>
+            <div class="health_dimBar"><div class="health_dimFill health_dimFillGreen" style="--dim-fill:84%"></div></div>
+            <div class="health_dimEvidence">6 customer meetings in the last 30 days · exec sync scheduled</div>
+          </div>
+          <div class="health_dim">
+            <div class="health_dimName"><span>Engagement</span><span class="health_dimScore">79</span></div>
+            <div class="health_dimBar"><div class="health_dimFill health_dimFillGreen" style="--dim-fill:79%"></div></div>
+            <div class="health_dimEvidence">Email response time improving · Jen replied same day</div>
+          </div>
+          <div class="health_dim">
+            <div class="health_dimName"><span>Stakeholder Coverage</span><span class="health_dimScore">72</span></div>
+            <div class="health_dimBar"><div class="health_dimFill health_dimFillGreen" style="--dim-fill:72%"></div></div>
+            <div class="health_dimEvidence">Champion and technical buyer active · procurement not yet characterized</div>
+          </div>
+          <div class="health_dim">
+            <div class="health_dimName"><span>Champion Health</span><span class="health_dimScore">86</span></div>
+            <div class="health_dimBar"><div class="health_dimFill health_dimFillGreen" style="--dim-fill:86%"></div></div>
+            <div class="health_dimEvidence">Jen Park restarted the renewal thread after the Q2 Launch demo</div>
+          </div>
+          <div class="health_dim">
+            <div class="health_dimName"><span>Financial Proximity</span><span class="health_dimScore">63</span></div>
+            <div class="health_dimBar"><div class="health_dimFill health_dimFillYellow" style="--dim-fill:63%"></div></div>
+            <div class="health_dimEvidence">ARR growth path visible · platform-fee packaging unresolved</div>
+          </div>
+          <div class="health_dim">
+            <div class="health_dimName"><span>Update Momentum</span><span class="health_dimScore">81</span></div>
+            <div class="health_dimBar"><div class="health_dimFill health_dimFillGreen" style="--dim-fill:81%"></div></div>
+            <div class="health_dimEvidence">New signal volume is up across meetings and email</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="about-intelligence" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">About this<br>intelligence</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow">
+            <div style="font-family:var(--font-mono); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.14em; color:var(--color-text-secondary); margin:0;">About this intelligence</div>
+          </div>
+        </div>
+        <div class="health_metaCard">
+          <div class="health_metaCardProse">
+            Last enrichment ran Today. No new signals triggered triage. The system is watching — it will surface changes as they emerge. Sources: 3 transcripts · 2 emails · 1 pdf.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); letter-spacing:0.06em; margin-top:16px;">Last updated: 2026-04-22T13:00:00Z</div>
     </div>
   </div>
-</section>
 
-<!-- View switcher (sticky bottom) -->
-<nav class="account-view-switcher" data-ds-name="AccountViewSwitcher" data-ds-tier="pattern" data-ds-spec="patterns/AccountViewSwitcher.md" aria-label="Account views">
-  <button aria-current="page">Health & Outlook</button>
-  <button>Context</button>
-  <button>Work</button>
-</nav>
+  <div class="AccountDetailPage_view" style="display:none">
+    <section id="thesis">
+      <section class="AccountDetailEditorial_thesisSection">
+        <div class="AccountDetailEditorial_thesisLabel">The thesis</div>
+        <p class="AccountDetailEditorial_thesisQuote">
+          <span aria-hidden="true" class="AccountDetailEditorial_pullquoteMark">“</span>
+          Acme Corp is healthy, but the renewal depends on turning tier 3 pricing into a platform conversation before legal starts.
+          <span aria-hidden="true" class="AccountDetailEditorial_pullquoteMark">”</span>
+        </p>
+        <div class="AccountDetailEditorial_thesisMeta">
+          <span>Synthesized from 18 meetings · 8 transcripts · Updated Today</span>
+        </div>
+      </section>
+    </section>
 
-<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
-  <div class="finis-mark">*&nbsp;&nbsp;*&nbsp;&nbsp;*</div>
-  <div class="finis-date">Apr 23, 2026 · enriched 2h ago</div>
-  <div class="finis-caption">Acme Corp · briefed since Jan 2025</div>
-</div>
+    <div id="the-room" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">The<br>Room</div>
+      <div class="entity-detail_marginContent">
+        <section class="StakeholderGrid_section">
+          <div class="ChapterHeading_heading">
+            <hr class="ChapterHeading_rule">
+            <div class="ChapterHeading_titleRow">
+              <h2 class="ChapterHeading_title">The Room</h2>
+            </div>
+            <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+              <span style="display:inline-flex; align-items:center; gap:8px;"><span>6 people</span></span>
+              <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>4 with assessments</span></span>
+              <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span style="color:var(--color-spice-saffron)">2 need verification</span></span>
+              <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+            </div>
+          </div>
+          <div class="StakeholderGrid_subsectionLabel">
+            Their team
+            <span class="StakeholderGrid_subsectionHint">who we're meeting with — Acme Corp</span>
+          </div>
+          <div class="StakeholderGrid_roomGrid">
+            <article class="StakeholderGrid_personCard StakeholderGrid_personCardPrimary">
+              <div class="StakeholderGrid_personHeader">
+                <div class="StakeholderGrid_avatar">JP</div>
+                <div class="StakeholderGrid_personIdentity">
+                  <div class="StakeholderGrid_personName">Jen Park</div>
+                  <div class="StakeholderGrid_personTitle">CTO</div>
+                  <div class="StakeholderGrid_rolePills">
+                    <span class="StakeholderGrid_rolePill StakeholderGrid_rolePillChampion">Champion<button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Champion role" title="Remove Champion">×</button></span>
+                    <span class="StakeholderGrid_rolePill StakeholderGrid_rolePillTechnical">Primary Contact<button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Primary Contact role" title="Remove Primary Contact">×</button></span>
+                    <button type="button" class="StakeholderGrid_rolePillAdd">+ role</button>
+                  </div>
+                </div>
+                <button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Jen Park" title="Remove from account">×</button>
+              </div>
+              <p class="StakeholderGrid_assessment">Jen restarted the renewal motion after Q2 Launch stabilized. She wants an executive-ready pricing frame before Acme's Wednesday sync.</p>
+              <div class="StakeholderGrid_personFooter"><span>Last in meeting · Apr 22</span><span>14 meetings</span></div>
+            </article>
+            <article class="StakeholderGrid_personCard StakeholderGrid_personCardPrimary">
+              <div class="StakeholderGrid_personHeader">
+                <div class="StakeholderGrid_avatar">DM</div>
+                <div class="StakeholderGrid_personIdentity">
+                  <div class="StakeholderGrid_personName">Dan Mitchell</div>
+                  <div class="StakeholderGrid_personTitle">General Counsel</div>
+                  <div class="StakeholderGrid_rolePills">
+                    <span class="StakeholderGrid_rolePill StakeholderGrid_rolePillEconomic">Decision Maker<button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Decision Maker role" title="Remove Decision Maker">×</button></span>
+                    <button type="button" class="StakeholderGrid_rolePillAdd">+ role</button>
+                  </div>
+                </div>
+                <button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Dan Mitchell" title="Remove from account">×</button>
+              </div>
+              <p class="StakeholderGrid_assessment">Dan is pragmatic on SLA and SOC2 language. He will not block the renewal if pricing is framed cleanly before legal review.</p>
+              <div class="StakeholderGrid_personFooter"><span>Last in meeting · Apr 20</span><span>7 meetings</span></div>
+            </article>
+            <article class="StakeholderGrid_personCard StakeholderGrid_personCardPrimary">
+              <div class="StakeholderGrid_personHeader">
+                <div class="StakeholderGrid_avatar">SW</div>
+                <div class="StakeholderGrid_personIdentity">
+                  <div class="StakeholderGrid_personName">Sara Wu</div>
+                  <div class="StakeholderGrid_personTitle">VP Engineering</div>
+                  <div class="StakeholderGrid_rolePills">
+                    <span class="StakeholderGrid_rolePill StakeholderGrid_rolePillTechnical StakeholderGrid_rolePillProvenanceAi">Technical Contact<button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Technical Contact role" title="Remove Technical Contact">×</button></span>
+                    <button type="button" class="StakeholderGrid_rolePillAdd">+ role</button>
+                  </div>
+                </div>
+                <button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Sara Wu" title="Remove from account">×</button>
+              </div>
+              <p class="StakeholderGrid_assessment">Sara joined late but is likely sponsoring architecture review. She needs a concise technical-readiness packet before Apr 24.</p>
+              <div class="StakeholderGrid_personFooter"><span>Last in meeting · Apr 21</span><span>3 meetings</span></div>
+            </article>
+            <article class="StakeholderGrid_personCard StakeholderGrid_personCardPrimary">
+              <div class="StakeholderGrid_personHeader">
+                <div class="StakeholderGrid_avatar">MD</div>
+                <div class="StakeholderGrid_personIdentity">
+                  <div class="StakeholderGrid_personName">Marco Devine</div>
+                  <div class="StakeholderGrid_personTitle">Procurement Lead</div>
+                  <div class="StakeholderGrid_rolePills">
+                    <span class="StakeholderGrid_rolePill StakeholderGrid_rolePillEconomic StakeholderGrid_rolePillProvenanceAi">Economic Buyer<button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Economic Buyer role" title="Remove Economic Buyer">×</button></span>
+                    <button type="button" class="StakeholderGrid_rolePillAdd">+ role</button>
+                  </div>
+                </div>
+                <button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove Marco Devine" title="Remove from account">×</button>
+              </div>
+              <p class="StakeholderGrid_assessment">Marco is pressing on per-seat ceiling. He is not anti-renewal; he needs a procurement-safe packaging story.</p>
+              <div class="StakeholderGrid_personFooter"><span>Last in meeting · Apr 20</span><span>5 meetings</span></div>
+            </article>
+          </div>
+          <div class="StakeholderGrid_moreAssociated">
+            <span class="StakeholderGrid_moreAssociatedCount">+2</span>
+            more associated · Aoife Murphy · Liu Kang
+          </div>
+
+          <div class="StakeholderGrid_subsectionLabel">
+            Our team
+            <span class="StakeholderGrid_subsectionHint">who we bring into Acme Corp conversations</span>
+          </div>
+          <div class="StakeholderGrid_roomGridInternal">
+            <article class="StakeholderGrid_personCard StakeholderGrid_personCardInternal">
+              <div class="StakeholderGrid_personHeader">
+                <div class="StakeholderGrid_avatar">SC</div>
+                <div class="StakeholderGrid_personIdentity">
+                  <div class="StakeholderGrid_personName">Sam Chen</div>
+                  <div class="StakeholderGrid_rolePills">
+                    <span class="StakeholderGrid_rolePill StakeholderGrid_rolePillInternal">CSM<button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove CSM role" title="Remove CSM">×</button></span>
+                    <button type="button" class="StakeholderGrid_rolePillAdd">+ role</button>
+                  </div>
+                </div>
+                <button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove from team" title="Remove from team">×</button>
+              </div>
+            </article>
+            <article class="StakeholderGrid_personCard StakeholderGrid_personCardInternal">
+              <div class="StakeholderGrid_personHeader">
+                <div class="StakeholderGrid_avatar">PR</div>
+                <div class="StakeholderGrid_personIdentity">
+                  <div class="StakeholderGrid_personName">Priya Raman</div>
+                  <div class="StakeholderGrid_rolePills">
+                    <span class="StakeholderGrid_rolePill StakeholderGrid_rolePillInternal">AE<button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove AE role" title="Remove AE">×</button></span>
+                    <button type="button" class="StakeholderGrid_rolePillAdd">+ role</button>
+                  </div>
+                </div>
+                <button type="button" class="StakeholderGrid_rolePillRemove" aria-label="Remove from team" title="Remove from team">×</button>
+              </div>
+            </article>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="what-matters" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">What<br>matters</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow">
+            <h2 class="ChapterHeading_title">What matters to them</h2>
+          </div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>2 strategic priorities</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>2 competitive mentions</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>1 expansion signal</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+        </div>
+        <section class="StrategicLandscape_section">
+          <div class="StrategicLandscape_subsectionLabel">Strategic priorities</div>
+          <div class="StrategicLandscape_priorityGrid">
+            <article class="StrategicLandscape_priorityCard">
+              <div class="StrategicLandscape_priorityHead">
+                <div class="StrategicLandscape_priorityName">Launch Q2 self-serve analytics</div>
+                <span class="StrategicLandscape_statusTag StrategicLandscape_statusActive">Active</span>
+              </div>
+              <div class="StrategicLandscape_priorityMeta">Jen Park · Q2 Launch</div>
+              <div class="StrategicLandscape_priorityContext">Analytics is the internal proof point Jen is using to justify platform-fee packaging.</div>
+              <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+            </article>
+            <article class="StrategicLandscape_priorityCard">
+              <div class="StrategicLandscape_priorityHead">
+                <div class="StrategicLandscape_priorityName">Reduce support escalations before renewal</div>
+                <span class="StrategicLandscape_statusTag StrategicLandscape_statusEvaluating">Evaluating</span>
+              </div>
+              <div class="StrategicLandscape_priorityMeta">Sara Wu · Apr 24</div>
+              <div class="StrategicLandscape_priorityContext">Engineering wants evidence that the Helpline Rollout will lower escalation load.</div>
+              <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+            </article>
+          </div>
+          <div class="StrategicLandscape_subsectionLabel">Competitive landscape</div>
+          <div class="StrategicLandscape_competitorRow">
+            <article class="StrategicLandscape_competitorCard">
+              <div class="StrategicLandscape_competitorName">Stark Industries internal platform</div>
+              <div class="StrategicLandscape_threatScale"><span class="StrategicLandscape_threatDot StrategicLandscape_threatDotOn"></span><span class="StrategicLandscape_threatDot StrategicLandscape_threatDotOn"></span><span class="StrategicLandscape_threatDot"></span></div>
+              <div class="StrategicLandscape_threatLabel">Evaluation</div>
+              <div class="StrategicLandscape_competitorContext">Procurement mentioned a build-vs-buy comparison during the pricing thread.</div>
+              <div class="StrategicLandscape_competitorSource">Apr 20 · renewal email</div>
+              <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+            </article>
+            <article class="StrategicLandscape_competitorCard">
+              <div class="StrategicLandscape_competitorName">Northwind analytics add-on</div>
+              <div class="StrategicLandscape_threatScale"><span class="StrategicLandscape_threatDot StrategicLandscape_threatDotOn"></span><span class="StrategicLandscape_threatDot"></span><span class="StrategicLandscape_threatDot"></span></div>
+              <div class="StrategicLandscape_threatLabel">Mentioned</div>
+              <div class="StrategicLandscape_competitorContext">Sara compared dashboard velocity to Northwind during the technical prep call.</div>
+              <div class="StrategicLandscape_competitorSource">Apr 21 · transcript</div>
+              <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+            </article>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="value-commitments" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">What we've<br>built</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow">
+            <h2 class="ChapterHeading_title">What we've built together</h2>
+          </div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>2 value statements</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>2 success metrics</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+        </div>
+        <section class="ValueCommitments_section">
+          <div class="ValueCommitments_subsectionLabel">Value delivered</div>
+          <div class="ValueCommitments_valueGrid">
+            <article class="ValueCommitments_valueCard">
+              <span class="ValueCommitments_impactTag ValueCommitments_impactTagRevenue">Revenue</span>
+              <div class="ValueCommitments_valueHeadline">Q2 Launch analytics unlocked the expansion path from $480K to $620K ARR.</div>
+              <div class="ValueCommitments_valueSource">Apr 18 · Q2 Launch readout</div>
+              <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+            </article>
+            <article class="ValueCommitments_valueCard">
+              <span class="ValueCommitments_impactTag ValueCommitments_impactTagSpeed">Speed</span>
+              <div class="ValueCommitments_valueHeadline">Helpline Rollout cut first-response routing time and gave Sara Wu a concrete adoption story.</div>
+              <div class="ValueCommitments_valueSource">Apr 20 · rollout sync</div>
+              <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+            </article>
+          </div>
+          <div class="ValueCommitments_subsectionLabel">Success metrics</div>
+          <div class="ValueCommitments_metricRow">
+            <article class="ValueCommitments_metricCard">
+              <div class="ValueCommitments_metricName">Active seats</div>
+              <div class="ValueCommitments_metricValues"><span class="ValueCommitments_metricCurrent">420</span><span class="ValueCommitments_metricTarget">/ 500</span></div>
+              <div class="ValueCommitments_metricFooter"><span class="ValueCommitments_metricStatus ValueCommitments_statusOnTrack">On track</span><span class="ValueCommitments_metricOwner">Owner: Sara Wu</span></div>
+              <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+            </article>
+            <article class="ValueCommitments_metricCard">
+              <div class="ValueCommitments_metricName">Escalation reduction</div>
+              <div class="ValueCommitments_metricValues"><span class="ValueCommitments_metricCurrent">18%</span><span class="ValueCommitments_metricTarget">/ 25%</span></div>
+              <div class="ValueCommitments_metricFooter"><span class="ValueCommitments_metricStatus ValueCommitments_statusNeutral">Tracking</span><span class="ValueCommitments_metricOwner">Owner: Jen Park</span></div>
+              <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+            </article>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div id="their-voice" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Their<br>voice</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Their voice</h2></div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>2 quotes captured</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+        </div>
+        <div class="QuoteWall_wall">
+          <article class="QuoteWall_card">
+            <blockquote class="QuoteWall_quote">“If we can package this as a platform fee, I can defend it in the exec room.”</blockquote>
+            <div class="QuoteWall_attribution">Jen Park, CTO</div>
+            <div class="QuoteWall_why">This is the cleanest signal that pricing structure, not value, is the renewal constraint.</div>
+            <div class="QuoteWall_footer"><span>Via Glean</span><span>Apr 22</span><span class="QuoteWall_badge QuoteWall_positive">positive</span></div>
+          </article>
+          <article class="QuoteWall_card">
+            <blockquote class="QuoteWall_quote">“Legal is fine if the SLA language stays standard. Procurement is where this slows down.”</blockquote>
+            <div class="QuoteWall_attribution">Dan Mitchell, General Counsel</div>
+            <div class="QuoteWall_why">Legal risk is lower than the commercial timeline risk.</div>
+            <div class="QuoteWall_footer"><span>Via Glean</span><span>Apr 20</span><span class="QuoteWall_badge QuoteWall_neutral">neutral</span></div>
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div id="commercial-shape" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Commercial<br>shape</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Commercial shape</h2></div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span style="color:var(--color-spice-saffron)">Several fields unverified — see gaps below</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+        </div>
+        <div>
+          <div class="ReferenceGrid_grid">
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">ARR (current)</span><span class="ReferenceGrid_value ReferenceGrid_valueAccent"><span class="EditableText_editable" title="Click to edit" data-editable-text>620000</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">12-month trend</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>Up 29% with tier 3 packaging</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Contract type</span><span class="ReferenceGrid_value">Annual</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Renewal date</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>2026-06-15</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Auto-renew</span><span class="ReferenceGrid_value">No</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Multi-year remaining</span><span class="ReferenceGrid_value ReferenceGrid_valueGap"><span class="EditableText_editable" title="Click to edit" data-editable-text>Capture →</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Customer fiscal year</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>Calendar year</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Previous renewal outcome</span><span class="ReferenceGrid_value">On-time</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Procurement complexity</span><span class="ReferenceGrid_value">Complex / multi-stakeholder</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Discount history</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>8% bundle discount in 2025</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Discount appetite</span><span class="ReferenceGrid_value">Modest</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Payment behavior</span><span class="ReferenceGrid_value">On-time</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Budget holder</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>Jen Park</span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="technical-shape" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Technical<br>shape</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Technical shape</h2></div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>2 open tickets</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>4 features active</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+        </div>
+        <div>
+          <div class="ReferenceGrid_grid">
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Usage tier</span><span class="ReferenceGrid_value">enterprise</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Active users</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>420</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Services stage</span><span class="ReferenceGrid_value">optimization</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Support tier</span><span class="ReferenceGrid_value">premium</span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Open tickets</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>2</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">CSAT</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>4.4/5</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Adoption score</span><span class="ReferenceGrid_value"><span class="EditableText_editable" title="Click to edit" data-editable-text>82%</span></span></div>
+            <div class="ReferenceGrid_row"><span class="ReferenceGrid_label">Integrations</span><span class="ReferenceGrid_value ReferenceGrid_valueGap"><span class="EditableText_editable" title="Click to edit" data-editable-text>Capture →</span></span></div>
+          </div>
+          <div class="ReferenceGrid_featureHeading">Products · 4</div>
+          <div class="AccountTechnicalFootprint_productGroups">
+            <div class="AccountTechnicalFootprint_productGroup">
+              <div class="ReferenceGrid_featureItem AccountTechnicalFootprint_productHeader">
+                <span aria-hidden="true" class="ReferenceGrid_featureDot"></span>
+                <span class="AccountTechnicalFootprint_productLabel">DailyOS Platform</span>
+                <span class="AccountTechnicalFootprint_productMeta">3 features</span>
+              </div>
+              <div class="ReferenceGrid_featureList AccountTechnicalFootprint_productFeatureList">
+                <div class="ReferenceGrid_featureItem"><span aria-hidden="true" class="ReferenceGrid_featureDot"></span>Briefing automation</div>
+                <div class="ReferenceGrid_featureItem"><span aria-hidden="true" class="ReferenceGrid_featureDot"></span>Account health</div>
+                <div class="ReferenceGrid_featureItem"><span aria-hidden="true" class="ReferenceGrid_featureDot"></span>Report Engine</div>
+              </div>
+            </div>
+            <div class="AccountTechnicalFootprint_productGroup">
+              <div class="ReferenceGrid_featureItem AccountTechnicalFootprint_productHeader">
+                <span aria-hidden="true" class="ReferenceGrid_featureDot ReferenceGrid_featureDotTrial"></span>
+                <span class="AccountTechnicalFootprint_productLabel">Helpline Rollout</span>
+                <span class="AccountTechnicalFootprint_productMeta">trial</span>
+              </div>
+            </div>
+          </div>
+          <div class="ReferenceGrid_featureHeading">Feature adoption · 4 active</div>
+          <div class="ReferenceGrid_featureList">
+            <div class="ReferenceGrid_featureItem"><span aria-hidden="true" class="ReferenceGrid_featureDot"></span>Executive summaries</div>
+            <div class="ReferenceGrid_featureItem"><span aria-hidden="true" class="ReferenceGrid_featureDot"></span>Renewal risk briefing</div>
+            <div class="ReferenceGrid_featureItem"><span aria-hidden="true" class="ReferenceGrid_featureDot"></span>Stakeholder map</div>
+            <div class="ReferenceGrid_featureItem"><span aria-hidden="true" class="ReferenceGrid_featureDot"></span>QBR export</div>
+          </div>
+          <div class="ReferenceGrid_featureSource">All 4 features active as of Apr 22 (Glean)</div>
+        </div>
+      </div>
+    </div>
+
+    <div id="relationship-fabric" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Relationship<br>fabric</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Relationship fabric</h2></div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span style="color:var(--color-spice-saffron)">Most fields not captured — known gap</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+        </div>
+        <div>
+          <div class="RelationshipFabric_list">
+            <div class="RelationshipFabric_row"><span class="RelationshipFabric_label">Reference customer</span><span class="RelationshipFabric_content">Conditional</span></div>
+            <div class="RelationshipFabric_row"><span class="RelationshipFabric_label">Logo permission</span><span class="RelationshipFabric_content">Pending</span></div>
+            <div class="RelationshipFabric_row"><span class="RelationshipFabric_label">Case study</span><span class="RelationshipFabric_content"><span class="EditableText_editable" title="Click to edit" data-editable-text>Draft after renewal close</span></span></div>
+            <div class="RelationshipFabric_row"><span class="RelationshipFabric_label">Beta programs</span><span class="RelationshipFabric_content"><span><strong>Helpline Rollout</strong> — pilot</span></span></div>
+            <div class="RelationshipFabric_row">
+              <span class="RelationshipFabric_label">NPS</span>
+              <span class="RelationshipFabric_content">
+                <span class="RelationshipFabric_npsBlock">
+                  <span class="RelationshipFabric_npsScore"><span class="EditableText_editable" title="Click to edit" data-editable-text>42</span></span>
+                  <a href="#their-voice" class="RelationshipFabric_xrefPill">See quote wall →</a>
+                </span>
+              </span>
+            </div>
+            <div class="RelationshipFabric_row"><span class="RelationshipFabric_label">Speaking slots</span><span class="RelationshipFabric_content RelationshipFabric_contentGap"><span class="EditableText_editable" title="Click to edit" data-editable-text>Capture →</span></span></div>
+            <div class="RelationshipFabric_row"><span class="RelationshipFabric_label">Referrals made</span><span class="RelationshipFabric_content"><span class="EditableText_editable" title="Click to edit" data-editable-text>Northwind intro pending</span></span></div>
+            <div class="RelationshipFabric_row"><span class="RelationshipFabric_label">Advocacy trend</span><span class="RelationshipFabric_content">Strengthening</span></div>
+          </div>
+          <div class="RelationshipFabric_editorialClose">
+            We haven't systematically captured advocacy signal for Acme Corp. Given the NPS 42 and healthy relationship, this is a likely source of unrealized value.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="about-dossier" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">About the<br>dossier</div>
+      <div class="entity-detail_marginContent">
+        <section class="AboutThisDossier_section">
+          <div class="AboutThisDossier_eyebrow">About this dossier</div>
+          <div class="AboutThisDossier_card">
+            <div class="AboutThisDossier_cardLabel">Our data capture gap</div>
+            <div class="AboutThisDossier_cardText">2 stakeholders attended meetings but have no characterization — <strong>Aoife Murphy</strong> and <strong>Liu Kang</strong>. Assessments require verification in a customer-facing meeting.</div>
+          </div>
+          <div class="AboutThisDossier_card">
+            <div class="AboutThisDossier_cardLabel">Source coverage</div>
+            <div class="AboutThisDossier_cardText">Synthesized from <strong>6</strong> source files — 3 transcript · 2 email · 1 pdf. Gaps in commercial and relationship-fabric fields require manual capture and are not yet part of the enrichment loop.</div>
+          </div>
+          <div class="AboutThisDossier_card">
+            <div class="AboutThisDossier_cardLabel">Freshness</div>
+            <div class="AboutThisDossier_cardText">18 meetings on record · 8 with transcripts · Last full dossier enrichment: Apr 22.</div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); letter-spacing:0.06em; margin-top:16px;">Last updated: 2026-04-22T13:00:00Z</div>
+    </div>
+  </div>
+
+  <div class="AccountDetailPage_view" style="display:none">
+    <section id="commitments">
+      <div class="ChapterHeading_heading">
+        <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Commitments</h2></div>
+        <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+          <span style="display:inline-flex; align-items:center; gap:8px;"><span>3 open · sourced from actions</span></span>
+          <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Natural sort by recency</span></span>
+          <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+        </div>
+        <p class="ChapterHeading_epigraph">What we've said we'll do</p>
+      </div>
+      <div class="AccountDetailPage_cardStack">
+        <article class="WorkSurface_commitmentCard">
+          <h3 class="EditableText_editable WorkSurface_commitmentHeadline WorkSurface_commitmentHeadlineEmphasis" title="Click to edit" data-editable-text>Send adjusted tier 3 pricing memo before Jen Park's exec sync</h3>
+          <div class="WorkSurface_commitmentMetaRow"><strong>From:</strong><span class="WorkSurface_provenanceChipGroup"><button type="button" class="WorkSurface_citeChip WorkSurface_citeChipButton">Apr 22 renewal checkpoint</button></span></div>
+          <div class="WorkSurface_commitmentOwnerRow"><span><strong>Owner:</strong> <span class="EditableText_editable" title="Click to edit" data-editable-text>Sam Chen</span></span><span aria-hidden="true">·</span><span><strong>Due:</strong> <span class="WorkSurface_inlineEditable" title="Click to edit due date">Apr 22</span></span></div>
+          <div class="WorkSurface_pillRow"><span class="WorkSurface_audiencePill WorkSurface_audienceCustomer">Customer-facing</span><span class="WorkSurface_visibilityPill WorkSurface_visibilityPrivate">Private</span></div>
+          <div class="WorkSurface_commitmentActions"><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnPrimary">Mark done</button><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnMuted">Dismiss</button></div>
+        </article>
+        <article class="WorkSurface_commitmentCard">
+          <h3 class="EditableText_editable WorkSurface_commitmentHeadline WorkSurface_commitmentHeadlineEmphasis" title="Click to edit" data-editable-text>Prep Sara Wu architecture packet for Apr 24 technical review</h3>
+          <div class="WorkSurface_commitmentMetaRow"><strong>From:</strong><span class="WorkSurface_provenanceChipGroup"><button type="button" class="WorkSurface_citeChip WorkSurface_citeChipButton">Sara Wu technical prep</button></span></div>
+          <div class="WorkSurface_commitmentOwnerRow"><span><strong>Owner:</strong> <span class="EditableText_editable" title="Click to edit" data-editable-text>Priya Raman</span></span><span aria-hidden="true">·</span><span><strong>Due:</strong> <span class="WorkSurface_inlineEditable" title="Click to edit due date">Apr 24</span></span></div>
+          <div class="WorkSurface_pillRow"><span class="WorkSurface_audiencePill WorkSurface_audienceCustomer">Customer-facing</span><span class="WorkSurface_visibilityPill WorkSurface_visibilityPrivate">Private</span></div>
+          <div class="WorkSurface_commitmentActions"><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnPrimary">Mark done</button><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnMuted">Dismiss</button></div>
+        </article>
+        <article class="WorkSurface_commitmentCard">
+          <h3 class="EditableText_editable WorkSurface_commitmentHeadline" title="Click to edit" data-editable-text>Internal renewal posture review with finance</h3>
+          <div class="WorkSurface_commitmentMetaRow"><strong>From:</strong><span class="WorkSurface_provenanceChipGroup"><button type="button" class="WorkSurface_citeChip WorkSurface_citeChipButton">Account intelligence</button></span></div>
+          <div class="WorkSurface_commitmentOwnerRow"><span><strong>Owner:</strong> <span class="EditableText_editable" title="Click to edit" data-editable-text>Sam Chen</span></span><span aria-hidden="true">·</span><span><strong>Due:</strong> <span class="WorkSurface_inlineEditable" title="Click to edit due date">no date set</span></span></div>
+          <div class="WorkSurface_pillRow"><span class="WorkSurface_audiencePill WorkSurface_audienceInternal">Internal</span><span class="WorkSurface_visibilityPill WorkSurface_visibilityPrivate">Private</span></div>
+          <div class="WorkSurface_softNudge"><span class="WorkSurface_softNudgeLabel">Still active?</span>Carried for 49 days without a date — still active?</div>
+          <div class="WorkSurface_commitmentActions"><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnPrimary">Mark done</button><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnMuted">Dismiss</button></div>
+        </article>
+      </div>
+    </section>
+
+    <div id="suggestions" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Sugges-<br>tions</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Suggestions</h2></div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>1 suggestion</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Accept → commitment · Dismiss to hide · Yes / No trains quality</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+          <p class="ChapterHeading_epigraph">AI proposals · accept or validate</p>
+        </div>
+        <div class="AccountDetailPage_cardStack">
+          <article class="WorkSurface_recCard">
+            <div class="WorkSurface_recLabel">Suggestion · one-click accept</div>
+            <h3 class="WorkSurface_recHeadline">Ask Jen Park to approve platform-fee wording before legal kickoff.</h3>
+            <p class="WorkSurface_recRationale">The renewal risk is packaging ambiguity, not product value. A short approval before legal can keep the Jun 15 close path intact.</p>
+            <div class="WorkSurface_recProvenance"><span>Drafted from</span><button type="button" class="WorkSurface_citeChip WorkSurface_citeChipButton">Account intelligence</button></div>
+            <div class="WorkSurface_recActions"><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnAccent">Accept → create commitment</button><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnMuted" title="Hide this suggestion. Won't be re-proposed.">Dismiss</button></div>
+            <span class="AccuracyPrompt_wrapper"><span class="AccuracyPrompt_inlinePrompt">Is this accurate?</span><span class="AccuracyPrompt_choices"><button type="button" class="AccuracyPrompt_choiceInline">Yes</button><button type="button" class="AccuracyPrompt_choiceInline">No</button></span></span>
+          </article>
+        </div>
+      </div>
+    </div>
+
+    <div id="programs" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Programs<br>&amp; motions</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Programs &amp; motions</h2></div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>2 motions active</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+          <p class="ChapterHeading_epigraph">Standing motions · not a todo list</p>
+        </div>
+        <div class="WorkSurface_programsRow">
+          <article class="WorkSurface_programPill"><div class="WorkSurface_programState">In pilot</div><div class="WorkSurface_programDescription">Helpline Rollout adoption motion with Sara Wu's team.</div></article>
+          <article class="WorkSurface_programPill"><div class="WorkSurface_programState">In renewal</div><div class="WorkSurface_programDescription">MSA Renewal packaging and legal path for Jun 15.</div></article>
+        </div>
+      </div>
+    </div>
+
+    <div id="recently-landed" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Recently<br>landed</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Recently landed</h2></div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>2 items delivered</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>30-day tail · promotes to Context "value delivered"</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+          <p class="ChapterHeading_epigraph">30-day completion tail</p>
+        </div>
+        <div class="WorkSurface_timelineList">
+          <div class="WorkSurface_timelineRow"><div class="WorkSurface_timelineDate">APR 18</div><div><div class="WorkSurface_timelineEvent">Q2 Launch analytics readout delivered</div><div class="WorkSurface_timelineSource">Came from meeting notes · <a href="/accounts/acc-acme?view=context#value-commitments">See Context value →</a></div></div><span class="WorkSurface_refRowMeta WorkSurface_timelineDelivered">Delivered</span></div>
+          <div class="WorkSurface_timelineRow"><div class="WorkSurface_timelineDate">APR 16</div><div><div class="WorkSurface_timelineEvent">Helpline Rollout adoption summary sent to Sara Wu</div><div class="WorkSurface_timelineSource">Came from action · <a href="/accounts/acc-acme?view=context#value-commitments">See Context value →</a></div></div><span class="WorkSurface_refRowMeta WorkSurface_timelineDelivered">Delivered</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div id="outputs" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">Out-<br>puts</div>
+      <div class="entity-detail_marginContent">
+        <div class="ChapterHeading_heading">
+          <hr class="ChapterHeading_rule">
+          <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Outputs</h2></div>
+          <div style="font-family:var(--font-mono); font-size:10px; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-tertiary); margin:6px 0 32px; display:flex; flex-wrap:wrap; gap:0 8px;">
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span>4 reports available for this account</span></span>
+            <span style="display:inline-flex; align-items:center; gap:8px;"><span aria-hidden="true" style="color:var(--color-text-tertiary)">·</span><span>Updated Apr 22</span></span>
+          </div>
+          <p class="ChapterHeading_epigraph">Generated reports · open to regenerate</p>
+        </div>
+        <div class="WorkSurface_reportGrid">
+          <article class="WorkSurface_reportCard"><div class="WorkSurface_reportType">Account Health</div><h3 class="WorkSurface_reportTitle">Acme Corp — Account Health</h3><div class="WorkSurface_reportGen">Generated Apr 22<br>Trigger: on-demand</div><div class="WorkSurface_reportActions"><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnPrimary">Open</button><button type="button" class="WorkSurface_workBtn">Refresh</button></div></article>
+          <article class="WorkSurface_reportCard"><div class="WorkSurface_reportType">EBR / QBR</div><h3 class="WorkSurface_reportTitle">Acme Corp — EBR / QBR</h3><div class="WorkSurface_reportGen">Generated Apr 22<br>Trigger: on-demand</div><div class="WorkSurface_reportActions"><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnPrimary">Open</button><button type="button" class="WorkSurface_workBtn">Refresh</button></div></article>
+          <article class="WorkSurface_reportCard"><div class="WorkSurface_reportType">SWOT</div><h3 class="WorkSurface_reportTitle">Acme Corp — SWOT</h3><div class="WorkSurface_reportGen">Generated Apr 22<br>Trigger: on-demand</div><div class="WorkSurface_reportActions"><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnPrimary">Open</button><button type="button" class="WorkSurface_workBtn">Refresh</button></div></article>
+          <article class="WorkSurface_reportCard"><div class="WorkSurface_reportType">Risk Briefing</div><h3 class="WorkSurface_reportTitle">Acme Corp — Risk Briefing</h3><div class="WorkSurface_reportGen">Generated Apr 22<br>Trigger: on-demand</div><div class="WorkSurface_reportActions"><button type="button" class="WorkSurface_workBtn WorkSurface_workBtnPrimary">Open</button><button type="button" class="WorkSurface_workBtn">Refresh</button></div></article>
+        </div>
+        <p class="WorkSurface_reportFooterNote">Full-plan synthesis and export lives in the Report Engine. Open any report above to generate a fresh copy from current intelligence.</p>
+      </div>
+    </div>
+
+    <div id="the-record" class="entity-detail_marginLabelSection">
+      <div class="entity-detail_marginLabel">The<br>Record</div>
+      <div class="entity-detail_marginContent">
+        <section>
+          <div class="ChapterHeading_heading">
+            <hr class="ChapterHeading_rule">
+            <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">The Record</h2></div>
+          </div>
+          <button type="button" class="AddToRecord_addButton">+ Add note</button>
+          <div class="TimelineEntry_timeline">
+            <a class="TimelineEntry_entryLink" href="meeting.html"><div class="TimelineEntry_entry"><div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div><div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 22</span><span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span></div><div class="TimelineEntry_title">Acme Corp renewal checkpoint</div><div class="TimelineEntry_detail">Customer</div></div></a>
+            <div class="TimelineEntry_entry"><div class="TimelineEntry_dot TimelineEntry_dotEmail"></div><div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 21</span><span class="TimelineEntry_typeBadge TimelineEntry_typeEmail">Email</span></div><div class="TimelineEntry_title">Jen asked for platform-fee wording before exec sync</div><div class="TimelineEntry_detail">jen.park@acme.example</div></div>
+            <a class="TimelineEntry_entryLink" href="meeting.html"><div class="TimelineEntry_entry"><div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div><div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 20</span><span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span></div><div class="TimelineEntry_title">Acme legal and procurement prep</div><div class="TimelineEntry_detail">Customer</div></div></a>
+            <div class="TimelineEntry_entry"><div class="TimelineEntry_dot TimelineEntry_dotContext"></div><div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 18</span><span class="TimelineEntry_typeBadge TimelineEntry_typeContext">Note</span></div><div class="TimelineEntry_title">Pricing memo should emphasize platform fee</div><div class="TimelineEntry_detail">Added by you</div></div>
+            <div class="TimelineEntry_entry"><div class="TimelineEntry_dot TimelineEntry_dotValue"></div><div class="TimelineEntry_dateLine"><span class="TimelineEntry_date">Apr 16</span><span class="TimelineEntry_typeBadge TimelineEntry_typeValue">Value</span></div><div class="TimelineEntry_title">Milestone completed: Q2 Launch analytics readout</div><div class="TimelineEntry_detail">Auto-completed by lifecycle transition</div></div>
+          </div>
+        </section>
+      </div>
+    </div>
+
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); letter-spacing:0.06em; margin-top:16px;">Last updated: 2026-04-22T13:00:00Z</div>
+    </div>
+  </div>
+
+  <nav class="AccountViewSwitcher_switcher" aria-label="Account views">
+    <button class="AccountViewSwitcher_tab AccountViewSwitcher_tabActive" data-view="0" aria-current="page">Health &amp; Outlook</button>
+    <button class="AccountViewSwitcher_tab" data-view="1">Context</button>
+    <button class="AccountViewSwitcher_tab" data-view="2">The Work</button>
+  </nav>
 
 </main>
+</div>
 
+<script>
+  // AccountViewSwitcher tab handler — mirrors page.setActiveView in AccountDetailPage.tsx.
+  // All 3 view divs stay mounted (display: block|none) so this is a pure visibility toggle.
+  (function () {
+    const tabs = document.querySelectorAll('.AccountViewSwitcher_tab');
+    const views = document.querySelectorAll('.AccountDetailPage_view');
+    tabs.forEach((tab) => {
+      tab.addEventListener('click', () => {
+        const idx = Number(tab.dataset.view);
+        tabs.forEach((t, i) => {
+          if (i === idx) {
+            t.classList.add('AccountViewSwitcher_tabActive');
+            t.setAttribute('aria-current', 'page');
+          } else {
+            t.classList.remove('AccountViewSwitcher_tabActive');
+            t.removeAttribute('aria-current');
+          }
+        });
+        views.forEach((v, i) => { v.style.display = i === idx ? 'block' : 'none'; });
+      });
+    });
+  })();
+</script>
 <script src="../_shared/chrome.js"></script>
 <script src="../_shared/inspector.js"></script>
 </body>

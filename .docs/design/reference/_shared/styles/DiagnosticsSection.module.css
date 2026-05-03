@@ -1,0 +1,633 @@
+/* =============================================================================
+   DiagnosticsSection — CSS module for inline-style extraction
+   Editorial design tokens only. No hard-coded colors.
+   ============================================================================= */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SHARED BUTTON STYLES (migrated from styles.ts inline objects)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_btn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.DiagnosticsSection_btnPrimary {
+  composes: btn;
+  color: var(--color-garden-olive);
+  border: 1px solid var(--color-garden-olive);
+}
+
+.DiagnosticsSection_btnGhost {
+  composes: btn;
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-rule-heavy);
+}
+
+.DiagnosticsSection_btnDisabledOpacity {
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DEVELOPER TOGGLE
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_devToolLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.DiagnosticsSection_devToolDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 2px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENTITY MODE SELECTOR
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_entityModeDescription {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-bottom: 16px;
+}
+
+.DiagnosticsSection_entityModeList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.DiagnosticsSection_entityModeBtn {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.DiagnosticsSection_entityModeBtn[data-selected="true"] {
+  border-color: var(--color-desk-charcoal);
+}
+
+.DiagnosticsSection_entityModeBtn[data-saving="true"] {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.DiagnosticsSection_entityModeIcon {
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.DiagnosticsSection_entityModeContent {
+  flex: 1;
+}
+
+.DiagnosticsSection_entityModeTitle {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.DiagnosticsSection_entityModeDesc {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 2px;
+}
+
+.DiagnosticsSection_entityModeCheck {
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   SCHEDULE ROW
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_scheduleHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.DiagnosticsSection_scheduleLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.DiagnosticsSection_scheduleStatusGroup {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.DiagnosticsSection_scheduleCron {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+
+.DiagnosticsSection_scheduleTimezone {
+  opacity: 0.6;
+}
+
+.DiagnosticsSection_scheduleRunBtn {
+  background: none;
+  border: none;
+  color: var(--color-text-tertiary);
+  padding: 4px;
+}
+
+.DiagnosticsSection_scheduleRunBtn:not(:disabled) {
+  cursor: pointer;
+}
+
+.DiagnosticsSection_scheduleRunBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MANUAL RUN
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_manualRunDescription {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-bottom: 16px;
+}
+
+.DiagnosticsSection_manualRunRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+}
+
+.DiagnosticsSection_manualRunSpinner {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MEETING BACKFILL
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_backfillDescription {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-bottom: 12px;
+}
+
+.DiagnosticsSection_backfillPathDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-bottom: 16px;
+}
+
+.DiagnosticsSection_backfillCode {
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.DiagnosticsSection_backfillResultRow {
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  margin-bottom: 16px;
+}
+
+.DiagnosticsSection_backfillResultHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.DiagnosticsSection_backfillResultLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.DiagnosticsSection_backfillErrorSection {
+  margin-top: 8px;
+}
+
+.DiagnosticsSection_backfillErrorLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-spice-terracotta);
+  margin-bottom: 4px;
+}
+
+.DiagnosticsSection_backfillErrorList {
+  max-height: 128px;
+  overflow-y: auto;
+}
+
+.DiagnosticsSection_backfillErrorItem {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin: 0;
+  margin-bottom: 2px;
+}
+
+.DiagnosticsSection_backfillRunBtn {
+  width: 100%;
+  text-align: center;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   DATABASE STORAGE CARD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_dbCard {
+  margin-top: 8px;
+}
+
+.DiagnosticsSection_dbHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.DiagnosticsSection_dbIconDefault {
+  color: var(--color-text-tertiary);
+}
+
+.DiagnosticsSection_dbIconWarning {
+  color: var(--color-turmeric);
+}
+
+.DiagnosticsSection_dbIconDanger {
+  color: var(--color-terracotta);
+}
+
+.DiagnosticsSection_dbLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.DiagnosticsSection_dbSizeDefault {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  margin-left: auto;
+}
+
+.DiagnosticsSection_dbSizeWarning {
+  composes: dbSizeDefault;
+  color: var(--color-turmeric);
+}
+
+.DiagnosticsSection_dbSizeDanger {
+  composes: dbSizeDefault;
+  color: var(--color-terracotta);
+}
+
+.DiagnosticsSection_dbDangerMessage {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-terracotta);
+  margin-bottom: 8px;
+}
+
+.DiagnosticsSection_dbExpandBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.DiagnosticsSection_dbChevron {
+  width: 12px;
+  height: 12px;
+  transition: transform 0.2s ease;
+}
+
+.DiagnosticsSection_dbChevronExpanded {
+  composes: dbChevron;
+  transform: rotate(180deg);
+}
+
+.DiagnosticsSection_dbTableDetails {
+  margin-top: 8px;
+}
+
+.DiagnosticsSection_dbTableRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 3px 0;
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.DiagnosticsSection_dbTableName {
+  color: var(--color-text-secondary);
+}
+
+.DiagnosticsSection_dbTableCount {
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   AI USAGE CARD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_aiCard {
+  margin-top: 8px;
+}
+
+.DiagnosticsSection_aiStatGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.DiagnosticsSection_aiStatCard {
+  border: 1px solid var(--color-rule-light);
+  padding: 12px 14px;
+}
+
+.DiagnosticsSection_aiStatNumber {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  color: var(--color-text-primary);
+  margin-top: 4px;
+}
+
+.DiagnosticsSection_aiStatDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 4px;
+}
+
+.DiagnosticsSection_aiSectionBlock {
+  margin-top: 16px;
+}
+
+.DiagnosticsSection_aiSectionLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.DiagnosticsSection_aiGuardCard {
+  border: 1px solid var(--color-rule-light);
+  padding: 12px 14px;
+}
+
+.DiagnosticsSection_aiGuardStatus {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.DiagnosticsSection_aiGuardDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+  margin-top: 6px;
+}
+
+.DiagnosticsSection_aiCallSiteRow {
+  display: flex;
+  justify-content: space-between;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-family: var(--font-mono);
+  font-size: 12px;
+}
+
+.DiagnosticsSection_aiCallSiteLabel {
+  color: var(--color-text-secondary);
+}
+
+.DiagnosticsSection_aiCallSiteCount {
+  color: var(--color-text-tertiary);
+}
+
+.DiagnosticsSection_aiNoData {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.DiagnosticsSection_aiTrendRow {
+  display: grid;
+  grid-template-columns: 90px 1fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.DiagnosticsSection_aiTrendDate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.DiagnosticsSection_aiTrendSummary {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.DiagnosticsSection_aiTrendTokens {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ARCHIVED ACCOUNTS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_archivedCard {
+  margin-top: 8px;
+}
+
+.DiagnosticsSection_archivedToggleBtn {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.DiagnosticsSection_archivedChevron {
+  width: 14px;
+  height: 14px;
+  transition: transform 0.2s ease;
+}
+
+.DiagnosticsSection_archivedChevronExpanded {
+  composes: archivedChevron;
+  transform: rotate(180deg);
+}
+
+.DiagnosticsSection_archivedList {
+  margin-top: 16px;
+}
+
+.DiagnosticsSection_archivedEmpty {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+}
+
+.DiagnosticsSection_archivedAccountsList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.DiagnosticsSection_archivedAccountRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 10px 0;
+}
+
+.DiagnosticsSection_archivedAccountRowBorder {
+  composes: archivedAccountRow;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.DiagnosticsSection_archivedAccountName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.DiagnosticsSection_archivedAccountParent {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-left: 8px;
+}
+
+.DiagnosticsSection_archivedRestoreBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-garden-sage);
+  background: none;
+  border: 1px solid var(--color-garden-sage);
+  border-radius: 4px;
+  padding: 4px 10px;
+  cursor: pointer;
+}
+
+.DiagnosticsSection_archivedRestoreBtn:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   I645: FEEDBACK & LEARNING CARD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.DiagnosticsSection_feedbackCard {
+  margin-top: 8px;
+}
+
+.DiagnosticsSection_feedbackStatGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 12px;
+}
+
+.DiagnosticsSection_feedbackStatItem {
+  border: 1px solid var(--color-rule-light);
+  padding: 12px 14px;
+}
+
+.DiagnosticsSection_feedbackStatNumber {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  color: var(--color-text-primary);
+  margin-top: 4px;
+}
+
+.DiagnosticsSection_feedbackStatDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}

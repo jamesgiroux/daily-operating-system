@@ -1,0 +1,175 @@
+
+.PersonHero_hero {
+  composes: hero from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_heroDate {
+  composes: heroDate from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_nameRow {
+  display: flex;
+  align-items: center;
+  gap: 20px;
+  margin-bottom: 40px;
+}
+
+.PersonHero_avatar {
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--color-garden-larkspur-15);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  color: var(--color-garden-larkspur);
+  flex-shrink: 0;
+}
+
+.PersonHero_name {
+  composes: heroTitle from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_lede {
+  composes: heroLede from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_badges {
+  composes: heroBadges from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_badge {
+  composes: heroBadge from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_relationshipExternal {
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-spice-turmeric);
+}
+
+.PersonHero_relationshipInternal {
+  background: var(--color-desk-charcoal-8);
+  color: var(--color-text-secondary);
+}
+
+.PersonHero_relationshipUnknown {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-tertiary);
+}
+
+.PersonHero_temperatureHot {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-sage);
+}
+
+.PersonHero_temperatureWarm {
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-spice-turmeric);
+}
+
+.PersonHero_temperatureCool {
+  background: var(--color-rule-light);
+  color: var(--color-text-secondary);
+}
+
+.PersonHero_temperatureCold {
+  background: var(--color-spice-terracotta-15);
+  color: var(--color-spice-terracotta);
+}
+
+.PersonHero_subtitle {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+  margin-bottom: 24px;
+}
+
+.PersonHero_archivedBanner {
+  composes: heroArchivedBanner from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_archivedText {
+  composes: heroArchivedText from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_meta {
+  composes: heroMeta from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_metaButton {
+  composes: heroMetaButton from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_metaButtonEnriching {
+  composes: metaButton;
+  color: var(--color-garden-larkspur);
+  text-decoration: none;
+  cursor: default;
+}
+
+.PersonHero_metaButtonDanger {
+  composes: metaButton;
+  color: var(--color-spice-terracotta);
+}
+
+.PersonHero_metaButtonDanger:hover {
+  color: var(--color-spice-chili);
+}
+
+.PersonHero_readMore {
+  composes: heroReadMore from "../entity/EntityHeroBase.module.css";
+}
+
+.PersonHero_subtitleRow {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.PersonHero_bio {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  font-style: italic;
+}
+
+.PersonHero_bioWithLede {
+  margin-top: 8px;
+}
+
+.PersonHero_socialLinks {
+  display: flex;
+  gap: 12px;
+  margin-top: 8px;
+  flex-wrap: wrap;
+}
+
+.PersonHero_socialLink {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-garden-larkspur);
+  text-decoration: none;
+}
+
+.PersonHero_socialLinkMuted {
+  color: var(--color-text-secondary);
+}
+
+.PersonHero_badgesWithTopMargin {
+  margin-top: 24px;
+}
+
+.PersonHero_metaRow {
+  display: flex;
+  align-items: baseline;
+  gap: 16px;
+  flex-wrap: wrap;
+  margin-top: 16px;
+}

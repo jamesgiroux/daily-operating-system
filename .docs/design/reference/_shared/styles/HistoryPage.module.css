@@ -1,0 +1,92 @@
+.HistoryPage_container {
+  max-width: var(--page-content-width-standard);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+.HistoryPage_headerRow {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 2fr 1fr;
+  gap: 12px;
+  padding: 0 0 8px;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.HistoryPage_headerCell {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.HistoryPage_entryRow {
+  display: grid;
+  grid-template-columns: 2fr 1fr 1fr 2fr 1fr;
+  gap: 12px;
+  padding: 10px 0;
+  align-items: center;
+}
+
+.HistoryPage_entryRowBorder {
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.HistoryPage_cellFilename {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.HistoryPage_cellMono {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.HistoryPage_statusCell {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.HistoryPage_statusDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.HistoryPage_statusDotSuccess {
+  background: var(--color-garden-sage);
+}
+
+.HistoryPage_statusDotError {
+  background: var(--color-spice-terracotta);
+}
+
+.HistoryPage_statusTextError {
+  color: var(--color-spice-terracotta);
+}
+
+.HistoryPage_cellTruncate {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.HistoryPage_cellNoWrap {
+  white-space: nowrap;
+}
+
+.HistoryPage_errorRow {
+  grid-column: 1 / -1;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-spice-terracotta);
+  padding-top: 2px;
+}

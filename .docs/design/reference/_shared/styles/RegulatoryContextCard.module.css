@@ -1,0 +1,63 @@
+
+.RegulatoryContextCard_header {
+  margin-bottom: 0.75rem;
+}
+
+.RegulatoryContextCard_title {
+  font-family: var(--font-serif);
+  font-size: 1.25rem;
+  margin: 0;
+}
+
+.RegulatoryContextCard_subtitle {
+  color: var(--color-text-secondary);
+  font-size: 0.875rem;
+  margin: var(--space-xs) 0 0;
+}
+
+.RegulatoryContextCard_list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.RegulatoryContextCard_item {
+  display: grid;
+  grid-template-columns: minmax(140px, 20%) 1fr auto;
+  gap: 0.75rem;
+  padding: 0.75rem 0;
+  align-items: start;
+}
+
+.RegulatoryContextCard_item + .RegulatoryContextCard_item {
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.RegulatoryContextCard_standard {
+  font-family: var(--font-serif);
+  font-size: 1rem;
+  font-weight: 500;
+}
+
+.RegulatoryContextCard_evidence {
+  margin: 0;
+  font-size: 0.9375rem;
+  line-height: 1.4;
+}
+
+.RegulatoryContextCard_sourceReference {
+  margin: var(--space-xs) 0 0;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
+  font-family: var(--font-mono);
+}
+
+.RegulatoryContextCard_statusChip {
+  padding: 0.125rem var(--space-sm);
+  border-radius: 999px;
+  color: var(--color-paper-warm-white);
+  font-size: 0.75rem;
+  font-weight: 500;
+  white-space: nowrap;
+  align-self: start;
+}

@@ -1,0 +1,180 @@
+/* SettingsPage — CSS Module  */
+
+.SettingsPage_container {
+  max-width: var(--page-content-width-standard);
+  margin-left: auto;
+  margin-right: auto;
+}
+
+/* ── Banners ── */
+
+.SettingsPage_banner {
+  padding: 12px 20px;
+  border-bottom: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.SettingsPage_bannerText {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-secondary);
+}
+
+.SettingsPage_bannerAction {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: none;
+  cursor: pointer;
+  white-space: nowrap;
+  padding: 0;
+}
+
+.SettingsPage_bannerDismiss {
+  font-size: 16px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 0 12px;
+  line-height: 1;
+}
+
+.SettingsPage_bannerDismiss:hover {
+  color: var(--color-text-secondary);
+}
+
+/* ── Sections ── */
+
+.SettingsPage_section {
+  margin-bottom: 48px;
+}
+
+.SettingsPage_sectionInset {
+  margin-top: 32px;
+}
+
+/* ── Claude Code Section ── */
+
+.SettingsPage_claudeCodeLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0;
+  margin-bottom: 12px;
+}
+
+.SettingsPage_claudeCodeRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.SettingsPage_claudeCodeColumn {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.SettingsPage_claudeCodeText {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.SettingsPage_claudeCodeTextMuted {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.SettingsPage_claudeCodeTextTertiary {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+.SettingsPage_claudeCodeActions {
+  display: flex;
+  gap: 12px;
+}
+
+.SettingsPage_ctaButton {
+  align-self: flex-start;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.SettingsPage_ctaButton:disabled {
+  color: var(--color-text-tertiary);
+  cursor: default;
+}
+
+/* ── Claude Code Wrapper ── */
+
+.SettingsPage_claudeCodeWrapper {
+  margin-bottom: 32px;
+}
+
+.SettingsPage_systemAction {
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.SettingsPage_systemActionButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-spice-turmeric);
+  background: none;
+  border: 1px solid var(--color-spice-turmeric);
+  border-radius: 4px;
+  padding: 4px 12px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.SettingsPage_systemActionButton:hover {
+  background: var(--color-spice-turmeric-12, rgba(201, 162, 39, 0.08));
+}
+
+.SettingsPage_systemActionHint {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Icon utilities ── */
+
+.SettingsPage_iconTertiary {
+  color: var(--color-text-tertiary);
+}
+
+/* ── Spacer ── */
+
+.SettingsPage_bottomSpacer {
+  height: 80px;
+}

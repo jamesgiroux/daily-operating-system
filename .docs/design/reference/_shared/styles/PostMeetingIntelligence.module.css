@@ -1,0 +1,942 @@
+/* =============================================================================
+   PostMeetingIntelligence — Meeting Record editorial layout
+   Matches .docs/mockups/meeting-record.html design
+   ============================================================================= */
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CONTAINER
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_container {
+  display: flex;
+  flex-direction: column;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   EXECUTIVE SUMMARY (pull quote)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_summaryBlock {
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding: 24px 0 24px 32px;
+  margin-top: 48px;
+}
+
+.PostMeetingIntelligence_summaryText {
+  font-family: var(--font-serif);
+  font-size: 21px;
+  font-weight: 300;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 640px;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CHAPTER SECTIONS (80px padding-top)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_chapter {
+  padding-top: 80px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   MONO LABEL (sub-labels within chapters)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_monoLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 16px;
+}
+
+.PostMeetingIntelligence_monoLabelSage {
+  composes: monoLabel;
+  color: var(--color-garden-sage);
+}
+
+.PostMeetingIntelligence_monoLabelTerracotta {
+  composes: monoLabel;
+  color: var(--color-spice-terracotta);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE THREAD
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_threadIntro {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  margin: 0 0 24px;
+}
+
+.PostMeetingIntelligence_threadList {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin: 0;
+  padding: 0;
+}
+
+.PostMeetingIntelligence_threadItem {
+  display: flex;
+  align-items: first baseline;
+  gap: 12px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.PostMeetingIntelligence_threadIcon {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+  font-weight: 600;
+}
+
+.PostMeetingIntelligence_threadIconConfirmed {
+  composes: threadIcon;
+  color: var(--color-garden-sage);
+}
+
+.PostMeetingIntelligence_threadIconOpen {
+  composes: threadIcon;
+  color: var(--color-spice-turmeric);
+}
+
+.PostMeetingIntelligence_threadIconNeutral {
+  composes: threadIcon;
+  color: var(--color-text-tertiary);
+  font-size: 11px;
+}
+
+.PostMeetingIntelligence_threadIconNewFace {
+  composes: threadIcon;
+  color: var(--color-spice-saffron, #deb841);
+}
+
+.PostMeetingIntelligence_threadDetail {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-quaternary);
+  margin-left: 4px;
+  letter-spacing: 0.02em;
+}
+
+.PostMeetingIntelligence_threadDeltaUp {
+  color: var(--color-garden-sage);
+  font-weight: 600;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PREDICTIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_predictionGroup {
+  margin-bottom: 32px;
+}
+
+.PostMeetingIntelligence_predictionGroup:last-child {
+  margin-bottom: 0;
+}
+
+.PostMeetingIntelligence_predictionItem {
+  display: flex;
+  align-items: first baseline;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.PostMeetingIntelligence_predictionItemConfirmed {
+  composes: predictionItem;
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+}
+
+.PostMeetingIntelligence_predictionItemSurprise {
+  composes: predictionItem;
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+}
+
+.PostMeetingIntelligence_predictionItemNotRaised {
+  composes: predictionItem;
+  opacity: 0.5;
+}
+
+.PostMeetingIntelligence_predictionIcon {
+  flex-shrink: 0;
+  width: 18px;
+  text-align: center;
+}
+
+.PostMeetingIntelligence_predictionIconConfirmed {
+  composes: predictionIcon;
+  color: var(--color-garden-sage);
+  font-weight: 600;
+}
+
+.PostMeetingIntelligence_predictionIconSurprise {
+  composes: predictionIcon;
+  color: var(--color-spice-turmeric);
+  font-weight: 600;
+}
+
+.PostMeetingIntelligence_predictionIconNotRaised {
+  composes: predictionIcon;
+  color: var(--color-text-quaternary);
+}
+
+.PostMeetingIntelligence_predictionMatch {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin: 4px 0 0;
+  line-height: 1.45;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ENGAGEMENT
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_talkBalance {
+  margin-bottom: 40px;
+}
+
+.PostMeetingIntelligence_speakerSentiments {
+  display: flex;
+  flex-direction: column;
+  gap: 28px;
+  margin-bottom: 40px;
+}
+
+.PostMeetingIntelligence_speakerHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+
+.PostMeetingIntelligence_speakerName {
+  font-size: 16px;
+  font-weight: 500;
+}
+
+.PostMeetingIntelligence_speakerSentiment {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.PostMeetingIntelligence_sentimentPositive {
+  composes: speakerSentiment;
+  color: var(--color-garden-sage);
+}
+
+.PostMeetingIntelligence_sentimentCautious {
+  composes: speakerSentiment;
+  color: var(--color-spice-turmeric);
+}
+
+.PostMeetingIntelligence_sentimentNegative {
+  composes: speakerSentiment;
+  color: var(--color-spice-terracotta);
+}
+
+.PostMeetingIntelligence_sentimentNeutral {
+  composes: speakerSentiment;
+  color: var(--color-text-tertiary);
+}
+
+.PostMeetingIntelligence_speakerEvidence {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+/* Engagement signal grid */
+.PostMeetingIntelligence_signalGrid {
+  display: grid;
+  grid-template-columns: 150px 1fr;
+  gap: 8px 32px;
+  margin-bottom: 40px;
+}
+
+.PostMeetingIntelligence_signalKey {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  text-align: right;
+  padding-top: 2px;
+}
+
+.PostMeetingIntelligence_signalValue {
+  font-size: 15px;
+  font-weight: 400;
+}
+
+/* Escalation block */
+.PostMeetingIntelligence_escalationBlock {
+  border-left: 2px solid var(--color-spice-terracotta);
+  padding: 16px 0 16px 24px;
+  margin-bottom: 32px;
+}
+
+.PostMeetingIntelligence_escalationQuote {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.PostMeetingIntelligence_escalationAttribution {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  margin-top: 8px;
+  letter-spacing: 0.02em;
+}
+
+/* Competitor mention */
+.PostMeetingIntelligence_competitorMention {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0 0 12px;
+}
+
+.PostMeetingIntelligence_competitorMention:last-child {
+  margin-bottom: 0;
+}
+
+.PostMeetingIntelligence_competitorName {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   CHAMPION HEALTH
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_championHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.PostMeetingIntelligence_championName {
+  font-size: 18px;
+  font-weight: 500;
+}
+
+.PostMeetingIntelligence_championBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  padding: 3px 10px;
+  border-radius: 3px;
+}
+
+.PostMeetingIntelligence_championBadgeStrong {
+  composes: championBadge;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+}
+
+.PostMeetingIntelligence_championBadgeWeak {
+  composes: championBadge;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+}
+
+.PostMeetingIntelligence_championBadgeLost {
+  composes: championBadge;
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8, rgba(196, 101, 74, 0.06));
+}
+
+.PostMeetingIntelligence_championBadgeNone {
+  composes: championBadge;
+  color: var(--color-text-tertiary);
+  background: var(--color-rule-light);
+}
+
+.PostMeetingIntelligence_championEvidence {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  margin: 0 0 12px;
+}
+
+.PostMeetingIntelligence_championRisk {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   KEY FINDINGS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_findingsGroup {
+  margin-bottom: 40px;
+}
+
+.PostMeetingIntelligence_findingsGroup:last-child {
+  margin-bottom: 0;
+}
+
+.PostMeetingIntelligence_findingItem {
+  display: flex;
+  gap: 16px;
+  padding: 20px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.PostMeetingIntelligence_findingItem:last-child {
+  border-bottom: none;
+}
+
+.PostMeetingIntelligence_findingDot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  margin-top: 9px;
+}
+
+.PostMeetingIntelligence_findingDotSage {
+  composes: findingDot;
+  background: var(--color-garden-sage);
+}
+
+.PostMeetingIntelligence_findingDotTerracotta {
+  composes: findingDot;
+  background: var(--color-spice-terracotta);
+}
+
+.PostMeetingIntelligence_findingDotTurmeric {
+  composes: findingDot;
+  background: var(--color-spice-turmeric);
+}
+
+.PostMeetingIntelligence_findingDotCharcoal {
+  composes: findingDot;
+  background: var(--color-text-tertiary);
+}
+
+.PostMeetingIntelligence_findingContent {
+  flex: 1;
+  min-width: 0;
+}
+
+.PostMeetingIntelligence_findingTitle {
+  font-size: 16px;
+  font-weight: 400;
+  line-height: 1.45;
+  margin: 0 0 6px;
+}
+
+.PostMeetingIntelligence_findingBadge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 7px;
+  border-radius: 3px;
+  margin-left: 8px;
+  vertical-align: 2px;
+}
+
+.PostMeetingIntelligence_badgeExpansion {
+  composes: findingBadge;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+}
+
+.PostMeetingIntelligence_badgeValue {
+  composes: findingBadge;
+  color: var(--color-garden-olive, #6b7c52);
+  background: rgba(107, 124, 82, 0.08);
+}
+
+.PostMeetingIntelligence_badgeRed {
+  composes: findingBadge;
+  color: var(--color-spice-terracotta);
+  background: var(--color-spice-terracotta-8, rgba(196, 101, 74, 0.06));
+}
+
+.PostMeetingIntelligence_badgeYellow {
+  composes: findingBadge;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+}
+
+.PostMeetingIntelligence_badgeDecisionJoint {
+  composes: findingBadge;
+  color: var(--color-mineral-larkspur, #5a7fa5);
+  background: rgba(90, 127, 165, 0.08);
+}
+
+.PostMeetingIntelligence_badgeDecisionCustomer {
+  composes: findingBadge;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+}
+
+.PostMeetingIntelligence_badgeDecisionInternal {
+  composes: findingBadge;
+  color: var(--color-text-secondary, #6b6b6b);
+  background: rgba(107, 107, 107, 0.07);
+}
+
+.PostMeetingIntelligence_findingImpact {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin: 0 0 10px;
+  line-height: 1.5;
+}
+
+.PostMeetingIntelligence_evidenceBlock {
+  border-left: 2px solid var(--color-spice-saffron, #deb841);
+  padding: 8px 0 8px 20px;
+  margin: 10px 0 6px;
+}
+
+.PostMeetingIntelligence_evidenceBlockRed {
+  composes: evidenceBlock;
+  border-left-color: var(--color-spice-terracotta);
+}
+
+.PostMeetingIntelligence_evidenceBlockYellow {
+  composes: evidenceBlock;
+  border-left-color: var(--color-spice-turmeric);
+}
+
+.PostMeetingIntelligence_evidenceText {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.PostMeetingIntelligence_attribution {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-quaternary);
+  margin-top: 6px;
+  letter-spacing: 0.02em;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   COMMITMENTS & ACTIONS
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_commitmentItem {
+  display: flex;
+  align-items: first baseline;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.PostMeetingIntelligence_commitmentItem:last-child {
+  border-bottom: none;
+}
+
+.PostMeetingIntelligence_commitmentIcon {
+  flex-shrink: 0;
+  width: 18px;
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+}
+
+.PostMeetingIntelligence_commitmentTag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-quaternary);
+  margin-left: 8px;
+}
+
+.PostMeetingIntelligence_actionsSublabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-quaternary);
+  margin: 32px 0 12px;
+}
+
+.PostMeetingIntelligence_actionItem {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 16px;
+  border-radius: 4px;
+  margin-bottom: 6px;
+  font-size: 15px;
+  line-height: 1.5;
+}
+
+.PostMeetingIntelligence_actionItemSuggested {
+  composes: actionItem;
+  background: var(--color-spice-turmeric-8, rgba(201, 162, 39, 0.07));
+  border: 1px solid rgba(201, 162, 39, 0.12);
+}
+
+.PostMeetingIntelligence_actionItemPending {
+  composes: actionItem;
+  background: transparent;
+  border-bottom: 1px solid var(--color-rule-light);
+  border-radius: 0;
+  padding: 14px 0;
+  margin-bottom: 0;
+}
+
+.PostMeetingIntelligence_actionItemCompleted {
+  composes: actionItem;
+  background: transparent;
+  border-bottom: 1px solid var(--color-rule-light);
+  border-radius: 0;
+  padding: 14px 0;
+  margin-bottom: 0;
+  opacity: 0.55;
+}
+
+.PostMeetingIntelligence_pendingPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: var(--color-rule-light);
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.PostMeetingIntelligence_completedIcon {
+  color: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+.PostMeetingIntelligence_actionTitleCompleted {
+  text-decoration: line-through;
+  color: var(--color-text-tertiary);
+}
+
+.PostMeetingIntelligence_commitmentsList {
+  margin-bottom: 32px;
+  border-bottom: 1px solid var(--color-rule-heavy);
+  padding-bottom: 8px;
+}
+
+.PostMeetingIntelligence_actionsList {
+  margin-top: 0;
+}
+
+.PostMeetingIntelligence_suggestedPill {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: rgba(201, 162, 39, 0.12);
+  padding: 3px 8px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.PostMeetingIntelligence_actionText {
+  flex: 1;
+  min-width: 0;
+}
+
+.PostMeetingIntelligence_actionContext {
+  display: block;
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+.PostMeetingIntelligence_actionMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-quaternary);
+  margin-left: 6px;
+}
+
+.PostMeetingIntelligence_priorityP1 {
+  color: var(--color-spice-terracotta);
+}
+
+.PostMeetingIntelligence_priorityP2 {
+  color: var(--color-text-tertiary);
+}
+
+.PostMeetingIntelligence_actionControls {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.PostMeetingIntelligence_actionBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 5px 12px;
+  border-radius: 3px;
+  border: none;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.PostMeetingIntelligence_actionBtn:hover {
+  opacity: 0.75;
+}
+
+.PostMeetingIntelligence_btnAccept {
+  composes: actionBtn;
+  color: var(--color-garden-sage);
+  background: var(--color-garden-sage-8, rgba(126, 170, 123, 0.07));
+  border: 1px solid rgba(126, 170, 123, 0.15);
+}
+
+.PostMeetingIntelligence_btnDismiss {
+  composes: actionBtn;
+  color: var(--color-text-quaternary);
+  background: transparent;
+  border: 1px solid var(--color-rule-light);
+}
+
+.PostMeetingIntelligence_btnComplete {
+  composes: actionBtn;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: 1px solid var(--color-rule-light);
+}
+
+.PostMeetingIntelligence_btnReopen {
+  composes: actionBtn;
+  color: var(--color-text-quaternary);
+  background: transparent;
+  border: none;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   ROLE CHANGES
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_roleChange {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.PostMeetingIntelligence_roleChange:last-child {
+  border-bottom: none;
+}
+
+.PostMeetingIntelligence_roleHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.PostMeetingIntelligence_roleName {
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.PostMeetingIntelligence_roleTransition {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.PostMeetingIntelligence_roleStatus {
+  color: var(--color-text-secondary);
+}
+
+.PostMeetingIntelligence_roleArrow {
+  color: var(--color-text-quaternary);
+  flex-shrink: 0;
+}
+
+.PostMeetingIntelligence_roleEvidenceBlock {
+  border-left: 2px solid var(--color-spice-saffron, #deb841);
+  padding: 6px 0 6px 20px;
+}
+
+.PostMeetingIntelligence_roleEvidence {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  margin: 0;
+  margin: 0;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   THE ROOM
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_roomGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px;
+}
+
+.PostMeetingIntelligence_roomSideLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 16px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.PostMeetingIntelligence_roomPerson {
+  padding: 8px 0;
+}
+
+.PostMeetingIntelligence_roomName {
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.PostMeetingIntelligence_roomRole {
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-secondary);
+}
+
+.PostMeetingIntelligence_roomNewTag {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-spice-saffron, #deb841);
+  margin-left: 6px;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   PRE-MEETING CONTEXT (collapsible)
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_preMeetingDetails {
+  margin-top: 80px;
+}
+
+.PostMeetingIntelligence_preMeetingSummary {
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  list-style: none;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.PostMeetingIntelligence_preMeetingSummary::-webkit-details-marker {
+  display: none;
+}
+
+.PostMeetingIntelligence_preMeetingChevron {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--color-text-quaternary);
+  transition: transform 0.2s ease;
+}
+
+.PostMeetingIntelligence_preMeetingDetails[open] .PostMeetingIntelligence_preMeetingChevron {
+  transform: rotate(90deg);
+}
+
+.PostMeetingIntelligence_preMeetingContent {
+  margin-top: 24px;
+  padding: 24px;
+  background: var(--color-warm-white, #faf8f6);
+  border-radius: 4px;
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-tertiary);
+  opacity: 0.7;
+}
+
+/* ─────────────────────────────────────────────────────────────────────────────
+   HOVER-REVEAL FEEDBACK
+   ───────────────────────────────────────────────────────────────────────────── */
+
+.PostMeetingIntelligence_feedbackSlot {
+  margin-left: auto;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.PostMeetingIntelligence_findingItem:hover .PostMeetingIntelligence_feedbackSlot,
+.PostMeetingIntelligence_feedbackSlot:focus-within {
+  opacity: 1;
+}

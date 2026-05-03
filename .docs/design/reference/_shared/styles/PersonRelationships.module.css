@@ -1,0 +1,379 @@
+/* PersonRelationships — "Their Network" chapter (ADR-0088) */
+
+.PersonRelationships_chapter {
+  /* Spacing handled by page-level chapterSectionWithPadding wrapper */
+}
+
+.PersonRelationships_clusterSummary {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin-bottom: var(--space-lg);
+}
+
+.PersonRelationships_calloutList {
+  margin-bottom: var(--space-md);
+}
+
+.PersonRelationships_calloutRisk {
+  border-left: 3px solid var(--color-spice-turmeric);
+  padding-left: var(--space-md);
+  margin-bottom: var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.PersonRelationships_calloutOpportunity {
+  border-left: 3px solid var(--color-garden-sage);
+  padding-left: var(--space-md);
+  margin-bottom: var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-secondary);
+}
+
+.PersonRelationships_edgeGroup {
+  margin-bottom: var(--space-lg);
+}
+
+.PersonRelationships_groupLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-sm);
+}
+
+/* Edge row */
+.PersonRelationships_edgeRow {
+  display: flex;
+  align-items: center;
+  gap: var(--space-sm);
+  padding: 6px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.PersonRelationships_edgeLink {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.PersonRelationships_edgeLink:hover {
+  color: var(--color-garden-larkspur);
+}
+
+.PersonRelationships_edgeBadge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 6px;
+  border-radius: var(--radius-editorial-sm);
+  /* Charcoal tint — from --color-desk-charcoal #1e2530 */
+  background: var(--color-rule-light);
+  color: var(--color-text-secondary);
+}
+
+.PersonRelationships_suggestedBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-garden-sage-14);
+  color: var(--color-garden-sage);
+}
+
+.PersonRelationships_edgeMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.PersonRelationships_edgeConfidence {
+  cursor: help;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+}
+
+.PersonRelationships_edgeRationale {
+  cursor: help;
+  text-decoration: underline;
+  text-decoration-style: dotted;
+  text-underline-offset: 2px;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.PersonRelationships_edgeDate {
+  opacity: 0.7;
+}
+
+/* Accept button on suggested edge rows */
+.PersonRelationships_acceptBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-garden-sage);
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.PersonRelationships_edgeRow:hover .PersonRelationships_acceptBtn {
+  opacity: 1;
+}
+
+.PersonRelationships_acceptBtn:hover {
+  color: var(--color-garden-eucalyptus);
+}
+
+/* Confirm button (inline confirm flow) */
+.PersonRelationships_confirmBtn {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-paper-warm-white);
+  background: var(--color-garden-sage);
+  border: none;
+  border-radius: var(--radius-editorial-sm);
+  padding: 3px 10px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.PersonRelationships_confirmBtn:hover {
+  opacity: 0.9;
+}
+
+/* Delete button on edge rows */
+.PersonRelationships_deleteBtn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 2px;
+  border-radius: 3px;
+  opacity: 0;
+  transition: opacity 0.15s ease, color 0.15s ease;
+}
+
+.PersonRelationships_edgeRow:hover .PersonRelationships_deleteBtn {
+  opacity: 1;
+}
+
+.PersonRelationships_deleteBtn:hover {
+  color: var(--color-spice-terracotta);
+}
+
+/* Empty state */
+.PersonRelationships_emptyState {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md);
+}
+
+/* Add connection button */
+.PersonRelationships_addBtn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px dashed var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: color 0.15s ease, border-color 0.15s ease;
+  margin-top: var(--space-sm);
+}
+
+.PersonRelationships_addBtn:hover {
+  color: var(--color-garden-larkspur);
+  border-color: var(--color-garden-larkspur);
+}
+
+/* Add flow container */
+.PersonRelationships_addFlow {
+  margin-top: var(--space-sm);
+}
+
+.PersonRelationships_searchInput {
+  width: 100%;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 8px 12px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-primary);
+  outline: none;
+  transition: border-color 0.15s ease;
+}
+
+.PersonRelationships_searchInput:focus {
+  border-color: var(--color-garden-larkspur);
+}
+
+.PersonRelationships_searchResults {
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  margin-top: 4px;
+  max-height: 240px;
+  overflow-y: auto;
+  background: var(--color-paper-warm-white);
+}
+
+.PersonRelationships_searchResultItem {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  cursor: pointer;
+  text-align: left;
+  transition: background 0.1s ease;
+}
+
+.PersonRelationships_searchResultItem:last-child {
+  border-bottom: none;
+}
+
+.PersonRelationships_searchResultItem:hover {
+  background: var(--color-desk-charcoal-4);
+}
+
+.PersonRelationships_searchResultName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.PersonRelationships_searchResultMeta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.PersonRelationships_noResults {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  text-align: center;
+  padding: 12px 0;
+}
+
+/* Type selector (step 2) */
+.PersonRelationships_typeSelector {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.PersonRelationships_selectedPersonLabel {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.PersonRelationships_clearPersonBtn {
+  display: flex;
+  align-items: center;
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  padding: 2px;
+}
+
+.PersonRelationships_clearPersonBtn:hover {
+  color: var(--color-spice-terracotta);
+}
+
+.PersonRelationships_typeSelectorRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.PersonRelationships_typeLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.PersonRelationships_typeSelectorActions {
+  display: flex;
+  gap: var(--space-sm);
+  align-items: center;
+}
+
+.PersonRelationships_cancelBtn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 6px 10px;
+}
+
+.PersonRelationships_cancelBtn:hover {
+  color: var(--color-text-primary);
+}
+
+.PersonRelationships_saveBtn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-paper-warm-white);
+  background: var(--color-garden-larkspur);
+  border: none;
+  border-radius: var(--radius-editorial-sm);
+  padding: 6px 14px;
+  cursor: pointer;
+  transition: opacity 0.15s ease;
+}
+
+.PersonRelationships_saveBtn:hover {
+  opacity: 0.9;
+}
+
+.PersonRelationships_saveBtn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}

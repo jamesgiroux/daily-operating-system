@@ -1,0 +1,688 @@
+/* ==========================================================================
+ * WorkSurface.module.css — Work tab
+ *
+ * Workbench, not todo list. Zero-guilt execution surface.
+ * Colocated styles for the 8-chapter Work view components:
+ *   NumberedFocusList, ProgramPill, CommitmentCard, SuggestionCard,
+ *   SharedRefRow, RecentlyLandedRow, ReportCard, NudgeRow, VisibilityPill.
+ *
+ * Token + typography fidelity verified against
+ *   .docs/mockups/account-work-globex.html
+ * ========================================================================= */
+
+/* Pull in design tokens explicitly. The global load from index.css can
+ * fail in strict-mode WebKit when the relative @import chain emits an
+ * absolute URL that gets caught by the Vite SPA fallback (text/html
+ * MIME → refused). Importing locally guarantees these CSS variables
+ * resolve regardless of whether the global chain succeeded. */
+
+/* ═════════ Shared freshness strip (chapter sublabel style) ═════════ */
+.WorkSurface_sublabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+  margin: 8px 0 0 0;
+}
+
+/* ═════════ CHAPTER 1 — 90-DAY FOCUS (editorial numbered list) ═════════ */
+.WorkSurface_focusList {
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+  padding-top: 24px;
+}
+.WorkSurface_focusItem {
+  display: grid;
+  grid-template-columns: 96px 1fr;
+  gap: 32px;
+  align-items: baseline;
+}
+.WorkSurface_focusNumeral {
+  font-family: var(--font-serif);
+  font-size: 72px;
+  font-weight: 300;
+  line-height: 1;
+  color: var(--color-rule-heavy);
+  letter-spacing: -0.03em;
+  text-align: right;
+  padding-top: 4px;
+}
+.WorkSurface_focusBody {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.WorkSurface_focusHeadline {
+  font-family: var(--font-serif);
+  font-size: 26px;
+  font-weight: 400;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+  letter-spacing: -0.01em;
+  margin: 0;
+}
+.WorkSurface_focusPara {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+  margin: 0;
+}
+.WorkSurface_focusProvenance {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--color-text-tertiary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+  padding-top: 4px;
+}
+.WorkSurface_focusProvenanceLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-right: 4px;
+}
+.WorkSurface_citeChip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  border-bottom: 1px dotted var(--color-text-tertiary);
+  text-decoration: none;
+  white-space: nowrap;
+  padding-bottom: 1px;
+}
+.WorkSurface_citeChip:hover {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+}
+.WorkSurface_citeChipButton {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: default;
+}
+.WorkSurface_citeChipButtonClickable {
+  cursor: pointer;
+}
+
+/* ═════════ CHAPTER 2 — PROGRAMS & MOTIONS ═════════ */
+.WorkSurface_programsRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding-top: 8px;
+}
+.WorkSurface_programPill {
+  padding: 32px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 10px;
+  border-left: 2px solid var(--color-spice-turmeric);
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.WorkSurface_programState {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-spice-turmeric);
+}
+.WorkSurface_programDescription {
+  font-family: var(--font-serif);
+  font-size: 15px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+@media (max-width: 900px) {
+  .WorkSurface_programsRow {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* ═════════ CHAPTER 3 — COMMITMENTS ═════════ */
+.WorkSurface_commitmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.WorkSurface_commitmentCard {
+  padding: 32px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.WorkSurface_commitmentHeadline {
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+/* DOS Work-tab Phase 3: top-4 emphasis for Commitments chapter.
+   Mockup uses a uniform 19px serif 400; emphasis lifts the first few cards
+   with a slight size bump only — weight stays at 400 so the list stays in
+   the editorial serif register rather than reading as two weights.
+   v1.2.1 QA: user reported base 19px/400 cards were reading too heavy
+   because the emphasis bump to 600 raised the whole chapter's perceived
+   weight. */
+.WorkSurface_commitmentHeadlineEmphasis {
+  font-size: 22px;
+  line-height: 1.3;
+}
+
+/* Inline click-to-edit affordance for the commitment owner/due fields.
+   Matches the saffron-underline cue used by the global inline-edit pattern
+   (EditableText flips to a terracotta underline while editing; this
+   reveals the same hover background as EditableText.module.css). */
+.WorkSurface_inlineEditable {
+  cursor: text;
+  border-radius: 2px;
+  transition: background 0.15s ease;
+  padding: 0 2px;
+}
+.WorkSurface_inlineEditable:hover {
+  background: var(--color-desk-charcoal-5);
+}
+.WorkSurface_inlineDateInput {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid var(--color-spice-terracotta);
+  outline: none;
+  padding: 0;
+}
+.WorkSurface_commitmentMetaRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 16px;
+  align-items: center;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+}
+.WorkSurface_commitmentMetaRow strong {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+.WorkSurface_provenanceChipGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+.WorkSurface_commitmentOwnerRow {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+  align-items: center;
+}
+.WorkSurface_commitmentOwnerRow strong {
+  font-weight: 600;
+}
+.WorkSurface_pillRow {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+}
+
+/* ── Audience pill ── */
+.WorkSurface_audiencePill {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 5px 14px;
+  border-radius: 100px;
+}
+.WorkSurface_audienceCustomer {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-rosemary);
+}
+.WorkSurface_audienceInternal {
+  background: var(--color-desk-charcoal-8);
+  color: var(--color-text-secondary);
+}
+
+/* ── Visibility pill (Private / Shared) ── */
+.WorkSurface_visibilityPill {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  padding: 5px 14px;
+  border-radius: 100px;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  text-decoration: none;
+}
+.WorkSurface_visibilityPill::before {
+  content: "";
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+}
+.WorkSurface_visibilityPrivate {
+  background: var(--color-desk-charcoal-8);
+  color: var(--color-text-secondary);
+}
+.WorkSurface_visibilityPrivate::before {
+  background: var(--color-text-tertiary);
+}
+.WorkSurface_visibilityShared {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-rosemary);
+  border-bottom: 1px dotted var(--color-garden-rosemary);
+}
+.WorkSurface_visibilityShared::before {
+  background: var(--color-garden-sage);
+}
+
+/* ── Soft nudge (non-guilt flag inside a commitment) ── */
+.WorkSurface_softNudge {
+  font-family: var(--font-serif);
+  font-size: 13px;
+  font-style: italic;
+  color: #a6862c;
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 4px 4px 0;
+  padding: 8px 16px;
+  line-height: 1.5;
+}
+.WorkSurface_softNudgeLabel {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  font-weight: 700;
+  font-style: normal;
+  color: #a6862c;
+  margin-right: 8px;
+}
+.WorkSurface_linearStatusNote {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-secondary);
+  padding: 4px 0;
+}
+
+.WorkSurface_commitmentActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 16px;
+  margin-top: 4px;
+  border-top: 1px dashed var(--color-rule-light);
+  align-items: center;
+}
+
+/* ── Work buttons (shared across commitments, suggestions, nudges, reports) ── */
+.WorkSurface_workBtn {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  font-weight: 600;
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-secondary);
+  padding: 7px 13px;
+  border-radius: 100px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.WorkSurface_workBtn:hover {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+.WorkSurface_workBtnPrimary {
+  background: var(--color-desk-charcoal);
+  color: var(--color-paper-cream);
+  border-color: var(--color-desk-charcoal);
+}
+.WorkSurface_workBtnPrimary:hover {
+  background: var(--color-desk-ink);
+  border-color: var(--color-desk-ink);
+  /* v1.2.1 QA fix: .workBtn:hover flipped color to text-primary (black),
+     fighting the cream base on primary buttons. Re-assert cream here so
+     Mark done stays legible on hover without introducing !important. */
+  color: var(--color-paper-cream);
+}
+.WorkSurface_workBtnAccent {
+  background: var(--color-spice-turmeric);
+  color: white;
+  border-color: var(--color-spice-turmeric);
+}
+.WorkSurface_workBtnAccent:hover {
+  background: #b58f1f;
+  border-color: #b58f1f;
+  color: white;
+}
+.WorkSurface_workBtnMuted {
+  color: var(--color-text-tertiary);
+  border-color: transparent;
+  background: none;
+}
+.WorkSurface_workBtnMuted:hover {
+  color: var(--color-text-secondary);
+}
+
+/* ═════════ CHAPTER 4 — SUGGESTIONS (saffron) ═════════ */
+.WorkSurface_recList {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+}
+.WorkSurface_recCard {
+  padding: 24px 32px;
+  background: var(--color-spice-saffron-10);
+  border-left: 3px solid var(--color-spice-saffron);
+  border-radius: 0 10px 10px 0;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+.WorkSurface_recLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: #a6862c;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.WorkSurface_recLabel::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--color-spice-saffron);
+}
+.WorkSurface_recHeadline {
+  font-family: var(--font-serif);
+  font-size: 20px;
+  font-weight: 400;
+  line-height: 1.35;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.WorkSurface_recRationale {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.7;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+  margin: 0;
+}
+.WorkSurface_recProvenance {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  align-items: center;
+}
+.WorkSurface_recActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-top: 8px;
+  align-items: center;
+}
+.WorkSurface_recDismissHint {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  margin-left: auto;
+}
+
+/* ═════════ CHAPTER 5 — SHARED WITH THE TEAM ═════════ */
+.WorkSurface_sharedSubsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  color: var(--color-text-secondary);
+  font-weight: 600;
+  margin-top: 32px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+.WorkSurface_sharedSubsectionLabel:first-of-type {
+  margin-top: 16px;
+}
+.WorkSurface_refRow {
+  display: grid;
+  grid-template-columns: 120px 1fr auto;
+  gap: 24px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.WorkSurface_refRow:last-child {
+  border-bottom: none;
+}
+.WorkSurface_refRowId {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-garden-rosemary);
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  border-bottom: 1px dotted var(--color-garden-rosemary);
+}
+.WorkSurface_refRowBody {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--color-text-primary);
+}
+.WorkSurface_refRowBody strong {
+  font-weight: 500;
+}
+.WorkSurface_refRowSub {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+}
+.WorkSurface_refRowMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+/* ═════════ CHAPTER 6 — RECENTLY LANDED ═════════ */
+.WorkSurface_timelineList {
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
+}
+.WorkSurface_timelineRow {
+  display: grid;
+  grid-template-columns: 80px 1fr auto;
+  gap: 32px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  align-items: baseline;
+}
+.WorkSurface_timelineRow:last-child {
+  border-bottom: none;
+}
+.WorkSurface_timelineDate {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-garden-rosemary);
+}
+.WorkSurface_timelineEvent {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+.WorkSurface_timelineSource {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 4px;
+}
+.WorkSurface_timelineDelivered {
+  color: var(--color-garden-rosemary);
+}
+
+/* ═════════ CHAPTER 7 — OUTPUTS ═════════ */
+.WorkSurface_reportGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 24px;
+  padding-top: 8px;
+}
+@media (max-width: 900px) {
+  .WorkSurface_reportGrid {
+    grid-template-columns: 1fr;
+  }
+}
+.WorkSurface_reportCard {
+  padding: 32px;
+  background: var(--color-paper-warm-white);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 220px;
+}
+.WorkSurface_reportType {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-spice-turmeric);
+}
+.WorkSurface_reportTitle {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.4;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+.WorkSurface_reportGen {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  line-height: 1.55;
+  margin-top: auto;
+}
+.WorkSurface_reportActions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-top: 16px;
+  border-top: 1px dashed var(--color-rule-light);
+}
+.WorkSurface_reportFooterNote {
+  margin-top: 32px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  line-height: 1.6;
+  max-width: 620px;
+}
+
+/* ═════════ CHAPTER 8 — NUDGES (rows, hidden when empty) ═════════ */
+.WorkSurface_nudgeList {
+  display: flex;
+  flex-direction: column;
+  padding-top: 8px;
+}
+.WorkSurface_nudgeRow {
+  padding: 24px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.WorkSurface_nudgeRow:last-child {
+  border-bottom: none;
+}
+.WorkSurface_nudgeHeadline {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  letter-spacing: -0.005em;
+  margin: 0;
+}
+.WorkSurface_nudgeBody {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  max-width: 680px;
+  margin: 0;
+}
+.WorkSurface_nudgeActions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+  padding-top: 4px;
+}
+.WorkSurface_nudgeLeaveAsIs {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+}

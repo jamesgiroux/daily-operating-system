@@ -1,0 +1,1125 @@
+/* =============================================================================
+   STAKEHOLDER GALLERY — CSS Module
+   Editorial stakeholder cards with enriched person data.
+   ============================================================================= */
+
+
+/* ── Section root ── */
+
+.StakeholderGallery_section {
+  scroll-margin-top: 60px;
+}
+
+/* ── 2-column card grid ── */
+
+.StakeholderGallery_grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 40px 48px;
+}
+
+.StakeholderGallery_suggestedGridOffset {
+  margin-top: 40px;
+}
+
+.StakeholderGallery_subsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-secondary);
+  margin-bottom: 16px;
+  margin-top: 8px;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.StakeholderGallery_subsectionHint {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  text-transform: none;
+  letter-spacing: 0;
+  font-style: italic;
+}
+
+/* ── Individual card ── */
+
+.StakeholderGallery_card {
+  position: relative;
+}
+
+.StakeholderGallery_cardHeader {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  flex-wrap: wrap;
+}
+
+/* ── Avatar ring ── */
+
+.StakeholderGallery_avatarRing {
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 2px solid transparent;
+}
+
+.StakeholderGallery_avatarRingLinked {
+  border-radius: 50%;
+  flex-shrink: 0;
+  padding: 2px;
+  border: 2px solid var(--color-garden-larkspur);
+}
+
+/* ── Name ── */
+
+.StakeholderGallery_name {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+/* ── Name as link ── */
+
+.StakeholderGallery_nameLink {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.StakeholderGallery_nameLink:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+/* ── Link icon ── */
+
+.StakeholderGallery_linkIcon {
+  color: var(--color-garden-larkspur);
+  flex-shrink: 0;
+}
+
+/* ── Title & department line ── */
+
+.StakeholderGallery_titleLine {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin: 0 0 4px 0;
+}
+
+/* ── Role from stakeholder data ── */
+
+.StakeholderGallery_role {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin: 0 0 8px 0;
+}
+
+/* ── Assessment text ── */
+
+.StakeholderGallery_assessment {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+.StakeholderGallery_readMore {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0 0 0 4px;
+}
+
+/* ── Last interaction date ── */
+
+.StakeholderGallery_lastSeen {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-top: 6px;
+}
+
+.StakeholderGallery_pendingAssessment {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 13px;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+  background: var(--color-spice-saffron-10);
+  border-left: 2px solid var(--color-spice-saffron);
+  border-radius: 0 var(--radius-editorial-sm) var(--radius-editorial-sm) 0;
+  padding: 8px 12px;
+  margin-top: 4px;
+}
+
+.StakeholderGallery_needsAssessmentBadge {
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+.StakeholderGallery_needsAssessmentBadgeTint {
+  background: rgba(196,147,53,0.15);
+  color: #a6862c;
+}
+
+.StakeholderGallery_healthLink {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-spice-turmeric);
+  border-bottom: 1px dotted var(--color-spice-turmeric);
+  text-decoration: none;
+  align-self: flex-start;
+  margin-top: 6px;
+}
+
+/* ── Static engagement badge ── */
+
+.StakeholderGallery_engagementBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+
+/* ── Remove button (hover) ── */
+
+.StakeholderGallery_removeButton {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+}
+
+.StakeholderGallery_removeIcon {
+  color: var(--color-text-tertiary);
+}
+
+/* ── Confirmed card remove button (hover-revealed) ── */
+
+.StakeholderGallery_cardRemoveButton {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 2;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  color: var(--color-text-tertiary);
+}
+
+.StakeholderGallery_card:hover .StakeholderGallery_cardRemoveButton {
+  opacity: 1;
+}
+
+.StakeholderGallery_cardRemoveButton:hover {
+  color: var(--color-earth-terracotta);
+  border-color: var(--color-earth-terracotta);
+}
+
+/* ── Suggested section label ── */
+
+.StakeholderGallery_suggestedLabel {
+  display: block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-top: var(--space-md);
+  margin-bottom: var(--space-xs);
+}
+
+/* ── Suggestion / create contact actions ── */
+
+.StakeholderGallery_actionButton {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.StakeholderGallery_actionButtonSuggestion {
+  composes: actionButton;
+  color: var(--color-garden-larkspur);
+}
+
+.StakeholderGallery_actionButtonCreate {
+  composes: actionButton;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Card link wrapper ── */
+
+.StakeholderGallery_cardLink {
+  text-decoration: none;
+  color: inherit;
+}
+
+/* ── Show more button ── */
+
+.StakeholderGallery_showMore {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 12px 0 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+
+/* ── Add stakeholder section ── */
+
+.StakeholderGallery_addSection {
+  margin-top: var(--space-xl);
+}
+
+.StakeholderGallery_addSectionCompact {
+  margin-top: var(--space-md);
+}
+
+.StakeholderGallery_addForm {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.StakeholderGallery_searchInputWrapper {
+  position: relative;
+  width: 200px;
+}
+
+.StakeholderGallery_searchIcon {
+  position: absolute;
+  left: 8px;
+  top: 9px;
+  color: var(--color-text-tertiary);
+}
+
+.StakeholderGallery_searchInput {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 4px 8px 4px 26px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-primary);
+  width: 100%;
+}
+
+.StakeholderGallery_roleInput {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 4px 8px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: transparent;
+  color: var(--color-text-primary);
+  width: 160px;
+}
+
+.StakeholderGallery_addButton {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  background: none;
+  border: none;
+  padding: 4px 0;
+}
+
+.StakeholderGallery_addButtonActive {
+  composes: addButton;
+  color: var(--color-spice-turmeric);
+  cursor: pointer;
+}
+
+.StakeholderGallery_addButtonDisabled {
+  composes: addButton;
+  color: var(--color-text-tertiary);
+  cursor: default;
+}
+
+/* ── Search results dropdown ── */
+
+.StakeholderGallery_searchResults {
+  margin-top: 8px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  background: var(--color-paper-warm-white);
+}
+
+.StakeholderGallery_searchResultsLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  padding: 8px 12px 4px;
+  margin: 0;
+}
+
+.StakeholderGallery_searchResultItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px 12px;
+  background: none;
+  border: none;
+  border-top: 1px solid var(--color-rule-light);
+  cursor: pointer;
+  text-align: left;
+}
+
+.StakeholderGallery_searchResultName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.StakeholderGallery_searchResultMeta {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.04em;
+  margin-left: 8px;
+}
+
+.StakeholderGallery_searchResultIcon {
+  color: var(--color-garden-larkspur);
+  flex-shrink: 0;
+}
+
+/* ── Add stakeholder trigger ── */
+
+.StakeholderGallery_addTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ── Your Team — compact clickable chips ── */
+
+.StakeholderGallery_teamChipsSection {
+  margin-top: 40px;
+  padding-top: 20px;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.StakeholderGallery_teamHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.StakeholderGallery_teamLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+}
+
+.StakeholderGallery_teamEditToggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 4px;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.StakeholderGallery_teamHeader:hover .StakeholderGallery_teamEditToggle {
+  opacity: 1;
+}
+
+.StakeholderGallery_teamEditToggleActive {
+  composes: teamEditToggle;
+  opacity: 1;
+  background: var(--color-garden-larkspur-14);
+  color: var(--color-garden-larkspur);
+}
+
+.StakeholderGallery_teamChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  position: relative;
+}
+
+.StakeholderGallery_teamChip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 6px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-warm-white);
+  text-decoration: none;
+  color: inherit;
+  transition: border-color 0.15s ease;
+}
+
+.StakeholderGallery_teamChip:hover {
+  border-color: var(--color-text-tertiary);
+}
+
+.StakeholderGallery_teamChipName {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.StakeholderGallery_teamChipNameLink {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.StakeholderGallery_teamChipNameLink:hover {
+  color: var(--color-spice-turmeric);
+}
+
+.StakeholderGallery_teamChipRole {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Team edit mode ── */
+
+.StakeholderGallery_teamChipEditable {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 8px 4px 12px;
+  border-radius: 20px;
+  border: 1px solid var(--color-garden-larkspur-14);
+  background: var(--color-paper-warm-white);
+}
+
+.StakeholderGallery_teamChipRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 0;
+  flex-shrink: 0;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.StakeholderGallery_teamChipRemove:hover {
+  border-color: var(--color-earth-terracotta);
+  color: var(--color-earth-terracotta);
+}
+
+.StakeholderGallery_teamAddTrigger {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  border: 1px dashed var(--color-rule-light);
+  background: none;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.StakeholderGallery_teamAddTrigger:hover {
+  border-color: var(--color-garden-larkspur);
+  color: var(--color-garden-larkspur);
+}
+
+.StakeholderGallery_teamAddForm {
+  margin-top: 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  position: relative;
+}
+
+.StakeholderGallery_teamAddCancel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 4px 0;
+}
+
+.StakeholderGallery_teamSearchDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  width: 320px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  background: var(--color-paper-warm-white);
+  box-shadow: var(--shadow-lg);
+}
+
+.StakeholderGallery_teamSearchDropdownPortal {
+  position: fixed;
+  z-index: 9999;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  background: var(--color-paper-cream);
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12), 0 1px 4px rgba(0, 0, 0, 0.08);
+  padding: 4px 0;
+}
+
+/* ── Coverage strip ── */
+
+.StakeholderGallery_coverageStrip {
+  margin-top: var(--space-xl);
+  padding: var(--space-sm) 0;
+  border-top: 1px solid var(--color-rule-light);
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.StakeholderGallery_coverageNumbers {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+  letter-spacing: 0.02em;
+}
+
+.StakeholderGallery_coverageLabel {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+/* ── Enrichment provenance tag  ── */
+
+.StakeholderGallery_enrichmentTag {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 6px;
+}
+
+.StakeholderGallery_enrichmentTag[data-source="clay"] {
+  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
+  color: var(--color-spice-turmeric);
+}
+
+.StakeholderGallery_enrichmentTag[data-source="gravatar"] {
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: var(--color-garden-larkspur);
+}
+
+/* ── Source provenance indicators (DB-first read model) ── */
+
+.StakeholderGallery_sourceRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.StakeholderGallery_sourceLabel {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 6px;
+  border-radius: 3px;
+  margin-top: 6px;
+}
+
+.StakeholderGallery_sourceRow .StakeholderGallery_sourceLabel {
+  margin-top: 0;
+}
+
+.StakeholderGallery_sourceLabel[data-source="glean"] {
+  background: var(--color-garden-larkspur-15, rgba(110, 137, 168, 0.15));
+  color: var(--color-garden-larkspur);
+}
+
+.StakeholderGallery_sourceLabel[data-source="google"] {
+  background: var(--color-spice-turmeric-12, rgba(224, 175, 65, 0.12));
+  color: var(--color-spice-turmeric);
+}
+
+.StakeholderGallery_sourceAccept {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-garden-sage);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.StakeholderGallery_sourceAccept:hover {
+  color: var(--color-text-primary);
+}
+
+.StakeholderGallery_sourceDismiss {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+.StakeholderGallery_sourceDismiss:hover {
+  color: var(--color-earth-terracotta);
+}
+
+/* ── Engagement badges ── */
+
+.StakeholderGallery_engagementBadge {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 2px 8px;
+  border-radius: 3px;
+  margin-left: auto;
+}
+
+.StakeholderGallery_engagementActive { background: rgba(126, 170, 123, 0.12); color: var(--color-garden-sage); }
+.StakeholderGallery_engagementWarm { background: rgba(222, 184, 65, 0.12); color: var(--color-spice-turmeric); }
+.StakeholderGallery_engagementCooling { background: rgba(196, 101, 74, 0.12); color: var(--color-spice-terracotta); }
+.StakeholderGallery_engagementNew { background: rgba(143, 163, 196, 0.12); color: var(--color-garden-larkspur); }
+
+/* ── Relationship Depth — full-width strip (Ledger-inspired) ── */
+
+.StakeholderGallery_relationshipDepthSection {
+  margin-top: 32px;
+  border-top: 2px solid var(--color-desk-charcoal);
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.StakeholderGallery_depthStrip {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 0;
+}
+
+.StakeholderGallery_depthCell {
+  padding: 20px 20px;
+  border-right: 1px solid var(--color-rule-light);
+}
+
+.StakeholderGallery_depthCell:last-child {
+  border-right: none;
+}
+
+.StakeholderGallery_depthCellLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 8px;
+}
+
+.StakeholderGallery_depthCellValue {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 300;
+  text-transform: capitalize;
+  letter-spacing: -0.01em;
+}
+
+.StakeholderGallery_depthBadgeSage { color: var(--color-garden-sage); }
+.StakeholderGallery_depthBadgeTurmeric { color: var(--color-spice-turmeric); }
+.StakeholderGallery_depthBadgeTerracotta { color: var(--color-spice-terracotta); }
+.StakeholderGallery_depthBadgeRed { color: var(--color-spice-terracotta); }
+.StakeholderGallery_depthBadgeNeutral { color: var(--color-text-tertiary); }
+
+.StakeholderGallery_depthGapsRow {
+  display: flex;
+  gap: 12px;
+  align-items: baseline;
+  padding: 12px 20px;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+.StakeholderGallery_depthGapsLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-spice-terracotta);
+  flex-shrink: 0;
+}
+
+.StakeholderGallery_depthGapsText {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  font-style: italic;
+  line-height: 1.5;
+  color: var(--color-text-secondary);
+}
+
+/* -- Champion designation badge (C2) -- */
+
+.StakeholderGallery_championBadgeRow {
+  margin-top: 24px;
+  padding: 16px 20px;
+  border-top: 1px solid var(--color-rule-light);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.StakeholderGallery_championBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  border-radius: 4px;
+  border: 1px solid var(--color-garden-sage);
+  background: rgba(126, 170, 123, 0.08);
+  color: var(--color-garden-sage);
+}
+
+.StakeholderGallery_championBadgeLink {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  text-decoration: none;
+}
+
+.StakeholderGallery_championBadgeLink:hover {
+  color: var(--color-spice-turmeric);
+}
+
+.StakeholderGallery_championBadgeLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-garden-sage);
+}
+
+/* ── Editable text overrides for stakeholder cards ── */
+
+.StakeholderGallery_editableName {
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.StakeholderGallery_editableRole {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 400;
+  color: var(--color-text-tertiary);
+  margin: 0 0 8px 0;
+}
+
+.StakeholderGallery_editableAssessment {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.6;
+  color: var(--color-text-secondary);
+  margin: 0;
+}
+
+/* ── Suggested stakeholder card overlays (editorial grid cards) ── */
+
+.StakeholderGallery_suggestedCardActions {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  display: flex;
+  gap: 4px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+  z-index: 2;
+}
+
+.StakeholderGallery_card:hover .StakeholderGallery_suggestedCardActions {
+  opacity: 1;
+}
+
+.StakeholderGallery_suggestedAcceptBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-garden-sage);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--color-garden-sage);
+  transition: background 0.15s ease;
+}
+
+.StakeholderGallery_suggestedAcceptBtn:hover {
+  background: rgba(126, 170, 123, 0.12);
+}
+
+.StakeholderGallery_suggestedDismissBtn {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 1px solid var(--color-rule-light);
+  background: var(--color-paper-cream);
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  color: var(--color-text-tertiary);
+  transition: color 0.15s ease, border-color 0.15s ease;
+}
+
+.StakeholderGallery_suggestedDismissBtn:hover {
+  color: var(--color-earth-terracotta);
+  border-color: var(--color-earth-terracotta);
+}
+
+.StakeholderGallery_suggestedBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--color-text-tertiary);
+  margin-top: 8px;
+}
+
+/* ── Multi-role badges ── */
+
+.StakeholderGallery_roleBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  margin: 4px 0 6px 0;
+}
+
+.StakeholderGallery_addRoleWrapper {
+  position: relative;
+  display: inline-block;
+}
+
+.StakeholderGallery_roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+  background: var(--color-garden-larkspur-14);
+  color: var(--color-garden-larkspur);
+}
+
+.StakeholderGallery_roleBadge[data-source="user"] {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+}
+
+.StakeholderGallery_roleBadge[data-source="intelligence"] {
+  background: var(--color-garden-larkspur-14);
+  color: var(--color-garden-larkspur);
+}
+
+.StakeholderGallery_roleRemove {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 12px;
+  height: 12px;
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.StakeholderGallery_roleRemove:hover {
+  opacity: 1;
+}
+
+.StakeholderGallery_addRoleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px dashed var(--color-rule-light);
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.StakeholderGallery_addRoleBtn:hover {
+  border-color: var(--color-garden-larkspur);
+  color: var(--color-garden-larkspur);
+}
+
+/* ── Role picker dropdown ── */
+
+.StakeholderGallery_rolePickerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px 0;
+  min-width: 140px;
+}
+
+.StakeholderGallery_rolePickerItem {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  cursor: pointer;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-primary);
+}
+
+.StakeholderGallery_rolePickerItem:hover {
+  background: var(--color-black-4);
+}
+
+/* ── Engagement badge variants ── */
+
+.StakeholderGallery_engagementStrongAdvocate { background: var(--color-spice-turmeric-12); color: var(--color-spice-turmeric); }
+.StakeholderGallery_engagementEngaged { background: var(--color-garden-rosemary-14); color: var(--color-garden-rosemary); }
+.StakeholderGallery_engagementNeutral { background: var(--color-garden-larkspur-14); color: var(--color-garden-larkspur); }
+.StakeholderGallery_engagementDisengaged { background: var(--color-text-tertiary-8); color: var(--color-text-tertiary); }
+.StakeholderGallery_engagementUnknown { background: var(--color-text-tertiary-8); color: var(--color-text-tertiary); }

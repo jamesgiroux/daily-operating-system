@@ -1,0 +1,30 @@
+
+.MeetingRow_row {
+  display: grid;
+  grid-template-columns: 90px 1fr auto;
+  gap: var(--space-md);
+  align-items: baseline;
+  padding: 14px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.MeetingRow_date {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  white-space: nowrap;
+}
+
+.MeetingRow_title {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+}
+
+.MeetingRow_badgeWrap {
+  display: flex;
+  align-items: baseline;
+  gap: var(--space-sm);
+}

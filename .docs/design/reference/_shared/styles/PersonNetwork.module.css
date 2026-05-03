@@ -1,0 +1,207 @@
+/* PersonNetwork — "Their Orbit" chapter (ADR-0088) */
+
+.PersonNetwork_section {
+  /* scroll-margin and spacing handled by page-level chapterSectionWithPadding wrapper */
+}
+
+.PersonNetwork_emptyState {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  margin-top: var(--space-md);
+}
+
+.PersonNetwork_grid {
+  display: grid;
+  gap: 40px;
+  margin-top: var(--space-lg);
+}
+
+.PersonNetwork_gridTwoCol {
+  composes: grid;
+  grid-template-columns: 1fr 1fr;
+}
+
+.PersonNetwork_gridOneCol {
+  composes: grid;
+  grid-template-columns: 1fr;
+}
+
+.PersonNetwork_columnLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: var(--space-md);
+}
+
+.PersonNetwork_columnList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+}
+
+.PersonNetwork_pickerWrap {
+  margin-top: var(--space-lg);
+  max-width: 320px;
+}
+
+/* Entity row */
+.PersonNetwork_entityRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 10px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.PersonNetwork_entityContent {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  flex: 1;
+}
+
+.PersonNetwork_entityLink {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+  color: var(--color-text-primary);
+}
+
+.PersonNetwork_entityDot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.PersonNetwork_entityName {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.PersonNetwork_entityType {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.PersonNetwork_unlinkBtn {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 6px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+/* ── Role badges (matches StakeholderGallery pattern) ── */
+
+.PersonNetwork_roleBadges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-left: 18px;
+  margin: 2px 0 0 0;
+}
+
+.PersonNetwork_roleBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 8px;
+  border-radius: 3px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.PersonNetwork_roleRemove {
+  border: none;
+  background: none;
+  color: inherit;
+  cursor: pointer;
+  padding: 0;
+  font-size: 11px;
+  line-height: 1;
+  opacity: 0.6;
+  transition: opacity 0.15s ease;
+}
+
+.PersonNetwork_roleRemove:hover {
+  opacity: 1;
+}
+
+.PersonNetwork_addRoleBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 3px;
+  border: 1px dashed var(--color-rule-light);
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1;
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.PersonNetwork_addRoleBtn:hover {
+  border-color: var(--color-garden-larkspur);
+  color: var(--color-garden-larkspur);
+}
+
+/* ── Role picker dropdown ── */
+
+.PersonNetwork_rolePickerDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  z-index: 50;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  box-shadow: var(--shadow-lg);
+  padding: 4px 0;
+  min-width: 140px;
+}
+
+.PersonNetwork_rolePickerItem {
+  display: block;
+  width: 100%;
+  padding: 6px 12px;
+  border: none;
+  background: none;
+  text-align: left;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  cursor: pointer;
+  color: var(--color-text-primary);
+}
+
+.PersonNetwork_rolePickerItem:hover {
+  background: var(--color-black-4);
+}

@@ -1,0 +1,202 @@
+
+.AccountHero_hero {
+  composes: hero from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_heroDate {
+  composes: heroDate from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_name {
+  composes: heroTitle from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_lede {
+  composes: heroLede from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_badges {
+  composes: heroBadges from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_badge {
+  composes: heroBadge from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_healthGreen {
+  background: var(--color-garden-sage-15);
+  color: var(--color-garden-sage);
+}
+
+.AccountHero_healthYellow {
+  background: var(--color-spice-turmeric-15);
+  color: var(--color-spice-turmeric);
+}
+
+.AccountHero_healthRed {
+  background: var(--color-spice-terracotta-15);
+  color: var(--color-spice-terracotta);
+}
+
+.AccountHero_lifecycleBadge {
+  background: var(--color-rule-light);
+  color: var(--color-text-secondary);
+}
+
+.AccountHero_customerBadge {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+}
+
+.AccountHero_internalBadge {
+  background: var(--color-garden-larkspur-15);
+  color: var(--color-garden-larkspur);
+}
+
+.AccountHero_partnerBadge {
+  background: var(--color-garden-rosemary-12);
+  color: var(--color-garden-rosemary);
+}
+
+.AccountHero_archivedBanner {
+  composes: heroArchivedBanner from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_archivedText {
+  composes: heroArchivedText from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_companyContext {
+  margin-top: 24px;
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.55;
+  color: var(--color-text-tertiary);
+}
+
+.AccountHero_meta {
+  composes: heroMeta from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_parentLink {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-decoration: none;
+  margin-bottom: 8px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.AccountHero_parentLink:hover {
+  color: var(--color-text-secondary);
+}
+
+.AccountHero_metaButton {
+  composes: heroMetaButton from "../entity/EntityHeroBase.module.css";
+}
+
+.AccountHero_metaButtonEnriching {
+  composes: metaButton;
+  color: var(--color-spice-turmeric);
+  text-decoration: none;
+  cursor: default;
+}
+
+/* ── Hero date layout ── */
+
+.AccountHero_heroDateLayout {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ── Lede paragraph spacing ── */
+
+.AccountHero_ledeParagraph {
+  margin: 0;
+}
+
+.AccountHero_ledeParagraphSpaced {
+  margin: 12px 0 0;
+}
+
+/* ── Read more button ── */
+
+.AccountHero_readMore {
+  composes: heroReadMore from "../entity/EntityHeroBase.module.css";
+  padding-top: 4px;
+}
+
+.AccountHero_provenance {
+  margin-top: var(--space-md, 16px);
+  display: grid;
+  gap: var(--space-md, 16px);
+  max-width: 720px;
+}
+
+/* ── Account Type Badge ── */
+
+.AccountHero_typeBadgeWrapper {
+  position: relative;
+  display: inline-flex;
+}
+
+.AccountHero_typeBadgeButton {
+  cursor: pointer;
+  border: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.AccountHero_typeBadgeChevron {
+  opacity: 0.5;
+}
+
+.AccountHero_typeBadgeDropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  background: var(--color-paper-cream);
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  box-shadow: var(--shadow-lg);
+  z-index: 50;
+  min-width: 120px;
+  padding: 4px 0;
+}
+
+.AccountHero_typeBadgeOption {
+  display: block;
+  width: 100%;
+  text-align: left;
+  padding: 6px 12px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: transparent;
+  border: none;
+  cursor: pointer;
+}
+
+.AccountHero_typeBadgeOptionActive {
+  font-weight: 600;
+  background: var(--color-desk-charcoal-4);
+}
+
+.AccountHero_typeBadgeOptionCustomer {
+  color: var(--color-spice-turmeric);
+}
+
+.AccountHero_typeBadgeOptionInternal {
+  color: var(--color-garden-larkspur);
+}
+
+.AccountHero_typeBadgeOptionPartner {
+  color: var(--color-garden-rosemary);
+}

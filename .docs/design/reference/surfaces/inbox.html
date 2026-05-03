@@ -1,161 +1,188 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Inbox · DailyOS Reference</title>
-<link rel="stylesheet" href="../_shared/tokens.css">
-<link rel="stylesheet" href="../_shared/chrome.css">
-<link rel="stylesheet" href="../_shared/primitives.css">
-<link rel="stylesheet" href="../_shared/inspector.css">
-<style>
-  .inbox-list { list-style: none; margin: 0; padding: 0; }
-  .inbox-row {
-    display: grid;
-    grid-template-columns: 90px 1fr auto;
-    gap: 0 18px;
-    align-items: baseline;
-    padding: 14px 0;
-    border-bottom: 1px solid var(--color-rule-light);
-  }
-  .inbox-row:last-child { border-bottom: none; }
-  .inbox-row .source-pill {
-    font-family: var(--font-mono);
-    font-size: 10px;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--color-text-tertiary);
-  }
-  .inbox-row .what {
-    font-family: var(--font-serif);
-    font-size: 16px;
-    color: var(--color-text-primary);
-    line-height: 1.4;
-  }
-  .inbox-row .what em {
-    font-style: italic;
-    color: var(--color-text-secondary);
-  }
-  .inbox-row .when {
-    font-family: var(--font-mono);
-    font-size: 11px;
-    color: var(--color-text-quaternary);
-    white-space: nowrap;
-  }
-</style>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Inbox · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../_shared/styles/InboxPage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditorialPageHeader.module.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
   data-folio-label="Inbox"
-  data-folio-crumbs="Inbox"
   data-tint="larkspur"
-  data-active-page="inbox"
-  data-nav-base=".">
+  data-active-page="dropbox"
+  data-nav-base="."
+  data-folio-actions="refresh">
 
-<main class="page" data-ds-name="Inbox" data-ds-tier="surface" data-ds-spec="surfaces/Inbox.md">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
 
-<header class="hero" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
-  <div class="hero-eyebrow">
-    <span class="quality-dot"></span>
-    Inbox · 12 captures since yesterday
-  </div>
-  <h1 class="hero-title">Inbox</h1>
-  <p class="hero-lede">Things captured into DailyOS that haven't been routed yet — emails, calendar invites, drive files, manual notes. Triage as low-friction as possible.</p>
-</header>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Today<span class="margin-label-count">7 new</span></div>
-  <div class="margin-content">
-    <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Today</h2>
-      <p class="chapter-epigraph">Captured in the last 24 hours.</p>
+<div class="InboxPage_pageContainer">
+  <section class="EditorialPageHeader_header EditorialPageHeader_scaleStandard EditorialPageHeader_widthStandard EditorialPageHeader_ruleStandard">
+    <div class="EditorialPageHeader_topRow">
+      <div class="EditorialPageHeader_titleBlock">
+        <div class="EditorialPageHeader_title">Inbox</div>
+      </div>
+      <div class="EditorialPageHeader_meta">6 files</div>
     </div>
+    <div class="EditorialPageHeader_rule"></div>
+  </section>
 
-    <ul class="inbox-list">
-      <li class="inbox-row">
-        <span class="source-pill">Email</span>
-        <span class="what">Marco Devine — <em>Re: Q2 pricing scenarios</em> · "Aoife is good for 2pm Apr 24…"</span>
-        <span class="when">2h ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Email</span>
-        <span class="what">Jen Park — <em>Adjusted memo draft</em> · "Almost done — sending shortly."</span>
-        <span class="when">3h ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Calendar</span>
-        <span class="what">New invite — <em>Northwind monthly</em> · Maya Cole, Apr 28 · 11am</span>
-        <span class="when">5h ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Drive</span>
-        <span class="what">Updated — <em>Acme — Renewal pricing scenarios.xlsx</em> · last edited by Sara Wu</span>
-        <span class="when">6h ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Email</span>
-        <span class="what">Liu Kang — <em>SSO question</em> · "Quick clarification on the audit-log scope…"</span>
-        <span class="when">8h ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Note</span>
-        <span class="what">You — <em>Globex follow-up reminder</em></span>
-        <span class="when">12h ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Calendar</span>
-        <span class="what">Cancelled — <em>Globex intro</em> · Maria pushed to Q3</span>
-        <span class="when">Yesterday</span>
-      </li>
-    </ul>
+  <div class="InboxPage_dropZoneCompact">
+    <span class="InboxPage_dropZoneTextCompact">Drop files here</span>
   </div>
-</section>
 
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Earlier<span class="margin-label-count">5 items</span></div>
-  <div class="margin-content">
-    <div class="chapter" data-ds-name="ChapterHeading" data-ds-tier="pattern" data-ds-spec="patterns/ChapterHeading.md">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Earlier this week</h2>
-      <p class="chapter-epigraph">Stable captures from earlier — most have been routed.</p>
+  <section>
+    <div class="InboxPage_fileList">
+      <div>
+        <div class="InboxPage_rowContainer InboxPage_rowBorder">
+          <span class="InboxPage_rowDot" style="background:var(--color-spice-terracotta)"></span>
+          <button type="button" class="InboxPage_rowTitleButton">
+            <span class="InboxPage_rowTitle">Acme Renewal Notes</span>
+            <span class="InboxPage_rowClassificationLabel">Meeting Notes</span>
+          </button>
+          <div class="InboxPage_rowRight">
+            <span class="InboxPage_statusGroup" title="">
+              <span class="InboxPage_statusDot" style="background:var(--color-text-tertiary)"></span>
+              <span class="InboxPage_statusLabel">New</span>
+            </span>
+            <span class="InboxPage_rowTime">2h ago</span>
+            <button class="InboxPage_rowProcessButton">Process</button>
+            <span class="InboxPage_expandIndicator">v</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="InboxPage_rowContainer InboxPage_rowBorder">
+          <span class="InboxPage_rowDot" style="background:var(--color-spice-turmeric)"></span>
+          <button type="button" class="InboxPage_rowTitleButton">
+            <span class="InboxPage_rowTitle">Northwind Q2 Launch Blockers</span>
+            <span class="InboxPage_rowClassificationLabel">Spreadsheet</span>
+          </button>
+          <div class="InboxPage_rowRight">
+            <span class="InboxPage_statusGroup" title="This file needs AI analysis to determine where it belongs">
+              <span class="InboxPage_statusDot" style="background:var(--color-spice-turmeric)"></span>
+              <span class="InboxPage_statusLabel">Needs AI</span>
+            </span>
+            <span class="InboxPage_rowTime">45m ago</span>
+            <button class="InboxPage_rowProcessButton">Process</button>
+            <span class="InboxPage_expandIndicator">v</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="InboxPage_rowContainer InboxPage_rowBorder">
+          <span class="InboxPage_rowDot" style="background:var(--color-spice-terracotta)"></span>
+          <button type="button" class="InboxPage_rowTitleButton">
+            <span class="InboxPage_rowTitle">Globex Helpline Rollout Sync</span>
+            <span class="InboxPage_rowClassificationLabel">Meeting Notes</span>
+          </button>
+          <div class="InboxPage_rowRight">
+            <span class="InboxPage_statusGroup" title="AI has analyzed this file &mdash; confirm which account or project it belongs to">
+              <span class="InboxPage_statusDot" style="background:var(--color-spice-turmeric)"></span>
+              <span class="InboxPage_statusLabel">Needs assignment</span>
+            </span>
+            <span class="InboxPage_rowTime">28m ago</span>
+            <button class="InboxPage_rowProcessButton">Process</button>
+            <span class="InboxPage_expandIndicator">v</span>
+          </div>
+        </div>
+        <div class="InboxPage_entityPickerRow InboxPage_rowBorder">
+          <span class="InboxPage_entityPickerSuggestion">Suggested: Globex Inc</span>
+          <select class="InboxPage_entityPickerSelect">
+            <option value="" disabled selected>Assign to account...</option>
+            <option value="acme">Acme Corp</option>
+            <option value="globex">Globex Inc</option>
+            <option value="northwind">Northwind Traders</option>
+            <option value="stark">Stark Industries</option>
+            <option value="meridian">Meridian Harbor</option>
+          </select>
+        </div>
+      </div>
+
+      <div>
+        <div class="InboxPage_rowContainer InboxPage_rowBorder">
+          <span class="InboxPage_rowDot" style="background:var(--color-garden-sage)"></span>
+          <button type="button" class="InboxPage_rowTitleButton">
+            <span class="InboxPage_rowTitle">Q2 Launch Context Brief</span>
+            <span class="InboxPage_rowClassificationLabel">Context</span>
+          </button>
+          <div class="InboxPage_rowRight">
+            <span class="InboxPage_statusGroup" title="">
+              <span class="InboxPage_statusDot" style="background:var(--color-text-tertiary)"></span>
+              <span class="InboxPage_statusLabel">New</span>
+            </span>
+            <span class="InboxPage_rowTime">Apr 21</span>
+            <button class="InboxPage_rowProcessButton">Process</button>
+            <span class="InboxPage_expandIndicator">v</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="InboxPage_rowContainer InboxPage_rowBorder">
+          <span class="InboxPage_rowDot" style="background:var(--color-text-tertiary)"></span>
+          <button type="button" class="InboxPage_rowTitleButton">
+            <span class="InboxPage_rowTitle">Meridian Harbor Procurement Review</span>
+            <span class="InboxPage_rowClassificationLabel">Text</span>
+          </button>
+          <div class="InboxPage_rowRight">
+            <span class="InboxPage_statusGroup" title="This file has been classified and filed">
+              <span class="InboxPage_statusDot" style="background:var(--color-garden-sage)"></span>
+              <span class="InboxPage_statusLabel">Processed</span>
+            </span>
+            <span class="InboxPage_rowTime">Apr 21</span>
+            <button class="InboxPage_rowProcessButton">Process</button>
+            <span class="InboxPage_expandIndicator">v</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="InboxPage_rowContainer">
+          <span class="InboxPage_rowDot" style="background:var(--color-text-tertiary)"></span>
+          <button type="button" class="InboxPage_rowTitleButton">
+            <span class="InboxPage_rowTitle">Stark Industries Executive Readout</span>
+            <span class="InboxPage_rowClassificationLabel">Document</span>
+          </button>
+          <div class="InboxPage_rowRight">
+            <span class="InboxPage_statusGroup" title="Something went wrong processing this file">
+              <span class="InboxPage_statusDot" style="background:var(--color-spice-terracotta)"></span>
+              <span class="InboxPage_statusLabel InboxPage_statusLabelError">Error</span>
+            </span>
+            <button class="InboxPage_rowProcessButton">Process</button>
+            <span class="InboxPage_expandIndicator">v</span>
+          </div>
+        </div>
+        <div class="InboxPage_errorInline">
+          AI could not identify a destination. Confirm the account or project and try again.
+        </div>
+      </div>
     </div>
+  </section>
 
-    <ul class="inbox-list">
-      <li class="inbox-row">
-        <span class="source-pill">Email</span>
-        <span class="what">Aoife Murphy — <em>Procurement intro</em> · routed to Meridian Harbor</span>
-        <span class="when">2d ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Drive</span>
-        <span class="what">Shared — <em>Helpline rollout deck</em> · Marco Devine</span>
-        <span class="when">3d ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Email</span>
-        <span class="what">Kevin Otieno — <em>Re-intro</em> · routed to Northwind Traders</span>
-        <span class="when">3d ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Calendar</span>
-        <span class="what">Acme renewal call confirmed — Jen Park, Dan Mitchell</span>
-        <span class="when">4d ago</span>
-      </li>
-      <li class="inbox-row">
-        <span class="source-pill">Note</span>
-        <span class="what">You — <em>Sara Wu intro context</em> · routed to Acme Corp</span>
-        <span class="when">5d ago</span>
-      </li>
-    </ul>
+  <div style="text-align:center; padding:72px 0 24px;">
+    <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+    </div>
   </div>
-</section>
-
-<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
-  <div class="finis-mark">*&nbsp;&nbsp;*&nbsp;&nbsp;*</div>
-  <div class="finis-date">Apr 23, 2026 · synced 2 minutes ago</div>
 </div>
 
 </main>
+</div>
 
 <script src="../_shared/chrome.js"></script>
 <script src="../_shared/inspector.js"></script>

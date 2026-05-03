@@ -1,0 +1,103 @@
+
+.TimelineEntry_timeline {
+  position: relative;
+  padding-left: 40px;
+}
+
+.TimelineEntry_timeline::before {
+  content: '';
+  position: absolute;
+  left: 11px;
+  top: 8px;
+  bottom: 8px;
+  width: 1px;
+  background: var(--color-rule-heavy);
+}
+
+.TimelineEntry_entry {
+  position: relative;
+  padding-bottom: 32px;
+}
+
+.TimelineEntry_entry:last-child {
+  padding-bottom: 0;
+}
+
+.TimelineEntry_dot {
+  position: absolute;
+  left: -33px;
+  top: 5px;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  border: 2px solid var(--color-paper-cream);
+}
+
+.TimelineEntry_dotMeeting { background: var(--color-spice-turmeric); }
+.TimelineEntry_dotEmail { background: var(--color-garden-larkspur); }
+.TimelineEntry_dotCapture { background: var(--color-garden-sage); }
+.TimelineEntry_dotEvent { background: var(--color-spice-saffron); }
+.TimelineEntry_dotValue { background: var(--color-garden-sage); }
+.TimelineEntry_dotRisk { background: var(--color-spice-terracotta); }
+.TimelineEntry_dotDecision { background: var(--color-spice-terracotta); }
+.TimelineEntry_dotContext { background: var(--color-garden-rosemary); }
+
+.TimelineEntry_dateLine {
+  display: flex;
+  align-items: center;
+  gap: 0;
+  margin-bottom: 4px;
+}
+
+.TimelineEntry_date {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.TimelineEntry_typeBadge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 1px 5px;
+  border-radius: 2px;
+  margin-left: 8px;
+}
+
+.TimelineEntry_typeMeeting { background: var(--color-spice-turmeric-10); color: var(--color-spice-turmeric); }
+.TimelineEntry_typeEmail { background: var(--color-garden-larkspur-12); color: var(--color-garden-larkspur); }
+.TimelineEntry_typeCapture { background: var(--color-garden-sage-12); color: var(--color-garden-rosemary); }
+.TimelineEntry_typeEvent { background: var(--color-spice-saffron-12); color: var(--color-spice-saffron); }
+.TimelineEntry_typeValue { background: var(--color-garden-sage-12); color: var(--color-garden-rosemary); }
+.TimelineEntry_typeRisk { background: var(--color-spice-terracotta-10); color: var(--color-spice-terracotta); }
+.TimelineEntry_typeDecision { background: var(--color-spice-terracotta-10); color: var(--color-spice-terracotta); }
+.TimelineEntry_typeContext { background: color-mix(in srgb, var(--color-garden-rosemary) 12%, transparent); color: var(--color-garden-rosemary); }
+
+.TimelineEntry_title {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+}
+
+.TimelineEntry_detail {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+  max-width: 580px;
+  margin-top: 4px;
+}
+
+.TimelineEntry_entryLink {
+  display: block;
+  text-decoration: none;
+  color: inherit;
+}

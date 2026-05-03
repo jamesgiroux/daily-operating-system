@@ -1,0 +1,321 @@
+/* YouCard — Restructured identity settings  */
+
+/* ── Subsection groups ── */
+
+.YouCard_subsectionGroup {
+  padding-bottom: 24px;
+  margin-bottom: 24px;
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.YouCard_subsectionGroup:last-child {
+  border-bottom: none;
+  margin-bottom: 0;
+  padding-bottom: 0;
+}
+
+.YouCard_subsectionTitle {
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: -0.01em;
+  color: var(--color-text-primary);
+  margin: 0 0 16px 0;
+}
+
+/* ── Loading skeleton ── */
+
+.YouCard_skeleton {
+  height: 40px;
+  background: var(--color-rule-light);
+  border-radius: 4px;
+  animation: pulse 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ── Domains ── */
+
+.YouCard_domainsInput {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  border-bottom: 1px solid var(--color-rule-light);
+  padding: 8px 0;
+  min-height: 36px;
+}
+
+.YouCard_domainChip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-primary);
+  background: var(--color-rule-light);
+  padding: 2px 8px;
+  border-radius: 3px;
+}
+
+.YouCard_domainChipRemove {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+  color: var(--color-text-tertiary);
+  display: flex;
+  align-items: center;
+}
+
+.YouCard_domainTextInput {
+  min-width: 120px;
+  flex: 1;
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: transparent;
+  border: none;
+  outline: none;
+}
+
+/* ── Role presets ── */
+
+.YouCard_roleGrid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+}
+
+.YouCard_roleCard {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 16px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.YouCard_roleCard:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.YouCard_roleCardActive {
+  border: 2px solid var(--color-spice-turmeric);
+}
+
+.YouCard_roleCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.YouCard_roleCardName {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--color-text-primary);
+}
+
+.YouCard_roleCardDescription {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.4;
+}
+
+/* ── Workspace ── */
+
+.YouCard_workspacePath {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+}
+
+.YouCard_savingInline {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Day start ── */
+
+.YouCard_dayStartLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.YouCard_dayStartBold {
+  font-weight: 500;
+}
+
+.YouCard_timeInput {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  color: var(--color-text-primary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 4px 8px;
+}
+
+.YouCard_timeInput:disabled {
+  opacity: 0.5;
+}
+
+.YouCard_timeInputRow {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ── Personality ── */
+
+.YouCard_personalityList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.YouCard_personalityCard {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 4px;
+  padding: 12px 16px;
+  text-align: left;
+  background: none;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 4px;
+  cursor: pointer;
+  transition: border-color 0.15s ease;
+}
+
+.YouCard_personalityCardActive {
+  border-color: var(--color-desk-charcoal);
+}
+
+.YouCard_personalityCardHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.YouCard_personalityCardLabel {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.YouCard_personalityExample {
+  font-family: var(--font-serif);
+  font-size: 12px;
+  font-style: italic;
+  color: var(--color-text-tertiary);
+  margin-top: 2px;
+}
+
+/* ── Shared editorial patterns (migrated from styles.ts inline spreads) ── */
+
+.YouCard_subsectionLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  margin: 0 0 12px;
+}
+
+.YouCard_description {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0 0 16px;
+}
+
+.YouCard_descriptionSmall {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0;
+}
+
+.YouCard_descriptionSmallSpaced {
+  composes: descriptionSmall;
+  margin-top: 2px;
+}
+
+.YouCard_settingRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.YouCard_thinRule {
+  height: 1px;
+  background: var(--color-rule-light);
+  border: none;
+  margin: 16px 0;
+}
+
+.YouCard_monoLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.YouCard_activePresetLabel {
+  composes: monoLabel;
+  margin-top: 12px;
+  color: var(--color-spice-turmeric);
+}
+
+.YouCard_btnGhost {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 4px 14px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-rule-heavy);
+}
+
+.YouCard_btnGhostDisabled {
+  composes: btnGhost;
+  opacity: 0.5;
+}
+
+.YouCard_iconCheck {
+  color: var(--color-spice-turmeric);
+  flex-shrink: 0;
+}
+
+.YouCard_iconCheckSage {
+  color: var(--color-garden-sage);
+}
+
+.YouCard_iconSpinner {
+  color: var(--color-text-tertiary);
+}

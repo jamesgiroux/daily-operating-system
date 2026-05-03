@@ -1,0 +1,67 @@
+/* TextSizeSection — Text scale preferences  */
+
+.TextSizeSection_container {
+  margin-top: var(--space-sm);
+}
+
+.TextSizeSection_description {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin: 0 0 var(--space-lg) 0;
+}
+
+/* ── Preset buttons ── */
+
+.TextSizeSection_presetRow {
+  display: flex;
+  gap: var(--space-sm);
+}
+
+.TextSizeSection_presetButton {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-secondary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 6px 16px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.TextSizeSection_presetButton:hover {
+  border-color: var(--color-text-tertiary);
+  color: var(--color-text-primary);
+}
+
+.TextSizeSection_presetButton[data-active="true"] {
+  border-color: var(--color-garden-olive);
+  color: var(--color-garden-olive);
+  font-weight: 600;
+}
+
+/* ── Preview ── */
+
+.TextSizeSection_preview {
+  font-family: var(--font-sans);
+  color: var(--color-text-secondary);
+  line-height: 1.5;
+  margin: var(--space-md) 0 0 0;
+  padding: 12px 0;
+  border-top: 1px solid var(--color-rule-light);
+}
+
+/* ── Save indicator ── */
+
+.TextSizeSection_saveStatus {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  color: var(--color-garden-sage);
+  margin-top: var(--space-sm);
+  min-height: 16px;
+}

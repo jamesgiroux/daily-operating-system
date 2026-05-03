@@ -1,0 +1,102 @@
+@import '../../styles/design-tokens.css';
+
+.WatchListPrograms_section {
+  margin-top: var(--space-2xl);
+}
+
+.WatchListPrograms_heading {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-spice-turmeric);
+  margin-bottom: 20px;
+}
+
+.WatchListPrograms_programList {
+  display: flex;
+  flex-direction: column;
+}
+
+.WatchListPrograms_program {
+  display: flex;
+  flex-direction: column;
+  padding: 12px 0;
+}
+
+.WatchListPrograms_program:not(:last-child) {
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.WatchListPrograms_programHeader {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+}
+
+.WatchListPrograms_programName,
+.WatchListPrograms_programNameInput {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+  flex: 1;
+}
+
+.WatchListPrograms_programNameInput {
+  background: none;
+  border: none;
+  border-bottom: 1px solid transparent;
+  outline: none;
+  padding: 0;
+}
+
+.WatchListPrograms_programNameInput:focus {
+  border-bottom-color: var(--color-rule-light);
+}
+
+.WatchListPrograms_statusSelect,
+.WatchListPrograms_statusBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 2px 7px;
+  border-radius: 3px;
+}
+
+.WatchListPrograms_statusSelect {
+  border: none;
+  cursor: pointer;
+}
+
+.WatchListPrograms_deleteButton,
+.WatchListPrograms_addButton {
+  background: none;
+  border: none;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  color: var(--color-text-tertiary);
+}
+
+.WatchListPrograms_deleteButton {
+  font-size: 10px;
+  padding: 0;
+}
+
+.WatchListPrograms_notes {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+  margin: var(--space-xs) 0 0;
+}
+
+.WatchListPrograms_addButton {
+  font-size: 10px;
+  padding: var(--space-sm) 0;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}

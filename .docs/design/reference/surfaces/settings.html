@@ -1,172 +1,1000 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Settings · DailyOS Reference</title>
-  <link rel="stylesheet" href="../_shared/tokens.css">
-  <link rel="stylesheet" href="../_shared/primitives.css">
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../_shared/styles/SettingsPage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditorialPageHeader.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
+  <link rel="stylesheet" href="../_shared/styles/YouCard.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ActivityLogSection.module.css">
+  <link rel="stylesheet" href="../_shared/styles/NotificationSection.module.css">
+  <link rel="stylesheet" href="../_shared/styles/TextSizeSection.module.css">
+  <link rel="stylesheet" href="../_shared/styles/DiagnosticsSection.module.css">
   <link rel="stylesheet" href="../_shared/chrome.css">
   <link rel="stylesheet" href="../_shared/inspector.css">
-  <style>
-    .surface-masthead { padding-top: var(--space-5xl); padding-bottom: var(--space-xl); }
-    .surface-eyebrow, .section-eyebrow, .field-label, .row-meta, .connector-meta, .system-key {
-      font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.09em; text-transform: uppercase;
-      color: var(--color-text-tertiary);
-    }
-    .surface-title { font-family: var(--font-serif); font-size: 76px; font-weight: 400; line-height: 1.04; letter-spacing: -0.02em; }
-    .surface-lede { max-width: 670px; margin-top: var(--space-lg); font-family: var(--font-serif); font-size: 21px; font-style: italic; font-weight: 300; line-height: 1.58; color: var(--color-text-secondary); }
-    .glance-row { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 1px; margin-top: var(--space-xl); border-top: 1px solid var(--color-rule-heavy); border-bottom: 1px solid var(--color-rule-heavy); }
-    .glance-cell { min-height: 96px; padding: 18px 20px; background: rgba(250, 248, 246, 0.48); }
-    .glance-label { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); }
-    .glance-value { display: flex; align-items: center; gap: 8px; margin-top: 10px; font-family: var(--font-serif); font-size: 25px; line-height: 1.15; }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--color-garden-sage); flex: 0 0 auto; }
-    .status-dot.warn { background: var(--color-spice-saffron); }
-    .settings-section { margin-top: var(--space-2xl); scroll-margin-top: 72px; }
-    .section-head { padding-top: var(--space-sm); border-top: 1px solid var(--color-rule-heavy); margin-bottom: var(--space-lg); }
-    .section-head h2 { margin-top: 10px; font-family: var(--font-serif); font-size: 32px; font-weight: 400; line-height: 1.18; }
-    .section-epi { max-width: 620px; margin-top: 6px; font-family: var(--font-serif); font-size: 16px; font-style: italic; font-weight: 300; line-height: 1.45; color: var(--color-text-tertiary); }
-    .rows { border-top: 1px solid var(--color-rule-light); }
-    .form-row { display: grid; grid-template-columns: minmax(190px, 0.9fr) minmax(0, 1.3fr) auto; gap: var(--space-lg); align-items: center; padding: 18px 0; border-bottom: 1px solid var(--color-rule-light); }
-    .row-copy p, .connector-copy p, .log-copy p { margin-top: 4px; font-size: 13px; line-height: 1.5; color: var(--color-text-tertiary); }
-    .inline-input { display: inline-flex; min-height: 36px; align-items: center; padding: 7px 10px; border: 1px solid var(--color-rule-light); border-radius: var(--radius-sm); background: var(--color-paper-warm-white); font-size: 14px; color: var(--color-text-primary); }
-    .segmented { display: inline-flex; gap: 2px; padding: 3px; border: 1px solid var(--color-rule-light); border-radius: var(--radius-sm); background: var(--color-paper-warm-white); }
-    .segment { border: 0; border-radius: 3px; padding: 6px 10px; background: transparent; font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); }
-    .segment.active { background: var(--color-spice-turmeric-12); color: var(--color-spice-turmeric); }
-    .chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
-    .chip { display: inline-flex; align-items: center; gap: 6px; padding: 5px 9px; border: 1px solid var(--color-rule-light); border-radius: 100px; background: var(--color-paper-warm-white); font-size: 12px; color: var(--color-text-secondary); }
-    .connector-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1px 28px; border-top: 1px solid var(--color-rule-light); }
-    .connector-surface { display: flex; align-items: center; justify-content: space-between; gap: var(--space-lg); padding: 18px 0; border-bottom: 1px solid var(--color-rule-light); }
-    .connector-name, .log-title, .system-value { font-family: var(--font-serif); font-size: 18px; line-height: 1.3; }
-    .switch { width: 44px; height: 24px; border: 0; border-radius: 999px; background: var(--color-rule-heavy); padding: 3px; display: inline-flex; justify-content: flex-start; }
-    .switch::before { content: ""; width: 18px; height: 18px; border-radius: 50%; background: var(--color-paper-warm-white); box-shadow: var(--shadow-sm); }
-    .switch.is-on { justify-content: flex-end; background: var(--color-garden-sage); }
-    .privacy-grid, .health-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--space-md); }
-    .control-card { padding: 18px; border-top: 1px solid var(--color-rule-heavy); background: rgba(250, 248, 246, 0.36); }
-    .control-card h3 { font-family: var(--font-serif); font-size: 20px; font-weight: 400; line-height: 1.25; }
-    .control-card p { margin-top: 8px; font-size: 13px; line-height: 1.5; color: var(--color-text-tertiary); }
-    .system-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-lg); }
-    .system-row { display: grid; grid-template-columns: 120px 1fr; gap: var(--space-lg); padding: 16px 0; border-bottom: 1px solid var(--color-rule-light); }
-    .folio-action svg { width: 12px; height: 12px; }
-    @media (max-width: 860px) { .glance-row, .privacy-grid, .health-grid, .system-grid, .connector-list { grid-template-columns: 1fr; } .form-row { grid-template-columns: 1fr; } .surface-title { font-size: 56px; } }
-  </style>
 </head>
 <body
-  data-ds-name="Settings"
-  data-ds-tier="surface"
-  data-ds-spec="surfaces/Settings.md"
   data-folio-label="Settings"
-  crumbs="Settings"
-  data-crumbs="Settings"
   data-tint="turmeric"
   data-active-page="settings"
-  data-folio-status="Auto-saved · just now"
-  data-folio-actions="search"
   data-nav-base="."
->
-  <div class="atmosphere" data-tint="turmeric" data-ds-name="AtmosphereLayer" data-ds-tier="chrome" data-ds-spec="chrome/AtmosphereLayer.md"></div>
-  <header class="folio" data-ds-name="FolioBar" data-ds-tier="chrome" data-ds-spec="chrome/FolioBar.md">
-    <div class="folio-left"><span class="folio-mark">*</span><span class="folio-label">Settings</span><span class="folio-crumbs"><a href=".">Settings</a></span></div>
-    <div class="folio-right"><span class="folio-search" data-ds-name="SearchAction" data-ds-tier="primitive" data-ds-spec="primitives/SearchAction.md">Search</span><span class="folio-status-dot" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span><span class="folio-status-text">Auto-saved · just now</span></div>
-  </header>
-  <nav class="nav-island" aria-label="Settings chapters" data-ds-name="FloatingNavIsland" data-ds-tier="chrome" data-ds-spec="chrome/FloatingNavIsland.md">
-    <a class="nav-island-item" href="#identity" aria-label="01 You" aria-current="page" data-tint="turmeric" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">01</a>
-    <a class="nav-island-item" href="#connectors" aria-label="02 Connectors" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">02</a>
-    <a class="nav-island-item" href="#briefing" aria-label="03 Briefing and AI" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">03</a>
-    <a class="nav-island-item" href="#data" aria-label="04 Data" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">04</a>
-    <a class="nav-island-item" href="#activity" aria-label="05 Activity" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">05</a>
-    <a class="nav-island-item" href="#system" aria-label="06 System" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">06</a>
-    <a class="nav-island-item" href="#diagnostics" aria-label="07 Diagnostics" data-ds-name="NavIslandItem" data-ds-tier="primitive" data-ds-spec="primitives/NavIslandItem.md">07</a>
-  </nav>
-  <main class="page" data-ds-name="PageContainer" data-ds-tier="chrome" data-ds-spec="chrome/PageContainer.md">
-    <article class="surface-masthead hero-watermark-wrap" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
-      <div class="hero-watermark" data-tint="turmeric">*</div>
-      <p class="surface-eyebrow">Settings · Last edited 4 minutes ago</p>
-      <h1 class="surface-title">Settings</h1>
-      <p class="surface-lede">Your workspace is healthy, synchronized, and tuned for a customer success day at Automattic.</p>
-      <div class="glance-row" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
-        <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div class="glance-label">Connectors</div><div class="glance-value"><span class="status-dot" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span>6 healthy</div></div>
-        <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div class="glance-label">Database</div><div class="glance-value"><span class="status-dot" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span>220.8 MB</div></div>
-        <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div class="glance-label">AI today</div><div class="glance-value"><span class="status-dot warn" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span>82%</div></div>
-        <div class="glance-cell" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md"><div class="glance-label">Anomalies 24h</div><div class="glance-value"><span class="status-dot warn" data-ds-name="StatusDot" data-ds-tier="primitive" data-ds-spec="primitives/StatusDot.md"></span>2 recovered</div></div>
+  data-chapters="settings-you:user:You|settings-connectors:link2:Connectors|settings-data:shield:Data|settings-system:monitor:System">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div class="SettingsPage_container">
+  <section class="EditorialPageHeader_header EditorialPageHeader_scalePage EditorialPageHeader_widthStandard EditorialPageHeader_ruleStandard">
+    <div class="EditorialPageHeader_topRow">
+      <div class="EditorialPageHeader_titleBlock">
+        <div class="EditorialPageHeader_title">Settings</div>
       </div>
-    </article>
-    <section id="identity" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
-      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">01 You</p><h2>Identity</h2><p class="section-epi">The profile that shapes briefings, saved context, and account summaries.</p></header>
-      <div class="rows">
-        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Name</div><p>Shown across Me, reports, and briefing notes.</p></div><span class="inline-input" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md">Sam Chen</span><span class="row-meta">Synced 2026-04-30</span></div>
-        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Role</div><p>Used to prioritize CSM workflows and account context.</p></div><span class="inline-input" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md">Customer Success Manager</span><span class="row-meta">Automattic</span></div>
-        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Presets</div><p>Role presets change vocabulary, reports, and default filters.</p></div><div class="segmented" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md"><button class="segment active" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">CSM</button><button class="segment" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Sales</button><button class="segment" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Lead</button></div><div class="chip-row"><span class="chip" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Retention</span><span class="chip" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">Expansion</span></div></div>
+    </div>
+    <div class="EditorialPageHeader_rule"></div>
+  </section>
+
+  <section id="settings-you" class="SettingsPage_section">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">You</h2>
       </div>
-    </section>
-    <section id="connectors" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
-      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">02 Connectors</p><h2>Connectors</h2><p class="section-epi">External services that feed the morning briefing and account timeline.</p></header>
-      <div class="connector-list">
-        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Gmail</div><p>Last mail sync 2026-04-30 08:44.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
-        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Calendar</div><p>Events indexed through 2026-04-30.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
-        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Drive</div><p>24 account docs refreshed 2026-04-29.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
-        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Granola</div><p>12 notes imported this week.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
-        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Linear</div><p>Customer-linked issues updated 2026-04-28.</p></div><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Healthy</span></article>
-        <article class="connector-surface" data-ds-name="ConnectorSurface" data-ds-tier="pattern" data-ds-spec="patterns/ConnectorSurface.md"><div class="connector-copy"><div class="connector-name">Quill</div><p>Draft notes ready for review.</p></div><span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Recovering</span></article>
+      <p class="ChapterHeading_epigraph">Who you are and how your workspace is organized.</p>
+    </div>
+
+    <div>
+      <div class="YouCard_subsectionGroup">
+        <h3 class="YouCard_subsectionTitle">Identity</h3>
+        <div>
+          <p class="YouCard_subsectionLabel">Your Domains</p>
+          <p class="YouCard_description">Your organization's email domains -- used to distinguish internal vs external meetings</p>
+          <div class="YouCard_domainsInput">
+            <span class="YouCard_domainChip">
+              dailyos.com
+              <button type="button" class="YouCard_domainChipRemove">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </span>
+            <span class="YouCard_domainChip">
+              samchen.co
+              <button type="button" class="YouCard_domainChipRemove">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </span>
+            <input type="text" value="" class="YouCard_domainTextInput" />
+          </div>
+        </div>
       </div>
-    </section>
-    <section id="briefing" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
-      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">03 Briefing &amp; AI</p><h2>Briefing &amp; AI</h2><p class="section-epi">Defaults for briefings, recommendations, and voice.</p></header>
-      <div class="rows">
-        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Auto-refresh</div><p>Refresh the daily briefing when account context changes.</p></div><button class="switch is-on" aria-pressed="true" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"></button><span class="row-meta">Every 20 min</span></div>
-        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Voice</div><p>Keep recommendations calm, explicit, and account-grounded.</p></div><div class="segmented" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md"><button class="segment" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Concise</button><button class="segment active" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Direct</button><button class="segment" data-ds-name="SegmentButton" data-ds-tier="primitive" data-ds-spec="primitives/SegmentButton.md">Warm</button></div><span class="row-meta">Default</span></div>
-        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">AI budget guardrail</div><p>Warn when daily model usage crosses the team limit.</p></div><button class="switch is-on" aria-pressed="true" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"></button><span class="row-meta">82% today</span></div>
-        <div class="form-row" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md"><div class="row-copy"><div class="field-label">Account-first summaries</div><p>Bias briefs toward open risks and customer outcomes.</p></div><button class="switch is-on" aria-pressed="true" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md"></button><span class="row-meta">CSM preset</span></div>
+
+      <div class="YouCard_subsectionGroup">
+        <h3 class="YouCard_subsectionTitle">Workspace</h3>
+        <div>
+          <p class="YouCard_subsectionLabel">Workspace</p>
+          <p class="YouCard_description">The directory where DailyOS stores briefings, actions, and files</p>
+          <div class="YouCard_settingRow">
+            <span class="YouCard_workspacePath">/Users/sam/DailyOS</span>
+            <button class="YouCard_btnGhost">Change</button>
+          </div>
+        </div>
+        <hr class="YouCard_thinRule" />
+        <div>
+          <p class="YouCard_subsectionLabel">Your Day</p>
+          <p class="YouCard_description">When does your workday start? DailyOS prepares the first pass before this time.</p>
+          <div class="YouCard_settingRow">
+            <div>
+              <span class="YouCard_dayStartLabel">
+                First briefing pass at <span class="YouCard_dayStartBold">8:00 AM</span>
+              </span>
+              <p class="YouCard_descriptionSmallSpaced YouCard_descriptionSmall">America/Toronto</p>
+            </div>
+            <div class="YouCard_timeInputRow">
+              <input type="time" value="08:00" class="YouCard_timeInput" />
+            </div>
+          </div>
+        </div>
       </div>
-    </section>
-    <section id="data" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
-      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">04 Data</p><h2>Data</h2><p class="section-epi">Privacy controls for retention, export, and sensitive sources.</p></header>
-      <div class="privacy-grid">
-        <article class="control-card" data-ds-name="PrivacyControl" data-ds-tier="pattern" data-ds-spec="patterns/PrivacyControl.md"><h3>Local-first index</h3><p>Keep embeddings and summaries on this device unless explicitly exported.</p><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Enabled</span></article>
-        <article class="control-card" data-ds-name="PrivacyControl" data-ds-tier="pattern" data-ds-spec="patterns/PrivacyControl.md"><h3>Retention window</h3><p>Prune raw connector events after 180 days while keeping derived account memory.</p><span class="pill" data-tone="neutral" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>180 days</span></article>
-        <article class="control-card" data-ds-name="PrivacyControl" data-ds-tier="pattern" data-ds-spec="patterns/PrivacyControl.md"><h3>Export package</h3><p>Last export completed 2026-04-26 with profile, account, and activity JSON.</p><span class="pill" data-tone="larkspur" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Ready</span></article>
+
+      <div class="YouCard_subsectionGroup">
+        <h3 class="YouCard_subsectionTitle">Preferences</h3>
+        <div>
+          <p class="YouCard_subsectionLabel">Role Presets</p>
+          <p class="YouCard_description">Select your role to tailor vitals, vocabulary, and AI emphasis across DailyOS.</p>
+          <div class="YouCard_roleGrid">
+            <button type="button" class="YouCard_roleCard YouCard_roleCardActive">
+              <div class="YouCard_roleCardHeader">
+                <span class="YouCard_roleCardName">Senior CSM</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="YouCard_iconCheck"><path d="M20 6 9 17l-5-5"/></svg>
+              </div>
+              <span class="YouCard_roleCardDescription">Customer health, renewals, and adoption emphasis</span>
+            </button>
+            <button type="button" class="YouCard_roleCard">
+              <div class="YouCard_roleCardHeader">
+                <span class="YouCard_roleCardName">Sales Lead</span>
+              </div>
+              <span class="YouCard_roleCardDescription">Pipeline, next steps, and commercial momentum</span>
+            </button>
+            <button type="button" class="YouCard_roleCard">
+              <div class="YouCard_roleCardHeader">
+                <span class="YouCard_roleCardName">Founder</span>
+              </div>
+              <span class="YouCard_roleCardDescription">Operating rhythm, strategic risks, and leverage</span>
+            </button>
+          </div>
+          <p class="YouCard_activePresetLabel YouCard_monoLabel">Active: Senior CSM</p>
+        </div>
+        <hr class="YouCard_thinRule" />
+        <div>
+          <p class="YouCard_subsectionLabel">Personality</p>
+          <p class="YouCard_description">Sets the tone for empty states, loading messages, and notifications</p>
+          <div class="YouCard_personalityList">
+            <button class="YouCard_personalityCard YouCard_personalityCardActive">
+              <div class="YouCard_personalityCardHeader">
+                <span class="YouCard_personalityCardLabel">Professional</span>
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="YouCard_iconCheckSage"><path d="M20 6 9 17l-5-5"/></svg>
+              </div>
+              <span class="YouCard_descriptionSmall">Straightforward, clean copy</span>
+              <span class="YouCard_personalityExample">&quot;No data yet.&quot;</span>
+            </button>
+            <button class="YouCard_personalityCard">
+              <div class="YouCard_personalityCardHeader">
+                <span class="YouCard_personalityCardLabel">Friendly</span>
+              </div>
+              <span class="YouCard_descriptionSmall">Warm, encouraging tone</span>
+              <span class="YouCard_personalityExample">&quot;Nothing here yet -- we'll have this ready for you soon.&quot;</span>
+            </button>
+            <button class="YouCard_personalityCard">
+              <div class="YouCard_personalityCardHeader">
+                <span class="YouCard_personalityCardLabel">Playful</span>
+              </div>
+              <span class="YouCard_descriptionSmall">Personality-rich, fun</span>
+              <span class="YouCard_personalityExample">&quot;The hamsters are still running. Data incoming.&quot;</span>
+            </button>
+          </div>
+        </div>
       </div>
-    </section>
-    <section id="activity" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
-      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">05 Activity</p><h2>Activity</h2><p class="section-epi">The last five system events affecting settings and context.</p></header>
-      <div class="timeline" data-ds-name="Timeline" data-ds-tier="pattern" data-ds-spec="patterns/Timeline.md">
-        <article class="timeline-entry" data-type="event" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 30</span><div class="log-copy"><h3 class="timeline-title">Quill connector recovered after retry.</h3><p>Backfill finished in 38 seconds.</p></div></div></article>
-        <article class="timeline-entry" data-type="context" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 29</span><div class="log-copy"><h3 class="timeline-title">CSM preset tuned account summary bias.</h3><p>Retention risks now lead briefings.</p></div></div></article>
-        <article class="timeline-entry" data-type="email" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 28</span><div class="log-copy"><h3 class="timeline-title">Gmail scope refreshed.</h3><p>Read-only mail scope verified.</p></div></div></article>
-        <article class="timeline-entry" data-type="capture" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 25</span><div class="log-copy"><h3 class="timeline-title">Automattic playbook chips updated.</h3><p>Saved expansion and renewal rituals.</p></div></div></article>
-        <article class="timeline-entry" data-type="value" data-ds-name="TimelineEntry" data-ds-tier="primitive" data-ds-spec="primitives/TimelineEntry.md"><div class="timeline-row"><span class="timeline-date">Apr 24</span><div class="log-copy"><h3 class="timeline-title">Database compaction completed.</h3><p>Recovered 18.4 MB without data loss.</p></div></div></article>
+    </div>
+  </section>
+
+  <section id="settings-connectors" class="SettingsPage_section">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">Connectors</h2>
       </div>
-    </section>
-    <section id="system" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
-      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">06 System</p><h2>System</h2><p class="section-epi">Version, runtime, and integration status for the local workspace.</p></header>
-      <div class="system-grid">
-        <div class="system-row" data-ds-name="SystemStatusRow" data-ds-tier="pattern" data-ds-spec="patterns/SystemStatusRow.md"><div class="system-key">App</div><div class="system-value">DailyOS 1.4.4 reference</div></div>
-        <div class="system-row" data-ds-name="SystemStatusRow" data-ds-tier="pattern" data-ds-spec="patterns/SystemStatusRow.md"><div class="system-key">Runtime</div><div class="system-value">Tauri shell ready</div></div>
-        <div class="system-row" data-ds-name="SystemStatusRow" data-ds-tier="pattern" data-ds-spec="patterns/SystemStatusRow.md"><div class="system-key">Index</div><div class="system-value">4,218 context chunks</div></div>
-        <div class="system-row" data-ds-name="SystemStatusRow" data-ds-tier="pattern" data-ds-spec="patterns/SystemStatusRow.md"><div class="system-key">Sync</div><div class="system-value">Last pass 2026-04-30</div></div>
+      <p class="ChapterHeading_epigraph">External services that feed your daily briefings.</p>
+    </div>
+
+    <div style="margin-bottom:32px;">
+      <h3 style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Context Source</h3>
+      <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:16px;">
+        Where DailyOS gathers context for briefings and analysis. Local mode uses your workspace files and connectors. Glean mode uses your organization's knowledge graph.
+      </p>
+      <div style="display:flex;gap:12px;margin-bottom:20px;">
+        <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);display:flex;align-items:center;gap:6px;padding:8px 16px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>
+          Local
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 6 9 17l-5-5"/></svg>
+        </button>
+        <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);display:flex;align-items:center;gap:6px;padding:8px 16px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20"/><path d="M2 12h20"/></svg>
+          Glean
+        </button>
       </div>
-    </section>
-    <section id="diagnostics" class="settings-section" data-ds-name="SettingsSection" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSection.md">
-      <header class="section-head" data-ds-name="SectionHead" data-ds-tier="pattern" data-ds-spec="patterns/SectionHead.md"><p class="section-eyebrow">07 Diagnostics</p><h2>Diagnostics</h2><p class="section-epi">Health checks for sync, storage, retrieval, and briefing generation.</p></header>
-      <div class="health-grid">
-        <article class="control-card" data-ds-name="HealthCheck" data-ds-tier="pattern" data-ds-spec="patterns/HealthCheck.md"><h3>Connector sweep</h3><p>6 passed, 0 failed after one recovered retry.</p><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Passed</span></article>
-        <article class="control-card" data-ds-name="HealthCheck" data-ds-tier="pattern" data-ds-spec="patterns/HealthCheck.md"><h3>Vector recall</h3><p>Recall fixture returned the expected Automattic account memory.</p><span class="pill" data-tone="sage" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Passed</span></article>
-        <article class="control-card" data-ds-name="HealthCheck" data-ds-tier="pattern" data-ds-spec="patterns/HealthCheck.md"><h3>Briefing render</h3><p>Next briefing dry-run completed with 82% daily AI budget used.</p><span class="pill" data-tone="turmeric" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md"><span class="pill-dot"></span>Watch</span></article>
+    </div>
+
+    <div>
+      <div>
+        <button style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 0;background:none;border:none;border-bottom:1px solid var(--color-rule-light);cursor:pointer;text-align:left;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+          <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);flex:1;">Google</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.02em;">sam.chen@dailyos.com</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--color-text-tertiary);transform:none;transition:transform 0.2s ease;flex-shrink:0;"><polyline points="6 9 12 15 18 9" /></svg>
+        </button>
       </div>
-    </section>
-    <footer class="finis" data-ds-name="FinisMarker" data-ds-tier="chrome" data-ds-spec="chrome/FinisMarker.md">
-      <div class="finis-mark">*</div>
-      <div class="finis-date">Auto-saved just now</div>
-      <p class="finis-caption">Settings changes persist as they happen.</p>
-    </footer>
-  </main>
-  <script>
-    document.querySelectorAll(".switch").forEach((control) => {
-      control.addEventListener("click", () => {
-        const active = control.classList.toggle("is-on");
-        control.setAttribute("aria-pressed", active ? "true" : "false");
-      });
-    });
-  </script>
+      <div>
+        <button style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 0;background:none;border:none;border-bottom:1px solid var(--color-rule-light);cursor:pointer;text-align:left;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+          <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);flex:1;">Claude Desktop</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.02em;">Configured</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--color-text-tertiary);transform:none;transition:transform 0.2s ease;flex-shrink:0;"><polyline points="6 9 12 15 18 9" /></svg>
+        </button>
+      </div>
+      <div>
+        <button style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 0;background:none;border:none;border-bottom:1px solid var(--color-rule-light);cursor:pointer;text-align:left;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+          <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);flex:1;">Quill Transcripts</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.02em;">Bridge active</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--color-text-tertiary);transform:none;transition:transform 0.2s ease;flex-shrink:0;"><polyline points="6 9 12 15 18 9" /></svg>
+        </button>
+      </div>
+      <div>
+        <button style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 0;background:none;border:none;border-bottom:1px solid var(--color-rule-light);cursor:pointer;text-align:left;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+          <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);flex:1;">Granola Transcripts</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.02em;">23 documents</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--color-text-tertiary);transform:none;transition:transform 0.2s ease;flex-shrink:0;"><polyline points="6 9 12 15 18 9" /></svg>
+        </button>
+      </div>
+      <div>
+        <button style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 0;background:none;border:none;border-bottom:1px solid var(--color-rule-light);cursor:pointer;text-align:left;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+          <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);flex:1;">Gravatar Avatars</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.02em;">140 cached</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--color-text-tertiary);transform:none;transition:transform 0.2s ease;flex-shrink:0;"><polyline points="6 9 12 15 18 9" /></svg>
+        </button>
+      </div>
+      <div>
+        <button style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 0;background:none;border:none;border-bottom:1px solid var(--color-rule-light);cursor:pointer;text-align:left;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+          <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);flex:1;">Clay Enrichment</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.02em;">8 enriched</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--color-text-tertiary);transform:none;transition:transform 0.2s ease;flex-shrink:0;"><polyline points="6 9 12 15 18 9" /></svg>
+        </button>
+      </div>
+      <div>
+        <button style="display:flex;align-items:center;gap:12px;width:100%;padding:14px 0;background:none;border:none;border-bottom:1px solid var(--color-rule-light);cursor:pointer;text-align:left;">
+          <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+          <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);flex:1;">Linear Issues</span>
+          <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);letter-spacing:0.02em;">47 issues</span>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;color:var(--color-text-tertiary);transform:none;transition:transform 0.2s ease;flex-shrink:0;"><polyline points="6 9 12 15 18 9" /></svg>
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <section id="settings-data" class="SettingsPage_section">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">Data</h2>
+      </div>
+      <p class="ChapterHeading_epigraph">What happened, when, and whether anything looks unusual.</p>
+    </div>
+
+    <div style="margin-bottom:24px;">
+      <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Database Recovery</p>
+
+      <div style="border:1px solid var(--color-rule-light);border-radius:6px;padding:14px;margin-bottom:12px;background:var(--color-surface-secondary);">
+        <div style="display:flex;flex-direction:column;gap:4px;">
+          <div style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;">
+            <strong>Path:</strong> <span style="font-family:var(--font-mono);font-size:11px;">/Users/example/.dailyos/dailyos.db</span>
+          </div>
+          <div style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;">
+            <strong>Size:</strong> 1.0 MB &bull; <strong>Schema:</strong> v17 &bull; <strong>Last backup:</strong> 3/10/2026, 7:00:00 AM
+          </div>
+        </div>
+      </div>
+
+      <div style="border:1px solid var(--color-rule-light);border-radius:6px;padding:14px;margin-bottom:12px;background:var(--color-surface-secondary);">
+        <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-garden-sage);"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+          <span style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Database healthy</span>
+        </div>
+      </div>
+
+      <div style="display:flex;align-items:center;gap:8px;margin-bottom:12px;">
+        <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);" title="Create backup">
+          <span style="display:inline-flex;align-items:center;gap:6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.66 4.03 3 9 3s9-1.34 9-3V5"/><path d="M3 12c0 1.66 4.03 3 9 3s9-1.34 9-3"/></svg>
+            Create Backup
+          </span>
+        </button>
+        <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);" title="Export a copy of the database">
+          <span style="display:inline-flex;align-items:center;gap:6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            Export
+          </span>
+        </button>
+        <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">
+          <span style="display:inline-flex;align-items:center;gap:6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/><path d="M3 21v-5h5"/><path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/><path d="M16 8h5V3"/></svg>
+            Refresh List
+          </span>
+        </button>
+      </div>
+
+      <div style="border:1px solid var(--color-rule-light);border-radius:6px;overflow:hidden;">
+        <div style="display:flex;align-items:center;justify-content:space-between;gap:12px;padding:10px 12px;border-bottom:none;">
+          <div style="min-width:0;flex:1;">
+            <div style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-primary);margin-bottom:4px;word-break:break-all;">dailyos.db.bak</div>
+            <div style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;">manual &bull; 3/10/2026, 7:00:00 AM &bull; 1.0 MB</div>
+          </div>
+          <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">Restore</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ActivityLogSection_container">
+      <h3 style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Activity Log</h3>
+      <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:16px;">A tamper-evident record of what the app did and when.</p>
+
+      <div class="ActivityLogSection_filterBar">
+        <button class="ActivityLogSection_filterChip ActivityLogSection_filterChipActive">All</button>
+        <button class="ActivityLogSection_filterChip">Security</button>
+        <button class="ActivityLogSection_filterChip">Data</button>
+        <button class="ActivityLogSection_filterChip">AI</button>
+        <button class="ActivityLogSection_filterChip">Anomalies</button>
+        <button class="ActivityLogSection_filterChip">Config</button>
+        <button class="ActivityLogSection_filterChip">System</button>
+      </div>
+
+      <div class="ActivityLogSection_dayGroup">
+        <h4 class="ActivityLogSection_dayLabel">Today</h4>
+        <div>
+          <div class="ActivityLogSection_record">
+            <span class="ActivityLogSection_timestamp">08:15:30 AM</span>
+            <span class="ActivityLogSection_categoryChip ActivityLogSection_categoryAi">ai</span>
+            <span class="ActivityLogSection_eventName">Meeting briefing generated</span>
+          </div>
+        </div>
+        <div>
+          <div class="ActivityLogSection_record">
+            <span class="ActivityLogSection_timestamp">08:05:11 AM</span>
+            <span class="ActivityLogSection_categoryChip ActivityLogSection_categoryDataAccess">data access</span>
+            <span class="ActivityLogSection_eventName">Calendar synced (18 events)</span>
+          </div>
+        </div>
+        <div>
+          <div class="ActivityLogSection_record">
+            <span class="ActivityLogSection_timestamp">07:58:02 AM</span>
+            <span class="ActivityLogSection_categoryChip ActivityLogSection_categoryConfig">config</span>
+            <span class="ActivityLogSection_eventName">Context source changed (Local → Local)</span>
+          </div>
+        </div>
+        <div>
+          <div class="ActivityLogSection_record">
+            <span class="ActivityLogSection_timestamp">07:42:45 AM</span>
+            <span class="ActivityLogSection_categoryChip ActivityLogSection_categorySystem">system</span>
+            <span class="ActivityLogSection_eventName">App started</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ActivityLogSection_pagination">
+        <span class="ActivityLogSection_paginationCount">Showing 4 of 4 entries</span>
+      </div>
+
+      <div class="ActivityLogSection_actions">
+        <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">Export Log</button>
+        <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);">Verify Integrity</button>
+      </div>
+    </div>
+
+    <div class="SettingsPage_sectionInset">
+      <div>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Your data</p>
+
+        <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:16px;">
+          Everything is stored locally on your Mac. Nothing leaves your device unless you explicitly connect an external service.
+        </p>
+        <div style="margin-bottom:24px;">
+          <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:8px;">
+            Stored locally: calendar events, email metadata and summaries, contacts, meeting transcripts, and AI-generated intelligence.
+          </p>
+          <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:0;">
+            Not stored permanently: full email bodies, Glean result payloads after disconnect, or connector credentials outside the macOS Keychain.
+          </p>
+        </div>
+
+        <div style="display:flex;flex-wrap:wrap;gap:8px 24px;margin-bottom:24px;">
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);">5 accounts</span>
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);">8 contacts</span>
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);">3 projects</span>
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);">14 meetings</span>
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);">9 actions</span>
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);">28 insights</span>
+          <span style="font-family:var(--font-mono);font-size:12px;color:var(--color-text-secondary);">64 emails</span>
+        </div>
+
+        <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+        <div style="padding:16px 0;">
+          <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:12px;">Download a ZIP containing all your data as human-readable JSON files.</p>
+          <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);display:inline-flex;align-items:center;gap:6px;opacity:1;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" x2="12" y1="15" y2="3"/></svg>
+            Export all data
+          </button>
+        </div>
+
+        <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+        <div style="padding:16px 0;">
+          <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:12px;">
+            Remove all AI-generated analysis while keeping your accounts, contacts, and meetings intact. Insights will be regenerated automatically over time.
+          </p>
+          <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-spice-terracotta);border:1px solid var(--color-spice-terracotta);display:inline-flex;align-items:center;gap:6px;">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-.867 12.142A2 2 0 0 1 16.138 20H7.862a2 2 0 0 1-1.995-1.858L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
+            Clear insights
+          </button>
+        </div>
+
+        <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+        <div style="padding:16px;margin-top:8px;border:1px solid var(--color-spice-terracotta);border-radius:6px;">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:8px;">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="color:var(--color-spice-terracotta);"><path d="m21.73 18-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+            <span style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-spice-terracotta);">Danger zone</span>
+          </div>
+          <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:12px;">
+            Permanently delete all data including your database, workspace files, and configuration. This cannot be undone. DailyOS will restart with a clean slate.
+          </p>
+          <div style="display:flex;align-items:center;gap:12px;">
+            <input type="text" placeholder="Type &quot;DELETE&quot; to confirm" value="" style="width:200px;font-family:var(--font-sans);font-size:14px;color:var(--color-text-primary);background:none;border:none;border-bottom:1px solid var(--color-spice-terracotta);padding:8px 0;outline:none;" />
+            <button disabled style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;transition:all 0.15s ease;color:var(--color-spice-terracotta);border:1px solid var(--color-spice-terracotta);display:inline-flex;align-items:center;gap:6px;opacity:0.4;cursor:not-allowed;">
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18"/><path d="M8 6V4h8v2"/><path d="m19 6-.867 12.142A2 2 0 0 1 16.138 20H7.862a2 2 0 0 1-1.995-1.858L5 6"/><path d="M10 11v5"/><path d="M14 11v5"/></svg>
+              Delete everything
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="settings-system" class="SettingsPage_section">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">System</h2>
+      </div>
+      <p class="ChapterHeading_epigraph">Version, health, and advanced configuration.</p>
+    </div>
+
+    <div class="SettingsPage_claudeCodeWrapper">
+      <div>
+        <p class="SettingsPage_claudeCodeLabel">Claude Code</p>
+        <div class="SettingsPage_claudeCodeRow">
+          <span class="StatusDot_dot StatusDot_md StatusDot_connected" role="img" aria-label="connected"></span>
+          <span class="SettingsPage_claudeCodeText">Claude Code is ready</span>
+        </div>
+      </div>
+    </div>
+
+    <div>
+      <div>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Updates</p>
+        <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:12px;">DailyOS v1.3.0</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+          <span style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;">Check for new versions</span>
+          <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">Check for Updates</button>
+        </div>
+      </div>
+
+      <div style="display:flex;flex-direction:column;gap:4px;margin-top:16px;">
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);margin:0;">Last briefing: Apr 22, 8:00 AM</p>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);margin:0;">Analysis health: All clear</p>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:24px 0;" />
+
+      <div>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Sync Status</p>
+        <div style="display:flex;flex-direction:column;gap:6px;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:6px;height:6px;border-radius:50%;background-color:var(--color-garden-sage);flex-shrink:0;"></div>
+              <span style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-primary);">Google Calendar</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);">synced 4m ago</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:6px;height:6px;border-radius:50%;background-color:var(--color-garden-sage);flex-shrink:0;"></div>
+              <span style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-primary);">Gmail</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);">synced 11m ago</span>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:4px 0;">
+            <div style="display:flex;align-items:center;gap:8px;">
+              <div style="width:6px;height:6px;border-radius:50%;background-color:var(--color-garden-sage);flex-shrink:0;"></div>
+              <span style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-primary);">Claude Code</span>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px;">
+              <span style="font-family:var(--font-mono);font-size:11px;color:var(--color-text-tertiary);">ready</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:24px 0;" />
+
+      <div>
+        <h3 style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Security</h3>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+          <div>
+            <span style="font-family:var(--font-sans);font-size:13px;font-weight:500;color:var(--color-text-secondary);margin-bottom:0;display:block;">Lock after idle</span>
+            <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">Require Touch ID or password after a period of inactivity</p>
+          </div>
+          <div style="display:flex;gap:6px;">
+            <button style="font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">5 minutes</button>
+            <button style="font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);">15 minutes</button>
+            <button style="font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">30 minutes</button>
+            <button style="font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">Never</button>
+          </div>
+        </div>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:24px 0;" />
+
+      <div>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">AI &amp; Background Work</p>
+        <p style="font-family:var(--font-sans);font-size:13px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-bottom:16px;">Tune the background refresh budget, cadence, and model routing in one place.</p>
+        <div style="display:flex;flex-direction:column;">
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);">Deep Analysis</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">Reports, briefings, narratives, and higher-reasoning work</p>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);opacity:1;">haiku</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);opacity:1;">sonnet</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);opacity:1;">opus</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);">Detailed Extraction</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">Structured reading, summarizing, and action extraction</p>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);opacity:1;">haiku</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);opacity:1;">sonnet</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);opacity:1;">opus</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);">Background Maintenance</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">Automatic refreshes and poller-driven upkeep</p>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);opacity:1;">haiku</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);opacity:1;">sonnet</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);opacity:1;">opus</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:14px;font-weight:500;color:var(--color-text-primary);">Fast Mechanical</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">Low-complexity sorting, filing, and lightweight processing</p>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);opacity:1;">haiku</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);opacity:1;">sonnet</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);opacity:1;">opus</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:13px;font-weight:500;color:var(--color-text-secondary);margin-bottom:0;display:block;">Calendar Poll Interval</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">How often DailyOS checks Google Calendar when polling is enabled</p>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);">5m</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">10m</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">15m</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">30m</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">60m</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:13px;font-weight:500;color:var(--color-text-secondary);margin-bottom:0;display:block;">Email Poll Interval</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">How often DailyOS checks Gmail for background refreshes</p>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">5m</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);">15m</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">30m</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">60m</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:13px;font-weight:500;color:var(--color-text-secondary);margin-bottom:0;display:block;">Pre-Meeting Refresh Window</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">How far ahead DailyOS may refresh account intelligence for upcoming meetings</p>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">2h</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">4h</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);">12h</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">24h</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:13px;font-weight:500;color:var(--color-text-secondary);margin-bottom:0;display:block;">Daily AI Budget</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">Estimated tokens per day, shared across background enrichment, meeting prep, briefings, and manual refreshes. Resets at local midnight. When exhausted, no new AI calls start until the next reset.</p>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:4px;font-style:italic;">Moderate use -- daily briefings plus background enrichment</p>
+            </div>
+            <div style="display:flex;gap:4px;">
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">50k</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-garden-olive);border:1px solid var(--color-garden-olive);">100k</button>
+              <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:3px 10px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">250k</button>
+            </div>
+          </div>
+          <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+            <div>
+              <span style="font-family:var(--font-sans);font-size:13px;font-weight:500;color:var(--color-text-secondary);margin-bottom:0;display:block;">Background AI Guard</span>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">18,400 estimated tokens used in the last 4 hours</p>
+              <p style="font-family:var(--font-sans);font-size:12px;color:var(--color-text-tertiary);line-height:1.5;margin:0;margin-top:2px;">Recent timeout rate: 0%</p>
+            </div>
+            <button style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;background:none;border-radius:4px;padding:4px 14px;cursor:pointer;transition:all 0.15s ease;color:var(--color-text-tertiary);border:1px solid var(--color-rule-heavy);">Reset to Recommended</button>
+          </div>
+        </div>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:24px 0;" />
+
+      <button style="display:inline-flex;align-items:center;gap:6px;background:none;border:none;cursor:pointer;padding:4px 0;font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);">
+        Advanced
+        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style="transition:transform 0.2s ease;transform:rotate(0deg);flex-shrink:0;">
+          <path d="M4.5 2.5L8 6L4.5 9.5" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" />
+        </svg>
+      </button>
+    </div>
+
+    <div class="NotificationSection_container">
+      <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Notifications</p>
+      <p class="NotificationSection_description">Control which native alerts DailyOS sends to your notification center.</p>
+
+      <div class="NotificationSection_toggleRow">
+        <div class="NotificationSection_toggleInfo">
+          <span class="NotificationSection_toggleLabel">Daily briefing alerts</span>
+          <span class="NotificationSection_toggleDescription">Notifies when your daily briefing is ready</span>
+        </div>
+        <button type="button" class="NotificationSection_switch" data-checked="true" aria-pressed="true">
+          <span class="NotificationSection_switchThumb"></span>
+        </button>
+      </div>
+
+      <div class="NotificationSection_toggleRow">
+        <div class="NotificationSection_toggleInfo">
+          <span class="NotificationSection_toggleLabel">Meeting notes alerts</span>
+          <span class="NotificationSection_toggleDescription">Notifies when meeting transcripts are processed (rate-limited to once per 5 minutes)</span>
+        </div>
+        <button type="button" class="NotificationSection_switch" data-checked="true" aria-pressed="true">
+          <span class="NotificationSection_switchThumb"></span>
+        </button>
+      </div>
+
+      <div class="NotificationSection_toggleRow">
+        <div class="NotificationSection_toggleInfo">
+          <span class="NotificationSection_toggleLabel">Connection alerts</span>
+          <span class="NotificationSection_toggleDescription">Notifies when Google account needs reconnection</span>
+        </div>
+        <button type="button" class="NotificationSection_switch" data-checked="true" aria-pressed="true">
+          <span class="NotificationSection_switchThumb"></span>
+        </button>
+      </div>
+
+      <div class="NotificationSection_quietHoursSection">
+        <div class="NotificationSection_quietHoursToggle">
+          <div class="NotificationSection_toggleInfo">
+            <span class="NotificationSection_toggleLabel">Quiet hours</span>
+            <span class="NotificationSection_toggleDescription">Suppress all notifications during these hours</span>
+          </div>
+          <button type="button" class="NotificationSection_switch" data-checked="true" aria-pressed="true">
+            <span class="NotificationSection_switchThumb"></span>
+          </button>
+        </div>
+
+        <div class="NotificationSection_quietHoursRow">
+          <span class="NotificationSection_hourLabel">From</span>
+          <select class="NotificationSection_hourSelect">
+            <option value="0">12:00 AM</option>
+            <option value="1">1:00 AM</option>
+            <option value="2">2:00 AM</option>
+            <option value="3">3:00 AM</option>
+            <option value="4">4:00 AM</option>
+            <option value="5">5:00 AM</option>
+            <option value="6">6:00 AM</option>
+            <option value="7">7:00 AM</option>
+            <option value="8">8:00 AM</option>
+            <option value="9">9:00 AM</option>
+            <option value="10">10:00 AM</option>
+            <option value="11">11:00 AM</option>
+            <option value="12">12:00 PM</option>
+            <option value="13">1:00 PM</option>
+            <option value="14">2:00 PM</option>
+            <option value="15">3:00 PM</option>
+            <option value="16">4:00 PM</option>
+            <option value="17">5:00 PM</option>
+            <option value="18">6:00 PM</option>
+            <option value="19">7:00 PM</option>
+            <option value="20">8:00 PM</option>
+            <option value="21">9:00 PM</option>
+            <option value="22" selected>10:00 PM</option>
+            <option value="23">11:00 PM</option>
+          </select>
+          <span class="NotificationSection_hourLabel">to</span>
+          <select class="NotificationSection_hourSelect">
+            <option value="0">12:00 AM</option>
+            <option value="1">1:00 AM</option>
+            <option value="2">2:00 AM</option>
+            <option value="3">3:00 AM</option>
+            <option value="4">4:00 AM</option>
+            <option value="5">5:00 AM</option>
+            <option value="6">6:00 AM</option>
+            <option value="7" selected>7:00 AM</option>
+            <option value="8">8:00 AM</option>
+            <option value="9">9:00 AM</option>
+            <option value="10">10:00 AM</option>
+            <option value="11">11:00 AM</option>
+            <option value="12">12:00 PM</option>
+            <option value="13">1:00 PM</option>
+            <option value="14">2:00 PM</option>
+            <option value="15">3:00 PM</option>
+            <option value="16">4:00 PM</option>
+            <option value="17">5:00 PM</option>
+            <option value="18">6:00 PM</option>
+            <option value="19">7:00 PM</option>
+            <option value="20">8:00 PM</option>
+            <option value="21">9:00 PM</option>
+            <option value="22">10:00 PM</option>
+            <option value="23">11:00 PM</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <div class="TextSizeSection_container">
+      <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Text Size</p>
+      <p class="TextSizeSection_description">Adjust the interface text size for readability.</p>
+
+      <div class="TextSizeSection_presetRow">
+        <button type="button" class="TextSizeSection_presetButton" data-active="false">90%</button>
+        <button type="button" class="TextSizeSection_presetButton" data-active="true">100%</button>
+        <button type="button" class="TextSizeSection_presetButton" data-active="false">110%</button>
+        <button type="button" class="TextSizeSection_presetButton" data-active="false">120%</button>
+      </div>
+
+      <p class="TextSizeSection_preview" style="font-size:14px;">The quick brown fox jumps over the lazy dog.</p>
+    </div>
+
+    <div class="SettingsPage_systemAction">
+      <button class="SettingsPage_systemActionButton">Run Setup Again</button>
+      <span class="SettingsPage_systemActionHint">Re-run the onboarding wizard to update your profile and connectors.</span>
+    </div>
+  </section>
+
+  <section id="settings-diagnostics" class="SettingsPage_section">
+    <div class="ChapterHeading_heading">
+      <hr class="ChapterHeading_rule" />
+      <div class="ChapterHeading_titleRow">
+        <h2 class="ChapterHeading_title">Diagnostics</h2>
+      </div>
+      <p class="ChapterHeading_epigraph">Developer tools and debugging utilities.</p>
+    </div>
+
+    <div>
+      <div>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Developer Tools</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+          <div>
+            <span class="DiagnosticsSection_devToolLabel">Developer Tools</span>
+            <p class="DiagnosticsSection_devToolDescription">Switches to an isolated sandbox (separate database, workspace, and auth)</p>
+          </div>
+          <button class="DiagnosticsSection_btnGhost DiagnosticsSection_btn">Off</button>
+        </div>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+      <div>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Schedules</p>
+        <p class="DiagnosticsSection_manualRunDescription">Automated workflow execution times</p>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+          <div>
+            <div class="DiagnosticsSection_scheduleHeader">
+              <span class="DiagnosticsSection_scheduleLabel">Morning Briefing</span>
+              <div class="DiagnosticsSection_scheduleStatusGroup">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+                <span style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Enabled</span>
+              </div>
+            </div>
+            <p class="DiagnosticsSection_scheduleCron">8:00 AM (weekdays) <span class="DiagnosticsSection_scheduleTimezone">(America/Toronto)</span></p>
+          </div>
+          <button class="DiagnosticsSection_scheduleRunBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+          </button>
+        </div>
+        <div style="display:flex;align-items:center;justify-content:space-between;padding:12px 0;border-bottom:1px solid var(--color-rule-light);">
+          <div>
+            <div class="DiagnosticsSection_scheduleHeader">
+              <span class="DiagnosticsSection_scheduleLabel">Nightly Archive</span>
+              <div class="DiagnosticsSection_scheduleStatusGroup">
+                <div style="width:8px;height:8px;border-radius:50%;background:var(--color-garden-sage);flex-shrink:0;"></div>
+                <span style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Enabled</span>
+              </div>
+            </div>
+            <p class="DiagnosticsSection_scheduleCron">Every 4 hours (daily) <span class="DiagnosticsSection_scheduleTimezone">(America/Toronto)</span></p>
+          </div>
+          <button class="DiagnosticsSection_scheduleRunBtn">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polygon points="6 3 20 12 6 21 6 3"/></svg>
+          </button>
+        </div>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+      <div>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Manual Run</p>
+        <p class="DiagnosticsSection_manualRunDescription">Trigger workflows manually without waiting for schedule</p>
+        <div class="DiagnosticsSection_manualRunRow">
+          <button class="DiagnosticsSection_btnPrimary DiagnosticsSection_btn">Run Daily Briefing</button>
+          <button class="DiagnosticsSection_btnGhost DiagnosticsSection_btn">Run Weekly Briefing</button>
+          <button class="DiagnosticsSection_btnGhost DiagnosticsSection_btn">Run Archive</button>
+        </div>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+      <div>
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Historical Meeting Backfill</p>
+        <p class="DiagnosticsSection_backfillDescription">Import historical meeting files from your workspace into the database. Scans account and project directories for meeting files (transcripts, notes, summaries) and creates database records + entity links for any meetings not already in the system.</p>
+        <p class="DiagnosticsSection_backfillPathDescription">
+          Looks for files in: <code class="DiagnosticsSection_backfillCode">02-Meetings/</code>, <code class="DiagnosticsSection_backfillCode">03-Call-Transcripts/</code>, <code class="DiagnosticsSection_backfillCode">Call-Transcripts/</code>, <code class="DiagnosticsSection_backfillCode">Meeting-Notes/</code>
+        </p>
+        <button class="DiagnosticsSection_btnPrimary DiagnosticsSection_btn DiagnosticsSection_backfillRunBtn">Run Backfill</button>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+      <div class="DiagnosticsSection_aiCard">
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">AI Usage</p>
+        <div class="DiagnosticsSection_aiStatGrid">
+          <div class="DiagnosticsSection_aiStatCard">
+            <div style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Used Today</div>
+            <div class="DiagnosticsSection_aiStatNumber">42,180</div>
+            <p class="DiagnosticsSection_aiStatDescription">est. tokens across 18 calls</p>
+          </div>
+          <div class="DiagnosticsSection_aiStatCard">
+            <div style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Remaining</div>
+            <div class="DiagnosticsSection_aiStatNumber">57,820</div>
+            <p class="DiagnosticsSection_aiStatDescription">of 100k daily budget</p>
+          </div>
+          <div class="DiagnosticsSection_aiStatCard">
+            <div style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Status</div>
+            <div class="DiagnosticsSection_aiStatNumber" style="font-size:14px;padding-top:4px;">Active</div>
+            <p class="DiagnosticsSection_aiStatDescription">resets at local midnight</p>
+          </div>
+        </div>
+
+        <div style="margin-bottom:16px;">
+          <div style="height:4px;background:var(--color-rule-light);border-radius:2px;overflow:hidden;">
+            <div style="height:100%;width:42.18%;background:var(--color-garden-sage);border-radius:2px;transition:width 0.3s ease;"></div>
+          </div>
+          <p class="DiagnosticsSection_aiStatDescription" style="margin-top:4px;">42% of daily budget used</p>
+        </div>
+
+        <div class="DiagnosticsSection_aiSectionBlock">
+          <div class="DiagnosticsSection_aiSectionLabel">Background Guard</div>
+          <div class="DiagnosticsSection_aiGuardCard">
+            <div class="DiagnosticsSection_aiGuardStatus">Running</div>
+            <p class="DiagnosticsSection_aiGuardDescription">18,400 tokens in the last 4 hours</p>
+            <p class="DiagnosticsSection_aiGuardDescription">Timeout rate: 0% across recent background calls</p>
+          </div>
+        </div>
+
+        <div class="DiagnosticsSection_aiSectionBlock">
+          <div class="DiagnosticsSection_aiSectionLabel">Top Operations</div>
+          <div class="DiagnosticsSection_aiCallSiteRow">
+            <span class="DiagnosticsSection_aiCallSiteLabel">meeting_prep</span>
+            <span class="DiagnosticsSection_aiCallSiteCount">8</span>
+          </div>
+          <div class="DiagnosticsSection_aiCallSiteRow">
+            <span class="DiagnosticsSection_aiCallSiteLabel">email_summary</span>
+            <span class="DiagnosticsSection_aiCallSiteCount">6</span>
+          </div>
+        </div>
+
+        <div class="DiagnosticsSection_aiSectionBlock">
+          <div class="DiagnosticsSection_aiSectionLabel">Models</div>
+          <div class="DiagnosticsSection_aiCallSiteRow">
+            <span class="DiagnosticsSection_aiCallSiteLabel">sonnet</span>
+            <span class="DiagnosticsSection_aiCallSiteCount">12</span>
+          </div>
+          <div class="DiagnosticsSection_aiCallSiteRow">
+            <span class="DiagnosticsSection_aiCallSiteLabel">haiku</span>
+            <span class="DiagnosticsSection_aiCallSiteCount">6</span>
+          </div>
+        </div>
+
+        <div class="DiagnosticsSection_aiSectionBlock">
+          <div class="DiagnosticsSection_aiSectionLabel">7-Day Trend</div>
+          <div class="DiagnosticsSection_aiTrendRow">
+            <span class="DiagnosticsSection_aiTrendDate">2026-04-22</span>
+            <span class="DiagnosticsSection_aiTrendSummary">18 calls · 42,180 tokens · 28.4s</span>
+            <span class="DiagnosticsSection_aiTrendTokens">in 31,200 / out 10,980</span>
+          </div>
+          <div class="DiagnosticsSection_aiTrendRow">
+            <span class="DiagnosticsSection_aiTrendDate">2026-04-21</span>
+            <span class="DiagnosticsSection_aiTrendSummary">14 calls · 38,900 tokens · 24.1s</span>
+            <span class="DiagnosticsSection_aiTrendTokens">in 29,100 / out 9,800</span>
+          </div>
+        </div>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+      <div class="DiagnosticsSection_feedbackCard">
+        <p style="font-family:var(--font-mono);font-size:11px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-text-tertiary);margin:0;margin-bottom:12px;">Feedback &amp; Learning</p>
+        <div class="DiagnosticsSection_feedbackStatGrid">
+          <div class="DiagnosticsSection_feedbackStatItem">
+            <div style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Feedback Events</div>
+            <div class="DiagnosticsSection_feedbackStatNumber">7</div>
+            <p class="DiagnosticsSection_feedbackStatDescription">corrections recorded</p>
+          </div>
+          <div class="DiagnosticsSection_feedbackStatItem">
+            <div style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Suppressions</div>
+            <div class="DiagnosticsSection_feedbackStatNumber">2</div>
+            <p class="DiagnosticsSection_feedbackStatDescription">active item suppressions</p>
+          </div>
+          <div class="DiagnosticsSection_feedbackStatItem">
+            <div style="font-family:var(--font-mono);font-size:11px;font-weight:500;letter-spacing:0.04em;color:var(--color-text-tertiary);">Last Feedback</div>
+            <p class="DiagnosticsSection_feedbackStatDescription" style="margin-top:8px;">Apr 22, 9:15 AM</p>
+          </div>
+        </div>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+      <div class="DiagnosticsSection_dbCard">
+        <div class="DiagnosticsSection_dbHeader">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="DiagnosticsSection_dbIconDefault"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>
+          <span class="DiagnosticsSection_dbLabel">Database Storage</span>
+          <span class="DiagnosticsSection_dbSizeDefault">28.3 MB</span>
+        </div>
+
+        <button class="DiagnosticsSection_dbExpandBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="DiagnosticsSection_dbChevron">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+          Table details
+        </button>
+      </div>
+
+      <hr style="height:1px;background:var(--color-rule-light);border:none;margin:16px 0;" />
+
+      <div class="DiagnosticsSection_archivedCard">
+        <button class="DiagnosticsSection_archivedToggleBtn">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="DiagnosticsSection_archivedChevron">
+            <polyline points="6 9 12 15 18 9" />
+          </svg>
+          Archived Accounts
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <div style="text-align:center; padding:72px 0 24px;">
+    <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+    </div>
+  </div>
+  <div class="SettingsPage_bottomSpacer"></div>
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
 </body>
 </html>

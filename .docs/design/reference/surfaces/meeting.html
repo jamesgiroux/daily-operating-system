@@ -1,340 +1,532 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Meridian Harbor — Q2 Business Review · DailyOS Reference</title>
-<link rel="stylesheet" href="../_shared/tokens.css">
-<link rel="stylesheet" href="../_shared/chrome.css">
-<link rel="stylesheet" href="../_shared/primitives.css">
-<link rel="stylesheet" href="../_shared/inspector.css">
-<style>
-  .folio-actions {
-    position: fixed; top: var(--folio-height); left: 0; right: 0;
-    height: 36px;
-    background: rgba(245,242,239,0.78); backdrop-filter: blur(10px);
-    border-bottom: 1px solid var(--color-rule-light);
-    display: flex; justify-content: flex-end; gap: 10px;
-    padding: 0 48px 0 80px;
-    z-index: 99;
-    align-items: center;
-  }
-  .folio-actions button {
-    background: transparent; border: 1px solid var(--color-rule-heavy);
-    color: var(--color-text-secondary);
-    font: 500 11px/1 var(--font-mono);
-    text-transform: uppercase; letter-spacing: 0.06em;
-    padding: 6px 12px; border-radius: var(--radius-sm); cursor: pointer;
-  }
-  .folio-actions button.primary {
-    background: var(--color-spice-turmeric); border-color: var(--color-spice-turmeric);
-    color: var(--color-desk-charcoal);
-  }
-  .folio-actions button:hover { background: var(--color-desk-charcoal-4); }
-  .folio-actions button.primary:hover { opacity: 0.92; }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Meeting Briefing · DailyOS Reference</title>
 
-  .meeting-page { margin-top: 36px; }
-
-  .agenda-list { list-style: none; margin: 0; padding: 0; }
-  .agenda-row {
-    display: grid; grid-template-columns: 24px 1fr auto; gap: 12px;
-    padding: 12px 0; border-bottom: 1px solid var(--color-rule-light);
-    align-items: baseline;
-  }
-  .agenda-row .icon { font-family: var(--font-mono); font-size: 14px; color: var(--color-garden-sage); }
-  .agenda-row .icon.open { color: var(--color-text-tertiary); }
-  .agenda-row .icon.new { color: var(--color-garden-larkspur); }
-  .agenda-row .what { font-family: var(--font-serif); font-size: 16px; color: var(--color-text-primary); }
-  .agenda-row .meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--color-text-tertiary); white-space: nowrap; }
-  .agenda-row .meta.overdue { color: var(--color-spice-terracotta); font-weight: 600; }
-
-  .findings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 32px; }
-  .findings-col h3 { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
-  .findings-col.risks h3 { color: var(--color-spice-terracotta); }
-  .findings-col.wins h3 { color: var(--color-garden-rosemary); }
-  .finding { display: grid; grid-template-columns: 14px 1fr; gap: 10px; margin-bottom: 16px; }
-  .finding .dot { width: 8px; height: 8px; border-radius: 50%; margin-top: 6px; }
-  .finding.risk .dot { background: var(--color-spice-terracotta); }
-  .finding.win .dot { background: var(--color-garden-sage); }
-  .finding.decision .dot { background: var(--color-text-tertiary); }
-  .finding-title { font-family: var(--font-serif); font-size: 16px; color: var(--color-text-primary); margin-bottom: 4px; }
-  .finding-impact { font-family: var(--font-sans); font-size: 13px; color: var(--color-text-secondary); line-height: 1.5; }
-  .evidence { font-family: var(--font-serif); font-style: italic; font-size: 14px; color: var(--color-text-secondary); border-left: 2px solid var(--color-rule-heavy); padding: 4px 0 4px 12px; margin: 8px 0; max-width: 480px; }
-  .attribution { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; color: var(--color-text-tertiary); }
-
-  .findings-3 { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 24px; }
-  .findings-3 h3 { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; margin-bottom: 12px; }
-  .findings-3 .col.wins h3 { color: var(--color-garden-rosemary); }
-  .findings-3 .col.risks h3 { color: var(--color-spice-terracotta); }
-  .findings-3 .col.decisions h3 { color: var(--color-text-tertiary); }
-
-  .talk-balance { display: flex; height: 14px; border-radius: 7px; overflow: hidden; margin: 16px 0 8px; }
-  .talk-balance span { font-family: var(--font-mono); font-size: 10px; padding: 0 8px; line-height: 14px; color: #fff; white-space: nowrap; overflow: hidden; }
-
-  .signal-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px 32px; max-width: 600px; }
-  .signal-grid .sk { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--color-text-tertiary); }
-  .signal-grid .sv { font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); }
-
-  .commitment, .suggested-action {
-    display: grid; grid-template-columns: 90px 1fr auto; gap: 16px;
-    padding: 14px 0; border-bottom: 1px solid var(--color-rule-light); align-items: baseline;
-  }
-  .pill-yours { background: var(--color-spice-turmeric-12); color: var(--color-spice-turmeric); }
-  .pill-theirs { background: var(--color-garden-larkspur-12); color: var(--color-garden-larkspur); }
-  .pill-suggested { background: var(--color-spice-saffron-15); color: #8a6f1a; }
-  .pill-pending { background: var(--color-desk-charcoal-4); color: var(--color-text-secondary); }
-  .commit-tag {
-    display: inline-flex; padding: 3px 10px; border-radius: 100px;
-    font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.06em; text-transform: uppercase;
-  }
-  .commit-text { font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); line-height: 1.5; }
-  .commit-meta { font-family: var(--font-mono); font-size: 10px; letter-spacing: 0.04em; color: var(--color-text-tertiary); }
-
-  .accept-btn { background: var(--color-spice-turmeric); color: var(--color-desk-charcoal); border: none; padding: 6px 14px; border-radius: var(--radius-sm); font: 500 11px var(--font-mono); cursor: pointer; }
-  .dismiss-btn { background: transparent; border: 1px solid var(--color-rule-heavy); color: var(--color-text-secondary); padding: 6px 14px; border-radius: var(--radius-sm); font: 500 11px var(--font-mono); cursor: pointer; }
-
-  .role-row { display: grid; grid-template-columns: 200px 1fr; gap: 16px; padding: 12px 0; }
-  .role-name { font-family: var(--font-serif); font-size: 16px; color: var(--color-text-primary); }
-  .role-trans { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.06em; color: var(--color-text-secondary); }
-</style>
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../_shared/styles/meeting-intel.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+  <link rel="stylesheet" href="../_shared/styles/IntelligenceFeedback.module.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
-  data-folio-label="Meeting"
-  data-folio-crumbs="Meetings > Meridian Harbor — Q2 Business Review"
-  data-folio-status="Apr 17, 2026 · 13:08 · processed"
-  data-folio-actions="search"
+  data-folio-label="Meeting Briefing"
+  data-folio-crumbs="Today>Acme Corp renewal checkpoint"
   data-tint="turmeric"
-  data-active-page="briefing"
-  data-nav-base=".">
+  data-active-page="today"
+  data-nav-base="."
+  data-folio-actions="refresh"
+  data-folio-refresh-title="Check for updates"
+  data-chapters="headline:alignleft:The Brief|risks:alerttriangle:Risks|the-room:users:The Room|your-plan:target:Your Plan">
 
-<div class="folio-actions" data-ds-name="FolioActions" data-ds-tier="pattern" data-ds-spec="patterns/FolioActions.md">
-  <button title="Copy">⧉ Copy</button>
-  <button title="Share">↗ Share</button>
-  <button class="primary">Send Recap</button>
-  <button title="Re-extract">↺ Re-extract</button>
-</div>
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
 
-<main class="page meeting-page" data-ds-name="MeetingDetail" data-ds-tier="surface" data-ds-spec="surfaces/MeetingDetail.md">
+<div class="meeting-intel_pageContainer" data-ds-name="MeetingDetailPage" data-ds-tier="surface" data-ds-spec="surfaces/MeetingDetailPage.md">
+  <div>
+    <section id="headline" class="meeting-intel_heroSection">
+      <p class="meeting-intel_monoOverline">Meeting Briefing</p>
 
-<header class="hero" data-ds-name="MeetingHero" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
-  <span class="pill" data-tone="sage" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md">
-    <span class="pill-dot"></span>
-    Wrapped 8 minutes ago · 56 min recorded
-  </span>
-  <p class="hero-eyebrow" style="margin-top:18px;">Meeting Recap · Tuesday, Apr 17 · 11:00–11:56 AM PT</p>
-  <h1 class="hero-title">Meridian Harbor — Q2 Business Review</h1>
-  <p class="hero-lede" style="font-style:normal; font-size:18px;">
-    Hosted by you · with <a href="person.html" style="border-bottom:1px solid var(--color-rule-heavy);">Priya Shankar</a> (CSM), <a href="person.html" style="border-bottom:1px solid var(--color-rule-heavy);">Marco Devine</a>, <a href="person.html" style="border-bottom:1px solid var(--color-rule-heavy);">Liu Kang</a>, <a href="person.html" style="border-bottom:1px solid var(--color-rule-heavy);">Aoife Murphy</a> · 56 min · Granola transcript attached
-  </p>
-  <p style="font-family:var(--font-serif); font-size:18px; line-height:1.6; color:var(--color-text-primary); margin-top:24px; max-width:740px;">
-    Marco raised pricing in the first 4 minutes — he wants a 12% reduction tied to a 24-month renewal. Aoife (procurement) backed him. You held the floor on Helpline adoption and the audit-log work, and you committed to a follow-up renewal-pricing meeting with Aoife on Apr 24. Liu was quiet but warmed up when the SSO topic came up. No decisions today; one new commitment from you, three follow-ups assigned to Priya.
-  </p>
-</header>
+      <h1 class="meeting-intel_heroTitle">Acme Corp renewal checkpoint</h1>
 
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Plan<span class="margin-label-count">tracked</span></div>
-  <div class="margin-content">
-    <div class="chapter">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">What happened to your plan</h2>
-      <p class="chapter-epigraph">Tracking the 4 agenda items from the briefing.</p>
+      <div class="meeting-intel_lifecycleBadge">
+        <span class="meeting-intel_bulletDotTurmeric"></span>
+        <span class="meeting-intel_lifecycleText">Renewal</span>
+      </div>
+
+      <div class="meeting-intel_metadataLine">
+        <p class="meeting-intel_metadataText">10:00 AM - 10:45 AM &middot; customer &middot; Acme Corp</p>
+      </div>
+
+      <div class="meeting-intel_entityChipsWrap">
+        <div style="display:flex; flex-direction:column; gap:8px;">
+          <div style="display:flex; flex-wrap:wrap; align-items:center; gap:8px;">
+            <span style="display:inline-flex; align-items:center; gap:4px; font-family:var(--font-sans); font-size:12px; font-weight:400; color:var(--color-entity-account); background:var(--color-spice-turmeric-8); padding:3px 10px; border-radius:4px; line-height:1.3; opacity:1; border:none; transition:background 0.15s ease, opacity 0.15s ease;">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px; height:12px; opacity:0.7; flex-shrink:0;" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
+              <a href="account.html" style="color:inherit; text-decoration:none;">Acme Corp</a>
+              <button type="button" style="display:inline-flex; align-items:center; justify-content:center; width:16px; height:16px; padding:0; border:none; background:transparent; cursor:pointer; color:inherit; opacity:0.4; transition:opacity 0.15s ease; border-radius:2px; margin-left:2px;">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:12px; height:12px;" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <blockquote class="meeting-intel_keyInsight">
+        <div class="meeting-intel_intelRowBody">
+          <p class="meeting-intel_keyInsightText">Acme Corp is aligned on the Q2 Launch value story, but Jen Park wants the renewal path de-risked before procurement sees final MSA redlines.</p>
+        </div>
+        <span class="meeting-intel_itemActions">
+          <span class="IntelligenceFeedback_wrapper">
+            <span class="IntelligenceFeedback_container">
+              <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+              </button>
+              <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+              </button>
+            </span>
+          </span>
+        </span>
+      </blockquote>
+
+      <div class="meeting-intel_sinceLastWrap">
+        <p class="meeting-intel_sinceLastHeading">Since Last Meeting</p>
+        <ul class="meeting-intel_sinceLastList">
+          <li class="meeting-intel_sinceLastItem">
+            <span class="meeting-intel_bulletDotTurmericMuted"></span>
+            <span>Jen Park confirmed the security exhibit can move ahead if legal receives clean MSA redlines today.</span>
+          </li>
+          <li class="meeting-intel_sinceLastItem">
+            <span class="meeting-intel_bulletDotTurmericMuted"></span>
+            <span>Dan Mitchell flagged one unresolved launch dependency around audit-log export ownership.</span>
+          </li>
+          <li class="meeting-intel_sinceLastItem">
+            <span class="meeting-intel_bulletDotTurmericMuted"></span>
+            <span>Sara Wu joined the renewal thread for the first time and asked for a technical risk summary.</span>
+          </li>
+        </ul>
+      </div>
+
+      <div class="meeting-intel_currentStateWrap">
+        <p class="meeting-intel_currentStateHeading">Account Pulse</p>
+        <div class="meeting-intel_currentStateGrid">
+          <span class="meeting-intel_currentStateItem">Champion engaged: Jen is pushing for a clean commercial path before Friday.</span>
+          <span class="meeting-intel_currentStateItem">Procurement exposure: MSA redlines are now the critical-path blocker.</span>
+          <span class="meeting-intel_currentStateItem">Launch confidence is stable after the support workflow rehearsal.</span>
+          <span class="meeting-intel_currentStateItem">Executive readout needs a sharper answer on legal timing.</span>
+        </div>
+      </div>
+
+      <div class="meeting-intel_readinessWrap">
+        <p class="meeting-intel_readinessHeading">Before This Meeting</p>
+        <ul class="meeting-intel_readinessList">
+          <li class="meeting-intel_readinessItem">
+            <span class="meeting-intel_bulletDotTurmericMuted"></span>
+            <span>Have the MSA redline summary ready for Jen, with the two clauses legal still owns.</span>
+          </li>
+          <li class="meeting-intel_readinessItem">
+            <span class="meeting-intel_bulletDotTurmericMuted"></span>
+            <span>Bring the Q2 Launch dependency map so Dan can confirm the audit-log owner live.</span>
+          </li>
+          <li class="meeting-intel_readinessItem">
+            <span class="meeting-intel_bulletDotTurmericMuted"></span>
+            <span>Ask Sara whether the technical risk summary should go to the exec readout or stay in the renewal thread.</span>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="risks" class="meeting-intel_chapterSection">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">The Risks</h2>
+        </div>
+      </div>
+
+      <div class="meeting-intel_risksContainer">
+        <blockquote class="meeting-intel_featuredRisk">
+          <div class="meeting-intel_intelRowBody">
+            <p class="meeting-intel_featuredRiskText">If the MSA redlines leave this meeting without one named owner, procurement will treat the renewal as slipping and reopen pricing pressure.</p>
+          </div>
+          <span class="meeting-intel_itemActions">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </blockquote>
+
+        <div class="meeting-intel_subordinateRisk">
+          <div class="meeting-intel_intelRowBody">
+            <p class="meeting-intel_subordinateRiskText">Dan has not accepted audit-log ownership; if you leave it implied, the Q2 Launch plan will still have a visible gap.</p>
+          </div>
+          <span class="meeting-intel_itemActions">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
+
+        <div class="meeting-intel_subordinateRisk">
+          <div class="meeting-intel_intelRowBody">
+            <p class="meeting-intel_subordinateRiskText">Sara is new to the renewal path; overloading her with commercial detail before the technical summary could dilute the architecture signal.</p>
+          </div>
+          <span class="meeting-intel_itemActions">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="meeting-intel_chapterSection">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Recent Wins</h2>
+        </div>
+      </div>
+
+      <div class="meeting-intel_recentWinsContainer">
+        <div class="meeting-intel_recentWinItem">
+          <span class="meeting-intel_bulletDotSage"></span>
+          <p class="meeting-intel_recentWinText">Helpline Rollout rehearsal landed cleanly with support; Acme Corp no longer sees launch readiness as the blocker.</p>
+          <span class="meeting-intel_itemActions">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
+        <div class="meeting-intel_recentWinItem">
+          <span class="meeting-intel_bulletDotSage"></span>
+          <p class="meeting-intel_recentWinText">Jen volunteered to sponsor the executive readout if the legal owner and launch owner are explicit by end of day.</p>
+          <span class="meeting-intel_itemActions">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section class="meeting-intel_chapterSection">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Open Items</h2>
+        </div>
+      </div>
+
+      <div class="meeting-intel_openItemsContainer">
+        <div class="meeting-intel_openItemRow meeting-intel_openItemOverdue">
+          <p class="meeting-intel_openItemTitle">Send Acme Corp final MSA redlines to Jen Park.</p>
+          <span class="meeting-intel_openItemDue meeting-intel_openItemDueOverdue">Overdue: Apr 20</span>
+        </div>
+        <div class="meeting-intel_openItemRow">
+          <p class="meeting-intel_openItemTitle">Confirm Dan Mitchell owns audit-log export before the launch readout.</p>
+          <span class="meeting-intel_openItemDue">Due: Apr 22</span>
+        </div>
+        <div class="meeting-intel_openItemRow">
+          <p class="meeting-intel_openItemTitle">Share the technical risk summary with Sara Wu.</p>
+          <span class="meeting-intel_openItemDue">Due: Apr 23</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="the-room" class="meeting-intel_chapterSection">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">The Room</h2>
+        </div>
+      </div>
+
+      <div class="meeting-intel_attendeeList">
+        <div class="meeting-intel_attendeeRowOuter">
+          <a href="person.html" class="meeting-intel_attendeeLink">
+            <div class="meeting-intel_attendeeRow">
+              <div class="meeting-intel_attendeeAvatar meeting-intel_attendeeAvatarDefault">J</div>
+              <div class="meeting-intel_attendeeBody">
+                <div class="meeting-intel_attendeeNameRow">
+                  <span class="meeting-intel_attendeeTooltipWrap">
+                    <p class="meeting-intel_attendeeName">Jen Park</p>
+                    <span class="meeting-intel_attendeeTooltip">
+                      <span class="meeting-intel_attendeeMetaMono meeting-intel_tooltipMetaBlockSpaced">Last met 2 days ago &middot; 8 meetings</span>
+                      <span class="meeting-intel_tooltipAssessment">Executive sponsor and the person most likely to keep the renewal on the Q2 Launch value story.</span>
+                    </span>
+                  </span>
+                  <span class="meeting-intel_attendeeRole">CTO</span>
+                  <span class="meeting-intel_attendeeTempDot">
+                    <span class="meeting-intel_attendeeTempIndicator meeting-intel_tempIndicatorHot"></span>
+                    <span class="meeting-intel_attendeeTempLabel meeting-intel_tempLabelHot">hot</span>
+                  </span>
+                  <span class="meeting-intel_attendeeEngagement meeting-intel_engagementChampion">champion</span>
+                </div>
+                <p class="meeting-intel_attendeeAssessment">Executive sponsor and the person most likely to keep the renewal on the Q2 Launch value story.</p>
+                <div class="meeting-intel_attendeeMeta">
+                  <span class="meeting-intel_attendeeOrg">Acme Corp</span>
+                  <span class="meeting-intel_attendeeMetaMono">8 meetings</span>
+                  <span class="meeting-intel_attendeeMetaMono">Last seen 2 days ago</span>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+
+        <div class="meeting-intel_attendeeRowOuter">
+          <a href="person.html" class="meeting-intel_attendeeLink">
+            <div class="meeting-intel_attendeeRow">
+              <div class="meeting-intel_attendeeAvatar meeting-intel_attendeeAvatarDefault">D</div>
+              <div class="meeting-intel_attendeeBody">
+                <div class="meeting-intel_attendeeNameRow">
+                  <span class="meeting-intel_attendeeTooltipWrap">
+                    <p class="meeting-intel_attendeeName">Dan Mitchell</p>
+                    <span class="meeting-intel_attendeeTooltip">
+                      <span class="meeting-intel_attendeeMetaMono meeting-intel_tooltipMetaBlockSpaced">Last met 5 days ago &middot; 6 meetings</span>
+                      <span class="meeting-intel_tooltipAssessment">Owns the launch dependency conversation, but needs a direct ask rather than another status pass.</span>
+                    </span>
+                  </span>
+                  <span class="meeting-intel_attendeeRole">Engineering Lead</span>
+                  <span class="meeting-intel_attendeeTempDot">
+                    <span class="meeting-intel_attendeeTempIndicator meeting-intel_tempIndicatorWarm"></span>
+                    <span class="meeting-intel_attendeeTempLabel meeting-intel_tempLabelWarm">warm</span>
+                  </span>
+                  <span class="meeting-intel_attendeeEngagement meeting-intel_engagementNeutral">neutral</span>
+                </div>
+                <p class="meeting-intel_attendeeAssessment">Owns the launch dependency conversation, but needs a direct ask rather than another status pass.</p>
+                <div class="meeting-intel_attendeeMeta">
+                  <span class="meeting-intel_attendeeOrg">Acme Corp</span>
+                  <span class="meeting-intel_attendeeMetaMono">6 meetings</span>
+                  <span class="meeting-intel_attendeeMetaMono">Last seen 5 days ago</span>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+
+        <div class="meeting-intel_attendeeRowOuter">
+          <a href="person.html" class="meeting-intel_attendeeLink">
+            <div class="meeting-intel_attendeeRow">
+              <div class="meeting-intel_attendeeAvatar meeting-intel_attendeeAvatarNew">S</div>
+              <div class="meeting-intel_attendeeBody">
+                <div class="meeting-intel_attendeeNameRow">
+                  <span class="meeting-intel_attendeeTooltipWrap">
+                    <p class="meeting-intel_attendeeName">Sara Wu</p>
+                    <span class="meeting-intel_attendeeTooltip">
+                      <span class="meeting-intel_tooltipAssessment">New to the renewal thread; treat her as a technical validator, not a commercial approver.</span>
+                    </span>
+                  </span>
+                  <span class="meeting-intel_attendeeRole">VP Engineering</span>
+                  <span class="meeting-intel_attendeeTempDot">
+                    <span class="meeting-intel_attendeeTempIndicator meeting-intel_tempIndicatorWarm"></span>
+                    <span class="meeting-intel_attendeeTempLabel meeting-intel_tempLabelWarm">warm</span>
+                  </span>
+                  <span class="meeting-intel_attendeeNewContact">New contact</span>
+                </div>
+                <p class="meeting-intel_attendeeAssessment">New to the renewal thread; treat her as a technical validator, not a commercial approver.</p>
+                <div class="meeting-intel_attendeeMeta">
+                  <span class="meeting-intel_attendeeOrg">Acme Corp</span>
+                </div>
+              </div>
+            </div>
+          </a>
+        </div>
+
+        <div class="meeting-intel_attendeeRowOuter">
+          <div class="meeting-intel_attendeeNonLink">
+            <div class="meeting-intel_attendeeRow">
+              <div class="meeting-intel_attendeeAvatar meeting-intel_attendeeAvatarDefault">S</div>
+              <div class="meeting-intel_attendeeBody">
+                <div class="meeting-intel_attendeeNameRow">
+                  <span class="meeting-intel_attendeeTooltipWrap">
+                    <p class="meeting-intel_attendeeName">Sam Chen</p>
+                    <span class="meeting-intel_attendeeTooltip">
+                      <span class="meeting-intel_tooltipAssessment">Own the renewal path and keep the discussion focused on named blockers.</span>
+                    </span>
+                  </span>
+                  <span class="meeting-intel_attendeeRole">Senior CSM</span>
+                  <span class="meeting-intel_attendeeTempDot">
+                    <span class="meeting-intel_attendeeTempIndicator meeting-intel_tempIndicatorDefault"></span>
+                    <span class="meeting-intel_attendeeTempLabel meeting-intel_tempLabelDefault">internal</span>
+                  </span>
+                </div>
+                <p class="meeting-intel_attendeeAssessment">Own the renewal path and keep the discussion focused on named blockers.</p>
+                <div class="meeting-intel_attendeeMeta">
+                  <span class="meeting-intel_attendeeOrg">Internal</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="meeting-intel_chapterSection">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Recent Correspondence</h2>
+        </div>
+      </div>
+
+      <div class="meeting-intel_sinceLastWrap">
+        <p class="meeting-intel_sinceLastHeading">Three threads since the last checkpoint; legal timing is now the common theme.</p>
+      </div>
+
+      <div class="meeting-intel_risksContainer">
+        <div class="meeting-intel_subordinateRisk">
+          <a href="emails.html" class="meeting-intel_emailSignalLink">
+            <div class="meeting-intel_emailSignalHeader">
+              <span class="meeting-intel_emailSignalSender">Jen Park</span>
+              <span class="meeting-intel_emailSignalDate">Apr 21</span>
+            </div>
+            <p class="meeting-intel_emailSignalMeta">Renewal thread</p>
+            <p class="meeting-intel_subordinateRiskText">Can we get the final redline owner on the calendar before the exec readout?</p>
+          </a>
+          <span class="meeting-intel_itemActions">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
+
+        <div class="meeting-intel_subordinateRisk">
+          <a href="emails.html" class="meeting-intel_emailSignalLink">
+            <div class="meeting-intel_emailSignalHeader">
+              <span class="meeting-intel_emailSignalSender">Sara Wu</span>
+              <span class="meeting-intel_emailSignalDate">Apr 21</span>
+            </div>
+            <p class="meeting-intel_emailSignalMeta">Architecture summary</p>
+            <p class="meeting-intel_subordinateRiskText">Send me the technical risk summary and I can sanity-check it before Jen shares it.</p>
+          </a>
+          <span class="meeting-intel_itemActions">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2h0a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22h0a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <section id="your-plan" class="meeting-intel_chapterSection">
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule" />
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Your Plan</h2>
+        </div>
+      </div>
+
+      <div class="meeting-intel_planContainer">
+        <ol class="meeting-intel_planList">
+          <li class="meeting-intel_planItem">
+            <span class="meeting-intel_planNumber">1</span>
+            <div class="meeting-intel_planItemBody">
+              <p class="meeting-intel_planTopic">Open with the renewal path, not the launch update.</p>
+              <p class="meeting-intel_planWhy">Jen needs a named owner and date for the redlines before she can keep procurement calm.</p>
+            </div>
+            <div class="meeting-intel_planItemActions"></div>
+          </li>
+          <li class="meeting-intel_planItem">
+            <span class="meeting-intel_planNumber">2</span>
+            <div class="meeting-intel_planItemBody">
+              <p class="meeting-intel_planTopic">Ask Dan to accept audit-log export ownership in the meeting.</p>
+              <p class="meeting-intel_planWhy">This converts the Q2 Launch risk from an open question into a tracked commitment.</p>
+            </div>
+            <div class="meeting-intel_planItemActions"></div>
+          </li>
+          <li class="meeting-intel_planItem">
+            <span class="meeting-intel_planNumber">3</span>
+            <div class="meeting-intel_planItemBody">
+              <p class="meeting-intel_planTopic">Position Sara as the technical validator for the exec readout.</p>
+              <p class="meeting-intel_planWhy">She is new to the thread and can make the risk summary more credible if the ask is specific.</p>
+            </div>
+            <div class="meeting-intel_planItemActions"></div>
+          </li>
+          <li class="meeting-intel_planItem">
+            <span class="meeting-intel_planNumber">4</span>
+            <div class="meeting-intel_planItemBody">
+              <p class="meeting-intel_planTopic">Close with the next checkpoint and exact send order.</p>
+              <p class="meeting-intel_planWhy">The team needs to know whether legal, engineering, or Jen moves first after the call.</p>
+            </div>
+            <div class="meeting-intel_planItemActions"></div>
+          </li>
+        </ol>
+
+        <details class="meeting-intel_calendarDetails">
+          <summary class="meeting-intel_calendarSummary">
+            <svg class="meeting-intel_iconMd meeting-intel_detailsChevron" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m9 18 6-6-6-6"/></svg>
+            Calendar Description
+          </summary>
+          <p class="meeting-intel_calendarBody">Renewal checkpoint for Acme Corp. Confirm MSA redline owner, audit-log export owner, and technical summary path before Friday executive readout.</p>
+        </details>
+      </div>
+    </section>
+
+    <div class="meeting-intel_transcriptCta">
+      <button type="button" class="meeting-intel_transcriptCtaBtn">
+        <svg class="meeting-intel_iconMd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+        Attach Transcript
+      </button>
+      <button type="button" class="meeting-intel_transcriptCtaBtn" title="Paste a transcript copied from another tool">
+        <svg class="meeting-intel_iconMd" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H9a2 2 0 0 0-2 2v2h10V4a2 2 0 0 0-2-2Z"/><path d="M8 4H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h6"/><path d="M16 4h2a2 2 0 0 1 2 2v7"/><path d="M21 18h-7"/><path d="m18 15 3 3-3 3"/></svg>
+        Paste Transcript
+      </button>
+      <span class="meeting-intel_transcriptCtaLabel">Attach transcript or notes</span>
     </div>
-    <ul class="agenda-list" data-ds-name="AgendaThreadList" data-ds-tier="pattern" data-ds-spec="patterns/AgendaThreadList.md">
-      <li class="agenda-row"><span class="icon">✓</span><div class="what">Pricing pressure raised first — confirmed.<div class="meta">Item 1 of plan · 18 min spent</div></div><span></span></li>
-      <li class="agenda-row"><span class="icon">✓</span><div class="what">Helpline rollout discussed; Marco accepted the one-sprint slip without escalation.<div class="meta">Item 2 of plan · 11 min spent</div></div><span></span></li>
-      <li class="agenda-row"><span class="icon open">○</span><div class="what">Liu re-engagement — partially. She joined SSO discussion but didn't speak on technical roadmap.<div class="meta">Item 3 of plan · 7 min spent</div></div><span></span></li>
-      <li class="agenda-row"><span class="icon">✓</span><div class="what">Renewal scenarios deferred to Apr 24 follow-up. Aoife will attend.<div class="meta">Item 4 of plan · 8 min spent</div></div><span></span></li>
-      <li class="agenda-row"><span class="icon open">○</span><div class="what">Audit-log export to Marco — STILL OPEN.<div class="meta overdue">Carried over · 9 days overdue</div></div><span></span></li>
-      <li class="agenda-row"><span class="icon new">+</span><div class="what">Aoife Murphy<div class="meta">new attendee · procurement lead</div></div><span></span></li>
-    </ul>
+
+    <div class="meeting-intel_finisWrap">
+      <div style="text-align:center; padding:72px 0 24px;">
+        <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        </div>
+      </div>
+    </div>
   </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Predictions<span class="margin-label-count">vs reality</span></div>
-  <div class="margin-content">
-    <div class="chapter">
-      <hr class="chapter-rule">
-      <h2 class="chapter-title">Predictions vs. Reality</h2>
-    </div>
-    <div class="findings-grid" data-ds-name="PredictionsVsRealityGrid" data-ds-tier="pattern" data-ds-spec="patterns/PredictionsVsRealityGrid.md">
-      <div class="findings-col risks">
-        <h3>Risks (from briefing)</h3>
-        <div class="finding risk"><div class="dot"></div><div><div class="finding-title">Procurement-led 12% pricing compression — CONFIRMED</div><div class="finding-impact">Asked exactly as predicted. Marco named Acme as the comparator.</div></div></div>
-        <div class="finding risk"><div class="dot"></div><div><div class="finding-title">Helpline slip — surfaced but not escalated</div><div class="finding-impact">Marco accepted the new dates without pushback.</div></div></div>
-        <div class="finding risk"><div class="dot"></div><div><div class="finding-title">Liu's disengagement — partial</div><div class="finding-impact">She joined for ~9 minutes but did not engage on roadmap.</div></div></div>
-      </div>
-      <div class="findings-col wins">
-        <h3>Wins (from briefing)</h3>
-        <div class="finding win"><div class="dot"></div><div><div class="finding-title">92% Helpline adoption landed well</div><div class="finding-impact">Marco asked for a case-study quote — first time this quarter.</div></div></div>
-        <div class="finding win"><div class="dot"></div><div><div class="finding-title">SSO/audit-log work re-anchored the technical thread</div><div class="finding-impact">Liu acknowledged the cleanup; Marco followed up with the audit-log request.</div></div></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Conversation<span class="margin-label-count">analysis</span></div>
-  <div class="margin-content">
-    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Conversation</h2></div>
-
-    <div class="talk-balance" data-ds-name="TalkBalanceBar" data-ds-tier="pattern" data-ds-spec="patterns/TalkBalanceBar.md">
-      <span style="background:var(--color-spice-turmeric); flex:38; color:var(--color-desk-charcoal);">You — 38%</span>
-      <span style="background:var(--color-spice-terracotta); flex:27;">Marco — 27%</span>
-      <span style="background:var(--color-garden-larkspur); flex:18;">Priya — 18%</span>
-      <span style="background:var(--color-garden-eucalyptus); flex:11;">Aoife — 11%</span>
-      <span style="background:var(--color-text-tertiary); flex:6;">Liu — 6%</span>
-    </div>
-
-    <div class="signal-grid" data-ds-name="SignalGrid" data-ds-tier="pattern" data-ds-spec="patterns/SignalGrid.md" style="margin-top:20px;">
-      <div><span class="sk">Question density</span> <span class="sv">High (1.4/min)</span></div>
-      <div><span class="sk">Decision maker active</span> <span class="sv">Marco — yes</span></div>
-      <div><span class="sk">Forward-looking</span> <span class="sv">62% of statements</span></div>
-      <div><span class="sk">Monologue risk</span> <span class="sv">Yes — minute 18–24</span></div>
-    </div>
-
-    <div data-ds-name="EscalationQuote" data-ds-tier="pattern" data-ds-spec="patterns/EscalationQuote.md" style="margin-top:24px;">
-      <p class="evidence" style="font-size:18px; max-width:600px;">"If we're going to defend this number to our CFO, we need to see what flexibility looks like before we sign anything."</p>
-      <p class="attribution">— Aoife Murphy · Procurement Lead · 11:14 AM</p>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Findings<span class="margin-label-count">3 cols</span></div>
-  <div class="margin-content">
-    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Findings</h2></div>
-
-    <div class="findings-3" data-ds-name="FindingsTriad" data-ds-tier="pattern" data-ds-spec="patterns/FindingsTriad.md">
-      <div class="col wins">
-        <h3>Wins</h3>
-        <div class="finding win"><div class="dot"></div><div>
-          <div class="finding-title">Marco asked for a case-study quote</div>
-          <div class="finding-impact">First time this quarter. Public reference candidate.</div>
-          <div class="evidence">"The team's been telling me it's the best ticketing setup we've had in three years — happy to say that on the record."</div>
-          <p class="attribution">— Marco · 11:31</p>
-        </div></div>
-      </div>
-      <div class="col risks">
-        <h3>Risks</h3>
-        <div class="finding risk"><div class="dot"></div><div>
-          <div class="finding-title">Aoife framed renewal as conditional on pricing</div>
-          <div class="finding-impact">Procurement now has the floor on the renewal conversation, not Marco.</div>
-          <div class="evidence">"This year we'll need procurement sign-off before any auto-renew, and that's going to mean a competitive review."</div>
-          <p class="attribution">— Aoife · 11:18</p>
-        </div></div>
-      </div>
-      <div class="col decisions">
-        <h3>Decisions</h3>
-        <div class="finding decision"><div class="dot"></div><div>
-          <div class="finding-title">Renewal-pricing follow-up scheduled</div>
-          <div class="finding-impact">Apr 24 · 1pm · with Aoife · pricing scenarios required.</div>
-        </div></div>
-        <div class="finding decision"><div class="dot"></div><div>
-          <div class="finding-title">Helpline rollout date reset to May 8</div>
-          <div class="finding-impact">Marco accepted the one-sprint slip. Confirmed in the room.</div>
-        </div></div>
-      </div>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Champion<span class="margin-label-count">Marco</span></div>
-  <div class="margin-content">
-    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Champion Health</h2></div>
-    <div data-ds-name="ChampionHealthBlock" data-ds-tier="pattern" data-ds-spec="patterns/ChampionHealthBlock.md">
-      <div style="display:flex; gap:18px; align-items:baseline;">
-        <span style="font-family:var(--font-serif); font-size:24px;">Marco Devine</span>
-        <span style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.06em; color:var(--color-spice-saffron);">● Still champion · weakening</span>
-      </div>
-      <div class="evidence" style="margin-top:14px;">"I'll go to bat for the Helpline numbers internally — but the per-seat math has to come down or I won't have cover."</div>
-      <p class="attribution">— Marco · 11:52 — last 4 minutes of the call</p>
-      <p style="margin-top:14px; font-family:var(--font-sans); font-size:14px; line-height:1.55; color:var(--color-spice-chili);">
-        <strong>Risk:</strong> Marco is now using procurement as cover. If pricing isn't resolved by mid-May, he stops being a champion and becomes a neutral.
-      </p>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Commits<span class="margin-label-count">3 + 3 sug</span></div>
-  <div class="margin-content">
-    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Commitments &amp; Actions</h2></div>
-
-    <div class="commitment" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
-      <span class="commit-tag pill-yours">YOURS</span>
-      <div class="commit-text">Send three pricing scenarios for the Apr 24 follow-up — covering 0%, 6%, and 12% reduction with renewal-term tradeoffs.</div>
-      <span></span>
-    </div>
-    <div class="commitment" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
-      <span class="commit-tag pill-yours">YOURS</span>
-      <div class="commit-text">Audit-log export to Marco by EOD Friday (carried over from March).</div>
-      <span></span>
-    </div>
-    <div class="commitment" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
-      <span class="commit-tag pill-theirs">THEIRS</span>
-      <div class="commit-text">Marco will confirm Aoife's authority level for the Apr 24 meeting.</div>
-      <span></span>
-    </div>
-
-    <h3 style="font-family:var(--font-mono); font-size:11px; letter-spacing:0.08em; text-transform:uppercase; color:var(--color-text-tertiary); margin:24px 0 12px;">Suggested actions</h3>
-
-    <div class="suggested-action" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
-      <span class="commit-tag pill-suggested">Suggested</span>
-      <div>
-        <div class="commit-text"><strong>Schedule the Apr 24 renewal-pricing meeting</strong></div>
-        <div class="commit-meta">P1 · Owner: you · Due Apr 19</div>
-        <div class="evidence">"Apr 24 at 1pm works for us." — Aoife, 11:54</div>
-      </div>
-      <div style="display:flex; gap:8px;"><button class="accept-btn">Accept</button><button class="dismiss-btn">Dismiss</button></div>
-    </div>
-    <div class="suggested-action" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
-      <span class="commit-tag pill-suggested">Suggested</span>
-      <div>
-        <div class="commit-text"><strong>Loop Anika in on the discount-floor request</strong></div>
-        <div class="commit-meta">P1 · Owner: you · Due Apr 22</div>
-      </div>
-      <div style="display:flex; gap:8px;"><button class="accept-btn">Accept</button><button class="dismiss-btn">Dismiss</button></div>
-    </div>
-    <div class="suggested-action" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
-      <span class="commit-tag pill-suggested">Suggested</span>
-      <div>
-        <div class="commit-text"><strong>Draft case-study quote for Marco's review</strong></div>
-        <div class="commit-meta">P2 · Owner: Priya · Due Apr 24</div>
-      </div>
-      <div style="display:flex; gap:8px;"><button class="accept-btn">Accept</button><button class="dismiss-btn">Dismiss</button></div>
-    </div>
-
-    <div class="commitment" data-ds-name="CommitmentRow" data-ds-tier="pattern" data-ds-spec="patterns/CommitmentRow.md">
-      <span class="commit-tag pill-pending">Pending</span>
-      <div class="commit-text"><strong>Send the audit-log export</strong><div class="commit-meta">P1 · Owner: you · Due Apr 8 — overdue</div></div>
-      <button class="dismiss-btn">Mark complete</button>
-    </div>
-  </div>
-</section>
-
-<section class="margin-section" data-ds-name="MarginGrid" data-ds-tier="pattern" data-ds-spec="patterns/MarginGrid.md">
-  <div class="margin-label">Roles<span class="margin-label-count">2 changes</span></div>
-  <div class="margin-content">
-    <div class="chapter"><hr class="chapter-rule"><h2 class="chapter-title">Role changes detected</h2></div>
-    <div data-ds-name="RoleTransitionRow" data-ds-tier="pattern" data-ds-spec="patterns/RoleTransitionRow.md" class="role-row">
-      <div class="role-name">Aoife Murphy</div>
-      <div class="role-trans">No relationship → Procurement gatekeeper</div>
-    </div>
-    <div data-ds-name="RoleTransitionRow" data-ds-tier="pattern" data-ds-spec="patterns/RoleTransitionRow.md" class="role-row">
-      <div class="role-name">Marco Devine</div>
-      <div class="role-trans">Champion → Champion (weakening)</div>
-    </div>
-  </div>
-</section>
-
-<div class="finis" data-ds-name="FinisMarker" data-ds-tier="pattern" data-ds-spec="patterns/FinisMarker.md">
-  <div class="finis-mark">✱ ✱ ✱</div>
-  <div class="finis-date">Processed Apr 17, 2026 · 13:08 — from 56-min Granola transcript</div>
 </div>
 
 </main>
+</div>
 
 <script src="../_shared/chrome.js"></script>
 <script src="../_shared/inspector.js"></script>

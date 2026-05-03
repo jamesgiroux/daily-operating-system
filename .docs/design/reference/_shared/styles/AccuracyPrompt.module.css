@@ -1,0 +1,117 @@
+.AccuracyPrompt_wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 4px);
+  vertical-align: middle;
+}
+
+.AccuracyPrompt_inlinePrompt {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-text-tertiary);
+  margin-right: var(--space-xs, 4px);
+}
+
+.AccuracyPrompt_metaTrigger {
+  color: var(--color-spice-turmeric);
+  text-decoration: none;
+  border-bottom: 1px solid var(--color-spice-turmeric);
+  background: none;
+  font: inherit;
+  cursor: pointer;
+  padding: 0;
+}
+
+.AccuracyPrompt_metaPrompt {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs, 4px);
+}
+
+.AccuracyPrompt_metaPromptLabel {
+  color: var(--color-spice-turmeric);
+}
+
+.AccuracyPrompt_choices {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+}
+
+.AccuracyPrompt_choiceInline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 2px 8px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.AccuracyPrompt_choiceMeta {
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 999px;
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: 0.08em;
+  padding: 2px 8px;
+  text-transform: uppercase;
+}
+
+.AccuracyPrompt_choiceInline:hover:not(:disabled),
+.AccuracyPrompt_choiceMeta:hover:not(:disabled) {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-primary);
+  border-color: var(--color-text-tertiary);
+}
+
+.AccuracyPrompt_choiceInline:focus-visible,
+.AccuracyPrompt_choiceMeta:focus-visible,
+.AccuracyPrompt_metaTrigger:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 1px;
+}
+
+.AccuracyPrompt_choiceInline:disabled,
+.AccuracyPrompt_choiceMeta:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.AccuracyPrompt_done {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-garden-sage);
+}
+
+.AccuracyPrompt_linkButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0.06em;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.AccuracyPrompt_linkButton:hover:not(:disabled) {
+  color: var(--color-text-primary);
+}

@@ -116,6 +116,11 @@
   --radius-md: 10px;
   --radius-lg: 12px;
   --radius-xl: 16px;
+  /* Editorial radius aliases — match src/styles/design-tokens.css naming */
+  --radius-editorial-sm: 4px;
+  --radius-editorial-md: 10px;
+  --radius-editorial-lg: 12px;
+  --radius-editorial-xl: 16px;
 
   /* Shadows */
   --shadow-sm: 0 2px 8px rgba(30, 37, 48, 0.1);
@@ -128,6 +133,7 @@
   --transition-normal: 0.15s ease;
 
   /* Glass */
+  --backdrop-blur: blur(12px);
   --frosted-glass-background: rgba(245, 242, 239, 0.85);
   --frosted-glass-nav: rgba(250, 248, 246, 0.8);
 

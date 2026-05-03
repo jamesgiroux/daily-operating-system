@@ -1,0 +1,362 @@
+/* =============================================================================
+ * Monthly Wrapped — shared slide layout + animation classes
+ * ============================================================================= */
+
+/* Scroll-snap wrapper */
+.monthly-wrapped_slideContainer {
+  scroll-snap-type: y proximity;
+}
+
+/* Full-viewport breakout — escapes parent max-width */
+.monthly-wrapped_viewportBreakout {
+  margin-left: calc(50% - 50vw);
+  width: 100vw;
+  overflow: hidden;
+}
+
+/* Base slide */
+.monthly-wrapped_slide {
+  min-height: 100vh;
+  scroll-snap-align: start;
+  scroll-margin-top: 60px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 120px 120px 80px;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Slide headline typography */
+.monthly-wrapped_slideTitle {
+  font-family: var(--font-serif);
+  font-weight: 300;
+  line-height: 1.05;
+  margin: 0 0 24px;
+  letter-spacing: -0.01em;
+}
+
+/* Slide subtitle */
+.monthly-wrapped_slideSubtitle {
+  font-family: var(--font-serif);
+  font-weight: 300;
+  line-height: 1.6;
+}
+
+/* Body text */
+.monthly-wrapped_slideBody {
+  font-family: var(--font-sans);
+  line-height: 1.6;
+}
+
+/* Mono overline label */
+.monthly-wrapped_overline {
+  font-family: var(--font-mono);
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+/* Small overline variant (11px) */
+.monthly-wrapped_overlineSmall {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+/* Large animated number display */
+.monthly-wrapped_statNumber {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  line-height: 1;
+}
+
+/* Stat label */
+.monthly-wrapped_statLabel {
+  font-family: var(--font-serif);
+  font-weight: 300;
+}
+
+/* Sub-stats row */
+.monthly-wrapped_subStats {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  letter-spacing: 0.04em;
+}
+
+/* Serif italic quote/pattern text */
+.monthly-wrapped_serifQuote {
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1.6;
+  max-width: 700px;
+  margin: 0;
+}
+
+/* Background texture overlay */
+.monthly-wrapped_bgTexture {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+/* Relative z-index container (above bg textures) */
+.monthly-wrapped_contentLayer {
+  position: relative;
+  z-index: 1;
+}
+
+/* Moment item in the moments slide */
+.monthly-wrapped_momentItem {
+  padding-bottom: 28px;
+  margin-bottom: 28px;
+  border-bottom: 1px solid var(--color-rule-heavy);
+}
+
+.monthly-wrapped_momentItem:last-child {
+  padding-bottom: 0;
+  margin-bottom: 0;
+  border-bottom: none;
+}
+
+.monthly-wrapped_momentLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  margin-bottom: 6px;
+}
+
+.monthly-wrapped_momentHeadline {
+  font-family: var(--font-serif);
+  font-size: 22px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  line-height: 1.35;
+}
+
+.monthly-wrapped_momentSubtext {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+  line-height: 1.5;
+  margin-top: 6px;
+}
+
+/* Rarity label divider */
+.monthly-wrapped_rarityDivider {
+  border-top: 1px solid rgba(255,255,255,0.12);
+  padding-top: 16px;
+}
+
+/* Alignment badge */
+.monthly-wrapped_alignmentBadge {
+  display: inline-flex;
+  align-items: center;
+  padding: 6px 14px;
+  border-radius: 4px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+/* Priority CTA button */
+.monthly-wrapped_ctaButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 8px 20px;
+  cursor: pointer;
+}
+
+/* Three words pill */
+.monthly-wrapped_wordPill {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 400;
+  border-radius: 4px;
+  padding: 8px 16px;
+}
+
+/* Flourish symbol */
+.monthly-wrapped_flourish {
+  font-family: var(--font-mono);
+  font-size: 20px;
+}
+
+/* Loading skeleton container */
+.monthly-wrapped_loadingSkeleton {
+  padding: 120px 120px 80px;
+}
+
+/* Empty state container */
+.monthly-wrapped_emptyState {
+  padding: 120px 120px 80px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  min-height: 60vh;
+  text-align: center;
+}
+
+.monthly-wrapped_emptyOverline {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.12em;
+  color: var(--color-garden-eucalyptus);
+  margin-bottom: 24px;
+}
+
+.monthly-wrapped_emptyTitle {
+  font-family: var(--font-serif);
+  font-size: 32px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  margin: 0 0 16px;
+}
+
+.monthly-wrapped_emptyDescription {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  color: var(--color-text-secondary);
+  max-width: 420px;
+  line-height: 1.6;
+  margin-bottom: 32px;
+}
+
+.monthly-wrapped_emptyError {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-spice-terracotta);
+  margin-bottom: 16px;
+}
+
+/* Folio regenerate button */
+.monthly-wrapped_folioAction {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  background: none;
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+}
+
+.monthly-wrapped_folioActionActive {
+  color: var(--color-garden-eucalyptus);
+  border: 1px solid var(--color-garden-eucalyptus);
+  opacity: 1;
+}
+
+.monthly-wrapped_folioActionDisabled {
+  color: var(--color-text-tertiary);
+  border: 1px solid var(--color-rule-light);
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* =============================================================================
+ * Animation utility classes
+ * ============================================================================= */
+
+.monthly-wrapped_animHidden { opacity: 0; }
+.monthly-wrapped_animSlideUp { animation: wrappedSlideUp 0.5s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.monthly-wrapped_animSlideUpSlow { animation: wrappedSlideUp 0.55s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.monthly-wrapped_animSlideUpLong { animation: wrappedSlideUp 0.6s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.monthly-wrapped_animFadeIn { animation: wrappedFadeIn 0.4s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.monthly-wrapped_animFadeInSlow { animation: wrappedFadeIn 0.5s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+.monthly-wrapped_animScaleReveal { animation: wrappedScaleReveal 0.6s ease forwards; animation-delay: var(--anim-delay, 0ms); }
+
+/* =============================================================================
+ * Slide background variants
+ * ============================================================================= */
+
+.monthly-wrapped_bgInk { background: var(--color-desk-ink); }
+.monthly-wrapped_bgEucalyptus { background: var(--color-garden-eucalyptus); }
+.monthly-wrapped_bgTurmeric { background: var(--color-spice-turmeric); }
+.monthly-wrapped_bgWarmWhite { background: var(--color-paper-warm-white); }
+.monthly-wrapped_bgTerracotta { background: var(--color-spice-terracotta); }
+.monthly-wrapped_bgRosemary { background: var(--color-garden-rosemary); }
+.monthly-wrapped_bgSage { background: var(--color-garden-sage); }
+.monthly-wrapped_bgSaffron { background: var(--color-spice-saffron); }
+.monthly-wrapped_bgLinen { background: var(--color-paper-linen); }
+
+/* =============================================================================
+ * Loading skeleton background
+ * ============================================================================= */
+
+.monthly-wrapped_skeletonBar { background: var(--color-rule-light); }
+
+/* =============================================================================
+ * Per-slide element variants (layered on base typography classes)
+ * ============================================================================= */
+
+/* --- SplashSlide --- */
+.monthly-wrapped_splashOverline { color: rgba(255,255,255,0.4); margin-bottom: 24px; }
+.monthly-wrapped_splashMonth { font-size: clamp(64px, 9vw, 120px); line-height: 0.95; color: #ffffff; margin: 0 0 20px; letter-spacing: -0.02em; }
+.monthly-wrapped_splashYear { font-family: var(--font-mono); font-size: clamp(28px, 3.5vw, 48px); font-weight: 700; color: var(--color-spice-turmeric); letter-spacing: 0.04em; }
+
+/* --- VolumeSlide --- */
+.monthly-wrapped_volumeOverline { font-size: 12px; color: rgba(255,255,255,0.7); margin-bottom: 32px; }
+.monthly-wrapped_volumeStat { font-size: clamp(72px, 10vw, 96px); color: #ffffff; margin-bottom: 8px; }
+.monthly-wrapped_volumeStatLabel { font-size: 28px; color: rgba(255,255,255,0.9); margin-bottom: 32px; }
+.monthly-wrapped_volumeSubStats { color: rgba(255,255,255,0.65); }
+
+/* --- TopAccountsSlide --- */
+.monthly-wrapped_topAccountOverline { font-size: 12px; color: rgba(42,43,61,0.55); margin-bottom: 32px; }
+.monthly-wrapped_topAccountName { font-size: clamp(48px, 7vw, 80px); color: var(--color-desk-ink); }
+.monthly-wrapped_topAccountTouches { font-family: var(--font-mono); font-size: 16px; color: rgba(42,43,61,0.65); letter-spacing: 0.02em; }
+
+/* --- MomentsSlide --- */
+.monthly-wrapped_momentsOverline { font-size: 12px; font-weight: 700; color: var(--color-spice-turmeric); margin-bottom: 40px; }
+.monthly-wrapped_momentsList { max-width: 680px; }
+
+/* --- HiddenPatternSlide --- */
+.monthly-wrapped_hiddenPatternOverline { font-size: 12px; color: rgba(255,255,255,0.55); margin-bottom: 40px; }
+.monthly-wrapped_hiddenPatternQuote { font-size: 28px; color: #ffffff; }
+
+/* --- PersonalitySlide --- */
+.monthly-wrapped_personalityOverline { color: rgba(255,255,255,0.3); margin-bottom: 28px; }
+.monthly-wrapped_personalityTypeName { font-size: clamp(48px, 7vw, 80px); color: var(--color-spice-saffron); }
+.monthly-wrapped_personalityDescription { font-size: 18px; color: rgba(255,255,255,0.88); max-width: 600px; margin: 0 0 16px; }
+.monthly-wrapped_personalityKeyTrait { font-family: var(--font-mono); font-size: 13px; color: rgba(255,255,255,0.45); margin-bottom: 24px; }
+.monthly-wrapped_personalityRarity { color: var(--color-spice-turmeric); }
+
+/* --- PrioritySlide --- */
+.monthly-wrapped_priorityOverline { font-size: 12px; color: rgba(255,255,255,0.65); margin-bottom: 40px; }
+.monthly-wrapped_priorityStat { font-size: clamp(72px, 10vw, 96px); color: #ffffff; margin-bottom: 8px; }
+.monthly-wrapped_priorityStatLabel { font-size: 22px; color: rgba(255,255,255,0.9); margin-bottom: 24px; }
+.monthly-wrapped_priorityEmptyText { font-size: 24px; color: rgba(255,255,255,0.9); line-height: 1.5; max-width: 520px; margin-bottom: 28px; }
+.monthly-wrapped_priorityEmptyCta { color: rgba(255,255,255,0.9); border: 1px solid rgba(255,255,255,0.4); }
+
+/* --- TopWinSlide --- */
+.monthly-wrapped_topWinOverline { font-size: 12px; color: rgba(42,43,61,0.5); margin-bottom: 40px; }
+.monthly-wrapped_topWinQuote { font-size: 28px; color: var(--color-desk-ink); margin: 0 0 32px; }
+.monthly-wrapped_topWinFlourish { color: var(--color-spice-turmeric); }
+
+/* --- CarryForwardSlide --- */
+.monthly-wrapped_carryForwardOverline { font-size: 12px; color: var(--color-text-tertiary); margin-bottom: 40px; }
+.monthly-wrapped_carryForwardText { font-size: 22px; color: var(--color-text-primary); line-height: 1.7; max-width: 640px; margin: 0 0 56px; }
+.monthly-wrapped_carryForwardWordsLabel { color: var(--color-text-tertiary); margin-bottom: 16px; }
+.monthly-wrapped_carryForwardWordRow { display: flex; gap: 12px; flex-wrap: wrap; }
+
+/* --- CloseSlide --- */
+.monthly-wrapped_closeHeadline { font-size: clamp(40px, 5.5vw, 72px); line-height: 1.1; color: #ffffff; }
+.monthly-wrapped_closeSubLabel { font-family: var(--font-mono); font-size: 14px; color: rgba(255,255,255,0.3); letter-spacing: 0.04em; margin-bottom: 48px; }
+.monthly-wrapped_closeExportCta { color: rgba(255,255,255,0.6); border: 1px solid rgba(255,255,255,0.2); }
