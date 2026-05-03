@@ -4264,7 +4264,11 @@ mod tests {
         assert_eq!(visible_after_add, vec!["associated"]);
 
         // Simulate the soft-delete write path (UPDATE the row to
-        // tombstone it rather than DELETE).
+        // tombstone it rather than DELETE). dos7-allowed: this is
+        // a #[cfg(test)] fixture that exercises the DB-layer
+        // soft-delete shape directly; the production path
+        // (remove_stakeholder_role_inner) writes the m2 shadow
+        // tombstone alongside the same UPDATE.
         db.conn_ref()
             .execute(
                 "UPDATE account_stakeholder_roles

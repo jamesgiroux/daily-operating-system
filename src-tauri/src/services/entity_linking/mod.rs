@@ -246,6 +246,9 @@ pub async fn manual_dismiss(
 ) -> Result<LinkOutcome, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let state_for_ctx = state.clone();
+    let observed_at = ctx.clock.now().to_rfc3339();
+    let entity_for_shadow = entity.clone();
+    let owner_id_for_shadow = owner_id.clone();
     state
         .db_write(move |db| {
             let service_ctx = state_for_ctx.live_service_context();
@@ -265,7 +268,40 @@ pub async fn manual_dismiss(
                     &owner_id,
                     &entity.entity_id,
                     &entity.entity_type,
-                )
+                )?;
+                // L2 cycle-22 fix: shadow-write the m5 linking_dismissed
+                // tombstone so commit_claim PRE-GATE blocks AI re-link
+                // on the next enrichment. The shadow_write helper
+                // returns SkippedUnsupportedSubjectKind for
+                // OwnerType::EmailThread (no SubjectRef::EmailThread
+                // variant in v1.4.0 spine; tracked in migration 133's
+                // unsupported-kind sweep). Meeting + Email are
+                // supported subjects per cycle-3's substrate work.
+                let subject_kind = match owner_type {
+                    crate::services::entity_linking::types::OwnerType::Meeting => "Meeting",
+                    crate::services::entity_linking::types::OwnerType::Email => "Email",
+                    crate::services::entity_linking::types::OwnerType::EmailThread => {
+                        // Email thread isn't a SubjectRef variant. Skip
+                        // the shadow-write; legacy linking_dismissals
+                        // remains authoritative for this owner_type
+                        // until DOS-XXX introduces SubjectRef::EmailThread.
+                        return Ok(());
+                    }
+                };
+                let _ = crate::services::claims::shadow_write_tombstone_claim(
+                    db,
+                    crate::services::claims::ShadowTombstoneClaim {
+                        subject_kind,
+                        subject_id: &owner_id_for_shadow,
+                        claim_type: "linking_dismissed",
+                        field_path: Some(&entity_for_shadow.entity_type),
+                        text: &entity_for_shadow.entity_id,
+                        actor: "user",
+                        source_scope: Some("manual_dismiss"),
+                        observed_at: &observed_at,
+                    },
+                );
+                Ok(())
             })?;
 
             let ctx = build_manual_context(db, owner_type, owner_id);

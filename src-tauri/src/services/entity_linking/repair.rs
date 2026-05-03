@@ -130,6 +130,35 @@ pub fn apply_repair(db: &ActionDb, opts: &RepairOptions) -> Result<RepairReport,
             )
             .map_err(|e| format!("quarantine stakeholders: {e}"))?;
 
+        // L2 cycle-22 fix: snapshot the (person_id, role) tuples
+        // we're about to dismiss BEFORE the UPDATE so we can write
+        // matching shadow tombstone claims after. The repair sets
+        // dismissed_at on legacy rows but the substrate also needs
+        // matching m2 stakeholder_role tombstones, otherwise
+        // commit_claim PRE-GATE misses the dismissal and a future
+        // enrichment can re-surface the role despite the operator
+        // repair.
+        let dismissed_role_subjects: Vec<(String, String)> = {
+            let mut stmt = tx
+                .conn_ref()
+                .prepare(
+                    "SELECT person_id, role FROM account_stakeholder_roles \
+                     WHERE role = 'associated' \
+                       AND data_source = 'ai' \
+                       AND dismissed_at IS NULL \
+                       AND EXISTS ( \
+                         SELECT 1 FROM dos345_candidates c \
+                         WHERE c.account_id = account_stakeholder_roles.account_id \
+                           AND c.person_id = account_stakeholder_roles.person_id \
+                       )",
+                )
+                .map_err(|e| format!("snapshot dismissed roles prepare: {e}"))?;
+            let rows = stmt
+                .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+                .map_err(|e| format!("snapshot dismissed roles query: {e}"))?;
+            rows.filter_map(|r| r.ok()).collect()
+        };
+
         tx.conn_ref()
             .execute(
                 "UPDATE account_stakeholder_roles \
@@ -145,6 +174,28 @@ pub fn apply_repair(db: &ActionDb, opts: &RepairOptions) -> Result<RepairReport,
                 params![REPAIR_SOURCE, now],
             )
             .map_err(|e| format!("dismiss stakeholder roles: {e}"))?;
+
+        // L2 cycle-22 fix: shadow-write a stakeholder_role tombstone
+        // claim for each dismissed (person_id, role) pair, in the
+        // same transaction. Failures are tolerated (best-effort
+        // claim write); the legacy DB write is authoritative for
+        // this repair path until the substrate becomes the primary
+        // read surface.
+        for (person_id, role) in &dismissed_role_subjects {
+            let _ = crate::services::claims::shadow_write_tombstone_claim(
+                tx,
+                crate::services::claims::ShadowTombstoneClaim {
+                    subject_kind: "Person",
+                    subject_id: person_id,
+                    claim_type: "stakeholder_role",
+                    field_path: None,
+                    text: role,
+                    actor: "system",
+                    source_scope: Some("repair:dos345"),
+                    observed_at: &now,
+                },
+            );
+        }
 
         tx.conn_ref()
             .execute(
