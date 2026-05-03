@@ -1,6 +1,6 @@
 -- Migration 023: Drop legacy account_id column from meetings_history.
 --
--- The account_id column is replaced by the meeting_entities junction table (I52).
+-- The account_id column is replaced by the meeting_entities junction table.
 -- Before dropping, backfill any orphaned account_id values into meeting_entities.
 
 -- Disable FK enforcement so DROP TABLE succeeds when captures/quill_sync_state

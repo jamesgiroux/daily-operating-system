@@ -521,7 +521,7 @@ fn generate_mechanical_prep_with_inputs(
 
     // Resolve workspace path for context gathering
     // Phase 3: Build classified meeting JSON for gather_meeting_context
-    // I653 FIX 6: Include attendees so entity resolver signals fire during prep
+    // Include attendees so entity resolver signals fire during prep
     let attendees_val: serde_json::Value = meeting
         .attendees
         .as_deref()

@@ -54,7 +54,7 @@ pub async fn get_processing_history(
 // Onboarding: Demo Data
 // =============================================================================
 
-/// Install demo data for first-run experience (I56).
+/// Install demo data for first-run experience.
 ///
 /// Seeds curated accounts, actions, meetings, and people marked `is_demo = 1`.
 /// Writes fixture files if a workspace path is configured.
@@ -76,7 +76,7 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
     Ok("Demo data installed".into())
 }
 
-/// Clear all demo data and reset demo mode (I56).
+/// Clear all demo data and reset demo mode.
 #[tauri::command]
 pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state.config.read().as_ref().and_then(|c| {
@@ -130,14 +130,14 @@ pub async fn set_wizard_step(
 }
 
 // =============================================================================
-// Onboarding: Populate Workspace (I57)
+// Onboarding: Populate Workspace
 // =============================================================================
 
 /// Create account/project folders and save user domain during onboarding.
 ///
 /// For each account: creates `Accounts/{name}/` and upserts a minimal DbAccount
 /// record (bridge pattern fires `ensure_entity_for_account` automatically).
-/// For each project: creates `Projects/{name}/` (filesystem only, no SQLite — I50).
+/// For each project: creates `Projects/{name}/` (filesystem only, no SQLite).
 /// DB errors are non-fatal; folder creation is the primary value.
 #[tauri::command]
 pub async fn populate_workspace(
@@ -257,7 +257,7 @@ pub async fn populate_workspace(
                         .and_then(|e| e.keywords_extracted_at.clone()),
                     metadata: existing.as_ref().and_then(|e| e.metadata.clone()),
                     commercial_stage: existing.as_ref().and_then(|e| e.commercial_stage.clone()),
-                    // I644 fact columns
+                    //  fact columns
                     arr_range_low: existing.as_ref().and_then(|e| e.arr_range_low),
                     arr_range_high: existing.as_ref().and_then(|e| e.arr_range_high),
                     renewal_likelihood: existing.as_ref().and_then(|e| e.renewal_likelihood),
@@ -299,7 +299,7 @@ pub async fn populate_workspace(
                     customer_status_updated_at: existing
                         .as_ref()
                         .and_then(|e| e.customer_status_updated_at.clone()),
-                    // I644 dashboard.json fields
+                    //  dashboard.json fields
                     company_overview: existing.as_ref().and_then(|e| e.company_overview.clone()),
                     strategic_programs: existing
                         .as_ref()
@@ -490,7 +490,7 @@ pub async fn get_onboarding_priming_context(
 }
 
 // =============================================================================
-// Onboarding: Claude Code Status (I79)
+// Onboarding: Claude Code Status
 // =============================================================================
 
 /// Check whether Claude Code CLI is installed and authenticated.
@@ -524,7 +524,7 @@ pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
 pub async fn get_ai_usage_diagnostics(
     state: State<'_, Arc<AppState>>,
 ) -> Result<AiUsageDiagnostics, String> {
-    // Use local day key (DOS-279: budget tracks local day, not UTC).
+    // Use local day key (budget tracks local day, not UTC).
     let today_local = crate::pty::DailyTokenUsage::today_key();
     let background_pause = crate::pty::current_background_ai_pause_status();
 
@@ -597,7 +597,7 @@ pub async fn get_ai_usage_diagnostics(
                 .collect::<Vec<_>>();
             model_counts.sort_by(|a, b| b.count.cmp(&a.count).then_with(|| a.label.cmp(&b.label)));
 
-            // DOS-279: Read configured budget and current daily token usage.
+            // Read configured budget and current daily token usage.
             let daily_budget = crate::pty::read_configured_daily_budget(db);
             let daily_usage = crate::pty::DailyTokenUsage::load(db);
             let tokens_used = daily_usage.tokens_used;
@@ -736,7 +736,7 @@ pub fn clear_claude_status_cache() {
 }
 
 // =============================================================================
-// Onboarding: Claude CLI Installer (DOS-57) + Node.js Auto-Installer (DOS-65)
+// Onboarding: Claude CLI Installer  + Node.js Auto-Installer
 // =============================================================================
 
 #[derive(Clone, serde::Serialize)]
@@ -750,7 +750,7 @@ struct InstallProgress {
 static INSTALL_IN_PROGRESS: std::sync::atomic::AtomicBool =
     std::sync::atomic::AtomicBool::new(false);
 
-// Pinned Node.js LTS version + checksum for integrity verification (DOS-65)
+// Pinned Node.js LTS version + checksum for integrity verification
 const NODE_VERSION: &str = "22.15.0";
 const NODE_PKG_SHA256: &str = "0bc096a279cd7cbc57bf3a6c6570f3ca03b3ab684d1878a1425919e9b6b76317";
 
@@ -944,7 +944,7 @@ pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
         let npm_path = match crate::util::resolve_npm_binary() {
             Some(path) => path,
             None => {
-                // Node.js not found — auto-install it (DOS-65)
+                // Node.js not found — auto-install it
                 install_nodejs_blocking(&app)?;
 
                 // Re-resolve npm after Node install
@@ -1020,7 +1020,7 @@ pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
 }
 
 // =============================================================================
-// Onboarding: Inbox Training Sample (I78)
+// Onboarding: Inbox Training Sample
 // =============================================================================
 
 /// Copy a bundled sample meeting notes file into _inbox/ for onboarding training.
@@ -1135,7 +1135,7 @@ pub fn dev_run_today_full(state: State<'_, Arc<AppState>>) -> Result<String, Str
     crate::devtools::run_today_full(&state)
 }
 
-/// Restore from dev mode to live mode (I298).
+/// Restore from dev mode to live mode.
 ///
 /// Deactivates dev DB isolation, reopens the live database, reinitializes the
 /// async DB connection pool, and restores the original workspace path.
@@ -1154,7 +1154,7 @@ pub async fn dev_restore_live(state: State<'_, Arc<AppState>>) -> Result<String,
     Ok(result)
 }
 
-/// Purge all known mock/dev data from the current database (I298).
+/// Purge all known mock/dev data from the current database.
 ///
 /// Removes exact mock IDs seeded by devtools scenarios. Safe for the live DB.
 #[tauri::command]
@@ -1165,7 +1165,7 @@ pub fn dev_purge_mock_data(state: State<'_, Arc<AppState>>) -> Result<String, St
     crate::devtools::purge_mock_data(&state)
 }
 
-/// Delete stale dev artifact files from disk (I298).
+/// Delete stale dev artifact files from disk.
 ///
 /// Removes dailyos-dev.db and optionally ~/Documents/DailyOS-dev/.
 #[tauri::command]
@@ -1241,7 +1241,7 @@ pub fn build_outcome_data(
     }
 }
 
-/// Compute executive intelligence signals (I42).
+/// Compute executive intelligence signals.
 #[tauri::command]
 pub async fn get_executive_intelligence(
     state: State<'_, Arc<AppState>>,
@@ -1257,7 +1257,7 @@ pub async fn get_executive_intelligence(
 }
 
 // =============================================================================
-// I427: Global Search
+// Global Search
 // =============================================================================
 
 #[tauri::command]
@@ -1288,7 +1288,7 @@ pub async fn rebuild_search_index(state: State<'_, Arc<AppState>>) -> Result<usi
 }
 
 // =============================================================================
-// I428: Connectivity / Sync Freshness
+// Connectivity / Sync Freshness
 // =============================================================================
 
 #[tauri::command]
@@ -1301,7 +1301,7 @@ pub async fn get_sync_freshness(
 }
 
 // =============================================================================
-// I429: Data Export
+// Data Export
 // =============================================================================
 
 #[tauri::command]
@@ -1316,7 +1316,7 @@ pub async fn export_all_data(
 }
 
 // =============================================================================
-// I430: Privacy Controls
+// Privacy Controls
 // =============================================================================
 
 #[tauri::command]
@@ -1335,7 +1335,7 @@ pub async fn clear_intelligence(
 
 #[tauri::command]
 pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), String> {
-    // I609: Get DB path from static method, close db_service before deleting.
+    // Get DB path from static method, close db_service before deleting.
     let db_path = crate::db::ActionDb::db_path_public()
         .map(|p| p.to_string_lossy().to_string())
         .ok();
@@ -1370,7 +1370,7 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
 }
 
 // =============================================================================
-// Feature Flags (I537)
+// Feature Flags
 // =============================================================================
 
 /// Returns current feature flags. Reads from `config.features` so operators can
@@ -1398,10 +1398,10 @@ pub async fn get_feature_flags(
 }
 
 // =============================================================================
-// I614: DB Growth Monitoring
+// DB Growth Monitoring
 // =============================================================================
 
-/// Return DB file size and row counts for key tables (I614).
+/// Return DB file size and row counts for key tables.
 #[tauri::command]
 pub async fn get_db_growth_report(
     state: State<'_, Arc<AppState>>,
@@ -1412,7 +1412,7 @@ pub async fn get_db_growth_report(
 }
 
 // =============================================================================
-// I645: Feedback & Suppression Diagnostics
+// Feedback & Suppression Diagnostics
 // =============================================================================
 
 #[derive(Debug, Clone, serde::Serialize)]
@@ -1464,7 +1464,7 @@ pub async fn get_feedback_diagnostics(
 }
 
 // =============================================================================
-// Health Scoring (I633)
+// Health Scoring
 // =============================================================================
 
 /// Bulk recompute health scores for all accounts after formula fixes.
@@ -1476,7 +1476,7 @@ pub async fn bulk_recompute_health(state: State<'_, Arc<AppState>>) -> Result<us
 }
 
 // =============================================================================
-// DOS-287: Devtools audit — cross-entity contamination scan
+// Devtools audit — cross-entity contamination scan
 // =============================================================================
 
 /// One field's contamination hits within a single account.
@@ -1507,7 +1507,7 @@ pub struct CrossContaminationAuditReport {
     pub hits: Vec<AccountContaminationSummary>,
 }
 
-/// DOS-287: Pure audit core — iterate non-archived accounts, collect
+/// Pure audit core — iterate non-archived accounts, collect
 /// contamination hits across narrative fields. Factored out so tests can
 /// exercise it with an in-memory DB without spinning up `AppState`.
 pub fn run_cross_contamination_audit(
@@ -1624,7 +1624,7 @@ pub fn run_cross_contamination_audit(
     Ok(report)
 }
 
-/// DOS-287 Tier 4: Sweep every non-archived account and flag any whose
+/// Tier 4: Sweep every non-archived account and flag any whose
 /// stored narrative mentions another customer's identifiers.
 ///
 /// Scans:
@@ -1647,7 +1647,7 @@ pub async fn devtools_audit_cross_contamination(
     state.db_read(run_cross_contamination_audit).await
 }
 
-/// DOS-287: Null the enriched narrative fields for a single account so the
+/// Null the enriched narrative fields for a single account so the
 /// next enrichment pass rewrites them cleanly. There is NO bulk variant —
 /// that's explicitly out of scope.
 #[tauri::command]
@@ -1688,7 +1688,7 @@ pub async fn devtools_clear_contaminated_enrichment(
 }
 
 // =============================================================================
-// People Commands (I51)
+// People Commands
 // =============================================================================
 
 #[cfg(test)]
@@ -1707,7 +1707,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // DOS-287: Cross-contamination audit tests
+    // Cross-contamination audit tests
     // -----------------------------------------------------------------------
     use crate::db::test_utils::test_db;
     use crate::db::ActionDb;

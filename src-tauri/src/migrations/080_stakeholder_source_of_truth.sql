@@ -1,4 +1,4 @@
--- I652: Person-first stakeholder architecture.
+-- Person-first stakeholder architecture.
 -- Promotes account_stakeholders to sole source of truth for stakeholder data.
 -- Adds: FK to people(id), engagement/assessment columns, multi-role table, suggestions table.
 --

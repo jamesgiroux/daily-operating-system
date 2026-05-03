@@ -274,7 +274,7 @@ fn embed_file(
     }
 
     // nomic-embed-text-v1.5 asymmetric retrieval: documents get "search_document: " prefix,
-    // queries get "search_query: " prefix at search time (ADR-0074, I265).
+    // queries get "search_query: " prefix at search time (ADR-0074).
     let prefixed_chunks: Vec<String> = chunks
         .iter()
         .map(|c| format!("{}{}", crate::embeddings::DOCUMENT_PREFIX, c))

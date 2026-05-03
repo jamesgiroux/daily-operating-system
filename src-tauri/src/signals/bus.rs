@@ -1,13 +1,13 @@
 //! Signal event CRUD and source tier weights (ADR-0080).
 //!
-//! ## Signal Taxonomy (I530)
+//! ## Signal Taxonomy
 //!
 //! User-facing actions emit these signal types:
 //!
 //! | Signal Type              | Source           | Weight Change       | Trigger                |
 //! |--------------------------|------------------|---------------------|------------------------|
-//! | `intelligence_confirmed` | `user_feedback`  | alpha += 1          | Thumbs up (I529)       |
-//! | `intelligence_rejected`  | `user_feedback`  | beta  += 1          | Thumbs down (I529)     |
+//! | `intelligence_confirmed` | `user_feedback`  | alpha += 1          | Thumbs up        |
+//! | `intelligence_rejected`  | `user_feedback`  | beta  += 1          | Thumbs down      |
 //! | `user_correction`        | `user_edit`      | beta  += 1          | Edit intelligence field |
 //! | `intelligence_curated`   | `user_curation`  | (no weight change)  | Delete / remove item   |
 //! | `email_signal_dismissed` | `user_correction`| (no weight change)  | Dismiss email signal   |
@@ -65,7 +65,7 @@ pub fn source_base_weight(source: &str) -> f64 {
         "attendee" | "attendee_vote" | "email_thread" | "junction" => 0.8,
         "group_pattern" => 0.75,
         "proactive" => 0.7,
-        // I535/ADR-0100: Tiered Glean source confidence
+        // /ADR-0100: Tiered Glean source confidence
         "glean_crm" | "glean_salesforce" => 0.9, // Salesforce — system of record
         "glean_zendesk" | "glean_support" => 0.85, // Zendesk — ticket data is factual
         "glean_gong" => 0.8,                     // Gong — recorded calls, AI summaries synthesized
@@ -87,7 +87,7 @@ pub fn default_half_life(source: &str) -> i32 {
         "attendee" | "attendee_vote" | "junction" => 30,
         "group_pattern" => 60,
         "proactive" => 3,
-        // I535/ADR-0100: Tiered Glean half-lives
+        // /ADR-0100: Tiered Glean half-lives
         "glean_crm" | "glean_salesforce" => 90, // CRM data refreshes on enrichment cycle
         "glean_zendesk" | "glean_support" => 30, // Support health is dynamic
         "glean_gong" => 60,                     // Call patterns are stable-ish
@@ -146,7 +146,7 @@ pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError
         source_context: signal.source_context,
     })?;
 
-    // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
+    // Flag upcoming meetings linked to this entity for intelligence refresh.
     let _ = db.conn_ref().execute(
         "UPDATE meeting_transcripts SET has_new_signals = 1
          WHERE meeting_id IN (
@@ -192,7 +192,7 @@ pub fn emit_signal(
         source_context: None,
     })?;
 
-    // I332: Flag upcoming meetings linked to this entity for intelligence refresh.
+    // Flag upcoming meetings linked to this entity for intelligence refresh.
     // Lightweight SQL UPDATE — scheduler picks these up every 30 min.
     let _ = db.conn_ref().execute(
         "UPDATE meeting_transcripts SET has_new_signals = 1
@@ -257,7 +257,7 @@ pub fn emit_signal_and_propagate(
     Ok((id, derived_ids))
 }
 
-/// Emit a signal, propagate, AND evaluate for self-healing re-enrichment (I410).
+/// Emit a signal, propagate, AND evaluate for self-healing re-enrichment.
 ///
 /// Wrapper around `emit_signal_and_propagate` that additionally checks whether
 /// the affected entity should be re-enriched based on its trigger score.
@@ -285,7 +285,7 @@ pub fn emit_signal_propagate_and_evaluate(
         confidence,
     )?;
 
-    // Self-healing: event-driven trigger evaluation (I410)
+    // Self-healing: event-driven trigger evaluation
     let _ = crate::self_healing::scheduler::evaluate_on_signal(db, entity_id, entity_type, queue);
 
     Ok(result)

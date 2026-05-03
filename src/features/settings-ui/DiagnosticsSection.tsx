@@ -362,7 +362,7 @@ function MeetingBackfillCard() {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
-// DatabaseStorageCard (I614)
+// DatabaseStorageCard
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface DbGrowthReport {
@@ -424,7 +424,7 @@ const TABLE_LABELS: Record<string, string> = {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
-// I645: Feedback & Learning Card
+// Feedback & Learning Card
 // ═══════════════════════════════════════════════════════════════════════════
 
 interface FeedbackDiagnostics {

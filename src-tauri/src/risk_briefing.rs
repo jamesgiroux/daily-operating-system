@@ -84,7 +84,7 @@ fn build_risk_briefing_context(
 ) -> String {
     let mut prompt = String::with_capacity(16_000);
 
-    // I468: Injection resistance preamble
+    // Injection resistance preamble
     prompt.push_str(INJECTION_PREAMBLE);
 
     prompt.push_str(
@@ -429,7 +429,7 @@ pub fn gather_risk_input(
 
     let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
 
-    // Gather context via ContextProvider (Glean-aware), read from DB (I513)
+    // Gather context via ContextProvider (Glean-aware), read from DB
     let prior_intel = db.get_entity_intelligence(account_id).ok().flatten();
     let ctx = context_provider
         .gather_entity_context(db, account_id, "account", prior_intel.as_ref())

@@ -1,4 +1,4 @@
-//! DOS-287: Cross-entity contamination validator.
+//! Cross-entity contamination validator.
 //!
 //! Second-line defense against Glean/PTY enrichment writing content about a
 //! different customer into the target account's intelligence record. Runs
@@ -20,7 +20,7 @@
 //!
 //! Matching is case-insensitive; bounded by non-alphanumeric characters.
 //!
-//! TODO(DOS-282): Regression fixtures for vip-test.com / Acme cross-bleed
+//! TODO: Regression fixtures for vip-test.com / Acme cross-bleed
 //! should live with that ticket.
 
 use crate::db::ActionDb;
@@ -309,7 +309,7 @@ impl ContaminationValidation {
 ///
 /// Used by the contamination heuristics so a target's own subdomains
 /// (`vip.target.com`, `privacy.target.com`, `www.target.com`) don't get
-/// flagged as foreign tokens. DOS-319.
+/// flagged as foreign tokens.
 fn is_target_owned(token: &str, target_domains: &[String]) -> bool {
     target_domains.iter().any(|td| {
         if td.is_empty() {
@@ -681,7 +681,7 @@ mod tests {
         assert_eq!(acme_hit.source_account_id.as_deref(), Some("acme"));
     }
 
-    // DOS-319: subdomains of the target's own domains must not be flagged.
+    // subdomains of the target's own domains must not be flagged.
     #[test]
     fn target_owned_subdomain_not_flagged_as_vip_host() {
         let db = test_db();

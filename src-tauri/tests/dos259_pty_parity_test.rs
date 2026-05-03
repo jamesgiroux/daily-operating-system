@@ -1,7 +1,6 @@
-//! DOS-259 (W2-B) integration test: PTY provider byte-identical parity
-//! AND call-configuration parity.
+//! PTY provider byte-identical parity and call-configuration parity integration test.
 //!
-//! The W2-B refactor relocated provider construction from inline
+//! The provider refactor relocates provider construction from inline
 //! `PtyManager::for_tier(...)` to `PtyClaudeCode::new(...)` + the
 //! `IntelligenceProvider` trait. Two parity invariants must hold:
 //!
@@ -12,9 +11,11 @@
 //! 2. **Call-configuration parity** — `complete_blocking` and
 //!    `complete()` must invoke the underlying PTY with identical
 //!    timeout / `usage_context` / tier / nice_priority values, and
-//!    those values must match the pre-refactor inline calls. L2
-//!    cycle-26 codex F4 flagged the original test for skipping this
-//!    invariant entirely (it only exercised `ReplayProvider`).
+//!    those values must match the pre-refactor inline calls.
+//!
+//! When a real fixture corpus lands, this test gains captured PTY output
+//! as the canned text; until then the synthetic JSON-shaped fixture covers
+//! the parser's happy-path through the provider trait surface.
 
 use std::sync::{Arc, Mutex};
 
@@ -142,7 +143,7 @@ async fn pty_provider_parity_fixture_intelligence_json_byte_identical() {
     );
 }
 
-/// L2 cycle-26 (DOS-259) F4: `complete_blocking` invokes the PTY
+/// `complete_blocking` invokes the PTY
 /// adapter with the documented per-tier timeout, the configured
 /// `usage_context` (with tier appended), the requested tier, and
 /// `nice_priority=10` — the same values the pre-refactor inline
@@ -182,7 +183,7 @@ fn pty_provider_complete_blocking_propagates_call_config() {
     );
 }
 
-/// L2 cycle-26 (DOS-259) F4: per-tier timeout matrix — assert
+/// Per-tier timeout matrix: assert
 /// each tier maps to its documented timeout. Regression catches a
 /// drift where someone changes one tier's timeout without updating
 /// the constant.
@@ -229,7 +230,7 @@ async fn pty_provider_complete_async_propagates_per_tier_timeouts() {
     }
 }
 
-/// L2 cycle-26 (DOS-259) F4: `complete_blocking` and `complete()`
+/// `complete_blocking` and `complete()`
 /// produce identical PTY invocations for the same inputs — the two
 /// methods exist as sync/async siblings and must be substitutable.
 /// Without this guard the async path could silently drift (different

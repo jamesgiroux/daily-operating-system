@@ -1,5 +1,5 @@
 /**
- * AboutIntelligence — meta chapter: "About this intelligence" (DOS-203).
+ * AboutIntelligence — meta chapter: "About this intelligence".
  *
  * Renders the source manifest + enrichment freshness as a quiet meta card.
  * Mirrors the mockup's "About this intelligence" block (lines 974-989) — our

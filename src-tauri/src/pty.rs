@@ -98,7 +98,7 @@ const BACKGROUND_AI_TIMEOUT_RATE_THRESHOLD: f64 = 0.25;
 const BACKGROUND_AI_CONSECUTIVE_TIMEOUTS: usize = 3;
 
 // =============================================================================
-// Daily AI Token Budget (DOS-279)
+// Daily AI Token Budget
 // =============================================================================
 
 /// Persisted daily token usage — keyed by local YYYY-MM-DD.
@@ -579,7 +579,7 @@ fn record_ai_usage(
     };
     let mut ledger: AiUsageLedger = read_json_kv(&db, AI_USAGE_DAILY_KEY).unwrap_or_default();
 
-    // DOS-279: Use local day key for all daily usage tracking (not UTC).
+    // Use local day key for all daily usage tracking (not UTC).
     let today = DailyTokenUsage::today_key();
     let day = ledger.days.entry(today).or_default();
     day.call_count += 1;
@@ -590,7 +590,7 @@ fn record_ai_usage(
     *day.operation_counts.entry(call_site).or_insert(0) += 1;
     *day.model_counts.entry(model_name.clone()).or_insert(0) += 1;
 
-    // Retain last 7 days relative to local time (DOS-279: local day boundary).
+    // Retain last 7 days relative to local time (local day boundary).
     let cutoff = chrono::Local::now().date_naive() - ChronoDuration::days(6);
     ledger
         .days
@@ -598,7 +598,7 @@ fn record_ai_usage(
 
     write_json_kv(&db, AI_USAGE_DAILY_KEY, &ledger);
 
-    // Update the single-day token usage counter used by the budget gate (DOS-279).
+    // Update the single-day token usage counter used by the budget gate.
     record_daily_token_usage(&db, total_tokens);
 
     let mut recent: AiRecentUsageLedger =
@@ -631,7 +631,7 @@ fn parse_usage_day(value: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
 }
 
-/// Model tier for AI operations (I174).
+/// Model tier for AI operations.
 ///
 /// Maps to configured model names via `AiModelConfig`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -761,7 +761,7 @@ impl PtyManager {
         self
     }
 
-    /// Set CPU priority via `nice` for the subprocess (I173).
+    /// Set CPU priority via `nice` for the subprocess.
     /// Lower values = higher priority. 10 is a reasonable default for background work.
     pub fn with_nice_priority(mut self, priority: i32) -> Self {
         self.nice_priority = Some(priority);
@@ -829,7 +829,7 @@ impl PtyManager {
         let claude_str = claude_path.to_string_lossy();
         let started = std::time::Instant::now();
 
-        // DOS-279: Preflight daily budget check.
+        // Preflight daily budget check.
         // Estimate prompt size from the command string before spawning.
         let estimated_tokens = estimate_tokens(command);
         check_daily_budget(estimated_tokens)?;
@@ -1222,7 +1222,7 @@ mod tests {
     }
 
     // =========================================================================
-    // DOS-279: DailyTokenUsage unit tests
+    // DailyTokenUsage unit tests
     // =========================================================================
 
     #[test]

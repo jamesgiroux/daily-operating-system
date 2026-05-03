@@ -1,6 +1,6 @@
-//! DOS-310: per-entity claim invalidation primitive.
+//! per-entity claim invalidation primitive.
 //!
-//! Codex round 1 finding 4 + round 2 finding 6 corrected the original DOS-7
+//! Codex round 1 finding 4 + round 2 finding 6 corrected the original
 //! plan that extended `entity_graph_version` triggers to cover claims:
 //! `entity_graph_version` is a singleton counter, so every claim write would
 //! thrash unrelated entity-linking evaluations. This module replaces that
@@ -10,7 +10,7 @@
 //!
 //! - **Per-entity** `claim_version` on `accounts`, `projects`, `people`,
 //!   `meetings_history`. Bumped synchronously inside the same transaction
-//!   as the claim write (DOS-7's `commit_claim` calls into this module).
+//!   as the claim write (`services::claims::commit_claim` calls into this module).
 //!   Readers check `entity.claim_version` off the row they already loaded
 //!   — no extra query.
 //!
@@ -34,13 +34,13 @@
 //! References:
 //! - Codex round 1 findings 4, 9 (singleton thrash)
 //! - Codex round 2 findings 6, 7, 8 (Option pick + Global undefined + Multi deadlock)
-//! - Live Linear ticket DOS-310
+//! - ADR-0125 claim-substrate spine restriction
 
 use rusqlite::params;
 
 use crate::db::{ActionDb, DbError};
 
-/// Subject of a claim. DOS-7's `commit_claim` constructs this from the
+/// Subject of a claim. `services::claims::commit_claim` constructs this from the
 /// claim's `subject_ref` JSON column and passes to `bump_for_subject`.
 ///
 /// Variants are listed in the entity-type lock-order precedence:
@@ -52,7 +52,7 @@ use crate::db::{ActionDb, DbError};
 ///
 /// `Global` is structurally available, but v1.4.0 spine MUST NOT register any
 /// `claim_type` whose `canonical_subject_types` contains `SubjectType::Global`.
-/// This is enforced at the CLAIM_TYPE_REGISTRY layer (DOS-7 / ADR-0125), not
+/// This is enforced at the CLAIM_TYPE_REGISTRY layer (ADR-0125), not
 /// here.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SubjectRef {
@@ -78,7 +78,7 @@ pub enum SubjectRef {
     /// production caller that builds a `SubjectRef::Global` value to pass
     /// in. Construction is enforced by the bash lint at
     /// `scripts/check_no_global_subject_in_spine.sh` (CI-time) until
-    /// DOS-7 (ADR-0125) introduces the `CLAIM_TYPE_REGISTRY` and a
+    /// ADR-0125 introduces the `CLAIM_TYPE_REGISTRY` and a
     /// stronger compile-time guard via `canonical_subject_types`.
     Global,
 }
@@ -123,7 +123,7 @@ impl ActionDb {
     /// Bump the `claim_version` for a single entity.
     ///
     /// Returns the number of rows affected (0 if the entity doesn't exist).
-    /// Unknown entity IDs are NOT a hard error — DOS-7's `commit_claim`
+    /// Unknown entity IDs are NOT a hard error — `services::claims::commit_claim`
     /// inserts the claim row even if the subject entity is being deleted
     /// concurrently; the caller logs and proceeds. SQLite UPDATE on a
     /// non-existent ID silently affects 0 rows.
@@ -164,7 +164,7 @@ impl ActionDb {
     /// **Spine restriction**: v1.4.0 spine does not register any `claim_type`
     /// with `canonical_subject_types` containing `Global`. Calling this from
     /// spine production code is a category error caught by the
-    /// `CLAIM_TYPE_REGISTRY` lint (DOS-7 / ADR-0125 era).
+    /// `CLAIM_TYPE_REGISTRY` lint (ADR-0125 era).
     #[must_use = "claim invalidation results must be propagated"]
     pub fn bump_global_claim_epoch(&self) -> Result<(), DbError> {
         self.conn_ref().execute(
@@ -453,8 +453,8 @@ mod tests {
 
     #[test]
     fn bump_does_not_touch_entity_graph_version() {
-        // Live ticket acceptance: claim writes do NOT bump entity_graph_version.
-        // entity_graph_version is for entity-linking (DOS-258); claim invalidation
+        // Claim writes must not bump entity_graph_version.
+        // entity_graph_version is for entity-linking; claim invalidation
         // is a separate domain.
         let db = test_db();
         seed_account(&db, "acc-1");
@@ -479,7 +479,7 @@ mod tests {
 
     #[test]
     fn burst_writes_on_one_account_dont_affect_unrelated_entities() {
-        // Live ticket acceptance: 1000 claim writes on account A in 10s
+        // Burst claim writes on account A must
         // produce no invalidation noise on unrelated accounts/projects/people/meetings.
         // Using 1000 writes synchronously here as a stand-in for the production
         // burst test (test mode is single-threaded).
@@ -516,7 +516,7 @@ mod tests {
 
     #[test]
     fn dos310_100_concurrent_multi_consistent_sequences_no_deadlock() {
-        // Live ticket DOS-310 acceptance: "100 concurrent claim commits with
+        // Concurrent claim commits with
         // Multi([A, B]) and Multi([B, A]) produce exactly 100 commits with
         // consistent version sequences, no deadlock."
         //

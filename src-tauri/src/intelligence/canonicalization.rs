@@ -1,10 +1,10 @@
 //! Canonical hashing for tombstone item identity.
-//! Shared by W0 callers and DOS-7 commit_claim/propose_claim.
+//! Shared by current callers and commit_claim/propose_claim.
 
 use sha2::{Digest, Sha256};
 
 /// The kind of intelligence item being hashed; reserved for forward-compat
-/// with DOS-7's claim_type registry (ADR-0125). For W0 we only emit `Risk`/`Win`.
+/// with the claim_type registry (ADR-0125). For now we only emit `Risk`/`Win`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[allow(clippy::manual_non_exhaustive)]
 pub enum ItemKind {
@@ -12,7 +12,7 @@ pub enum ItemKind {
     Risk,
     /// Recent-win item text.
     Win,
-    /// Reserved for DOS-7 expansion; not emitted in W0.
+    /// Reserved for expansion; not emitted in W0.
     #[doc(hidden)]
     _Reserved,
 }

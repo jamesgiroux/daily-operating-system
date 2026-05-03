@@ -197,7 +197,7 @@ pub fn resolve_destination(
 }
 
 /// Resolve a unique destination path by appending `-1`, `-2` etc. when the
-/// target already exists (I69: prevent silent overwrites).
+/// target already exists (prevent silent overwrites).
 fn unique_destination(dest: &Path) -> PathBuf {
     if !dest.exists() {
         return dest.to_path_buf();
@@ -691,7 +691,7 @@ mod tests {
 
     // Ignored: pre-existing failure on dev at this worktree's base commit — the
     // router logic doesn't resolve "Crestview Media--Corporate-Services-B2B-..."
-    // filenames to a nested BU directory. Not related to DOS-18/DOS-203; tracked
+    // filenames to a nested BU directory. Not related to; tracked
     // separately (see also the parent→Crestview Media test-data rename).
     #[test]
     #[ignore]

@@ -103,7 +103,7 @@ pub fn clear_meeting_prep_frozen(
 ///
 /// For external meetings: scoped to non-internal attendees (customers, prospects, etc.).
 /// For internal meetings (team_sync, internal, one_on_one): includes all attendees,
-/// since the room IS internal colleagues (I401).
+/// since the room IS internal colleagues.
 pub fn hydrate_attendee_context(
     db: &ActionDb,
     meeting: &crate::db::DbMeeting,
@@ -142,7 +142,7 @@ pub fn hydrate_attendee_context(
         }
     }
 
-    // I401: Internal meetings show internal attendees — the room IS your team.
+    // Internal meetings show internal attendees — the room IS your team.
     // External meetings filter out internal colleagues to focus on the customer.
     let is_internal_meeting = matches!(
         meeting.meeting_type.as_str(),
@@ -436,7 +436,7 @@ fn cascade_targets<'a>(
 /// Performs mutation, prep invalidation, immediate mechanical rebuild, and
 /// async entity intelligence refresh queuing. Falls back to prep queue when
 /// immediate rebuild fails. Emits `prep-ready` event on successful rebuild
-/// so the frontend auto-refreshes (I477).
+/// so the frontend auto-refreshes.
 async fn mutate_meeting_entities_and_refresh_briefing(
     ctx: &ServiceContext<'_>,
     state: &AppState,
@@ -492,7 +492,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                                 .map_err(|e| e.to_string())?;
                         }
 
-                        // DOS-258 dual-write: mirror the user's override into
+                        // Entity-linking dual-write: mirror the user's override into
                         // linked_entities_raw so the briefing (which now reads
                         // the view) sees the selection. Preserves user
                         // dismissals so the next engine pass won't resurrect
@@ -573,8 +573,8 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         db.link_meeting_entity(&meeting_id, &entity_id, &entity_type)
                             .map_err(|e| e.to_string())?;
 
-                        // DOS-258 dual-write: set this entity as the user
-                        // primary (P1) so the DOS-258 read path surfaces the
+                        // Entity-linking dual-write: set this entity as the user
+                        // primary (P1) so the entity-link read path surfaces the
                         // user's pick. Replaces any existing auto-resolved
                         // primary; preserves user dismissals.
                         let now = mutation_now.clone();
@@ -617,7 +617,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         db.unlink_meeting_entity(&meeting_id, &entity_id)
                             .map_err(|e| e.to_string())?;
 
-                        // DOS-258 dual-write: persistent dismissal so the
+                        // Entity-linking dual-write: persistent dismissal so the
                         // engine won't re-link this entity on the next pass,
                         // and mark the raw row user_dismissed so the view
                         // filters it out immediately.
@@ -628,7 +628,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                              VALUES ('meeting', ?1, ?2, ?3, ?4)",
                             rusqlite::params![&meeting_id, &entity_id, &entity_type, &now],
                         );
-                        // DOS-7 L2 cycle-1 fix #5: shadow-write the
+                        // Shadow-write the
                         // mechanism-5 (linking_dismissals) write so
                         // commit_claim PRE-GATE blocks re-surfacing.
                         crate::services::claims::shadow_write_tombstone_claim(
@@ -781,7 +781,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
             })
             .await;
 
-        // Emit prep-ready so MeetingDetailPage auto-refreshes (I477).
+        // Emit prep-ready so MeetingDetailPage auto-refreshes.
         if let Some(app) = app_handle {
             let _ = app.emit(
                 "prep-ready",
@@ -805,7 +805,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     Ok(())
 }
 
-/// Context for meeting-entity mutation commands (I477).
+/// Context for meeting-entity mutation commands.
 ///
 /// Groups common meeting metadata fields to keep function signatures
 /// within clippy's 7-argument limit.
@@ -933,7 +933,7 @@ pub async fn get_meeting_history_detail(
                 .filter(|s| !s.is_empty())
                 .collect();
 
-            // Parse persisted prep context (I181)
+            // Parse persisted prep context
             let prep_context = meeting
                 .prep_context_json
                 .as_ref()
@@ -957,7 +957,7 @@ pub async fn get_meeting_history_detail(
         .await
 }
 
-/// Search meetings by title, summary, or prep context (I183).
+/// Search meetings by title, summary, or prep context.
 pub async fn search_meetings(
     query: &str,
     state: &AppState,
@@ -1275,7 +1275,7 @@ pub async fn get_meeting_timeline(
             }
 
             // Batch fetch linked entities for all meetings.
-            // DOS-258: read from the linked_entities view rather than the legacy
+            // read from the linked_entities view rather than the legacy
             // meeting_entities junction table so the meetings list chips match
             // the meeting detail page.
             let meeting_ids: Vec<String> = raw_meetings.iter().map(|m| m.id.clone()).collect();
@@ -1306,7 +1306,7 @@ pub async fn get_meeting_timeline(
                 .filter_map(|r| r.ok())
                 .collect();
 
-            // Count follow-up actions per meeting (I342)
+            // Count follow-up actions per meeting
             let action_count_sql = format!(
         "SELECT source_id, COUNT(*) FROM actions WHERE source_id IN ({}) GROUP BY source_id",
         capture_placeholders.join(", ")
@@ -1639,7 +1639,7 @@ pub async fn get_meeting_intelligence(
                 prep_data.user_agenda = user_agenda.clone();
                 prep_data.user_notes = user_notes.clone();
 
-                // Hydrate attendee_context from people DB (I51)
+                // Hydrate attendee_context from people DB
                 if prep_data.attendee_context.is_none() {
                     let attendee_context = hydrate_attendee_context(db, &meeting);
                     if !attendee_context.is_empty() {
@@ -1669,7 +1669,7 @@ pub async fn get_meeting_intelligence(
             let actions = db
                 .get_actions_for_meeting(&meeting.id)
                 .map_err(|e| e.to_string())?;
-            // DOS-258: read from the linked_entities view so the briefing UI
+            // read from the linked_entities view so the briefing UI
             // sees the new engine's output, not the legacy `meeting_entities`
             // table that accumulated false positives from the old fuzzy/
             // keyword resolver. Internal-only meetings (no external domain
@@ -1805,7 +1805,7 @@ pub async fn link_meeting_entity_with_prep_queue(
                 "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
             );
-            // DOS-258 dual-write: record user override in linked_entities_raw (P1 source).
+            // Entity-linking dual-write: record user override in linked_entities_raw (P1 source).
             let now = linked_at;
             let version = db.get_entity_graph_version().unwrap_or(0);
             let _ = db.conn_ref().execute(
@@ -1839,7 +1839,7 @@ pub async fn link_meeting_entity_with_prep_queue(
     Ok(())
 }
 
-/// DOS-240: Dismiss an auto-resolved meeting entity. This both unlinks the
+/// Dismiss an auto-resolved meeting entity. This both unlinks the
 /// current row AND records a persistent dismissal so calendar-sync and the
 /// background resolver will not re-link the same (meeting, entity, type)
 /// tuple on subsequent sweeps. Prep is invalidated and re-enqueued so the
@@ -1874,7 +1874,7 @@ pub async fn dismiss_meeting_entity(
                 "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
             );
-            // DOS-258 dual-write: tombstone in linking_dismissals + mark raw row.
+            // Entity-linking dual-write: tombstone in linking_dismissals + mark raw row.
             let now = dismissed_at;
             let _ = db.conn_ref().execute(
                 "INSERT OR IGNORE INTO linking_dismissals \
@@ -1882,7 +1882,7 @@ pub async fn dismiss_meeting_entity(
                  VALUES ('meeting', ?1, ?2, ?3, ?4, ?5)",
                 rusqlite::params![meeting_id_s, entity_id_s, entity_type_s, dismissed_by_s, now],
             );
-            // DOS-7 L2 cycle-1 fix #5: shadow-write the dismissal as an
+            // Shadow-write the dismissal as an
             // intelligence_claims tombstone for both mechanism 4
             // (meeting_entity_dismissals) and mechanism 5
             // (linking_dismissals) so commit_claim PRE-GATE blocks
@@ -1940,7 +1940,7 @@ pub async fn dismiss_meeting_entity(
     Ok(())
 }
 
-/// DOS-240: Restore a previously-dismissed meeting entity by deleting the
+/// Restore a previously-dismissed meeting entity by deleting the
 /// dismissal record. The entity will not appear immediately; it will reappear
 /// on the next calendar-sync or resolver pass that produces the same match.
 pub async fn restore_meeting_entity(
@@ -1960,7 +1960,7 @@ pub async fn restore_meeting_entity(
             let r = db
                 .remove_meeting_entity_dismissal(&meeting_id_s, &entity_id_s, &entity_type_s)
                 .map_err(|e| e.to_string())?;
-            // DOS-258 dual-write: remove linking_dismissals tombstone.
+            // Entity-linking dual-write: remove linking_dismissals tombstone.
             let _ = db.conn_ref().execute(
                 "DELETE FROM linking_dismissals \
                  WHERE owner_type = 'meeting' AND owner_id = ?1 \
@@ -2026,16 +2026,14 @@ pub async fn unlink_meeting_entity_with_prep_queue(
     let unlinked_at = ctx.clock.now().to_rfc3339();
     state
         .db_write(move |db| {
-            // L2 cycle-24 fix #2: read entity_type BEFORE the
-            // legacy unlink. The previous order was
-            // unlink → query meeting_entities → fall back to
-            // 'account' on miss; since unlink_meeting_entity
-            // deletes the meeting_entities row, the SELECT always
-            // missed and EVERY non-account dismissal got recorded
-            // with field_path='account'. Project/Person link
-            // dismissals could resurface because PRE-GATE matches
-            // on field_path and saw 'account' instead of the real
-            // entity_type.
+            // Read entity_type before the legacy unlink. The previous
+            // order was unlink -> query meeting_entities -> fall back
+            // to 'account' on miss; since unlink_meeting_entity deletes
+            // the meeting_entities row, the SELECT always missed and
+            // every non-account dismissal got recorded with
+            // field_path='account'. Project/Person link dismissals
+            // could resurface because PRE-GATE matches on field_path
+            // and saw 'account' instead of the real entity_type.
             let entity_type: String = db
                 .conn_ref()
                 .query_row(
@@ -2058,7 +2056,7 @@ pub async fn unlink_meeting_entity_with_prep_queue(
                 "UPDATE meeting_prep SET prep_frozen_json = NULL WHERE meeting_id = ?1",
                 rusqlite::params![meeting_id_s],
             );
-            // DOS-258 dual-write: unlink = dismiss in the new model.
+            // Entity-linking dual-write: unlink = dismiss in the new model.
             let now = unlinked_at;
             let _ = db.conn_ref().execute(
                 "INSERT OR IGNORE INTO linking_dismissals \
@@ -2066,7 +2064,7 @@ pub async fn unlink_meeting_entity_with_prep_queue(
                  VALUES ('meeting', ?1, ?2, ?3, ?4)",
                 rusqlite::params![meeting_id_s, entity_id_s, entity_type, now],
             );
-            // DOS-7 L2 cycle-1 fix #5: shadow-write the unlink-as-dismiss
+            // Shadow-write the unlink-as-dismiss
             // so commit_claim PRE-GATE blocks re-linking on the next pass.
             crate::services::claims::shadow_write_tombstone_claim(
                 db,
@@ -2105,19 +2103,19 @@ pub async fn unlink_meeting_entity_with_prep_queue(
     Ok(())
 }
 
-/// Persist classification-time entity links (I653).
+/// Persist classification-time entity links.
 ///
 /// Called at meeting creation time (calendar poll, prepare_today, prepare_week).
 /// At this point, prep does not exist yet, so no invalidation is needed.
 /// Additive: INSERT OR IGNORE preserves existing manual user links.
 /// No signal emission — classification is detection, not user mutation.
 ///
-/// DOS-224: Backward-compatible shim. Callers that only have `(id, type)`
+/// Backward-compatible shim. Callers that only have `(id, type)`
 /// pairs land at confidence 0.95 / is_primary=1 (the same defaults the
 /// legacy `link_meeting_entity` used). For scored input use the
 /// `_scored` variant below — that's what the calendar-sync path does now.
 ///
-/// DOS-240: Filters out any (entity_id, entity_type) the user previously
+/// Filters out any (entity_id, entity_type) the user previously
 /// dismissed so dismissals survive calendar-sync sweeps.
 pub fn persist_classification_entities(
     ctx: &ServiceContext<'_>,
@@ -2141,7 +2139,7 @@ pub fn persist_classification_entities(
     persist_classification_entities_scored(ctx, db, meeting_id, &scored)
 }
 
-/// DOS-224: Scored variant of `persist_classification_entities`. Writes each
+/// Scored variant of `persist_classification_entities`. Writes each
 /// junction row with its real confidence and a principled `is_primary`
 /// decision derived from the resolver output instead of pretending every
 /// classification-time link is a high-confidence primary.
@@ -2149,7 +2147,7 @@ pub fn persist_classification_entities(
 /// Rules:
 ///   - At most one `is_primary = 1` row per `entity_type` per meeting — the
 ///     single highest-confidence resolution wins.
-///   - A resolution is eligible for primary only if it passes the DOS-206
+///   - A resolution is eligible for primary only if it passes the
 ///     strength check: confidence >= 0.70 OR source != "title". Weaker
 ///     title-only matches (confidence 0.50 / source="title") still land,
 ///     but as non-primary suggestions — never as `is_primary = 1`.
@@ -2157,7 +2155,7 @@ pub fn persist_classification_entities(
 ///     so a later lower-confidence sweep can never downgrade a previously
 ///     linked primary.
 ///
-/// DOS-240: Dismissed entities (user-unlinked, recorded in
+/// Dismissed entities (user-unlinked, recorded in
 /// `meeting_entity_dismissals`) are skipped before any write. This closes
 /// the "dismissed entity comes back every sync" loop at the calendar-sync
 /// edge, mirroring the guard in
@@ -2173,7 +2171,7 @@ pub fn persist_classification_entities_scored(
         return Ok(0);
     }
 
-    // DOS-240: filter dismissals up front.
+    // filter dismissals up front.
     let dismissed = db
         .list_dismissed_meeting_entities(meeting_id)
         .unwrap_or_default();
@@ -2190,7 +2188,7 @@ pub fn persist_classification_entities_scored(
         );
     }
 
-    // DOS-224: pick at most one primary per entity_type (single-primary rule,
+    // pick at most one primary per entity_type (single-primary rule,
     // mirrors `select_auto_link_candidates` in the resolver path). A resolution
     // is "primary-eligible" only when it's stronger than a bare title-slug
     // match (confidence >= 0.70 OR source != "title").
@@ -2258,7 +2256,7 @@ pub fn persist_classification_entities_scored(
     Ok(linked)
 }
 
-/// Persist entity links from background auto-resolution, invalidating stale prep (I653).
+/// Persist entity links from background auto-resolution, invalidating stale prep.
 ///
 /// Called by the background entity resolution trigger (event_trigger.rs) which runs
 /// minutes to hours after meeting creation. Prep may already exist and be stale.
@@ -2340,7 +2338,7 @@ pub async fn persist_and_invalidate_entity_links(
     Ok(linked)
 }
 
-/// DOS-74: Entity link candidate with per-junction confidence and primary flag.
+/// Entity link candidate with per-junction confidence and primary flag.
 #[derive(Debug, Clone)]
 pub struct EntityLinkCandidate {
     pub entity_id: String,
@@ -2353,7 +2351,7 @@ pub struct EntityLinkCandidate {
 /// already hold a DB handle (e.g., event_trigger background task).
 /// AC4 requires all entity linking to go through service functions.
 ///
-/// DOS-74: Backward-compatible wrapper around
+/// Backward-compatible wrapper around
 /// `persist_and_invalidate_entity_links_sync_scored` that treats all
 /// inputs as high-confidence primaries (confidence 0.95, is_primary true).
 /// New callers with scored outcomes should use the scored variant directly.
@@ -2385,7 +2383,7 @@ pub fn persist_and_invalidate_entity_links_sync(
     )
 }
 
-/// DOS-74: Scored variant of persist_and_invalidate_entity_links_sync.
+/// Scored variant of persist_and_invalidate_entity_links_sync.
 /// Writes each junction row with its per-link confidence + is_primary flag
 /// so the frontend can render one primary entity and N muted suggestions.
 pub fn persist_and_invalidate_entity_links_sync_scored(
@@ -2401,7 +2399,7 @@ pub fn persist_and_invalidate_entity_links_sync_scored(
         return Ok(0);
     }
 
-    // DOS-240: user-dismissed entities must NOT be re-linked by the
+    // user-dismissed entities must NOT be re-linked by the
     // background resolver. Mirror of the guard in
     // `persist_classification_entities_scored`.
     let dismissed = db
@@ -2940,7 +2938,7 @@ fn navigate_segment<'a>(
     }
 }
 
-// ── I453: Meeting handlers extracted from commands.rs ──────────
+// ── Meeting handlers extracted from commands.rs ──────────
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -3250,7 +3248,7 @@ pub async fn refresh_meeting_briefing_full(
     }
 
     // Failed entity refreshes are queued for retry.
-    // DOS-311: Manual-priority retry path — surface EnqueueError::Paused
+    // Manual-priority retry path — surface EnqueueError::Paused
     // to the user (queue is draining for a schema-epoch migration). The
     // loop aborts on first Paused so the frontend shows a single retry
     // prompt rather than N error toasts.
@@ -3754,7 +3752,7 @@ pub async fn attach_meeting_transcript(
                     .and_then(|e| e.decision_maker_active.as_deref())
                     .map(|v| v == "no")
                     .unwrap_or(false);
-                // I555: Capture champion health, role changes, and risks for signal emissions
+                // Capture champion health, role changes, and risks for signal emissions
                 let key_advocate_health = result.key_advocate_health.clone();
                 let role_changes_data: Vec<(String, Option<String>, Option<String>)> = result
                     .role_changes
@@ -3798,7 +3796,7 @@ pub async fn attach_meeting_transcript(
                                 0.75,
                             );
 
-                            // I509: Emit sentiment-derived signals
+                            // Emit sentiment-derived signals
                             if let Some(ref sj) = sentiment_json {
                                 let _ = crate::services::signals::emit(
                                     &ctx, db, "account", aid,
@@ -3828,7 +3826,7 @@ pub async fn attach_meeting_transcript(
                                 );
                             }
 
-                            // I555: Champion health → person-level signal
+                            // Champion health → person-level signal
                             if let Some(ref ch) = key_advocate_health {
                                 if let Ok(Some(champion_pid)) = db.get_champion_person_id(aid) {
                                     match ch.champion_status.as_str() {
@@ -3861,7 +3859,7 @@ pub async fn attach_meeting_transcript(
                                 }
                             }
 
-                            // I555: Meeting frequency signal → triggers rule_meeting_frequency_drop
+                            // Meeting frequency signal → triggers rule_meeting_frequency_drop
                             let current_count = db.count_account_meetings_in_days(aid, 30).unwrap_or(0);
                             let previous_count = db.count_account_meetings_in_period(aid, 30, 30).unwrap_or(0);
                             let freq_value = serde_json::json!({
@@ -3876,7 +3874,7 @@ pub async fn attach_meeting_transcript(
                                 Some(&freq_value), 0.9,
                             );
 
-                            // I555: Risk signals with urgency-graduated confidence
+                            // Risk signals with urgency-graduated confidence
                             for risk in &risk_strings {
                                 let (urgency, confidence) = if risk.starts_with("[RED]") {
                                     ("red", 0.9)
@@ -3899,7 +3897,7 @@ pub async fn attach_meeting_transcript(
                                 );
                             }
 
-                            // I555: Role changes → stakeholder_change signal
+                            // Role changes → stakeholder_change signal
                             for (person_name, old_status, new_status) in &role_changes_data {
                                 let rc_value = serde_json::json!({
                                     "person": person_name,
@@ -3915,7 +3913,7 @@ pub async fn attach_meeting_transcript(
                             }
                         }
 
-                        // I509: Store sentiment as DB capture
+                        // Store sentiment as DB capture
                         if let Some(ref sj) = sentiment_json {
                             let _ = db.insert_capture(
                                 &mid,
@@ -3984,7 +3982,7 @@ mod tests {
         ServiceContext::test_live(clock, rng, ext)
     }
 
-    /// DOS-240 (chip-X → dismissal contract): after the UI dismisses an
+    /// Chip dismissal contract: after the UI dismisses an
     /// auto-linked entity (via `dismiss_meeting_entity` writing a row to
     /// `meeting_entity_dismissals`), the next classification persist pass
     /// MUST NOT re-link the same (meeting_id, entity_id, entity_type). This

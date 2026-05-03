@@ -1,4 +1,4 @@
-//! I535 / ADR-0100: Glean-first intelligence provider.
+//!  / ADR-0100: Glean-first intelligence provider.
 //!
 //! When Glean is connected, this provider uses the MCP `chat` tool as the
 //! primary intelligence computation engine. It produces the same `IntelligenceJson`
@@ -31,7 +31,7 @@ use crate::pty::ModelTier;
 
 use serde::{Deserialize, Serialize};
 
-/// I535: Glean-first intelligence provider.
+/// Glean-first intelligence provider.
 ///
 /// Wraps the GleanMcpClient `chat` tool for structured intelligence queries.
 /// Each call produces `IntelligenceJson`-compatible output parseable by
@@ -54,18 +54,18 @@ fn discovery_cache() -> &'static Mutex<HashMap<String, DiscoveryCacheEntry>> {
     DISCOVERY_CACHE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
-/// DOS-259 (W2-B): documented temperature placeholder for Glean MCP chat.
+///  documented temperature placeholder for Glean MCP chat.
 ///
 /// Glean's MCP `chat` tool does not expose a temperature flag; the
 /// underlying retrieval-augmented generation runs deterministically (the
 /// agentic search is what introduces variation, not sampling temperature).
 /// `0.0` is the documented placeholder for ADR-0106 §3 fingerprint
-/// metadata completeness; DOS-213 (W3) revisits when canonical
+/// metadata completeness;  (W3) revisits when canonical
 /// fingerprint hashing lands and may model Glean's effective entropy
 /// differently.
 const GLEAN_CHAT_DEFAULT_TEMPERATURE: f32 = 0.0;
 
-/// I535: Canonical `DiscoveredAccount` type (referenced by I494, I561).
+/// Canonical `DiscoveredAccount` type (referenced by ).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DiscoveredAccount {
@@ -99,7 +99,7 @@ impl GleanIntelligenceProvider {
     /// Returns `IntelligenceJson` on success, or an error string for fallback.
     /// The caller (`intel_queue.rs`) falls back to PTY on any error.
     ///
-    /// I575: When `app_handle` is provided, emits progressive enrichment events.
+    /// When `app_handle` is provided, emits progressive enrichment events.
     ///
     /// `is_background` suppresses user-visible degraded/fallback toasts for
     /// ProactiveHygiene / ContentChange / CalendarChange enrichments. These
@@ -153,13 +153,13 @@ impl GleanIntelligenceProvider {
         }
     }
 
-    /// I574: Parallel per-dimension Glean enrichment.
+    /// Parallel per-dimension Glean enrichment.
     ///
     /// Spawns 6 concurrent Glean `chat` calls (one per dimension group),
     /// each with a 30s timeout. Merges successful dimensions into a single
     /// `IntelligenceJson`. Falls back to legacy if 0 dimensions succeed.
     ///
-    /// I575: Uses `FuturesUnordered` to process dimensions as they complete,
+    /// Uses `FuturesUnordered` to process dimensions as they complete,
     /// writing progressive updates to DB and emitting events when `app_handle`
     /// is provided.
     #[allow(clippy::too_many_arguments)]
@@ -211,7 +211,7 @@ impl GleanIntelligenceProvider {
         let entity_type_owned = entity_type.to_string();
         let entity_name_owned = entity_name.to_string();
 
-        // I575: Use tokio::sync::mpsc channel to receive dimension results as they
+        // Use tokio::sync::mpsc channel to receive dimension results as they
         // complete, enabling progressive DB writes and event emission.
         let (tx, mut rx) =
             tokio::sync::mpsc::channel::<(String, Result<IntelligenceJson, String>)>(6);
@@ -345,7 +345,7 @@ impl GleanIntelligenceProvider {
                     } else {
                         succeeded += 1;
 
-                        // I651: After commercial_financial merge, extract and upsert products
+                        // After commercial_financial merge, extract and upsert products
                         if dim_name == "commercial_financial" && entity_type == "account" {
                             if let Ok(Some(products)) = extract_products_from_response(&partial) {
                                 // Best-effort upsert — log but don't fail enrichment if products fail
@@ -374,7 +374,7 @@ impl GleanIntelligenceProvider {
                             }
                         }
 
-                        // I575: Progressive DB write + event emission
+                        // Progressive DB write + event emission
                         if let Some(handle) = app_handle {
                             write_progressive_glean_dimension(entity_id, entity_type, &combined);
                             let _ = handle.emit(
@@ -405,7 +405,7 @@ impl GleanIntelligenceProvider {
             failed_dims,
         );
 
-        // I575: Emit completion event
+        // Emit completion event
         if let Some(handle) = app_handle {
             let _ = handle.emit(
                 "enrichment-complete",
@@ -503,14 +503,14 @@ impl GleanIntelligenceProvider {
             });
         }
 
-        // I576: Source-aware reconciliation with existing DB intelligence
+        // Source-aware reconciliation with existing DB intelligence
         let intel = {
             let existing = crate::db::ActionDb::open()
                 .ok()
                 .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
             match existing {
                 Some(mut existing) => {
-                    // I644: Protect stakeholder_insights when user has designated
+                    // Protect stakeholder_insights when user has designated
                     // team members via the Team panel (account_stakeholders with
                     // data_source='user'). Inject synthetic user_edits so
                     // reconcile_enrichment skips the stakeholder array.
@@ -551,7 +551,7 @@ impl GleanIntelligenceProvider {
             }
         };
 
-        // I624: Stamp source="glean" on product adoption so dual_write_enrichment_products
+        // Stamp source="glean" on product adoption so dual_write_enrichment_products
         // writes products with correct Glean attribution.
         let mut intel = intel;
         stamp_glean_product_source(&mut intel);
@@ -588,7 +588,7 @@ impl GleanIntelligenceProvider {
     ) -> Result<IntelligenceJson, String> {
         let is_incremental = ctx.prior_intelligence.is_some();
 
-        // Build the structured prompt requesting I508+I554 JSON
+        // Build the structured prompt requesting JSON
         let prompt = super::glean_prompts::build_glean_enrichment_prompt(
             entity_name,
             entity_type,
@@ -651,7 +651,7 @@ impl GleanIntelligenceProvider {
             manifest,
         )?;
 
-        // I576: Source-aware reconciliation with existing intelligence.
+        // Source-aware reconciliation with existing intelligence.
         // Preserves user corrections, transcript items, and dismissed tombstones.
         let intel = {
             let existing = crate::db::ActionDb::open()
@@ -667,7 +667,7 @@ impl GleanIntelligenceProvider {
             }
         };
 
-        // I624: Stamp source="glean" on product adoption so dual_write_enrichment_products
+        // Stamp source="glean" on product adoption so dual_write_enrichment_products
         // writes products with correct Glean attribution.
         let mut intel = intel;
         stamp_glean_product_source(&mut intel);
@@ -753,7 +753,7 @@ impl GleanIntelligenceProvider {
         &self.endpoint
     }
 
-    /// DOS-15: Supplemental leading-signals enrichment for the Health & Outlook tab.
+    /// Supplemental leading-signals enrichment for the Health & Outlook tab.
     ///
     /// Runs a second Glean `chat` call with the leading-signals prompt, parses the
     /// 7-bucket JSON response, and returns a normalized `HealthOutlookSignals`.
@@ -768,7 +768,7 @@ impl GleanIntelligenceProvider {
             .await
     }
 
-    /// DOS-287: Leading-signals enrichment with optional structured
+    /// Leading-signals enrichment with optional structured
     /// disambiguators. Callers that have an `IntelligenceContext` handy
     /// should prefer this variant so Glean retrieval is biased correctly.
     pub async fn enrich_leading_signals_with_disambiguators(
@@ -802,7 +802,7 @@ impl GleanIntelligenceProvider {
         super::glean_leading_signals::parse_leading_signals(&response_text)
     }
 
-    /// DOS-204: Peer-cohort renewal benchmark via a dedicated Glean chat pass.
+    /// Peer-cohort renewal benchmark via a dedicated Glean chat pass.
     ///
     /// Builds the validated peer-benchmark prompt from `account_name`,
     /// `industry_descriptor`, and `size_descriptor`, calls Glean with citation
@@ -866,7 +866,7 @@ Cite sources."
     }
 }
 
-/// DOS-259 (W2-B): `IntelligenceProvider` trait impl over `GleanIntelligenceProvider`.
+///  `IntelligenceProvider` trait impl over `GleanIntelligenceProvider`.
 ///
 /// `complete()` invokes the Glean MCP `chat` tool and returns the raw response
 /// text. The existing domain-specific helpers (`enrich_entity*`,
@@ -927,7 +927,7 @@ impl IntelligenceProvider for GleanIntelligenceProvider {
     }
 }
 
-/// DOS-204: Parse a Glean peer-benchmark response into `(band, narrative)`.
+/// Parse a Glean peer-benchmark response into `(band, narrative)`.
 ///
 /// Recognises the four explicit band prefixes (above / in line / in-line /
 /// below) plus the explicit "no comparable" opt-out. Anything that doesn't
@@ -1000,7 +1000,7 @@ fn extract_domains_for_glean_enrichment(_intel: &mut IntelligenceJson) {
     // This hook is in place for easy future enhancement.
 }
 
-/// I575: Write progressive dimension state to DB during Glean parallel enrichment.
+/// Write progressive dimension state to DB during Glean parallel enrichment.
 ///
 /// Similar to `write_progressive_dimension` in `intel_queue.rs` but for the Glean path.
 /// Non-fatal on error — the final merge+write after all dimensions is authoritative.
@@ -1059,7 +1059,7 @@ fn write_progressive_glean_dimension(
     }
 }
 
-/// I535: Emit tiered signals from Glean enrichment output.
+/// Emit tiered signals from Glean enrichment output.
 ///
 /// After Glean enrichment writes to entity_assessment, emit source-specific
 /// signals at ADR-0100 confidence tiers so they flow through the Intelligence Loop
@@ -1118,7 +1118,7 @@ pub fn emit_glean_signals(
         }
     }
 
-    // I649: Write technical footprint from org_health + support_health
+    // Write technical footprint from org_health + support_health
     if entity_type == "account" {
         let support_tier = intel
             .org_health
@@ -1346,7 +1346,7 @@ pub fn emit_glean_signals(
         }
     }
 
-    // I644: Promote high-confidence facts from Glean enrichment into accounts table
+    // Promote high-confidence facts from Glean enrichment into accounts table
     // columns with source tracking and provenance references.
     if entity_type == "account" {
         promote_glean_facts_to_accounts(db, entity_id, intel);
@@ -1371,7 +1371,7 @@ pub fn emit_glean_signals(
     }
 }
 
-/// I644: Promote high-confidence facts from Glean enrichment into accounts table columns.
+/// Promote high-confidence facts from Glean enrichment into accounts table columns.
 ///
 /// Extracts structured data from `IntelligenceJson` (contract context, renewal outlook,
 /// org health, support health, product classification) and upserts each fact into the
@@ -1533,7 +1533,7 @@ fn promote_glean_facts_to_accounts(
     }
 }
 
-/// I576: Source-aware reconciliation of enrichment output with existing intelligence.
+/// Source-aware reconciliation of enrichment output with existing intelligence.
 ///
 /// Rules:
 /// 1. User corrections (source "user_correction") — ALWAYS preserved
@@ -1593,7 +1593,7 @@ pub fn reconcile_enrichment(
         );
     }
 
-    // I652: stakeholder_insights is now write-only context in intelligence.json.
+    // stakeholder_insights is now write-only context in intelligence.json.
     // Real stakeholder protection is structural (data_source columns on account_stakeholders).
     // Always take the fresh AI output — intel_queue::write_enrichment_results routes
     // insights to DB columns or stakeholder_suggestions table.
@@ -1767,7 +1767,7 @@ pub fn reconcile_enrichment(
     result
 }
 
-/// I624: Ensure product adoption from Glean enrichment carries source="glean".
+/// Ensure product adoption from Glean enrichment carries source="glean".
 ///
 /// The Glean response may or may not include a source field in productAdoption.
 /// This stamps it explicitly so `dual_write_enrichment_products` writes products
@@ -1808,7 +1808,7 @@ fn reconcile_internal_team(
     merged
 }
 
-/// I576: Reconcile a Vec of source-attributed items.
+/// Reconcile a Vec of source-attributed items.
 ///
 /// 1. Keep all existing items whose source is NOT in `refreshed_sources`
 /// 2. Always keep items with source == "user_correction"
@@ -1842,7 +1842,7 @@ fn reconcile_vec_items<T: super::io::HasSource + Clone>(
     }
 
     // 2. Add new items, filtering against dismissed tombstones and existing duplicates
-    // I645: Only enforce dismissals from the last 90 days
+    // Only enforce dismissals from the last 90 days
     // dos259-grandfathered: 90-day dismissal cutoff; migrates to ctx.clock.now() when W2-A lands ServiceContext.
     let cutoff_90d = (chrono::Utc::now() - chrono::Duration::days(90)).to_rfc3339();
     for item in new_items {
@@ -1899,10 +1899,10 @@ pub fn extract_json_object(text: &str) -> Option<&str> {
 }
 
 // =============================================================================
-// I651: Product Classification Extraction & Upsert
+// Product Classification Extraction & Upsert
 // =============================================================================
 
-/// I651: Extract product classification from a Financial dimension response.
+/// Extract product classification from a Financial dimension response.
 ///
 /// Parses the `productClassification.products` array from the Glean response
 /// and returns structured product data ready for database upsert.
@@ -1946,7 +1946,7 @@ mod provider_trait_tests {
     }
 
     /// `glean_provider_fixture_returns_expected_fingerprint_metadata`
-    /// (per DOS-259 plan §9): fingerprint metadata fields populated at
+    /// (per plan §9): fingerprint metadata fields populated at
     /// `complete()` time are deterministic for a given (provider, tier).
     /// We assert the metadata shape via `current_model()` + `provider_kind()`
     /// rather than invoking Glean MCP (which requires a live endpoint);
@@ -1960,7 +1960,7 @@ mod provider_trait_tests {
     }
 }
 
-/// I651: Upsert extracted products to the database.
+/// Upsert extracted products to the database.
 ///
 /// For each (account_id, product_type, data_source) tuple, inserts or updates
 /// the row with tier, arr, billing_terms, and last_verified_at.

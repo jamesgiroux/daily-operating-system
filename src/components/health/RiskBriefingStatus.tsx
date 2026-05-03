@@ -1,5 +1,5 @@
 /**
- * RiskBriefingStatus — DOS-228 Wave 0e Fix 4.
+ * RiskBriefingStatus — Wave 0e Fix 4.
  *
  * Renders the current risk-briefing job status at the top of the Health
  * tab. When `status === "running"` this component is pinned (callers
@@ -9,7 +9,7 @@
  * briefing content itself lives in the reports table and is surfaced
  * elsewhere.
  *
- * Styling lives in `RiskBriefingStatus.module.css` (DOS-249 polish): the
+ * Styling lives in `RiskBriefingStatus.module.css`: the
  * prior inline-style block bypassed design tokens. All colours, spacing,
  * and typography now route through the shared token system.
  */
@@ -25,7 +25,7 @@ interface RiskBriefingStatusProps {
 export function RiskBriefingStatus({ job, accountId, onRetry: _onRetry }: RiskBriefingStatusProps) {
   if (!job) return null;
 
-  // DOS-113: generation failures stay silent on the Health tab. The user can
+  // generation failures stay silent on the Health tab. The user can
   // still open/regenerate from the report surface without a pinned red strip.
   if (job.status === "failed") return null;
 

@@ -841,7 +841,7 @@ pub fn apply_lifecycle_transition(
                     "lifecycle_transition",
                 )?;
             } else {
-                // I628 AC3: Note potential milestone matches in timeline (sub-0.8 confidence)
+                // Acceptance criterion: Note potential milestone matches in timeline (sub-0.8 confidence)
                 let matching = tx
                     .find_milestones_for_trigger(account_id, trigger)
                     .unwrap_or_default();
@@ -1000,7 +1000,7 @@ pub fn confirm_lifecycle_change(
     Ok(())
 }
 
-// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+// ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
 #[allow(clippy::too_many_arguments)]
 pub fn correct_account_product(
     ctx: &ServiceContext<'_>,
@@ -1062,7 +1062,7 @@ pub fn correct_lifecycle_change(
     Ok(())
 }
 
-// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+// ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
 #[allow(clippy::too_many_arguments)]
 pub fn accept_account_field_conflict(
     ctx: &ServiceContext<'_>,
@@ -1087,7 +1087,7 @@ pub fn accept_account_field_conflict(
     // inside the transaction below — it manages its own atomicity.
     update_account_field_inner(ctx, db, state, account_id, field, &next_value)?;
 
-    // DOS-309: pull the conflict-resolution writes into one transaction so
+    // pull the conflict-resolution writes into one transaction so
     // a failure on any single write rolls back the whole conflict-resolution
     // sequence. Side-effect emission (emit_propagate_and_evaluate, which
     // enqueues cross-entity intel work via engine.propagate) runs AFTER
@@ -1163,12 +1163,12 @@ pub fn accept_account_field_conflict(
         );
     }
 
-    // DOS-229 Wave 0e Fix 5: return post-write detail so the frontend can
+    // return post-write detail so the frontend can
     // setDetail(result) without a second fetch.
     build_account_detail_result(db, account_id)
 }
 
-// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+// ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
 #[allow(clippy::too_many_arguments)]
 pub fn dismiss_account_field_conflict(
     ctx: &ServiceContext<'_>,
@@ -1181,7 +1181,7 @@ pub fn dismiss_account_field_conflict(
     suggested_value: Option<&str>,
 ) -> Result<AccountDetailResult, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    // DOS-309: pull conflict-resolution writes into one transaction; emit
+    // pull conflict-resolution writes into one transaction; emit
     // signal-bus side effects after commit. See accept_account_field_conflict
     // for the architectural rationale.
     let dismissed_signal_id = format!("account-field-conflict-dismissed-{}", uuid::Uuid::new_v4());
@@ -1216,7 +1216,7 @@ pub fn dismiss_account_field_conflict(
         )
         .map_err(|e| format!("create_suppression_tombstone: {e}"))?;
 
-        // DOS-7 D4-1a: shadow-write tombstone claim. Subject is the account;
+        // Shadow-write tombstone claim. Subject is the account;
         // field carries the field key; item_text is the signal_id (opaque
         // structural identifier — kept consistent with backfill m1 metadata).
         let observed_at = ctx.clock.now().to_rfc3339();
@@ -1281,7 +1281,7 @@ pub fn dismiss_account_field_conflict(
 
 /// Get full detail for an account by ID.
 ///
-/// I644: All data from DB — no filesystem reads on the detail page path.
+/// All data from DB — no filesystem reads on the detail page path.
 /// Fetches actions, meetings, people, team, signals, captures, and email signals.
 pub async fn get_account_detail(
     ctx: &ServiceContext<'_>,
@@ -1307,7 +1307,7 @@ pub async fn get_account_detail(
         .await
 }
 
-/// DOS-229: Synchronous assembly of `AccountDetailResult` against a given DB
+/// Synchronous assembly of `AccountDetailResult` against a given DB
 /// connection. Extracted so write commands can read back post-write state
 /// from the SAME writer connection (avoiding SQLite WAL reader-snapshot lag
 /// that makes a follow-up `db_read` return stale rows until app reload).
@@ -1324,7 +1324,7 @@ pub fn build_account_detail_result(
                 .map_err(|e| e.to_string())?
                 .ok_or_else(|| format!("Account not found: {}", account_id))?;
 
-            // I644: Read narrative fields from DB columns (promoted from dashboard.json).
+            // Read narrative fields from DB columns (promoted from dashboard.json).
             let overview: Option<crate::accounts::CompanyOverview> = account
                 .company_overview
                 .as_ref()
@@ -1335,10 +1335,10 @@ pub fn build_account_detail_result(
                 .and_then(|json| serde_json::from_str(json).ok())
                 .unwrap_or_default();
             let notes = account.notes.clone();
-            // I644: Intelligence from DB only — no filesystem fallback.
+            // Intelligence from DB only — no filesystem fallback.
             let mut intelligence = db.get_entity_intelligence(&account_id).ok().flatten();
 
-            // I645: Filter stale items from active display using relevance windows.
+            // Filter stale items from active display using relevance windows.
             if let Some(ref mut intel) = intelligence {
                 intel.risks.retain(|risk| {
                     let sourced = risk.item_source.as_ref().map(|s| s.sourced_at.as_str());
@@ -1378,7 +1378,7 @@ pub fn build_account_detail_result(
                 })
                 .collect();
 
-            // DOS-233 Codex fix: totals are COUNT(*) without a LIMIT so
+            // totals are COUNT(*) without a LIMIT so
             // active accounts don't stall at 10 meetings / transcripts in
             // the About-this-dossier chapter.
             let meeting_total_count = db
@@ -1419,13 +1419,13 @@ pub fn build_account_detail_result(
             let recent_captures = db
                 .get_captures_for_account(&account_id, 90)
                 .unwrap_or_default();
-            // DOS-156: Use direct-only query for The Record display (precision over recall).
+            // Use direct-only query for The Record display (precision over recall).
             // Propagated person→account signals caused 14.6x fan-out noise.
             let recent_email_signals = db
                 .list_direct_email_signals_for_entity(&account_id, 12)
                 .unwrap_or_default();
 
-            // I114: Resolve parent name for child accounts, children for parent accounts
+            // Resolve parent name for child accounts, children for parent accounts
             let parent_name = account
                 .parent_id
                 .as_ref()
@@ -1470,12 +1470,12 @@ pub fn build_account_detail_result(
                 })
                 .collect();
 
-            // I628 AC5: auto-completed milestones for timeline display (last 90 days)
+            // Acceptance criterion: auto-completed milestones for timeline display (last 90 days)
             let auto_completed_milestones = db
                 .get_auto_completed_milestones(&account.id, 90)
                 .unwrap_or_default();
 
-            // I649: Technical footprint
+            // Technical footprint
             let technical_footprint = db
                 .get_account_technical_footprint(&account.id)
                 .unwrap_or(None);
@@ -1485,14 +1485,14 @@ pub fn build_account_detail_result(
                 .get_account_stakeholders_full(&account.id)
                 .unwrap_or_default();
 
-            // I644: Source references for promoted account facts
+            // Source references for promoted account facts
             let source_refs = db.get_account_source_refs(&account.id).unwrap_or_default();
 
-            // DOS-228 Fix 3: current risk-briefing job status for UI progress
+            // Regression guard: current risk-briefing job status for UI progress
             // and retry affordance.
             let risk_briefing_job = db.get_risk_briefing_job(&account.id).ok().flatten();
 
-            // DOS-27: Sentiment journal + sparkline (last 90 days).
+            // Sentiment journal + sparkline (last 90 days).
             let sentiment_history = db
                 .get_sentiment_history(&account.id, 90)
                 .unwrap_or_default();
@@ -1505,7 +1505,7 @@ pub fn build_account_detail_result(
                 .get_health_score_sparkline(&account.id, 90)
                 .unwrap_or_default();
 
-            // DOS-15: Glean leading-signal enrichment bundle — nullable.
+            // Glean leading-signal enrichment bundle — nullable.
             let glean_signals: Option<
                 crate::intelligence::glean_leading_signals::HealthOutlookSignals,
             > = db
@@ -1582,7 +1582,7 @@ pub fn update_account_field(
 ) -> Result<AccountDetailResult, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     update_account_field_inner(ctx, db, state, account_id, field, value)?;
-    // DOS-229 generalization (Wave 0e Fix 5): return the fresh detail
+    //  generalization (Wave 0e Fix 5): return the fresh detail
     // assembled on the SAME writer connection so the frontend hook can
     // setDetail(result) without a follow-up silentRefresh (which hits a
     // different pool reader whose WAL snapshot may lag).
@@ -1639,7 +1639,7 @@ fn update_account_field_inner(
             .map_err(|e| e.to_string())?;
     }
 
-    // Emit field update signal + self-healing evaluation (I308, I410)
+    // Emit field update signal + self-healing evaluation
     crate::services::signals::emit_propagate_and_evaluate(
             ctx,
         db,
@@ -1658,20 +1658,20 @@ fn update_account_field_inner(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
-    // Self-healing: record user correction for Clay-enrichable fields (I409)
+    // Self-healing: record user correction for Clay-enrichable fields
     if matches!(field, "lifecycle" | "arr" | "health" | "nps") {
         crate::self_healing::feedback::record_enrichment_correction(
             db, account_id, "account", "clay",
         );
     }
 
-    // DOS-228 Fix 2: Health-relevant field edits schedule a DEBOUNCED recompute
+    // Regression guard: Health-relevant field edits schedule a DEBOUNCED recompute
     // on the backend. 10 rapid edits within the debounce window coalesce into
     // exactly one recompute, reflecting the last committed state. This replaces
     // the previous synchronous recompute, which fired once per edit and could
     // not be trusted (AI agents, chat, and automation bypass the UI debounce).
     //
-    // DOS-228 Wave 0f: persist the durable `health_recompute_pending` marker
+    // persist the durable `health_recompute_pending` marker
     // SYNCHRONOUSLY on the same writer connection that just committed the
     // field edit, BEFORE scheduling the in-memory debounce. The debouncer
     // only owns timing/coalescing — it must never own marker durability, or
@@ -1690,7 +1690,7 @@ fn update_account_field_inner(
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
 
-            // DOS-44: When the name changes, rename the workspace directory to match.
+            // When the name changes, rename the workspace directory to match.
             // The old directory path is resolved from the account's current tracker_path
             // or the old name; the new path uses the updated name.
             if field == "name" {
@@ -1745,12 +1745,12 @@ fn update_account_field_inner(
     Ok(())
 }
 
-/// DOS-27: Sentiment values that represent elevated risk.
+/// Sentiment values that represent elevated risk.
 /// Transitioning INTO one of these from a non-risk value triggers
 /// background risk-briefing generation.
 const RISK_SENTIMENTS: &[&str] = &["at_risk", "critical"];
 
-/// DOS-231 Codex fix: persist a single gap-row field on `account_technical_footprint`.
+/// persist a single gap-row field on `account_technical_footprint`.
 ///
 /// Intelligence Loop 5Q:
 ///   1. Emits a `field_updated` signal with source `user_edit` and
@@ -1798,11 +1798,11 @@ pub fn update_technical_footprint_field(
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
     // Return the updated detail on the SAME writer connection so the
-    // frontend sees the persisted value immediately (DOS-229 pattern).
+    // frontend sees the persisted value immediately (pattern).
     build_account_detail_result(db, account_id)
 }
 
-/// DOS-110 / DOS-27: Set the user's manual health sentiment on an account.
+//: Set the user's manual health sentiment on an account.
 /// Writes the current sentiment + timestamp, appends a journal entry (value +
 /// optional note + computed band snapshot), emits a `field_updated` signal,
 /// and — on transition into at_risk/critical — enqueues a background risk
@@ -1880,7 +1880,7 @@ pub fn set_user_health_sentiment(
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
 
-    // DOS-27: Transition INTO at_risk/critical enqueues background risk briefing.
+    // Transition INTO at_risk/critical enqueues background risk briefing.
     // Not every save — only the transition. Silent on failure.
     let transitioning_into_risk = RISK_SENTIMENTS.contains(&sentiment)
         && !previous
@@ -1888,7 +1888,7 @@ pub fn set_user_health_sentiment(
             .map(|p| RISK_SENTIMENTS.contains(&p))
             .unwrap_or(false);
 
-    // DOS-228 Wave 0e Fix 1: persist the `enqueued` row on THIS writer
+    // persist the `enqueued` row on THIS writer
     // connection BEFORE we build the result. Previously the row was written
     // by a spawned `db_write` task, which cannot execute while the current
     // writer closure is still running — so the first AccountDetailResult
@@ -1902,13 +1902,13 @@ pub fn set_user_health_sentiment(
         spawn_risk_briefing_lifecycle(ctx, state, account_id.to_string(), attempt_id);
     }
 
-    // DOS-229: Read back the updated detail on the SAME writer connection so
+    // Read back the updated detail on the SAME writer connection so
     // the frontend sees post-write state immediately. A follow-up `db_read`
     // hits a different pool connection whose WAL snapshot can lag.
     build_account_detail_result(db, account_id)
 }
 
-/// DOS-269: "Add more detail" — update the note on the newest sentiment
+/// "Add more detail" — update the note on the newest sentiment
 /// history row whose sentiment matches the account's current value. No new
 /// history entry is appended. Falls back to `insert_sentiment_journal_entry`
 /// when there is no matching row yet (first-ever note for this value).
@@ -1983,7 +1983,7 @@ pub fn update_latest_sentiment_note(
     build_account_detail_result(db, account_id)
 }
 
-/// DOS-269: Triage snooze / resolve persistence. Serializable row for the
+/// Triage snooze / resolve persistence. Serializable row for the
 /// `list_triage_snoozes` command.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -1993,7 +1993,7 @@ pub struct TriageSnoozeRow {
     pub resolved_at: Option<String>,
 }
 
-/// DOS-7 L2 cycle-1 fix #5: map a lowercase entity_type column value
+/// Map a lowercase entity_type column value
 /// (e.g. "account", "person") to the PascalCase `subject_kind` field
 /// the claims substrate uses (e.g. "Account", "Person"). Unknown
 /// values are passed through unchanged.
@@ -2005,7 +2005,7 @@ fn capitalize_entity_kind(kind: &str) -> String {
     }
 }
 
-/// DOS-269: Snooze a triage card for N days. `days` must be positive; the
+/// Snooze a triage card for N days. `days` must be positive; the
 /// frontend default is 14.
 pub fn snooze_triage_item(
     ctx: &ServiceContext<'_>,
@@ -2022,14 +2022,14 @@ pub fn snooze_triage_item(
     db.snooze_triage_item(entity_type, entity_id, triage_key, &until_str)
         .map_err(|e| e.to_string())?;
 
-    // DOS-7 L2 cycle-1 fix #5: shadow-write the snooze as an
-    // intelligence_claims tombstone (claim_type='triage_snooze',
+    // Shadow-write the snooze as an intelligence_claims tombstone
+    // (claim_type='triage_snooze',
     // retraction_reason='system_snooze' via shadow_write helper's
     // default user_removal mapping) so PRE-GATE shadows the snoozed
     // card across enrichment passes.
     //
-    // L2 cycle-25 fix #3: pass the snooze expiry into expires_at so
-    // the claim tombstone honors the same finite TTL as the legacy
+    // Pass the snooze expiry into expires_at so the claim tombstone
+    // honors the same finite TTL as the legacy
     // triage_snoozes.snoozed_until column. Without this, runtime
     // snoozes became permanent claim tombstones — indefinitely
     // suppressing the triage card even after the snooze expired.
@@ -2052,9 +2052,9 @@ pub fn snooze_triage_item(
     Ok(())
 }
 
-/// DOS-269: Mark a triage card resolved. Permanent for that card id.
+/// Mark a triage card resolved. Permanent for that card id.
 /// Emits a low-weight field_updated signal so the Intelligence Loop
-/// records that the user acted on this card (parity with DOS-41 confirm).
+/// records that the user acted on this card (parity with confirm).
 pub fn resolve_triage_item(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -2067,7 +2067,7 @@ pub fn resolve_triage_item(
     db.resolve_triage_item(entity_type, entity_id, triage_key)
         .map_err(|e| e.to_string())?;
 
-    // DOS-7 L2 cycle-1 fix #5: shadow-write the resolve as an
+    // Shadow-write the resolve as an
     // intelligence_claims tombstone so PRE-GATE shadows the resolved
     // card across subsequent enrichment passes.
     let now = ctx.clock.now().to_rfc3339();
@@ -2108,7 +2108,7 @@ pub fn resolve_triage_item(
     Ok(())
 }
 
-/// DOS-269: Return all snooze/resolve rows for an entity. Rendering-time
+/// Return all snooze/resolve rows for an entity. Rendering-time
 /// filter decides whether a snooze is still active.
 pub fn list_triage_snoozes(
     db: &ActionDb,
@@ -2128,7 +2128,7 @@ pub fn list_triage_snoozes(
         .collect())
 }
 
-/// DOS-228 Wave 0e Fix 2: Spawn the SINGLE ordered lifecycle task for a
+/// Spawn the SINGLE ordered lifecycle task for a
 /// risk briefing attempt.
 ///
 /// The caller is responsible for having written the `enqueued` row with
@@ -2228,7 +2228,7 @@ fn spawn_risk_briefing_lifecycle(
     });
 }
 
-/// DOS-228 Wave 0e Fix 2: Re-enqueue a risk briefing generation.
+/// Re-enqueue a risk briefing generation.
 ///
 /// Behavior is now guarded:
 /// 1. The account must exist (rejects dangling IDs that would otherwise
@@ -2288,7 +2288,7 @@ pub async fn retry_risk_briefing(
     Ok(())
 }
 
-/// DOS-27: Field edits to health-relevant columns trigger a synchronous
+/// Field edits to health-relevant columns trigger a synchronous
 /// health recompute so the UI reflects the new band immediately.
 /// Rapid-fire edits are naturally coalesced: the frontend debounces at 2s
 /// before calling the backend command, so we don't duplicate the debounce here.
@@ -2326,7 +2326,7 @@ pub fn update_account_notes(
     crate::accounts::write_account_markdown(workspace, &account, None, db)
         .map_err(|e| format!("failed to write account dashboard.md: {e}"))?;
 
-    // Emit field update signal (I377)
+    // Emit field update signal
     crate::services::signals::emit_and_propagate(
             ctx,
         db,
@@ -2380,7 +2380,7 @@ pub fn update_account_programs(
     crate::accounts::write_account_markdown(workspace, &account, None, db)
         .map_err(|e| format!("failed to write account dashboard.md: {e}"))?;
 
-    // Emit field update signal (I377)
+    // Emit field update signal
     crate::services::signals::emit_and_propagate(
             ctx,
         db,
@@ -2457,7 +2457,7 @@ pub fn create_account(
         let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
     }
 
-    // Self-healing: initialize quality row for new entity (I406)
+    // Self-healing: initialize quality row for new entity
     crate::self_healing::quality::ensure_quality_row(db, &id, "account");
 
     Ok(id)
@@ -2465,7 +2465,7 @@ pub fn create_account(
 
 /// Archive or unarchive an account with signal emission. Cascades to children when archiving.
 ///
-/// DOS-286: when archiving, drops any pending intel queue entries for this
+/// when archiving, drops any pending intel queue entries for this
 /// account and its cascaded children so already-queued enrichments don't run
 /// against a now-archived target.
 pub fn archive_account(
@@ -2482,7 +2482,7 @@ pub fn archive_account(
         "entity_unarchived"
     };
 
-    // DOS-286: collect child IDs before archiving so we can drop their queued
+    // collect child IDs before archiving so we can drop their queued
     // enrichments too (cascade archives children in the same transaction).
     let child_ids: Vec<String> = if archived {
         db.conn_ref()
@@ -2516,7 +2516,7 @@ pub fn archive_account(
         Ok(())
     })?;
 
-    // DOS-286: drop any in-flight enrichments for the archived account and its children.
+    // drop any in-flight enrichments for the archived account and its children.
     if archived {
         state.intel_queue.remove_by_entity_id(id);
         for child_id in &child_ids {
@@ -2616,7 +2616,7 @@ pub fn set_team_member_role(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let observed_at = ctx.clock.now().to_rfc3339();
     db.with_transaction(|tx| {
-        // DOS-7 L2 cycle-2 fix #4: capture the user-owned roles being
+        // Capture the user-owned roles being
         // dismissed BEFORE the swap. The original D4-1b shadow write
         // tombstoned `new_role` — the role the user just pinned —
         // instead of the roles being retired. That's exactly inverted:
@@ -2648,7 +2648,7 @@ pub fn set_team_member_role(
         tx.set_team_member_role(account_id, person_id, new_role)
             .map_err(|e| e.to_string())?;
 
-        // DOS-7 L2 cycle-2 fix #4: shadow-write tombstones for each
+        // Shadow-write tombstones for each
         // role that was actually retired. PRE-GATE then blocks the AI
         // from re-surfacing those specific roles on the next pass.
         for old_role in &dismissed_roles {
@@ -2720,7 +2720,7 @@ pub fn remove_account_team_member(
 }
 
 /// Record an account lifecycle event with signal emission.
-// DOS-209: ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
+// ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
 #[allow(clippy::too_many_arguments)]
 pub fn record_account_event(
     ctx: &ServiceContext<'_>,
@@ -2962,7 +2962,7 @@ pub fn get_accounts_for_picker(db: &ActionDb) -> Result<Vec<PickerAccount>, Stri
     Ok(items)
 }
 
-// ── I452: Account mutation handlers extracted from commands.rs ──────────
+// ── Account mutation handlers extracted from commands.rs ──────────
 
 /// Create the internal organization (root account + initial team + colleagues).
 ///
@@ -3255,7 +3255,7 @@ pub fn backfill_internal_meeting_associations(
 }
 
 // =============================================================================
-// I652 Phase 2: Person-first stakeholder mutations
+// Person-first stakeholder mutations
 // =============================================================================
 
 /// Update engagement level for a stakeholder with signal emission.
@@ -3305,7 +3305,7 @@ fn update_stakeholder_engagement_inner(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: stakeholder engagement feeds the `stakeholder_coverage`
+        // stakeholder engagement feeds the `stakeholder_coverage`
         // and `key_advocate_health` health dimensions. Persist the durable marker
         // co-committed with the mutation so a crash between here and the debounce
         // flush leaves a trail for startup drain. See `update_account_field_inner`.
@@ -3361,7 +3361,7 @@ fn update_stakeholder_assessment_inner(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: assessment edits change key_advocate_health inputs —
+        // assessment edits change key_advocate_health inputs —
         // co-commit the marker with the mutation, then debounce a recompute.
         tx.mark_health_recompute_pending(account_id)
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
@@ -3455,7 +3455,7 @@ fn add_stakeholder_role_inner(
             0.9,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: key_advocate_health reads account_stakeholder_roles
+        // key_advocate_health reads account_stakeholder_roles
         // directly. Adding a role (especially 'champion') is load-bearing for
         // the health dimension — co-commit the pending marker.
         tx.mark_health_recompute_pending(account_id)
@@ -3542,7 +3542,7 @@ fn remove_stakeholder_role_inner(
             0.8,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: removing a role (e.g. champion) downgrades
+        // removing a role (e.g. champion) downgrades
         // key_advocate_health and stakeholder_coverage — co-commit the marker.
         tx.mark_health_recompute_pending(account_id)
             .map_err(|e| format!("failed to persist health_recompute_pending marker: {e}"))?;
@@ -3678,7 +3678,7 @@ pub fn accept_stakeholder_suggestion(
             1.0,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
-        // DOS-228 Wave 0g: accepting a suggestion inserts stakeholder rows,
+        // accepting a suggestion inserts stakeholder rows,
         // optional roles, and optional engagement — all health-scoring inputs.
         // Co-commit the marker on the same writer before returning.
         tx.mark_health_recompute_pending(&suggestion.account_id)
@@ -3863,7 +3863,7 @@ mod tests {
         let engine = PropagationEngine::default();
         let account = make_account("acc-new", "New Corp");
 
-        // DOS-209: ServiceContext required for mutations service.
+        // ServiceContext required for mutations service.
         let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 4, 30, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
@@ -4110,7 +4110,7 @@ mod tests {
             "AI-owned 'technical' role should survive a user role swap"
         );
 
-        // DOS-7 D4-1b: the old user-pinned 'champion' row is now SOFT-deleted
+        // The old user-pinned 'champion' row is now SOFT-deleted
         // (dismissed_at populated) instead of hard-deleted. Reads filter
         // `WHERE dismissed_at IS NULL` so it stays invisible to enrichment + UI;
         // the row preservation is what lets the claim layer reason about
@@ -4713,7 +4713,7 @@ mod tests {
         assert!(beta > 1.0, "Beta should increase on correct (was {})", beta);
     }
 
-    /// DOS-229: `build_account_detail_result` — called on the writer
+    /// `build_account_detail_result` — called on the writer
     /// connection after a mutation — must reflect the just-written state.
     /// Regression guard for the SQLite WAL reader-snapshot lag that caused
     /// save→refresh UI staleness on account detail pages.
@@ -4738,14 +4738,14 @@ mod tests {
             .expect("write sentiment_set_at");
 
         // Re-assembling the detail on the SAME connection must reflect the
-        // write — this is the invariant DOS-229 depends on.
+        // write — this is the invariant  depends on.
         let after = super::build_account_detail_result(&db, "acc-dos229")
             .expect("post-write build");
         assert_eq!(after.user_health_sentiment.as_deref(), Some("at_risk"));
         assert_eq!(after.sentiment_set_at.as_deref(), Some(ts.as_str()));
     }
 
-    /// DOS-228 Wave 0e Fix 1: the `risk_briefing_job` row must be visible
+    /// the `risk_briefing_job` row must be visible
     /// on the FIRST result returned from the sentiment save. Previously the
     /// row was written by a separately spawned task and the first response
     /// had `risk_briefing_job: None`. This test simulates the writer-side

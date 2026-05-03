@@ -1,4 +1,4 @@
-//! Post-meeting email correlation (I308 — ADR-0080 Phase 4).
+//! Post-meeting email correlation (ADR-0080 Phase 4).
 //!
 //! Correlates emails received 1-48h after meetings with meeting attendees
 //! to detect follow-up threads and extract action items.

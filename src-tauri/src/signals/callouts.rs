@@ -1,4 +1,4 @@
-//! Briefing callout generation (I308 — ADR-0080 Phase 4).
+//! Briefing callout generation (ADR-0080 Phase 4).
 //!
 //! Generates proactive intelligence callouts for the daily briefing by
 //! querying recent high-confidence signals and optionally ranking them
@@ -53,25 +53,25 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
     "cadence_anomaly",
     "email_cadence_drop",
     "risk_detected",
-    // DOS-54: Manual action creation
+    // Manual action creation
     "action_created_manually",
-    // DOS-51: Push-to-Linear
+    // Push-to-Linear
     "action_pushed_to_linear",
-    // I535/ADR-0100: Glean-sourced signal types
+    // /ADR-0100: Glean-sourced signal types
     "renewal_data_updated",
     "support_health_updated",
     "glean_org_change",
     "glean_champion_departed",
-    // DOS-207: Regulatory context + stakeholder verification
+    // Regulatory context + stakeholder verification
     "regulatory_requirement_detected",
     "regulatory_gap_detected",
     "stakeholder_verified",
     "stakeholder_unverified",
-    // DOS-49: Linear signal types
+    // Linear signal types
     "linear_issue_completed",
     "linear_issue_blocked",
     "linear_issue_overdue",
-    // DOS-15: Glean leading-signal enrichment (health_outlook_signals_json).
+    // Glean leading-signal enrichment (health_outlook_signals_json).
     "champion_at_risk",
     "sentiment_divergence",
     "competitor_decision_relevant",
@@ -91,7 +91,7 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
 ///
 /// Optionally ranks by embedding similarity to today's meetings if an
 /// embedding model is provided. When a UserEntity is provided, signal
-/// relevance is multiplied by alignment with user priorities (I414).
+/// relevance is multiplied by alignment with user priorities.
 pub fn generate_callouts(
     db: &ActionDb,
     model: Option<&EmbeddingModel>,
@@ -123,7 +123,7 @@ pub fn generate_callouts(
         signals.iter().map(|s| (s.clone(), 0.0)).collect()
     };
 
-    // I414: Apply user-context relevance weighting and persist to entity_assessment
+    // Apply user-context relevance weighting and persist to entity_assessment
     if user_entity.is_some() {
         for (signal, relevance) in &mut scored_signals {
             let entity_name =
@@ -135,7 +135,7 @@ pub fn generate_callouts(
             );
             *relevance *= weight;
 
-            // Persist non-default weights to entity_assessment (I414 AC4)
+            // Persist non-default weights to entity_assessment (AC4)
             if (weight - 1.0).abs() > f64::EPSILON {
                 let _ = db.conn_ref().execute(
                     "UPDATE entity_assessment SET user_relevance_weight = ?1 WHERE entity_id = ?2",
@@ -444,7 +444,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
             (headline, content.to_string())
         }
         "cadence_anomaly" | "email_cadence_drop" => {
-            // I319: value is the anomaly type string ("gone_quiet" or "activity_spike")
+            // value is the anomaly type string ("gone_quiet" or "activity_spike")
             let anomaly_type = signal.value.as_deref().unwrap_or("unknown");
             match anomaly_type {
                 "gone_quiet" => (
@@ -483,7 +483,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 ),
             }
         }
-        // DOS-54: Manual action creation callout
+        // Manual action creation callout
         "action_created_manually" => {
             let title = parsed
                 .get("title")
@@ -494,7 +494,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 format!("You created: {}", title),
             )
         }
-        // DOS-51: Push-to-Linear callout
+        // Push-to-Linear callout
         "action_pushed_to_linear" => {
             let identifier = parsed
                 .get("linear_identifier")
@@ -509,7 +509,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 format!("Created {} in Linear", url),
             )
         }
-        // I535/ADR-0100: Glean-sourced callout text handlers
+        // /ADR-0100: Glean-sourced callout text handlers
         "renewal_data_updated" => {
             let likelihood = parsed
                 .get("renewal_likelihood")
@@ -570,7 +570,7 @@ fn build_callout_text(signal: &SignalEvent) -> (String, String) {
                 .unwrap_or("No longer at the company per org directory");
             (format!("Champion departure: {}", name), detail.to_string())
         }
-        // DOS-49: Linear issue signal callout text
+        // Linear issue signal callout text
         "linear_issue_completed" => {
             let identifier = parsed
                 .get("identifier")

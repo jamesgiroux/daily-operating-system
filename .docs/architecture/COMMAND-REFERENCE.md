@@ -2,8 +2,8 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-04-25 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~397 commands
+**Auto-generated:** 2026-05-02 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~398 commands
 **Source files:** 11
 
 ---
@@ -71,6 +71,7 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `accept_suggested_action` | yes | id |
 | `archive_email` | yes | email_id |
 | `attach_meeting_transcript` | yes | file_path, meeting |
+| `attach_meeting_transcript_text` | yes | text, format, meeting |
 | `capture_meeting_outcome` | yes | outcome |
 | `complete_action` | yes | id |
 | `create_action` | yes | request |

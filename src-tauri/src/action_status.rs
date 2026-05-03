@@ -2,7 +2,7 @@
 //
 // All action status/priority values used in SQL queries, Rust logic,
 // and frontend communication reference these constants. Changing a
-// value here propagates everywhere (DOS-55).
+// value here propagates everywhere.
 
 // ── Status values ──────────────────────────────────────────────────
 

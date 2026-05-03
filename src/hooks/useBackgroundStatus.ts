@@ -1,5 +1,5 @@
 /**
- * useBackgroundStatus.ts — I571
+ * useBackgroundStatus.ts —
  *
  * Listens for `background-work-status` Tauri events from the intel queue
  * and returns state for the BackgroundWorkIndicator.

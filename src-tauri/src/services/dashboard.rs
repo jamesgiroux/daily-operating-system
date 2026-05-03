@@ -266,7 +266,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
     let engine = std::sync::Arc::clone(&state.signals.engine);
     let _ = state
         .db_write(move |db| {
-            // DOS-209 (W2-A): construct Live ServiceContext inline. Dashboard
+            //  construct Live ServiceContext inline. Dashboard
             // operations are always Live; the called mutator only consumes
             // ctx.check_mutation_allowed + ctx.clock (not external clients),
             // so a default ExternalClients is safe here. When dashboard.rs
@@ -355,7 +355,7 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
 
             // 3. Get entity map and intelligence qualities
             let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
-            // DOS-258: read from the linked_entities view rather than the legacy
+            // read from the linked_entities view rather than the legacy
             // meeting_entities junction table so dashboard prep chips match the
             // meeting detail page.
             let entity_map = db
@@ -593,7 +593,7 @@ pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
     let engine = std::sync::Arc::clone(&state.signals.engine);
     let _ = state
         .db_write(move |db| {
-            // DOS-209 (W2-A): see comment at build_live_dashboard_data — same pattern.
+            //  see comment at build_live_dashboard_data — same pattern.
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
@@ -653,7 +653,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
 
     let workspace = Path::new(&config.workspace_path);
 
-    // Build meetings from SQLite (DB-first, I513)
+    // Build meetings from SQLite (DB-first)
     let live_events = state
         .calendar
         .events
@@ -801,7 +801,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     // Filter out personal meetings — they're tracked but not displayed in briefing (ADR-0032)
     meetings.retain(|m| m.meeting_type != MeetingType::Personal);
 
-    // Consolidate all dashboard DB reads into a single lock acquisition (I235).
+    // Consolidate all dashboard DB reads into a single lock acquisition.
     // This reduces lock contention and improves dashboard load latency.
     let meeting_ids: Vec<String> = meetings.iter().map(|m| m.id.clone()).collect();
     struct DashboardDbSnapshot {
@@ -823,7 +823,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             }
             Ok(DashboardDbSnapshot {
                 reviewed: db.get_reviewed_preps().ok(),
-                // DOS-258: read from the linked_entities view rather than the legacy
+                // read from the linked_entities view rather than the legacy
                 // meeting_entities junction table so dashboard snapshot chips match
                 // the meeting detail page.
                 entity_map: db
@@ -855,7 +855,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             }
         }
 
-        // Annotate meetings with linked entities (I52)
+        // Annotate meetings with linked entities
         if let Some(ref entity_map) = snap.entity_map {
             for m in &mut meetings {
                 if let Some(entities) = entity_map.get(&m.id) {
@@ -865,7 +865,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             }
         }
 
-        // Flag meetings matching archived accounts for unarchive suggestion (I161)
+        // Flag meetings matching archived accounts for unarchive suggestion
         if let Some(ref accounts_with_domains) = snap.accounts_with_domains {
             let mut archived = Vec::new();
             let mut domains_by_account: HashMap<String, HashSet<String>> = HashMap::new();
@@ -962,7 +962,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         }
     }
 
-    // Annotate meetings with intelligence quality from lifecycle assessment (I329)
+    // Annotate meetings with intelligence quality from lifecycle assessment
     if let Some(ref snap) = db_snapshot {
         for m in &mut meetings {
             if let Some(q) = snap.intelligence_qualities.get(&m.id) {
@@ -971,7 +971,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         }
     }
 
-    // Load actions from DB (I513 — DB is sole source)
+    // Load actions from DB (DB is sole source)
     let actions: Vec<Action> = db_snapshot
         .as_ref()
         .and_then(|snap| snap.non_briefing_actions.as_ref())
@@ -997,7 +997,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         })
         .unwrap_or_default();
 
-    // I368: Try DB first for enriched emails, fall back to JSON
+    // Try DB first for enriched emails, fall back to JSON
     let (emails, email_sync): (Option<Vec<crate::types::Email>>, Option<EmailSyncStatus>) = {
         let mut db_emails: Vec<crate::types::Email> = state
             .db_read(|db| {
@@ -1090,7 +1090,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
 
         db_emails.sort_by(crate::services::emails::compare_email_rank);
 
-        // I448: DB is source of truth — no JSON fallback (archived emails
+        // DB is source of truth — no JSON fallback (archived emails
         // have resolved_at set and are correctly filtered by DB queries)
         if !db_emails.is_empty() {
             (Some(db_emails), None)
@@ -1155,7 +1155,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         inbox_count,
     };
 
-    // Build overview from live state (I513 — no JSON overview source)
+    // Build overview from live state (no JSON overview source)
     let hour = chrono::Timelike::hour(&chrono::Local::now());
     let greeting = if hour < 12 {
         "Good morning"
@@ -1237,7 +1237,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         Err(_) => DataFreshness::Unknown,
     };
 
-    // I513: Build replies_needed from DB instead of directive file.
+    // Build replies_needed from DB instead of directive file.
     let replies_needed: Vec<crate::json_loader::DirectiveReplyNeeded> = state
         .db_read(|db| {
             let now = chrono::Utc::now();
@@ -1308,7 +1308,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
         }
     };
 
-    // Fall back to DB enrichment stats when JSON sync status absent (I373)
+    // Fall back to DB enrichment stats when JSON sync status absent
     let email_sync_fallback: Option<EmailSyncStatus> = if email_sync.is_none() {
         match state
             .db_read(|db| db.get_email_sync_stats().map_err(|e| e.to_string()))
@@ -1380,7 +1380,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     }
 }
 
-/// Get week overview data from DB (I513: no JSON file reads).
+/// Get week overview data from DB (no JSON file reads).
 pub fn get_week_data(_state: &AppState) -> WeekResult {
     let started = std::time::Instant::now();
 
@@ -1511,7 +1511,7 @@ pub fn get_week_data(_state: &AppState) -> WeekResult {
         day_shapes: None,
     };
 
-    // Enrich dayShapes with live per-day action priorities (I279)
+    // Enrich dayShapes with live per-day action priorities
     if let Some(ref mut shapes) = week.day_shapes {
         if let Ok(candidates) = db.get_focus_candidate_actions(7) {
             for shape in shapes.iter_mut() {

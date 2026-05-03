@@ -2,12 +2,12 @@
  * DimensionBar — Renders 6 relationship health dimensions as horizontal bars.
  *
  * Labels are resolved from the active preset's intelligence.dimensionLabels
- * (DOS-177), falling back to hardcoded ADR-0083 vocabulary when no preset
+ *, falling back to hardcoded ADR-0083 vocabulary when no preset
  * is configured or the key is absent.
  *
  * Each bar shows: label, score, colored fill, trend arrow, expandable evidence.
  *
- * I502: Used in StateOfPlay for account detail pages.
+ * Used in StateOfPlay for account detail pages.
  */
 import { useState } from "react";
 import { TrendingUp, TrendingDown, Minus } from "lucide-react";

@@ -1,4 +1,4 @@
--- DOS-258 Lane A: linked_entities_raw + linked_entities view.
+-- linked_entities_raw + linked_entities view.
 --
 -- Raw table is the single write surface for all entity linking. The view is
 -- the sole public read surface — production queries must never read `_raw`

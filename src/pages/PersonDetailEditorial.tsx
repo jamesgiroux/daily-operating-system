@@ -133,7 +133,7 @@ export default function PersonDetailEditorial() {
   const preset = useActivePreset();
   useRevealObserver(!person.loading && !!person.detail);
 
-  // I352: Shared intelligence field update hook (must be before shellConfig useMemo)
+  // Shared intelligence field update hook (must be before shellConfig useMemo)
   const {
     updateField: handleUpdateIntelField,
     saveStatus,
@@ -183,7 +183,7 @@ export default function PersonDetailEditorial() {
   );
   useRegisterMagazineShell(shellConfig);
 
-  // I390: Person relationships
+  // Person relationships
   const [relationships, setRelationships] = useState<import("@/types").PersonRelationshipEdge[]>([]);
   const loadRelationships = useCallback(() => {
     if (!personId) return;
@@ -193,7 +193,7 @@ export default function PersonDetailEditorial() {
   }, [personId]);
   useEffect(() => { loadRelationships(); }, [loadRelationships]);
 
-  // I312: Preset metadata state
+  // Preset metadata state
   const [metadataValues, setMetadataValues] = useState<Record<string, string>>({});
   useEffect(() => {
     if (!personId) return;
@@ -207,7 +207,7 @@ export default function PersonDetailEditorial() {
       });
   }, [personId]);
 
-  // I529: Intelligence quality feedback
+  // Intelligence quality feedback
   const feedback = useIntelligenceFeedback(personId, "person");
 
   // Context entries — must be before early returns (React hooks rule)
@@ -329,7 +329,7 @@ export default function PersonDetailEditorial() {
         />
       </div>
 
-      {/* Chapter 6: The Work (suppressed when empty per I351) */}
+      {/* Chapter 6: The Work (suppressed when empty per) */}
       {(detail.openActions.length > 0 || (detail.upcomingMeetings ?? []).length > 0 || (intelligence?.recommendedActions?.length ?? 0) > 0) && (
         <div id="the-work" className={`editorial-reveal ${shared.chapterSectionWithPadding}`}>
           {intelligence?.recommendedActions && intelligence.recommendedActions.length > 0 && (

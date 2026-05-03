@@ -1,4 +1,4 @@
--- I318: Thread position tracking ("ball in your court")
+-- Thread position tracking ("ball in your court")
 
 CREATE TABLE IF NOT EXISTS email_threads (
     thread_id TEXT PRIMARY KEY,

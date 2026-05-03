@@ -1,5 +1,5 @@
 /**
- * FirstAccountStep.tsx — Wizard step 5: add customer accounts (I57).
+ * FirstAccountStep.tsx — Wizard step 5: add customer accounts.
  *
  * Optional but encouraged. Seeds the system with accounts
  * so briefings have something to work with on first run.

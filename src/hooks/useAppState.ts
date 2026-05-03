@@ -1,7 +1,7 @@
 /**
  * useAppState.ts
  *
- * App-level state hook for demo mode, tour, and wizard progress (I56).
+ * App-level state hook for demo mode, tour, and wizard progress.
  * Provides context via AppStateProvider, consumed by any component
  * that needs to know about demo mode or onboarding state.
  */

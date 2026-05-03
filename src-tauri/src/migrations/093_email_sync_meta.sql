@@ -1,4 +1,4 @@
--- DOS-31: Email retry pipeline + sync meta.
+-- Email retry pipeline + sync meta.
 --
 -- Adds a single-row metadata table that tracks the last *successful* Gmail
 -- fetch completion (as opposed to `last_seen_at` on each email row, which only

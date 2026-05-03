@@ -65,7 +65,7 @@ pub fn search_entity_content(
     let text_scores = compute_text_scores(&chunks, query);
 
     // nomic-embed-text-v1.5 asymmetric retrieval: queries get "search_query: " prefix,
-    // documents get "search_document: " prefix at embedding time (ADR-0074, I265).
+    // documents get "search_document: " prefix at embedding time (ADR-0074).
     let prefixed_query = format!("{}{}", crate::embeddings::QUERY_PREFIX, query);
     let query_embedding = model_opt
         .filter(|m| m.is_ready())

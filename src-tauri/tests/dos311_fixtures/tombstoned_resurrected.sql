@@ -1,11 +1,11 @@
--- DOS-311 fixture: tombstoned-resurrected.
+-- Tombstone fixture: resurrected item.
 --
 -- The bug case. A tombstone exists. The legacy projection still includes
 -- the OLD item (`sourced_at <= tombstone.dismissed_at`, or `sourced_at IS NULL`).
--- Reconcile MUST report exactly 1 finding. The `--repair` mode (DOS-7)
+-- Reconcile MUST report exactly 1 finding. The `--repair` mode
 -- consumes that finding and re-applies the tombstone via commit_claim.
 --
--- This fixture also exercises the DOS-311 `(dedup_key OR item_hash)`
+-- This fixture also exercises the reconcile match contract: `(dedup_key OR item_hash)`.
 -- match: the second tombstone's dedup_key has shifted post-creation but
 -- item_hash still matches the projection — the reconcile must catch it
 -- via the item_hash fallback.

@@ -1,4 +1,4 @@
--- DOS-7 L2 cycle-3 fix: add per-entity claim_version to the emails table
+-- Add per-entity claim_version to the emails table
 -- so SubjectRef::Email participates in the same per-entity invalidation
 -- machinery as Account/Meeting/Person/Project.
 --

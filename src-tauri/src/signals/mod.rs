@@ -1,11 +1,11 @@
-//! Universal signal bus for intelligence fusion (I306 / ADR-0080 Phase 2).
+//! Universal signal bus for intelligence fusion (ADR-0080 Phase 2).
 //!
 //! Every data source emits typed, weighted, time-decaying signals into a
 //! SQLite event log. Signals are fused using weighted log-odds Bayesian
 //! combination. The signal_weights table stores learned reliability via
-//! Beta distributions (populated by I307 Thompson Sampling).
+//! Beta distributions (populated by Thompson Sampling).
 //!
-//! I308 adds cross-entity propagation: when a signal is emitted, propagation
+//!  adds cross-entity propagation: when a signal is emitted, propagation
 //! rules derive new signals on related entities (e.g., person title_change →
 //! account stakeholder_change).
 

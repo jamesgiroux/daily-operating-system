@@ -1,4 +1,4 @@
-//! Signal service facade (I403).
+//! Signal service facade.
 //!
 //! Service-layer callers use these functions instead of reaching into
 //! `crate::signals::bus` directly.  Infrastructure callers that only have
@@ -16,7 +16,7 @@ use crate::signals::callouts::BriefingCallout;
 use crate::signals::propagation::PropagationEngine;
 
 /// Emit a signal event (no propagation). Convenience wrapper around bus::emit_signal.
-// DOS-209: ServiceContext adds one arg; signal facade mirrors bus shape.
+// ServiceContext adds one arg; signal facade mirrors bus shape.
 #[allow(clippy::too_many_arguments)]
 pub fn emit(
     ctx: &crate::services::context::ServiceContext<'_>,
@@ -42,7 +42,7 @@ pub fn emit(
 }
 
 /// Emit a signal and run cross-entity propagation rules.
-// DOS-209: ServiceContext adds one arg; signal facade mirrors bus shape.
+// ServiceContext adds one arg; signal facade mirrors bus shape.
 #[allow(clippy::too_many_arguments)]
 pub fn emit_and_propagate(
     ctx: &crate::services::context::ServiceContext<'_>,
@@ -70,7 +70,7 @@ pub fn emit_and_propagate(
 }
 
 /// Emit a signal, propagate, and evaluate for self-healing re-enrichment.
-// DOS-209: ServiceContext adds one arg; signal facade mirrors bus shape.
+// ServiceContext adds one arg; signal facade mirrors bus shape.
 #[allow(clippy::too_many_arguments)]
 pub fn emit_propagate_and_evaluate(
     ctx: &crate::services::context::ServiceContext<'_>,

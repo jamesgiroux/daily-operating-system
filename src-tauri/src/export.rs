@@ -1,4 +1,4 @@
-//! I429: User data export — ZIP file with human-readable JSON per domain.
+//! User data export — ZIP file with human-readable JSON per domain.
 
 use std::io::Write;
 use std::path::Path;

@@ -1,4 +1,4 @@
-//! Correction recording and weight updates (I307 / ADR-0080 Phase 3).
+//! Correction recording and weight updates (ADR-0080 Phase 3).
 //!
 //! When a user corrects a meeting-entity assignment, this module:
 //! 1. Records the correction in `entity_resolution_feedback`

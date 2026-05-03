@@ -1,4 +1,4 @@
--- Migration 008: Add missing indexes identified in beta hardening audit (I283)
+-- Migration 008: Add missing indexes identified in beta hardening audit
 --
 -- meeting_entities(meeting_id): eliminates full table scan on entity detail page loads
 -- meetings_history(calendar_event_id): prevents duplicate calendar imports

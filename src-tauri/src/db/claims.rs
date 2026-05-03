@@ -1,4 +1,4 @@
-//! DOS-7 D1: row types for the claims commit substrate.
+//! Row types for the claims commit substrate.
 //!
 //! D1 ships types only. The commit_claim algorithm (D2), 9-mechanism
 //! backfill (D3), hard-delete role refactor (D4), and reconcile pass

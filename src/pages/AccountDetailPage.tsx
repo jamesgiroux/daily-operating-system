@@ -35,7 +35,7 @@ import { AccountViewSwitcher } from "@/components/account/AccountViewSwitcher";
 // the codebase for possible Context-tab reuse, but it is not imported here.
 import { AccountPortfolioSection } from "@/components/account/AccountPortfolioSection";
 import { SentimentHero } from "@/components/health/SentimentHero";
-// DOS-203: Health-tab chapter components.
+// Health-tab chapter components.
 import { TriageSection, hasTriageContent } from "@/components/health/TriageSection";
 import { DivergenceSection, hasDivergenceContent } from "@/components/health/DivergenceSection";
 import { OutlookPanel, renewalCallVerdict } from "@/components/health/OutlookPanel";
@@ -56,7 +56,7 @@ import { AddToRecord } from "@/components/entity/AddToRecord";
 import { FileListSection } from "@/components/entity/FileListSection";
 import { CommercialShape } from "@/components/context/CommercialShape";
 import { RelationshipFabric } from "@/components/context/RelationshipFabric";
-// View 3 — The Work (DOS-13: workbench, not todo list)
+// View 3 — The Work (workbench, not todo list)
 import {
   ProgramPill,
   ProgramPillRow,
@@ -90,7 +90,7 @@ export default function AccountDetailPage() {
       .catch(() => setLinearConfigured(false));
   }, []);
 
-  // DOS-258 Lane F: pending stakeholder review queue for the Context tab.
+  // pending stakeholder review queue for the Context tab.
   const pendingStakeholders = usePendingStakeholders(accountId);
 
   // Work tab: progressive disclosure for suggestions. Long lists (some
@@ -110,7 +110,7 @@ export default function AccountDetailPage() {
   const fb = page.feedback;
 
   // ─── View 1: Health & Outlook ───────────────────────────────────────────
-  // DOS-203: editorial IA matching .docs/mockups/account-health-*.html:
+  // editorial IA matching.docs/mockups/account-health-*.html:
   //   1. Your Assessment (sentiment hero, id="your-assessment")
   //   2. Needs attention — triage cards + divergence findings
   //        (or On Track, id="on-track", in the fine state)
@@ -138,7 +138,7 @@ export default function AccountDetailPage() {
 
     return (
       <>
-        {/* DOS-228 Wave 0e Fix 4: pinned risk-briefing status at top of
+        {/* pinned risk-briefing status at top of
             Health tab. Renders nothing when there's no active job; shows
             running/failed states with a retry affordance on failure. */}
         <RiskBriefingStatus
@@ -162,7 +162,7 @@ export default function AccountDetailPage() {
         {isFineState ? (
           <MarginSection id="on-track" label={<>On<br/>Track</>}>
             <OnTrackChapter intelligence={intelligence} accountSizeLabel={detail.lifecycle ?? detail.accountType ?? null} />
-            {/* DOS-41: "Is this accurate?" after the AI fine-state summary. */}
+            {/* "Is this accurate?" after the AI fine-state summary. */}
             <IntelligenceCorrection
               entityId={detail.id}
               entityType="account"
@@ -200,7 +200,7 @@ export default function AccountDetailPage() {
           <MarginSection id="outlook" label="Outlook">
             <ChapterHeading title={`The Call: ${renewalCallVerdict(intelligence.agreementOutlook)}`} />
             <OutlookPanel intelligence={intelligence} />
-            {/* DOS-41 / DOS-203 Ch.4: "Is this accurate?" wraps the renewal
+            {/* Ch.4: "Is this accurate?" wraps the renewal
                 narrative pull-quote. Field is renewal_narrative (the dedicated
                 DOS-249 column); falls back to expansionPotential for accounts
                 enriched before the migration. */}
@@ -259,26 +259,26 @@ export default function AccountDetailPage() {
   };
 
   // ─── View 2: Context ────────────────────────────────────────────────────
-  // DOS-18: 9-chapter IA — Thesis / The Room / What matters / What we've built /
+  // 9-chapter IA — Thesis / The Room / What matters / What we've built
   // Their voice / Commercial shape / Technical shape / Relationship fabric /
   // About this dossier. Timeline + Files stay inline to preserve existing
-  // scroll affordances until The Work migration (DOS-13).
+  // scroll affordances until The Work migration.
   const renderContextView = () => {
     // Freshness fragment helpers derived from existing data. No new schema.
     const manifest = intelligence?.sourceManifest ?? [];
     const glean = acct.gleanSignals;
-    // DOS-233 Codex fix: prefer the backend COUNT(*) when available; fall
+    // prefer the backend COUNT(*) when available; fall
     // back to the manifest-derived count for older snapshots.
     const transcriptCount =
       detail.transcriptTotalCount
       ?? manifest.filter((m) => (m.format ?? "").toLowerCase().includes("transcript")).length;
-    // DOS-233: About-this-dossier counts previously used `acct.events` (lifecycle
+    // About-this-dossier counts previously used `acct.events` (lifecycle
     // events — churn/renewal records) instead of meetings, producing obviously
     // wrong figures like "0 meetings on record" on active accounts. The source
     // of truth for meetings linked to the account is `meeting_entities` joined
     // with `meetings` (see db/accounts.rs).
     //
-    // DOS-233 Codex fix: `recentMeetings` is capped at 10 for preview rendering,
+    // `recentMeetings` is capped at 10 for preview rendering,
     // so an account with 47 meetings previously stalled at "10 meetings on
     // record". The backend now exposes `meetingTotalCount` /
     // `transcriptTotalCount` (unbounded COUNT(*) queries). Fall back to
@@ -372,7 +372,7 @@ export default function AccountDetailPage() {
               }
             }}
           />
-          {/* DOS-258 Lane F: pending_review rows from account_stakeholders.
+          {/* pending_review rows from account_stakeholders.
               Rendered immediately after the confirmed-stakeholder grid so the
               user sees "what we know" then "what needs review" in one scan.
               Hidden when the queue is empty — no placeholder clutter. */}
@@ -409,7 +409,7 @@ export default function AccountDetailPage() {
           </MarginSection>
         )}
 
-        {/* Chapter 5: Their voice — Glean quote wall (DOS-205) */}
+        {/* Chapter 5: Their voice — Glean quote wall  */}
         <MarginSection id="their-voice" label={<>Their<br/>voice</>}>
           <ChapterHeading
             title="Their voice"
@@ -471,7 +471,7 @@ export default function AccountDetailPage() {
           />
         </MarginSection>
 
-        {/* Products folded into Technical shape as a dotted list (DOS-251
+        {/* Products folded into Technical shape as a dotted list (
             tracks full edit UX + Services subsection for v1.2.2). */}
 
         {/* Chapter 8: Relationship fabric — advocacy, beta, NPS history */}
@@ -521,7 +521,7 @@ export default function AccountDetailPage() {
   };
 
   // ─── View 3: The Work ───────────────────────────────────────────────────
-  // DOS-13: 8-chapter workbench IA matches account-work-globex.html mockup.
+  // 8-chapter workbench IA matches account-work-globex.html mockup.
   // Zero-guilt patterns throughout: "Still active?" replaces OVERDUE, Private/Shared
   // pills are orthogonal to draft/done, Dismiss is equal-valid with Mark done,
   // Suggestions carry "Dismiss (teaches system)", Nudges always offer "Leave as-is"

@@ -1,4 +1,4 @@
--- Migration 053: App state singleton + demo data markers (I56/I57)
+-- Migration 053: App state singleton + demo data markers
 --
 -- app_state is a single-row table holding onboarding and demo mode state.
 -- is_demo columns on accounts/actions/people allow selective cleanup.

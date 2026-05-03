@@ -1,4 +1,4 @@
-//! I319 / I581: Entity-level email cadence monitoring + silence surfacing.
+//!: Entity-level email cadence monitoring + silence surfacing.
 //!
 //! Keeps `entity_email_cadence` fresh from recent email signals, then emits
 //! `email_cadence_drop` once per threshold crossing when an account has gone

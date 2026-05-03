@@ -1,4 +1,4 @@
-//! Intelligence self-healing (I406–I410).
+//! Intelligence self-healing (–).
 //!
 //! Detects quality degradation in entity intelligence, triggers re-enrichment
 //! based on a continuous priority function, and wires user corrections back

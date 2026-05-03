@@ -529,7 +529,7 @@ pub(super) fn enqueue_ai_enrichments(
     // First: entities with no intelligence at all (never enriched)
     if let Ok(missing) = db.get_entities_without_intelligence() {
         for (entity_id, entity_type) in missing {
-            // DOS-286: skip archived entities — they shouldn't consume budget
+            // skip archived entities — they shouldn't consume budget
             if db.is_entity_archived(&entity_id, &entity_type) {
                 continue;
             }
@@ -551,7 +551,7 @@ pub(super) fn enqueue_ai_enrichments(
     // Second: entities with stale intelligence (>14 days with new content)
     if let Ok(stale) = db.get_stale_entity_intelligence(14) {
         for (entity_id, entity_type, _enriched_at) in stale {
-            // DOS-286: skip archived entities — they shouldn't consume budget
+            // skip archived entities — they shouldn't consume budget
             if db.is_entity_archived(&entity_id, &entity_type) {
                 continue;
             }

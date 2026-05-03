@@ -1,4 +1,4 @@
-//! Feedback closure for user corrections and enrichment success (I409).
+//! Feedback closure for user corrections and enrichment success.
 //!
 //! Wires user corrections back to source reliability via the signal bus
 //! and quality scoring system.

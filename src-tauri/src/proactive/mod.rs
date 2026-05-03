@@ -1,4 +1,4 @@
-//! Proactive surfacing engine (I260).
+//! Proactive surfacing engine.
 //!
 //! Periodically mines the database for patterns, correlations, and temporal
 //! signals, then surfaces synthesized insights through the existing briefing

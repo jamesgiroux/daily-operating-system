@@ -124,7 +124,7 @@ impl super::super::phases::Rule for P5TitleEvidence {
             }
         }
 
-        // External-attendee veto (DOS-258 evidence-hierarchy fix).
+        // External-attendee veto (evidence-hierarchy fix).
         //
         // Title alone cannot elect an account as Primary when external attendees
         // exist and we have no domain or stakeholder evidence connecting them

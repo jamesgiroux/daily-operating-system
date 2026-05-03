@@ -1,4 +1,4 @@
--- DOS-308: is_suppressed lookup support + tombstone remediation quarantine.
+-- is_suppressed lookup support + tombstone remediation quarantine.
 
 -- Covering index for the precedence query used by ActionDb::is_suppressed.
 CREATE INDEX IF NOT EXISTS idx_tombstones_lookup

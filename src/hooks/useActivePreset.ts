@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import type { RolePreset } from "@/types/preset";
 
 /**
- * Fetch the active role preset from the backend (I312).
+ * Fetch the active role preset from the backend.
  * Returns null if no preset is configured or the call fails.
  * The result is cached for the component's lifetime.
  */

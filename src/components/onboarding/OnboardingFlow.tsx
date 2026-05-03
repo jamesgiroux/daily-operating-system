@@ -1,5 +1,5 @@
 /**
- * OnboardingFlow.tsx — First-run wizard (I57 refactor, I561 three connectors)
+ * OnboardingFlow.tsx — First-run wizard (three connectors)
  *
  * Step sequence:
  * Welcome → Google → Claude Code → Glean → YouCard → FirstAccount → Role → Prime
@@ -94,7 +94,7 @@ export function OnboardingFlow({ onComplete }: OnboardingFlowProps) {
   const [visitedChapters, setVisitedChapters] = useState<Set<Chapter>>(new Set([CHAPTERS[0]]));
   const [resumeChecked, setResumeChecked] = useState(false);
 
-  // I561: Glean state
+  // Glean state
   const [gleanConnected, setGleanConnected] = useState(false);
   const [discoveredAccounts, setDiscoveredAccounts] = useState<DiscoveredAccount[]>([]);
   const [discoveryLoading, setDiscoveryLoading] = useState(false);

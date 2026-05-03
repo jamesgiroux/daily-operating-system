@@ -22,7 +22,7 @@ use super::io::*;
 const MAX_CONTEXT_BYTES: usize = 10_000;
 
 // =============================================================================
-// Intelligence Context Assembly (I131)
+// Intelligence Context Assembly
 // =============================================================================
 
 /// Assembled signals for the intelligence enrichment prompt.
@@ -40,9 +40,9 @@ pub struct IntelligenceContext {
     pub recent_email_signals: String,
     /// Linked stakeholders from account_stakeholders/entity_members + people.
     pub stakeholders: String,
-    /// Canonical contact names with IDs for stakeholder reconciliation (I420).
+    /// Canonical contact names with IDs for stakeholder reconciliation.
     pub canonical_contacts: Option<String>,
-    /// Deterministic attendance-backed stakeholder presence lines (I527).
+    /// Deterministic attendance-backed stakeholder presence lines.
     pub verified_stakeholder_presence: Option<String>,
     /// Source file manifest.
     pub file_manifest: Vec<SourceManifestEntry>,
@@ -54,33 +54,33 @@ pub struct IntelligenceContext {
     pub prior_intelligence: Option<String>,
     /// Next upcoming meeting for this entity.
     pub next_meeting: Option<String>,
-    /// Portfolio context for parent accounts (I384).
+    /// Portfolio context for parent accounts.
     /// Contains children's intelligence summaries and signal data for portfolio synthesis.
     pub portfolio_children_context: Option<String>,
-    /// Person relationship edges for network intelligence (I391).
+    /// Person relationship edges for network intelligence.
     /// Pre-formatted string of edges with effective confidence and types.
     pub relationship_edges: Option<String>,
-    /// User professional context block for personalized enrichment (I412).
+    /// User professional context block for personalized enrichment.
     pub user_context: Option<String>,
     /// Entity-specific context entries from entity_context_entries table.
     pub entity_context: Option<String>,
-    /// I508c: Dimension-aware gap queries for Glean fan-out.
+    /// Dimension-aware gap queries for Glean fan-out.
     pub gap_queries: Vec<GapQueryItem>,
-    /// I499: Pre-computed account health from algorithmic scoring.
+    /// Pre-computed account health from algorithmic scoring.
     pub computed_health: Option<super::io::AccountHealth>,
-    /// I500: Org-level health data from external sources (Glean/CRM).
+    /// Org-level health data from external sources (Glean/CRM).
     pub org_health: Option<super::io::OrgHealthData>,
-    /// I555: Additional context blocks (engagement patterns, champion health, commitments).
+    /// Additional context blocks (engagement patterns, champion health, commitments).
     pub extra_blocks: Vec<String>,
-    /// I645: Formatted user corrections (dismissed items + field edits) for prompt injection.
+    /// Formatted user corrections (dismissed items + field edits) for prompt injection.
     pub user_corrections: String,
-    /// I645: Formatted source reliability weights for prompt injection.
+    /// Formatted source reliability weights for prompt injection.
     pub signal_weights_block: String,
-    /// I647: Source-verified account facts from account_source_refs (fact kind only).
+    /// Source-verified account facts from account_source_refs (fact kind only).
     pub source_verified_facts: String,
-    /// I649: Technical footprint block for prompt injection.
+    /// Technical footprint block for prompt injection.
     pub technical_footprint_block: String,
-    /// DOS-287: Structured entity disambiguators for Glean/PTY prompt grounding.
+    /// Structured entity disambiguators for Glean/PTY prompt grounding.
     ///
     /// Populated at context build time so prompt builders remain pure.
     /// Each field degrades gracefully when empty — the prompt builder
@@ -88,7 +88,7 @@ pub struct IntelligenceContext {
     pub disambiguators: EntityDisambiguators,
 }
 
-/// DOS-287: Structured identifiers used to disambiguate Glean retrieval
+/// Structured identifiers used to disambiguate Glean retrieval
 /// and enforce grounding. Populated by `load_disambiguators` from the DB.
 ///
 /// All fields degrade gracefully when empty — the prompt builder skips
@@ -109,14 +109,14 @@ pub struct EntityDisambiguators {
     pub salesforce_account_id: Option<String>,
 }
 
-/// DOS-287: Parent-account context for disambiguation.
+/// Parent-account context for disambiguation.
 #[derive(Debug, Clone, Default)]
 pub struct ParentContext {
     pub name: String,
     pub domains: Vec<String>,
 }
 
-/// DOS-287: Personal-email hosts shouldn't leak into the disambiguation list —
+/// Personal-email hosts shouldn't leak into the disambiguation list —
 /// pulled from `google_api::classify::PERSONAL_EMAIL_DOMAINS`.
 pub fn is_personal_email_domain(domain: &str) -> bool {
     let d = domain.to_lowercase();
@@ -125,7 +125,7 @@ pub fn is_personal_email_domain(domain: &str) -> bool {
         .any(|&p| p == d)
 }
 
-/// DOS-287: True when the email host is a known bot/noreply host.
+/// True when the email host is a known bot/noreply host.
 ///
 /// Single source of truth for the bot host list lives in
 /// `crate::services::entity_linking::stakeholder_domains::BOT_EMAIL_HOSTS`
@@ -147,7 +147,7 @@ pub fn is_bot_email_host(email: &str) -> bool {
         || host.contains("noreply")
 }
 
-/// DOS-287: Load disambiguation identifiers from the DB for a given entity.
+/// Load disambiguation identifiers from the DB for a given entity.
 ///
 /// Only meaningful for `entity_type == "account"`; other entity types return
 /// empty defaults. Any DB error produces an empty field rather than an
@@ -246,7 +246,7 @@ pub fn load_disambiguators(
     out
 }
 
-/// I508c structured gap query item used for local ranking + remote fan-out.
+/// Structured gap query item used for local ranking + remote fan-out.
 #[derive(Debug, Clone)]
 pub struct GapQueryItem {
     /// Dimension key when the gap query targets a specific intelligence dimension.
@@ -267,7 +267,7 @@ pub fn build_intelligence_context(
     prior: Option<&IntelligenceJson>,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
 ) -> IntelligenceContext {
-    // DOS-287: Load structured disambiguators (domains, contacts, parent, SFDC).
+    // Load structured disambiguators (domains, contacts, parent, SFDC).
     // Must happen before any early-return paths so Glean prompt builders can rely
     // on this being populated whenever the entity is an account.
     let mut ctx = IntelligenceContext {
@@ -317,7 +317,7 @@ pub fn build_intelligence_context(
                 }
                 ctx.facts_block = facts.join("\n");
 
-                // I647: Source-verified facts from account_source_refs
+                // Source-verified facts from account_source_refs
                 if let Ok(refs) = db.get_account_source_refs(entity_id) {
                     let fact_refs: Vec<_> =
                         refs.iter().filter(|r| r.source_kind == "fact").collect();
@@ -372,7 +372,7 @@ pub fn build_intelligence_context(
                     }
                 }
 
-                // I649: Technical footprint
+                // Technical footprint
                 if let Ok(Some(tf)) = db.get_account_technical_footprint(entity_id) {
                     let mut lines = Vec::new();
                     if let Some(ref tier) = tf.support_tier {
@@ -500,7 +500,7 @@ pub fn build_intelligence_context(
         ctx.open_actions = lines.join("\n");
     }
 
-    // --- DOS-53: Actions tracked in Linear ---
+    // --- Actions tracked in Linear ---
     if let Ok(mut stmt) = db.conn.prepare(
         "SELECT a.title, all2.linear_identifier, a.status
          FROM actions a
@@ -552,7 +552,7 @@ pub fn build_intelligence_context(
         ctx.recent_captures = lines.join("\n");
     }
 
-    // --- I555: Meeting engagement patterns (last 5 meetings with dynamics) ---
+    // --- Meeting engagement patterns (last 5 meetings with dynamics) ---
     if entity_type == "account" {
         if let Ok(mut stmt) = db.conn.prepare(
             "SELECT m.start_time, m.title, mid.talk_balance_customer_pct, mid.talk_balance_internal_pct,
@@ -588,7 +588,7 @@ pub fn build_intelligence_context(
             }
         }
 
-        // --- I555: Champion health trend ---
+        // --- Champion health trend ---
         if let Ok(mut stmt) = db.conn.prepare(
             "SELECT m.start_time, mch.champion_name, mch.champion_status, mch.champion_evidence
              FROM meeting_champion_health mch
@@ -631,7 +631,7 @@ pub fn build_intelligence_context(
             }
         }
 
-        // --- I555: Open commitments from prior meetings ---
+        // --- Open commitments from prior meetings ---
         if let Ok(mut stmt) = db.conn.prepare(
             "SELECT title, owner, target_date, source
              FROM captured_commitments
@@ -735,7 +735,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- Email cadence summary (I319 data) ---
+    // --- Email cadence summary (data) ---
     {
         let conn = db.conn_ref();
         let cadence_result: Result<(i64, f64), _> = conn.query_row(
@@ -779,7 +779,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- Stakeholders (I652: person-first, read from account_stakeholders DB) ---
+    // --- Stakeholders (person-first, read from account_stakeholders DB) ---
     if entity_type == "account" || entity_type == "project" {
         let stakeholders = db
             .get_account_stakeholders_full(entity_id)
@@ -826,7 +826,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // I527: Deterministic stakeholder meeting presence lines for contradiction-resistant prompts.
+    // Deterministic stakeholder meeting presence lines for contradiction-resistant prompts.
     if entity_type == "account" || entity_type == "project" {
         if let Ok(facts) = crate::intelligence::build_fact_context(db, entity_id, entity_type) {
             let lines = crate::intelligence::format_verified_presence_lines(&facts, 8);
@@ -875,7 +875,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- Person relationship edges (I391) ---
+    // --- Person relationship edges  ---
     if entity_type == "person" {
         if let Ok(edges) = db.get_relationships_for_person(entity_id) {
             if !edges.is_empty() {
@@ -931,7 +931,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- File manifest + summaries (I286: vector-filtered, budget-capped) ---
+    // --- File manifest + summaries (vector-filtered, budget-capped) ---
     let files = db.get_entity_files(entity_id).unwrap_or_default();
     let is_incremental = prior.is_some();
     let enriched_at = prior.map(|p| p.enriched_at.as_str()).unwrap_or("");
@@ -1025,7 +1025,7 @@ pub fn build_intelligence_context(
         ctx.file_contents = file_parts.join("\n\n");
     }
 
-    // Build manifest with selected/skipped tracking (I286)
+    // Build manifest with selected/skipped tracking
     ctx.file_manifest = files
         .iter()
         .filter(|f| content_date_rfc3339(&f.filename, &f.modified_at) >= cutoff_90d)
@@ -1090,7 +1090,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- Recent transcript sentiment captures (I509) ---
+    // --- Recent transcript sentiment captures  ---
     if entity_type == "account" {
         if let Ok(captures) = db.get_captures_for_account(entity_id, 90) {
             let sentiment_captures: Vec<_> = captures
@@ -1136,7 +1136,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- Portfolio context for parent accounts (I384) ---
+    // --- Portfolio context for parent accounts  ---
     // If this account has children, gather their intelligence summaries and signals
     // for portfolio-level synthesis.
     if entity_type == "account" {
@@ -1148,7 +1148,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- Portfolio context for parent projects (I388) ---
+    // --- Portfolio context for parent projects  ---
     // Mirror of account hierarchy: if this project has children, gather their
     // intelligence summaries and signals for portfolio-level synthesis.
     if entity_type == "project" {
@@ -1160,7 +1160,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // --- User professional context (I412 + I417) ---
+    // --- User professional context  ---
     let entity_name_for_ctx = match entity_type {
         "account" => account.map(|a| a.name.as_str()),
         "project" => project.map(|p| p.name.as_str()),
@@ -1179,10 +1179,10 @@ pub fn build_intelligence_context(
         ctx.entity_context = Some(block);
     }
 
-    // I508c: Store gap queries for Glean fan-out
+    // Store gap queries for Glean fan-out.
     ctx.gap_queries = gap_queries;
 
-    // I645 B3: Inject user corrections (dismissed items + field edits) into prompt context
+    // Inject user corrections (dismissed items + field edits) into prompt context.
     if let Some(p) = prior {
         let cutoff_90d = (Utc::now() - chrono::Duration::days(90)).to_rfc3339();
         let mut correction_lines: Vec<String> = Vec::new();
@@ -1213,7 +1213,7 @@ pub fn build_intelligence_context(
         }
     }
 
-    // I645 B4: Inject signal source reliability weights into prompt context
+    // Inject signal source reliability weights into prompt context.
     {
         let sources = [
             "glean_crm",
@@ -1249,12 +1249,12 @@ pub fn build_intelligence_context(
     ctx
 }
 
-/// Build a user professional context block from the user_entity table (I412).
+/// Build a user professional context block from the user_entity table.
 ///
 /// Returns None when all fields are NULL (prompt is identical to pre-v0.14.0).
 /// Target: ~150-300 tokens for context injection.
 /// When an embedding model and entity name are available, appends top-2 semantically
-/// relevant user context entries as a "Professional Knowledge" sub-section (I417).
+/// relevant user context entries as a "Professional Knowledge" sub-section.
 fn build_user_context_block(
     db: &ActionDb,
     embedding_model: Option<&crate::embeddings::EmbeddingModel>,
@@ -1344,8 +1344,8 @@ fn build_user_context_block(
         }
     }
 
-    // I417: Semantic retrieval of user context entries relevant to this entity
-    // I413 AC4: Also search file attachments for relevant content
+    // Semantic retrieval of user context entries relevant to this entity
+    // Acceptance criterion: Also search file attachments for relevant content
     if let Some(name) = entity_name {
         let mut matches = super::user_context::search_user_context(
             db,
@@ -1394,7 +1394,7 @@ fn build_user_context_block(
     Some(parts.join("\n"))
 }
 
-/// Maximum context bytes for portfolio children data (I384).
+/// Maximum context bytes for portfolio children data.
 ///
 /// Parent accounts with many children could exceed the standard MAX_CONTEXT_BYTES.
 /// Tiered approach: full executive assessment + signals for first 8 children sorted
@@ -1407,7 +1407,7 @@ fn build_user_context_block(
 /// own entity context (~10KB).
 const MAX_PORTFOLIO_CONTEXT_BYTES: usize = 20_000;
 
-/// Build portfolio context from children's intelligence for a parent account (I384).
+/// Build portfolio context from children's intelligence for a parent account.
 ///
 /// Gathers each child's intelligence.json (from DB cache) and active signals,
 /// then formats them as a context block for the parent's enrichment prompt.
@@ -1535,7 +1535,7 @@ fn build_portfolio_children_context(db: &ActionDb, children: &[DbAccount]) -> St
     parts.join("\n")
 }
 
-/// Build portfolio context from children's intelligence for a parent project (I388).
+/// Build portfolio context from children's intelligence for a parent project.
 ///
 /// Mirrors `build_portfolio_children_context` but uses project-appropriate vocabulary
 /// (status instead of health, no ARR).
@@ -1653,7 +1653,7 @@ fn build_project_portfolio_children_context(db: &ActionDb, children: &[DbProject
     parts.join("\n")
 }
 
-/// I508c: Dimension-aware semantic gap queries for entity enrichment.
+/// Dimension-aware semantic gap queries for entity enrichment.
 ///
 /// Returns structured gap query items — the first query is used for local vector
 /// ranking, and the full set is used for Glean fan-out.
@@ -1683,7 +1683,7 @@ fn semantic_gap_queries(prior: Option<&IntelligenceJson>) -> Vec<GapQueryItem> {
         if p.current_state.is_none() {
             push_query(Some("current_state"), "working not working unknowns");
         }
-        // I508a dimension-aware gap checks
+        // Dimension-aware gap checks.
         if p.competitive_context.is_empty() {
             push_query(
                 Some("competitive_context"),
@@ -1794,7 +1794,7 @@ fn format_meeting_time_for_prompt(raw: &str) -> String {
 }
 
 // =============================================================================
-// Prompt Builder (I131)
+// Prompt Builder
 // =============================================================================
 
 /// Build the Claude Code prompt for entity intelligence enrichment.
@@ -1878,7 +1878,7 @@ fn build_intelligence_prompt_inner(
         .filter(|value| !value.trim().is_empty())
         .unwrap_or("key advocate");
 
-    // I468: Injection resistance preamble
+    // Injection resistance preamble
     prompt.push_str(INJECTION_PREAMBLE);
 
     // System context
@@ -1896,7 +1896,7 @@ fn build_intelligence_prompt_inner(
         local_now.format("%:z"),
     ));
 
-    // I313: Inject full vocabulary context for domain-specific framing
+    // Inject full vocabulary context for domain-specific framing
     if let Some(vocab) = vocabulary {
         prompt.push_str(&format!(
             "Domain vocabulary: entities are called \"{noun}\" (plural: \"{noun_plural}\"). \
@@ -1921,7 +1921,7 @@ fn build_intelligence_prompt_inner(
         prompt.push('\n');
     }
 
-    // I412: User professional context — personalizes assessment framing
+    // User professional context — personalizes assessment framing
     if let Some(ref user_ctx) = ctx.user_context {
         prompt.push_str("## Your Professional Context\n");
         prompt.push_str(&wrap_user_data(user_ctx));
@@ -1951,7 +1951,7 @@ fn build_intelligence_prompt_inner(
     if !ctx.facts_block.is_empty() {
         prompt.push_str("## Current Facts\n");
         prompt.push_str(&wrap_user_data(&ctx.facts_block));
-        // I645 B4: Append source reliability weights to facts block
+        // Append source reliability weights to facts block.
         if !ctx.signal_weights_block.is_empty() {
             prompt.push_str("\n\nSource reliability:\n");
             prompt.push_str(&ctx.signal_weights_block);
@@ -1959,7 +1959,7 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
-    // I647: Source-verified account facts (ground truth the LLM should not override)
+    // Source-verified account facts (ground truth the LLM should not override)
     if !ctx.source_verified_facts.is_empty() {
         prompt.push_str("## ");
         prompt.push_str(&ctx.source_verified_facts);
@@ -1972,14 +1972,14 @@ fn build_intelligence_prompt_inner(
         );
     }
 
-    // I649: Technical footprint context
+    // Technical footprint context
     if !ctx.technical_footprint_block.is_empty() {
         prompt.push_str("## ");
         prompt.push_str(&ctx.technical_footprint_block);
         prompt.push_str("\n\n");
     }
 
-    // I645 B3: User corrections — dismissed items and field edits
+    // User corrections: dismissed items and field edits.
     if !ctx.user_corrections.is_empty() {
         prompt.push_str(
             "## User Corrections (do not reproduce dismissed items)\n\
@@ -2038,7 +2038,7 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
-    // I420: Canonical contacts for deterministic stakeholder naming
+    // Canonical contacts for deterministic stakeholder naming
     if let Some(ref contacts) = ctx.canonical_contacts {
         prompt.push_str(
             "## Known Contacts (canonical names)\n\
@@ -2051,7 +2051,7 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
-    // I527: Attendance-backed presence facts. These are deterministic checks, not model inference.
+    // Attendance-backed presence facts. These are deterministic checks, not model inference.
     if let Some(ref verified) = ctx.verified_stakeholder_presence {
         prompt.push_str(
             "## Verified Stakeholder Meeting Presence\n\
@@ -2090,7 +2090,7 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
-    // Portfolio children context for parent accounts (I384)
+    // Portfolio children context for parent accounts
     if let Some(ref portfolio_ctx) = ctx.portfolio_children_context {
         prompt.push_str("## Portfolio: Child Account Intelligence\n");
         prompt.push_str("This is a PARENT account with child business units. ");
@@ -2100,7 +2100,7 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
-    // I391: Person relationship edges for network intelligence
+    // Person relationship edges for network intelligence
     if let Some(ref edges_ctx) = ctx.relationship_edges {
         prompt.push_str("## Relationship Network (person-to-person edges)\n");
         prompt.push_str("These are typed relationship edges with confidence scores. ");
@@ -2123,7 +2123,7 @@ fn build_intelligence_prompt_inner(
         prompt.push_str("\n\n");
     }
 
-    // I555: Extra context blocks (engagement patterns, champion health, commitments)
+    // Extra context blocks (engagement patterns, champion health, commitments)
     for block in &ctx.extra_blocks {
         prompt.push_str(&wrap_user_data(block));
         prompt.push_str("\n\n");
@@ -2199,7 +2199,7 @@ fn build_intelligence_prompt_inner(
         }
     }
 
-    // Partner-specific framing (I382): partner accounts use distinct vocabulary
+    // Partner-specific framing: partner accounts use distinct vocabulary
     if entity_type == "account" && relationship == Some("partner") {
         prompt.push_str(
             "PARTNER CONTEXT:\n\
@@ -2228,7 +2228,7 @@ fn build_intelligence_prompt_inner(
         },
         _ => "overall assessment",
     };
-    // I499: Inject pre-computed account health when available
+    // Inject pre-computed account health when available
     if let Some(ref computed) = ctx.computed_health {
         prompt.push_str(&format!(
             "## Pre-Computed Account Health (Algorithmic — ADR-0097)\n\
@@ -2251,7 +2251,7 @@ fn build_intelligence_prompt_inner(
         ));
     }
 
-    // JSON output format (I288)
+    // JSON output format
     prompt.push_str(&format!(
         "Return ONLY a JSON object — no other text before or after.\n\
          The JSON must conform exactly to this schema:\n\n\
@@ -2294,7 +2294,7 @@ fn build_intelligence_prompt_inner(
         );
     }
 
-    // I384: Portfolio section for parent accounts with children
+    // Portfolio section for parent accounts with children
     if ctx.portfolio_children_context.is_some() {
         prompt.push_str(
             ",\n\
@@ -2309,7 +2309,7 @@ fn build_intelligence_prompt_inner(
         );
     }
 
-    // I391: Network intelligence section for persons with relationship edges
+    // Network intelligence section for persons with relationship edges
     if ctx.relationship_edges.is_some() {
         prompt.push_str(
             ",\n\
@@ -2330,7 +2330,7 @@ fn build_intelligence_prompt_inner(
         );
     }
 
-    // I504: Inferred person-to-person relationships for account/project entities.
+    // Inferred person-to-person relationships for account/project entities.
     if ctx.canonical_contacts.is_some() && (entity_type == "account" || entity_type == "project") {
         prompt.push_str(
             ",\n\
@@ -2340,7 +2340,7 @@ fn build_intelligence_prompt_inner(
         );
     }
 
-    // DOS-13: Recommended actions from intelligence
+    // Recommended actions from intelligence
     prompt.push_str(
         ",\n\
            \"recommendedActions\": [\n\
@@ -2348,7 +2348,7 @@ fn build_intelligence_prompt_inner(
            ]",
     );
 
-    // I305: Keyword extraction for entity resolution
+    // Keyword extraction for entity resolution
     prompt.push_str(
         ",\n\
            \"keywords\": [\"5-15 distinctive keywords/phrases that identify this entity \
@@ -2356,9 +2356,9 @@ fn build_intelligence_prompt_inner(
          abbreviations, and commonly used references.\"]",
     );
 
-    // I396/I499: Health section — narrative-only when pre-computed, full when not
+    // Health section — narrative-only when pre-computed, full when not
     if ctx.computed_health.is_some() {
-        // I499: Pre-computed health available — LLM only provides narrative + actions
+        // Pre-computed health available — LLM only provides narrative + actions
         prompt.push_str(
             ",\n\
                \"health\": {\n\
@@ -2414,7 +2414,7 @@ fn build_intelligence_prompt_inner(
          \"coverageGaps\": [\"role or team with no relationship\"]}",
     );
 
-    // I508b: Dimension fields — only for accounts
+    // Dimension fields: only for accounts.
     if entity_type == "account" {
         prompt.push_str(
             ",\n\
@@ -2439,7 +2439,7 @@ fn build_intelligence_prompt_inner(
                \"sourceAttribution\": {\"fieldName\": [\"source1\"]}",
         );
 
-        // I554: Success plan signals for accounts
+        // Success plan signals for accounts
         prompt.push_str(
             ",\n\
                \"successPlanSignals\": {\n\
@@ -2516,7 +2516,7 @@ fn build_intelligence_prompt_inner(
 }
 
 // =============================================================================
-// Response Parser (I288: JSON-first with pipe-delimited fallback)
+// Response Parser (JSON-first with pipe-delimited fallback)
 // =============================================================================
 
 /// Intermediate JSON schema for AI response deserialization.
@@ -2525,7 +2525,7 @@ fn build_intelligence_prompt_inner(
 struct AiIntelResponse {
     #[serde(default)]
     executive_assessment: Option<String>,
-    /// I576: Concise editorial pull quote.
+    /// Concise editorial pull quote.
     #[serde(default)]
     pull_quote: Option<String>,
     #[serde(default)]
@@ -2544,44 +2544,44 @@ struct AiIntelResponse {
     next_meeting_readiness: Option<AiMeetingReadiness>,
     #[serde(default)]
     company_context: Option<AiCompanyContext>,
-    /// Portfolio intelligence for parent accounts (I384).
+    /// Portfolio intelligence for parent accounts.
     #[serde(default)]
     portfolio: Option<AiPortfolioIntelligence>,
-    /// Network intelligence for person entities (I391).
+    /// Network intelligence for person entities.
     #[serde(default)]
     network: Option<AiNetworkIntelligence>,
-    /// Inferred person-to-person relationships (I391).
+    /// Inferred person-to-person relationships.
     #[serde(default)]
     inferred_relationships: Vec<AiInferredRelationship>,
-    /// Auto-extracted keywords for entity resolution (I305).
+    /// Auto-extracted keywords for entity resolution.
     #[serde(default)]
     keywords: Vec<String>,
     /// ADR-0097 structured account health payload.
     #[serde(default)]
     health: Option<super::io::AccountHealth>,
-    /// Legacy I396: health score (0-100).
+    /// Legacy health score (0-100).
     #[serde(default)]
     health_score: Option<f64>,
-    /// Legacy I396: health trend direction + rationale.
+    /// Legacy health trend direction + rationale.
     #[serde(default)]
     health_trend: Option<AiHealthTrend>,
-    /// I396: Success metrics / KPIs the user tracks.
+    /// Success metrics / KPIs the user tracks.
     #[serde(default)]
     success_metrics: Option<Vec<AiSuccessMetric>>,
-    /// I396: Open commitments (promises made to/from the account).
+    /// Open commitments (promises made to/from the account).
     #[serde(default)]
     open_commitments: Option<Vec<AiOpenCommitment>>,
-    /// I396: Relationship depth assessment.
+    /// Relationship depth assessment.
     #[serde(default)]
     relationship_depth: Option<AiRelationshipDepth>,
-    // I508b: dimension fields — deserialize directly from LLM JSON output
+    // Dimension fields: deserialize directly from LLM JSON output.
     #[serde(default)]
     competitive_context: Vec<super::io::CompetitiveInsight>,
     #[serde(default)]
     strategic_priorities: Vec<super::io::StrategicPriority>,
     #[serde(default)]
     market_context: Vec<super::io::MarketContextItem>,
-    /// DOS-207: Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR, ...).
+    /// Regulatory / compliance items (DORA, SOC 2, HIPAA, GDPR,...).
     #[serde(default)]
     regulatory_context: Vec<super::io::RegulatoryItem>,
     #[serde(default)]
@@ -2610,15 +2610,15 @@ struct AiIntelResponse {
     nps_csat: Option<super::io::SatisfactionData>,
     #[serde(default)]
     source_attribution: Option<std::collections::HashMap<String, Vec<String>>>,
-    /// I554: Success plan signals synthesized from aggregate context.
+    /// Success plan signals synthesized from aggregate context.
     #[serde(default)]
     success_plan_signals: Option<crate::types::SuccessPlanSignals>,
-    /// DOS-13: AI-recommended actions from intelligence enrichment.
+    /// AI-recommended actions from intelligence enrichment.
     #[serde(default)]
     recommended_actions: Vec<super::io::RecommendedAction>,
 }
 
-/// I396: Health trend direction with rationale.
+/// Health trend direction with rationale.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiHealthTrend {
@@ -2662,7 +2662,7 @@ fn legacy_health_to_account_health(
     })
 }
 
-/// I396: A success metric / KPI tracked for an entity.
+/// A success metric / KPI tracked for an entity.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiSuccessMetric {
@@ -2677,7 +2677,7 @@ struct AiSuccessMetric {
     owner: Option<String>,
 }
 
-/// I396: An open commitment (promise made to/from the account).
+/// An open commitment (promise made to/from the account).
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiOpenCommitment {
@@ -2694,7 +2694,7 @@ struct AiOpenCommitment {
     status: Option<String>,
 }
 
-/// I396: Relationship depth assessment.
+/// Relationship depth assessment.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiRelationshipDepth {
@@ -2708,7 +2708,7 @@ struct AiRelationshipDepth {
     coverage_gaps: Option<Vec<String>>,
 }
 
-/// AI response structure for network intelligence (I391).
+/// AI response structure for network intelligence.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiNetworkIntelligence {
@@ -2741,7 +2741,7 @@ struct AiNetworkKeyRelationship {
     signal_summary: Option<String>,
 }
 
-/// AI response structure for an inferred relationship (I391).
+/// AI response structure for an inferred relationship.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiInferredRelationship {
@@ -2755,7 +2755,7 @@ struct AiInferredRelationship {
     rationale: Option<String>,
 }
 
-/// AI response structure for portfolio intelligence (I384).
+/// AI response structure for portfolio intelligence.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct AiPortfolioIntelligence {
@@ -2785,13 +2785,13 @@ struct AiRisk {
     source: Option<String>,
     #[serde(default = "default_urgency")]
     urgency: String,
-    /// DOS-249: Punchy 1-liner headline for the triage card.
+    /// Punchy 1-liner headline for the triage card.
     #[serde(default)]
     headline: Option<String>,
-    /// DOS-249: Evidence body with named people/timelines.
+    /// Evidence body with named people/timelines.
     #[serde(default)]
     evidence: Option<String>,
-    /// DOS-249: Specific kind label (e.g. "Renewal drag · compliance gap").
+    /// Specific kind label (e.g. "Renewal drag · compliance gap").
     #[serde(default)]
     kind_label: Option<String>,
 }
@@ -2827,7 +2827,7 @@ struct AiStakeholder {
     assessment: Option<String>,
     #[serde(default)]
     engagement: Option<String>,
-    /// DOS-207: verified from actual customer-conversation transcript
+    /// verified from actual customer-conversation transcript
     /// (true) vs inferred from meeting attendance only (false).
     #[serde(default)]
     verified: bool,
@@ -2882,7 +2882,7 @@ pub fn parse_intelligence_response(
     source_file_count: usize,
     manifest: Vec<SourceManifestEntry>,
 ) -> Result<IntelligenceJson, String> {
-    // Try JSON first (includes I470 validation + anomaly detection)
+    // Try JSON first (includes validation + anomaly detection)
     let mut intel = if let Some(parsed) = try_parse_json_response(
         response,
         entity_id,
@@ -2893,7 +2893,7 @@ pub fn parse_intelligence_response(
         parsed
     } else {
         // Fall back to pipe-delimited format (backwards compat).
-        // Run anomaly detection on the raw response even for non-JSON (I470).
+        // Run anomaly detection on the raw response even for non-JSON.
         crate::intelligence::validation::check_anomalies_public(response);
         parse_pipe_delimited_response(
             response,
@@ -2904,7 +2904,7 @@ pub fn parse_intelligence_response(
         )?
     };
 
-    // Cap array sizes to prevent oversized output (I296)
+    // Cap array sizes to prevent oversized output
     intel.risks.truncate(20);
     intel.recent_wins.truncate(10);
     intel.stakeholder_insights.truncate(20);
@@ -2959,7 +2959,7 @@ pub fn parse_intelligence_response(
     Ok(intel)
 }
 
-/// An inferred person-to-person relationship extracted from AI enrichment (I391).
+/// An inferred person-to-person relationship extracted from AI enrichment.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct InferredRelationship {
     pub from_person_id: String,
@@ -2968,7 +2968,7 @@ pub struct InferredRelationship {
     pub rationale: Option<String>,
 }
 
-/// Extract inferred relationships from an AI enrichment response (I391).
+/// Extract inferred relationships from an AI enrichment response.
 /// Returns empty vec if no valid relationships are found.
 pub fn extract_inferred_relationships(response: &str) -> Vec<InferredRelationship> {
     let json_str = match extract_json_from_response(response) {
@@ -3091,7 +3091,7 @@ fn try_parse_json_response(
 ) -> Option<IntelligenceJson> {
     let json_str = extract_json_from_response(response)?;
 
-    // I470: Validate structure and run anomaly detection before deserialization
+    // Validate structure and run anomaly detection before deserialization
     if let Err(e) = super::validation::validate_intelligence_response(json_str) {
         log::warn!(
             "Intelligence response validation failed for {}: {}",
@@ -3273,7 +3273,7 @@ fn try_parse_json_response(
         consistency_status: None,
         consistency_findings: Vec::new(),
         consistency_checked_at: None,
-        // I508b: map LLM-returned dimension fields into IntelligenceJson
+        // Map LLM-returned dimension fields into IntelligenceJson.
         competitive_context: ai_resp.competitive_context,
         strategic_priorities: ai_resp.strategic_priorities,
         market_context: ai_resp.market_context,
@@ -3582,7 +3582,7 @@ fn find_pipe_field(parts: &[&str], field: &str) -> Option<String> {
     None
 }
 
-// enrich_entity_intelligence removed per ADR-0086 (I376).
+// enrich_entity_intelligence removed per ADR-0086.
 // Entity intelligence is now enriched solely via intel_queue::run_enrichment.
 
 fn compute_signal_age(detected_at: &str) -> String {
@@ -3670,10 +3670,10 @@ mod tests {
         assert!(prompt.contains("Health: green"));
         assert!(prompt.contains("QBR"));
         assert!(prompt.contains("renewal"));
-        // I288: JSON output format
+        // JSON output format
         assert!(prompt.contains("\"companyContext\""));
         assert!(prompt.contains("JSON"));
-        // I139: prompt refinements
+        // prompt refinements
         assert!(prompt.contains("Lead with conclusions"));
         assert!(prompt.contains("Do NOT include footnotes"));
         assert!(prompt.contains("Max 250 words"));
@@ -4110,7 +4110,7 @@ Hope this helps!"#;
 }
 
 // ==========================================================================
-// I619 — Prompt Evaluation Suite: golden fixture tests
+// Prompt Evaluation Suite: golden fixture tests
 // ==========================================================================
 
 #[cfg(test)]
@@ -4335,7 +4335,7 @@ mod eval_tests {
             "Must have value delivered"
         );
 
-        // Competitive context (I508a dimension field)
+        // Competitive context dimension field.
         assert!(
             !intel.competitive_context.is_empty(),
             "Must have competitive context"
@@ -4359,7 +4359,7 @@ mod eval_tests {
             "Must have expansion signals"
         );
 
-        // Success plan signals (I554)
+        // Success plan signals
         assert!(
             intel.success_plan_signals.is_some(),
             "Must have success plan signals"
@@ -4503,7 +4503,7 @@ mod eval_tests {
         assert!(rels2.is_empty(), "Non-array must produce empty vec");
     }
 
-    // ── I645 Track B: Learning loop tests ──
+    // ──  Track B: Learning loop tests ──
 
     use crate::db::test_utils::test_db;
 

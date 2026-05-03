@@ -10,15 +10,15 @@ import styles from "@/pages/AccountDetailEditorial.module.css";
 
 interface AccountHealthSectionProps {
   health: NonNullable<EntityIntelligence["health"]>;
-  /** DOS-83: Consistency findings for bleed detection. */
+  /** Consistency findings for bleed detection. */
   consistencyFindings?: ConsistencyFinding[];
 }
 
 export function AccountHealthSection({ health, consistencyFindings }: AccountHealthSectionProps) {
-  // DOS-84: When fewer than 3 dimensions have data, show "Insufficient Data"
+  // When fewer than 3 dimensions have data, show "Insufficient Data"
   // Use !== true so undefined (old cached data) also triggers insufficient display
   const isInsufficient = health.sufficientData !== true;
-  // DOS-83: Check for cross-entity contamination in health narrative
+  // Check for cross-entity contamination in health narrative
   const narrativeBleed = hasBleedFlag(consistencyFindings, "health.narrative");
 
   return (

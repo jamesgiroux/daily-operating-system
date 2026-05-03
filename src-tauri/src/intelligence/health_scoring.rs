@@ -1,4 +1,4 @@
-//! I499: Algorithmic account health scoring engine (ADR-0097).
+//! Algorithmic account health scoring engine (ADR-0097).
 //!
 //! "LLM explains numbers, doesn't pick them." Six dimensions compute a score;
 //! the LLM provides narrative only.
@@ -14,7 +14,7 @@ use super::io::{
     OrgHealthData, RelationshipDimensions,
 };
 
-// DOS-53: Pushing actions to Linear could feed the engagement health dimension
+// Pushing actions to Linear could feed the engagement health dimension
 // as evidence of active account work. Deferred to post-v1.2.0 — the current
 // 6 dimensions are algorithmically computed from meeting/email/stakeholder data,
 // and action push frequency is too new a signal to tune weights on.
@@ -61,7 +61,7 @@ pub fn compute_account_health_with_preset(
     let weights = redistribute_weights(&dims, raw_weights);
     let confidence = compute_confidence(&dims);
 
-    // DOS-84: Count dimensions with actual data (weight > 0), excluding
+    // Count dimensions with actual data (weight > 0), excluding
     // the signal_momentum neutral placeholder which always has weight > 0.
     let sufficient_data = has_sufficient_data(&dims);
 
@@ -123,7 +123,7 @@ pub fn compute_account_health_with_preset(
         }
     }
 
-    // I633: Compute real trend from health_score_history instead of hardcoded "stable"
+    // Compute real trend from health_score_history instead of hardcoded "stable"
     let trend = compute_trend_from_history(db, &account.id, score);
 
     // Record this score in history for future trend computation
@@ -200,7 +200,7 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
     // Compare current score to oldest in window
     let oldest_score = history.last().map(|(s, _)| *s).unwrap_or(current_score);
     let delta_f = current_score - oldest_score;
-    // DOS-249: integer delta for the "▲ +12 in 30d" meta line
+    // integer delta for the "▲ +12 in 30d" meta line
     let delta_i = delta_f.round() as i32;
 
     let (direction, rationale) = if delta_f > 10.0 {
@@ -236,7 +236,7 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
         _ => 0.3,
     };
 
-    // DOS-249: Build structured signal tags for the trend meta line.
+    // Build structured signal tags for the trend meta line.
     // Derived from dimension evidence in the DB — one tag per declining or
     // improving dimension with a non-trivial trend signal.
     let tags = build_trend_tags(db, account_id, direction);
@@ -251,7 +251,7 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
     }
 }
 
-/// DOS-249: Build structured tags for the trend meta line from dimension
+/// Build structured tags for the trend meta line from dimension
 /// evidence evidence. Emits up to 4 tags (matching mockup style) derived from
 /// dimension trends stored in the most-recent health_json column.
 fn build_trend_tags(db: &ActionDb, account_id: &str, trend_direction: &str) -> Vec<HealthTrendTag> {
@@ -487,7 +487,7 @@ fn compute_meeting_cadence(db: &ActionDb, account_id: &str) -> DimensionScore {
         }
     }
 
-    // I555: Quality modifier from interaction dynamics
+    // Quality modifier from interaction dynamics
     let quality_multiplier = {
         let mut q = 1.0f64;
         if let Ok(dynamics_rows) = db
@@ -601,7 +601,7 @@ fn compute_stakeholder_coverage(db: &ActionDb, account_id: &str) -> DimensionSco
         return null_dimension("No stakeholders mapped");
     }
 
-    // I633: Tiered stakeholder scoring — base 50 for having any stakeholders,
+    // Tiered stakeholder scoring — base 50 for having any stakeholders,
     // +20 per active archetype role, +10 depth bonus.
     //
     //   0 stakeholders       → null (excluded from scoring)
@@ -621,7 +621,7 @@ fn compute_stakeholder_coverage(db: &ActionDb, account_id: &str) -> DimensionSco
             continue;
         }
 
-        // I555: Verify attendance recency via meeting_attendees
+        // Verify attendance recency via meeting_attendees
         let role_active = if let Some(person_id) = team
             .iter()
             .find(|t| t.role.to_lowercase().contains(role))
@@ -747,7 +747,7 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
         })
         .ok();
 
-    // I633: Raised inference caps — strong engagement shouldn't be penalized
+    // Raised inference caps — strong engagement shouldn't be penalized
     // just because the user hasn't tagged a champion. 15-20 point discount
     // vs explicit champion is fair, but old caps (55/40/25) were too harsh.
     match top_attendee {
@@ -810,7 +810,7 @@ fn infer_champion_from_attendance(db: &ActionDb, account_id: &str) -> DimensionS
 }
 
 fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScore {
-    // I652: Query account_stakeholder_roles directly for champion designation
+    // Query account_stakeholder_roles directly for champion designation
     let champion_rows: Vec<(String, String)> = db
         .conn
         .prepare(
@@ -834,7 +834,7 @@ fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScor
         return infer_champion_from_attendance(db, account_id);
     }
 
-    // I555: Query per-champion meeting engagement from meeting_champion_health
+    // Query per-champion meeting engagement from meeting_champion_health
     let champion_assessments: Vec<(String, String, Option<String>)> = db
         .conn
         .prepare(
@@ -854,7 +854,7 @@ fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScor
         .unwrap_or_default();
 
     if champion_assessments.is_empty() {
-        // I646 C1: User designated a champion — check if they specifically attended meetings
+        // Contract: User designated a champion — check if they specifically attended meetings
         let champion_person_id = champion.map(|(pid, _)| pid).unwrap_or("");
         let champion_name = champion.map(|(_, name)| name).unwrap_or("Champion");
 
@@ -963,7 +963,7 @@ fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScor
         evidence.push(format!("{short_date}: {status}{detail}"));
     }
 
-    // I535: Augment with Glean Gong signals if available
+    // Augment with Glean Gong signals if available
     let mut final_score = avg_score;
     let glean_gong_signals: Vec<(String, f64)> = db
         .conn
@@ -1023,7 +1023,7 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
     let days_to_renewal = (end_date - today).num_days() as f64;
     let mut evidence = vec![format!("{days_to_renewal:.0} days to renewal")];
 
-    // I633: Two-factor financial proximity — OUTCOME + ATTENTION.
+    // Two-factor financial proximity — OUTCOME + ATTENTION.
     //
     // Old formula used exponential decay from renewal date, which inverted the
     // meaning: a just-renewed account scored 5/100 while an about-to-churn
@@ -1122,7 +1122,7 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
         "stable".to_string()
     };
 
-    // I535: Augment with Glean CRM signals (Salesforce renewal probability)
+    // Augment with Glean CRM signals (Salesforce renewal probability)
     let crm_signals: Vec<(String, f64)> = db
         .conn
         .prepare(
@@ -1168,7 +1168,7 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
         }
     }
 
-    // DOS-207: Active regulatory gaps penalize financial proximity.
+    // Active regulatory gaps penalize financial proximity.
     // Count recent regulatory_gap_detected signals (last 30 days) and
     // subtract 5 points each, capped at 15 total. The surface forms the
     // risk side of the dimension — compliance gaps are procurement-side
@@ -1437,7 +1437,7 @@ fn redistribute_weights(dims: &RelationshipDimensions, raw: [f64; 6]) -> [f64; 6
     result
 }
 
-/// DOS-84: Determine if enough dimensions have real data for a reliable health score.
+/// Determine if enough dimensions have real data for a reliable health score.
 /// Returns true when >= 3 non-placeholder dimensions are populated.
 fn has_sufficient_data(dims: &RelationshipDimensions) -> bool {
     let populated_count = [
@@ -1463,7 +1463,7 @@ fn is_neutral_momentum_placeholder(dim: &DimensionScore) -> bool {
 }
 
 fn compute_confidence(dims: &RelationshipDimensions) -> f64 {
-    // I633: Smooth confidence curve replacing step function.
+    // Smooth confidence curve replacing step function.
     //
     // Old thresholds had harsh cliffs (0.1 → 0.3 → 0.6 → 0.9) that caused
     // 40% score regression to neutral at the common 3-4 dimension case.
@@ -1629,7 +1629,7 @@ mod tests {
             financial_proximity: active_dim(40.0),
             signal_momentum: active_dim(50.0),
         };
-        // I633: 6 populated dims → 0.5 + 6/6 * 0.5 = 1.0, clamped to 0.95
+        // 6 populated dims → 0.5 + 6/6 * 0.5 = 1.0, clamped to 0.95
         assert!((compute_confidence(&dims) - 0.95).abs() < 1e-6);
     }
 
@@ -1926,7 +1926,7 @@ mod tests {
         );
     }
 
-    // ===== I633: New tests for formula fixes =====
+    // ===== New tests for formula fixes =====
 
     #[test]
     fn test_confidence_smooth_curve_values() {
@@ -2245,7 +2245,7 @@ mod tests {
         );
     }
 
-    // ===== DOS-84: Sufficient data threshold tests =====
+    // ===== Sufficient data threshold tests =====
 
     #[test]
     fn test_sufficient_data_with_sparse_dimensions() {

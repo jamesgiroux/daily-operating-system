@@ -58,7 +58,7 @@ pub fn process_file(
     profile: &str,
     entity_tracker_path: Option<&str>,
 ) -> ProcessingResult {
-    // I60: validate path stays within inbox
+    // validate path stays within inbox
     let file_path = match crate::util::validate_inbox_path(workspace, filename) {
         Ok(p) => p,
         Err(e) => return ProcessingResult::Error { message: e },
@@ -158,7 +158,7 @@ pub fn process_file(
                         }
                     }
 
-                    // I474: Match MeetingNotes to historical meetings
+                    // Match MeetingNotes to historical meetings
                     if matches!(classification, Classification::MeetingNotes { .. }) {
                         if let Some(db) = db {
                             try_match_to_meeting(&classification, filename, &dest, db);
@@ -540,7 +540,7 @@ fn extract_and_sync_actions(
     }
 }
 
-/// I474: Attempt to match a MeetingNotes document to a historical meeting.
+/// Attempt to match a MeetingNotes document to a historical meeting.
 ///
 /// Queries recent meetings (last 14 days), runs the multi-signal matcher,
 /// and on confident match: updates the meeting's transcript metadata and

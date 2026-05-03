@@ -4,7 +4,7 @@ interface ReportSectionProps {
   heading: string;
   children: React.ReactNode;
   className?: string;
-  /** I529: Optional inline feedback controls rendered after the heading */
+  /** Optional inline feedback controls rendered after the heading */
   feedbackSlot?: ReactNode;
 }
 

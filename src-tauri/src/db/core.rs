@@ -14,7 +14,7 @@ use crate::db::encryption;
 use rusqlite::{params, Connection, OpenFlags};
 
 // ---------------------------------------------------------------------------
-// Dev DB isolation (I298)
+// Dev DB isolation
 // ---------------------------------------------------------------------------
 
 /// Process-wide flag steering `ActionDb::db_path()` between live and dev files.
@@ -146,7 +146,7 @@ impl ActionDb {
         // Run schema migrations (ADR-0071)
         crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
 
-        // Enable FK constraint enforcement (I285). Set after migrations since
+        // Enable FK constraint enforcement. Set after migrations since
         // migration 010 uses PRAGMA foreign_keys = OFF for table recreation.
         conn.execute_batch("PRAGMA foreign_keys = ON;")?;
 
@@ -546,7 +546,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// I652: Auto-dismiss stakeholder suggestions for internal team members.
+    /// Auto-dismiss stakeholder suggestions for internal team members.
     /// Cleans up suggestions that were created before the internal filter was added.
     fn dismiss_internal_stakeholder_suggestions(conn: &Connection) -> Result<(), DbError> {
         let dismissed = conn.execute(
@@ -573,7 +573,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// I652: Backfill engagement/assessment columns on `account_stakeholders` from
+    /// Backfill engagement/assessment columns on `account_stakeholders` from
     /// the legacy `entity_assessment.stakeholder_insights_json` blob.
     /// Runs once at startup — only touches rows where `engagement IS NULL`.
     fn backfill_stakeholder_columns(conn: &Connection) -> Result<(), DbError> {
@@ -759,7 +759,7 @@ impl ActionDb {
         Ok(())
     }
 
-    /// I644: One-time backfill of dashboard.json narrative fields into DB columns.
+    /// One-time backfill of dashboard.json narrative fields into DB columns.
     ///
     /// Iterates accounts with `tracker_path IS NOT NULL AND company_overview IS NULL`,
     /// reads their dashboard.json, and writes the fields to DB.

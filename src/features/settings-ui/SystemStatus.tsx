@@ -267,7 +267,7 @@ interface AiBackgroundConfig {
     emailPollIntervalMinutes?: number;
   };
   hygienePreMeetingHours?: number;
-  /** Daily AI token budget (DOS-279). */
+  /** Daily AI token budget. */
   dailyAiTokenBudget?: number;
 }
 
@@ -1119,7 +1119,7 @@ function CaptureSection() {
 }
 
 // ---------------------------------------------------------------------------
-// DataManagementSection — reset email learning (I374)
+// DataManagementSection — reset email learning
 // ---------------------------------------------------------------------------
 
 function DataManagementSection() {
@@ -1173,7 +1173,7 @@ function DataManagementSection() {
 }
 
 // ---------------------------------------------------------------------------
-// SyncStatusSection — I428: per-source sync freshness
+// SyncStatusSection — per-source sync freshness
 // ---------------------------------------------------------------------------
 
 const SOURCE_LABELS: Record<string, string> = {
@@ -1265,7 +1265,7 @@ function SyncStatusSection() {
 }
 
 // ---------------------------------------------------------------------------
-// SecuritySection — app lock timeout config (I465)
+// SecuritySection — app lock timeout config
 // ---------------------------------------------------------------------------
 
 const lockTimeoutOptions = [

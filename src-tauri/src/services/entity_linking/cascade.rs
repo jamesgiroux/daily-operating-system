@@ -126,7 +126,7 @@ pub fn run_cascade(
                 c3_promote_trusted_stakeholders(ctx, link_ctx, &primary.entity_id, db)?;
             }
 
-            // DOS-258: after any account-primary resolution, sweep the
+            // after any account-primary resolution, sweep the
             // account's stakeholder graph for domains not yet registered.
             // Closes the loop alongside C2/C3 so meeting → primary-account
             // paths self-heal account_domains on every pass.
@@ -365,7 +365,7 @@ fn c3_promote_trusted_stakeholders(
         let _ = db.suggest_stakeholder_pending(account_id, person_id, "user_set_primary", 1.0);
         let _ = db.confirm_stakeholder(account_id, person_id);
 
-        // DOS-258 Tier 3: self-healing — a confirmed stakeholder's external
+        // Tier 3: self-healing — a confirmed stakeholder's external
         // domain is evidence the account owns that domain. Merge it into
         // account_domains so future P4 domain evidence fires without a
         // second manual confirmation.

@@ -1,4 +1,4 @@
--- Migration 048: Google Drive sync metadata table (I426)
+-- Migration 048: Google Drive sync metadata table
 --
 -- Stores watched Drive sources and their sync state.
 -- Files are downloaded and placed in entity Documents/ folders.

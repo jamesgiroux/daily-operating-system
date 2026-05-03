@@ -1,5 +1,5 @@
 /**
- * useEnrichmentProgress — Progressive enrichment event listener (I575).
+ * useEnrichmentProgress — Progressive enrichment event listener.
  *
  * Listens for `enrichment-progress` and `enrichment-complete` Tauri events
  * emitted by the backend as each intelligence dimension finishes. Returns

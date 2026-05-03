@@ -1,4 +1,4 @@
--- I644: Promote dashboard.json narrative fields to DB columns.
+-- Promote dashboard.json narrative fields to DB columns.
 -- Eliminates filesystem reads from detail page paths.
 
 -- Account narrative fields (previously in dashboard.json)

@@ -1,4 +1,4 @@
--- DOS-258 Lane A: entity_graph_version singleton counter + triggers.
+-- entity_graph_version singleton counter + triggers.
 --
 -- Replaces per-evaluation hash walks with a trigger-maintained O(1) counter.
 -- The evaluate() function reads this version at the start of each evaluation

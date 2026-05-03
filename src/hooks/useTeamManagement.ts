@@ -24,7 +24,7 @@ export function useTeamManagement(
   accountId: string | undefined,
   reload: () => Promise<void>,
   /**
-   * DOS-229 Wave 0e Fix 5: Stakeholder mutation commands now return a full
+   * Stakeholder mutation commands now return a full
    * AccountDetail assembled on the writer connection. When provided, the
    * hook applies the returned detail directly instead of re-fetching —
    * closes the WAL-snapshot lag window where suggestions/role changes
@@ -162,7 +162,7 @@ export function useTeamManagement(
     );
   }, [teamInlineName, teamInlineEmail, teamInlineRole, performTeamOperation, createAndAddTeamMember]);
 
-  // ── I652: Stakeholder engagement, assessment, roles, suggestions ──
+  // ── Stakeholder engagement, assessment, roles, suggestions ──
 
   const refreshWithSuggestions = useCallback(async () => {
     await reload();
@@ -172,7 +172,7 @@ export function useTeamManagement(
       .catch(() => setSuggestions([]));
   }, [accountId, reload]);
 
-  // DOS-229 Wave 0e Fix 5: direct-apply the returned AccountDetail when the
+  // direct-apply the returned AccountDetail when the
   // hook was wired with an applyDetail callback; fall back to refresh if
   // not (keeps the hook usable from sites that don't own the detail state).
   // Suggestions are a separate query so we still fetch those post-write.
@@ -298,7 +298,7 @@ export function useTeamManagement(
     addTeamMemberDirect,
     createTeamMemberDirect,
     changeTeamMemberRole,
-    // I652: Stakeholder engagement, assessment, roles, suggestions
+    // Stakeholder engagement, assessment, roles, suggestions
     suggestions,
     updateStakeholderEngagement,
     updateStakeholderAssessment,

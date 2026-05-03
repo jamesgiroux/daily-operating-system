@@ -1,5 +1,5 @@
 /**
- * @deprecated DOS-41: Use `IntelligenceCorrection` on account pages instead.
+ * @deprecated Use `IntelligenceCorrection` on account pages instead.
  * `IntelligenceFeedback` remains on project and person pages during the
  * strangler-fig migration. Do not add new usages on account surfaces.
  */
@@ -14,7 +14,7 @@ interface IntelligenceFeedbackProps {
 }
 
 /**
- * Inline thumbs-up / thumbs-down feedback for AI-generated intelligence (I529).
+ * Inline thumbs-up / thumbs-down feedback for AI-generated intelligence.
  *
  * Renders two small icon buttons. Hidden by default (opacity: 0),
  * revealed on hover or when a vote is active.

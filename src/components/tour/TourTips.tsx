@@ -1,7 +1,7 @@
 /**
  * TourTips.tsx
  *
- * Floating corner card with 4 post-wizard tips (I56).
+ * Floating corner card with 4 post-wizard tips.
  * Appears after wizard completion on first real launch.
  * Not a spotlight overlay — just a corner card with navigation.
  */

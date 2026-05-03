@@ -1,4 +1,4 @@
-//! Email-specific relevance scoring adapter (I395).
+//! Email-specific relevance scoring adapter.
 //!
 //! Maps DbEmail to ScoringContext, applies noise sender/subject penalties,
 //! and builds today's meeting context for embedding similarity.
@@ -36,7 +36,7 @@ const NOISE_SUBJECT_PREFIXES: &[&str] = &[
 ///
 /// `merged_signal_keywords` is the pre-merged keyword list from
 /// `AppState::get_merged_signal_config().signal_keywords`. Passed explicitly
-/// so this function does not reach into global state (DOS-176).
+/// so this function does not reach into global state.
 pub fn score_single_email(
     db: &ActionDb,
     model: Option<&EmbeddingModel>,
@@ -84,7 +84,7 @@ pub fn score_single_email(
 /// Score all enriched active emails. Returns (email_id, score, reason) tuples.
 ///
 /// `merged_signal_keywords` is the pre-merged keyword list from
-/// `AppState::get_merged_signal_config().signal_keywords` (DOS-176).
+/// `AppState::get_merged_signal_config.signal_keywords`.
 pub fn score_emails(
     db: &ActionDb,
     model: Option<&EmbeddingModel>,

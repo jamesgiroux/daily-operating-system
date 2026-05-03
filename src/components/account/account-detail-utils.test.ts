@@ -2,13 +2,13 @@ import { describe, expect, it } from "vitest";
 import { buildWorkChapters } from "./account-detail-utils";
 
 /**
- * DOS-13 Work tab: chapter pills MUST match the section ids rendered by
+ *  Work tab: chapter pills MUST match the section ids rendered by
  * AccountDetailPage.renderWorkView, or the folio nav island dead-links.
  *
  * This snapshot is the authoritative contract for those ids.
  *
  * Wave 0g Finding 2: "shared" is conditional on hasSharedData (real
- * tracker provenance, arrives in v1.2.2 / DOS-75).
+ * tracker provenance, arrives in v1.2.2).
  */
 // Phase 2a chapter order: Commitments is the opener, Programs sits
 // between Suggestions and the optional Shared pill, The Record is the

@@ -1,4 +1,4 @@
-//! General-purpose item relevance scorer (I395).
+//! General-purpose item relevance scorer.
 //!
 //! Composes existing signal infrastructure — entity linkage counts, embedding
 //! cosine similarity, AI urgency mapping, keyword matching, and time decay —
@@ -33,7 +33,7 @@ pub struct ScoredItem {
 ///
 /// `merged_signal_keywords` is the pre-merged list of (keyword, weight) pairs from
 /// `AppState::get_merged_signal_config()`. Callers are responsible for passing the
-/// correct merged list — this function does not reach into global state (DOS-176).
+/// correct merged list — this function does not reach into global state.
 ///
 /// Scoring dimensions:
 /// - Entity linkage (0.0–0.30): signal_events count for entity
@@ -66,7 +66,7 @@ pub fn score_item(
         0.0
     };
 
-    // 2. Meeting relevance (0.0–0.25) — entity must have a meeting today (I449)
+    // 2. Meeting relevance (0.0–0.25) — entity must have a meeting today
     let relevance_score = if !todays_meeting_context.is_empty() && !ctx.content_text.is_empty() {
         // Only claim meeting relevance if the email's entity actually has a meeting today
         let entity_has_meeting = ctx
@@ -150,7 +150,7 @@ pub fn score_item(
     }
 }
 
-/// Check whether an entity has a meeting scheduled today (I449).
+/// Check whether an entity has a meeting scheduled today.
 fn entity_has_meeting_today(db: &ActionDb, entity_id: &str) -> bool {
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
     let start = format!("{}T00:00:00", today);
@@ -303,7 +303,7 @@ mod tests {
     }
 
     // =========================================================================
-    // DOS-176: Preset-aware signal keyword tests
+    // Preset-aware signal keyword tests
     // =========================================================================
 
     /// Build a merged keyword list from a preset (mirrors the runtime path).

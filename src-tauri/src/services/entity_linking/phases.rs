@@ -284,7 +284,7 @@ pub fn run_phases(
     let phase3_result = db.with_transaction(|_| {
         // CAS: read graph version inside the transaction. If it changed since
         // the adapter built ctx, retry phase3 once with the fresh snapshot
-        // rather than writing stale links (DOS-258 spec: "retry once").
+        // rather than writing stale links (spec: "retry once").
         let current_version = db.get_entity_graph_version().unwrap_or(link_ctx.graph_version);
         let refreshed_ctx: std::borrow::Cow<LinkingContext> = if current_version != link_ctx.graph_version {
             log::info!(

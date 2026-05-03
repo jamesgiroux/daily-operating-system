@@ -1,4 +1,4 @@
-//! DOS-210 W3-A: Ability registry, AbilityContext, and typed/erased invocation.
+//! Ability registry, AbilityContext, and typed/erased invocation.
 //!
 //! Per ADR-0102 §181-258. Type definitions consumed by the `#[ability]`
 //! proc macro (W3-A part 3) for `inventory::submit!` registration.
@@ -116,7 +116,7 @@ pub type AbilityResult<T> = Result<AbilityOutput<T>, AbilityError>;
 
 /// AbilityContext wraps ServiceContext and adds actor + confirmation.
 ///
-/// DOS-304 hard boundary: this is the ONLY way ability code accesses runtime;
+///  hard boundary: this is the ONLY way ability code accesses runtime;
 /// raw ActionDb / AppState / SQL handles / fs writers / live queues are NEVER
 /// surfaced here.
 pub struct AbilityContext<'a> {

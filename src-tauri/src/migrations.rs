@@ -423,27 +423,27 @@ const MIGRATIONS: &[Migration] = &[
         version: 101,
         sql: include_str!("migrations/100_email_retry_batch.sql"),
     },
-    // DOS-228 Wave 0e fixes: risk_briefing_jobs.attempt_id (CAS lifecycle)
+    // risk_briefing_jobs.attempt_id (CAS lifecycle)
     // + health_recompute_pending (durable debouncer). Combined migration to
     // minimize collision with parallel work.
     Migration {
         version: 102,
         sql: include_str!("migrations/101_risk_briefing_attempt_and_recompute_pending.sql"),
     },
-    // DOS-242: emails.is_noise column for hard-drop bulk/marketing filter.
+    // emails.is_noise column for hard-drop bulk/marketing filter.
     Migration {
         version: 103,
         sql: include_str!("migrations/102_email_is_noise.sql"),
     },
-    // DOS-31: track stale-failed auto-retry count so we cap automatic
+    // track stale-failed auto-retry count so we cap automatic
     // promotions instead of looping forever on rows that fundamentally
-    // can't enrich. DOS-29 reads this column to compute the
+    // can't enrich. Email sync stats read this column to compute the
     // `permanently_failed` count surfaced in the failure UX.
     Migration {
         version: 104,
         sql: include_str!("migrations/103_email_auto_retry_count.sql"),
     },
-    // DOS-247: Defensive re-add of `is_noise` column. Tolerated as
+    // Defensive re-add of `is_noise` column. Tolerated as
     // "duplicate column name" by the framework if the column already
     // exists (normal upgrade); a real fix for users whose v103
     // schema_version was recorded without the ALTER actually applying.
@@ -451,14 +451,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 105,
         sql: include_str!("migrations/104_email_is_noise_defensive.sql"),
     },
-    // DOS-247: Recover emails over-suppressed by DOS-242 Rule 3
+    // Recover emails over-suppressed by Rule 3
     // (List-Unsubscribe alone). Rule is tightened in code; this
     // migration restores is_noise=0 for rows outside the bulk allow-list.
     Migration {
         version: 106,
         sql: include_str!("migrations/105_email_noise_recovery.sql"),
     },
-    // DOS-248: After DOS-247's coarse recovery, re-suppress noreply
+    // After the coarse email-noise recovery, re-suppress noreply
     // senders and bracket-prefix internal-org notifications that the
     // tightened rules now catch. Brings existing data in line with
     // the fixed code without requiring a fresh sync.
@@ -481,7 +481,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 109,
         sql: include_str!("migrations/108_work_tab_actions.sql"),
     },
-    // DOS-269: Persist Health-tab triage card Snooze + Confirm-resolved state
+    // Persist Health-tab triage card Snooze + Confirm-resolved state
     // so dismissals survive refresh. Keyed on (entity_type, entity_id,
     // triage_key); rendering-time filter hides rows where
     // resolved_at IS NOT NULL or snoozed_until > now.
@@ -489,7 +489,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 110,
         sql: include_str!("migrations/109_triage_snoozes.sql"),
     },
-    // DOS-258 Lane A: entity linking schema foundation.
+    // entity linking schema foundation.
     // linked_entities_raw (write surface) + linked_entities view (read surface),
     // linking_dismissals (cross-surface dismissal store),
     // entity_linking_evaluations (append-only provenance audit),
@@ -520,14 +520,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 116,
         sql: include_str!("migrations/115_migrate_meeting_entity_dismissals.sql"),
     },
-    // DOS-258 Lane C: pending_thread_inheritance queue for P2 out-of-order
+    // pending_thread_inheritance queue for P2 out-of-order
     // email delivery. When a child email arrives before its parent, P2 enqueues
     // it here; the queue is drained when the parent is later evaluated.
     Migration {
         version: 117,
         sql: include_str!("migrations/116_pending_thread_inheritance.sql"),
     },
-    // DOS-258 follow-up: complete entity_graph_version trigger coverage.
+    // complete entity_graph_version trigger coverage.
     // Adds INSERT/DELETE + name/archived UPDATE triggers for accounts and
     // projects so P5 name-matching and P4/P4b/P4c domain evidence stay
     // consistent after entity creation, deletion, or rename.
@@ -535,19 +535,19 @@ const MIGRATIONS: &[Migration] = &[
         version: 118,
         sql: include_str!("migrations/117_entity_graph_version_full_triggers.sql"),
     },
-    // DOS-258 follow-up: add source provenance to account_domains so
+    // add source provenance to account_domains so
     // raw_rebuild_account_domains can purge inferred domains before cutover.
     Migration {
         version: 119,
         sql: include_str!("migrations/118_account_domains_source.sql"),
     },
-    // DOS-258 follow-up: email To/Cc recipient columns for multi-participant
+    // email To/Cc recipient columns for multi-participant
     // domain evidence in P4b/P4c rules.
     Migration {
         version: 120,
         sql: include_str!("migrations/119_email_to_cc.sql"),
     },
-    // DOS-258 evidence-hierarchy fix: rename P4a/P4b/P4c rule identifiers to
+    // Evidence-hierarchy fix: rename P4a/P4b/P4c rule identifiers to
     // P4b/P4c/P4d so a new stakeholder-inference rule can take the P4a slot.
     // Shifts existing rows in linked_entities_raw (rule_id, source) and
     // entity_linking_evaluations (rule_id) via a two-pass update.
@@ -555,14 +555,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 121,
         sql: include_str!("migrations/120_dos_258_rule_rename.sql"),
     },
-    // DOS-258 Tier 4: add last_migration_sweep_at to entity_graph_version so
+    // Entity-graph sweep state: add last_migration_sweep_at to entity_graph_version so
     // the startup rescan can self-correct existing weak primaries once per
     // upgrade without re-running on every boot.
     Migration {
         version: 122,
         sql: include_str!("migrations/121_entity_graph_sweep_state.sql"),
     },
-    // DOS-321: collapse duplicate commitment-typed actions where the AI
+    // collapse duplicate commitment-typed actions where the AI
     // emitted the same commitment text under different commitment_id
     // values across enrichment runs. Pick a canonical row per
     // (entity, normalized_title), rewire bridge rows to point at it,
@@ -572,7 +572,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 123,
         sql: include_str!("migrations/122_dos_321_collapse_commitment_dupes.sql"),
     },
-    // DOS-310: per-entity claim_version columns (Option A invalidation primitive)
+    // per-entity claim_version columns (Option A invalidation primitive)
     // + shared migration_state.global_claim_epoch row. Replaces the
     // entity_graph_version trigger extension that round-1 Codex review caught
     // as a singleton-counter cache thrash bug. SubjectRef::Multi uses
@@ -581,7 +581,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 124,
         sql: include_str!("migrations/123_dos_310_per_entity_claim_invalidation.sql"),
     },
-    // DOS-311: migration_state.schema_epoch row. Workers capture it at job
+    // migration_state.schema_epoch row. Workers capture it at job
     // pickup; the WriteFence rechecks at write-back. If a migration bumps
     // the epoch mid-flight, in-flight work is rejected (caller logs +
     // re-queues). See src-tauri/src/intelligence/write_fence.rs.
@@ -589,35 +589,35 @@ const MIGRATIONS: &[Migration] = &[
         version: 125,
         sql: include_str!("migrations/124_dos_311_schema_epoch.sql"),
     },
-    // DOS-308: covering index for suppression lookups + quarantine table for
-    // tombstone remediation before DOS-7's claims substrate migration.
+    // covering index for suppression lookups + quarantine table for
+    // tombstone remediation before the claims substrate migration.
     Migration {
         version: 126,
         sql: include_str!("migrations/125_suppression_remediation.sql"),
     },
-    // DOS-308: durable operator audit for malformed suppression decisions.
+    // durable operator audit for malformed suppression decisions.
     Migration {
         version: 127,
         sql: include_str!("migrations/126_suppression_malformed_log.sql"),
     },
-    // DOS-308 cycle-3: mark remediated quarantine rows as resolved audit trail.
+    //  cycle-3: mark remediated quarantine rows as resolved audit trail.
     Migration {
         version: 128,
         sql: include_str!("migrations/127_quarantine_resolved_at.sql"),
     },
-    // DOS-308 cycle-4: partial index for the unresolved-row gate query.
+    //  cycle-4: partial index for the unresolved-row gate query.
     // Split from migration 128 so a partial-failure retry cannot leave
     // the column added but the index missing.
     Migration {
         version: 129,
         sql: include_str!("migrations/128_quarantine_unresolved_index.sql"),
     },
-    // DOS-7 D1: claims commit substrate schema (intelligence_claims + 5 siblings).
+    // Claims commit substrate schema (intelligence_claims + 5 siblings).
     Migration {
         version: 130,
         sql: include_str!("migrations/129_dos_7_claims_schema.sql"),
     },
-    // DOS-7 D3a-1: backfill mechanisms 1-4 (suppression_tombstones,
+    // Claims backfill D3a-1: backfill mechanisms 1-4 (suppression_tombstones,
     // account_stakeholder_roles.dismissed_at, email_dismissals,
     // meeting_entity_dismissals) into intelligence_claims tombstone rows.
     // D3a-2 covers mechanisms 5-8; D3b covers DismissedItem JSON blobs.
@@ -625,14 +625,14 @@ const MIGRATIONS: &[Migration] = &[
         version: 131,
         sql: include_str!("migrations/130_dos_7_claims_backfill_a1.sql"),
     },
-    // DOS-7 D3a-2: backfill mechanisms 5-8 (linking_dismissals,
+    // Claims backfill D3a-2: backfill mechanisms 5-8 (linking_dismissals,
     // briefing_callouts.dismissed_at, nudge_dismissals, triage_snoozes)
     // + duplicate-pair corroboration between mechanism 4 and 5.
     Migration {
         version: 132,
         sql: include_str!("migrations/131_dos_7_claims_backfill_a2.sql"),
     },
-    // DOS-7 L2 cycle-3 fix: emails.claim_version so SubjectRef::Email
+    // Add emails.claim_version so SubjectRef::Email
     // participates in per-entity invalidation alongside Account/Meeting/
     // Person/Project. Required to unwind cycle-2's Account+prefix
     // workaround for email dismissals.
@@ -640,7 +640,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 133,
         sql: include_str!("migrations/132_dos_7_email_claim_version.sql"),
     },
-    // DOS-7 L2 cycle-12 fix: withdraw m5 backfill rows whose
+    // Withdraw m5 backfill rows whose
     // subject_ref kind is not a supported SubjectRef variant
     // (e.g. owner_type='email_thread' from linking_dismissals).
     Migration {
@@ -876,7 +876,7 @@ fn create_backup_via_sqlcipher_export(
 ) -> Result<(), String> {
     // sqlcipher_export must run inside BEGIN IMMEDIATE so that WAL frames are
     // included in the snapshot. Without the transaction, SQLCipher copies only
-    // the base page state and produces an 8KB hollow file (DOS-273).
+    // the base page state and produces an 8KB hollow file.
     let backup_path_s = backup_path.to_string_lossy().replace('\'', "''");
     conn.execute_batch(&format!(
         "ATTACH DATABASE '{backup_path_s}' AS premigration KEY \"x'{hex_key}'\";"
@@ -997,7 +997,7 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
     //
     // The previous sqlcipher_export-first approach produced 8KB hollow files
     // because sqlcipher_export without a transaction only copies base pages,
-    // not the WAL. The Backup API reads through the WAL correctly (DOS-273).
+    // not the WAL. The Backup API reads through the WAL correctly.
     let backup_result = if encrypted {
         let key = encryption_key
             .as_deref()
@@ -1074,7 +1074,7 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
         return Ok(0);
     }
 
-    // DOS-308: quarantine gate. Refuse to apply migration 126 (the DOS-7
+    // quarantine gate. Refuse to apply migration 126 (the
     // backfill territory) until unresolved quarantine rows are resolved.
     // Resolved quarantine rows are retained as audit trail and do NOT block
     // subsequent migrations.
@@ -1439,7 +1439,7 @@ mod tests {
         )
         .expect("chat_turns table should exist");
 
-        // Verify backlog/archived action statuses work (migration 074 + DOS-55)
+        // Verify backlog/archived action statuses work (migration 074)
         conn.execute(
             "INSERT INTO actions (id, title, status, created_at, updated_at)
              VALUES ('backlog-1', 'Backlog action', 'backlog', '2025-01-01', '2025-01-01')",
@@ -1733,7 +1733,7 @@ mod tests {
         )
         .expect("linear_entity_links table should exist and accept inserts");
 
-        // DOS-258 Lane A: verify entity linking schema (migrations 111–116)
+        // verify entity linking schema (migrations 111–116)
 
         // linked_entities_raw: table exists and enforces CHECK constraints
         conn.execute(
@@ -2130,7 +2130,7 @@ mod tests {
         );
     }
 
-    /// DOS-226 (Codex finding 4): migration 097 rebuilds the `emails` table to
+    ///  migration 097 rebuilds the `emails` table to
     /// widen the `enrichment_state` CHECK constraint. The rebuild must
     /// recreate every index that existed on the old table. If any index is
     /// dropped silently (as was the case pre-fix for `idx_emails_relevance`
@@ -2312,7 +2312,7 @@ mod tests {
         );
     }
 
-    /// DOS-258 evidence-hierarchy fix: verify migration 120 shifts every
+    /// Evidence-hierarchy fix: verify migration 120 shifts every
     /// P4a/P4b/P4c rule identifier one letter forward without collisions.
     /// Guards against the re-run case: applying the migration twice on
     /// already-migrated data must be a no-op (idempotent).

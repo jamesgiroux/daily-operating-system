@@ -47,7 +47,7 @@ pub struct ProjectDetailResult {
     pub parent_aggregate: Option<crate::db::ProjectParentAggregate>,
 }
 
-/// Compact child project summary for parent detail pages (I388).
+/// Compact child project summary for parent detail pages.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ProjectChildSummary {
@@ -74,7 +74,7 @@ pub async fn get_project_detail(
     crate::services::projects::get_project_detail(&project_id, &state).await
 }
 
-/// Get child projects for a parent project (I388).
+/// Get child projects for a parent project.
 #[tauri::command]
 pub async fn get_child_projects_list(
     parent_id: String,
@@ -83,7 +83,7 @@ pub async fn get_child_projects_list(
     crate::services::projects::get_child_projects_list(&parent_id, &state).await
 }
 
-/// I388: Get ancestor projects for breadcrumb navigation.
+/// Get ancestor projects for breadcrumb navigation.
 #[tauri::command]
 pub async fn get_project_ancestors(
     project_id: String,
@@ -150,7 +150,7 @@ pub async fn enrich_project(
     .await
 }
 
-// ── I76: Database Backup & Rebuild ──────────────────────────────────
+// ── Database Backup & Rebuild ──────────────────────────────────
 
 #[tauri::command]
 pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
@@ -174,7 +174,7 @@ pub async fn restore_database_from_backup(
     backup_path: String,
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
-    // I566: Timeout on user-facing permit acquisition.
+    // Timeout on user-facing permit acquisition.
     let _permit = match tokio::time::timeout(
         std::time::Duration::from_secs(10),
         state.permits.user_initiated.acquire(),
@@ -186,7 +186,7 @@ pub async fn restore_database_from_backup(
         Err(_) => return Err("Background work in progress — please try again shortly".to_string()),
     };
 
-    // I609: Drop async DB service before swapping files on disk.
+    // Drop async DB service before swapping files on disk.
     {
         let mut db_service_guard = state.db_service.write().await;
         *db_service_guard = None;
@@ -211,7 +211,7 @@ pub async fn restore_database_from_backup(
 
 #[tauri::command]
 pub async fn start_fresh_database(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
-    // I609: Drop async DB service before deleting files.
+    // Drop async DB service before deleting files.
     {
         let mut db_service_guard = state.db_service.write().await;
         *db_service_guard = None;
@@ -317,7 +317,7 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
             Some(state.embedding_model.as_ref()),
         );
 
-        // Prune old audit trail files (I297)
+        // Prune old audit trail files
         let pruned = crate::audit::prune_audit_files(workspace);
         if pruned > 0 {
             log::info!("run_hygiene_scan_now: pruned {} old audit files", pruned);
@@ -345,7 +345,7 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
     Ok(build_intelligence_hygiene_status(&state, Some(&report)))
 }
 
-/// Detect potential duplicate people (I172).
+/// Detect potential duplicate people.
 #[tauri::command]
 pub async fn get_duplicate_people(
     state: State<'_, Arc<AppState>>,
@@ -353,7 +353,7 @@ pub async fn get_duplicate_people(
     state.db_read(crate::hygiene::detect_duplicate_people).await
 }
 
-/// Detect potential duplicate people for a specific person (I172).
+/// Detect potential duplicate people for a specific person.
 #[tauri::command]
 pub async fn get_duplicate_people_for_person(
     person_id: String,
@@ -371,7 +371,7 @@ pub async fn get_duplicate_people_for_person(
 }
 
 // =============================================================================
-// I176: Archive / Unarchive Entities
+// Archive / Unarchive Entities
 // =============================================================================
 
 /// Archive or unarchive an account. Cascades to children when archiving.
@@ -475,7 +475,7 @@ pub async fn get_archived_people(
         .await
 }
 
-/// Restore an archived account with optional child restoration (I199).
+/// Restore an archived account with optional child restoration.
 #[tauri::command]
 pub async fn restore_account(
     account_id: String,
@@ -493,7 +493,7 @@ pub async fn restore_account(
 }
 
 // =============================================================================
-// I171: Multi-Domain Config
+// Multi-Domain Config
 // =============================================================================
 
 /// Set multiple user domains for multi-org meeting classification.
@@ -507,7 +507,7 @@ pub async fn set_user_domains(
 }
 
 // =============================================================================
-// I162: Bulk Entity Creation
+// Bulk Entity Creation
 // =============================================================================
 
 /// Bulk-create accounts from a list of names. Returns created account IDs.
@@ -558,7 +558,7 @@ pub async fn bulk_create_projects(
 }
 
 // =============================================================================
-// I143: Account Events
+// Account Events
 // =============================================================================
 
 /// Record an account lifecycle event (expansion, downsell, churn, etc.)

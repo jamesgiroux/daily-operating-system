@@ -60,7 +60,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
 
   // Entity mode from app config — controls nav ordering (accounts vs projects first).
   // Fetched once on mount and invalidated via config-updated event so preset changes
-  // in Settings take effect immediately (I389 acceptance criterion 4) without
+  // in Settings take effect immediately (acceptance criterion 4) without
   // firing an IPC call on every page navigation.
   const [entityMode, setEntityMode] = useState<'account' | 'project' | 'both'>('account');
   const activePage = pageConfig?.activePage ?? 'today';
@@ -98,7 +98,7 @@ export const MagazinePageLayout: React.FC<MagazinePageLayoutProps> = ({
   const folioLabel = pageConfig?.folioLabel ?? 'Daily Briefing';
   const breadcrumbs = pageConfig?.breadcrumbs;
   const chapters = pageConfig?.chapters;
-  // I563: Read volatile folio state from ref — falls back to config for backwards compat.
+  // Read volatile folio state from ref — falls back to config for backwards compat.
   const volatile = useFolioVolatile();
   const folioActions = volatile.folioActions ?? pageConfig?.folioActions;
   const { appState, clearDemo } = useAppState();

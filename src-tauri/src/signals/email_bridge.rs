@@ -166,7 +166,7 @@ pub fn run_email_meeting_bridge(
     Ok(correlations)
 }
 
-/// I372: Emit entity signals from ALL enriched emails (not just meeting-linked).
+/// Emit entity signals from ALL enriched emails (not just meeting-linked).
 ///
 /// For each recently enriched email with a resolved entity, emit:
 /// - `email_sentiment` — the sentiment assessment (positive/negative/mixed)
@@ -180,7 +180,7 @@ pub fn emit_enriched_email_signals(
 ) -> usize {
     // Get enriched emails with resolved entities
     let mut stmt = match db.conn_ref().prepare(
-        // DOS-242: noise emails (LinkedIn/Slack/etc.) must not emit entity
+        // noise emails (LinkedIn/Slack/etc.) must not emit entity
         // signals — they were never user-meaningful correspondence.
         "SELECT email_id, entity_id, entity_type, sentiment, urgency, subject, sender_email
          FROM emails
@@ -231,7 +231,7 @@ pub fn emit_enriched_email_signals(
 
     // Build set of "entity_type:email_id" keys that already have signals to avoid duplicates.
     // Keyed by entity_type so that a person signal for email X does NOT prevent an account
-    // signal for the same email (I372 C3/C4 — person→account propagation).
+    // signal for the same email (C3 / C4 — person→account propagation).
     let already_signaled: std::collections::HashSet<String> = db
         .conn_ref()
         .prepare(
@@ -250,7 +250,7 @@ pub fn emit_enriched_email_signals(
     let mut emitted = 0usize;
 
     for (email_id, entity_id, entity_type, sentiment, urgency, subject, sender) in &rows {
-        // DOS-156 Layer 2: Skip internal senders — they are linked to many accounts
+        //  Layer 2: Skip internal senders — they are linked to many accounts
         // as team members, causing massive fan-out. Mirror the is_external check from
         // executor.rs:240.
         let is_internal_sender = sender
@@ -328,7 +328,7 @@ pub fn emit_enriched_email_signals(
                         emitted += 1;
                     }
 
-                    // I633: Also populate email_signals table for health scoring
+                    // Also populate email_signals table for health scoring
                     let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                         email_id,
                         sender_email: sender.as_deref(),
@@ -346,7 +346,7 @@ pub fn emit_enriched_email_signals(
                 }
             }
 
-            // Emit email_commitment when contextual summary contains commitment language (I372 AC2)
+            // Emit email_commitment when contextual summary contains commitment language (AC2)
             {
                 let summary: Option<String> = db
                     .conn_ref()
@@ -388,7 +388,7 @@ pub fn emit_enriched_email_signals(
                             emitted += 1;
                         }
 
-                        // I633: Also populate email_signals for health scoring
+                        // Also populate email_signals for health scoring
                         let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                             email_id,
                             sender_email: sender.as_deref(),
@@ -430,7 +430,7 @@ pub fn emit_enriched_email_signals(
                     emitted += 1;
                 }
 
-                // I633: Also populate email_signals for health scoring
+                // Also populate email_signals for health scoring
                 let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                     email_id,
                     sender_email: sender.as_deref(),
@@ -447,7 +447,7 @@ pub fn emit_enriched_email_signals(
                 });
             }
 
-            // I633: For ALL enriched emails (even neutral sentiment), create a
+            // For ALL enriched emails (even neutral sentiment), create a
             // baseline email_signal so health scoring sees email activity.
             // Uses "relationship" type — the email demonstrates active relationship.
             if sentiment.as_deref() == Some("neutral") || sentiment.is_none() {
@@ -468,13 +468,13 @@ pub fn emit_enriched_email_signals(
             }
         } // end !skip_direct
 
-        // I372 C3/C4: Propagate person email signals to linked accounts.
+        // Propagate person email signals to linked accounts.
         // When an email is resolved to a person entity, emit corresponding
         // account-level signals so that `signal_events` contains account-type
         // rows with source 'email_enrichment'. This is direct emission (not
         // the propagation engine) so the source remains '%email%'-queryable.
         //
-        // DOS-156 Layer 2: Skip propagation entirely for internal senders.
+        //  Layer 2: Skip propagation entirely for internal senders.
         // Internal CS team members are linked to 20+ accounts — propagating
         // every email to all of them caused 14.6x fan-out.
         if entity_type == "person" && !is_internal_sender {
@@ -491,7 +491,7 @@ pub fn emit_enriched_email_signals(
                 })
                 .unwrap_or_default();
 
-            // DOS-156 Layer 3: Fanout limit — if a person is linked to more than
+            //  Layer 3: Fanout limit — if a person is linked to more than
             // MAX_ACCOUNT_FANOUT accounts, the email is likely from a broadly-linked
             // contact (e.g. sales rep covering many accounts). Skip propagation to
             // avoid noise.
@@ -537,7 +537,7 @@ pub fn emit_enriched_email_signals(
                         );
                         emitted += 1;
 
-                        // I633: Propagate to account email_signals for health scoring
+                        // Propagate to account email_signals for health scoring
                         let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                             email_id,
                             sender_email: sender.as_deref(),
@@ -567,7 +567,7 @@ pub fn emit_enriched_email_signals(
                     );
                     emitted += 1;
 
-                    // I633: Propagate to account email_signals for health scoring
+                    // Propagate to account email_signals for health scoring
                     let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                         email_id,
                         sender_email: sender.as_deref(),
@@ -584,7 +584,7 @@ pub fn emit_enriched_email_signals(
                     });
                 }
 
-                // I633: Baseline relationship signal for all propagated emails
+                // Baseline relationship signal for all propagated emails
                 let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                     email_id,
                     sender_email: sender.as_deref(),
@@ -610,7 +610,7 @@ pub fn emit_enriched_email_signals(
             rows.len()
         );
 
-        // I598: Health recompute for accounts that received email signals is
+        // Health recompute for accounts that received email signals is
         // deferred — this function runs inside a DB lock hold in orchestrate.rs.
         // Running recompute_entity_health here blocks dashboard reads and causes
         // briefing flicker. Health will recompute on the next enrichment cycle

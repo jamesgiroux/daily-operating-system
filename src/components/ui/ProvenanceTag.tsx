@@ -1,5 +1,5 @@
 /**
- * I576: Provenance tag for intelligence items.
+ * Provenance tag for intelligence items.
  * Shows a muted label indicating where an intelligence item came from.
  * Omits the tag for pty_synthesis (default, no tag needed).
  */

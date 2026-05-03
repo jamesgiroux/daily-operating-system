@@ -1,6 +1,6 @@
 use super::*;
 
-/// Result of a find-or-create person operation (I652).
+/// Result of a find-or-create person operation.
 #[derive(Debug)]
 pub enum PersonResolution {
     /// Existing person found by email (primary or alias). Definitive match.
@@ -17,7 +17,7 @@ pub enum PersonResolution {
 
 impl ActionDb {
     // =========================================================================
-    // People (I51)
+    // People
     // =========================================================================
 
     /// Insert or update a person. Idempotent — won't overwrite manually-set fields
@@ -74,7 +74,7 @@ impl ActionDb {
         Ok(!existed)
     }
 
-    /// Create a person from minimal Glean-sourced fields (I505).
+    /// Create a person from minimal Glean-sourced fields.
     ///
     /// Idempotent: if the email already exists, returns Ok without changes
     /// (the existing person is left untouched — use `update_person_profile` for updates).
@@ -294,7 +294,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Person resolution: find-or-create with email + name dedup (I652)
+    // Person resolution: find-or-create with email + name dedup
     // =========================================================================
 
     /// Find an existing person by email (primary + aliases) or name similarity,
@@ -515,7 +515,7 @@ impl ActionDb {
         Ok(people)
     }
 
-    /// Get all people with pre-computed temperature/trend signals (I106).
+    /// Get all people with pre-computed temperature/trend signals.
     /// Uses a single batch query with LEFT JOIN subqueries instead of 3N individual queries.
     pub fn get_people_with_signals(
         &self,
@@ -1014,7 +1014,7 @@ impl ActionDb {
     }
 
     // =========================================================================
-    // Hygiene Gap Detection (I145 — ADR-0058)
+    // Hygiene Gap Detection (ADR-0058)
     // =========================================================================
 
     /// People with email-derived names: no spaces, contains @, or single word.

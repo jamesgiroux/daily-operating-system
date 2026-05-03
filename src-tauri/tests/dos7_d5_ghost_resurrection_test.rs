@@ -1,8 +1,8 @@
-//! DOS-7 D5-3 -- Suite E ghost-resurrection 5-run simulation.
+//! Claims ghost-resurrection 5-run simulation.
 //!
 //! Asserts the tombstone PRE-GATE in commit_claim prevents an AI-surfaced
 //! risk that the user dismissed from re-appearing across multiple
-//! enrichment cycles. Load-bearing proof of DOS-7's core invariant.
+//! enrichment cycles. Load-bearing proof of the claim substrate's core invariant.
 
 use chrono::{Duration, TimeZone, Utc};
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
@@ -168,7 +168,7 @@ CREATE INDEX IF NOT EXISTS idx_repair_pending
     WHERE state IN ('pending', 'in_progress');
 "#;
 
-// Live W1/DOS-310 does not create a `claim_invalidation` table; it adds
+// The live invalidation migration does not create a `claim_invalidation` table; it adds
 // per-entity `claim_version` columns plus shared `migration_state` rows.
 // `commit_claim` reaches this surface through `ActionDb::bump_for_subject`.
 const W1_CLAIM_INVALIDATION_SCHEMA_SQL: &str = r#"
@@ -444,7 +444,7 @@ fn five_run_ghost_resurrection_simulation_keeps_tombstoned_risk_dead() {
     );
     advance_pass(&clock);
 
-    // Known DOS-280 limitation: paraphrases have a different item_hash today,
+    // Known canonicalization limitation: paraphrases have a different item_hash today,
     // so the tombstone PRE-GATE does not suppress them until canonicalization
     // learns same-meaning equivalence.
     assert_inserted(commit_claim_attempt(

@@ -1,4 +1,4 @@
--- I507: Persist source attribution for email_signals feedback routing.
+-- Persist source attribution for email_signals feedback routing.
 -- Use rebuild pattern for SQLite idempotency and to tolerate partial legacy schemas.
 PRAGMA foreign_keys = OFF;
 BEGIN IMMEDIATE;

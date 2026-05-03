@@ -56,7 +56,7 @@ pub struct JsonMeeting {
     pub has_prep: bool,
     pub prep_file: Option<String>,
     pub prep_summary: Option<JsonPrepSummary>,
-    /// Entities linked via M2M junction table or entity resolution (I339)
+    /// Entities linked via M2M junction table or entity resolution
     #[serde(default)]
     pub linked_entities: Option<Vec<LinkedEntity>>,
     /// Raw calendar attendees from Google Calendar (not AI-enriched)
@@ -98,7 +98,7 @@ pub struct JsonStakeholder {
     pub focus: Option<String>,
 }
 
-// I513: load_actions_json and supporting types removed — DB is the source of truth.
+// load_actions_json and supporting types removed — DB is the source of truth.
 // sync_actions_to_db (JSON→DB) was the only caller and has been eliminated.
 
 // =============================================================================
@@ -190,7 +190,7 @@ pub struct DirectiveMeeting {
     pub end_display: Option<String>,
     #[serde(rename = "type", default)]
     pub meeting_type: Option<String>,
-    /// Resolved entities from I336 entity-generic classification.
+    /// Resolved entities from entity-generic classification.
     #[serde(default)]
     pub entities: Vec<serde_json::Value>,
 }
@@ -203,25 +203,25 @@ pub struct DirectiveMeetingContext {
     pub account: Option<String>,
     #[serde(default)]
     pub account_data: Option<serde_json::Value>,
-    /// I337: Resolved entity ID (account, project, or person).
+    /// Resolved entity ID (account, project, or person).
     #[serde(default)]
     pub entity_id: Option<String>,
-    /// I337: Resolved entity type ("account", "project", "person").
+    /// Resolved entity type ("account", "project", "person").
     #[serde(default)]
     pub entity_type: Option<String>,
-    /// I337: Structured primary entity data.
+    /// Structured primary entity data.
     #[serde(default)]
     pub primary_entity: Option<serde_json::Value>,
-    /// I337: Project-specific data when entity is a project.
+    /// Project-specific data when entity is a project.
     #[serde(default)]
     pub project_data: Option<serde_json::Value>,
-    /// I337: Person-specific data when entity is a person.
+    /// Person-specific data when entity is a person.
     #[serde(default)]
     pub person_data: Option<serde_json::Value>,
-    /// I337: Relationship signals when entity is a person.
+    /// Relationship signals when entity is a person.
     #[serde(default)]
     pub relationship_signals: Option<serde_json::Value>,
-    /// I337: Shared entities (accounts/projects) when entity is a person.
+    /// Shared entities (accounts/projects) when entity is a person.
     #[serde(default)]
     pub shared_entities: Option<Vec<serde_json::Value>>,
     #[serde(default)]
@@ -255,7 +255,7 @@ pub struct DirectiveMeetingContext {
     pub recent_captures: Option<Vec<serde_json::Value>>,
     #[serde(default)]
     pub meeting_history: Option<Vec<serde_json::Value>>,
-    // I135: Entity intelligence (from intelligence.json) — persistent prep context
+    // Entity intelligence (from intelligence.json) — persistent prep context
     #[serde(default)]
     pub executive_assessment: Option<String>,
     #[serde(default)]
@@ -270,10 +270,10 @@ pub struct DirectiveMeetingContext {
     pub consistency_status: Option<crate::intelligence::ConsistencyStatus>,
     #[serde(default)]
     pub consistency_findings: Option<Vec<crate::intelligence::ConsistencyFinding>>,
-    /// Calendar event description (I185).
+    /// Calendar event description.
     #[serde(default)]
     pub description: Option<String>,
-    /// I317: Pre-meeting email context gathered from email signals/bridge.
+    /// Pre-meeting email context gathered from email signals/bridge.
     #[serde(default)]
     pub pre_meeting_email_context: Option<Vec<serde_json::Value>>,
 }
@@ -337,15 +337,15 @@ pub struct DirectiveEmails {
     pub low_count: u32,
     #[serde(default, alias = "syncError")]
     pub sync_error: Option<DirectiveEmailSyncError>,
-    /// AI-synthesized email narrative (I322)
+    /// AI-synthesized email narrative
     #[serde(default)]
     pub narrative: Option<String>,
-    /// Threads awaiting user reply (I318/I355)
+    /// Threads awaiting user reply
     #[serde(default, alias = "repliesNeeded")]
     pub replies_needed: Vec<DirectiveReplyNeeded>,
 }
 
-/// A thread awaiting the user's reply (I318 — "ball in your court").
+/// A thread awaiting the user's reply ("ball in your court").
 #[derive(Debug, Clone, Default, serde::Deserialize, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct DirectiveReplyNeeded {
@@ -375,10 +375,10 @@ pub struct DirectiveEmail {
     pub snippet: Option<String>,
     #[serde(default)]
     pub priority: Option<String>,
-    /// RFC3339 timestamp of the most recent message in the thread (I652: Gate 1 newness check).
+    /// RFC3339 timestamp of the most recent message in the thread (Gate 1 newness check).
     #[serde(default)]
     pub last_response_date: Option<String>,
-    /// Message count in the thread for reference context (I652).
+    /// Message count in the thread for reference context.
     #[serde(default)]
     pub thread_message_count: Option<usize>,
 }
@@ -423,4 +423,4 @@ pub fn load_directive(today_dir: &Path) -> Result<Directive, String> {
 // Week JSON Loading (Phase 3C)
 // =============================================================================
 
-// I513: load_week_json removed — WeekOverview is now built from DB in services/dashboard.rs.
+// load_week_json removed — WeekOverview is now built from DB in services/dashboard.rs.

@@ -1,4 +1,4 @@
-//! SQLite backup and rebuild-from-filesystem (I76 / ADR-0048)
+//! SQLite backup and rebuild-from-filesystem (ADR-0048)
 //!
 //! **Backup**: Uses `rusqlite::backup::Backup` API to create a hot copy next
 //! to the active database (`<active-db>.bak`). Runs on app startup and after
@@ -201,7 +201,7 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
     let mut backup_conn = rusqlite::Connection::open(&backup_path)
         .map_err(|e| format!("Failed to open backup file: {}", e))?;
 
-    // Apply encryption key to backup destination so .bak is also encrypted (I462)
+    // Apply encryption key to backup destination so.bak is also encrypted
     let hex_key = crate::db::encryption::get_or_create_db_key(&backup_path)
         .map_err(|e| format!("Failed to get encryption key for backup: {e}"))?;
     backup_conn
@@ -216,7 +216,7 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
         .step(-1)
         .map_err(|e| format!("Backup failed: {}", e))?;
 
-    // Restrict backup file permissions (I463)
+    // Restrict backup file permissions
     crate::db::hardening::set_file_permissions(&backup_path);
 
     log::info!("Database backed up to {}", backup_path.display());

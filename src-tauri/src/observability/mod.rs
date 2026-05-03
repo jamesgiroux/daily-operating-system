@@ -1,4 +1,4 @@
-//! DOS-210 W3-A: Observability module per ADR-0120.
+//! Observability module per ADR-0120.
 //!
 //! Provides InvocationRecord and an Evaluate-mode in-memory subscriber that
 //! ability tests use to capture span fields. Production NDJSON subscriber

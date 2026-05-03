@@ -1,4 +1,4 @@
--- Migration 021: Proactive surfacing tables (I260 — ADR-0080 Phase 5)
+-- Migration 021: Proactive surfacing tables (ADR-0080 Phase 5)
 --
 -- Tracks proactive scan state per detector and deduplicates insights
 -- so the same pattern isn't surfaced repeatedly.

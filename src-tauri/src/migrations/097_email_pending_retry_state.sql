@@ -1,4 +1,4 @@
--- DOS-226: Introduce `pending_retry` as a transitional enrichment state to make
+-- Introduce `pending_retry` as a transitional enrichment state to make
 -- manual retries rollback-safe.
 --
 -- Before this change, `retry_failed_emails` reset rows `failed -> pending` with
@@ -22,7 +22,7 @@
 -- The column list matches the accumulated ALTERs from migrations 034, 035,
 -- 071, and 082. Defaults and indexes are restored at the end.
 --
--- DOS-226 follow-up (Codex finding 4): the initial revision of this migration
+--  follow-up (Codex finding 4): the initial revision of this migration
 -- restored only the indexes created by migration 034. `idx_emails_relevance`
 -- (035) and `idx_emails_enriched_at` (082) were silently dropped on upgrade,
 -- regressing query plans that rely on them (relevance-sorted inbox reads,

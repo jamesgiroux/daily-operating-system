@@ -1,4 +1,4 @@
-//! Signal propagation engine (I308 — ADR-0080 Phase 4).
+//! Signal propagation engine (ADR-0080 Phase 4).
 //!
 //! When a signal is emitted, the propagation engine evaluates registered rules
 //! to derive new signals on related entities. For example, a `title_change` on
@@ -39,7 +39,7 @@ pub struct PropagationEngine {
     /// Shared prep invalidation queue — signals that affect meeting prep content
     /// push meeting IDs here for regeneration by the scheduler.
     prep_queue: Option<Arc<Mutex<Vec<String>>>>,
-    /// I385: Intelligence enrichment queue for cross-entity propagation targets.
+    /// Intelligence enrichment queue for cross-entity propagation targets.
     intel_queue: Option<Arc<crate::intel_queue::IntelligenceQueue>>,
 }
 
@@ -63,7 +63,7 @@ impl PropagationEngine {
         self.prep_queue = Some(queue);
     }
 
-    /// I385: Set the intelligence enrichment queue for cross-entity propagation targets.
+    /// Set the intelligence enrichment queue for cross-entity propagation targets.
     pub fn set_intel_queue(&mut self, queue: Arc<crate::intel_queue::IntelligenceQueue>) {
         self.intel_queue = Some(queue);
     }
@@ -104,7 +104,7 @@ impl PropagationEngine {
 
                 db.insert_signal_derivation(&source_signal.id, &id, rule_name)?;
 
-                // I385: Track cross-entity targets for intel enrichment
+                // Track cross-entity targets for intel enrichment
                 if ds.entity_id != source_signal.entity_id {
                     cross_entity_targets.push((ds.entity_id.clone(), ds.entity_type.clone()));
                 }
@@ -113,8 +113,8 @@ impl PropagationEngine {
             }
         }
 
-        // I385: Propagated signals trigger intel enrichment for cross-entity targets.
-        // DOS-286: skip archived entities — user has asserted they're done with them.
+        // Propagated signals trigger intel enrichment for cross-entity targets.
+        // skip archived entities — user has asserted they're done with them.
         if let Some(ref intel_q) = self.intel_queue {
             for (eid, etype) in &cross_entity_targets {
                 if db.is_entity_archived(eid, etype) {
@@ -130,7 +130,7 @@ impl PropagationEngine {
             }
         }
 
-        // I353 Step 2: Evaluate signal-driven hygiene actions
+        // Evaluate signal-driven hygiene actions
         super::rules::evaluate_hygiene_actions(source_signal, db);
 
         // Signal-driven prep invalidation: queue affected meetings for regeneration
@@ -150,7 +150,7 @@ pub fn default_engine() -> PropagationEngine {
         "rule_person_job_change",
         super::rules::rule_person_job_change,
     );
-    // I555: Re-registered — transcript processing now emits "meeting_frequency" signals
+    // Re-registered — transcript processing now emits "meeting_frequency" signals
     engine.register(
         "rule_meeting_frequency_drop",
         super::rules::rule_meeting_frequency_drop,
@@ -175,13 +175,13 @@ pub fn default_engine() -> PropagationEngine {
         "rule_person_profile_discovered",
         super::rules::rule_person_profile_discovered,
     );
-    // I535/ADR-0100: Glean-sourced signal propagation
+    // /ADR-0100: Glean-sourced signal propagation
     engine.register("rule_glean_org_change", super::rules::rule_glean_org_change);
     engine.register(
         "rule_glean_champion_departed",
         super::rules::rule_glean_champion_departed,
     );
-    // DOS-207: Regulatory gap → account_risk propagation
+    // Regulatory gap → account_risk propagation
     engine.register("rule_regulatory_gap", super::rules::rule_regulatory_gap);
 
     engine

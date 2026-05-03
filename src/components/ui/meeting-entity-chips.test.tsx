@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 /**
- * DOS-240 Wave 0f: UI-click integration test.
+ * UI-click integration test.
  *
  * Wave 0e-C wired `MeetingEntityChips` chip X to `dismiss_meeting_entity`,
  * but only backend-side unit tests existed. This test mounts the real

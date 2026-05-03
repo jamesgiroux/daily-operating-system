@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# DOS-7 D4-2 lint: claims are written ONLY through services/claims.rs.
+# Claims-substrate lint: claims are written ONLY through services/claims.rs.
 #
 # Forbids INSERT/UPDATE statements against intelligence_claims,
 # claim_corroborations, claim_contradictions outside the
@@ -9,9 +9,9 @@
 # are explicit one-time exceptions — they bypass the runtime gate
 # precisely because they're the cutover mechanism.
 #
-# Plan §6 + Linear DOS-7 acceptance: "All writes via services/claims.rs;
-# CI test enumerates write sites and rejects direct INSERT INTO
-# intelligence_claims elsewhere."
+# Claims plan acceptance: all writes go through services/claims.rs; CI
+# enumerates write sites and rejects direct INSERT INTO intelligence_claims
+# elsewhere.
 
 set -euo pipefail
 

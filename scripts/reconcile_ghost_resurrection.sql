@@ -1,8 +1,8 @@
--- DOS-311: reconcile pass for ghost resurrection after the DOS-7 cutover.
+-- Reconcile pass for ghost resurrection after the claims cutover.
 --
--- WHEN THIS RUNS: at step 6 of DOS-7's 7-step migration sequence (pre-flight
+-- WHEN THIS RUNS: at step 6 of the claims migration sequence (pre-flight
 -- log → bump epoch → drain → backfill → requeue → reconcile → resume), AFTER
--- DOS-7's 9-mechanism consolidation has populated `intelligence_claims`.
+-- the claim substrate has populated `intelligence_claims`.
 --
 -- DEFINITION OF GHOST RESURRECTION: an active item present in any legacy
 -- projection (`entity_intelligence` JSON columns, `intelligence.json` file
@@ -12,17 +12,13 @@
 -- tombstone's `dismissed_at`.
 --
 -- ZERO findings = clean migration. Any findings = stale projection that
--- DOS-301's projection sweep (W3-D) or this script's `--repair` mode
--- consumes.
+-- the projection sweep or this script's `--repair` mode consumes.
 --
--- CROSS-ISSUE NOTE (DOS-311 W1 ship-time): this SQL references
--- `intelligence_claims` which DOES NOT YET EXIST in the W1 codebase.
--- DOS-7 (W3-C) ships the table; the SQL below is committed as a static
--- asset that DOS-7's migration script consumes via include_str! when the
--- table is in place. Until DOS-7 lands, this SQL is documentation /
--- contract only.
+-- CROSS-MIGRATION NOTE: this SQL references `intelligence_claims`, so it is
+-- a static contract until the claims schema exists. The claims migration script
+-- consumes this SQL via include_str! when the table is in place.
 --
--- The view `legacy_projection_state` is also a DOS-7 deliverable: it
+-- The view `legacy_projection_state` is also part of the claims cutover: it
 -- materializes a unified shape over `entity_intelligence` JSON columns,
 -- `intelligence.json` file content, and account narrative columns. Its
 -- columns must include `(subject_ref, claim_type, field_path, dedup_key,
@@ -36,7 +32,7 @@
 --
 -- The item_hash fallback catches items whose dedup_key shifted post-tombstone
 -- (e.g., a re-enrichment regenerated the canonical key) but whose content
--- fingerprint still matches the dismissed item. Live ticket DOS-311 calls
+-- fingerprint still matches the dismissed item. The reconcile contract calls
 -- this out explicitly: "(dedup_key OR item_hash)".
 
 WITH tombstoned_claims AS (

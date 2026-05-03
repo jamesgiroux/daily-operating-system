@@ -1,4 +1,4 @@
--- Migration 044: Add embedding column to user_context_entries for semantic retrieval (I417)
+-- Migration 044: Add embedding column to user_context_entries for semantic retrieval
 --
 -- Stores the embedding vector directly on the context entry row,
 -- avoiding the content_embeddings FK constraint to content_index.

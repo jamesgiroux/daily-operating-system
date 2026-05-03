@@ -5,7 +5,7 @@
 //! 2. Rust-native mechanical delivery — schedule, actions, preps, emails
 //! 3. AI enrichment — Claude Code enriches emails + briefing narrative
 //!
-//! I513: sync_actions_to_db removed — DB is the source of truth for actions.
+//! sync_actions_to_db removed — DB is the source of truth for actions.
 //! The old JSON→DB sync direction is no longer needed.
 
 use crate::types::WorkflowId;

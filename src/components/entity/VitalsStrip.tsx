@@ -12,7 +12,7 @@ import css from "./VitalsStrip.module.css";
 
 interface VitalsStripProps {
   vitals: VitalDisplay[];
-  /** I644: Per-field source attribution refs, keyed by field name on each VitalDisplay. */
+  /** Per-field source attribution refs, keyed by field name on each VitalDisplay. */
   sourceRefs?: AccountSourceRef[];
 }
 

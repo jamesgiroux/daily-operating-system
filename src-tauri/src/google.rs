@@ -55,7 +55,7 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
         })?;
 
     // Fetch a week of events so the timeline, cancellation detection,
-    // and prep generation cover upcoming meetings (I386).
+    // and prep generation cover upcoming meetings.
     // Use LOCAL date, not UTC — at 9 PM ET, UTC is already tomorrow,
     // which would exclude today's events from the poll response.
     let today = chrono::Local::now().date_naive();
@@ -77,10 +77,10 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 
     let entity_hints = build_entity_hints_from_state(state);
 
-    // Save attendee display names for hygiene name resolution (I342)
+    // Save attendee display names for hygiene name resolution
     save_attendee_display_names(&raw_events, state);
 
-    // Classify and convert (I171 + I336: multi-domain, entity-generic)
+    // Classify and convert (: multi-domain, entity-generic)
     let events: Vec<CalendarEvent> = raw_events
         .iter()
         .map(|raw| {
@@ -93,7 +93,7 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
     Ok(events)
 }
 
-/// Build entity hints from DB for meeting classification (I336).
+/// Build entity hints from DB for meeting classification.
 fn build_entity_hints_from_state(_state: &AppState) -> Vec<google_api::classify::EntityHint> {
     if let Ok(db) = crate::db::ActionDb::open() {
         return crate::helpers::build_entity_hints(&db);
@@ -237,16 +237,16 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         serde_json::json!({"events_fetched": events.len()}),
                     );
                 }
-                // Check for new prep-eligible meetings before storing (I41)
+                // Check for new prep-eligible meetings before storing
                 let new_preps = generate_preps_for_new_meetings(&events, &state, &workspace);
                 if new_preps > 0 {
                     log::info!("Calendar poll: generated {} new preps", new_preps);
                 }
 
-                // Populate people from calendar attendees (I51)
+                // Populate people from calendar attendees
                 let sync_intel = populate_people_from_events(&events, &state, &workspace);
 
-                // DOS-258 Lane D: run deterministic entity linking for each event.
+                // run deterministic entity linking for each event.
                 let clock = crate::services::context::SystemClock;
                 let rng = crate::services::context::SystemRng;
                 let ext = crate::services::context::ExternalClients::default();
@@ -339,7 +339,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     *guard = events;
                 }
 
-                // Pre-meeting intelligence refresh (I147 — ADR-0058)
+                // Pre-meeting intelligence refresh (ADR-0058)
                 let cfg_for_hygiene = state.config.read().clone();
                 if let Ok(db) = crate::db::ActionDb::open() {
                     let refreshed = crate::hygiene::check_upcoming_meeting_readiness(
@@ -355,7 +355,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     }
                 }
 
-                // I428: Record successful calendar sync
+                // Record successful calendar sync
                 if let Ok(db) = crate::db::ActionDb::open() {
                     let _ =
                         crate::connectivity::record_sync_success(db.conn_ref(), "google_calendar");
@@ -366,7 +366,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Check for recently-ended meetings needing Quill transcript sync
                 crate::quill::poller::check_ended_meetings_for_sync(&state);
 
-                // Wake Granola poller immediately when meetings end (I424)
+                // Wake Granola poller immediately when meetings end
                 state.integrations.granola_poller_wake.notify_one();
 
                 // Notify frontend about new preps
@@ -376,7 +376,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(PollError::AuthExpired) => {
                 log::warn!("Calendar poll: token expired");
-                // I428: Record calendar sync failure
+                // Record calendar sync failure
                 if let Ok(db) = crate::db::ActionDb::open() {
                     let _ = crate::connectivity::record_sync_failure(
                         db.conn_ref(),
@@ -397,7 +397,7 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 let _ = crate::notification::notify_auth_expired(&app_handle, &state);
             }
             Err(PollError::ApiError(ref e)) => {
-                // I428: Record calendar sync failure
+                // Record calendar sync failure
                 if let Ok(db) = crate::db::ActionDb::open() {
                     let _ = crate::connectivity::record_sync_failure(
                         db.conn_ref(),
@@ -645,7 +645,7 @@ struct CalendarSyncIntelligence {
     changed_meetings: Vec<String>,
 }
 
-/// Populate people table from calendar event attendees (I51).
+/// Populate people table from calendar event attendees.
 ///
 /// For each event, for each attendee email:
 /// - Skip self (match against user's Google email)
@@ -705,7 +705,7 @@ fn populate_people_from_events(
             event.meeting_type.as_str(),
         );
 
-        // Snapshot old title before ensure_meeting_in_history updates it (I386)
+        // Snapshot old title before ensure_meeting_in_history updates it
         let old_title: Option<String> = db
             .conn_ref()
             .query_row(
@@ -734,7 +734,7 @@ fn populate_people_from_events(
                 let _ = db.mark_meeting_new_signals(&meeting_id);
                 changed_meetings.push(meeting_id.clone());
 
-                // I386: If title changed, check if entity links need reclassification.
+                // If title changed, check if entity links need reclassification.
                 // Compare the event's current account (from classification) with existing
                 // entity links in DB. If different, invalidate prep for regeneration.
                 if old_title.as_deref() != Some(&event.title) {
@@ -745,7 +745,7 @@ fn populate_people_from_events(
                         .map(|e| e.id.as_str())
                         .collect();
 
-                    // I653 FIX 5: Compare entity IDs, not name strings
+                    // Compare entity IDs, not name strings
                     let new_entity_ids: std::collections::HashSet<&str> = event
                         .classified_entities
                         .as_ref()
@@ -780,7 +780,7 @@ fn populate_people_from_events(
             }
         }
 
-        // DOS-258: entity linking is now handled by evaluate_meeting() in the
+        // entity linking is now handled by evaluate_meeting in the
         // async calendar poll loop (run_calendar_poller), which runs the
         // deterministic P1-P11 engine and writes to linked_entities_raw.
         // persist_classification_entities_scored / persist_classification_entities
@@ -865,7 +865,7 @@ fn populate_people_from_events(
                 }
                 new_people += 1;
 
-                // I353 Step 2: Emit person_created signal for hygiene feedback loop
+                // Emit person_created signal for hygiene feedback loop
                 if is_new {
                     let ctx = state.live_service_context();
                     let _ = crate::services::signals::emit_and_propagate(
@@ -923,7 +923,7 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
     let current_ids: std::collections::HashSet<&str> =
         current_events.iter().map(|e| e.id.as_str()).collect();
 
-    // Query meetings in the polled range from DB that have a calendar_event_id (I386)
+    // Query meetings in the polled range from DB that have a calendar_event_id
     let mut stmt = match db.conn_ref().prepare(
         "SELECT m.id, m.calendar_event_id FROM meetings m
          LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
@@ -960,7 +960,7 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
                 meeting_id
             );
         }
-        // Emit cancellation signal (I308) with propagation
+        // Emit cancellation signal  with propagation
         let ctx = state.live_service_context();
         let _ = crate::services::signals::emit_and_propagate(
             &ctx,
@@ -1209,7 +1209,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
     tokio::time::sleep(Duration::from_secs(10)).await;
     let mut next_due_at: Option<Instant> = None;
 
-    // Gmail always polls — Glean Governed mode removed (I560 Wave 1).
+    // Gmail always polls — Glean Governed mode removed.
 
     loop {
         // Dev mode isolation: pause background processing while dev sandbox is active
@@ -1303,7 +1303,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 serde_json::json!({"emails_fetched": after_ids.len()}),
                             );
                         }
-                        // I428: Record successful gmail sync
+                        // Record successful gmail sync
                         if let Ok(db) = crate::db::ActionDb::open() {
                             let _ =
                                 crate::connectivity::record_sync_success(db.conn_ref(), "gmail");
@@ -1403,7 +1403,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                     _ => {}
                                 }
 
-                                // I395: Re-score after enrichment so new intelligence is reflected.
+                                // Re-score after enrichment so new intelligence is reflected.
                                 let scores = {
                                     let active = crate::db::ActionDb::open()
                                         .ok()
@@ -1452,7 +1452,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         }
                     }
                     Err(ref e) => {
-                        // I428: Record gmail sync failure (delivery)
+                        // Record gmail sync failure (delivery)
                         if let Ok(db) = crate::db::ActionDb::open() {
                             let _ = crate::connectivity::record_sync_failure(
                                 db.conn_ref(),
@@ -1465,7 +1465,7 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 }
             }
             Err(ref e) => {
-                // I428: Record gmail sync failure (fetch)
+                // Record gmail sync failure (fetch)
                 if let Ok(db) = crate::db::ActionDb::open() {
                     let _ = crate::connectivity::record_sync_failure(
                         db.conn_ref(),
@@ -1617,7 +1617,7 @@ mod tests {
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::Customer));
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::Qbr));
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::Partnership));
-        // I159: Person-prep types
+        // Person-prep types
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::Internal));
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::TeamSync));
         assert!(PREP_ELIGIBLE_TYPES.contains(&MeetingType::OneOnOne));

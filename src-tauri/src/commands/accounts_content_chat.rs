@@ -19,10 +19,10 @@ pub struct AccountListItem {
     pub is_parent: bool,
     pub account_type: crate::db::AccountType,
     pub archived: bool,
-    /// DOS-110: User health sentiment assessment.
+    /// User health sentiment assessment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_health_sentiment: Option<String>,
-    /// DOS-110: When the sentiment was last set.
+    /// When the sentiment was last set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sentiment_set_at: Option<String>,
 }
@@ -40,7 +40,7 @@ pub struct AccountDetailResult {
     pub renewal_date: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub renewal_stage: Option<String>,
-    /// I646 C3: Separate commercial opportunity stage.
+    /// Contract: Separate commercial opportunity stage.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commercial_stage: Option<String>,
     pub contract_start: Option<String>,
@@ -50,13 +50,13 @@ pub struct AccountDetailResult {
     pub open_actions: Vec<crate::db::DbAction>,
     pub upcoming_meetings: Vec<MeetingSummary>,
     pub recent_meetings: Vec<MeetingPreview>,
-    /// DOS-233 Codex fix: total count of meetings linked to this account
+    /// total count of meetings linked to this account
     /// above the accepted-confidence floor (0.70). `recent_meetings` is
     /// capped at 10 for preview rendering; this field gives the About-
     /// dossier its true "N meetings on record" number.
     #[serde(default)]
     pub meeting_total_count: i64,
-    /// DOS-233 Codex fix: total count of meetings with a transcript on
+    /// total count of meetings with a transcript on
     /// record for this account (unbounded). The preview/manifest lists
     /// remain capped; this is the dossier count source of truth.
     #[serde(default)]
@@ -85,40 +85,40 @@ pub struct AccountDetailResult {
     pub field_conflicts: Vec<crate::types::AccountFieldConflictSuggestion>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub intelligence: Option<crate::intelligence::IntelligenceJson>,
-    /// I628 AC5: Recently auto-completed milestones for timeline display.
+    /// Acceptance criterion: Recently auto-completed milestones for timeline display.
     #[serde(default)]
     pub auto_completed_milestones: Vec<crate::types::AccountMilestone>,
-    /// I649: Technical footprint, adoption, and service-delivery data.
+    /// Technical footprint, adoption, and service-delivery data.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub technical_footprint: Option<crate::db::DbAccountTechnicalFootprint>,
     /// DB-first stakeholder read model: all stakeholders with provenance.
     #[serde(default)]
     pub stakeholders_full: Vec<crate::db::DbStakeholderFull>,
-    /// I644: Source references for promoted account facts.
+    /// Source references for promoted account facts.
     #[serde(default)]
     pub source_refs: Vec<crate::db::DbAccountSourceRef>,
-    /// DOS-110: User health sentiment assessment.
+    /// User health sentiment assessment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub user_health_sentiment: Option<String>,
-    /// DOS-110: When the sentiment was last set.
+    /// When the sentiment was last set.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sentiment_set_at: Option<String>,
-    /// DOS-27: Most recent sentiment journal note for the current value.
+    /// Most recent sentiment journal note for the current value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub sentiment_note: Option<String>,
-    /// DOS-27: Sentiment journal entries — last 90 days.
+    /// Sentiment journal entries — last 90 days.
     #[serde(default)]
     pub sentiment_history: Vec<crate::db::accounts::DbSentimentJournalEntry>,
-    /// DOS-27: Daily computed-health sparkline — last 90 days.
+    /// Daily computed-health sparkline — last 90 days.
     #[serde(default)]
     pub health_sparkline: Vec<crate::db::accounts::DbHealthSparklinePoint>,
-    /// DOS-15: Glean leading-signal enrichment bundle (champion risk, usage
+    /// Glean leading-signal enrichment bundle (champion risk, usage
     /// trends, sentiment divergence, transcript extraction, commercial signals,
     /// advocacy, quote wall). Null when Glean is not configured or enrichment
     /// has not yet run for this account.
     #[serde(skip_serializing_if = "Option::is_none", rename = "gleanSignals")]
     pub glean_signals: Option<crate::intelligence::glean_leading_signals::HealthOutlookSignals>,
-    /// DOS-228 Fix 3: Current risk-briefing generation job status.
+    /// Regression guard: Current risk-briefing generation job status.
     /// Present when a briefing has ever been enqueued for this account; the
     /// frontend uses this to render progress, surface failures, and expose a
     /// retry affordance. Replaces the old fire-and-forget behaviour where
@@ -127,7 +127,7 @@ pub struct AccountDetailResult {
     pub risk_briefing_job: Option<crate::db::accounts::DbRiskBriefingJob>,
 }
 
-/// Compact child account summary for parent detail pages (I114).
+/// Compact child account summary for parent detail pages.
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AccountChildSummary {
@@ -167,7 +167,7 @@ pub async fn get_accounts_for_picker(
         .await
 }
 
-/// Get child accounts for a parent (I114).
+/// Get child accounts for a parent.
 #[tauri::command]
 pub async fn get_child_accounts_list(
     parent_id: String,
@@ -178,7 +178,7 @@ pub async fn get_child_accounts_list(
         .await
 }
 
-/// I316: Get ancestor accounts for breadcrumb navigation.
+/// Get ancestor accounts for breadcrumb navigation.
 #[tauri::command]
 pub async fn get_account_ancestors(
     account_id: String,
@@ -192,7 +192,7 @@ pub async fn get_account_ancestors(
         .await
 }
 
-/// I316: Get all descendant accounts for a given ancestor.
+/// Get all descendant accounts for a given ancestor.
 #[tauri::command]
 pub async fn get_descendant_accounts(
     ancestor_id: String,
@@ -226,7 +226,7 @@ pub async fn get_account_detail(
     crate::services::accounts::get_account_detail(&ctx, &account_id, &app_state).await
 }
 
-/// Get account-team members (I207).
+/// Get account-team members.
 #[tauri::command]
 pub async fn get_account_team(
     account_id: String,
@@ -237,7 +237,7 @@ pub async fn get_account_team(
         .await
 }
 
-/// Add a person-role pair to an account team (I207).
+/// Add a person-role pair to an account team.
 #[tauri::command]
 pub async fn add_account_team_member(
     account_id: String,
@@ -287,7 +287,7 @@ pub async fn set_team_member_role(
         .await
 }
 
-/// Remove a person-role pair from an account team (I207).
+/// Remove a person-role pair from an account team.
 #[tauri::command]
 pub async fn remove_account_team_member(
     account_id: String,
@@ -338,7 +338,7 @@ pub async fn update_account_field(
         .await
 }
 
-/// DOS-231 Codex fix: persist a single gap-row field on
+/// persist a single gap-row field on
 /// `account_technical_footprint` and return the refreshed account detail so
 /// the frontend can render the value without a follow-up fetch.
 #[tauri::command]
@@ -365,7 +365,7 @@ pub async fn update_technical_footprint_field(
         .await
 }
 
-/// DOS-110 / DOS-27: Set the user's manual health sentiment on an account,
+//: Set the user's manual health sentiment on an account,
 /// optionally attaching a journal note.
 #[tauri::command]
 pub async fn set_user_health_sentiment(
@@ -391,7 +391,7 @@ pub async fn set_user_health_sentiment(
         .await
 }
 
-/// DOS-269: Update the note on the latest sentiment journal row for an
+/// Update the note on the latest sentiment journal row for an
 /// account rather than inserting a new history entry. This is the
 /// "Add more detail" flow — the user is augmenting the existing journal
 /// entry, not creating a new sentiment change. Falls back to insertion
@@ -418,7 +418,7 @@ pub async fn update_latest_sentiment_note(
         .await
 }
 
-/// DOS-269: Persist a triage-card snooze. `triage_key` is the frontend's
+/// Persist a triage-card snooze. `triage_key` is the frontend's
 /// stable card id; `days` is the snooze window (default 14 at the call
 /// site). Resolves silently — the UI refreshes after the call.
 #[tauri::command]
@@ -446,7 +446,7 @@ pub async fn snooze_triage_item(
         .await
 }
 
-/// DOS-269: Mark a triage card resolved. Permanent for the lifetime of the
+/// Mark a triage card resolved. Permanent for the lifetime of the
 /// card key — re-enrichment that emits a new key will re-surface.
 #[tauri::command]
 pub async fn resolve_triage_item(
@@ -472,7 +472,7 @@ pub async fn resolve_triage_item(
         .await
 }
 
-/// DOS-269: Return the active snooze/resolution rows for an entity so the
+/// Return the active snooze/resolution rows for an entity so the
 /// frontend can hide matching triage cards.
 #[tauri::command]
 pub async fn list_triage_snoozes(
@@ -487,7 +487,7 @@ pub async fn list_triage_snoozes(
         .await
 }
 
-/// DOS-228 Fix 3: Retry a failed (or re-run a prior) risk-briefing job.
+/// Regression guard: Retry a failed (or re-run a prior) risk-briefing job.
 /// Returns immediately; the user should refetch `get_account_detail` to see
 /// the `risk_briefing_job` row progress through enqueued → running → complete.
 #[tauri::command]
@@ -875,7 +875,7 @@ pub async fn backfill_internal_meeting_associations(
 }
 
 // =============================================================================
-// I652 Phase 2: Person-first stakeholder commands
+// Person-first stakeholder commands
 // =============================================================================
 
 /// Update engagement level for a stakeholder.
@@ -1049,7 +1049,7 @@ pub async fn dismiss_stakeholder_suggestion(
 }
 
 // =============================================================================
-// DOS-258 Lane F: Pending stakeholder review queue
+// Pending stakeholder review queue
 // =============================================================================
 
 /// Row returned by get_pending_stakeholder_suggestions.
@@ -1129,7 +1129,7 @@ pub async fn dismiss_pending_stakeholder(
 }
 
 // =============================================================================
-// I124: Content Index
+// Content Index
 // =============================================================================
 
 /// Get indexed files for an entity.
@@ -1224,7 +1224,7 @@ pub async fn index_entity_files(
 
 /// Reveal a file in macOS Finder.
 ///
-/// Path must resolve to within the workspace directory or ~/.dailyos/ (I293).
+/// Path must resolve to within the workspace directory or ~.dailyos.
 #[tauri::command]
 pub fn reveal_in_finder(path: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let canonical = std::fs::canonicalize(&path).map_err(|e| format!("Invalid path: {}", e))?;
@@ -1697,9 +1697,9 @@ pub async fn chat_list_entities(
         .await
 }
 
-// ── I74/I131: Entity Intelligence Enrichment via Claude Code ────────
+// ──: Entity Intelligence Enrichment via Claude Code ────────
 
-/// Uses split-lock pattern (I173) — DB lock held only briefly during gather/write.
+/// Uses split-lock pattern  — DB lock held only briefly during gather/write.
 #[tauri::command]
 pub async fn enrich_account(
     app_handle: tauri::AppHandle,

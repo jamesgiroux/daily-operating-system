@@ -1,4 +1,4 @@
--- Migration 085: Action-to-Linear-issue link table for push-to-Linear (DOS-50).
+-- Migration 085: Action-to-Linear-issue link table for push-to-Linear.
 CREATE TABLE IF NOT EXISTS action_linear_links (
     id TEXT PRIMARY KEY,
     action_id TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,

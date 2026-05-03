@@ -1,4 +1,4 @@
-//! DOS-228 Fix 2: Backend-side debounce for post-edit health recompute.
+//! Regression guard: Backend-side debounce for post-edit health recompute.
 //!
 //! Previously, every health-relevant field edit synchronously invoked
 //! `recompute_entity_health` inside `services::accounts::update_account_field`.
@@ -6,7 +6,7 @@
 //! racy when the scoring pass overlapped with subsequent writes. The frontend
 //! debounce could not be trusted because:
 //!   1. AI agents and automation can call `update_account_field` directly.
-//!   2. Chat/correction backends (DOS-229) skip the UI debounce entirely.
+//!   2. Chat/correction backends  skip the UI debounce entirely.
 //!   3. Health recompute cost scales with signal volume; we must coalesce.
 //!
 //! This module provides a per-account debouncer. Each call to
@@ -91,7 +91,7 @@ impl HealthRecomputeDebouncer {
 /// the recompute is executed on the Tauri async runtime after the debounce
 /// window closes, and only if no newer edit has landed in the meantime.
 ///
-/// DOS-228 Wave 0f: this function is **timing/coalescing only**. The durable
+/// this function is **timing/coalescing only**. The durable
 /// `health_recompute_pending` marker MUST be written by the caller on the
 /// same writer connection that committed the triggering mutation, BEFORE
 /// calling this function. If we owned marker persistence here — even
@@ -164,7 +164,7 @@ pub fn schedule_recompute(
     });
 }
 
-/// DOS-228 Wave 0e Fix 3: Drain persisted `health_recompute_pending`
+/// Drain persisted `health_recompute_pending`
 /// markers on app startup. Any row surviving a crash gets its recompute run
 /// synchronously (from the caller's perspective — each is a separate
 /// `db_write`) and, on success, its marker cleared. Failures are logged
@@ -304,7 +304,7 @@ mod tests {
         assert!(d.try_claim("b", b));
     }
 
-    /// DOS-228 Wave 0f: the debouncer is timing-only. `record` must not touch
+    /// the debouncer is timing-only. `record` must not touch
     /// the database — all persistence now lives in the calling mutation's
     /// writer closure. This test codifies that separation of concerns: a bare
     /// `HealthRecomputeDebouncer` is fully usable with no DB handle at all.

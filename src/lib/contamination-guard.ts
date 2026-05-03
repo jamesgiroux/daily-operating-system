@@ -1,5 +1,5 @@
 /**
- * DOS-83: Cross-entity contamination guard utilities.
+ * Cross-entity contamination guard utilities.
  *
  * Provides helpers to check if intelligence fields are flagged as
  * cross-entity bleed by the backend consistency checker.

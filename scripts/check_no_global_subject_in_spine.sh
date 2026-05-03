@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# DOS-310 spine restriction (interim guard until DOS-7 ships
+#  spine restriction (interim guard until  ships
 # CLAIM_TYPE_REGISTRY): v1.4.0 production code must not construct
 # `SubjectRef::Global` directly. Match arms for the variant are
 # permitted (they route to the correct epoch path); construction is
@@ -17,7 +17,7 @@
 #   - .docs/, scripts/           — documentation and tooling
 #
 # Replaced by the CLAIM_TYPE_REGISTRY-aware compile-time guard introduced
-# by DOS-7 (W3) per ADR-0125.
+# by (W3) per ADR-0125.
 
 set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"

@@ -1,6 +1,6 @@
-//! Entity-trigger helpers retained after the DOS-258 rewrite.
+//! Entity-trigger helpers retained after the signal invalidation rewrite.
 //!
-//! The legacy event-driven entity resolution trigger (I308, ADR-0080 Phase 4)
+//! The legacy event-driven entity resolution trigger (ADR-0080 Phase 4)
 //! was removed here. Entity linking now runs on every calendar poll via
 //! `services::entity_linking::calendar_adapter::evaluate_meeting`, which
 //! writes to `linked_entities_raw` instead of the fuzzy/keyword resolver's

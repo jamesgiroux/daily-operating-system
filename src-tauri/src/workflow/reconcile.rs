@@ -205,7 +205,7 @@ pub fn run_reconciliation(workspace: &Path, db: Option<&ActionDb>) -> Reconcilia
 
 /// Record completed meetings in SQLite meetings/meeting_prep/meeting_transcripts tables.
 ///
-/// Also persists enriched prep context (I181) so prep data survives archival.
+/// Also persists enriched prep context  so prep data survives archival.
 pub fn persist_meetings(db: &ActionDb, result: &ReconciliationResult, workspace: &Path) {
     let preps_dir = workspace.join("_today").join("data").join("preps");
     let clock = crate::services::context::SystemClock;
@@ -587,7 +587,7 @@ pub fn write_morning_flags(today_dir: &Path, result: &ReconciliationResult) -> R
     fs::write(data_dir.join("next-morning-flags.json"), &json)
         .map_err(|e| format!("Failed to write next-morning-flags.json: {}", e))?;
 
-    // I513: Also store in app_state_kv for DB-based reads
+    // Also store in app_state_kv for DB-based reads
     if let Ok(db) = crate::db::ActionDb::open() {
         let clock = crate::services::context::SystemClock;
         let rng = crate::services::context::SystemRng;

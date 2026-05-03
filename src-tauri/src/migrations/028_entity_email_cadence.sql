@@ -1,4 +1,4 @@
--- I319: Entity-level email cadence monitoring
+-- Entity-level email cadence monitoring
 
 CREATE TABLE IF NOT EXISTS entity_email_cadence (
     entity_id TEXT NOT NULL,

@@ -4,11 +4,11 @@
  * TriageSection tests.
  *
  * History:
- *   - DOS-232 (Codex): TriageSection must not fall into the "On track" fine
+ *   - TriageSection must not fall into the "On track" fine
  *     state when a health-relevant leading signal is present. Each family of
  *     `HealthOutlookSignals` below seeds ONE signal and asserts
  *     `hasTriageContent` + the rendered card.
- *   - DOS-249 (Wave-0g): hard cap at 5, unified Local + Glean ranking
+ *   - hard cap at 5, unified Local + Glean ranking
  *     (urgent → soon → stakeholder, newest first within bucket), and
  *     per-card `IntelligenceCorrection` feedback slot.
  */
@@ -349,7 +349,7 @@ describe("TriageSection — DOS-249 cap + ranking + feedback slot", () => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// DOS-269: Action wiring — Snooze, Confirm resolved, Still accurate.
+// Action wiring — Snooze, Confirm resolved, Still accurate.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { fireEvent, waitFor } from "@testing-library/react";

@@ -113,7 +113,7 @@ function groupByMeeting(actions: DbAction[]): ActionGroup[] {
 
   // "Everything Else" — single group, sorted by due date ascending.
   // Overdue items naturally surface to the top without a guilt-inducing header.
-  // Proper overdue handling (aging, zero-guilt prompts) deferred to v1.0.2 I583.
+  // Proper overdue handling (aging, zero-guilt prompts) deferred to v1.0.2.
   if (everythingElse.length > 0) {
     everythingElse.sort((x, y) => {
       if (!x.dueDate && !y.dueDate) return 0;
