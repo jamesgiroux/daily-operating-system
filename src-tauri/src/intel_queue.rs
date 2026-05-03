@@ -2021,6 +2021,7 @@ fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &In
     let existing = db.get_entity_intelligence(entity_id).ok().flatten();
     let mut merged = if let Some(mut existing) = existing {
         for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
+            // best-effort: progressive partial writes are advisory; final reconciliation writes the authoritative snapshot.
             let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
                 &mut existing,
                 dim,

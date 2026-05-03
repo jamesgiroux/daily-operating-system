@@ -13,28 +13,70 @@ else
   prefix="src"
 fi
 
-files=(
-  "$prefix/services/intelligence.rs"
-  "$prefix/services/linear.rs"
-  "$prefix/intel_queue.rs"
-  "$prefix/self_healing/detector.rs"
-  "$prefix/self_healing/quality.rs"
-  "$prefix/self_healing/feedback.rs"
-  "$prefix/self_healing/scheduler.rs"
-  "$prefix/executor.rs"
-  "$prefix/pty.rs"
-  "$prefix/privacy.rs"
-  "$prefix/db_backup.rs"
-)
+files=()
+
+add_tree() {
+  local dir="$1"
+  [[ -d "$dir" ]] || return 0
+  while IFS= read -r file; do
+    files+=("$file")
+  done < <(find "$dir" -type f -name '*.rs' | sort)
+}
+
+add_file() {
+  local file="$1"
+  [[ -f "$file" ]] || return 0
+  files+=("$file")
+}
+
+# Subtree scans cover logical writer surfaces that are expected to grow or split.
+add_tree "$prefix/services"
+add_tree "$prefix/db"
+add_tree "$prefix/self_healing"
+
+# Leaf modules below are writer paths that do not fit one writer-surface subtree.
+add_file "$prefix/pty.rs"
+add_file "$prefix/privacy.rs"
+add_file "$prefix/executor.rs"
+add_file "$prefix/db_backup.rs"
+add_file "$prefix/intel_queue.rs"
+add_file "$prefix/migrations.rs"
 
 violations=""
 for file in "${files[@]}"; do
   [[ -f "$file" ]] || continue
   file_violations="$(
     awk '
-      /let[[:space:]]+_[[:space:]]*=[^;]*(\.execute|\.execute_batch)[[:space:]]*\(/ {
-        if (prev !~ /^[[:space:]]*\/\/[[:space:]]*best-effort:/) {
-          print FILENAME ":" FNR ":" $0
+      function reset_tracking() {
+        tracking = 0
+        start_line = 0
+        start_text = ""
+        window = ""
+        allowed = 0
+      }
+      function check_window() {
+        if (window ~ /\.(execute|execute_batch)[[:space:]]*\(/ && !allowed) {
+          print FILENAME ":" start_line ":" start_text
+        }
+      }
+      /let[[:space:]]+_[[:space:]]*=/ && $0 !~ /^[[:space:]]*\/\// && !tracking {
+        tracking = 1
+        start_line = FNR
+        start_text = $0
+        window = $0 "\n"
+        allowed = (prev ~ /^[[:space:]]*\/\/[[:space:]]*best-effort:/)
+        if ($0 ~ /;/) {
+          check_window()
+          reset_tracking()
+        }
+        prev = $0
+        next
+      }
+      tracking {
+        window = window $0 "\n"
+        if ($0 ~ /;/) {
+          check_window()
+          reset_tracking()
         }
       }
       { prev = $0 }

@@ -1477,10 +1477,11 @@ impl ActionDb {
 
         if updated.is_empty() {
             // Still stamp last_enriched_at so this person isn't re-queued
-            let _ = conn.execute(
+            conn.execute(
                 "UPDATE people SET last_enriched_at = ?1 WHERE id = ?2",
                 rusqlite::params![now, person_id],
-            );
+            )
+            .map_err(|e| DbError::Migration(format!("update_person_profile stamp: {}", e)))?;
             return Ok(ProfileUpdateResult {
                 fields_updated: vec![],
             });
@@ -1510,6 +1511,7 @@ impl ActionDb {
         let log_id = format!("el-{}", uuid::Uuid::new_v4());
         let fields_json = serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
 
+        // best-effort: enrichment_log is audit-only; profile updates above are authoritative.
         let _ = conn.execute(
             "INSERT INTO enrichment_log
                 (id, entity_type, entity_id, source, event_type, fields_updated, created_at)

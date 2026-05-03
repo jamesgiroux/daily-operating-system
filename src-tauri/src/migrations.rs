@@ -940,6 +940,45 @@ fn is_no_such_actions_table_error(err: &SqliteError) -> bool {
         .starts_with("no such table: actions")
 }
 
+fn sqlite_unknown_error_message(err: &SqliteError) -> Option<&str> {
+    match err {
+        SqliteError::SqliteFailure(sqlite_err, Some(msg))
+            if sqlite_err.code == ErrorCode::Unknown =>
+        {
+            Some(msg)
+        }
+        SqliteError::SqlInputError {
+            error,
+            msg,
+            sql: _,
+            offset: _,
+        } if error.code == ErrorCode::Unknown => Some(msg),
+        _ => None,
+    }
+}
+
+/// rusqlite 0.31/libsqlite3-sys does not expose extended codes for ALTER TABLE
+/// duplicate-column dialect errors; this substring fallback is durable against
+/// libsqlite text drift because these messages are stable across supported
+/// versions (3.35..3.45).
+fn is_duplicate_column_error(e: &SqliteError) -> bool {
+    match sqlite_unknown_error_message(e) {
+        Some(msg) => msg.to_ascii_lowercase().contains("duplicate column name"),
+        None => false,
+    }
+}
+
+/// rusqlite 0.31/libsqlite3-sys does not expose extended codes for ALTER TABLE
+/// unknown-column dialect errors; this substring fallback is durable against
+/// libsqlite text drift because these messages are stable across supported
+/// versions (3.35..3.45).
+fn is_missing_column_error(e: &SqliteError) -> bool {
+    match sqlite_unknown_error_message(e) {
+        Some(msg) => msg.to_ascii_lowercase().contains("no such column"),
+        None => false,
+    }
+}
+
 fn probe_actions_table(conn: &Connection) -> Result<bool, String> {
     let mut stmt = match conn.prepare("SELECT 1 FROM actions LIMIT 1") {
         Ok(stmt) => stmt,
@@ -1176,8 +1215,8 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
                 // "no such column" is only safe for pure ALTER TABLE migrations
                 // (PR #11: multi-statement migrations with CREATE/INSERT/DROP
                 // must not silently swallow this error).
-                let is_dup_column = msg.contains("duplicate column name");
-                let is_benign_alter = is_single_alter && msg.contains("no such column");
+                let is_dup_column = is_duplicate_column_error(&e);
+                let is_benign_alter = is_single_alter && is_missing_column_error(&e);
                 if is_dup_column || is_benign_alter {
                     log::warn!(
                         "Migration v{}: benign schema conflict ({}), continuing",
@@ -1311,6 +1350,52 @@ mod tests {
                 "only missing actions table should classify as fresh DB: {msg}"
             );
         }
+    }
+
+    fn sqlite_failure_with_message(code: i32, msg: &str) -> SqliteError {
+        SqliteError::SqliteFailure(rusqlite::ffi::Error::new(code), Some(msg.to_string()))
+    }
+
+    #[test]
+    fn is_duplicate_column_error_classifies_supported_sqlite_message() {
+        let err = sqlite_failure_with_message(
+            rusqlite::ffi::SQLITE_ERROR,
+            "duplicate column name: source_asof",
+        );
+        assert!(is_duplicate_column_error(&err));
+        assert!(!is_missing_column_error(&err));
+    }
+
+    #[test]
+    fn is_duplicate_column_error_rejects_unrelated_errors() {
+        let locked =
+            sqlite_failure_with_message(rusqlite::ffi::SQLITE_LOCKED, "duplicate column name: id");
+        let unrelated =
+            sqlite_failure_with_message(rusqlite::ffi::SQLITE_ERROR, "database table is locked");
+        assert!(!is_duplicate_column_error(&locked));
+        assert!(!is_duplicate_column_error(&unrelated));
+    }
+
+    #[test]
+    fn is_missing_column_error_classifies_supported_sqlite_message() {
+        let err = sqlite_failure_with_message(
+            rusqlite::ffi::SQLITE_ERROR,
+            "no such column: stale_column",
+        );
+        assert!(is_missing_column_error(&err));
+        assert!(!is_duplicate_column_error(&err));
+    }
+
+    #[test]
+    fn is_missing_column_error_rejects_unrelated_errors() {
+        let corrupt =
+            sqlite_failure_with_message(rusqlite::ffi::SQLITE_CORRUPT, "no such column: id");
+        let unrelated = sqlite_failure_with_message(
+            rusqlite::ffi::SQLITE_ERROR,
+            "no such table: accounts",
+        );
+        assert!(!is_missing_column_error(&corrupt));
+        assert!(!is_missing_column_error(&unrelated));
     }
 
     #[test]

@@ -772,7 +772,7 @@ mod tests {
         // directly so the legacy reader and claims-backed reader can
         // be compared without invoking the runtime writer service.
         conn.execute(
-            "INSERT INTO intelligence_claims \
+            "INSERT INTO intelligence_claims /* dos7-allowed: parity test seed for legacy dismissal reader */ \
              (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
               actor, data_source, observed_at, created_at, provenance_json, metadata_json, \
               claim_state, surfacing_state, retraction_reason, expires_at, temporal_scope, \
@@ -1604,7 +1604,7 @@ mod tests {
         // dos7-allowed: parity test seed uses json_object to prove
         // escaped subject identifiers match the claims-backed reader.
         conn.execute(
-            "INSERT INTO intelligence_claims \
+            "INSERT INTO intelligence_claims /* dos7-allowed: parity test seed for escaped subject_ref */ \
              (id, subject_ref, claim_type, field_path, text, dedup_key, item_hash, \
               actor, data_source, observed_at, created_at, provenance_json, \
               claim_state, surfacing_state, retraction_reason, \
