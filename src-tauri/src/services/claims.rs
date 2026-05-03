@@ -546,6 +546,19 @@ fn insert_claim_row(tx: &ActionDb, claim: &IntelligenceClaim) -> Result<(), Clai
     Ok(())
 }
 
+fn project_legacy_state_for_claim(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+) -> Result<(), ClaimError> {
+    let outcomes = crate::services::derived_state::project_claim_to_db_legacy_tx(ctx, tx, claim);
+    for outcome in outcomes {
+        crate::services::derived_state::record_projection_outcome(ctx, tx, &claim.id, &outcome)
+            .map_err(|e| ClaimError::Transaction(e.to_string()))?;
+    }
+    Ok(())
+}
+
 const CLAIM_COLUMNS: &str = "id, subject_ref, claim_type, field_path, topic_key, text, dedup_key,
     item_hash, actor, data_source, source_ref, source_asof, observed_at, created_at,
     provenance_json, metadata_json, claim_state, surfacing_state, demotion_reason,
@@ -1093,6 +1106,7 @@ pub fn commit_claim(
                     needs_user_decision_at: None,
                 };
                 insert_claim_row(tx, &contradicting)?;
+                project_legacy_state_for_claim(ctx, tx, &contradicting)?;
 
                 let contradiction_id = uuid::Uuid::new_v4().to_string();
                 tx.conn_ref().execute(
@@ -1160,6 +1174,7 @@ pub fn commit_claim(
         };
 
         insert_claim_row(tx, &claim)?;
+        project_legacy_state_for_claim(ctx, tx, &claim)?;
         tx.bump_for_subject(&subject)?;
 
         if proposal.tombstone.is_some() {

@@ -73,6 +73,19 @@ fn lint_legacy_unattributed_writer_allowlist_passes_against_current_tree() {
     );
 }
 
+// v1.4.1 follow-up: route legacy AI writers through derived_state
+#[test]
+#[ignore]
+fn lint_legacy_projection_writers_passes_against_current_tree() {
+    let (ok, stdout, stderr) =
+        run_lint("src-tauri/scripts/check_dos301_legacy_projection_writers.sh");
+    assert!(
+        ok,
+        "legacy-projection-writer lint failed:\nstdout: {}\nstderr: {}",
+        stdout, stderr
+    );
+}
+
 /// L2 cycle-1 fix #5: every runtime legacy-dismissal-table write must
 /// be paired with a `shadow_write_tombstone_claim` call within ±50
 /// lines so the claim substrate stays in parity with legacy storage.
