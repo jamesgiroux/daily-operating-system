@@ -29,6 +29,7 @@ use crate::abilities::feedback::{
     compute_needs_nuance_trust_effect, feedback_semantics, transition_for_feedback,
     ClaimFeedbackMetadata, ClaimRenderPolicy, ClaimVerificationState, FeedbackAction, RepairAction,
 };
+pub use crate::abilities::trust::TrustScore;
 use crate::db::claim_invalidation::SubjectRef;
 use crate::db::claims::{
     ClaimSensitivity, ClaimState, IntelligenceClaim, ReconciliationKind, SurfacingState,
@@ -126,6 +127,8 @@ pub enum ClaimError {
     UnknownClaimType(String),
     #[error("unknown claim_id: {0}")]
     UnknownClaimId(String),
+    #[error("claim not found: {0}")]
+    ClaimNotFound(String),
     #[error("invalid claim feedback: {0}")]
     InvalidFeedback(String),
     #[error("invalid actor: {0}")]
@@ -149,6 +152,9 @@ pub enum ClaimError {
     #[error("serialization error: {0}")]
     Serde(#[from] serde_json::Error),
 }
+
+pub type ClaimsError = ClaimError;
+pub type TrustVersion = i64;
 
 // ---------------------------------------------------------------------------
 // Per-key commit lock (ADR-0113 R2)
@@ -1690,6 +1696,47 @@ pub fn record_corroboration(
 }
 
 // ---------------------------------------------------------------------------
+// update_claim_trust
+// ---------------------------------------------------------------------------
+
+pub fn update_claim_trust(
+    db: &ActionDb,
+    claim_id: &str,
+    trust_score: TrustScore,
+    trust_version: TrustVersion,
+    ctx: &ServiceContext<'_>,
+) -> Result<(), ClaimsError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| ClaimsError::Mode(e.to_string()))?;
+
+    let trust_computed_at = ctx.clock.now().to_rfc3339();
+    let trust_score = trust_score_db_value(trust_score);
+    let updated = db.conn_ref().execute(
+        "UPDATE intelligence_claims
+         SET trust_score = ?1,
+             trust_computed_at = ?2,
+             trust_version = ?3
+         WHERE id = ?4",
+        params![trust_score, &trust_computed_at, trust_version, claim_id],
+    )?;
+
+    if updated == 0 {
+        return Err(ClaimsError::ClaimNotFound(claim_id.to_string()));
+    }
+
+    Ok(())
+}
+
+fn trust_score_db_value(trust_score: TrustScore) -> Option<f64> {
+    let value = trust_score.value();
+    if value.is_finite() {
+        Some(value)
+    } else {
+        None
+    }
+}
+
+// ---------------------------------------------------------------------------
 // reconcile_contradiction
 // ---------------------------------------------------------------------------
 
@@ -2326,6 +2373,52 @@ mod tests {
             .expect("read lifecycle columns")
     }
 
+    fn read_trust_columns(
+        db: &ActionDb,
+        claim_id: &str,
+    ) -> (Option<f64>, Option<String>, Option<i64>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version \
+                 FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read trust columns")
+    }
+
+    fn read_non_trust_claim_columns(db: &ActionDb, claim_id: &str) -> Vec<Option<String>> {
+        db.conn_ref()
+            .query_row(
+                "SELECT id, subject_ref, claim_type, field_path, topic_key, text, dedup_key,
+                        item_hash, actor, data_source, source_ref, source_asof, observed_at,
+                        created_at, provenance_json, metadata_json, claim_state,
+                        surfacing_state, demotion_reason, reactivated_at, retraction_reason,
+                        expires_at, superseded_by, thread_id, temporal_scope, sensitivity,
+                        verification_state, verification_reason, needs_user_decision_at
+                 FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| {
+                    let mut values = Vec::new();
+                    for index in 0..29 {
+                        values.push(row.get::<_, Option<String>>(index)?);
+                    }
+                    Ok(values)
+                },
+            )
+            .expect("read non-trust claim columns")
+    }
+
+    fn read_subject_ref_and_text(db: &ActionDb, claim_id: &str) -> (String, String) {
+        db.conn_ref()
+            .query_row(
+                "SELECT subject_ref, text FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read subject_ref and text")
+    }
+
     fn repair_job_count(db: &ActionDb, claim_id: &str) -> i64 {
         db.conn_ref()
             .query_row(
@@ -2354,6 +2447,140 @@ mod tests {
                 |row| row.get::<_, String>(0),
             )
             .expect("read signal value")
+    }
+
+    #[test]
+    fn update_claim_trust_writes_only_trust_columns() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut p = proposal("Trust updater preserves non trust columns");
+        p.metadata_json = Some(serde_json::json!({ "preserve": true }).to_string());
+        p.thread_id = Some("thread-preserve".to_string());
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+        let before = read_non_trust_claim_columns(&db, &claim_id);
+
+        update_claim_trust(&db, &claim_id, TrustScore(0.73), 4, &ctx).unwrap();
+
+        let after = read_non_trust_claim_columns(&db, &claim_id);
+        assert_eq!(after, before);
+        assert_eq!(
+            read_trust_columns(&db, &claim_id),
+            (Some(0.73), Some(TS.to_string()), Some(4))
+        );
+    }
+
+    #[test]
+    fn update_claim_trust_uses_injected_clock_for_trust_computed_at() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-clock",
+            SUBJECT,
+            "risk",
+            "Clock-controlled trust update",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        let fixed_at = Utc.with_ymd_and_hms(2026, 5, 4, 9, 15, 30).unwrap();
+        let clock = FixedClock::new(fixed_at);
+        let rng = SeedableRng::new(17);
+        let external = ExternalClients::default();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        update_claim_trust(&db, "claim-clock", TrustScore(0.64), 2, &ctx).unwrap();
+
+        let (_, trust_computed_at, _) = read_trust_columns(&db, "claim-clock");
+        assert_eq!(trust_computed_at, Some(fixed_at.to_rfc3339()));
+    }
+
+    #[test]
+    fn update_claim_trust_returns_claim_not_found_for_missing_id() {
+        let db = test_db();
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let err = update_claim_trust(&db, "missing-claim", TrustScore(0.5), 1, &ctx)
+            .expect_err("missing claim must return ClaimNotFound");
+
+        assert!(matches!(
+            err,
+            ClaimsError::ClaimNotFound(claim_id) if claim_id == "missing-claim"
+        ));
+    }
+
+    #[test]
+    fn update_claim_trust_writes_null_for_unscored() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-unscored",
+            SUBJECT,
+            "risk",
+            "Unscored trust update",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        update_claim_trust(&db, "claim-unscored", TrustScore(f64::NAN), 3, &ctx).unwrap();
+
+        assert_eq!(
+            read_trust_columns(&db, "claim-unscored"),
+            (None, Some(TS.to_string()), Some(3))
+        );
+    }
+
+    #[test]
+    fn update_claim_trust_overwrites_prior_trust_score_with_new_one() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-overwrite",
+            SUBJECT,
+            "risk",
+            "Trust score overwrite",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        let first_at = Utc.with_ymd_and_hms(2026, 5, 4, 8, 0, 0).unwrap();
+        let second_at = Utc.with_ymd_and_hms(2026, 5, 4, 8, 30, 0).unwrap();
+        let clock = FixedClock::new(first_at);
+        let rng = SeedableRng::new(23);
+        let external = ExternalClients::default();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        update_claim_trust(&db, "claim-overwrite", TrustScore(0.21), 1, &ctx).unwrap();
+        clock.set(second_at);
+        update_claim_trust(&db, "claim-overwrite", TrustScore(0.88), 2, &ctx).unwrap();
+
+        assert_eq!(
+            read_trust_columns(&db, "claim-overwrite"),
+            (Some(0.88), Some(second_at.to_rfc3339()), Some(2))
+        );
+    }
+
+    #[test]
+    fn update_claim_trust_preserves_subject_ref_and_text() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-identity",
+            SUBJECT,
+            "risk",
+            "Subject ref and text must stay stable",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let before = read_subject_ref_and_text(&db, "claim-identity");
+
+        update_claim_trust(&db, "claim-identity", TrustScore(0.91), 5, &ctx).unwrap();
+
+        assert_eq!(read_subject_ref_and_text(&db, "claim-identity"), before);
     }
 
     #[test]
