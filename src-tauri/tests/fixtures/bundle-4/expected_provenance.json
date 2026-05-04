@@ -1,0 +1,354 @@
+{
+  "data": {
+    "entity_id": "acct-test-1",
+    "entity_type": "account",
+    "render_policy": "show",
+    "claim_id": "claim-test-provider-person-context-bleed",
+    "trust_score": 0.28,
+    "trust_band": "needs_verification"
+  },
+  "provenance": {
+    "provenance_schema_version": 1,
+    "ability_name": "enrich_account_intelligence",
+    "ability_version": {
+      "major": 1,
+      "minor": 0
+    },
+    "ability_schema_version": 1,
+    "invocation_id": "44444444-4444-4444-8444-444444444444",
+    "produced_at": "2026-05-01T12:00:00Z",
+    "inputs_snapshot": {
+      "newest_signal_at": "2026-05-01T12:00:00Z",
+      "entity_watermarks": {
+        "acct-test-1": {
+          "entity_version": 1,
+          "last_updated": "2026-05-01T12:00:00Z"
+        },
+        "acct-test-2": {
+          "entity_version": 1,
+          "last_updated": "2026-05-01T12:00:00Z"
+        },
+        "person-test-shared": {
+          "entity_version": 1,
+          "last_updated": "2026-05-01T12:00:00Z"
+        }
+      },
+      "source_freshness": {
+        "seeded-account-a": "2026-04-24T12:00:00Z",
+        "seeded-account-b": "2026-04-25T12:00:00Z",
+        "seeded-person-shared": "2026-04-26T12:00:00Z",
+        "provider-completion": "2026-05-01T12:00:00Z"
+      },
+      "provider_config_hash": "bundle-4-v1-synthetic-fingerprint",
+      "glean_connected": false
+    },
+    "actor": {
+      "kind": "user"
+    },
+    "mode": "evaluate",
+    "trust": {
+      "effective": "untrusted",
+      "contributions": [
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 0
+            }
+          },
+          "reason": "directly_from_target_account_seed"
+        },
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 1
+            }
+          },
+          "reason": "directly_from_sibling_account_seed"
+        },
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 2
+            }
+          },
+          "reason": "directly_from_shared_person_context"
+        },
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 3
+            }
+          },
+          "reason": "directly_from_llm_synthesis"
+        }
+      ],
+      "contains_stored_synthesis": false
+    },
+    "sources": [
+      {
+        "data_source": {
+          "other": "fixture_seed"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "seeded-account-a",
+              "provider": "vendor.example.com"
+            }
+          }
+        ],
+        "observed_at": "2026-04-24T12:00:00Z",
+        "source_asof": "2026-04-24T12:00:00Z",
+        "evidence_weight": 0.95,
+        "scoring_class": "reference",
+        "synthesis_marker": null,
+        "lifecycle_state": "active"
+      },
+      {
+        "data_source": {
+          "other": "fixture_seed"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "seeded-account-b",
+              "provider": "vendor.example.com"
+            }
+          }
+        ],
+        "observed_at": "2026-04-25T12:00:00Z",
+        "source_asof": "2026-04-25T12:00:00Z",
+        "evidence_weight": 0.95,
+        "scoring_class": "reference",
+        "synthesis_marker": null,
+        "lifecycle_state": "active"
+      },
+      {
+        "data_source": {
+          "other": "person_context"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "seeded-person-shared",
+              "provider": "vendor.example.com"
+            }
+          }
+        ],
+        "observed_at": "2026-04-26T12:00:00Z",
+        "source_asof": "2026-04-26T12:00:00Z",
+        "evidence_weight": 0.5,
+        "scoring_class": "ambiguous_person_context",
+        "synthesis_marker": null,
+        "lifecycle_state": "active",
+        "origin_account_id": "acct-test-2"
+      },
+      {
+        "data_source": {
+          "other": "provider_completion"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "bundle-4-provider-person-context-bleed",
+              "provider": "vendor.example.com"
+            }
+          }
+        ],
+        "observed_at": "2026-05-01T12:00:00Z",
+        "source_asof": "2026-05-01T12:00:00Z",
+        "evidence_weight": 0.2,
+        "scoring_class": "reference",
+        "synthesis_marker": {
+          "producer_ability": "enrich_account_intelligence",
+          "producer_invocation_id": "44444444-4444-4444-8444-444444444444",
+          "produced_at": "2026-05-01T12:00:00Z"
+        }
+      }
+    ],
+    "thread_ids": [
+      "mtg-test-b-1",
+      "mtg-test-b-2"
+    ],
+    "prompt_fingerprint": {
+      "provider": "vendor.example.com",
+      "model": "replay",
+      "prompt_template_id": "account-intelligence-prep",
+      "prompt_template_version": "bundle-4-v1",
+      "canonical_prompt_hash": "bundle-4-v1-synthetic-fingerprint",
+      "temperature": 0,
+      "top_p": null,
+      "seed": 42,
+      "tokens_input": null,
+      "tokens_output": null,
+      "provider_completion_id": "bundle-4-provider-person-context-bleed"
+    },
+    "children": [],
+    "field_attributions": {
+      "/executiveAssessment": {
+        "subject": {
+          "subject": {
+            "account": "acct-test-1"
+          },
+          "binding": "direct_input",
+          "supporting_source_refs": [
+            {
+              "source": {
+                "source_index": 0
+              }
+            }
+          ],
+          "competing_subjects": [],
+          "fit": {
+            "status": "confident",
+            "confidence": 0.9,
+            "method": "direct_input_plus_target_seed"
+          }
+        },
+        "derivation": "llm_synthesis",
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 3
+            }
+          },
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "confidence": {
+          "value": 0.78,
+          "kind": "computed"
+        },
+        "explanation": "Provider assessment is scoped to Account A and supported by seeded-account-a."
+      },
+      "/stakeholderInsights/0": {
+        "subject": {
+          "subject": {
+            "person": "person-test-shared"
+          },
+          "binding": "source_matched",
+          "supporting_source_refs": [
+            {
+              "source": {
+                "source_index": 2
+              }
+            }
+          ],
+          "competing_subjects": [
+            {
+              "account": "acct-test-2"
+            },
+            {
+              "project": "proj-test-b-1"
+            },
+            {
+              "project": "proj-test-b-2"
+            }
+          ],
+          "fit": {
+            "status": "ambiguous",
+            "confidence": 0.28,
+            "method": "person_context_account_boundary"
+          }
+        },
+        "derivation": "suppression_policy",
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 3
+            }
+          },
+          {
+            "source": {
+              "source_index": 2
+            }
+          },
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "confidence": {
+          "value": 0.28,
+          "kind": "computed"
+        },
+        "explanation": "The provider attributed the insight through person-test-shared, but the claim text matched Account B-exclusive project tokens and was withheld from Account A rendering.",
+        "cross_entity_origin": {
+          "person_id": "person-test-shared",
+          "origin_account_id": "acct-test-2",
+          "target_account_id": "acct-test-1",
+          "source_refs": [
+            "seeded-person-shared",
+            "seeded-account-b"
+          ],
+          "tokens": [
+            "proj-test-b-1",
+            "proj-test-b-2"
+          ]
+        }
+      }
+    },
+    "subject": {
+      "subject": {
+        "account": "acct-test-1"
+      },
+      "binding": "direct_input",
+      "supporting_source_refs": [],
+      "competing_subjects": [],
+      "fit": {
+        "status": "confident",
+        "confidence": 1,
+        "method": "direct_input"
+      }
+    },
+    "warnings": [
+      {
+        "cross_entity_subject_ambiguity": {
+          "field": "/stakeholderInsights/0",
+          "person_id": "person-test-shared",
+          "target_account_id": "acct-test-1",
+          "origin_account_id": "acct-test-2",
+          "hits": [
+            "proj-test-b-1",
+            "proj-test-b-2"
+          ]
+        }
+      }
+    ],
+    "claim_attribution": {
+      "claim-test-provider-person-context-bleed": {
+        "attributed_source": "provider_completion",
+        "source_index": 3,
+        "corroborators": [],
+        "contradicts": [],
+        "warnings": [
+          "cross_entity_subject_ambiguity",
+          "low_cross_entity_coherence"
+        ],
+        "origin": {
+          "person_id": "person-test-shared",
+          "account_id": "acct-test-2",
+          "source_indices": [
+            1,
+            2,
+            3
+          ]
+        }
+      }
+    }
+  },
+  "ability_version": {
+    "major": 1,
+    "minor": 0
+  },
+  "diagnostics": {
+    "warnings": [
+      "cross_entity_subject_ambiguity",
+      "low_cross_entity_coherence"
+    ]
+  }
+}

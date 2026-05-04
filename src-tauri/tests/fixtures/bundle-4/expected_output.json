@@ -1,0 +1,138 @@
+{
+  "version": 1,
+  "entityId": "acct-test-1",
+  "entityType": "account",
+  "enrichedAt": "2026-05-01T12:00:00Z",
+  "sourceFileCount": 3,
+  "sourceManifest": [
+    {
+      "filename": "source://seeded-account-a",
+      "modifiedAt": "2026-04-24T12:00:00Z",
+      "format": "json",
+      "contentType": "account_fact"
+    },
+    {
+      "filename": "source://seeded-account-b",
+      "modifiedAt": "2026-04-25T12:00:00Z",
+      "format": "json",
+      "contentType": "account_fact"
+    },
+    {
+      "filename": "person://seeded-person-shared",
+      "modifiedAt": "2026-04-26T12:00:00Z",
+      "format": "json",
+      "contentType": "person_context"
+    }
+  ],
+  "executiveAssessment": "acme.example.com is progressing its Account A project plan with no verified dependency on sibling account work.",
+  "risks": [
+    {
+      "text": "Stakeholder context is ambiguous because the shared person has activity on two distinct accounts.",
+      "source": "vendor.example.com completion",
+      "urgency": "watch",
+      "headline": "Shared stakeholder context needs attribution",
+      "evidence": "The provider attribution routed Jane Doe context through person-test-shared while the target entity is acct-test-1.",
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.74,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "vendor.example.com completion for acct-test-1"
+      },
+      "discrepancy": true
+    }
+  ],
+  "recentWins": [
+    {
+      "text": "proj-test-a-1 and proj-test-a-2 remain the only Account A project context verified for acme.example.com.",
+      "source": "seeded Account A context",
+      "impact": "Keeps rendered intelligence scoped to Account A.",
+      "itemSource": {
+        "source": "fixture_seed",
+        "confidence": 0.95,
+        "sourcedAt": "2026-04-24T12:00:00Z",
+        "reference": "seeded-account-a"
+      },
+      "discrepancy": false
+    }
+  ],
+  "stakeholderInsights": [
+    {
+      "name": "Jane Doe",
+      "role": "Shared stakeholder",
+      "assessment": "Jane Doe is linked to acme.example.com, but project-specific provider context was withheld because it could not be attributed to Account A.",
+      "engagement": "ambiguous",
+      "source": "vendor.example.com completion",
+      "personId": "person-test-shared",
+      "verified": false,
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.28,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "vendor.example.com completion for acct-test-1 via person-test-shared"
+      },
+      "discrepancy": true
+    }
+  ],
+  "sourceAttribution": {
+    "executiveAssessment": [
+      "provider_completion:seeded-account-a"
+    ],
+    "risks": [
+      "provider_completion:seeded-person-shared"
+    ],
+    "recentWins": [
+      "fixture_seed:seeded-account-a"
+    ],
+    "stakeholderInsights": [
+      "provider_completion:seeded-person-shared",
+      "provider_completion:seeded-account-b"
+    ]
+  },
+  "consistencyStatus": "flagged",
+  "consistencyFindings": [
+    {
+      "code": "CROSS_ENTITY_SUBJECT_AMBIGUITY",
+      "severity": "high",
+      "fieldPath": "stakeholderInsights[0].assessment",
+      "claimText": "Provider stakeholder insight referenced sibling-account project context for the shared person.",
+      "evidenceText": "The person context belongs to acct-test-2 while the enrichment target is acct-test-1.",
+      "autoFixed": false
+    }
+  ],
+  "renderPolicy": "show",
+  "suppressedFields": [
+    {
+      "fieldPath": "stakeholderInsights[0].assessment",
+      "claimId": "claim-test-provider-person-context-bleed",
+      "sourceId": "seeded-person-shared",
+      "trustBand": "needs_verification",
+      "warnings": [
+        "cross_entity_subject_ambiguity",
+        "low_cross_entity_coherence"
+      ]
+    }
+  ],
+  "trustAnnotations": {
+    "executiveAssessment": {
+      "trustScore": 0.78,
+      "trustBand": "likely_current",
+      "warningBand": null,
+      "warnings": []
+    },
+    "stakeholderInsights": {
+      "claimId": "claim-test-provider-person-context-bleed",
+      "trustScore": 0.28,
+      "trustBand": "needs_verification",
+      "warningBand": "verify_first",
+      "warnings": [
+        "cross_entity_subject_ambiguity",
+        "low_cross_entity_coherence"
+      ],
+      "dominantPenalties": [
+        "cross_entity_coherence",
+        "subject_fit_confidence"
+      ],
+      "corroborationCount": 0
+    }
+  }
+}

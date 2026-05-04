@@ -1,0 +1,228 @@
+{
+  "post_action_state": {
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-test-account-a-provider-assessment",
+        "subject_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "claim_type": "entity_summary",
+        "field_path": "executiveAssessment",
+        "topic_key": "acct-test-1:account-a-project-plan",
+        "text": "acme.example.com is progressing its Account A project plan with no verified dependency on sibling account work.",
+        "data_source": "provider_completion",
+        "source_ref": {
+          "source_id": "seeded-account-a",
+          "provider": "vendor.example.com",
+          "attribution": "provider_completion"
+        },
+        "source_asof": "2026-05-01T12:00:00Z",
+        "observed_at": "2026-05-01T12:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "verification_state": "active",
+        "trust_score": 0.78,
+        "trust_band": "likely_current",
+        "trust_version": 1,
+        "corroboration_count": 1,
+        "dominant_penalties": [],
+        "metadata": {
+          "fixture_bundle": 4,
+          "target_account_id": "acct-test-1",
+          "cross_entity_context_expected": false
+        }
+      }
+    ],
+    "not_created_claim_subjects": [
+      {
+        "attempted_claim_id": "claim-test-provider-person-context-bleed",
+        "target_account_id": "acct-test-1",
+        "subject_ref": {
+          "kind": "project",
+          "id": "proj-test-b-1"
+        },
+        "created": false,
+        "reason": "cross_entity_subject_ambiguity"
+      },
+      {
+        "attempted_claim_id": "claim-test-provider-person-context-bleed",
+        "target_account_id": "acct-test-1",
+        "subject_ref": {
+          "kind": "project",
+          "id": "proj-test-b-2"
+        },
+        "created": false,
+        "reason": "cross_entity_subject_ambiguity"
+      }
+    ],
+    "rejected_claims": [
+      {
+        "claim_id": "claim-test-provider-person-context-bleed",
+        "subject_ref": {
+          "kind": "person",
+          "id": "person-test-shared"
+        },
+        "requested_entity_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "origin_entity_ref": {
+          "kind": "account",
+          "id": "acct-test-2"
+        },
+        "claim_type": "stakeholder_insight",
+        "field_path": "stakeholderInsights[0].assessment",
+        "topic_key": "person-test-shared:stakeholder_context:cross_entity",
+        "text": "Jane Doe is driving proj-test-b-1 and proj-test-b-2 as the next priorities for this account.",
+        "data_source": "provider_completion",
+        "source_ref": {
+          "source_id": "seeded-person-shared",
+          "provider": "vendor.example.com",
+          "attribution": "provider_completion",
+          "origin_account_id": "acct-test-2"
+        },
+        "source_asof": "2026-05-01T12:00:00Z",
+        "observed_at": "2026-05-01T12:00:00Z",
+        "created": false,
+        "rejection_reason": "cross_entity_subject_ambiguity",
+        "trust_score": 0.28,
+        "trust_band": "needs_verification",
+        "trust_version": 1,
+        "dominant_penalties": [
+          "cross_entity_coherence",
+          "subject_fit_confidence"
+        ],
+        "confidence_evidence": {
+          "score": 0.28,
+          "band_label": "needs_verification",
+          "factor_breakdown": [
+            {
+              "name": "source_reliability",
+              "weight": 1,
+              "raw_value": 0.2,
+              "value": 0.2,
+              "contribution": -1.609438
+            },
+            {
+              "name": "freshness_weight",
+              "weight": 1,
+              "raw_value": 1,
+              "value": 1,
+              "contribution": 0
+            },
+            {
+              "name": "corroboration_weight",
+              "weight": 1,
+              "raw_value": 0,
+              "value": 0.05,
+              "contribution": -2.995732
+            },
+            {
+              "name": "contradiction_penalty",
+              "weight": 1,
+              "raw_value": 1,
+              "value": 1,
+              "contribution": 0
+            },
+            {
+              "name": "user_feedback_weight",
+              "weight": 1,
+              "raw_value": 1,
+              "value": 1,
+              "contribution": 0
+            },
+            {
+              "name": "subject_fit_confidence",
+              "weight": 1,
+              "raw_value": 0.28,
+              "value": 0.28,
+              "contribution": -1.272966
+            },
+            {
+              "name": "cross_entity_coherence",
+              "weight": 1,
+              "raw_value": 0.2025,
+              "value": 0.2025,
+              "contribution": -1.597015
+            }
+          ],
+          "caveats": [
+            {
+              "kind": "few_sources"
+            },
+            {
+              "kind": "cross_entity_references",
+              "hit_count": 2
+            }
+          ],
+          "cross_entity_hits": [
+            {
+              "token": "proj-test-b-1",
+              "kind": "company_name",
+              "source_subject": {
+                "kind": "account",
+                "id": "acct-test-2"
+              }
+            },
+            {
+              "token": "proj-test-b-2",
+              "kind": "company_name",
+              "source_subject": {
+                "kind": "account",
+                "id": "acct-test-2"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "confidence_evidence": [
+      {
+        "signal_type": "ConfidenceEvidence",
+        "claim_id": "claim-test-provider-person-context-bleed",
+        "factor": {
+          "name": "cross_entity_coherence",
+          "raw_value": 0.2025,
+          "value": 0.2025
+        },
+        "hits": [
+          "proj-test-b-1",
+          "proj-test-b-2"
+        ]
+      }
+    ],
+    "account_b_project_claims_unchanged": [
+      {
+        "claim_id": "claim-test-b-proj-1",
+        "subject_ref": {
+          "kind": "project",
+          "id": "proj-test-b-1"
+        },
+        "account_id": "acct-test-2",
+        "text": "proj-test-b-1 tracks Account B data migration readiness for subsidiary.example.com.",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.92
+      },
+      {
+        "claim_id": "claim-test-b-proj-2",
+        "subject_ref": {
+          "kind": "project",
+          "id": "proj-test-b-2"
+        },
+        "account_id": "acct-test-2",
+        "text": "proj-test-b-2 tracks Account B launch sequencing for subsidiary.example.com.",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "trust_score": 0.91
+      }
+    ],
+    "preserved_claims": [
+      "claim-test-a-proj-1: proj-test-a-1 tracks Account A onboarding readiness for acme.example.com.",
+      "claim-test-a-proj-2: proj-test-a-2 tracks Account A stakeholder enablement for acme.example.com.",
+      "claim-test-b-proj-1: proj-test-b-1 tracks Account B data migration readiness for subsidiary.example.com.",
+      "claim-test-b-proj-2: proj-test-b-2 tracks Account B launch sequencing for subsidiary.example.com."
+    ]
+  }
+}
