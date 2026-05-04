@@ -1,0 +1,70 @@
+- generic [active] [ref=e1]:
+  - banner [ref=e2]:
+    - generic [ref=e3]:
+      - link [ref=e4] [cursor=pointer]:
+        - /url: "#"
+        - img [ref=e5]
+      - navigation "Breadcrumb" [ref=e7]:
+        - button "Reference" [ref=e8] [cursor=pointer]
+        - generic [ref=e9]: /
+        - button "Surfaces" [ref=e10] [cursor=pointer]
+        - generic [ref=e11]: /
+        - button "Onboarding" [ref=e12] [cursor=pointer]
+        - generic [ref=e13]: /
+        - generic [ref=e14]: Your Role
+    - button "Open search (⌘K)" [ref=e16] [cursor=pointer]: ⌘K
+  - generic:
+    - generic:
+      - img
+  - generic [ref=e19]:
+    - generic [ref=e20]:
+      - separator [ref=e21]
+      - heading "What's your role?" [level=2] [ref=e23]
+      - paragraph [ref=e24]: This shapes your vitals, vocabulary, and how AI prepares your briefings. You can change anytime in Settings.
+    - generic [ref=e25]:
+      - button "Core The default DailyOS operating mode for project-centered work. Tracks projects, meetings, decisions, and follow-through without assuming a specific department or go-to-market motion." [ref=e26] [cursor=pointer]:
+        - generic [ref=e28]: Core
+        - generic [ref=e29]: The default DailyOS operating mode for project-centered work. Tracks projects, meetings, decisions, and follow-through without assuming a specific department or go-to-market motion.
+      - button "Customer Success For customer success managers who own a portfolio of accounts. Tracks ARR, health scores, renewal timelines, and stakeholder relationships to flag retention risks and expansion opportunities." [ref=e30] [cursor=pointer]:
+        - generic [ref=e32]: Customer Success
+        - generic [ref=e33]: For customer success managers who own a portfolio of accounts. Tracks ARR, health scores, renewal timelines, and stakeholder relationships to flag retention risks and expansion opportunities.
+      - button "Affiliates & Partnerships For affiliate, creator, partnership, and alliance teams managing account-centric external relationships, campaign cycles, joint pipeline, attribution, and performance-based collaboration." [ref=e34] [cursor=pointer]:
+        - generic [ref=e36]: Affiliates & Partnerships
+        - generic [ref=e37]: For affiliate, creator, partnership, and alliance teams managing account-centric external relationships, campaign cycles, joint pipeline, attribution, and performance-based collaboration.
+      - button "Product & Marketing For product and marketing teams coordinating initiatives, launches, campaigns, stakeholder feedback, and cross-functional delivery." [ref=e38] [cursor=pointer]:
+        - generic [ref=e40]: Product & Marketing
+        - generic [ref=e41]: For product and marketing teams coordinating initiatives, launches, campaigns, stakeholder feedback, and cross-functional delivery.
+  - navigation "Section navigation" [ref=e43]:
+    - link "Welcome" [ref=e44] [cursor=pointer]:
+      - /url: "#welcome"
+      - generic [ref=e45]: "?"
+      - text: Welcome
+    - link "Google" [ref=e46] [cursor=pointer]:
+      - /url: "#google"
+      - img [ref=e47]
+      - text: Google
+    - link "Claude" [ref=e50] [cursor=pointer]:
+      - /url: "#claude-code"
+      - generic [ref=e51]: "?"
+      - text: Claude
+    - link "Glean" [ref=e52] [cursor=pointer]:
+      - /url: "#glean"
+      - generic [ref=e53]: "?"
+      - text: Glean
+    - link "About You" [ref=e54] [cursor=pointer]:
+      - /url: "#youcard"
+      - img [ref=e55]
+      - text: About You
+    - link "Account" [ref=e58] [cursor=pointer]:
+      - /url: "#first-account"
+      - img [ref=e59]
+      - text: Account
+    - link "Your Role" [ref=e63] [cursor=pointer]:
+      - /url: "#role"
+      - img [ref=e64]
+      - text: Your Role
+    - link "Prime" [ref=e67] [cursor=pointer]:
+      - /url: "#prime"
+      - generic [ref=e68]: "?"
+      - text: Prime
+  - button "Chrome on" [ref=e69] [cursor=pointer]: Chrome on

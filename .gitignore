@@ -9,6 +9,13 @@ daybreak/
 # Codex agent logs (ephemeral debug output)
 .docs/plans/**/_prompts/_logs/
 
+# Legacy archive mockups (contain pre-PII-discipline customer references;
+# kept on disk as historical reference but never shipped to git history)
+.docs/_archive/mockups/
+
+# Inventory update queue (auto-generated, may contain live customer data)
+.docs/design/*.log
+
 # Credentials and secrets
 .config/
 *.credentials
