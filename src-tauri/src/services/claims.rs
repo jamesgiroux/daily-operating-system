@@ -2449,6 +2449,40 @@ mod tests {
             .expect("read signal value")
     }
 
+    fn assert_float_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    fn read_corroboration_strengths(db: &ActionDb, claim_id: &str) -> Vec<f64> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT strength FROM claim_corroborations
+                 WHERE claim_id = ?1
+                 ORDER BY data_source",
+            )
+            .expect("prepare corroboration strength read");
+        stmt.query_map(params![claim_id], |row| row.get::<_, f64>(0))
+            .expect("read corroboration strengths")
+            .collect::<Result<_, _>>()
+            .expect("collect corroboration strengths")
+    }
+
+    fn noisy_or_strength(strengths: &[f64]) -> f64 {
+        if strengths.is_empty() {
+            return 0.0;
+        }
+
+        1.0 - strengths
+            .iter()
+            .fold(1.0, |miss_probability, strength| {
+                miss_probability * (1.0 - strength)
+            })
+    }
+
     #[test]
     fn update_claim_trust_writes_only_trust_columns() {
         let db = test_db();
@@ -2468,6 +2502,27 @@ mod tests {
         assert_eq!(
             read_trust_columns(&db, &claim_id),
             (Some(0.73), Some(TS.to_string()), Some(4))
+        );
+    }
+
+    #[test]
+    fn trust_recompute_does_not_update_direct_sql() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut p = proposal("Trust recompute service boundary preserves claim payload");
+        p.metadata_json = Some(serde_json::json!({ "service_boundary": true }).to_string());
+        p.thread_id = Some("thread-service-boundary".to_string());
+        let claim_id = inserted_claim_id(commit_claim(&ctx, &db, p).unwrap());
+        let before = read_non_trust_claim_columns(&db, &claim_id);
+
+        update_claim_trust(&db, &claim_id, TrustScore(0.81), 9, &ctx).unwrap();
+
+        assert_eq!(read_non_trust_claim_columns(&db, &claim_id), before);
+        assert_eq!(
+            read_trust_columns(&db, &claim_id),
+            (Some(0.81), Some(TS.to_string()), Some(9))
         );
     }
 
@@ -3887,6 +3942,59 @@ mod tests {
 
         assert_ne!(first, second);
         assert_eq!(count, 2);
+    }
+
+    #[test]
+    fn corroboration_strength_matches_record_corroboration_formula() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk formula")).unwrap());
+
+        record_corroboration(&ctx, &db, &claim_id, "calendar", None, None).unwrap();
+        record_corroboration(&ctx, &db, &claim_id, "glean", None, None).unwrap();
+        let strengths = read_corroboration_strengths(&db, &claim_id);
+
+        assert_eq!(strengths, vec![0.5, 0.5]);
+        assert_float_close(noisy_or_strength(&strengths), 0.75);
+    }
+
+    #[test]
+    fn corroboration_same_source_reinforcement_saturates_below_diverse_sources() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut same_source_proposal = proposal("Risk same source");
+        same_source_proposal.field_path = Some("health.risk.same_source".to_string());
+        let mut diverse_proposal = proposal("Risk diverse source");
+        diverse_proposal.field_path = Some("health.risk.diverse".to_string());
+        let same_source_claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, same_source_proposal).unwrap());
+        let diverse_claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, diverse_proposal).unwrap());
+
+        let first =
+            record_corroboration(&ctx, &db, &same_source_claim_id, "glean", None, None).unwrap();
+        let second =
+            record_corroboration(&ctx, &db, &same_source_claim_id, "glean", None, None).unwrap();
+        record_corroboration(&ctx, &db, &diverse_claim_id, "calendar", None, None).unwrap();
+        record_corroboration(&ctx, &db, &diverse_claim_id, "glean", None, None).unwrap();
+
+        let same_source_strength =
+            noisy_or_strength(&read_corroboration_strengths(&db, &same_source_claim_id));
+        let diverse_strength =
+            noisy_or_strength(&read_corroboration_strengths(&db, &diverse_claim_id));
+
+        assert_eq!(first, second);
+        assert_float_close(same_source_strength, 1.0);
+        assert_float_close(diverse_strength, 0.75);
+        assert!(
+            same_source_strength > diverse_strength,
+            "landed W3-C formula currently saturates same-source reinforcement at the ceiling"
+        );
     }
 
     #[test]

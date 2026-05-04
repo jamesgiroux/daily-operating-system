@@ -416,6 +416,30 @@ mod tests {
         );
     }
 
+    fn zero_weights() -> TrustFactorWeights {
+        TrustFactorWeights {
+            source_reliability: 0.0,
+            freshness_weight: 0.0,
+            corroboration_weight: 0.0,
+            contradiction_penalty: 0.0,
+            user_feedback_weight: 0.0,
+            subject_fit_confidence: 0.0,
+            cross_entity_coherence: 0.0,
+        }
+    }
+
+    fn factor_evidence<'a>(
+        computation: &'a TrustComputation,
+        name: &str,
+    ) -> &'a FactorEvidence {
+        computation
+            .evidence
+            .factor_breakdown
+            .iter()
+            .find(|factor| factor.name == name)
+            .unwrap_or_else(|| panic!("missing factor evidence for {name}"))
+    }
+
     #[test]
     fn trust_geometric_mean_all_floor_05_returns_floor() {
         let score = aggregate_geometric_mean(&factors(&[0.0; 7]), 0.05).unwrap();
@@ -436,6 +460,98 @@ mod tests {
             band_for_score(score, &TrustConfig::default()),
             TrustBand::LikelyCurrent
         );
+    }
+
+    #[test]
+    fn trust_feedback_boost_clamped_to_ceiling() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.config.weights = TrustFactorWeights {
+            user_feedback_weight: 1.0,
+            ..zero_weights()
+        };
+        ctx.factor_inputs.user_feedback = UserFeedbackSignal::Confirmed;
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        let feedback = factor_evidence(&computation, "user_feedback_weight");
+
+        assert_close(feedback.raw_value, TrustConfig::default().feedback_boost);
+        assert_close(feedback.value, 1.0);
+        assert_close(computation.score.value(), 1.0);
+    }
+
+    #[test]
+    fn trust_contradiction_present_downranks() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.config.weights = TrustFactorWeights {
+            contradiction_penalty: 1.0,
+            ..zero_weights()
+        };
+        ctx.factor_inputs.contradiction_count = 1;
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+
+        assert_close(
+            computation.score.value(),
+            1.0 - TrustConfig::default().contradiction_multiplier,
+        );
+        assert_eq!(computation.band, TrustBand::UseWithCaution);
+        assert!(computation
+            .evidence
+            .caveats
+            .contains(&ConfidenceCaveat::UnresolvedContradiction));
+    }
+
+    #[test]
+    fn trust_factor_count_is_five_canonical_plus_local_helpers() {
+        let computation = compile_trust(&test_claim(), test_context()).unwrap();
+        let names: Vec<&str> = computation
+            .evidence
+            .factor_breakdown
+            .iter()
+            .map(|factor| factor.name.as_str())
+            .collect();
+
+        assert_eq!(
+            names,
+            vec![
+                "source_reliability",
+                "freshness_weight",
+                "corroboration_weight",
+                "contradiction_penalty",
+                "user_feedback_weight",
+                "subject_fit_confidence",
+                "cross_entity_coherence",
+            ]
+        );
+        assert_eq!(names[..5].len(), 5, "ADR-0114 canonical factor count");
+        assert_eq!(names[5..].len(), 2, "Trust Compiler local helper count");
+    }
+
+    #[test]
+    fn corroboration_zero_rows_clamps_to_floor() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.config.weights = TrustFactorWeights {
+            corroboration_weight: 1.0,
+            ..zero_weights()
+        };
+        ctx.factor_inputs.corroboration_strength = 0.0;
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        let corroboration = factor_evidence(&computation, "corroboration_weight");
+
+        assert_close(corroboration.raw_value, 0.0);
+        assert_close(corroboration.value, TrustConfig::default().clamp_floor);
+        assert_close(
+            computation.score.value(),
+            TrustConfig::default().clamp_floor,
+        );
+        assert!(computation
+            .evidence
+            .caveats
+            .contains(&ConfidenceCaveat::FewSources));
     }
 
     #[test]
@@ -557,5 +673,40 @@ mod tests {
             assert!(score.is_finite());
             assert!((0.0..=1.0).contains(&score));
         }
+    }
+
+    #[test]
+    fn trust_compiler_p99_under_5ms_claim_volume() {
+        let claim = test_claim();
+        let base_ctx = test_context();
+        let mut samples = Vec::with_capacity(1_000);
+
+        for idx in 0..1_000 {
+            let mut ctx = base_ctx.clone();
+            ctx.factor_inputs.source_reliability = 0.50 + (idx % 50) as f64 / 100.0;
+            ctx.factor_inputs.corroboration_strength = if idx % 3 == 0 { 0.5 } else { 1.0 };
+            ctx.factor_inputs.contradiction_count = if idx % 31 == 0 { 1 } else { 0 };
+            ctx.cross_entity.claim_text = if idx % 17 == 0 {
+                "The target account mentions other.example in a support note.".to_string()
+            } else {
+                "The target account has elevated renewal risk.".to_string()
+            };
+
+            let start = std::time::Instant::now();
+            compile_trust(&claim, ctx).unwrap();
+            samples.push(start.elapsed().as_micros());
+        }
+
+        samples.sort_unstable();
+        let p99 = samples[(samples.len() * 99) / 100];
+        eprintln!(
+            "[trust compiler] p99={}us samples={} threshold=5000us",
+            p99,
+            samples.len()
+        );
+        assert!(
+            p99 < 5_000,
+            "trust compiler p99 {p99}us exceeded 5ms budget"
+        );
     }
 }

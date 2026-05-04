@@ -4028,6 +4028,18 @@ mod tests {
         })
     }
 
+    fn load_single_trust_claim(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+    ) -> crate::db::claims::IntelligenceClaim {
+        let subject_ref = claim_subject_ref_json_for_entity("account", account_id)
+            .expect("account subject ref");
+        let mut claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
+            .expect("load active trust claims");
+        assert_eq!(claims.len(), 1, "expected one active trust claim");
+        claims.remove(0)
+    }
+
     fn seed_trust_corroboration(db: &crate::db::ActionDb, claim_id: &str, source: &str) {
         with_trust_ctx(|ctx| {
             record_corroboration(ctx, db, claim_id, source, Some(TRUST_TS), Some("test"))
@@ -4153,6 +4165,171 @@ mod tests {
                 params![data_source],
             )
             .expect("seed malformed source weight");
+    }
+
+    fn assert_float_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn freshness_context_timestamp_unknown_applies_penalty() {
+        let db = trust_test_db();
+        let account_id = "acct-freshness-unknown";
+        seed_trust_account(&db, account_id);
+        let mut proposal = trust_claim_proposal(
+            account_id,
+            "Freshness falls back to observed_at when source_asof is missing.",
+            "unit_test_source",
+        );
+        proposal.source_asof = None;
+        proposal.observed_at = "2026-05-03T12:00:00+00:00".to_string();
+        with_trust_ctx(|ctx| {
+            commit_claim(ctx, &db, proposal).expect("commit freshness claim");
+        });
+        let claim = load_single_trust_claim(&db, account_id);
+
+        let freshness = freshness_context_for_claim(
+            Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
+            &claim,
+        );
+        let weight = crate::abilities::trust::factors::freshness_weight(
+            &freshness,
+            &claim.temporal_scope,
+            &crate::abilities::trust::TrustConfig::default(),
+        );
+        let expected_base = (-std::f64::consts::LN_2 / 90.0).exp();
+
+        assert!(!freshness.timestamp_known);
+        assert_float_close(freshness.age_days, 1.0);
+        assert_float_close(weight, expected_base * 0.8);
+    }
+
+    #[test]
+    fn freshness_context_timestamp_known_uses_source_asof_age() {
+        let db = trust_test_db();
+        let account_id = "acct-freshness-known";
+        seed_trust_account(&db, account_id);
+        let mut proposal = trust_claim_proposal(
+            account_id,
+            "Freshness prefers source_asof over older observed_at.",
+            "unit_test_source",
+        );
+        proposal.source_asof = Some("2026-05-03T12:00:00+00:00".to_string());
+        proposal.observed_at = "2026-04-04T12:00:00+00:00".to_string();
+        with_trust_ctx(|ctx| {
+            commit_claim(ctx, &db, proposal).expect("commit freshness claim");
+        });
+        let claim = load_single_trust_claim(&db, account_id);
+
+        let freshness = freshness_context_for_claim(
+            Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
+            &claim,
+        );
+
+        assert!(freshness.timestamp_known);
+        assert_float_close(freshness.age_days, 1.0);
+    }
+
+    #[test]
+    fn corroboration_strength_matches_record_corroboration_formula() {
+        let db = trust_test_db();
+        let account_id = "acct-corroboration-formula";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "Diverse source corroboration composes via noisy OR.",
+            "unit_test_source",
+        );
+        seed_trust_corroboration(&db, &claim_id, "glean");
+        seed_trust_corroboration(&db, &claim_id, "calendar");
+
+        assert_float_close(corroboration_strength_for_claim(&db, &claim_id), 0.75);
+    }
+
+    #[test]
+    fn peer_benchmark_claim_sets_cross_entity_context_expected() {
+        let db = trust_test_db();
+        let account_id = "acct-peer-benchmark";
+        seed_trust_account(&db, account_id);
+        let mut proposal = trust_claim_proposal(
+            account_id,
+            "Peer benchmark compares this account against similar companies.",
+            "unit_test_source",
+        );
+        proposal.field_path = Some("agreement_outlook.peer_benchmark.median".to_string());
+        with_trust_ctx(|ctx| {
+            commit_claim(ctx, &db, proposal).expect("commit peer benchmark claim");
+        });
+        let claim = load_single_trust_claim(&db, account_id);
+
+        assert!(cross_entity_context_expected(&claim));
+    }
+
+    #[test]
+    fn trust_recompute_updates_claim_trust_columns_via_claims_service() {
+        let db = trust_test_db();
+        let account_id = "acct-trust-service-update";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "Trust recompute should persist trust columns.",
+            "unit_test_source",
+        );
+        seed_trust_corroboration(&db, &claim_id, "glean");
+
+        run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
+
+        let (score, computed_at, version) = read_trust_columns(&db, &claim_id);
+        assert!(score.is_some_and(|value| value > 0.75));
+        assert!(computed_at.is_some());
+        assert_eq!(version, Some(1));
+        assert_eq!(pipeline_failure_count(&db, "extractor_mismatch"), 0);
+    }
+
+    #[test]
+    fn trust_recompute_does_not_require_bridge_invocation_id() {
+        let db = trust_test_db();
+        let account_id = "acct-no-bridge-invocation";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "Trust recompute emits evidence without bridge handles.",
+            "unit_test_source",
+        );
+        seed_trust_corroboration(&db, &claim_id, "glean");
+
+        run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
+
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT value FROM signal_events
+                 WHERE source = 'trust_recompute' AND value IS NOT NULL",
+            )
+            .expect("prepare signal read");
+        let values: Vec<String> = stmt
+            .query_map([], |row| row.get::<_, String>(0))
+            .expect("read trust signal values")
+            .collect::<Result<_, _>>()
+            .expect("collect trust signal values");
+
+        assert!(!values.is_empty(), "trust recompute should emit evidence");
+        for value in values {
+            assert!(!value.contains("invocation_id"));
+            assert!(!value.contains("bridge_invocation"));
+        }
+    }
+
+    #[test]
+    #[ignore = "depends on bundle 5 fixture from W6-A/DOS-283"]
+    fn bundle5_user_correction_tombstone_not_averaged_away() {
+        panic!("bundle 5 fixture from W6-A/DOS-283 is not seeded in DOS-5 chunk 7");
     }
 
     #[test]
