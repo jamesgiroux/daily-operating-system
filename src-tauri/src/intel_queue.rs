@@ -2612,22 +2612,22 @@ pub fn apply_enrichment_side_writes(
     prepared: &PreparedEnrichment,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    apply_enrichment_stakeholder_side_writes(tx, input, &prepared.intelligence);
+    apply_enrichment_stakeholder_side_writes(tx, input, &prepared.intelligence)?;
 
     for audit in &prepared.side_writes.malformed_suppression_audits {
-        if let Err(audit_err) = tx.record_malformed_suppression(
+        tx.record_malformed_suppression(
             &audit.record_id,
             &audit.reason,
             &input.entity_id,
             audit.field_key,
             Some(audit.caller_context),
-        ) {
-            log::warn!(
+        )
+        .map_err(|audit_err| {
+            format!(
                 "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
-                input.entity_id,
-                audit_err
-            );
-        }
+                input.entity_id, audit_err
+            )
+        })?;
     }
 
     Ok(())
@@ -2637,13 +2637,13 @@ fn apply_enrichment_stakeholder_side_writes(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     final_intel: &IntelligenceJson,
-) {
+) -> Result<(), String> {
     // Route AI stakeholder insights to DB columns or suggestions table.
     // Person-first architecture: enrichment never overwrites user-designated data.
     // AI can update columns it previously wrote (data_source='ai'), and new
     // discoveries go to stakeholder_suggestions for user review.
     if input.entity_type != "account" || final_intel.stakeholder_insights.is_empty() {
-        return;
+        return Ok(());
     }
 
     for insight in &final_intel.stakeholder_insights {
@@ -2677,16 +2677,18 @@ fn apply_enrichment_stakeholder_side_writes(
                         )
                         .unwrap_or_else(|_| "ai".to_string());
                     if ds == "ai" {
-                        if let Err(e) = db.conn_ref().execute(
-                            "UPDATE account_stakeholders SET engagement = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_engagement = 'ai'",
-                            rusqlite::params![engagement, &input.entity_id, pid],
-                        ) {
-                            log::warn!(
+                        db.conn_ref()
+                            .execute(
+                                "UPDATE account_stakeholders SET engagement = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_engagement = 'ai'",
+                                rusqlite::params![engagement, &input.entity_id, pid],
+                            )
+                            .map_err(|e| {
+                                format!(
                                 "update AI-owned stakeholder engagement failed for {}:{}: {e}",
                                 input.entity_id,
                                 pid
-                            );
-                        }
+                                )
+                            })?;
                     } else {
                         // AI disagrees with user-owned engagement — write suggestion
                         write_stakeholder_suggestion(&StakeholderSuggestionParams {
@@ -2695,7 +2697,7 @@ fn apply_enrichment_stakeholder_side_writes(
                             person_id: Some(pid),
                             insight,
                             source: ai_source,
-                        });
+                        })?;
                     }
                 }
 
@@ -2710,16 +2712,18 @@ fn apply_enrichment_stakeholder_side_writes(
                         )
                         .unwrap_or_else(|_| "ai".to_string());
                     if ds == "ai" {
-                        if let Err(e) = db.conn_ref().execute(
-                            "UPDATE account_stakeholders SET assessment = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_assessment = 'ai'",
-                            rusqlite::params![assessment, &input.entity_id, pid],
-                        ) {
-                            log::warn!(
+                        db.conn_ref()
+                            .execute(
+                                "UPDATE account_stakeholders SET assessment = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_assessment = 'ai'",
+                                rusqlite::params![assessment, &input.entity_id, pid],
+                            )
+                            .map_err(|e| {
+                                format!(
                                 "update AI-owned stakeholder assessment failed for {}:{}: {e}",
                                 input.entity_id,
                                 pid
-                            );
-                        }
+                                )
+                            })?;
                     }
                 }
 
@@ -2742,16 +2746,18 @@ fn apply_enrichment_stakeholder_side_writes(
                     );
                     let is_dismissed = existing.as_ref().is_some_and(|(_, d)| d.is_some());
                     if !is_user_owned && !is_dismissed {
-                        if let Err(e) = db.conn_ref().execute(
-                            "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
-                            rusqlite::params![&input.entity_id, pid, role],
-                        ) {
-                            log::warn!(
+                        db.conn_ref()
+                            .execute(
+                                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
+                                rusqlite::params![&input.entity_id, pid, role],
+                            )
+                            .map_err(|e| {
+                                format!(
                                 "upsert AI-owned stakeholder role failed for {}:{}: {e}",
                                 input.entity_id,
                                 pid
-                            );
-                        }
+                                )
+                            })?;
                     }
                 }
             } else {
@@ -2762,7 +2768,7 @@ fn apply_enrichment_stakeholder_side_writes(
                     person_id: Some(pid),
                     insight,
                     source: ai_source,
-                });
+                })?;
             }
         } else {
             // No person_id — write to suggestions table
@@ -2772,9 +2778,11 @@ fn apply_enrichment_stakeholder_side_writes(
                 person_id: None,
                 insight,
                 source: ai_source,
-            });
+            })?;
         }
     }
+
+    Ok(())
 }
 
 /// Best-effort post-commit disk cache write for composed enrichment.
@@ -2910,7 +2918,7 @@ struct StakeholderSuggestionParams<'a> {
 
 /// Write a stakeholder suggestion to the `stakeholder_suggestions` table.
 /// Skips if a pending suggestion for the same person+account already exists.
-fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
+fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) -> Result<(), String> {
     let StakeholderSuggestionParams {
         db,
         account_id,
@@ -2930,7 +2938,7 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
             )
             .unwrap_or(false);
         if is_internal {
-            return;
+            return Ok(());
         }
     } else {
         // No person_id — check by name (PTY often suggests names without IDs)
@@ -2943,7 +2951,7 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
             )
             .unwrap_or(false);
         if is_internal_by_name {
-            return;
+            return Ok(());
         }
     }
 
@@ -2969,34 +2977,37 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) {
             > 0
     };
     if already_pending {
-        return;
+        return Ok(());
     }
 
     let raw_json = serde_json::to_string(insight).unwrap_or_default();
-    if let Err(e) = db.conn_ref().execute(
-        "INSERT INTO stakeholder_suggestions (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, raw_suggestion, created_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, datetime('now'))",
-        rusqlite::params![
-            account_id,
-            person_id,
-            &insight.name,
-            Option::<&str>::None,
-            &insight.role,
-            &insight.engagement,
-            source,
-            raw_json,
-        ],
-    ) {
-        log::warn!(
-            "I652: Failed to write stakeholder suggestion for {} on {}: {}",
-            insight.name, account_id, e,
-        );
-    } else {
-        log::info!(
-            "I652: Wrote stakeholder suggestion for '{}' on account {}",
-            insight.name, account_id,
-        );
-    }
+    db.conn_ref()
+        .execute(
+            "INSERT INTO stakeholder_suggestions (account_id, person_id, suggested_name, suggested_email, suggested_role, suggested_engagement, source, status, raw_suggestion, created_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, 'pending', ?8, datetime('now'))",
+            rusqlite::params![
+                account_id,
+                person_id,
+                &insight.name,
+                Option::<&str>::None,
+                &insight.role,
+                &insight.engagement,
+                source,
+                raw_json,
+            ],
+        )
+        .map_err(|e| {
+            format!(
+                "I652: Failed to write stakeholder suggestion for {} on {}: {}",
+                insight.name, account_id, e,
+            )
+        })?;
+    log::info!(
+        "I652: Wrote stakeholder suggestion for '{}' on account {}",
+        insight.name,
+        account_id,
+    );
+    Ok(())
 }
 
 /// Keep prior core intelligence fields when a fresh refresh returns sparse output.

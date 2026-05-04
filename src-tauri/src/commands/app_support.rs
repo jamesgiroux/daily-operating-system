@@ -1801,7 +1801,7 @@ mod tests {
             &db,
             "acme",
             "Acme",
-            &["acme.com", "vip-test.com", "acme.com"],
+            &["acme.com", "vip-test.com"],
             None,
             None,
             None,

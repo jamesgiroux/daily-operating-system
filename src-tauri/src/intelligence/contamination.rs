@@ -20,8 +20,7 @@
 //!
 //! Matching is case-insensitive; bounded by non-alphanumeric characters.
 //!
-//! TODO: Regression fixtures for vip-test.com / Acme cross-bleed
-//! should live with that ticket.
+//! Regression fixtures cover cross-entity contamination detection.
 
 use crate::db::ActionDb;
 
@@ -383,8 +382,7 @@ fn whole_word_contains(haystack: &str, needle: &str) -> bool {
 }
 
 /// Extract all WordPress VIP host patterns from `text` (assumed lowercase).
-/// Matches `vip-foo.com`, `vip-test.com`, and `vip5.something.com` — the host
-/// naming used by WordPress VIP's customer infrastructure.
+/// Matches dashed or dotted VIP hostnames used by WordPress VIP infrastructure.
 fn extract_vip_hosts(text: &str) -> Vec<String> {
     let mut out: Vec<String> = Vec::new();
     let bytes = text.as_bytes();
@@ -460,7 +458,7 @@ mod tests {
     fn detects_foreign_domain_in_text() {
         let db = test_db();
         insert_account(&db, "target", "Jane", &["example.com"]);
-        insert_account(&db, "other", "Acme", &["acme.com", "acme.com"]);
+        insert_account(&db, "other", "Acme", &["acme.com"]);
 
         let text =
             "The latest review mentions vip-test.com performance and acme.com customer success.";
@@ -495,8 +493,8 @@ mod tests {
     fn detects_wpvip_host_pattern_not_in_target_domains() {
         let db = test_db();
         insert_account(&db, "target", "Jane", &["example.com"]);
-        // Note: acme.com is NOT registered as an account domain — we still want to
-        // flag vip-test.com as a foreign WP-VIP host.
+        // The account domain list is intentionally omitted to verify
+        // infrastructure-host detection.
         let text = "Performance at vip-test.com is concerning.";
         let hits =
             detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
@@ -805,7 +803,7 @@ mod tests {
         insert_account(&db, "target", "Jane", &["example.com"]);
         insert_account(&db, "other", "Acme", &["acme.com"]);
 
-        // "acme.com" as a pure substring inside another word shouldn't match.
+        // Domains embedded between non-alphanumeric boundaries still match.
         let text = "See prefix-acme.com-suffix.foo.";
         let hits =
             detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
