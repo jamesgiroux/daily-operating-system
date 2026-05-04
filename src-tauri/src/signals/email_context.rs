@@ -49,16 +49,13 @@ pub fn gather_email_context(
          ORDER BY created_at DESC
          LIMIT ?2",
     ) {
-        if let Ok(rows) = stmt.query_map(
-            rusqlite::params![entity_id, limit as i64],
-            |row| {
-                Ok((
-                    row.get::<_, Option<String>>(0)?,
-                    row.get::<_, f64>(1)?,
-                    row.get::<_, String>(2)?,
-                ))
-            },
-        ) {
+        if let Ok(rows) = stmt.query_map(rusqlite::params![entity_id, limit as i64], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, f64>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        }) {
             for row in rows.flatten() {
                 let (value_json, confidence, date) = row;
                 if let Some(ref val_str) = value_json {
@@ -149,8 +146,16 @@ mod tests {
         // Seed two entities' worth of pre_meeting_context signals.
         let conn = db.conn_ref();
         for (eid, from, text) in [
-            ("acmecorp", "randall.benson@example.com", "Randall: AcmeCorp thread"),
-            ("acmecorp", "randall.benson@example.com", "Randall: another AcmeCorp thread"),
+            (
+                "acmecorp",
+                "randall.benson@example.com",
+                "Randall: AcmeCorp thread",
+            ),
+            (
+                "acmecorp",
+                "randall.benson@example.com",
+                "Randall: another AcmeCorp thread",
+            ),
             ("josiah-wold", "josiah@example.com", "Josiah: 1:1 prep"),
         ] {
             let value = serde_json::json!({

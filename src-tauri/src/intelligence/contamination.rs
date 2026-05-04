@@ -689,8 +689,13 @@ mod tests {
             ..Default::default()
         };
         let narrative = collect_narrative_text(&intel);
-        let hits =
-            detect_cross_entity_contamination(&narrative, "target", &["example.com".into()], &[], &db);
+        let hits = detect_cross_entity_contamination(
+            &narrative,
+            "target",
+            &["example.com".into()],
+            &[],
+            &db,
+        );
         assert!(!hits.is_empty(), "expected at least one contamination hit");
         assert!(hits.iter().any(|h| h.foreign_token == "vip-test.com"
             || h.foreign_token == "acme"
@@ -711,8 +716,13 @@ mod tests {
             ..Default::default()
         };
         let narrative = collect_narrative_text(&intel);
-        let hits =
-            detect_cross_entity_contamination(&narrative, "target", &["example.com".into()], &[], &db);
+        let hits = detect_cross_entity_contamination(
+            &narrative,
+            "target",
+            &["example.com".into()],
+            &[],
+            &db,
+        );
         assert!(hits.is_empty(), "expected clean narrative, got: {:?}", hits);
     }
 

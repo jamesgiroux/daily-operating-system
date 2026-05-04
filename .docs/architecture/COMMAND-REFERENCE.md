@@ -2,7 +2,7 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-05-02 by `.docs/generators/gen-command-reference.sh`
+**Auto-generated:** 2026-05-04 by `.docs/generators/gen-command-reference.sh`
 **Registered in lib.rs:** ~398 commands
 **Source files:** 11
 

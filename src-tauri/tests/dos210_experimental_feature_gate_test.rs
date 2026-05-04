@@ -56,9 +56,7 @@ async fn dos210_experimental_feature_gate_fixture(
     _ctx: &AbilityContext<'_>,
     _input: ExperimentalInput,
 ) -> AbilityResult<ExperimentalOutput> {
-    let produced_at = chrono::Utc
-        .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-        .unwrap();
+    let produced_at = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
     let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-fixture".into()));
     let mut builder = ProvenanceBuilder::new(ProvenanceBuilderConfig::new(
         "dos210_experimental_feature_gate_fixture",

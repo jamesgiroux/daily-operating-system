@@ -1,13 +1,15 @@
 //! P10 — Email shared-inbox heuristic.
 //! Sender local-part linked to one account ≥3× prior → auto_suggested, not primary.
 
-use crate::db::ActionDb;
 use super::super::types::{Candidate, EntityRef, LinkRole, LinkingContext, OwnerType, RuleOutcome};
+use crate::db::ActionDb;
 
 pub struct P10SharedInbox;
 
 impl super::super::phases::Rule for P10SharedInbox {
-    fn id(&self) -> &'static str { "P10" }
+    fn id(&self) -> &'static str {
+        "P10"
+    }
 
     fn evaluate(
         &self,

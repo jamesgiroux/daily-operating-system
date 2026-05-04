@@ -221,21 +221,18 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         // sync with the filesystem. The sync is idempotent — existing
                         // accounts with matching IDs won't be duplicated, and renamed
                         // directories get a fresh bootstrap under the new name.
-                        } else if matches!(
-                            event.kind,
-                            EventKind::Create(_) | EventKind::Modify(_)
-                        ) && event.paths.iter().any(|p| {
-                            p.is_dir()
-                                && (p.parent() == Some(accounts_dir_clone.as_path())
-                                    || p.parent() == Some(projects_dir_clone.as_path()))
-                                && p.file_name()
-                                    .and_then(|n| n.to_str())
-                                    .is_some_and(|n| {
+                        } else if matches!(event.kind, EventKind::Create(_) | EventKind::Modify(_))
+                            && event.paths.iter().any(|p| {
+                                p.is_dir()
+                                    && (p.parent() == Some(accounts_dir_clone.as_path())
+                                        || p.parent() == Some(projects_dir_clone.as_path()))
+                                    && p.file_name().and_then(|n| n.to_str()).is_some_and(|n| {
                                         !n.starts_with('_')
                                             && !n.starts_with('.')
                                             && n != "Internal"
                                     })
-                        }) {
+                            })
+                        {
                             let _ = tx.try_send(WatchSource::NewEntityDir);
                         } else if event
                             .paths
@@ -446,7 +443,8 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 requested_at: std::time::Instant::now(),
                             },
                         );
-                        let _ = state                            .intel_queue
+                        let _ = state
+                            .intel_queue
                             .enqueue(crate::intel_queue::IntelRequest::new(
                                 entity_id.clone(),
                                 "account".to_string(),
@@ -481,7 +479,8 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 requested_at: std::time::Instant::now(),
                             },
                         );
-                        let _ = state                            .intel_queue
+                        let _ = state
+                            .intel_queue
                             .enqueue(crate::intel_queue::IntelRequest::new(
                                 entity_id.clone(),
                                 "project".to_string(),
@@ -520,11 +519,9 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 log::info!("DOS-44: New entity directory detected, running workspace sync");
                 if let Ok(db) = crate::db::ActionDb::open() {
                     let accounts_synced =
-                        crate::accounts::sync_accounts_from_workspace(&workspace, &db)
-                            .unwrap_or(0);
+                        crate::accounts::sync_accounts_from_workspace(&workspace, &db).unwrap_or(0);
                     let projects_synced =
-                        crate::projects::sync_projects_from_workspace(&workspace, &db)
-                            .unwrap_or(0);
+                        crate::projects::sync_projects_from_workspace(&workspace, &db).unwrap_or(0);
                     if accounts_synced > 0 {
                         log::info!(
                             "DOS-44: Bootstrapped {} new account(s) from workspace",
@@ -566,7 +563,9 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
 
     let user_domains = {
         let g = state.config.read();
-        g.as_ref().map(|c| c.resolved_user_domains()).unwrap_or_default()
+        g.as_ref()
+            .map(|c| c.resolved_user_domains())
+            .unwrap_or_default()
     };
 
     for path in paths {

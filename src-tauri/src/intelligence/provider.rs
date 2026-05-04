@@ -202,10 +202,7 @@ pub enum ProviderError {
     /// The provider does not support the requested `ModelTier` (e.g. a
     /// remote provider configured without a Synthesis-tier model).
     #[error("provider does not support tier {tier:?}: {message}")]
-    TierUnavailable {
-        tier: ModelTier,
-        message: String,
-    },
+    TierUnavailable { tier: ModelTier, message: String },
 
     /// Prompt exceeded the provider's accepted length budget. Distinct
     /// from `InvalidPrompt`: length is structural, not policy.
@@ -452,7 +449,10 @@ mod tests {
         let mut fixtures = std::collections::HashMap::new();
         for i in 0..32u32 {
             let p = PromptInput::new(format!("prompt-{i}"));
-            fixtures.insert(prompt_replay_hash(&p), fixture_completion(&format!("r-{i}")));
+            fixtures.insert(
+                prompt_replay_hash(&p),
+                fixture_completion(&format!("r-{i}")),
+            );
         }
         let provider: Arc<dyn IntelligenceProvider> = Arc::new(ReplayProvider::new(fixtures));
         let mut handles = Vec::new();
@@ -497,12 +497,10 @@ mod tests {
         // mode-bearing selector.
         // Live → live; Evaluate → replay (or fail-closed if unset);
         // Simulate → fail-closed.
-        let live: Arc<dyn IntelligenceProvider> = Arc::new(
-            ReplayProvider::from_prompt_pairs([("p", "live")]),
-        );
-        let replay: Arc<dyn IntelligenceProvider> = Arc::new(
-            ReplayProvider::from_prompt_pairs([("p", "replay")]),
-        );
+        let live: Arc<dyn IntelligenceProvider> =
+            Arc::new(ReplayProvider::from_prompt_pairs([("p", "live")]));
+        let replay: Arc<dyn IntelligenceProvider> =
+            Arc::new(ReplayProvider::from_prompt_pairs([("p", "replay")]));
 
         let chosen = select_provider(
             ExecutionMode::Live,

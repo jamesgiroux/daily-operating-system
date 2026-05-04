@@ -1031,7 +1031,7 @@ pub fn update_email_entity(
     let etype = entity_type.unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
     let _ = crate::services::signals::emit(
-            ctx,
+        ctx,
         db,
         etype,
         eid,
@@ -1354,7 +1354,7 @@ pub fn promote_commitment_to_action(
     let sig_entity_type = entity_type.unwrap_or("email");
     let sig_entity_id = entity_id.unwrap_or(email_id);
     let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         engine,
         sig_entity_type,
@@ -1397,7 +1397,7 @@ pub fn dismiss_gone_quiet(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+        ctx,
         db,
         engine,
         "account",
@@ -1472,7 +1472,7 @@ pub fn dismiss_email_item(
     let etype = entity_id.map(|_| "account").unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
     let _ = crate::services::signals::emit(
-            ctx,
+        ctx,
         db,
         etype,
         eid,
@@ -2044,9 +2044,7 @@ mod tests {
     #[test]
     fn dismiss_email_item_persists_email_subject_tombstone_claim() {
         use crate::db::test_utils::test_db;
-        use crate::services::context::{
-            ExternalClients, FixedClock, SeedableRng, ServiceContext,
-        };
+        use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
         use chrono::TimeZone;
 
         let db = test_db();
@@ -2059,8 +2057,7 @@ mod tests {
             )
             .unwrap();
 
-        let clock =
-            FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 12, 0, 0).unwrap());
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 2, 12, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = ServiceContext::test_live(&clock, &rng, &ext);

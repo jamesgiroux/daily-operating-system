@@ -64,9 +64,7 @@ fn build_account_health_prompt(
         _ => "account",
     };
     let close_concept = match active_preset {
-        "affiliates-partnerships" | "affiliates" | "partnerships" => {
-            "agreement or campaign cycle"
-        }
+        "affiliates-partnerships" | "affiliates" | "partnerships" => "agreement or campaign cycle",
         "product-marketing" | "product" | "marketing" => "launch milestone or delivery date",
         "core" | "the-desk" => "project deadline",
         _ => "renewal date",

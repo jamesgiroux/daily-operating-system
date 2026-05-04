@@ -231,10 +231,7 @@ async fn process_clay_queue(state: &AppState) -> u32 {
 async fn process_gravatar_queue(state: &AppState) -> u32 {
     let enabled = {
         let config = state.config.read();
-        config
-            .as_ref()
-            .map(|c| c.gravatar.enabled)
-            .unwrap_or(false)
+        config.as_ref().map(|c| c.gravatar.enabled).unwrap_or(false)
     };
 
     if !enabled {

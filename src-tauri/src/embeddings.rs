@@ -1,7 +1,7 @@
+use parking_lot::Mutex;
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 use std::path::PathBuf;
-use parking_lot::Mutex;
 
 pub const DEFAULT_DIMENSION: usize = 768;
 

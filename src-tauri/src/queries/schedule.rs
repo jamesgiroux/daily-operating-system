@@ -98,9 +98,9 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
-        classified_entities: None,
+            classified_entities: None,
             scored_classified_entities: None,
         }];
         let blocks = available_blocks_from_live(&events, day);
@@ -146,9 +146,9 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
-        classified_entities: None,
+            classified_entities: None,
             scored_classified_entities: None,
         }];
 
@@ -164,9 +164,9 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
-        classified_entities: None,
+            classified_entities: None,
             scored_classified_entities: None,
         });
         let after = available_blocks_from_live(&events, day);

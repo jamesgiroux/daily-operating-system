@@ -22,10 +22,7 @@ pub fn raw_rebuild_account_domains(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let deleted = db
         .conn_ref()
-        .execute(
-            "DELETE FROM account_domains WHERE source = 'inferred'",
-            [],
-        )
+        .execute("DELETE FROM account_domains WHERE source = 'inferred'", [])
         .map_err(|e| format!("raw_rebuild_account_domains: delete inferred domains: {e}"))?;
 
     log::info!(

@@ -33,7 +33,11 @@ pub fn submit_intelligence_feedback(
     let action = match feedback_type {
         "positive" => CorrectionAction::Confirmed,
         "negative" => CorrectionAction::Rejected,
-        other => return Err(format!("invalid feedback_type '{other}' (expected positive|negative)")),
+        other => {
+            return Err(format!(
+                "invalid feedback_type '{other}' (expected positive|negative)"
+            ))
+        }
     };
 
     submit_intelligence_correction(
@@ -240,17 +244,13 @@ pub fn submit_intelligence_correction(
                 .map(|v| !v.trim().is_empty())
                 .unwrap_or(false);
             if !ok {
-                return Err(
-                    "corrected action requires a non-empty corrected_value".to_string(),
-                );
+                return Err("corrected action requires a non-empty corrected_value".to_string());
             }
         }
         CorrectionAction::Annotated => {
             let ok = annotation.map(|v| !v.trim().is_empty()).unwrap_or(false);
             if !ok {
-                return Err(
-                    "annotated action requires a non-empty annotation".to_string(),
-                );
+                return Err("annotated action requires a non-empty annotation".to_string());
             }
         }
         CorrectionAction::Confirmed | CorrectionAction::Rejected | CorrectionAction::Dismissed => {
@@ -303,7 +303,9 @@ pub fn submit_intelligence_correction(
             CorrectionAction::Confirmed => {
                 let _ = db.upsert_signal_weight(source, entity_type, &field_category, 1.0, 0.0);
             }
-            CorrectionAction::Rejected | CorrectionAction::Corrected | CorrectionAction::Dismissed => {
+            CorrectionAction::Rejected
+            | CorrectionAction::Corrected
+            | CorrectionAction::Dismissed => {
                 let _ = db.upsert_signal_weight(source, entity_type, &field_category, 0.0, 1.0);
             }
             CorrectionAction::Annotated => {}
@@ -331,7 +333,7 @@ pub fn submit_intelligence_correction(
     })
     .to_string();
     let _ = crate::services::signals::emit(
-            ctx,
+        ctx,
         db,
         entity_type,
         entity_id,
@@ -368,9 +370,7 @@ pub fn submit_intelligence_correction(
     // re-derives them from signals. We only patch the column for fields
     // that have a dedicated column on `accounts`.
     if action == CorrectionAction::Corrected && entity_type == "account" {
-        if let (Some(column), Some(value)) =
-            (account_column_for_field(field), corrected_value)
-        {
+        if let (Some(column), Some(value)) = (account_column_for_field(field), corrected_value) {
             // Normalize lifecycle for parity with services::accounts::update_account_field.
             // Mirrors the whitelist + normalization used by the direct-edit
             // path; the semantic correctness of a user "correction" should
@@ -538,7 +538,7 @@ mod correction_tests {
     //! tests here exercise the contract.
 
     use super::*;
-    use crate::db::{DbAccount, test_utils::test_db};
+    use crate::db::{test_utils::test_db, DbAccount};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::TimeZone;
 
@@ -610,11 +610,22 @@ mod correction_tests {
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
-        super::submit_intelligence_feedback(&ctx, db, entity_id, entity_type, field, feedback_type, context)
+        super::submit_intelligence_feedback(
+            &ctx,
+            db,
+            entity_id,
+            entity_type,
+            field,
+            feedback_type,
+            context,
+        )
     }
 
     /// Read all feedback rows for an entity; newest first.
-    fn feedback_rows(db: &ActionDb, entity_id: &str) -> Vec<(String, Option<String>, Option<String>, Option<String>)> {
+    fn feedback_rows(
+        db: &ActionDb,
+        entity_id: &str,
+    ) -> Vec<(String, Option<String>, Option<String>, Option<String>)> {
         let mut stmt = db
             .conn_ref()
             .prepare(
@@ -822,27 +833,45 @@ mod correction_tests {
 
         // First correction: green → yellow
         submit_intelligence_correction(
-            &db, "acct-4", "account", "health",
-            CorrectionAction::Corrected, Some("yellow"), None, None,
+            &db,
+            "acct-4",
+            "account",
+            "health",
+            CorrectionAction::Corrected,
+            Some("yellow"),
+            None,
+            None,
         )
         .unwrap();
 
         // Second correction: yellow → red. Previous should be "yellow"
         // (pulled from the prior correction row), not "green".
         submit_intelligence_correction(
-            &db, "acct-4", "account", "health",
-            CorrectionAction::Corrected, Some("red"), None, None,
+            &db,
+            "acct-4",
+            "account",
+            "health",
+            CorrectionAction::Corrected,
+            Some("red"),
+            None,
+            None,
         )
         .unwrap();
 
         let rows = feedback_rows(&db, "acct-4");
         assert_eq!(rows.len(), 2, "both corrections persisted");
         // rows are DESC by id — newest first
-        assert_eq!(rows[0].1.as_deref(), Some("yellow"),
-            "second correction's previous_value chains from first");
+        assert_eq!(
+            rows[0].1.as_deref(),
+            Some("yellow"),
+            "second correction's previous_value chains from first"
+        );
         assert_eq!(rows[0].2.as_deref(), Some("red"));
-        assert_eq!(rows[1].1.as_deref(), Some("green"),
-            "first correction's previous_value came from account column");
+        assert_eq!(
+            rows[1].1.as_deref(),
+            Some("green"),
+            "first correction's previous_value came from account column"
+        );
         assert_eq!(rows[1].2.as_deref(), Some("yellow"));
     }
 

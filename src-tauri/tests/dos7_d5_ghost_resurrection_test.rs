@@ -444,7 +444,10 @@ fn five_run_ghost_resurrection_simulation_keeps_tombstoned_risk_dead() {
         ORIGINAL_RISK,
         false,
     ));
-    assert_eq!(raw_active_risk_text_count_for(&conn, "acct-1", ORIGINAL_RISK), 1);
+    assert_eq!(
+        raw_active_risk_text_count_for(&conn, "acct-1", ORIGINAL_RISK),
+        1
+    );
     assert_eq!(visible_active_risk_count_for(&conn, "acct-1"), 1);
     advance_pass(&clock);
 
@@ -457,7 +460,10 @@ fn five_run_ghost_resurrection_simulation_keeps_tombstoned_risk_dead() {
         ORIGINAL_RISK,
         true,
     ));
-    assert_eq!(tombstone_risk_text_count_for(&conn, "acct-1", ORIGINAL_RISK), 1);
+    assert_eq!(
+        tombstone_risk_text_count_for(&conn, "acct-1", ORIGINAL_RISK),
+        1
+    );
     assert_eq!(
         visible_active_risk_text_count_for(&conn, "acct-1", ORIGINAL_RISK),
         0
@@ -668,7 +674,10 @@ fn five_run_simulation_pre_gate_does_not_block_different_subject() {
         false,
     ));
     assert_eq!(visible_active_risk_count_for(&conn, "acct-2"), 1);
-    assert_eq!(tombstone_risk_text_count_for(&conn, "acct-2", ORIGINAL_RISK), 0);
+    assert_eq!(
+        tombstone_risk_text_count_for(&conn, "acct-2", ORIGINAL_RISK),
+        0
+    );
     advance_pass(&clock);
 
     assert_tombstone_pre_gate(commit_claim_attempt(

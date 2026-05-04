@@ -21,12 +21,8 @@ use std::sync::{Arc, Mutex};
 
 use dailyos_lib::intelligence::io::SourceManifestEntry;
 use dailyos_lib::intelligence::prompts::parse_intelligence_response;
-use dailyos_lib::intelligence::provider::{
-    IntelligenceProvider, PromptInput, ReplayProvider,
-};
-use dailyos_lib::intelligence::pty_provider::{
-    PtyClaudeCode, PtySpawnAdapter, PtySpawnRequest,
-};
+use dailyos_lib::intelligence::provider::{IntelligenceProvider, PromptInput, ReplayProvider};
+use dailyos_lib::intelligence::pty_provider::{PtyClaudeCode, PtySpawnAdapter, PtySpawnRequest};
 use dailyos_lib::pty::{AiUsageContext, ClaudeOutput, ModelTier};
 use dailyos_lib::types::AiModelConfig;
 
@@ -103,8 +99,7 @@ impl PtySpawnAdapter for FakePtySpawnAdapter {
 async fn pty_provider_parity_fixture_intelligence_json_byte_identical() {
     // Original parity invariant: the trait surface does not perturb
     // the parsed output byte-shape vs. the direct-stdout path.
-    let provider =
-        ReplayProvider::from_prompt_pairs([(FIXTURE_PROMPT, FIXTURE_PTY_STDOUT)]);
+    let provider = ReplayProvider::from_prompt_pairs([(FIXTURE_PROMPT, FIXTURE_PTY_STDOUT)]);
     let prompt = PromptInput::new(FIXTURE_PROMPT);
     let completion = provider
         .complete(prompt, ModelTier::Synthesis)
@@ -112,22 +107,12 @@ async fn pty_provider_parity_fixture_intelligence_json_byte_identical() {
         .expect("replay returns canned text");
 
     let manifest: Vec<SourceManifestEntry> = vec![];
-    let mut parsed_via_provider = parse_intelligence_response(
-        &completion.text,
-        "entity-1",
-        "account",
-        0,
-        manifest.clone(),
-    )
-    .expect("parse via provider path");
-    let mut parsed_direct = parse_intelligence_response(
-        FIXTURE_PTY_STDOUT,
-        "entity-1",
-        "account",
-        0,
-        manifest,
-    )
-    .expect("parse via direct path");
+    let mut parsed_via_provider =
+        parse_intelligence_response(&completion.text, "entity-1", "account", 0, manifest.clone())
+            .expect("parse via provider path");
+    let mut parsed_direct =
+        parse_intelligence_response(FIXTURE_PTY_STDOUT, "entity-1", "account", 0, manifest)
+            .expect("parse via direct path");
 
     let pin = "2026-04-29T00:00:00+00:00".to_string();
     parsed_via_provider.enriched_at = pin.clone();
@@ -174,8 +159,14 @@ fn pty_provider_complete_blocking_propagates_call_config() {
     let calls = captured.lock().unwrap();
     assert_eq!(calls.len(), 1);
     assert_eq!(calls[0].tier, ModelTier::Synthesis);
-    assert_eq!(calls[0].timeout_secs, 240, "Synthesis tier must use 240s timeout");
-    assert_eq!(calls[0].nice_priority, 10, "nice_priority must be 10 (legacy value)");
+    assert_eq!(
+        calls[0].timeout_secs, 240,
+        "Synthesis tier must use 240s timeout"
+    );
+    assert_eq!(
+        calls[0].nice_priority, 10,
+        "nice_priority must be 10 (legacy value)"
+    );
     assert!(
         calls[0].usage_label.contains("complete_blocking_parity"),
         "usage_context must propagate the caller-supplied label, got: {}",

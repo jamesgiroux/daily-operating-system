@@ -338,7 +338,8 @@ mod tests {
     fn provenance_llm_synthesis_requires_source_refs() {
         let explanation = SanitizedExplanation::new("Provider reported confidence").unwrap();
         let confidence = Confidence::declared(0.8, &explanation).unwrap();
-        let attr = FieldAttribution::llm_synthesis(subject(), Vec::new(), confidence, Some(explanation));
+        let attr =
+            FieldAttribution::llm_synthesis(subject(), Vec::new(), confidence, Some(explanation));
 
         assert_eq!(
             attr.unwrap_err(),

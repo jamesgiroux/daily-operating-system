@@ -250,7 +250,8 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 let clock = crate::services::context::SystemClock;
                 let rng = crate::services::context::SystemRng;
                 let ext = crate::services::context::ExternalClients::default();
-                let svc_ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                let svc_ctx =
+                    crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 for event in &events {
                     if let Err(e) =
                         crate::services::entity_linking::calendar_adapter::evaluate_meeting(
@@ -978,21 +979,17 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
 
 /// Get workspace path from config
 fn get_workspace(state: &AppState) -> Option<PathBuf> {
-    state
-        .config
-        .read()
-        .clone()
-        .and_then(|cfg| {
-            if cfg.workspace_path.trim().is_empty() {
-                return None;
-            }
-            let path = std::path::PathBuf::from(cfg.workspace_path);
-            if path.exists() {
-                Some(path)
-            } else {
-                None
-            }
-        })
+    state.config.read().clone().and_then(|cfg| {
+        if cfg.workspace_path.trim().is_empty() {
+            return None;
+        }
+        let path = std::path::PathBuf::from(cfg.workspace_path);
+        if path.exists() {
+            Some(path)
+        } else {
+            None
+        }
+    })
 }
 
 /// Get the email poll interval in minutes from config
@@ -1413,8 +1410,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                         match crate::db::ActionDb::open() {
                                             Ok(scoring_db) => {
                                                 let model = state.embedding_model.clone();
-                                                let merged_kws =
-                                                    state.get_merged_signal_config().signal_keywords;
+                                                let merged_kws = state
+                                                    .get_merged_signal_config()
+                                                    .signal_keywords;
                                                 crate::signals::email_scoring::score_emails(
                                                     &scoring_db,
                                                     Some(&model),
@@ -1501,7 +1499,7 @@ mod tests {
             account: account.map(|a| a.to_string()),
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -1638,7 +1636,7 @@ mod tests {
             account: Some("acme".to_string()),
             attendees: vec![],
             is_all_day: true,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,

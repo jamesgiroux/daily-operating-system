@@ -4,13 +4,18 @@
 //! Evidence-hierarchy fix: renamed from P4a so the stakeholder-inference
 //! rule (`P4aStakeholder`) can take the P4a slot.
 
+use super::super::{
+    evidence, primitives,
+    types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome},
+};
 use crate::db::ActionDb;
-use super::super::{evidence, primitives, types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome}};
 
 pub struct P4bOneOnOne;
 
 impl super::super::phases::Rule for P4bOneOnOne {
-    fn id(&self) -> &'static str { "P4b" }
+    fn id(&self) -> &'static str {
+        "P4b"
+    }
 
     fn evaluate(
         &self,
@@ -62,7 +67,10 @@ impl super::super::phases::Rule for P4bOneOnOne {
         let ev = evidence::matched_evidence(
             ctx,
             &Candidate {
-                entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
+                entity: EntityRef {
+                    entity_id: account.id.clone(),
+                    entity_type: "account".to_string(),
+                },
                 role: LinkRole::Primary,
                 confidence: 0.95,
                 rule_id: "P4b".to_string(),
@@ -72,7 +80,10 @@ impl super::super::phases::Rule for P4bOneOnOne {
         );
 
         Ok(RuleOutcome::Matched(Candidate {
-            entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
+            entity: EntityRef {
+                entity_id: account.id.clone(),
+                entity_type: "account".to_string(),
+            },
             role: LinkRole::Primary,
             confidence: 0.95,
             rule_id: "P4b".to_string(),

@@ -48,7 +48,9 @@ impl EmbeddingQueue {
         }
 
         queue.push_back(request.clone());
-        self.last_enqueued.lock().insert(request.entity_id, Instant::now());
+        self.last_enqueued
+            .lock()
+            .insert(request.entity_id, Instant::now());
     }
 
     pub fn dequeue(&self) -> Option<EmbeddingRequest> {

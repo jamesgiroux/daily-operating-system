@@ -1,8 +1,8 @@
 use dailyos_lib::abilities::provenance::CompositionId;
+use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
 use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
-use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
 use dailyos_lib::services::context::ExecutionMode;
 
 fn passthrough_erased<'a>(

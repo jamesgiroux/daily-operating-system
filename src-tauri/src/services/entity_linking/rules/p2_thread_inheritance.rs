@@ -1,10 +1,15 @@
+use super::super::{
+    evidence, primitives,
+    types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome},
+};
 use crate::db::ActionDb;
-use super::super::{evidence, primitives, types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome}};
 
 pub struct P2ThreadInheritance;
 
 impl super::super::phases::Rule for P2ThreadInheritance {
-    fn id(&self) -> &'static str { "P2" }
+    fn id(&self) -> &'static str {
+        "P2"
+    }
 
     fn evaluate(
         &self,

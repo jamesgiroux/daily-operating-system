@@ -165,7 +165,8 @@ pub fn build_fact_context(
     let (entity_name, related_entity_names) = resolve_entity_names(db, entity_id, entity_type);
 
     // Query all other entity names for positive bleed identification.
-    let all_other_entity_names = get_all_other_entity_names(db, entity_id, &entity_name, &related_entity_names);
+    let all_other_entity_names =
+        get_all_other_entity_names(db, entity_id, &entity_name, &related_entity_names);
 
     Ok(FactContext {
         entity_id: entity_id.to_string(),
@@ -205,7 +206,11 @@ pub fn format_verified_presence_lines(facts: &FactContext, limit: usize) -> Vec<
 }
 
 /// Resolve entity name and parent/child names for bleed detection.
-fn resolve_entity_names(db: &ActionDb, entity_id: &str, entity_type: &str) -> (String, Vec<String>) {
+fn resolve_entity_names(
+    db: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+) -> (String, Vec<String>) {
     let mut entity_name = String::new();
     let mut related = Vec::new();
 
@@ -831,7 +836,6 @@ mod tests {
                 discrepancy: None,
 
                 ..Default::default()
-
             }],
             ..Default::default()
         };
@@ -908,7 +912,6 @@ mod tests {
                 discrepancy: None,
 
                 ..Default::default()
-
             }],
             ..Default::default()
         };
@@ -991,8 +994,7 @@ mod tests {
         };
         let intel = IntelligenceJson {
             executive_assessment: Some(
-                "REDACTED continues to invest in this business unit's growth."
-                    .to_string(),
+                "REDACTED continues to invest in this business unit's growth.".to_string(),
             ),
             ..Default::default()
         };

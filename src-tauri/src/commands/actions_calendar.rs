@@ -833,11 +833,7 @@ pub async fn attach_meeting_transcript(
     let app_state = state.inner().clone();
     let ctx = app_state.live_service_context();
     crate::services::meetings::attach_meeting_transcript(
-        &ctx,
-        file_path,
-        meeting,
-        &app_state,
-        app_handle,
+        &ctx, file_path, meeting, &app_state, app_handle,
     )
     .await
 }
@@ -895,11 +891,7 @@ pub async fn attach_meeting_transcript_text(
     let app_state = state.inner().clone();
     let ctx = app_state.live_service_context();
     crate::services::meetings::attach_meeting_transcript(
-        &ctx,
-        path_str,
-        meeting,
-        &app_state,
-        app_handle,
+        &ctx, path_str, meeting, &app_state, app_handle,
     )
     .await
 }

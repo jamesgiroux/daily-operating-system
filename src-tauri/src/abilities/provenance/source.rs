@@ -41,16 +41,7 @@ impl EntityId {
 macro_rules! id_newtype {
     ($name:ident) => {
         #[derive(
-            Debug,
-            Clone,
-            PartialEq,
-            Eq,
-            PartialOrd,
-            Ord,
-            Hash,
-            Serialize,
-            Deserialize,
-            JsonSchema,
+            Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
         )]
         #[serde(transparent)]
         pub struct $name(pub String);
@@ -245,9 +236,7 @@ impl SourceAttribution {
         })
     }
 
-    pub fn legacy_unattributed(
-        observed_at: DateTime<Utc>,
-    ) -> Result<Self, SourceAttributionError> {
+    pub fn legacy_unattributed(observed_at: DateTime<Utc>) -> Result<Self, SourceAttributionError> {
         Self::new(
             DataSource::LegacyUnattributed,
             Vec::new(),
@@ -261,12 +250,15 @@ impl SourceAttribution {
     pub fn stored_synthesis_entity_field(&self) -> Option<(EntityId, String)> {
         self.synthesis_marker.as_ref()?;
 
-        self.identifiers.iter().find_map(|identifier| match identifier {
-            SourceIdentifier::Entity { entity_id, field } => {
-                Some((entity_id.clone(), field.clone().unwrap_or_else(|| "unknown".into())))
-            }
-            _ => None,
-        })
+        self.identifiers
+            .iter()
+            .find_map(|identifier| match identifier {
+                SourceIdentifier::Entity { entity_id, field } => Some((
+                    entity_id.clone(),
+                    field.clone().unwrap_or_else(|| "unknown".into()),
+                )),
+                _ => None,
+            })
     }
 }
 

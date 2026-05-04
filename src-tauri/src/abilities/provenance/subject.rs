@@ -139,7 +139,9 @@ impl SubjectAttribution {
         competing_subjects: Vec<CompetingSubject>,
         fit: SubjectFitAssessment,
     ) -> Result<Self, SubjectAttributionError> {
-        if matches!(subject, SubjectRef::Unknown) && matches!(fit.status, SubjectFitStatus::Confident) {
+        if matches!(subject, SubjectRef::Unknown)
+            && matches!(fit.status, SubjectFitStatus::Confident)
+        {
             return Err(SubjectAttributionError::UnknownSubjectCannotBeConfident);
         }
 

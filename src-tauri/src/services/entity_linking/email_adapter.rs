@@ -2,13 +2,13 @@
 
 use std::sync::Arc;
 
-use crate::db::ActionDb;
 use crate::db::types::DbEmail;
+use crate::db::ActionDb;
 use crate::state::AppState;
 
 use super::primitives::domain_from_email;
 use super::types::{
-    LinkingContext, LinkOutcome, OwnerRef, OwnerType, Participant, ParticipantRole, Trigger,
+    LinkOutcome, LinkingContext, OwnerRef, OwnerType, Participant, ParticipantRole, Trigger,
 };
 
 /// Convert a DbEmail into a LinkingContext for evaluate().
@@ -92,7 +92,9 @@ pub async fn evaluate_email(
     email: &DbEmail,
     trigger: Trigger,
 ) -> Result<LinkOutcome, String> {
-    svc_ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    svc_ctx
+        .check_mutation_allowed()
+        .map_err(|e| e.to_string())?;
     let thread_id = email.thread_id.clone();
 
     let ctx = state.with_db_read(|db| build_context(email, None, db))?;
@@ -103,9 +105,7 @@ pub async fn evaluate_email(
     // resolve correctly with the parent's primary available.
     if outcome.primary.is_some() {
         if let Some(tid) = thread_id {
-            let children = state.with_db_read(move |db| {
-                db.drain_thread_inheritance_queue(&tid)
-            })?;
+            let children = state.with_db_read(move |db| db.drain_thread_inheritance_queue(&tid))?;
 
             if !children.is_empty() {
                 log::info!(
@@ -114,8 +114,8 @@ pub async fn evaluate_email(
                 );
                 for child_id in children {
                     let cid = child_id.clone();
-                    let child_email = state
-                        .with_db_read(move |db| db.get_email_by_id_for_linking(&cid));
+                    let child_email =
+                        state.with_db_read(move |db| db.get_email_by_id_for_linking(&cid));
                     match child_email {
                         Ok(Some(child_email)) => {
                             // Box::pin required because evaluate_email calls itself

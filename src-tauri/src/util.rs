@@ -1,5 +1,5 @@
-use std::path::{Path, PathBuf};
 use parking_lot::Mutex;
+use std::path::{Path, PathBuf};
 
 // ─── Node.js Binary Resolution ─────────────────────────────────────────────
 //

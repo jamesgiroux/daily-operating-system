@@ -728,7 +728,6 @@ mod tests {
                 discrepancy: None,
 
                 ..Default::default()
-
             }]),
             ..Default::default()
         };

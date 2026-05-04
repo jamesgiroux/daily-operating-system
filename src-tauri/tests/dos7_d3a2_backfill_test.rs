@@ -146,7 +146,15 @@ fn mechanism_5_linking_dismissals_backfills_with_owner_subject() {
             "SELECT subject_ref, claim_type, field_path, text, dedup_key \
              FROM intelligence_claims WHERE id LIKE 'm5-%' LIMIT 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .unwrap();
     assert!(subject_ref.contains("\"kind\":\"Email\""));
@@ -350,7 +358,15 @@ fn mechanism_8_triage_snoozes_backfills_with_expires_at_for_snooze() {
             "SELECT subject_ref, claim_type, text, expires_at, retraction_reason \
              FROM intelligence_claims WHERE id LIKE 'm8-%' LIMIT 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .unwrap();
     assert!(subject_ref.contains("\"kind\":\"Account\""));

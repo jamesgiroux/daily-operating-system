@@ -1,13 +1,15 @@
 //! P7 — 1:1 internal × external, no P4 domain match.
 //! Primary = the external person.
 
-use crate::db::ActionDb;
 use super::super::types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome};
+use crate::db::ActionDb;
 
 pub struct P7InternalExternal;
 
 impl super::super::phases::Rule for P7InternalExternal {
-    fn id(&self) -> &'static str { "P7" }
+    fn id(&self) -> &'static str {
+        "P7"
+    }
 
     fn evaluate(
         &self,
@@ -33,7 +35,10 @@ impl super::super::phases::Rule for P7InternalExternal {
         };
 
         Ok(RuleOutcome::Matched(Candidate {
-            entity: EntityRef { entity_id: person_id, entity_type: "person".to_string() },
+            entity: EntityRef {
+                entity_id: person_id,
+                entity_type: "person".to_string(),
+            },
             role: LinkRole::Primary,
             confidence: 0.70,
             rule_id: "P7".to_string(),

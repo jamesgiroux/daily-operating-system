@@ -4,8 +4,8 @@
 //! backfill (D3), hard-delete role refactor (D4), and reconcile pass
 //! (D5) consume these types but live in services/claims.rs.
 
-use serde::{Deserialize, Serialize};
 use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 pub use crate::abilities::feedback::{ClaimVerificationState, FeedbackAction as FeedbackType};
 

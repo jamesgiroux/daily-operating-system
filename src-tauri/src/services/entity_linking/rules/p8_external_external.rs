@@ -1,12 +1,14 @@
 //! P8 — 1:1 external × external → primary = none.
 
-use crate::db::ActionDb;
 use super::super::types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome};
+use crate::db::ActionDb;
 
 pub struct P8ExternalExternal;
 
 impl super::super::phases::Rule for P8ExternalExternal {
-    fn id(&self) -> &'static str { "P8" }
+    fn id(&self) -> &'static str {
+        "P8"
+    }
 
     fn evaluate(
         &self,
@@ -27,7 +29,10 @@ impl super::super::phases::Rule for P8ExternalExternal {
         // We encode this as Matched with a sentinel that phases.rs treats
         // as no-primary.
         Ok(RuleOutcome::Matched(Candidate {
-            entity: EntityRef { entity_id: String::new(), entity_type: String::new() },
+            entity: EntityRef {
+                entity_id: String::new(),
+                entity_type: String::new(),
+            },
             role: LinkRole::Primary,
             confidence: 0.0,
             rule_id: "P8".to_string(),

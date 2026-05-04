@@ -61,10 +61,22 @@ fn provider_selection_distinguishes_tiers() {
         std::env::temp_dir(),
         AiUsageContext::new("test", "tier_distinction"),
     );
-    assert_eq!(pty.current_model(ModelTier::Synthesis).as_str(), "syn-model");
-    assert_eq!(pty.current_model(ModelTier::Extraction).as_str(), "ext-model");
-    assert_eq!(pty.current_model(ModelTier::Background).as_str(), "bg-model");
-    assert_eq!(pty.current_model(ModelTier::Mechanical).as_str(), "mech-model");
+    assert_eq!(
+        pty.current_model(ModelTier::Synthesis).as_str(),
+        "syn-model"
+    );
+    assert_eq!(
+        pty.current_model(ModelTier::Extraction).as_str(),
+        "ext-model"
+    );
+    assert_eq!(
+        pty.current_model(ModelTier::Background).as_str(),
+        "bg-model"
+    );
+    assert_eq!(
+        pty.current_model(ModelTier::Mechanical).as_str(),
+        "mech-model"
+    );
 }
 
 #[test]
@@ -86,9 +98,18 @@ fn pty_claude_code_propagates_tier_to_model_and_provider_kind() {
     );
 
     // Each tier resolves to its configured model name.
-    assert_eq!(pty.current_model(ModelTier::Synthesis).as_str(), "syn-routed");
-    assert_eq!(pty.current_model(ModelTier::Extraction).as_str(), "ext-routed");
-    assert_eq!(pty.current_model(ModelTier::Background).as_str(), "bg-routed");
+    assert_eq!(
+        pty.current_model(ModelTier::Synthesis).as_str(),
+        "syn-routed"
+    );
+    assert_eq!(
+        pty.current_model(ModelTier::Extraction).as_str(),
+        "ext-routed"
+    );
+    assert_eq!(
+        pty.current_model(ModelTier::Background).as_str(),
+        "bg-routed"
+    );
     assert_eq!(
         pty.current_model(ModelTier::Mechanical).as_str(),
         "mech-routed"
@@ -140,7 +161,10 @@ async fn completion_via_replay_provider_carries_required_fingerprint_fields() {
         .await
         .expect("replay returns");
     assert_eq!(got.text, "r");
-    assert_eq!(got.fingerprint_metadata.provider, ProviderKind::Other("replay"));
+    assert_eq!(
+        got.fingerprint_metadata.provider,
+        ProviderKind::Other("replay")
+    );
     // temperature is f32 (not Option) — equality is well-defined here.
     assert_eq!(got.fingerprint_metadata.temperature, 0.0);
     // model is non-Option — assert it's a real ModelName, not absent.
@@ -180,8 +204,10 @@ async fn select_provider_routes_live_evaluate_simulate_per_adr_0104() {
 
     let live: Arc<dyn IntelligenceProvider> =
         Arc::new(ReplayProvider::from_prompt_pairs([("p", "live-response")]));
-    let replay: Arc<dyn IntelligenceProvider> =
-        Arc::new(ReplayProvider::from_prompt_pairs([("p", "replay-response")]));
+    let replay: Arc<dyn IntelligenceProvider> = Arc::new(ReplayProvider::from_prompt_pairs([(
+        "p",
+        "replay-response",
+    )]));
 
     // Live mode → live provider returned.
     let chosen = select_provider(

@@ -501,8 +501,7 @@ pub(super) fn resolve_names_from_calendar(db: &ActionDb) -> (usize, Vec<HygieneF
     let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
 
     for (person_id, email, display_name) in &candidates {
-        if crate::services::hygiene::update_person_name(&ctx, db, person_id, display_name).is_ok()
-        {
+        if crate::services::hygiene::update_person_name(&ctx, db, person_id, display_name).is_ok() {
             details.push(HygieneFixDetail {
                 fix_type: "name_resolved_calendar".to_string(),
                 entity_name: Some(display_name.clone()),
@@ -540,7 +539,8 @@ pub(super) fn enqueue_ai_enrichments(
                 );
                 return enqueued;
             }
-            let _ = queue.enqueue(IntelRequest::new(                entity_id,
+            let _ = queue.enqueue(IntelRequest::new(
+                entity_id,
                 entity_type,
                 IntelPriority::ProactiveHygiene,
             ));
@@ -562,7 +562,8 @@ pub(super) fn enqueue_ai_enrichments(
                 );
                 return enqueued;
             }
-            let _ = queue.enqueue(IntelRequest::new(                entity_id,
+            let _ = queue.enqueue(IntelRequest::new(
+                entity_id,
                 entity_type,
                 IntelPriority::ProactiveHygiene,
             ));
@@ -615,7 +616,8 @@ pub(super) fn enqueue_glean_risk_gap_fills(
             break;
         }
 
-        let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(            entity_id,
+        let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(
+            entity_id,
             "account".to_string(),
             crate::intel_queue::IntelPriority::ProactiveHygiene,
         ));

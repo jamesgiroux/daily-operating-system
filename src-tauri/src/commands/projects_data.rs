@@ -117,8 +117,7 @@ pub async fn update_project_field(
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
     let ctx = state.live_service_context();
-    crate::services::projects::update_project_field(&ctx, &project_id, &field, &value, &state)
-        .await
+    crate::services::projects::update_project_field(&ctx, &project_id, &field, &value, &state).await
 }
 
 /// Update the notes field on a project.

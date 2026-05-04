@@ -30,7 +30,11 @@ fn main() -> ExitCode {
 
     log::info!(
         "DOS-311 reconcile post-migration: {}",
-        if repair_mode { "REPAIR mode" } else { "REPORT mode" }
+        if repair_mode {
+            "REPAIR mode"
+        } else {
+            "REPORT mode"
+        }
     );
 
     let sql_path = locate_reconcile_sql();
@@ -126,9 +130,7 @@ fn main() -> ExitCode {
     }
 
     if !repair_mode {
-        log::info!(
-            "Run with --repair to re-apply tombstones via services::claims::commit_claim."
-        );
+        log::info!("Run with --repair to re-apply tombstones via services::claims::commit_claim.");
         return ExitCode::from(1);
     }
 

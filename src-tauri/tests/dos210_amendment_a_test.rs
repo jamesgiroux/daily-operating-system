@@ -90,9 +90,7 @@ fn error_kind_label(kind: &AbilityErrorKind) -> String {
 }
 
 fn parent_output(warnings: Vec<ProvenanceWarning>) -> AbilityOutput<FixtureOutput> {
-    let produced_at = chrono::Utc
-        .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-        .unwrap();
+    let produced_at = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
     let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-fixture".into()));
     let mut builder = ProvenanceBuilder::new(ProvenanceBuilderConfig::new("parent_a", produced_at));
     builder.set_subject(subject.clone());
@@ -153,5 +151,8 @@ fn nonoptional_composed_read_failure_propagates_as_hard_error() {
     assert_eq!(registry.iter_for(Actor::System).count(), 2);
 
     let err = parent_a_nonoptional().unwrap_err();
-    assert_eq!(err.kind, AbilityErrorKind::HardError("simulated".to_string()));
+    assert_eq!(
+        err.kind,
+        AbilityErrorKind::HardError("simulated".to_string())
+    );
 }

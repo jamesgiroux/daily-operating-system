@@ -8,8 +8,8 @@
 //! Modeled on `intel_queue.rs`: priority queue, dedup, sequential processing,
 //! split-lock DB access so the UI stays responsive.
 
-use std::collections::{HashMap, VecDeque};
 use parking_lot::Mutex;
+use std::collections::{HashMap, VecDeque};
 use std::time::{Duration, Instant};
 
 use std::sync::Arc;
@@ -417,12 +417,7 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                 let enrich_app = app.clone();
                 let enrich_meeting_id = request.meeting_id.clone();
                 tokio::spawn(async move {
-                    enrich_prep_via_pty(
-                        &enrich_state,
-                        &enrich_app,
-                        &enrich_meeting_id,
-                    )
-                    .await;
+                    enrich_prep_via_pty(&enrich_state, &enrich_app, &enrich_meeting_id).await;
                 });
             }
             Ok(Ok(false)) => {
@@ -758,7 +753,11 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
             }
         },
         Err(e) => {
-            log::warn!("enrich_prep_via_pty: config error: {}, skipping {}", e, meeting_id);
+            log::warn!(
+                "enrich_prep_via_pty: config error: {}, skipping {}",
+                e,
+                meeting_id
+            );
             return;
         }
     };
@@ -785,7 +784,10 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
     let _permit = match state.permits.pty.acquire().await {
         Ok(p) => p,
         Err(_) => {
-            log::warn!("enrich_prep_via_pty: PTY semaphore closed, skipping {}", meeting_id);
+            log::warn!(
+                "enrich_prep_via_pty: PTY semaphore closed, skipping {}",
+                meeting_id
+            );
             return;
         }
     };
@@ -818,7 +820,11 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
     let prep: serde_json::Value = match serde_json::from_str(&prep_json) {
         Ok(v) => v,
         Err(e) => {
-            log::warn!("enrich_prep_via_pty: JSON parse error for {}: {}", meeting_id, e);
+            log::warn!(
+                "enrich_prep_via_pty: JSON parse error for {}: {}",
+                meeting_id,
+                e
+            );
             return;
         }
     };
@@ -833,7 +839,11 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
     {
         Ok(v) => v,
         Err(e) => {
-            log::warn!("enrich_prep_via_pty: enrichment task panicked for {}: {}", meeting_id, e);
+            log::warn!(
+                "enrich_prep_via_pty: enrichment task panicked for {}: {}",
+                meeting_id,
+                e
+            );
             return;
         }
     };
@@ -848,7 +858,11 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
     let enriched_str = match serde_json::to_string(&enriched) {
         Ok(s) => s,
         Err(e) => {
-            log::warn!("enrich_prep_via_pty: serialize error for {}: {}", meeting_id, e);
+            log::warn!(
+                "enrich_prep_via_pty: serialize error for {}: {}",
+                meeting_id,
+                e
+            );
             return;
         }
     };
@@ -867,7 +881,10 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
 
     match write_result {
         Ok(_) => {
-            log::info!("enrich_prep_via_pty: enriched prep written for {}", meeting_id);
+            log::info!(
+                "enrich_prep_via_pty: enriched prep written for {}",
+                meeting_id
+            );
             // Emit prep-ready again so the UI refreshes with the enriched version
             let _ = app.emit(
                 "prep-ready",
@@ -877,7 +894,11 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
             );
         }
         Err(e) => {
-            log::warn!("enrich_prep_via_pty: DB write failed for {}: {}", meeting_id, e);
+            log::warn!(
+                "enrich_prep_via_pty: DB write failed for {}: {}",
+                meeting_id,
+                e
+            );
         }
     }
 }

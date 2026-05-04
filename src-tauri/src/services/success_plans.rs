@@ -640,7 +640,7 @@ pub fn complete_milestone(
         .map_err(|e| format!("signal emit failed: {e}"))?;
         if let Some(objective) = objective {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 &state.signals.engine,
                 "account",
@@ -669,7 +669,7 @@ pub fn skip_milestone(
             .map_err(|e: crate::db::DbError| e.to_string())?;
         if let Some(objective) = objective {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 &state.signals.engine,
                 "account",
@@ -854,8 +854,7 @@ pub fn match_commitments_to_milestones(
     for (commit_id, commit_title, _owner, commit_target_date, _confidence, _source) in &commitments
     {
         for milestone in &milestones {
-            let score =
-                crate::helpers::jaccard_word_similarity(commit_title, &milestone.title);
+            let score = crate::helpers::jaccard_word_similarity(commit_title, &milestone.title);
             if score > 0.7 {
                 // Link commitment to milestone
                 if let Err(e) = db.conn_ref().execute(
@@ -874,14 +873,8 @@ pub fn match_commitments_to_milestones(
                 // Backfill milestone target_date if commitment has one and milestone doesn't
                 if milestone.target_date.is_none() {
                     if let Some(ref td) = commit_target_date {
-                        let _ = db.update_milestone(
-                            &milestone.id,
-                            None,
-                            Some(td),
-                            None,
-                            None,
-                            None,
-                        );
+                        let _ =
+                            db.update_milestone(&milestone.id, None, Some(td), None, None, None);
                     }
                 }
 

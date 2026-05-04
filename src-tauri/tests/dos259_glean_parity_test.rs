@@ -10,9 +10,7 @@
 
 use dailyos_lib::intelligence::io::SourceManifestEntry;
 use dailyos_lib::intelligence::prompts::parse_intelligence_response;
-use dailyos_lib::intelligence::provider::{
-    IntelligenceProvider, PromptInput, ReplayProvider,
-};
+use dailyos_lib::intelligence::provider::{IntelligenceProvider, PromptInput, ReplayProvider};
 use dailyos_lib::pty::ModelTier;
 
 const FIXTURE_PROMPT: &str = "glean enrichment for account-99";
@@ -44,8 +42,7 @@ async fn glean_provider_parity_fixture_intelligence_json_byte_identical() {
     // ReplayProvider stands in for the Glean MCP chat call — same
     // text shape the live Glean provider returns, fed through the
     // shared parser the legacy direct-construction path uses.
-    let provider =
-        ReplayProvider::from_prompt_pairs([(FIXTURE_PROMPT, FIXTURE_GLEAN_RESPONSE)]);
+    let provider = ReplayProvider::from_prompt_pairs([(FIXTURE_PROMPT, FIXTURE_GLEAN_RESPONSE)]);
     let prompt = PromptInput::new(FIXTURE_PROMPT);
     let completion = provider
         .complete(prompt, ModelTier::Synthesis)
@@ -69,14 +66,9 @@ async fn glean_provider_parity_fixture_intelligence_json_byte_identical() {
         manifest.clone(),
     )
     .expect("parse via provider path");
-    let mut parsed_direct = parse_intelligence_response(
-        FIXTURE_GLEAN_RESPONSE,
-        "account-99",
-        "account",
-        1,
-        manifest,
-    )
-    .expect("parse via direct path");
+    let mut parsed_direct =
+        parse_intelligence_response(FIXTURE_GLEAN_RESPONSE, "account-99", "account", 1, manifest)
+            .expect("parse via direct path");
 
     // Pin enriched_at (parser stamps Utc::now()) so byte comparison
     // reflects shape parity, not wall-clock drift between two calls.

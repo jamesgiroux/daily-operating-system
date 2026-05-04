@@ -176,9 +176,7 @@ pub fn backfill_domains_for_all_accounts(
             }
             Ok(_) => {}
             Err(e) => {
-                log::warn!(
-                    "stakeholder_domains: backfill failed for account {account_id}: {e}"
-                );
+                log::warn!("stakeholder_domains: backfill failed for account {account_id}: {e}");
             }
         }
     }
@@ -193,8 +191,8 @@ pub fn backfill_domains_for_all_accounts(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::db::ActionDb;
     use crate::db::types::{DbAccount, DbPerson};
+    use crate::db::ActionDb;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::{TimeZone, Utc};
     use rusqlite::params;
@@ -293,8 +291,7 @@ mod tests {
         seed_person(&db, "p1", "alice@customer.com", "external");
         link_stakeholder(&db, "acme", "p1", "active");
 
-        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
-            .unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap();
         assert_eq!(new, 1);
 
         let domains = db.get_account_domains("acme").unwrap();
@@ -308,8 +305,7 @@ mod tests {
         seed_person(&db, "p1", "bob@customer.com", "internal");
         link_stakeholder(&db, "acme", "p1", "active");
 
-        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
-            .unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -321,8 +317,7 @@ mod tests {
         seed_person(&db, "p1", "carol@gmail.com", "external");
         link_stakeholder(&db, "acme", "p1", "active");
 
-        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
-            .unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -340,8 +335,7 @@ mod tests {
         link_stakeholder(&db, "acme", "p3", "active");
         link_stakeholder(&db, "acme", "p4", "active");
 
-        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
-            .unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -370,8 +364,7 @@ mod tests {
         link_stakeholder(&db, "acme", "p1", "pending_review");
         link_stakeholder(&db, "acme", "p2", "dismissed");
 
-        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[]))
-            .unwrap();
+        let new = with_test_ctx(|ctx| backfill_domains_for_account(ctx, &db, "acme", &[])).unwrap();
         assert_eq!(new, 0);
         assert!(db.get_account_domains("acme").unwrap().is_empty());
     }
@@ -441,8 +434,14 @@ mod tests {
         assert_eq!(touched, 3, "customer + partner accounts only");
         assert_eq!(new, 3);
         assert!(db.get_account_domains("myco").unwrap().is_empty());
-        assert_eq!(db.get_account_domains("acme").unwrap(), vec!["acme-ext.com"]);
-        assert_eq!(db.get_account_domains("beta").unwrap(), vec!["beta-ext.com"]);
+        assert_eq!(
+            db.get_account_domains("acme").unwrap(),
+            vec!["acme-ext.com"]
+        );
+        assert_eq!(
+            db.get_account_domains("beta").unwrap(),
+            vec!["beta-ext.com"]
+        );
         assert_eq!(
             db.get_account_domains("partnerco").unwrap(),
             vec!["partner-ext.com"]

@@ -114,7 +114,14 @@ fn dedupe_prep_items_against(
 
 fn normalize_prep_card_item(item: &str) -> String {
     let mut value = item.trim().to_lowercase();
-    for suffix in [" — high", " — medium", " — low", " - high", " - medium", " - low"] {
+    for suffix in [
+        " — high",
+        " — medium",
+        " — low",
+        " - high",
+        " - medium",
+        " - low",
+    ] {
         if value.ends_with(suffix) {
             value.truncate(value.len() - suffix.len());
             break;
@@ -636,11 +643,7 @@ pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
 
 async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> DashboardResult {
     // Get Google auth status for frontend
-    let google_auth = state
-        .calendar
-        .google_auth
-        .lock()
-        .clone();
+    let google_auth = state.calendar.google_auth.lock().clone();
     // Get config
     let config = match state.config.read().clone() {
             Some(c) => c,
@@ -654,11 +657,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
     let workspace = Path::new(&config.workspace_path);
 
     // Build meetings from SQLite (DB-first)
-    let live_events = state
-        .calendar
-        .events
-        .read()
-        .clone();
+    let live_events = state.calendar.events.read().clone();
     let tz: chrono_tz::Tz = config
         .schedules
         .today
@@ -1343,7 +1342,14 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
             let lu = load_dashboard_lifecycle_updates(db, 3);
             let bc = load_briefing_callouts(db, 10);
             let ac = crate::services::actions::get_aging_action_count(db).ok();
-            Ok::<(Vec<DashboardLifecycleUpdate>, Vec<DashboardBriefingCallout>, Option<i64>), String>((lu, bc, ac))
+            Ok::<
+                (
+                    Vec<DashboardLifecycleUpdate>,
+                    Vec<DashboardBriefingCallout>,
+                    Option<i64>,
+                ),
+                String,
+            >((lu, bc, ac))
         })
         .await
         .unwrap_or_default();

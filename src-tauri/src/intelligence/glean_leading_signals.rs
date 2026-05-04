@@ -933,7 +933,10 @@ mod tests {
         let stored = serde_json::to_string(&parsed).expect("serialize");
         let reread: HealthOutlookSignals = serde_json::from_str(&stored).expect("deserialize");
 
-        let cr = reread.champion_risk.as_ref().expect("champion_risk survives");
+        let cr = reread
+            .champion_risk
+            .as_ref()
+            .expect("champion_risk survives");
         assert_eq!(cr.champion_name.as_deref(), Some("Alex Morgan"));
         assert!(cr.at_risk);
         assert_eq!(cr.risk_level.as_deref(), Some("high"));
@@ -941,11 +944,20 @@ mod tests {
         assert_eq!(cr.backup_champion_candidates.len(), 1);
         assert_eq!(cr.backup_champion_candidates[0].name, "Jordan Kim");
 
-        let cs = reread.channel_sentiment.as_ref().expect("channel_sentiment survives");
+        let cs = reread
+            .channel_sentiment
+            .as_ref()
+            .expect("channel_sentiment survives");
         assert!(cs.divergence_detected);
-        assert_eq!(cs.divergence_summary.as_deref(), Some("meetings cordial, tickets frustrated"));
+        assert_eq!(
+            cs.divergence_summary.as_deref(),
+            Some("meetings cordial, tickets frustrated")
+        );
 
-        let te = reread.transcript_extraction.as_ref().expect("transcript_extraction survives");
+        let te = reread
+            .transcript_extraction
+            .as_ref()
+            .expect("transcript_extraction survives");
         assert_eq!(te.budget_cycle_signals.len(), 1);
         assert!(te.budget_cycle_signals[0].locked);
 
@@ -954,9 +966,18 @@ mod tests {
 
         // Derived signals still fire correctly after round-trip.
         let derived = reread.derive_signals();
-        assert!(derived.champion_at_risk.is_some(), "champion risk derives after roundtrip");
-        assert!(derived.sentiment_divergence.is_some(), "divergence derives after roundtrip");
-        assert!(derived.budget_cycle_locked.is_some(), "budget locked derives after roundtrip");
+        assert!(
+            derived.champion_at_risk.is_some(),
+            "champion risk derives after roundtrip"
+        );
+        assert!(
+            derived.sentiment_divergence.is_some(),
+            "divergence derives after roundtrip"
+        );
+        assert!(
+            derived.budget_cycle_locked.is_some(),
+            "budget locked derives after roundtrip"
+        );
     }
 
     #[test]

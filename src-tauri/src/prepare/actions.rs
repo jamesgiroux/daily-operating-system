@@ -288,7 +288,10 @@ fn fetch_categorized_actions(db: &crate::db::ActionDb) -> ActionResult {
                 .as_ref()
                 .and_then(|d| NaiveDate::parse_from_str(d, "%Y-%m-%d").ok());
 
-            let priority = crate::action_status::priority_label(priority_int.unwrap_or(crate::action_status::PRIORITY_LOW)).to_string();
+            let priority = crate::action_status::priority_label(
+                priority_int.unwrap_or(crate::action_status::PRIORITY_LOW),
+            )
+            .to_string();
             let status = status.unwrap_or_else(|| "unstarted".to_string());
 
             // Check for waiting status

@@ -20,8 +20,8 @@
 //!   SQLCipher WAL read-verify races on `Connection::open()` verification.
 
 use std::any::Any;
-use std::path::PathBuf;
 use std::panic::{self, AssertUnwindSafe};
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex as StdMutex};
 use std::thread;
@@ -133,9 +133,7 @@ impl PooledConnection {
         })
     }
 
-    fn split_payload<T: Send + 'static>(
-        payload: CallResult,
-    ) -> Result<T, PooledCallError> {
+    fn split_payload<T: Send + 'static>(payload: CallResult) -> Result<T, PooledCallError> {
         let payload = payload?;
         payload
             .downcast::<T>()
@@ -187,11 +185,7 @@ impl PooledConnection {
 
 /// Apply standard pragmas to a connection. `read_only` adds `query_only=ON`.
 /// PRAGMA key MUST be first for SQLCipher (ADR-0092).
-fn apply_pragmas(
-    conn: &Connection,
-    read_only: bool,
-    hex_key: &str,
-) -> Result<(), rusqlite::Error> {
+fn apply_pragmas(conn: &Connection, read_only: bool, hex_key: &str) -> Result<(), rusqlite::Error> {
     conn.execute_batch(&crate::db::encryption::key_to_pragma(hex_key))?;
     conn.execute_batch("PRAGMA journal_mode = WAL;")?;
     conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
@@ -205,7 +199,11 @@ fn apply_pragmas(
 
 /// Open a fresh encrypted connection on the same initialization semantics as
 /// `ActionDb::open` (key, verification query, WAL/busy/sync setup, migrations).
-fn open_encrypted_fresh(path: &str, hex_key: &str, read_only: bool) -> rusqlite::Result<Connection> {
+fn open_encrypted_fresh(
+    path: &str,
+    hex_key: &str,
+    read_only: bool,
+) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
     apply_pragmas(&conn, read_only, hex_key)?;
     conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
@@ -336,21 +334,21 @@ impl DbService {
         hex_key: String,
     ) -> Result<Connection, DbError> {
         let path = path.to_string_lossy().to_string();
-        let result = self.writer.call_sync(move |_| open_encrypted_fresh(&path, &hex_key, false));
+        let result = self
+            .writer
+            .call_sync(move |_| open_encrypted_fresh(&path, &hex_key, false));
         match result {
             Ok(conn) => Ok(conn),
             Err(PooledCallError::Rusqlite(error)) => Err(DbError::Sqlite(error)),
-            Err(PooledCallError::Closed) => {
-                Err(DbError::Migration("pooled writer thread not available".to_string()))
-            }
-            Err(PooledCallError::Panic(message)) => {
-                Err(DbError::Migration(format!("open_fresh_serialized panic: {message}")))
-            }
-            Err(PooledCallError::TypeMismatch) => {
-                Err(DbError::Migration(
-                    "open_fresh_serialized result type mismatch".to_string(),
-                ))
-            }
+            Err(PooledCallError::Closed) => Err(DbError::Migration(
+                "pooled writer thread not available".to_string(),
+            )),
+            Err(PooledCallError::Panic(message)) => Err(DbError::Migration(format!(
+                "open_fresh_serialized panic: {message}"
+            ))),
+            Err(PooledCallError::TypeMismatch) => Err(DbError::Migration(
+                "open_fresh_serialized result type mismatch".to_string(),
+            )),
         }
     }
 
@@ -547,11 +545,8 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("fresh_open_fallback.db");
 
-        let svc = DbService::open_at(path.clone())
-            .await
-            .expect("open svc");
-        let hex_key = crate::db::encryption::get_or_create_db_key(&path)
-            .expect("db key");
+        let svc = DbService::open_at(path.clone()).await.expect("open svc");
+        let hex_key = crate::db::encryption::get_or_create_db_key(&path).expect("db key");
 
         let writer = svc.clone();
         let writer_task = tokio::task::spawn_blocking(move || -> Result<(), String> {
@@ -575,7 +570,8 @@ mod tests {
             let key = hex_key.clone();
             let path = path.clone();
             open_tasks.push(tokio::spawn(async move {
-                svc.open_fresh_serialized(path.clone(), key).map_err(|e| e.to_string())
+                svc.open_fresh_serialized(path.clone(), key)
+                    .map_err(|e| e.to_string())
             }));
         }
 
@@ -596,7 +592,10 @@ mod tests {
             "SQLCipher fresh-open race produced SQLITE_NOTADB"
         );
 
-        writer_task.await.expect("writer task").expect("writer task error");
+        writer_task
+            .await
+            .expect("writer task")
+            .expect("writer task error");
     }
 
     #[cfg(target_os = "macos")]

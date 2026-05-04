@@ -109,9 +109,7 @@ pub fn delete_gravatar_api_key() -> Result<(), String> {
 pub fn migrate_from_config(state: &crate::state::AppState) {
     let legacy_key = {
         let config = state.config.read();
-        config
-            .as_ref()
-            .and_then(|c| c.gravatar.api_key.clone())
+        config.as_ref().and_then(|c| c.gravatar.api_key.clone())
     };
 
     let Some(key) = legacy_key else {

@@ -376,7 +376,9 @@ pub fn detect_stale_champion(db: &ActionDb, ctx: &DetectorContext) -> Vec<RawIns
         .unwrap_or_else(|_| conn.prepare("SELECT 1 WHERE 0").unwrap());
 
     let accounts: Vec<(String, String, String)> = acct_stmt
-        .query_map(params![today_str, end_90d], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))
+        .query_map(params![today_str, end_90d], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?))
+        })
         .ok()
         .map(|rows| rows.filter_map(|r| r.ok()).collect())
         .unwrap_or_default();

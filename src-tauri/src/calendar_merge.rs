@@ -88,7 +88,7 @@ pub fn merge_meetings(briefing: Vec<Meeting>, live: &[CalendarEvent], tz: &Tz) -
                 overlay_status: Some(OverlayStatus::New),
                 prep_reviewed: None,
                 linked_entities: None,
-           
+
                 suggested_unarchive_account_id: None,
                 intelligence_quality: None,
                 calendar_attendees: None,
@@ -174,7 +174,7 @@ mod tests {
             account: Some("Acme".to_string()),
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -197,7 +197,7 @@ mod tests {
             overlay_status: None,
             prep_reviewed: None,
             linked_entities: None,
-           
+
             suggested_unarchive_account_id: None,
             intelligence_quality: None,
             calendar_attendees: None,

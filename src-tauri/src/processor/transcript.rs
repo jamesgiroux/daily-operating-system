@@ -15,8 +15,8 @@ use crate::db::{ActionDb, DbProcessingLog};
 use crate::pty::{AiUsageContext, ModelTier, PtyManager};
 use crate::types::AiModelConfig;
 use crate::types::{
-    CalendarEvent, CapturedAction, KeyAdvocateHealth, CompetitorMention, EngagementSignals,
-    EscalationSignal, InteractionDynamics, MeetingType, RoleChange, SpeakerSentiment,
+    CalendarEvent, CapturedAction, CompetitorMention, EngagementSignals, EscalationSignal,
+    InteractionDynamics, KeyAdvocateHealth, MeetingType, RoleChange, SpeakerSentiment,
     TranscriptCommitment, TranscriptResult, TranscriptSentiment,
 };
 use crate::util::{
@@ -723,8 +723,7 @@ pub fn process_transcript_with_kind(
                     db,
                     &meeting.id,
                     &db_health,
-                )
-                {
+                ) {
                     log::warn!(
                         "Failed to persist reviewed champion health for {}: {}",
                         meeting.id,
@@ -796,10 +795,11 @@ pub fn process_transcript_with_kind(
                     let clock = crate::services::context::SystemClock;
                     let rng = crate::services::context::SystemRng;
                     let ext = crate::services::context::ExternalClients::default();
-                    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-                    if let Err(e) =
-                        crate::services::intelligence::recompute_entity_health(&ctx, db, eid, "account")
-                    {
+                    let ctx =
+                        crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                    if let Err(e) = crate::services::intelligence::recompute_entity_health(
+                        &ctx, db, eid, "account",
+                    ) {
                         log::warn!(
                             "Health recompute failed for {} after transcript: {}",
                             eid,
@@ -2078,7 +2078,8 @@ fn persist_enriched_transcript_data(db: &crate::db::ActionDb, data: &EnrichedTra
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            match crate::services::success_plans::match_commitments_to_milestones(&ctx, db, acct_id) {
+            match crate::services::success_plans::match_commitments_to_milestones(&ctx, db, acct_id)
+            {
                 Ok(count) if count > 0 => {
                     log::info!(
                         "Matched {} commitments to milestones for account {}",
@@ -2918,15 +2919,18 @@ Transcript:
 /// is reserved for legacy files without DB context.
 pub fn enrich_meeting_from_db(meeting: &mut CalendarEvent, db: &ActionDb) {
     // Linked entities (ordered: is_primary DESC, confidence DESC)
-    if meeting.linked_entities.as_ref().is_none_or(|v| v.is_empty()) {
+    if meeting
+        .linked_entities
+        .as_ref()
+        .is_none_or(|v| v.is_empty())
+    {
         if let Ok(entities) = db.get_meeting_linked_entities(&meeting.id) {
             if !entities.is_empty() {
                 // Primary account name → meeting.account (used by routing step 1
                 // and frontmatter)
                 if meeting.account.is_none() {
-                    if let Some(primary_account) = entities
-                        .iter()
-                        .find(|e| e.entity_type == "account")
+                    if let Some(primary_account) =
+                        entities.iter().find(|e| e.entity_type == "account")
                     {
                         meeting.account = Some(primary_account.name.clone());
                     }
@@ -2937,10 +2941,7 @@ pub fn enrich_meeting_from_db(meeting: &mut CalendarEvent, db: &ActionDb) {
     } else if meeting.account.is_none() {
         // linked_entities was provided but account wasn't — derive it.
         if let Some(entities) = meeting.linked_entities.as_ref() {
-            if let Some(primary_account) = entities
-                .iter()
-                .find(|e| e.entity_type == "account")
-            {
+            if let Some(primary_account) = entities.iter().find(|e| e.entity_type == "account") {
                 meeting.account = Some(primary_account.name.clone());
             }
         }
@@ -2953,7 +2954,11 @@ pub fn enrich_meeting_from_db(meeting: &mut CalendarEvent, db: &ActionDb) {
                 .into_iter()
                 .filter_map(|p| {
                     let e = p.email.trim();
-                    if e.is_empty() { None } else { Some(e.to_string()) }
+                    if e.is_empty() {
+                        None
+                    } else {
+                        Some(e.to_string())
+                    }
                 })
                 .collect();
         }
@@ -3899,7 +3904,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -4209,7 +4214,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -4264,7 +4269,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -4289,7 +4294,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec!["Sarah Chen".to_string(), "Alex Torres".to_string()],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "acc-record".to_string(),
                 name: "Acme Corp".to_string(),
@@ -4428,7 +4433,7 @@ mod tests {
             account: Some("Acme Corp".to_string()),
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "proj-route".to_string(),
                 name: "Platform Migration".to_string(),
@@ -4447,7 +4452,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "proj-route".to_string(),
                 name: "Platform Migration".to_string(),
@@ -4466,7 +4471,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: Some(vec![crate::types::LinkedEntity {
                 id: "person-route".to_string(),
                 name: "Pat Kim".to_string(),
@@ -4485,7 +4490,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,
@@ -4550,22 +4555,10 @@ mod tests {
 
         // Link primary account + secondary project so the helper has to
         // pick the right primary by entity_type.
-        db.link_meeting_entity_with_confidence(
-            "mtg-enrich",
-            "acc-enrich",
-            "account",
-            0.95,
-            true,
-        )
-        .expect("link account");
-        db.link_meeting_entity_with_confidence(
-            "mtg-enrich",
-            "proj-enrich",
-            "project",
-            0.7,
-            false,
-        )
-        .expect("link project");
+        db.link_meeting_entity_with_confidence("mtg-enrich", "acc-enrich", "account", 0.95, true)
+            .expect("link account");
+        db.link_meeting_entity_with_confidence("mtg-enrich", "proj-enrich", "project", 0.7, false)
+            .expect("link project");
 
         // Attach the person to the meeting via meeting_attendees so the
         // attendee-fallback routing arm has data to chew on.

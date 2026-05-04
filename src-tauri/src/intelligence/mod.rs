@@ -1,23 +1,23 @@
+pub mod canonicalization;
 pub mod compute;
 pub mod consistency;
 pub mod contamination;
-pub mod canonicalization;
 pub mod dimension_prompts;
 pub mod glean_leading_signals;
 pub mod glean_prompts;
 pub mod glean_provider;
 pub mod health_scoring;
-pub mod provider;
-pub mod pty_provider;
 pub mod io;
 pub mod lifecycle;
 pub mod predictions;
-pub mod write_fence;
 pub mod prompts;
+pub mod provider;
+pub mod pty_provider;
 pub mod relationships;
 pub mod timeliness;
 pub mod user_context;
 pub mod validation;
+pub mod write_fence;
 
 pub use compute::*;
 pub use consistency::*;

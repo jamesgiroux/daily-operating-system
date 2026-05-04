@@ -83,9 +83,7 @@ pub async fn rescan_stale_weak_primaries(
         match owner_type {
             OwnerType::Email => match rescan_email(state.clone(), &owner_id).await {
                 Ok(()) => attempts += 1,
-                Err(e) => log::warn!(
-                    "entity_linking rescan: email {owner_id} re-eval failed: {e}"
-                ),
+                Err(e) => log::warn!("entity_linking rescan: email {owner_id} re-eval failed: {e}"),
             },
             OwnerType::Meeting | OwnerType::EmailThread => {
                 // Meetings: the calendar adapter needs a live CalendarEvent
@@ -221,14 +219,21 @@ mod tests {
 
         let current: i64 = db
             .conn_ref()
-            .query_row("SELECT version FROM entity_graph_version WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT version FROM entity_graph_version WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .expect("read version");
-        let mut stmt = db.conn_ref().prepare(
-            "SELECT owner_id FROM linked_entities_raw \
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT owner_id FROM linked_entities_raw \
              WHERE role = 'primary' \
                AND source IN ('rule:P5', 'rule:P11') \
                AND graph_version < ?1",
-        ).expect("prepare");
+            )
+            .expect("prepare");
         let stale: Vec<String> = stmt
             .query_map(rusqlite::params![current], |r| r.get::<_, String>(0))
             .expect("query")
@@ -264,14 +269,21 @@ mod tests {
 
         let current: i64 = db
             .conn_ref()
-            .query_row("SELECT version FROM entity_graph_version WHERE id = 1", [], |r| r.get(0))
+            .query_row(
+                "SELECT version FROM entity_graph_version WHERE id = 1",
+                [],
+                |r| r.get(0),
+            )
             .expect("version");
-        let mut stmt = db.conn_ref().prepare(
-            "SELECT owner_id FROM linked_entities_raw \
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT owner_id FROM linked_entities_raw \
              WHERE role = 'primary' \
                AND source IN ('rule:P5', 'rule:P11') \
                AND graph_version < ?1",
-        ).expect("prepare");
+            )
+            .expect("prepare");
         let stale: Vec<String> = stmt
             .query_map(rusqlite::params![current], |r| r.get::<_, String>(0))
             .expect("query")
@@ -299,7 +311,8 @@ mod tests {
             .execute(
                 "INSERT INTO account_domains (account_id, domain) VALUES ('sub', 'sub.example')",
                 [],
-            ).expect("domain");
+            )
+            .expect("domain");
 
         let candidates = db
             .lookup_account_candidates_by_domain("sub.example")

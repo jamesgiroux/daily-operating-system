@@ -1,8 +1,8 @@
 // Settings service — extracted from commands.rs
 // Business logic for configuration and settings mutations.
 
-use crate::state::AppState;
 use crate::services::context::ServiceContext;
+use crate::state::AppState;
 use crate::types::{Config, WorkflowId};
 
 fn validate_ai_model_choice(tier: &str, model: &str) -> Result<(), String> {
@@ -483,7 +483,10 @@ mod tests {
         // Old field is preserved (serde default 0 if missing, or actual value if present)
         assert_eq!(config.hygiene_ai_budget, 10);
         // New field should use the serde default (50_000)
-        assert_eq!(config.daily_ai_token_budget, crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET);
+        assert_eq!(
+            config.daily_ai_token_budget,
+            crate::pty::DEFAULT_DAILY_AI_TOKEN_BUDGET
+        );
     }
 }
 

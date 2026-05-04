@@ -360,15 +360,13 @@ fn build_prep_summary(ctx: &DirectiveMeetingContext) -> Option<Value> {
                     arr.iter()
                         .take(3)
                         .filter_map(|v| {
-                            v.as_str()
-                                .map(sanitize_inline_markdown)
-                                .or_else(|| {
-                                    v.get("text")
-                                        .or_else(|| v.get("win"))
-                                        .or_else(|| v.get("summary"))
-                                        .and_then(|text| text.as_str())
-                                        .map(sanitize_inline_markdown)
-                                })
+                            v.as_str().map(sanitize_inline_markdown).or_else(|| {
+                                v.get("text")
+                                    .or_else(|| v.get("win"))
+                                    .or_else(|| v.get("summary"))
+                                    .and_then(|text| text.as_str())
+                                    .map(sanitize_inline_markdown)
+                            })
                         })
                         .collect()
                 })
@@ -2317,14 +2315,7 @@ fn push_non_overdue_open_items(
                     .get("title")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown item");
-                push_unique_agenda_item(
-                    agenda,
-                    seen_topics,
-                    title,
-                    None,
-                    "open_item",
-                    max_items,
-                );
+                push_unique_agenda_item(agenda, seen_topics, title, None, "open_item", max_items);
             }
         }
     }
@@ -2379,14 +2370,7 @@ fn push_open_items_all(
                     .get("title")
                     .and_then(|v| v.as_str())
                     .unwrap_or("Unknown item");
-                push_unique_agenda_item(
-                    agenda,
-                    seen_topics,
-                    title,
-                    None,
-                    "open_item",
-                    max_items,
-                );
+                push_unique_agenda_item(agenda, seen_topics, title, None, "open_item", max_items);
                 count += 1;
             }
         }
@@ -4031,11 +4015,7 @@ pub fn enrich_preps(
 ///
 /// Returns the enriched prep JSON on success, or the original on failure.
 /// Never panics — graceful degradation is the contract.
-pub fn enrich_single_prep(
-    prep: &Value,
-    pty: &crate::pty::PtyManager,
-    workspace: &Path,
-) -> Value {
+pub fn enrich_single_prep(prep: &Value, pty: &crate::pty::PtyManager, workspace: &Path) -> Value {
     let meeting_id = prep
         .get("meetingId")
         .and_then(|v| v.as_str())
@@ -4190,7 +4170,12 @@ pub fn enrich_single_prep(
     };
 
     // Audit trail
-    let _ = crate::audit::write_audit_entry(workspace, "meeting_prep_enrichment", meeting_id, &output.stdout);
+    let _ = crate::audit::write_audit_entry(
+        workspace,
+        "meeting_prep_enrichment",
+        meeting_id,
+        &output.stdout,
+    );
 
     let enrichments = parse_prep_enrichment(&output.stdout);
     let Some(enrichment) = enrichments.get(meeting_id) else {

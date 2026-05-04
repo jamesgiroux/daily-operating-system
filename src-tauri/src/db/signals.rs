@@ -253,10 +253,7 @@ impl ActionDb {
     }
 
     /// Insert an enriched capture with metadata columns.
-    pub fn insert_capture_enriched(
-        &self,
-        input: &CaptureInput<'_>,
-    ) -> Result<(), DbError> {
+    pub fn insert_capture_enriched(&self, input: &CaptureInput<'_>) -> Result<(), DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -377,10 +374,7 @@ impl ActionDb {
     const VALID_ENTITY_TYPES: &'static [&'static str] = &["account", "project"];
 
     /// Insert an email signal, returning `true` if a new row was inserted.
-    pub fn upsert_email_signal(
-        &self,
-        input: &EmailSignalInput<'_>,
-    ) -> Result<bool, DbError> {
+    pub fn upsert_email_signal(&self, input: &EmailSignalInput<'_>) -> Result<bool, DbError> {
         if !Self::VALID_SIGNAL_TYPES.contains(&input.signal_type) {
             log::warn!(
                 "Ignoring unknown email signal type '{}' for entity {}",

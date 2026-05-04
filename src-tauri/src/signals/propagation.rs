@@ -4,8 +4,8 @@
 //! to derive new signals on related entities. For example, a `title_change` on
 //! a person propagates `stakeholder_change` to all linked accounts.
 
-use std::sync::Arc;
 use parking_lot::Mutex;
+use std::sync::Arc;
 
 use rusqlite::params;
 use uuid::Uuid;
@@ -118,12 +118,11 @@ impl PropagationEngine {
         if let Some(ref intel_q) = self.intel_queue {
             for (eid, etype) in &cross_entity_targets {
                 if db.is_entity_archived(eid, etype) {
-                    log::debug!(
-                        "Signal propagation: skipping archived entity {eid} ({etype})"
-                    );
+                    log::debug!("Signal propagation: skipping archived entity {eid} ({etype})");
                     continue;
                 }
-                let _ = intel_q.enqueue(crate::intel_queue::IntelRequest::new(                    eid.clone(),
+                let _ = intel_q.enqueue(crate::intel_queue::IntelRequest::new(
+                    eid.clone(),
                     etype.clone(),
                     crate::intel_queue::IntelPriority::ProactiveHygiene,
                 ));

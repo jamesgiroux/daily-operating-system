@@ -484,11 +484,7 @@ fn push_disambiguation_block(
 
 /// Emit the `## Retrieval scope` block — inclusion bias + exclusion heuristics.
 /// Shared between Glean and PTY; PTY calls it via the same entry point.
-fn push_retrieval_scope_block(
-    prompt: &mut String,
-    entity_name: &str,
-    ctx: &IntelligenceContext,
-) {
+fn push_retrieval_scope_block(prompt: &mut String, entity_name: &str, ctx: &IntelligenceContext) {
     prompt.push_str("## Retrieval scope\n");
     prompt.push_str(&format!(
         "- Prefer documents that reference at least one identifier listed \
@@ -1064,7 +1060,6 @@ mod tests {
             discrepancy: None,
 
             ..Default::default()
-
         }];
 
         let mut partial = empty_intel();
@@ -1118,7 +1113,6 @@ mod tests {
             discrepancy: None,
 
             ..Default::default()
-
         }];
 
         merge_dimension_into(&mut existing, "stakeholder_champion", &partial).unwrap();
@@ -1432,8 +1426,15 @@ mod tests {
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("## Entity disambiguation"));
         assert!(p.contains("Known domains: acme.com, acme.io"));
         assert!(p.contains("allowed domain set is exactly: acme.com, acme.io"));
@@ -1442,8 +1443,15 @@ mod tests {
     #[test]
     fn glean_prompt_omits_domains_section_when_empty_rather_than_writing_none() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("## Entity disambiguation"));
         // Must NOT emit empty "Known domains:" or "(none)" lines.
         assert!(!p.contains("Known domains:"));
@@ -1469,8 +1477,15 @@ mod tests {
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("Known contacts: alice@acme.com"));
     }
 
@@ -1495,8 +1510,15 @@ mod tests {
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("external@customer.com"));
         // The `assistant.gong.io` shared-bot note must always appear so Glean
         // knows not to anchor on that signal.
@@ -1513,8 +1535,15 @@ mod tests {
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("Parent company: Parent Co (domains: parent.com)"));
     }
 
@@ -1525,24 +1554,45 @@ mod tests {
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("REDACTED account ID: 001Abc000012345"));
     }
 
     #[test]
     fn glean_prompt_sfdc_id_not_provided_when_absent() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("REDACTED account ID: not provided"));
     }
 
     #[test]
     fn glean_prompt_grounding_rule_text_present() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("## Grounding rule"));
         assert!(p.contains("OMIT the claim"));
         assert!(p.contains("cross-customer contamination"));
@@ -1551,8 +1601,15 @@ mod tests {
     #[test]
     fn glean_prompt_retrieval_scope_present() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
-        let p =
-            build_glean_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_glean_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("## Retrieval scope"));
         assert!(p.contains("vip-*.com"));
         assert!(p.contains("wordpress-test@assistant.gong.io"));
@@ -1568,7 +1625,15 @@ mod tests {
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
-        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("## Entity disambiguation"));
         assert!(p.contains("Known domains: acme.com"));
         assert!(p.contains("REDACTED account ID: 001xyz"));
@@ -1579,7 +1644,15 @@ mod tests {
     #[test]
     fn pty_prompt_omits_empty_lines() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
-        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(!p.contains("Known domains:"));
         assert!(!p.contains("Known contacts:"));
         assert!(!p.contains("Parent company:"));
@@ -1589,7 +1662,15 @@ mod tests {
     #[test]
     fn pty_prompt_grounding_rule_text_present() {
         let ctx = ctx_with_disambiguators(EntityDisambiguators::default());
-        let p = build_dimension_prompt("core_assessment", "Acme", "account", None, &ctx, false, None);
+        let p = build_dimension_prompt(
+            "core_assessment",
+            "Acme",
+            "account",
+            None,
+            &ctx,
+            false,
+            None,
+        );
         assert!(p.contains("OMIT the claim"));
     }
 }
@@ -1700,7 +1781,6 @@ mod eval_tests {
             discrepancy: None,
 
             ..Default::default()
-
         }];
         existing.contract_context = Some(super::super::io::ContractContext {
             contract_type: Some("annual".to_string()),
@@ -1828,7 +1908,6 @@ mod eval_tests {
             discrepancy: None,
 
             ..Default::default()
-
         }];
         merge_dimension_into(&mut existing, "stakeholder_champion", &p2).unwrap();
 

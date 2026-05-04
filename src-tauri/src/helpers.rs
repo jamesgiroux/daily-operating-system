@@ -474,7 +474,8 @@ mod jaccard_tests {
         // "complete" and "onboarding" shared; "customer" only in a, "setup" only in b
         // a = {complete, customer, onboarding}, b = {complete, onboarding, setup}
         // intersection = 2, union = 4 => 0.5
-        let score = jaccard_word_similarity("Complete customer onboarding", "Complete onboarding setup");
+        let score =
+            jaccard_word_similarity("Complete customer onboarding", "Complete onboarding setup");
         assert!((score - 0.5).abs() < f64::EPSILON);
     }
 

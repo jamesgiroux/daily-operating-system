@@ -386,11 +386,7 @@ pub async fn get_executive_intelligence(
             .await
             .unwrap_or_default();
 
-        let live_events = state
-            .calendar
-            .events
-            .read()
-            .clone();
+        let live_events = state.calendar.events.read().clone();
         let tz: chrono_tz::Tz = config
             .schedules
             .today

@@ -305,8 +305,7 @@ mod tests {
             entity_type: "account".into(),
             ..Default::default()
         };
-        fenced_write_intelligence_json(&cycle, &db, tmp.path(), &intel)
-            .expect("happy path write");
+        fenced_write_intelligence_json(&cycle, &db, tmp.path(), &intel).expect("happy path write");
         assert!(tmp.path().join("intelligence.json").exists());
     }
 
@@ -382,9 +381,7 @@ mod tests {
             drop(cycle);
         }
         let median = median_micros(&mut samples);
-        eprintln!(
-            "[suite-p baseline] FenceCycle::capture: median={median}µs samples=500"
-        );
+        eprintln!("[suite-p baseline] FenceCycle::capture: median={median}µs samples=500");
         assert!(
             median < 200,
             "regression: FenceCycle::capture took {median}µs (W1 baseline ~5-15µs; bound 200µs)"
@@ -468,12 +465,14 @@ mod tests {
         );
 
         // Step 4: worker write rejected
-        let write_result =
-            fenced_write_intelligence_json(&worker_cycle, &db, dir, &intel);
+        let write_result = fenced_write_intelligence_json(&worker_cycle, &db, dir, &intel);
         assert!(
             matches!(
                 write_result,
-                Err(FenceError::EpochAdvanced { captured: 1, current: 2 })
+                Err(FenceError::EpochAdvanced {
+                    captured: 1,
+                    current: 2
+                })
             ),
             "worker write must be rejected with EpochAdvanced 1→2; got {write_result:?}",
         );

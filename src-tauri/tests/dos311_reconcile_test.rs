@@ -25,10 +25,9 @@ fn project_root() -> PathBuf {
 
 fn fresh_db() -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory db");
-    let schema = std::fs::read_to_string(
-        project_root().join("src-tauri/tests/dos311_fixtures/schema.sql"),
-    )
-    .expect("read schema.sql");
+    let schema =
+        std::fs::read_to_string(project_root().join("src-tauri/tests/dos311_fixtures/schema.sql"))
+            .expect("read schema.sql");
     conn.execute_batch(&schema).expect("apply schema");
     conn
 }
@@ -44,10 +43,9 @@ fn load_fixture(conn: &Connection, name: &str) {
 }
 
 fn run_reconcile(conn: &Connection) -> usize {
-    let sql = std::fs::read_to_string(
-        project_root().join("scripts/reconcile_ghost_resurrection.sql"),
-    )
-    .expect("read reconcile_ghost_resurrection.sql");
+    let sql =
+        std::fs::read_to_string(project_root().join("scripts/reconcile_ghost_resurrection.sql"))
+            .expect("read reconcile_ghost_resurrection.sql");
     let mut stmt = conn.prepare(&sql).expect("prepare reconcile SQL");
     let count = stmt
         .query_map([], |_row| Ok(()))
@@ -101,10 +99,9 @@ fn dos311_reconcile_match_path_distinguishes_dedup_vs_hash() {
     // diagnosing data drift.
     let conn = fresh_db();
     load_fixture(&conn, "tombstoned_resurrected");
-    let sql = std::fs::read_to_string(
-        project_root().join("scripts/reconcile_ghost_resurrection.sql"),
-    )
-    .expect("read reconcile SQL");
+    let sql =
+        std::fs::read_to_string(project_root().join("scripts/reconcile_ghost_resurrection.sql"))
+            .expect("read reconcile SQL");
     let mut stmt = conn.prepare(&sql).expect("prepare");
     let mut paths: Vec<String> = stmt
         .query_map([], |row| row.get::<_, String>("match_path"))

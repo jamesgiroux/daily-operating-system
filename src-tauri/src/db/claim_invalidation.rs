@@ -56,16 +56,26 @@ use crate::db::{ActionDb, DbError};
 /// here.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum SubjectRef {
-    Account { id: String },
-    Meeting { id: String },
-    Person { id: String },
-    Project { id: String },
+    Account {
+        id: String,
+    },
+    Meeting {
+        id: String,
+    },
+    Person {
+        id: String,
+    },
+    Project {
+        id: String,
+    },
     /// L2 cycle-3 fix: email-anchored claims (e.g. dismissed email
     /// commitments/questions per mechanism 3 in migration 130). Bumps
     /// `emails.claim_version` (added by migration 132). Lock-order
     /// precedence is `Email = 4` — slots after Project so existing
     /// Multi orderings remain stable.
-    Email { id: String },
+    Email {
+        id: String,
+    },
     /// Multiple entities affected by one claim. Sorted before bumping.
     Multi(Vec<SubjectRef>),
     /// v1.4.1+ only; bumps `migration_state.global_claim_epoch` instead of
@@ -132,10 +142,7 @@ impl ActionDb {
     /// closure). The bump runs as part of the same transactional unit as
     /// the claim insert.
     #[must_use = "claim invalidation results must be propagated"]
-    pub fn bump_entity_claim_version(
-        &self,
-        subject: &SubjectRef,
-    ) -> Result<usize, DbError> {
+    pub fn bump_entity_claim_version(&self, subject: &SubjectRef) -> Result<usize, DbError> {
         let (table, id_column, id) = match subject {
             SubjectRef::Account { id } => ("accounts", "id", id.as_str()),
             SubjectRef::Project { id } => ("projects", "id", id.as_str()),
@@ -226,8 +233,7 @@ impl ActionDb {
                         .then_with(|| a.id_str().cmp(b.id_str()))
                 });
                 sorted.dedup_by(|a, b| {
-                    a.entity_type_order() == b.entity_type_order()
-                        && a.id_str() == b.id_str()
+                    a.entity_type_order() == b.entity_type_order() && a.id_str() == b.id_str()
                 });
                 for r in sorted {
                     self.bump_entity_claim_version(r)?;
@@ -268,7 +274,12 @@ mod tests {
         db.conn_ref()
             .execute(
                 "INSERT INTO people (id, email, name, updated_at) VALUES (?1, ?2, ?3, ?4)",
-                params![id, format!("{}@example.com", id), format!("person-{}", id), TS],
+                params![
+                    id,
+                    format!("{}@example.com", id),
+                    format!("person-{}", id),
+                    TS
+                ],
             )
             .expect("seed person");
     }
@@ -460,13 +471,11 @@ mod tests {
         seed_account(&db, "acc-1");
         let egv_before = read_entity_graph_version(&db);
 
-        db.bump_entity_claim_version(&SubjectRef::Account {
+        db.bump_entity_claim_version(&SubjectRef::Account { id: "acc-1".into() })
+            .unwrap();
+        db.bump_for_subject(&SubjectRef::Multi(vec![SubjectRef::Account {
             id: "acc-1".into(),
-        })
-        .unwrap();
-        db.bump_for_subject(&SubjectRef::Multi(vec![
-            SubjectRef::Account { id: "acc-1".into() },
-        ]))
+        }]))
         .unwrap();
         db.bump_global_claim_epoch().unwrap();
 
@@ -491,10 +500,8 @@ mod tests {
         seed_meeting(&db, "cold-m");
 
         for _ in 0..1000 {
-            db.bump_entity_claim_version(&SubjectRef::Account {
-                id: "hot".into(),
-            })
-            .unwrap();
+            db.bump_entity_claim_version(&SubjectRef::Account { id: "hot".into() })
+                .unwrap();
         }
 
         assert_eq!(read_claim_version(&db, "accounts", "hot"), 1000);
@@ -508,9 +515,9 @@ mod tests {
     fn nested_multi_returns_error() {
         let db = test_db();
         seed_account(&db, "a");
-        let result = db.bump_for_subject(&SubjectRef::Multi(vec![
-            SubjectRef::Multi(vec![SubjectRef::Account { id: "a".into() }]),
-        ]));
+        let result = db.bump_for_subject(&SubjectRef::Multi(vec![SubjectRef::Multi(vec![
+            SubjectRef::Account { id: "a".into() },
+        ])]));
         assert!(result.is_err(), "nested Multi must error");
     }
 
@@ -592,9 +599,7 @@ mod tests {
             samples.push(start.elapsed().as_nanos() / 1_000);
         }
         let median = median_micros(&mut samples);
-        eprintln!(
-            "[suite-p baseline] bump_for_subject single: median={median}µs samples=500"
-        );
+        eprintln!("[suite-p baseline] bump_for_subject single: median={median}µs samples=500");
         assert!(
             median < 200,
             "regression: bump_for_subject single took {median}µs (W1 baseline ~5-15µs; bound 200µs)"
@@ -624,9 +629,7 @@ mod tests {
             samples.push(start.elapsed().as_nanos() / 1_000);
         }
         let median = median_micros(&mut samples);
-        eprintln!(
-            "[suite-p baseline] bump_for_subject Multi-3: median={median}µs samples=500"
-        );
+        eprintln!("[suite-p baseline] bump_for_subject Multi-3: median={median}µs samples=500");
         assert!(
             median < 500,
             "regression: bump_for_subject Multi-3 took {median}µs (W1 baseline ~15-40µs; bound 500µs)"

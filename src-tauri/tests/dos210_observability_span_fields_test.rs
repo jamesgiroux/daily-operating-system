@@ -97,23 +97,20 @@ fn span_carries_required_fields_and_redacts_payload() {
         .build()
         .unwrap();
 
-    let clock = FixedClock::new(
-        chrono::Utc
-            .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-            .unwrap(),
-    );
+    let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(42);
     let external = ExternalClients::default();
     let services = ServiceContext::new_evaluate(&clock, &rng, &external);
     let ctx = AbilityContext::new(&services, Actor::User, None);
 
-    let output = runtime.block_on(dos210_span_fixture(
-        &ctx,
-        SpanInput {
-            value: "sensitive-payload-marker".to_string(),
-        },
-    ))
-    .unwrap();
+    let output = runtime
+        .block_on(dos210_span_fixture(
+            &ctx,
+            SpanInput {
+                value: "sensitive-payload-marker".to_string(),
+            },
+        ))
+        .unwrap();
     assert!(output.data().ok);
 
     let records = subscriber.snapshot();
@@ -130,7 +127,10 @@ fn span_carries_required_fields_and_redacts_payload() {
     // logic). Assert the timestamp is plausible: within 60s of test start.
     let test_start = chrono::Utc::now();
     let drift = (record.started_at - test_start).num_seconds().abs();
-    assert!(drift < 60, "started_at drifted >60s from wall clock: {drift}s");
+    assert!(
+        drift < 60,
+        "started_at drifted >60s from wall clock: {drift}s"
+    );
     assert!(record.ended_at >= record.started_at);
     assert!(matches!(record.outcome, Outcome::Ok));
     assert!(record.duration_ms <= 60_000);

@@ -2,13 +2,15 @@
 //! This rule is checked by the phase dispatcher after P4b/P4c produce >1 candidate.
 //! It does not run inline; phases.rs handles the multi-candidate case directly.
 
-use crate::db::ActionDb;
 use super::super::types::{LinkingContext, RuleOutcome};
+use crate::db::ActionDb;
 
 pub struct P9MultiAccount;
 
 impl super::super::phases::Rule for P9MultiAccount {
-    fn id(&self) -> &'static str { "P9" }
+    fn id(&self) -> &'static str {
+        "P9"
+    }
 
     fn evaluate(
         &self,

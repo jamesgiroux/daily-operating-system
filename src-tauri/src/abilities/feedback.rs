@@ -156,10 +156,7 @@ impl TrustEffect {
     };
 }
 
-pub fn compute_needs_nuance_trust_effect(
-    original_text: &str,
-    corrected_text: &str,
-) -> TrustEffect {
+pub fn compute_needs_nuance_trust_effect(original_text: &str, corrected_text: &str) -> TrustEffect {
     let original = word_tokens(original_text);
     let corrected = word_tokens(corrected_text);
     let overlap = jaccard_similarity(&original, &corrected);
@@ -382,9 +379,7 @@ pub fn transition_for_feedback(
         // NeedsUserDecision is terminal under automated processes.
         // No automatic transition out of it; only ConfirmCurrent
         // (handled above) or a corrected superseding claim closes it.
-        (ClaimVerificationState::NeedsUserDecision, _) => {
-            ClaimVerificationState::NeedsUserDecision
-        }
+        (ClaimVerificationState::NeedsUserDecision, _) => ClaimVerificationState::NeedsUserDecision,
         // Otherwise take the proposed state, but never DROP from
         // Contested to Active automatically.
         (ClaimVerificationState::Contested, _)
@@ -596,6 +591,10 @@ mod tests {
             // not a fallback.
             seen.entry(render).or_insert_with(Vec::new).push(action);
         }
-        assert_eq!(seen.len(), 9, "each feedback action has a distinct render policy");
+        assert_eq!(
+            seen.len(),
+            9,
+            "each feedback action has a distinct render policy"
+        );
     }
 }

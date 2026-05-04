@@ -135,7 +135,12 @@ pub fn schedule_recompute(
                 let rng = crate::services::context::SystemRng;
                 let ext = crate::services::context::ExternalClients::default();
                 let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-                crate::services::intelligence::recompute_entity_health(&ctx, db, &id_for_write, "account")
+                crate::services::intelligence::recompute_entity_health(
+                    &ctx,
+                    db,
+                    &id_for_write,
+                    "account",
+                )
             })
             .await;
 
@@ -180,7 +185,10 @@ pub async fn drain_pending(
         return;
     }
     let pending = match state
-        .db_read(|db| db.list_health_recompute_pending().map_err(|e| e.to_string()))
+        .db_read(|db| {
+            db.list_health_recompute_pending()
+                .map_err(|e| e.to_string())
+        })
         .await
     {
         Ok(v) => v,

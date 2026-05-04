@@ -286,7 +286,9 @@ impl ContextSnapshot {
         self.context_provider.is_remote()
     }
     pub fn remote_endpoint(&self) -> Option<String> {
-        self.context_provider.remote_endpoint().map(|s| s.to_string())
+        self.context_provider
+            .remote_endpoint()
+            .map(|s| s.to_string())
     }
     pub fn provider_name(&self) -> String {
         self.context_provider.provider_name().to_string()
@@ -430,9 +432,7 @@ pub fn build_merged_signal_config(
     // Produce deterministic order: base keywords first (in original order), then extras.
     let mut signal_keywords: Vec<(String, f64)> = BASE_SIGNAL_KEYWORDS
         .iter()
-        .filter_map(|&(k, _)| {
-            kw_map.remove(k).map(|w| (k.to_string(), w))
-        })
+        .filter_map(|&(k, _)| kw_map.remove(k).map(|w| (k.to_string(), w)))
         .collect();
     // Remaining are preset-only keywords (not in base).
     let mut extras: Vec<(String, f64)> = kw_map.into_iter().collect();
@@ -440,8 +440,10 @@ pub fn build_merged_signal_config(
     signal_keywords.extend(extras);
 
     // --- email_signal_types ---
-    let mut email_signal_types: Vec<String> =
-        BASE_EMAIL_SIGNAL_TYPES.iter().map(|s| s.to_string()).collect();
+    let mut email_signal_types: Vec<String> = BASE_EMAIL_SIGNAL_TYPES
+        .iter()
+        .map(|s| s.to_string())
+        .collect();
     for t in &preset.intelligence.email_signal_types {
         if !email_signal_types.iter().any(|e| e == t) {
             email_signal_types.push(t.clone());
@@ -452,9 +454,16 @@ pub fn build_merged_signal_config(
     // Merge both top-level emailPriorityKeywords and intelligence.emailPriorityKeywords.
     // Top-level field is kept for backward compat and also merged here.
     let mut email_priority_keywords: Vec<String> = Vec::new();
-    for kw in preset.email_priority_keywords.iter().chain(preset.intelligence.email_priority_keywords.iter()) {
+    for kw in preset
+        .email_priority_keywords
+        .iter()
+        .chain(preset.intelligence.email_priority_keywords.iter())
+    {
         let lower = kw.to_lowercase();
-        if !email_priority_keywords.iter().any(|e: &String| e.to_lowercase() == lower) {
+        if !email_priority_keywords
+            .iter()
+            .any(|e: &String| e.to_lowercase() == lower)
+        {
             email_priority_keywords.push(kw.clone());
         }
     }
@@ -702,10 +711,12 @@ impl AppState {
                     crate::intelligence::glean_provider::GleanIntelligenceProvider::new(&endpoint),
                 );
                 glean_intelligence_provider = Some(Arc::clone(&glean_provider_arc));
-                intelligence_provider = Some(glean_provider_arc
-                    as Arc<
-                        dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync,
-                    >);
+                intelligence_provider = Some(
+                    glean_provider_arc
+                        as Arc<
+                            dyn crate::intelligence::provider::IntelligenceProvider + Send + Sync,
+                        >,
+                );
                 Arc::new(crate::context_provider::glean::GleanContextProvider::new(
                     endpoint,
                     cache,
@@ -905,7 +916,10 @@ impl AppState {
     pub fn glean_intelligence_provider(
         &self,
     ) -> Option<Arc<crate::intelligence::glean_provider::GleanIntelligenceProvider>> {
-        self.context_state.read().glean_intelligence_provider.clone()
+        self.context_state
+            .read()
+            .glean_intelligence_provider
+            .clone()
     }
 
     /// Glean provider bridge: hot-swap ONLY the concrete Glean provider Arc.
@@ -932,11 +946,7 @@ impl AppState {
     /// caller must keep the `state` reference alive for the call's
     /// duration — which is the natural pattern for command handlers.
     pub fn live_service_context(&self) -> crate::services::context::ServiceContext<'_> {
-        crate::services::context::ServiceContext::new_live(
-            &self.clock,
-            &self.rng,
-            &self.external,
-        )
+        crate::services::context::ServiceContext::new_live(&self.clock, &self.rng, &self.external)
     }
 
     ///  atomic context-mode transition.
@@ -1402,7 +1412,11 @@ fn recover_from_unclean_dev_exit() {
 
     // Also check: does the live config itself point at the dev workspace?
     let config_contaminated = std::fs::read_to_string(&config)
-        .map(|s| s.contains("DailyOS-dev") || s.contains("\"developerMode\":true") || s.contains("\"developerMode\": true"))
+        .map(|s| {
+            s.contains("DailyOS-dev")
+                || s.contains("\"developerMode\":true")
+                || s.contains("\"developerMode\": true")
+        })
         .unwrap_or(false);
 
     if needs_recovery || config_contaminated {

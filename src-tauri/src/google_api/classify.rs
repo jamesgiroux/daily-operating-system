@@ -243,7 +243,8 @@ pub fn classify_meeting_multi(
         .iter()
         .filter(|e| e.entity_type == "account")
         .max_by(|a, b| {
-            let conf_cmp = a.confidence
+            let conf_cmp = a
+                .confidence
                 .partial_cmp(&b.confidence)
                 .unwrap_or(std::cmp::Ordering::Equal);
             if conf_cmp != std::cmp::Ordering::Equal {
@@ -254,11 +255,13 @@ pub fn classify_meeting_multi(
             let a_internal = entity_hints
                 .iter()
                 .find(|h| h.id == a.entity_id)
-                .and_then(|h| h.account_type.as_deref()) == Some("internal");
+                .and_then(|h| h.account_type.as_deref())
+                == Some("internal");
             let b_internal = entity_hints
                 .iter()
                 .find(|h| h.id == b.entity_id)
-                .and_then(|h| h.account_type.as_deref()) == Some("internal");
+                .and_then(|h| h.account_type.as_deref())
+                == Some("internal");
             match (a_internal, b_internal) {
                 (true, false) => std::cmp::Ordering::Greater, // internal a wins
                 (false, true) => std::cmp::Ordering::Less,    // internal b wins
@@ -525,7 +528,10 @@ fn resolve_entities(
     // attending a meeting boosts CloudCo's confidence via attendee vote signal.
     let mut account_boosts: HashMap<String, f64> = HashMap::new();
     let total_attendees = attendee_emails.len().max(1) as f64;
-    for hint in entity_hints.iter().filter(|h| h.entity_type == EntityType::Person) {
+    for hint in entity_hints
+        .iter()
+        .filter(|h| h.entity_type == EntityType::Person)
+    {
         // Check if this person is an attendee
         let is_attendee = hint
             .emails
@@ -623,19 +629,17 @@ impl ClassifiedMeeting {
             .map(|e| e.name.clone());
 
         // Carry entity IDs through so callers can persist links.
-        let classified_entities: Option<Vec<(String, String)>> = if self
-            .resolved_entities
-            .is_empty()
-        {
-            None
-        } else {
-            Some(
-                self.resolved_entities
-                    .iter()
-                    .map(|e| (e.entity_id.clone(), e.entity_type.clone()))
-                    .collect(),
-            )
-        };
+        let classified_entities: Option<Vec<(String, String)>> =
+            if self.resolved_entities.is_empty() {
+                None
+            } else {
+                Some(
+                    self.resolved_entities
+                        .iter()
+                        .map(|e| (e.entity_id.clone(), e.entity_type.clone()))
+                        .collect(),
+                )
+            };
 
         // Also carry full scored resolutions so the calendar-sync
         // persistence path can make primary-vs-suggestion decisions instead
@@ -708,7 +712,7 @@ mod tests {
                 keywords: vec![],
                 emails: vec![],
                 account_type: None,
-                    linked_account_ids: vec![],
+                linked_account_ids: vec![],
             })
             .collect()
     }
@@ -727,7 +731,7 @@ mod tests {
             keywords: keywords.iter().map(|s| s.to_string()).collect(),
             emails: vec![],
             account_type: None,
-                    linked_account_ids: vec![],
+            linked_account_ids: vec![],
         }
     }
 
@@ -741,7 +745,7 @@ mod tests {
             keywords: vec![],
             emails: emails.iter().map(|s| s.to_string()).collect(),
             account_type: None,
-                    linked_account_ids: vec![],
+            linked_account_ids: vec![],
         }
     }
 
@@ -771,7 +775,7 @@ mod tests {
             keywords: vec![],
             emails: vec![],
             account_type: None,
-                    linked_account_ids: vec![],
+            linked_account_ids: vec![],
         }
     }
 
@@ -1126,11 +1130,7 @@ mod tests {
     /// which is below the 0.70 threshold for the entity-aware override.
     #[test]
     fn test_dos206_internal_title_slug_does_not_promote_to_customer() {
-        let hints = vec![account_hint_with_domain(
-            "acme-id",
-            "Acme",
-            &["acme.com"],
-        )];
+        let hints = vec![account_hint_with_domain("acme-id", "Acme", &["acme.com"])];
         // 3 internal attendees, title mentions "Acme" (slug-only match).
         // No external domain signal exists, so the only resolution route is
         // title-slug at confidence 0.50 / source="title". Must stay internal.
@@ -1231,7 +1231,8 @@ mod tests {
     ///  must fire here.
     #[test]
     fn test_dos206_internal_account_type_never_promotes_to_customer() {
-        let mut hint = account_hint_with_domain("sub-id", "InternalUser1 Subsidiary", &["subsidiary.com"]);
+        let mut hint =
+            account_hint_with_domain("sub-id", "InternalUser1 Subsidiary", &["subsidiary.com"]);
         hint.keywords = vec!["internaluser1 subsidiary".to_string()];
         hint.account_type = Some("internal".to_string());
         let hints = vec![hint];

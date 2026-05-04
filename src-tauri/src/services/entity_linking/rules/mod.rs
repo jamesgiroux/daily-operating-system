@@ -1,3 +1,5 @@
+pub mod p10_shared_inbox;
+pub mod p11_fallback;
 pub mod p1_user_override;
 pub mod p2_thread_inheritance;
 pub mod p3_series_inheritance;
@@ -10,8 +12,6 @@ pub mod p6_internal_internal;
 pub mod p7_internal_external;
 pub mod p8_external_external;
 pub mod p9_multi_account;
-pub mod p10_shared_inbox;
-pub mod p11_fallback;
 
 use super::phases::Rule;
 use super::types::Candidate;

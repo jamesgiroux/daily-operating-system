@@ -120,9 +120,18 @@ mod tests {
 
         assert!(result.contains(&"acme.com".to_string()));
         assert!(result.contains(&"bigcorp.com".to_string()));
-        assert!(!result.contains(&"company.com".to_string()), "user domain excluded");
-        assert!(!result.contains(&"gmail.com".to_string()), "personal email excluded");
-        assert!(!result.contains(&"outlook.com".to_string()), "personal email excluded");
+        assert!(
+            !result.contains(&"company.com".to_string()),
+            "user domain excluded"
+        );
+        assert!(
+            !result.contains(&"gmail.com".to_string()),
+            "personal email excluded"
+        );
+        assert!(
+            !result.contains(&"outlook.com".to_string()),
+            "personal email excluded"
+        );
         assert_eq!(result.len(), 2);
     }
 

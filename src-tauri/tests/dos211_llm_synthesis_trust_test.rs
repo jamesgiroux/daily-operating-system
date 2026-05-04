@@ -13,9 +13,7 @@ struct FixtureOutput {
 
 #[test]
 fn transform_ability_with_llm_synthesis_field_over_trusted_source_is_untrusted() {
-    let produced_at = chrono::Utc
-        .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-        .unwrap();
+    let produced_at = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
     let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-1".into()));
     let source = SourceAttribution::new(
         DataSource::Google,
@@ -51,5 +49,8 @@ fn transform_ability_with_llm_synthesis_field_over_trusted_source_is_untrusted()
         .unwrap();
 
     assert!(output.provenance().prompt_fingerprint.is_none());
-    assert_eq!(output.provenance().trust.effective, EffectiveTrust::Untrusted);
+    assert_eq!(
+        output.provenance().trust.effective,
+        EffectiveTrust::Untrusted
+    );
 }

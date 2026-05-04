@@ -261,7 +261,7 @@ pub async fn restore_meeting_entity(
         &entity_id,
         &entity_type,
     )
-        .await
+    .await
 }
 
 // =========================================================================

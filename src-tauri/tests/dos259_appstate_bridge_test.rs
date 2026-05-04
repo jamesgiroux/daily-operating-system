@@ -47,9 +47,8 @@ fn swap_intelligence_provider_takes_effect_on_next_read() {
     // into the bridge and asserting the next read returns it.
     let state = fresh_state();
 
-    let replay: Arc<dyn IntelligenceProvider + Send + Sync> = Arc::new(
-        ReplayProvider::from_prompt_pairs([("ping", "pong")]),
-    );
+    let replay: Arc<dyn IntelligenceProvider + Send + Sync> =
+        Arc::new(ReplayProvider::from_prompt_pairs([("ping", "pong")]));
     state.swap_intelligence_provider(Some(Arc::clone(&replay)));
 
     let read = state
@@ -61,9 +60,8 @@ fn swap_intelligence_provider_takes_effect_on_next_read() {
 #[test]
 fn swap_intelligence_provider_to_none_clears_bridge() {
     let state = fresh_state();
-    let replay: Arc<dyn IntelligenceProvider + Send + Sync> = Arc::new(
-        ReplayProvider::from_prompt_pairs([("ping", "pong")]),
-    );
+    let replay: Arc<dyn IntelligenceProvider + Send + Sync> =
+        Arc::new(ReplayProvider::from_prompt_pairs([("ping", "pong")]));
     state.swap_intelligence_provider(Some(replay));
     state.swap_intelligence_provider(None);
     assert!(state.intelligence_provider().is_none());
@@ -79,13 +77,12 @@ fn build_context_provider_local_clears_intelligence_provider_bridge() {
     let state = fresh_state();
 
     // Seed a replay provider as the "remote" bridge.
-    let replay: Arc<dyn IntelligenceProvider + Send + Sync> = Arc::new(
-        ReplayProvider::from_prompt_pairs([("ping", "pong")]),
-    );
+    let replay: Arc<dyn IntelligenceProvider + Send + Sync> =
+        Arc::new(ReplayProvider::from_prompt_pairs([("ping", "pong")]));
     state.swap_intelligence_provider(Some(replay));
-    state.swap_glean_intelligence_provider(Some(Arc::new(
-        GleanIntelligenceProvider::new("https://example.invalid/glean"),
-    )));
+    state.swap_glean_intelligence_provider(Some(Arc::new(GleanIntelligenceProvider::new(
+        "https://example.invalid/glean",
+    ))));
     assert!(state.intelligence_provider().is_some());
     assert!(state.glean_intelligence_provider().is_some());
 
@@ -130,7 +127,10 @@ fn context_snapshot_returns_coherent_view_under_one_lock() {
         endpoint: "https://example.invalid/glean".to_string(),
     });
     let snap = state.context_snapshot();
-    assert!(snap.is_remote(), "snapshot is_remote must reflect Glean mode");
+    assert!(
+        snap.is_remote(),
+        "snapshot is_remote must reflect Glean mode"
+    );
     assert!(
         snap.intelligence_provider.is_some(),
         "snapshot trait Arc populated for Glean mode"
@@ -143,7 +143,10 @@ fn context_snapshot_returns_coherent_view_under_one_lock() {
     // After a Local switch, the next snapshot must show all three cleared.
     state.set_context_mode_atomic(&ContextMode::Local);
     let snap = state.context_snapshot();
-    assert!(!snap.is_remote(), "snapshot is_remote false after Local switch");
+    assert!(
+        !snap.is_remote(),
+        "snapshot is_remote false after Local switch"
+    );
     assert!(snap.intelligence_provider.is_none());
     assert!(snap.glean_intelligence_provider.is_none());
 }
@@ -300,11 +303,8 @@ async fn replay_provider_through_appstate_bridge_returns_canned_text() {
     );
     state.swap_intelligence_provider(Some(replay));
 
-    let provider = state
-        .intelligence_provider()
-        .expect("bridge populated");
-    let prompt =
-        dailyos_lib::intelligence::provider::PromptInput::new("end-to-end prompt");
+    let provider = state.intelligence_provider().expect("bridge populated");
+    let prompt = dailyos_lib::intelligence::provider::PromptInput::new("end-to-end prompt");
     let completion = provider
         .complete(prompt, ModelTier::Synthesis)
         .await

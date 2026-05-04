@@ -8,9 +8,7 @@ use dailyos_lib::abilities::provenance::{
 
 #[test]
 fn children_serialize_as_bare_provenance_array_per_adr_0105() {
-    let produced_at = chrono::Utc
-        .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-        .unwrap();
+    let produced_at = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
     let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-1".into()));
     let child = provenance_for_test(
         "child_lookup",

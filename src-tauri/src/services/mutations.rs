@@ -536,7 +536,7 @@ pub fn delete_person_relationship(
 
         if let Some((from_id, to_id)) = person_ids {
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 engine,
                 "person",
@@ -548,7 +548,7 @@ pub fn delete_person_relationship(
             )
             .map_err(|e| format!("signal emit failed (from): {e}"))?;
             crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 tx,
                 engine,
                 "person",
@@ -639,7 +639,7 @@ pub fn persist_transcript_outcomes(
         let capture_count = wins.len() + risks.len() + decisions.len();
         if capture_count > 0 {
             crate::services::signals::emit(
-            ctx,
+                ctx,
                 tx,
                 entity_type,
                 entity_id,

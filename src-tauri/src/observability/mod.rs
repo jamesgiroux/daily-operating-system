@@ -114,9 +114,7 @@ mod tests {
         );
         assert_eq!(
             rec.ended_at,
-            Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-                .unwrap()
-                + Duration::milliseconds(42)
+            Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap() + Duration::milliseconds(42)
         );
         assert_eq!(rec.outcome, Outcome::Ok);
         assert_eq!(rec.duration_ms, 42);

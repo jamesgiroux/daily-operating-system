@@ -127,17 +127,13 @@ pub fn parse_source_timestamp(
     // happens to accept them. RFC3339 timestamps end in `Z` or a
     // `+HH:MM` / `-HH:MM` offset; anything else is ambiguous.
     if !has_timezone_marker(raw) {
-        return SourceTimestampStatus::Malformed(
-            SourceTimestampMalformedReason::MissingTimezone,
-        );
+        return SourceTimestampStatus::Malformed(SourceTimestampMalformedReason::MissingTimezone);
     }
 
     let parsed = match DateTime::parse_from_rfc3339(raw) {
         Ok(dt) => dt.with_timezone(&Utc),
         Err(_) => {
-            return SourceTimestampStatus::Malformed(
-                SourceTimestampMalformedReason::Unparseable,
-            )
+            return SourceTimestampStatus::Malformed(SourceTimestampMalformedReason::Unparseable)
         }
     };
 
@@ -295,11 +291,7 @@ mod tests {
         let entity_origin = Utc.with_ymd_and_hms(2024, 1, 1, 0, 0, 0).unwrap();
         // 2018 is well after 2015 (so not malformed) but before
         // entity origin in 2024 — so implausible.
-        let res = parse_source_timestamp(
-            Some("2018-06-15T12:00:00Z"),
-            now,
-            Some(entity_origin),
-        );
+        let res = parse_source_timestamp(Some("2018-06-15T12:00:00Z"), now, Some(entity_origin));
         match res {
             SourceTimestampStatus::Implausible { parsed, reason } => {
                 assert_eq!(reason, SourceTimestampImplausibleReason::BeforeEntityOrigin);

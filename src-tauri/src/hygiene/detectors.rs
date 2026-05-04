@@ -296,7 +296,8 @@ pub fn check_upcoming_meeting_readiness(
             // Pre-meeting window: enqueue if trigger score >= 0.4 (lower than the
             // signal-driven 0.7 threshold because we're in a time-critical window)
             if trigger_score >= 0.4 {
-                let _ = queue.enqueue(IntelRequest::new(                    entity.id.clone(),
+                let _ = queue.enqueue(IntelRequest::new(
+                    entity.id.clone(),
                     entity_type,
                     IntelPriority::CalendarChange,
                 ));

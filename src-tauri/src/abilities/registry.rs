@@ -78,9 +78,7 @@ pub struct AbilityDescriptor {
         &'a AbilityContext<'a>,
         serde_json::Value,
     ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a,
-        >,
+        Box<dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>,
     >,
     pub input_schema: fn() -> serde_json::Value,
     pub output_schema: fn() -> serde_json::Value,
@@ -368,7 +366,9 @@ impl<'de> Deserialize<'de> for ExecutionMode {
             "live" | "Live" => Ok(ExecutionMode::Live),
             "simulate" | "Simulate" => Ok(ExecutionMode::Simulate),
             "evaluate" | "Evaluate" => Ok(ExecutionMode::Evaluate),
-            other => Err(D::Error::custom(format!("unknown execution mode `{other}`"))),
+            other => Err(D::Error::custom(format!(
+                "unknown execution mode `{other}`"
+            ))),
         }
     }
 }
@@ -442,8 +442,10 @@ fn validate_cycles(
                     Color::Unvisited => visit(target, by_name, color, stack, violations),
                     Color::Visiting => {
                         if let Some(pos) = stack.iter().position(|stacked| *stacked == target) {
-                            let mut cycle: Vec<String> =
-                                stack[pos..].iter().map(|entry| (*entry).to_string()).collect();
+                            let mut cycle: Vec<String> = stack[pos..]
+                                .iter()
+                                .map(|entry| (*entry).to_string())
+                                .collect();
                             cycle.push(target.to_string());
                             violations.push(RegistryViolation::CompositionCycle(cycle));
                         }
@@ -732,7 +734,10 @@ fn render_descriptor_doc(
         "- Composes: `{}` entries\n",
         descriptor.composes.len()
     ));
-    out.push_str(&format!("- Mutates: `{}` entries\n", descriptor.mutates.len()));
+    out.push_str(&format!(
+        "- Mutates: `{}` entries\n",
+        descriptor.mutates.len()
+    ));
     out
 }
 
@@ -782,9 +787,7 @@ mod tests {
         _ctx: &'a AbilityContext<'a>,
         input: serde_json::Value,
     ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a,
-        >,
+        Box<dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>,
     > {
         Box::pin(async move { Ok(input) })
     }
@@ -858,11 +861,14 @@ mod tests {
 
     fn compose(mut descriptor: AbilityDescriptor, target: &'static str) -> AbilityDescriptor {
         let id = CompositionId::new(format!("{}_to_{target}", descriptor.name));
-        push_compose(&mut descriptor, ComposesEntry {
-            id,
-            ability: target,
-            optional: false,
-        });
+        push_compose(
+            &mut descriptor,
+            ComposesEntry {
+                id,
+                ability: target,
+                optional: false,
+            },
+        );
         descriptor
     }
 
@@ -874,12 +880,18 @@ mod tests {
         descriptor
     }
 
-    fn with_actor_policy(mut descriptor: AbilityDescriptor, actors: Vec<Actor>) -> AbilityDescriptor {
+    fn with_actor_policy(
+        mut descriptor: AbilityDescriptor,
+        actors: Vec<Actor>,
+    ) -> AbilityDescriptor {
         descriptor.policy.allowed_actors = static_slice(actors);
         descriptor
     }
 
-    fn experimental(mut descriptor: AbilityDescriptor, registered_at: &'static str) -> AbilityDescriptor {
+    fn experimental(
+        mut descriptor: AbilityDescriptor,
+        registered_at: &'static str,
+    ) -> AbilityDescriptor {
         descriptor.experimental = true;
         descriptor.registered_at = Some(registered_at);
         descriptor
@@ -929,9 +941,11 @@ mod tests {
         ])
         .unwrap_err();
 
-        assert!(violations.contains(&RegistryViolation::DuplicateAbilityName(
-            "duplicate".to_string()
-        )));
+        assert!(
+            violations.contains(&RegistryViolation::DuplicateAbilityName(
+                "duplicate".to_string()
+            ))
+        );
     }
 
     #[test]
@@ -952,7 +966,10 @@ mod tests {
     fn registry_rejects_read_composing_publish_transitively() {
         let violations = AbilityRegistry::from_descriptors_checked(vec![
             compose(descriptor("read", AbilityCategory::Read), "transform"),
-            compose(descriptor("transform", AbilityCategory::Transform), "publish"),
+            compose(
+                descriptor("transform", AbilityCategory::Transform),
+                "publish",
+            ),
             descriptor("publish", AbilityCategory::Publish),
         ])
         .unwrap_err();
@@ -991,7 +1008,10 @@ mod tests {
         let registry = registry(vec![
             descriptor("agent_read", AbilityCategory::Read),
             descriptor("agent_maintenance", AbilityCategory::Maintenance),
-            with_actor_policy(descriptor("admin_read", AbilityCategory::Read), vec![Actor::Admin]),
+            with_actor_policy(
+                descriptor("admin_read", AbilityCategory::Read),
+                vec![Actor::Admin],
+            ),
         ]);
 
         let names: HashSet<&str> = registry
@@ -1047,11 +1067,14 @@ mod tests {
             for i in 0..descriptors.len() {
                 for target in (i + 1)..descriptors.len() {
                     if lcg(&mut seed) % 4 == 0 {
-                        push_compose(&mut descriptors[i], ComposesEntry {
-                            id: CompositionId::new(format!("{i}_{target}")),
-                            ability: names[target],
-                            optional: false,
-                        });
+                        push_compose(
+                            &mut descriptors[i],
+                            ComposesEntry {
+                                id: CompositionId::new(format!("{i}_{target}")),
+                                ability: names[target],
+                                optional: false,
+                            },
+                        );
                     }
                 }
             }
@@ -1074,18 +1097,24 @@ mod tests {
 
             for i in 0..descriptors.len() {
                 let target = (i + 1) % descriptors.len();
-                push_compose(&mut descriptors[i], ComposesEntry {
-                    id: CompositionId::new(format!("{i}_{target}")),
-                    ability: names[target],
-                    optional: false,
-                });
+                push_compose(
+                    &mut descriptors[i],
+                    ComposesEntry {
+                        id: CompositionId::new(format!("{i}_{target}")),
+                        ability: names[target],
+                        optional: false,
+                    },
+                );
                 if lcg(&mut seed) % 3 == 0 {
                     let extra = ((lcg(&mut seed) as usize) % descriptors.len()).max(i);
-                    push_compose(&mut descriptors[i], ComposesEntry {
-                        id: CompositionId::new(format!("{i}_{extra}_extra")),
-                        ability: names[extra],
-                        optional: false,
-                    });
+                    push_compose(
+                        &mut descriptors[i],
+                        ComposesEntry {
+                            id: CompositionId::new(format!("{i}_{extra}_extra")),
+                            ability: names[extra],
+                            optional: false,
+                        },
+                    );
                 }
             }
 

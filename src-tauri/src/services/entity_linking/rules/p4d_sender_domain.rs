@@ -2,13 +2,18 @@
 //!
 //! Evidence-hierarchy fix: renamed from P4c.
 
+use super::super::{
+    evidence, primitives,
+    types::{Candidate, EntityRef, LinkRole, LinkingContext, OwnerType, RuleOutcome},
+};
 use crate::db::ActionDb;
-use super::super::{evidence, primitives, types::{Candidate, EntityRef, LinkRole, LinkingContext, OwnerType, RuleOutcome}};
 
 pub struct P4dSenderDomain;
 
 impl super::super::phases::Rule for P4dSenderDomain {
-    fn id(&self) -> &'static str { "P4d" }
+    fn id(&self) -> &'static str {
+        "P4d"
+    }
 
     fn evaluate(
         &self,
@@ -50,7 +55,10 @@ impl super::super::phases::Rule for P4dSenderDomain {
         let ev = evidence::matched_evidence(
             ctx,
             &Candidate {
-                entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
+                entity: EntityRef {
+                    entity_id: account.id.clone(),
+                    entity_type: "account".to_string(),
+                },
                 role: LinkRole::Primary,
                 confidence: 0.95,
                 rule_id: "P4d".to_string(),
@@ -60,7 +68,10 @@ impl super::super::phases::Rule for P4dSenderDomain {
         );
 
         Ok(RuleOutcome::Matched(Candidate {
-            entity: EntityRef { entity_id: account.id.clone(), entity_type: "account".to_string() },
+            entity: EntityRef {
+                entity_id: account.id.clone(),
+                entity_type: "account".to_string(),
+            },
             role: LinkRole::Primary,
             confidence: 0.95,
             rule_id: "P4d".to_string(),

@@ -211,10 +211,7 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
         // Check if enabled
         let enabled = {
             let config = state.config.read();
-            config
-                .as_ref()
-                .map(|c| c.gravatar.enabled)
-                .unwrap_or(false)
+            config.as_ref().map(|c| c.gravatar.enabled).unwrap_or(false)
         };
 
         if !enabled {

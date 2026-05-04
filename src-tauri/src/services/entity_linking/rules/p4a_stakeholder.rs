@@ -94,9 +94,9 @@ impl super::super::phases::Rule for P4aStakeholder {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::phases::Rule;
     use super::super::super::types::{OwnerRef, OwnerType, Participant, ParticipantRole};
+    use super::*;
     use crate::db::test_utils::test_db;
     use crate::db::ActionDb;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
@@ -141,7 +141,10 @@ mod tests {
 
     fn mk_ctx(external_person_id: Option<&str>, email: &str) -> LinkingContext {
         LinkingContext {
-            owner: OwnerRef { owner_type: OwnerType::Meeting, owner_id: "m1".to_string() },
+            owner: OwnerRef {
+                owner_type: OwnerType::Meeting,
+                owner_id: "m1".to_string(),
+            },
             participants: vec![
                 Participant {
                     email: "me@company.com".to_string(),
@@ -200,8 +203,8 @@ mod tests {
                 .expect("evaluate"),
             RuleOutcome::Skip
         )
-            .then_some(())
-            .expect("dismissed stakeholder should not match");
+        .then_some(())
+        .expect("dismissed stakeholder should not match");
     }
 
     #[test]
@@ -217,8 +220,8 @@ mod tests {
                 .expect("evaluate"),
             RuleOutcome::Skip
         )
-            .then_some(())
-            .expect("pending_review stakeholder should not match");
+        .then_some(())
+        .expect("pending_review stakeholder should not match");
     }
 
     #[test]
@@ -238,7 +241,10 @@ mod tests {
         assert!(matches!(outcome, RuleOutcome::Skip));
 
         let candidates = P4aStakeholder::collect_candidates(&ctx, &db);
-        let ids: Vec<_> = candidates.iter().map(|c| c.entity.entity_id.as_str()).collect();
+        let ids: Vec<_> = candidates
+            .iter()
+            .map(|c| c.entity.entity_id.as_str())
+            .collect();
         assert_eq!(ids, vec!["acc-a", "acc-b"]);
     }
 
@@ -252,7 +258,10 @@ mod tests {
         seed_stakeholder(&db, "acc-jane", "p-internal", "active");
 
         let ctx = LinkingContext {
-            owner: OwnerRef { owner_type: OwnerType::Meeting, owner_id: "m1".to_string() },
+            owner: OwnerRef {
+                owner_type: OwnerType::Meeting,
+                owner_id: "m1".to_string(),
+            },
             participants: vec![
                 Participant {
                     email: "me@company.com".to_string(),
@@ -281,7 +290,7 @@ mod tests {
                 .expect("evaluate"),
             RuleOutcome::Skip
         )
-            .then_some(())
-            .expect("internal participants must never drive P4a");
+        .then_some(())
+        .expect("internal participants must never drive P4a");
     }
 }

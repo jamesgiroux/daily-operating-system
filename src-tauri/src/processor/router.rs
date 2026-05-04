@@ -698,7 +698,8 @@ mod tests {
     fn test_infer_entity_tracker_path_from_explicit_filename() {
         let workspace =
             std::env::temp_dir().join(format!("dailyos-router-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(workspace.join("Accounts/Crestview-Media/Corporate-Services-B2B")).unwrap();
+        std::fs::create_dir_all(workspace.join("Accounts/Crestview-Media/Corporate-Services-B2B"))
+            .unwrap();
 
         let inferred = infer_entity_tracker_path(
             &workspace,
@@ -721,7 +722,8 @@ mod tests {
     fn test_infer_entity_tracker_path_from_frontmatter_account_path() {
         let workspace =
             std::env::temp_dir().join(format!("dailyos-router-test-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir_all(workspace.join("Accounts/Crestview Media/Corporate-Services-B2B")).unwrap();
+        std::fs::create_dir_all(workspace.join("Accounts/Crestview Media/Corporate-Services-B2B"))
+            .unwrap();
 
         let content = r#"---
 account: "Crestview Media / Corporate-Services-B2B"
@@ -731,8 +733,14 @@ doc_type: summary
 Meeting notes here.
 "#;
 
-        let inferred =
-            infer_entity_tracker_path(&workspace, "notes.md", content, Some("Crestview Media"), None, None);
+        let inferred = infer_entity_tracker_path(
+            &workspace,
+            "notes.md",
+            content,
+            Some("Crestview Media"),
+            None,
+            None,
+        );
 
         assert_eq!(
             inferred,

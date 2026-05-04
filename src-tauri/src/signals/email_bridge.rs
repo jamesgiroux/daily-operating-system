@@ -545,7 +545,10 @@ pub fn emit_enriched_email_signals(
                             entity_id: account_id,
                             entity_type: "account",
                             signal_type: "sentiment",
-                            signal_text: &format!("{} tone from {}: {}", s, sender_display, email_subject),
+                            signal_text: &format!(
+                                "{} tone from {}: {}",
+                                s, sender_display, email_subject
+                            ),
                             confidence: Some(0.42),
                             sentiment: Some(s.as_str()),
                             urgency: urgency.as_deref(),

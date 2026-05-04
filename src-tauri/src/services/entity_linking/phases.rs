@@ -3,7 +3,7 @@
 use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
 
-use super::types::{LinkRole, LinkingContext, LinkOutcome, LinkTier, RuleOutcome, Trigger};
+use super::types::{LinkOutcome, LinkRole, LinkTier, LinkingContext, RuleOutcome, Trigger};
 use super::{cascade, evidence, rules};
 
 pub trait Rule: Send + Sync {
@@ -100,9 +100,11 @@ pub fn phase2_record_facts(ctx: &mut LinkingContext, db: &ActionDb, user_domains
         if p.person_id.is_some() {
             continue;
         }
-        let is_internal = user_domains
-            .iter()
-            .any(|ud| p.email.to_lowercase().ends_with(&format!("@{}", ud.to_lowercase())));
+        let is_internal = user_domains.iter().any(|ud| {
+            p.email
+                .to_lowercase()
+                .ends_with(&format!("@{}", ud.to_lowercase()))
+        });
         let relationship = if is_internal { "peer" } else { "contact" };
 
         match super::primitives::find_or_create_person(
@@ -234,12 +236,9 @@ fn collect_p4_candidates(
     let mut candidates = Vec::new();
 
     for c in P4aStakeholder::collect_candidates(link_ctx, db) {
-        if !candidates
-            .iter()
-            .any(|existing: &super::types::Candidate| {
-                existing.entity.entity_id == c.entity.entity_id
-            })
-        {
+        if !candidates.iter().any(|existing: &super::types::Candidate| {
+            existing.entity.entity_id == c.entity.entity_id
+        }) {
             candidates.push(c);
         }
     }
@@ -253,12 +252,9 @@ fn collect_p4_candidates(
             if !rules::is_no_primary_sentinel(&c) {
                 // Deduplicate by entity_id — stakeholder + domain rules could
                 // both match the same account for the same participant.
-                if !candidates
-                    .iter()
-                    .any(|existing: &super::types::Candidate| {
-                        existing.entity.entity_id == c.entity.entity_id
-                    })
-                {
+                if !candidates.iter().any(|existing: &super::types::Candidate| {
+                    existing.entity.entity_id == c.entity.entity_id
+                }) {
                     candidates.push(c);
                 }
             }
@@ -285,19 +281,23 @@ pub fn run_phases(
         // CAS: read graph version inside the transaction. If it changed since
         // the adapter built ctx, retry phase3 once with the fresh snapshot
         // rather than writing stale links (spec: "retry once").
-        let current_version = db.get_entity_graph_version().unwrap_or(link_ctx.graph_version);
-        let refreshed_ctx: std::borrow::Cow<LinkingContext> = if current_version != link_ctx.graph_version {
-            log::info!(
-                "entity_linking: graph version changed ({} → {}), re-running phase3 \
+        let current_version = db
+            .get_entity_graph_version()
+            .unwrap_or(link_ctx.graph_version);
+        let refreshed_ctx: std::borrow::Cow<LinkingContext> =
+            if current_version != link_ctx.graph_version {
+                log::info!(
+                    "entity_linking: graph version changed ({} → {}), re-running phase3 \
                  with fresh snapshot",
-                link_ctx.graph_version, current_version
-            );
-            let mut refreshed = link_ctx.clone();
-            refreshed.graph_version = current_version;
-            std::borrow::Cow::Owned(refreshed)
-        } else {
-            std::borrow::Cow::Borrowed(link_ctx)
-        };
+                    link_ctx.graph_version,
+                    current_version
+                );
+                let mut refreshed = link_ctx.clone();
+                refreshed.graph_version = current_version;
+                std::borrow::Cow::Owned(refreshed)
+            } else {
+                std::borrow::Cow::Borrowed(link_ctx)
+            };
         let link_ctx = &*refreshed_ctx;
 
         let dismissals = db
@@ -318,8 +318,11 @@ pub fn run_phases(
 
         // Delete old auto-resolution rows. Preserves source='user' and
         // source='user_dismissed' so user overrides and dismissals survive.
-        db.delete_auto_links_for_owner(link_ctx.owner.owner_type.as_str(), &link_ctx.owner.owner_id)
-            .map_err(|e| format!("delete_auto_links: {e}"))?;
+        db.delete_auto_links_for_owner(
+            link_ctx.owner.owner_type.as_str(),
+            &link_ctx.owner.owner_id,
+        )
+        .map_err(|e| format!("delete_auto_links: {e}"))?;
 
         // Write primary.
         if let Some(ref primary) = p3.primary_candidate {
@@ -394,8 +397,8 @@ pub fn run_phases(
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::types::{LinkRole, OwnerRef, OwnerType, Participant, ParticipantRole};
+    use super::*;
     use crate::db::test_utils::test_db;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::{TimeZone, Utc};
@@ -482,8 +485,8 @@ mod tests {
         let rng = SeedableRng::new(42);
         let ext = ExternalClients::default();
         let service_ctx = test_ctx(&clock, &rng, &ext);
-        let candidates = collect_p4_candidates(&service_ctx, &ctx, &db)
-            .expect("collect candidates");
+        let candidates =
+            collect_p4_candidates(&service_ctx, &ctx, &db).expect("collect candidates");
         let ids: Vec<_> = candidates
             .iter()
             .map(|candidate| candidate.entity.entity_id.as_str())

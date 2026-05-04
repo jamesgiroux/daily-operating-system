@@ -32,9 +32,7 @@ pub fn is_within_relevance_window(evidence_class: &str, observed_at: &str) -> bo
         .unwrap_or(DEFAULT_RELEVANCE_DAYS);
 
     let observed = NaiveDateTime::parse_from_str(observed_at, "%Y-%m-%dT%H:%M:%S")
-        .or_else(|_| {
-            chrono::DateTime::parse_from_rfc3339(observed_at).map(|dt| dt.naive_utc())
-        })
+        .or_else(|_| chrono::DateTime::parse_from_rfc3339(observed_at).map(|dt| dt.naive_utc()))
         .ok();
 
     match observed {

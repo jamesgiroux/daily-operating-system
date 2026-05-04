@@ -38,8 +38,10 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     visitor.scan_fn_body(&item_fn.block);
     let detected = visitor.detected;
 
-    if matches!(args.category, AbilityCategoryArg::Read | AbilityCategoryArg::Transform)
-        && !detected.is_empty()
+    if matches!(
+        args.category,
+        AbilityCategoryArg::Read | AbilityCategoryArg::Transform
+    ) && !detected.is_empty()
         && !args.experimental
     {
         return Err(syn::Error::new_spanned(
@@ -114,7 +116,11 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
         .iter()
         .map(ExecutionModeArg::registry_expr)
         .collect();
-    let compose_exprs: Vec<_> = args.composes.iter().map(ComposeArg::registry_expr).collect();
+    let compose_exprs: Vec<_> = args
+        .composes
+        .iter()
+        .map(ComposeArg::registry_expr)
+        .collect();
     let mutates_exprs: Vec<_> = detected.iter().map(|path| quote! { #path }).collect();
     let signal_exprs = args
         .signal_policy
@@ -557,7 +563,8 @@ impl Parse for AbilityArgs {
 
         Ok(Self {
             name: name.ok_or_else(|| input.error("missing required #[ability] name"))?,
-            category: category.ok_or_else(|| input.error("missing required #[ability] category"))?,
+            category: category
+                .ok_or_else(|| input.error("missing required #[ability] category"))?,
             version: version.ok_or_else(|| input.error("missing required #[ability] version"))?,
             schema_version: schema_version
                 .ok_or_else(|| input.error("missing required #[ability] schema_version"))?,
@@ -565,9 +572,8 @@ impl Parse for AbilityArgs {
                 .ok_or_else(|| input.error("missing required #[ability] allowed_actors"))?,
             allowed_modes: allowed_modes
                 .ok_or_else(|| input.error("missing required #[ability] allowed_modes"))?,
-            requires_confirmation: requires_confirmation.ok_or_else(|| {
-                input.error("missing required #[ability] requires_confirmation")
-            })?,
+            requires_confirmation: requires_confirmation
+                .ok_or_else(|| input.error("missing required #[ability] requires_confirmation"))?,
             may_publish: may_publish
                 .ok_or_else(|| input.error("missing required #[ability] may_publish"))?,
             composes,
@@ -601,7 +607,9 @@ impl AbilityCategoryArg {
             Self::Read => quote! { crate::abilities::registry::AbilityCategory::Read },
             Self::Transform => quote! { crate::abilities::registry::AbilityCategory::Transform },
             Self::Publish => quote! { crate::abilities::registry::AbilityCategory::Publish },
-            Self::Maintenance => quote! { crate::abilities::registry::AbilityCategory::Maintenance },
+            Self::Maintenance => {
+                quote! { crate::abilities::registry::AbilityCategory::Maintenance }
+            }
         }
     }
 }

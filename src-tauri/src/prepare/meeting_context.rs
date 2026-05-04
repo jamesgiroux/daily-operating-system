@@ -178,11 +178,7 @@ fn resolve_primary_entity(
                     .ok()
                     .flatten()
                     .map(|p| p.name),
-                EntityType::Person => db
-                    .get_person(&row.entity_id)
-                    .ok()
-                    .flatten()
-                    .map(|p| p.name),
+                EntityType::Person => db.get_person(&row.entity_id).ok().flatten().map(|p| p.name),
                 _ => None,
             })
             .unwrap_or_default();
@@ -434,8 +430,7 @@ fn gather_account_context(
             crate::intelligence::glean_leading_signals::HealthOutlookSignals,
         >(&signals_json)
         {
-            let mut leading: serde_json::Map<String, serde_json::Value> =
-                serde_json::Map::new();
+            let mut leading: serde_json::Map<String, serde_json::Value> = serde_json::Map::new();
 
             if let Some(cr) = &signals.champion_risk {
                 leading.insert(
@@ -1728,7 +1723,10 @@ fn push_unique_label(labels: &mut Vec<String>, label: &str) {
     if trimmed.is_empty() {
         return;
     }
-    if !labels.iter().any(|existing| existing.eq_ignore_ascii_case(trimmed)) {
+    if !labels
+        .iter()
+        .any(|existing| existing.eq_ignore_ascii_case(trimmed))
+    {
         labels.push(trimmed.to_string());
     }
 }
@@ -2499,14 +2497,9 @@ mod tests {
             "start": "2026-02-18T14:00:00Z",
         });
 
-        let matched = resolve_primary_entity(
-            Some(&db),
-            "evt-proj-related",
-            &meeting,
-            dir.path(),
-            None,
-        )
-        .expect("project primary should resolve");
+        let matched =
+            resolve_primary_entity(Some(&db), "evt-proj-related", &meeting, dir.path(), None)
+                .expect("project primary should resolve");
 
         assert_eq!(matched.entity_id, "proj-launch");
         assert_eq!(matched.entity_type, crate::entity::EntityType::Project);

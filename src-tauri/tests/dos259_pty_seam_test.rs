@@ -13,11 +13,9 @@ use std::sync::Arc;
 use parking_lot::Mutex;
 
 use dailyos_lib::intelligence::provider::{
-    Completion, IntelligenceProvider, ModelTier, ProviderKind, PromptInput,
+    Completion, IntelligenceProvider, ModelTier, PromptInput, ProviderKind,
 };
-use dailyos_lib::intelligence::pty_provider::{
-    PtyClaudeCode, PtySpawnAdapter, PtySpawnRequest,
-};
+use dailyos_lib::intelligence::pty_provider::{PtyClaudeCode, PtySpawnAdapter, PtySpawnRequest};
 use dailyos_lib::pty::{AiUsageContext, ClaudeOutput};
 use dailyos_lib::types::AiModelConfig;
 
@@ -105,7 +103,10 @@ fn complete_blocking_propagates_prompt_workspace_tier_and_model() {
     assert_eq!(completion.text, "FIXTURE-STDOUT");
 
     // Fingerprint metadata reflects the requested tier's model.
-    assert_eq!(completion.fingerprint_metadata.provider, ProviderKind::ClaudeCode);
+    assert_eq!(
+        completion.fingerprint_metadata.provider,
+        ProviderKind::ClaudeCode
+    );
     assert_eq!(completion.fingerprint_metadata.model.as_str(), "ext-test");
     assert_eq!(completion.fingerprint_metadata.temperature, 1.0);
 
@@ -123,7 +124,10 @@ fn complete_blocking_propagates_prompt_workspace_tier_and_model() {
     );
     assert_eq!(c.nice_priority, 10);
     assert_eq!(c.usage_subsystem, "dos259_seam_test");
-    assert_eq!(c.usage_tier, "extraction", "usage_context.tier overlaid by tier param");
+    assert_eq!(
+        c.usage_tier, "extraction",
+        "usage_context.tier overlaid by tier param"
+    );
 }
 
 #[tokio::test]
@@ -145,10 +149,7 @@ async fn complete_async_uses_same_adapter_path() {
         .await
         .expect("async complete returns canned stdout");
     assert_eq!(completion.text, "ASYNC-FIXTURE");
-    assert_eq!(
-        completion.fingerprint_metadata.model.as_str(),
-        "syn-test"
-    );
+    assert_eq!(completion.fingerprint_metadata.model.as_str(), "syn-test");
 
     let calls = fake.captured();
     assert_eq!(calls.len(), 1);

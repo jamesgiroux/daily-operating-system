@@ -101,9 +101,7 @@ pub fn sync_ai_commitments(
                 // we only refresh `last_seen_at` on the bridge so the LLM's
                 // continued emission remains observable.
                 if let Some(action_id) = row.action_id.as_deref() {
-                    let action_opt = db
-                        .get_action_by_id(action_id)
-                        .map_err(|e| e.to_string())?;
+                    let action_opt = db.get_action_by_id(action_id).map_err(|e| e.to_string())?;
                     if let Some(mut action) = action_opt {
                         if action.status.as_str() == BACKLOG {
                             let mut dirty = false;
@@ -118,10 +116,8 @@ pub fn sync_ai_commitments(
                             }
                             // Owner is recorded in context for now — DbAction
                             // has no owner field of its own.
-                            let owner_ctx = commitment
-                                .owner
-                                .as_deref()
-                                .map(|o| format!("owner: {o}"));
+                            let owner_ctx =
+                                commitment.owner.as_deref().map(|o| format!("owner: {o}"));
                             if action.context != owner_ctx {
                                 action.context = owner_ctx;
                                 dirty = true;
@@ -221,8 +217,16 @@ pub fn sync_ai_commitments(
                 };
                 db.upsert_action(&action).map_err(|e| e.to_string())?;
 
-                insert_bridge_row(ctx, db, commitment_id, entity_type, entity_id, &action_id, &now)
-                    .map_err(|e| e.to_string())?;
+                insert_bridge_row(
+                    ctx,
+                    db,
+                    commitment_id,
+                    entity_type,
+                    entity_id,
+                    &action_id,
+                    &now,
+                )
+                .map_err(|e| e.to_string())?;
                 summary.created += 1;
             }
         }
@@ -352,14 +356,15 @@ fn insert_bridge_row(
     now: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    db.conn_ref().execute(
-        "INSERT INTO ai_commitment_bridge
+    db.conn_ref()
+        .execute(
+            "INSERT INTO ai_commitment_bridge
              (commitment_id, entity_type, entity_id, action_id,
               first_seen_at, last_seen_at, tombstoned)
          VALUES (?1, ?2, ?3, ?4, ?5, ?5, 0)",
-        rusqlite::params![commitment_id, entity_type, entity_id, action_id, now],
-    )
-    .map_err(|e| e.to_string())?;
+            rusqlite::params![commitment_id, entity_type, entity_id, action_id, now],
+        )
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -370,11 +375,12 @@ fn touch_bridge_row(
     now: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    db.conn_ref().execute(
-        "UPDATE ai_commitment_bridge SET last_seen_at = ?1 WHERE commitment_id = ?2",
-        rusqlite::params![now, commitment_id],
-    )
-    .map_err(|e| e.to_string())?;
+    db.conn_ref()
+        .execute(
+            "UPDATE ai_commitment_bridge SET last_seen_at = ?1 WHERE commitment_id = ?2",
+            rusqlite::params![now, commitment_id],
+        )
+        .map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -457,8 +463,7 @@ mod tests {
         make_ctx!(ctx);
         let commitments = vec![make_commitment(Some("c:1"), "Tombstoned item")];
 
-        sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments)
-            .expect("initial sync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("initial sync");
 
         // Fetch the action_id we just created, tombstone it.
         let action_id: String = db
@@ -662,7 +667,10 @@ mod tests {
         let summary =
             sync_ai_commitments(&ctx, &db, "account", "acct-1", &original).expect("resync");
         assert_eq!(summary.created, 0);
-        assert_eq!(summary.updated, 0, "user-owned title must not be overwritten");
+        assert_eq!(
+            summary.updated, 0,
+            "user-owned title must not be overwritten"
+        );
 
         let title: String = db
             .conn_ref()
@@ -774,7 +782,10 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap();
-        assert_eq!(bridge_count, 2, "both source ids should bridge to the same action");
+        assert_eq!(
+            bridge_count, 2,
+            "both source ids should bridge to the same action"
+        );
     }
 
     #[test]

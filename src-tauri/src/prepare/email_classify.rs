@@ -348,10 +348,7 @@ pub fn boost_with_entity_context(
             .collect();
 
         for (signal_type, value, confidence) in &signals {
-            if merged_email_signal_types
-                .iter()
-                .any(|t| t == signal_type)
-            {
+            if merged_email_signal_types.iter().any(|t| t == signal_type) {
                 let reason = match value {
                     Some(v) => format!("elevated: {} (confidence {:.0}%)", v, confidence * 100.0),
                     None => format!(

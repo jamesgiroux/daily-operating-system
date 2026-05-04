@@ -234,7 +234,7 @@ pub async fn track_recommendation(
         index,
         &app_state,
     )
-        .await
+    .await
 }
 
 /// Dismiss a recommended action — removes it from intelligence.
@@ -254,7 +254,7 @@ pub async fn dismiss_recommendation(
         index,
         &app_state,
     )
-        .await
+    .await
 }
 
 ///  / Wave 0e: Mark an open commitment as done. Promotes the
@@ -275,7 +275,7 @@ pub async fn mark_commitment_done(
         index,
         &app_state,
     )
-        .await
+    .await
 }
 
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.

@@ -209,10 +209,7 @@ impl ActionDb {
     ///
     /// Returns rows with `status = 'completed'` AND `completed_at >= now - 30
     /// days` for the account. Sort: `completed_at DESC`. Capped at 20 rows.
-    pub fn get_account_recently_landed(
-        &self,
-        account_id: &str,
-    ) -> Result<Vec<DbAction>, DbError> {
+    pub fn get_account_recently_landed(&self, account_id: &str) -> Result<Vec<DbAction>, DbError> {
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
@@ -1693,7 +1690,11 @@ mod tests {
         let seeds = [
             ("a-mine", "Send the deck", "owner: James Giroux (TAM)"),
             ("b-mine-case", "Schedule sync", "owner: james giroux"),
-            ("c-other", "Prep contract", "owner: Renan Basteris (Account Manager)"),
+            (
+                "c-other",
+                "Prep contract",
+                "owner: Renan Basteris (Account Manager)",
+            ),
             ("d-other", "Migration plan", "owner: Sean Langlands"),
             ("e-unassigned", "Follow up on Q", ""),
             ("f-unassigned-null", "Review transcript", ""),
@@ -1728,8 +1729,14 @@ mod tests {
             ids.contains("g-unassigned-prose"),
             "rows without owner: prefix must surface"
         );
-        assert!(!ids.contains("c-other"), "other-owner rows must be filtered out");
-        assert!(!ids.contains("d-other"), "other-owner rows must be filtered out");
+        assert!(
+            !ids.contains("c-other"),
+            "other-owner rows must be filtered out"
+        );
+        assert!(
+            !ids.contains("d-other"),
+            "other-owner rows must be filtered out"
+        );
 
         // Unscoped fallback (None) = full list, same as get_suggested_actions().
         let unscoped = db.get_suggested_actions_for_user(None).expect("unscoped");
@@ -1740,7 +1747,13 @@ mod tests {
         );
 
         // Empty user_name also falls back to full list (defensive).
-        let empty = db.get_suggested_actions_for_user(Some("   ")).expect("empty");
-        assert_eq!(empty.len(), 7, "whitespace-only name falls back to full list");
+        let empty = db
+            .get_suggested_actions_for_user(Some("   "))
+            .expect("empty");
+        assert_eq!(
+            empty.len(),
+            7,
+            "whitespace-only name falls back to full list"
+        );
     }
 }

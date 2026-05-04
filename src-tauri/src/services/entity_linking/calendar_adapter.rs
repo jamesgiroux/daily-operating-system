@@ -8,7 +8,7 @@ use crate::types::CalendarEvent;
 
 use super::primitives::domain_from_email;
 use super::types::{
-    LinkingContext, LinkOutcome, OwnerRef, OwnerType, Participant, ParticipantRole, Trigger,
+    LinkOutcome, LinkingContext, OwnerRef, OwnerType, Participant, ParticipantRole, Trigger,
 };
 
 /// Derive the meeting DB primary id from a CalendarEvent.
@@ -75,16 +75,16 @@ pub async fn evaluate_meeting(
     event: &CalendarEvent,
     trigger: Trigger,
 ) -> Result<LinkOutcome, String> {
-    svc_ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    svc_ctx
+        .check_mutation_allowed()
+        .map_err(|e| e.to_string())?;
     let event_clone = event.clone();
 
     // Snapshot the authenticated calendar owner email (sync, no await).
     let self_email: Option<String> = {
         let g = state.calendar.google_auth.lock();
         match &*g {
-            crate::types::GoogleAuthStatus::Authenticated { email } => {
-                Some(email.to_lowercase())
-            }
+            crate::types::GoogleAuthStatus::Authenticated { email } => Some(email.to_lowercase()),
             _ => None,
         }
     };

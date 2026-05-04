@@ -110,7 +110,15 @@ fn mechanism_1_suppression_tombstones_backfills_to_tombstone_claim() {
             "SELECT claim_type, dedup_key, field_path, item_hash, expires_at \
              FROM intelligence_claims WHERE id LIKE 'm1-%' LIMIT 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .unwrap();
     assert_eq!(claim_type, "risk");
@@ -251,12 +259,26 @@ fn mechanism_4_meeting_entity_dismissals_backfills_with_meeting_subject() {
 
     run_backfill(&conn);
 
-    let (subject_ref, claim_type, field_path, text, dedup_key): (String, String, String, String, String) = conn
+    let (subject_ref, claim_type, field_path, text, dedup_key): (
+        String,
+        String,
+        String,
+        String,
+        String,
+    ) = conn
         .query_row(
             "SELECT subject_ref, claim_type, field_path, text, dedup_key \
              FROM intelligence_claims WHERE id LIKE 'm4-%' LIMIT 1",
             [],
-            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?, row.get(4)?)),
+            |row| {
+                Ok((
+                    row.get(0)?,
+                    row.get(1)?,
+                    row.get(2)?,
+                    row.get(3)?,
+                    row.get(4)?,
+                ))
+            },
         )
         .unwrap();
     assert!(subject_ref.contains("\"kind\":\"Meeting\""));
@@ -264,7 +286,10 @@ fn mechanism_4_meeting_entity_dismissals_backfills_with_meeting_subject() {
     assert_eq!(claim_type, "meeting_entity_dismissed");
     assert_eq!(field_path, "account");
     assert_eq!(text, "acct-y");
-    assert_eq!(dedup_key, "acct-y:meeting-x:meeting_entity_dismissed:account");
+    assert_eq!(
+        dedup_key,
+        "acct-y:meeting-x:meeting_entity_dismissed:account"
+    );
 }
 
 // ---------------------------------------------------------------------------

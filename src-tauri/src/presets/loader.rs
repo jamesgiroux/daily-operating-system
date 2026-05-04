@@ -208,8 +208,14 @@ mod tests {
     #[test]
     fn test_legacy_role_ids_alias_to_canonical_presets() {
         assert_eq!(load_preset("the-desk").unwrap().id, "core");
-        assert_eq!(load_preset("affiliates").unwrap().id, "affiliates-partnerships");
-        assert_eq!(load_preset("partnerships").unwrap().id, "affiliates-partnerships");
+        assert_eq!(
+            load_preset("affiliates").unwrap().id,
+            "affiliates-partnerships"
+        );
+        assert_eq!(
+            load_preset("partnerships").unwrap().id,
+            "affiliates-partnerships"
+        );
         assert_eq!(load_preset("product").unwrap().id, "product-marketing");
         assert_eq!(load_preset("marketing").unwrap().id, "product-marketing");
         assert_eq!(load_preset("sales").unwrap().id, "core");

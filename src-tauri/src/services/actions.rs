@@ -55,7 +55,7 @@ pub fn complete_action(
         // DOS Work-tab: Commitment lifecycle — delivered + tombstone the bridge.
         if action.action_kind == crate::action_status::KIND_COMMITMENT {
             let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 db,
                 engine,
                 entity_type,
@@ -69,8 +69,8 @@ pub fn complete_action(
                 )),
                 0.8,
             );
-            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(            ctx,
-db, id)
+            if let Err(e) =
+                crate::services::commitment_bridge::tombstone_commitment_bridge(ctx, db, id)
             {
                 log::warn!("commitment_bridge tombstone on complete failed (non-fatal): {e}");
             }
@@ -141,7 +141,7 @@ pub fn accept_suggested_action(
         // DOS Work-tab: Commitment lifecycle — accepted (backlog → unstarted).
         if action.action_kind == crate::action_status::KIND_COMMITMENT {
             let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 db,
                 engine,
                 entity_type,
@@ -201,7 +201,7 @@ pub fn reject_suggested_action(
         // DOS Work-tab: Commitment lifecycle — rejected + tombstone the bridge.
         if action.action_kind == crate::action_status::KIND_COMMITMENT {
             let _ = crate::services::signals::emit_and_propagate(
-            ctx,
+                ctx,
                 db,
                 engine,
                 entity_type,
@@ -215,8 +215,8 @@ pub fn reject_suggested_action(
                 )),
                 0.5,
             );
-            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(            ctx,
-db, id)
+            if let Err(e) =
+                crate::services::commitment_bridge::tombstone_commitment_bridge(ctx, db, id)
             {
                 log::warn!("commitment_bridge tombstone on reject failed (non-fatal): {e}");
             }
@@ -258,8 +258,8 @@ pub fn dismiss_suggested_action(
         // For commitment-kind actions still tombstone the bridge so the
         // commitment view doesn't resurrect it from the source artifact.
         if action.action_kind == crate::action_status::KIND_COMMITMENT {
-            if let Err(e) = crate::services::commitment_bridge::tombstone_commitment_bridge(            ctx,
-db, id)
+            if let Err(e) =
+                crate::services::commitment_bridge::tombstone_commitment_bridge(ctx, db, id)
             {
                 log::warn!("commitment_bridge tombstone on dismiss failed (non-fatal): {e}");
             }
@@ -740,9 +740,7 @@ pub fn get_suggested_actions(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, 
 /// case-insensitive owner-prefix match on `actions.context`. Ambiguous rows
 /// without a recognisable owner prefix still surface so the user doesn't
 /// miss triage work.
-pub fn get_suggested_actions_for_user(
-    db: &ActionDb,
-) -> Result<Vec<crate::db::DbAction>, String> {
+pub fn get_suggested_actions_for_user(db: &ActionDb) -> Result<Vec<crate::db::DbAction>, String> {
     let user_name = crate::services::user_entity::get_user_entity_from_db(db)
         .ok()
         .and_then(|u| u.name)

@@ -87,7 +87,9 @@ pub struct FixedClock {
 
 impl FixedClock {
     pub fn new(at: DateTime<Utc>) -> Self {
-        Self { now: Mutex::new(at) }
+        Self {
+            now: Mutex::new(at),
+        }
     }
 
     pub fn advance(&self, delta: chrono::Duration) {

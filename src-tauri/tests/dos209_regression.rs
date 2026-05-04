@@ -34,7 +34,13 @@ fn services_dir(root: &Path) -> PathBuf {
 /// Returns the matched lines (stdout) as a string; empty means no matches.
 fn rg_in(dir: &Path, pattern: &str) -> String {
     let out = Command::new("rg")
-        .args(["--files-with-matches", "--glob", "*.rs", pattern, dir.to_str().unwrap()])
+        .args([
+            "--files-with-matches",
+            "--glob",
+            "*.rs",
+            pattern,
+            dir.to_str().unwrap(),
+        ])
         .output();
 
     match out {
@@ -110,10 +116,10 @@ fn no_raw_thread_rng_in_services() {
 
 #[test]
 fn evaluate_mode_ctx_blocks_mutations() {
+    use chrono::TimeZone;
     use dailyos_lib::services::context::{
         ExecutionMode, ExternalClients, FixedClock, SeedableRng, ServiceContext, ServiceError,
     };
-    use chrono::TimeZone;
 
     let clk = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 1, 0, 0, 0).unwrap());
     let rng = SeedableRng::new(42);
@@ -126,7 +132,10 @@ fn evaluate_mode_ctx_blocks_mutations() {
         "Evaluate-mode ctx must block mutations, but check_mutation_allowed returned Ok"
     );
     assert!(
-        matches!(result, Err(ServiceError::WriteBlockedByMode(ExecutionMode::Evaluate))),
+        matches!(
+            result,
+            Err(ServiceError::WriteBlockedByMode(ExecutionMode::Evaluate))
+        ),
         "Expected WriteBlockedByMode(Evaluate), got: {:?}",
         result
     );
@@ -134,10 +143,10 @@ fn evaluate_mode_ctx_blocks_mutations() {
 
 #[test]
 fn simulate_mode_ctx_blocks_mutations() {
+    use chrono::TimeZone;
     use dailyos_lib::services::context::{
         ExecutionMode, ExternalClients, FixedClock, SeedableRng, ServiceContext, ServiceError,
     };
-    use chrono::TimeZone;
 
     let clk = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 1, 0, 0, 0).unwrap());
     let rng = SeedableRng::new(42);
@@ -150,7 +159,10 @@ fn simulate_mode_ctx_blocks_mutations() {
         "Simulate-mode ctx must block mutations, but check_mutation_allowed returned Ok"
     );
     assert!(
-        matches!(result, Err(ServiceError::WriteBlockedByMode(ExecutionMode::Simulate))),
+        matches!(
+            result,
+            Err(ServiceError::WriteBlockedByMode(ExecutionMode::Simulate))
+        ),
         "Expected WriteBlockedByMode(Simulate), got: {:?}",
         result
     );
@@ -158,10 +170,10 @@ fn simulate_mode_ctx_blocks_mutations() {
 
 #[test]
 fn live_mode_ctx_permits_mutations() {
+    use chrono::TimeZone;
     use dailyos_lib::services::context::{
         ExternalClients, FixedClock, SeedableRng, ServiceContext,
     };
-    use chrono::TimeZone;
 
     let clk = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 1, 0, 0, 0).unwrap());
     let rng = SeedableRng::new(42);

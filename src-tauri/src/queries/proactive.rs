@@ -389,7 +389,7 @@ mod tests {
             account: None,
             attendees: vec![],
             is_all_day: false,
-        series_id: None,
+            series_id: None,
             linked_entities: None,
             classified_entities: None,
             scored_classified_entities: None,

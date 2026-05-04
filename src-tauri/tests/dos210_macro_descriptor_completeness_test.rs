@@ -44,14 +44,10 @@ struct DescriptorOutput {
 }
 
 fn descriptor_output(ability_name: &'static str) -> AbilityResult<DescriptorOutput> {
-    let produced_at = chrono::Utc
-        .with_ymd_and_hms(2026, 5, 1, 12, 0, 0)
-        .unwrap();
+    let produced_at = chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap();
     let subject = SubjectAttribution::direct_confident(SubjectRef::Account("acct-fixture".into()));
-    let mut builder = ProvenanceBuilder::new(ProvenanceBuilderConfig::new(
-        ability_name,
-        produced_at,
-    ));
+    let mut builder =
+        ProvenanceBuilder::new(ProvenanceBuilderConfig::new(ability_name, produced_at));
     builder.set_subject(subject.clone());
     builder
         .attribute(
@@ -117,7 +113,10 @@ fn macro_emitted_descriptor_carries_full_policy_into_inventory() {
         .unwrap();
 
     assert_eq!(descriptor.category, AbilityCategory::Publish);
-    assert_eq!(descriptor.policy.allowed_actors, &[Actor::User, Actor::System]);
+    assert_eq!(
+        descriptor.policy.allowed_actors,
+        &[Actor::User, Actor::System]
+    );
     assert_eq!(
         descriptor.policy.allowed_modes,
         &[ExecutionMode::Live, ExecutionMode::Evaluate]
@@ -127,7 +126,10 @@ fn macro_emitted_descriptor_carries_full_policy_into_inventory() {
     assert_eq!(descriptor.composes.len(), 1);
     assert_eq!(descriptor.composes[0].id.as_str(), "child-read");
     assert_eq!(descriptor.composes[0].ability, "dos210_descriptor_child");
-    assert_eq!(descriptor.mutates, &["services::accounts::update_account_field"]);
+    assert_eq!(
+        descriptor.mutates,
+        &["services::accounts::update_account_field"]
+    );
     assert_eq!(
         descriptor.signal_policy.emits_on_output_change,
         &["account_changed"]

@@ -405,9 +405,15 @@ mod tests {
             intelligence: PresetIntelligenceConfig {
                 signal_keywords: vec![
                     // "renewal" exists in base at 0.15; preset says 0.20 → max-wins: 0.20
-                    PresetSignalKeyword { keyword: "renewal".to_string(), weight: 0.20 },
+                    PresetSignalKeyword {
+                        keyword: "renewal".to_string(),
+                        weight: 0.20,
+                    },
                     // "commission" is new (not in base)
-                    PresetSignalKeyword { keyword: "commission".to_string(), weight: 0.11 },
+                    PresetSignalKeyword {
+                        keyword: "commission".to_string(),
+                        weight: 0.11,
+                    },
                 ],
                 email_signal_types: vec![],
                 email_priority_keywords: vec![],
@@ -428,16 +434,22 @@ mod tests {
         );
 
         // "commission" (preset-only) should be present
-        let commission = merged.signal_keywords.iter().find(|(k, _)| k == "commission");
-        assert!(commission.is_some(), "merged list must contain 'commission'");
+        let commission = merged
+            .signal_keywords
+            .iter()
+            .find(|(k, _)| k == "commission");
+        assert!(
+            commission.is_some(),
+            "merged list must contain 'commission'"
+        );
     }
 
     #[test]
     fn dos176_cached_merge_updates_on_set_role() {
         // Verify that AppState::set_active_preset updates the cached merged config.
         // Load CS preset → expect 'churn'; load affiliates → expect 'commission'.
-        let cs_preset = crate::presets::loader::load_preset("customer-success")
-            .expect("CS preset should load");
+        let cs_preset =
+            crate::presets::loader::load_preset("customer-success").expect("CS preset should load");
         let aff_preset = crate::presets::loader::load_preset("affiliates")
             .expect("affiliates preset should load");
 
@@ -449,12 +461,19 @@ mod tests {
             "after set_role to CS, merged keywords must contain 'churn'"
         );
         assert!(
-            aff_merged.signal_keywords.iter().any(|(k, _)| k == "commission"),
+            aff_merged
+                .signal_keywords
+                .iter()
+                .any(|(k, _)| k == "commission"),
             "after set_role to affiliates, merged keywords must contain 'commission'"
         );
         // When using affiliates preset the preset-specific keywords should not include 'churn'
         assert!(
-            !aff_preset.intelligence.signal_keywords.iter().any(|sk| sk.keyword == "churn"),
+            !aff_preset
+                .intelligence
+                .signal_keywords
+                .iter()
+                .any(|sk| sk.keyword == "churn"),
             "affiliates preset config should not include 'churn'"
         );
     }

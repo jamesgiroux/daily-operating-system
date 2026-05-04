@@ -169,7 +169,10 @@ fn lint_script_runs_clean_against_current_workspace() {
     let repo_root = std::env::current_dir()
         .expect("cwd")
         .ancestors()
-        .find(|p| p.join("scripts/check_no_let_underscore_feedback.sh").exists())
+        .find(|p| {
+            p.join("scripts/check_no_let_underscore_feedback.sh")
+                .exists()
+        })
         .expect("locate repo root with scripts/check_no_let_underscore_feedback.sh")
         .to_path_buf();
 

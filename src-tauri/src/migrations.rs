@@ -1403,10 +1403,8 @@ mod tests {
     fn is_missing_column_error_rejects_unrelated_errors() {
         let corrupt =
             sqlite_failure_with_message(rusqlite::ffi::SQLITE_CORRUPT, "no such column: id");
-        let unrelated = sqlite_failure_with_message(
-            rusqlite::ffi::SQLITE_ERROR,
-            "no such table: accounts",
-        );
+        let unrelated =
+            sqlite_failure_with_message(rusqlite::ffi::SQLITE_ERROR, "no such table: accounts");
         assert!(!is_missing_column_error(&corrupt));
         assert!(!is_missing_column_error(&unrelated));
     }
@@ -2400,11 +2398,8 @@ mod tests {
     fn quarantine_with_retained_rows_does_not_block_post_126_migrations() {
         let conn = mem_db();
         run_migrations(&conn).expect("apply all migrations");
-        conn.execute(
-            "DELETE FROM schema_version WHERE version >= 128",
-            [],
-        )
-        .expect("make v128+ pending");
+        conn.execute("DELETE FROM schema_version WHERE version >= 128", [])
+            .expect("make v128+ pending");
         conn.execute(
             "INSERT INTO suppression_tombstones_quarantine \
              (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason, resolved_at) \
@@ -2427,11 +2422,8 @@ mod tests {
     fn quarantine_blocks_only_when_126_pending() {
         let conn = mem_db();
         run_migrations(&conn).expect("apply all migrations");
-        conn.execute(
-            "DELETE FROM schema_version WHERE version >= 126",
-            [],
-        )
-        .expect("make v126+ pending");
+        conn.execute("DELETE FROM schema_version WHERE version >= 126", [])
+            .expect("make v126+ pending");
         conn.execute(
             "INSERT INTO suppression_tombstones_quarantine \
              (id, entity_id, field_key, item_key, item_hash, dismissed_at, quarantine_reason) \

@@ -205,7 +205,10 @@ mod tests {
     #[test]
     fn test_should_send_all_enabled() {
         let config = NotificationConfig::default();
-        assert!(should_send(&config, NotificationCategory::WorkflowCompletion));
+        assert!(should_send(
+            &config,
+            NotificationCategory::WorkflowCompletion
+        ));
         assert!(should_send(&config, NotificationCategory::TranscriptReady));
         assert!(should_send(&config, NotificationCategory::AuthExpiry));
     }
@@ -219,7 +222,10 @@ mod tests {
             quiet_hours_start: None,
             quiet_hours_end: None,
         };
-        assert!(!should_send(&config, NotificationCategory::WorkflowCompletion));
+        assert!(!should_send(
+            &config,
+            NotificationCategory::WorkflowCompletion
+        ));
         assert!(should_send(&config, NotificationCategory::TranscriptReady));
     }
 

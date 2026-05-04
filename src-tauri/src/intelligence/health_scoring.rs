@@ -209,7 +209,10 @@ fn compute_trend_from_history(db: &ActionDb, account_id: &str, current_score: f6
             format!("Score up {delta_f:.0} points from {oldest_score:.0}"),
         )
     } else if delta_f > 5.0 {
-        ("improving", format!("Score trending up {delta_f:.0} points"))
+        (
+            "improving",
+            format!("Score trending up {delta_f:.0} points"),
+        )
     } else if delta_f < -10.0 {
         (
             "declining",
@@ -270,11 +273,10 @@ fn build_trend_tags(db: &ActionDb, account_id: &str, trend_direction: &str) -> V
         return Vec::new();
     };
 
-    let health: crate::intelligence::io::AccountHealth =
-        match serde_json::from_str(&json) {
-            Ok(h) => h,
-            Err(_) => return Vec::new(),
-        };
+    let health: crate::intelligence::io::AccountHealth = match serde_json::from_str(&json) {
+        Ok(h) => h,
+        Err(_) => return Vec::new(),
+    };
 
     let mut tags: Vec<HealthTrendTag> = Vec::new();
 
@@ -290,9 +292,18 @@ fn build_trend_tags(db: &ActionDb, account_id: &str, trend_direction: &str) -> V
     let dim_arr: [(&str, &crate::intelligence::io::DimensionScore); 6] = [
         ("meeting_cadence", &health.dimensions.meeting_cadence),
         ("email_engagement", &health.dimensions.email_engagement),
-        ("stakeholder_coverage", &health.dimensions.stakeholder_coverage),
-        ("key_advocate_health", &health.dimensions.key_advocate_health),
-        ("financial_proximity", &health.dimensions.financial_proximity),
+        (
+            "stakeholder_coverage",
+            &health.dimensions.stakeholder_coverage,
+        ),
+        (
+            "key_advocate_health",
+            &health.dimensions.key_advocate_health,
+        ),
+        (
+            "financial_proximity",
+            &health.dimensions.financial_proximity,
+        ),
         ("signal_momentum", &health.dimensions.signal_momentum),
     ];
 
@@ -310,24 +321,35 @@ fn build_trend_tags(db: &ActionDb, account_id: &str, trend_direction: &str) -> V
             "declining" => "down",
             _ => {
                 // Only include stable dims when the overall trend is changing
-                if trend_direction != "stable" { "stable" } else { continue; }
+                if trend_direction != "stable" {
+                    "stable"
+                } else {
+                    continue;
+                }
             }
         };
         // Build a human label from the first evidence item (capped to 25 chars)
         // or fall back to the dimension label.
-        let label = dim.evidence.first()
+        let label = dim
+            .evidence
+            .first()
             .map(|e| {
                 let e = e.trim();
                 if e.len() > 35 {
-                    e[..35].trim_end_matches(|c: char| !c.is_alphanumeric()).to_string()
+                    e[..35]
+                        .trim_end_matches(|c: char| !c.is_alphanumeric())
+                        .to_string()
                 } else {
                     e.to_string()
                 }
             })
-            .unwrap_or_else(|| dim_labels.iter()
-                .find(|(k, _)| *k == *dim_key)
-                .map(|(_, l)| l.to_string())
-                .unwrap_or_default());
+            .unwrap_or_else(|| {
+                dim_labels
+                    .iter()
+                    .find(|(k, _)| *k == *dim_key)
+                    .map(|(_, l)| l.to_string())
+                    .unwrap_or_default()
+            });
         tags.push(HealthTrendTag {
             label,
             direction: direction.to_string(),
@@ -1726,12 +1748,8 @@ mod tests {
 
         let customer_success = crate::presets::loader::load_preset("customer-success")
             .expect("load customer-success preset");
-        let preset_health = compute_account_health_with_preset(
-            &db,
-            &account,
-            None,
-            Some(&customer_success),
-        );
+        let preset_health =
+            compute_account_health_with_preset(&db, &account, None, Some(&customer_success));
 
         let dims = RelationshipDimensions {
             meeting_cadence: compute_meeting_cadence(&db, &account.id),

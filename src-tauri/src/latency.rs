@@ -3,9 +3,9 @@
 //! This keeps a bounded sample window per command so we can surface p95
 //! diagnostics without introducing persistent storage or production UI coupling.
 
+use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
 use std::sync::OnceLock;
-use parking_lot::Mutex;
 
 use chrono::{DateTime, Utc};
 

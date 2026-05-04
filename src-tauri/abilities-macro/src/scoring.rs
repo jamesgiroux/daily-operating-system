@@ -98,7 +98,10 @@ impl Default for MutationVisitor {
 
 impl<'ast> Visit<'ast> for MutationVisitor {
     fn visit_expr_call(&mut self, node: &'ast ExprCall) {
-        if let Expr::Path(ExprPath { qself: None, path, .. }) = node.func.as_ref() {
+        if let Expr::Path(ExprPath {
+            qself: None, path, ..
+        }) = node.func.as_ref()
+        {
             self.record_call_path(path);
         }
 
@@ -224,5 +227,7 @@ fn single_segment_path(path: &Path) -> Option<String> {
         return None;
     }
 
-    path.segments.first().map(|segment| segment.ident.to_string())
+    path.segments
+        .first()
+        .map(|segment| segment.ident.to_string())
 }

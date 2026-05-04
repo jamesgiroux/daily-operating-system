@@ -1,13 +1,15 @@
 //! P6 — 1:1 internal × internal, no P4/P5 account evidence.
 //! Primary = the other internal person (not the user themselves).
 
-use crate::db::ActionDb;
 use super::super::types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome};
+use crate::db::ActionDb;
 
 pub struct P6InternalInternal;
 
 impl super::super::phases::Rule for P6InternalInternal {
-    fn id(&self) -> &'static str { "P6" }
+    fn id(&self) -> &'static str {
+        "P6"
+    }
 
     fn evaluate(
         &self,
@@ -26,7 +28,10 @@ impl super::super::phases::Rule for P6InternalInternal {
         }
 
         // The "other" person is whichever participant is not the From sender.
-        let sender_email = ctx.from_participant().map(|p| p.email.as_str()).unwrap_or("");
+        let sender_email = ctx
+            .from_participant()
+            .map(|p| p.email.as_str())
+            .unwrap_or("");
         let other = internal
             .iter()
             .find(|p| p.email != sender_email)
@@ -43,7 +48,10 @@ impl super::super::phases::Rule for P6InternalInternal {
         };
 
         Ok(RuleOutcome::Matched(Candidate {
-            entity: EntityRef { entity_id: person_id, entity_type: "person".to_string() },
+            entity: EntityRef {
+                entity_id: person_id,
+                entity_type: "person".to_string(),
+            },
             role: LinkRole::Primary,
             confidence: 0.80,
             rule_id: "P6".to_string(),

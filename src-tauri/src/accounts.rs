@@ -659,9 +659,7 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                         // in Finder. Update the account name + tracker_path to match.
                         let dir_name_str = name_str.to_string();
                         let db_name_normalized = db_account.name.replace(' ', "-");
-                        if dir_name_str != db_name_normalized
-                            && dir_name_str != db_account.name
-                        {
+                        if dir_name_str != db_name_normalized && dir_name_str != db_account.name {
                             let new_name = dir_name_str.replace('-', " ");
                             log::info!(
                                 "DOS-44: Directory renamed '{}' → '{}', updating account",
@@ -670,13 +668,11 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             );
                             let mut renamed = db_account.clone();
                             renamed.name = new_name;
-                            renamed.tracker_path =
-                                Some(format!("Accounts/{}", dir_name_str));
+                            renamed.tracker_path = Some(format!("Accounts/{}", dir_name_str));
                             renamed.updated_at = chrono::Utc::now().to_rfc3339();
                             let _ = db.upsert_account(&renamed);
                             let _ = write_account_json(workspace, &renamed, Some(&json), db);
-                            let _ =
-                                write_account_markdown(workspace, &renamed, Some(&json), db);
+                            let _ = write_account_markdown(workspace, &renamed, Some(&json), db);
                             synced += 1;
                             continue;
                         }
@@ -1172,7 +1168,10 @@ mod tests {
         // Exactly one record (no duplicates)
         let all = db.get_all_accounts().unwrap();
         let delta_count = all.iter().filter(|a| a.name == "Delta Co").count();
-        assert_eq!(delta_count, 1, "bootstrap must not create duplicates on re-sync");
+        assert_eq!(
+            delta_count, 1,
+            "bootstrap must not create duplicates on re-sync"
+        );
     }
 
     // ── Parent-Child tests ────────────────────────────────────────────
@@ -1236,7 +1235,10 @@ mod tests {
         let result = read_account_json(&child_dir.join("dashboard.json")).unwrap();
         assert_eq!(result.account.id, "crestview-media--brandsco");
         assert_eq!(result.account.name, "BrandsCo");
-        assert_eq!(result.account.parent_id, Some("crestview-media".to_string()));
+        assert_eq!(
+            result.account.parent_id,
+            Some("crestview-media".to_string())
+        );
         assert_eq!(
             result.account.tracker_path,
             Some("Accounts/Crestview Media/BrandsCo".to_string())
@@ -1407,7 +1409,9 @@ mod tests {
         let children = db.get_child_accounts("crestview-media").unwrap();
         assert_eq!(children.len(), 2);
         assert!(children.iter().any(|c| c.id == "crestview-media--brandsco"));
-        assert!(children.iter().any(|c| c.id == "crestview-media--enterprise"));
+        assert!(children
+            .iter()
+            .any(|c| c.id == "crestview-media--enterprise"));
     }
 
     #[test]

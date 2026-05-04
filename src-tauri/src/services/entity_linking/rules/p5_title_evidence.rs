@@ -3,8 +3,11 @@
 //! Whole-word match (≥4 chars) against entity names + keywords.
 //! Blocked when P4 domain evidence points to a conflicting account.
 
+use super::super::{
+    evidence,
+    types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome},
+};
 use crate::db::ActionDb;
-use super::super::{evidence, types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome}};
 
 pub struct P5TitleEvidence {
     /// Entity_id from the P4 domain-evidence pass (if any). P5 is blocked
@@ -14,15 +17,48 @@ pub struct P5TitleEvidence {
 
 /// Words that match common entity names but are not meaningful for linking.
 const STOPLIST: &[&str] = &[
-    "open", "pilot", "plan", "monday", "notion", "mercury", "ramp",
-    "handshake", "bridge", "flow", "base", "peak", "note", "space",
-    "link", "next", "sync", "ready", "clear", "front", "core", "post",
-    "meet", "call", "talk", "chat", "dash", "pulse", "track", "task",
-    "work", "team", "loop", "zoom", "slack", "linear",
+    "open",
+    "pilot",
+    "plan",
+    "monday",
+    "notion",
+    "mercury",
+    "ramp",
+    "handshake",
+    "bridge",
+    "flow",
+    "base",
+    "peak",
+    "note",
+    "space",
+    "link",
+    "next",
+    "sync",
+    "ready",
+    "clear",
+    "front",
+    "core",
+    "post",
+    "meet",
+    "call",
+    "talk",
+    "chat",
+    "dash",
+    "pulse",
+    "track",
+    "task",
+    "work",
+    "team",
+    "loop",
+    "zoom",
+    "slack",
+    "linear",
 ];
 
 impl super::super::phases::Rule for P5TitleEvidence {
-    fn id(&self) -> &'static str { "P5" }
+    fn id(&self) -> &'static str {
+        "P5"
+    }
 
     fn evaluate(
         &self,
@@ -113,12 +149,20 @@ impl super::super::phases::Rule for P5TitleEvidence {
             if *p4_id != entity_id {
                 // P5 title match conflicts with domain evidence — write as related, not primary.
                 return Ok(RuleOutcome::Matched(Candidate {
-                    entity: EntityRef { entity_id, entity_type },
+                    entity: EntityRef {
+                        entity_id,
+                        entity_type,
+                    },
                     role: LinkRole::Related,
                     confidence,
                     rule_id: "P5".to_string(),
                     evidence: evidence::title_match_evidence(
-                        ctx, &entity_name, p4_id, &entity_name, false, false,
+                        ctx,
+                        &entity_name,
+                        p4_id,
+                        &entity_name,
+                        false,
+                        false,
                     ),
                 }));
             }
@@ -143,21 +187,37 @@ impl super::super::phases::Rule for P5TitleEvidence {
         // "Acme renewal plan" is legitimately about Acme.
         if self.p4_entity_id.is_none() && ctx.has_external_participant() {
             return Ok(RuleOutcome::Matched(Candidate {
-                entity: EntityRef { entity_id, entity_type },
+                entity: EntityRef {
+                    entity_id,
+                    entity_type,
+                },
                 role: LinkRole::Related,
                 confidence,
                 rule_id: "P5".to_string(),
                 evidence: evidence::title_match_evidence(
-                    ctx, &entity_name, &entity_name, &entity_name, false, false,
+                    ctx,
+                    &entity_name,
+                    &entity_name,
+                    &entity_name,
+                    false,
+                    false,
                 ),
             }));
         }
 
         let ev = evidence::title_match_evidence(
-            ctx, &entity_name, &entity_id, &entity_name, false, true,
+            ctx,
+            &entity_name,
+            &entity_id,
+            &entity_name,
+            false,
+            true,
         );
         Ok(RuleOutcome::Matched(Candidate {
-            entity: EntityRef { entity_id, entity_type },
+            entity: EntityRef {
+                entity_id,
+                entity_type,
+            },
             role: LinkRole::Primary,
             confidence,
             rule_id: "P5".to_string(),
@@ -168,9 +228,9 @@ impl super::super::phases::Rule for P5TitleEvidence {
 
 #[cfg(test)]
 mod tests {
-    use super::*;
     use super::super::super::phases::Rule;
     use super::super::super::types::{OwnerRef, OwnerType, Participant, ParticipantRole};
+    use super::*;
     use crate::db::test_utils::test_db;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use chrono::{TimeZone, Utc};
@@ -183,13 +243,13 @@ mod tests {
         ServiceContext::test_live(clock, rng, ext)
     }
 
-    fn ctx_with_participants(
-        participants: Vec<Participant>,
-        title: &str,
-    ) -> LinkingContext {
+    fn ctx_with_participants(participants: Vec<Participant>, title: &str) -> LinkingContext {
         let attendee_count = participants.len();
         LinkingContext {
-            owner: OwnerRef { owner_type: OwnerType::Meeting, owner_id: "m1".to_string() },
+            owner: OwnerRef {
+                owner_type: OwnerType::Meeting,
+                owner_id: "m1".to_string(),
+            },
             participants,
             title: Some(title.to_string()),
             attendee_count,
@@ -227,10 +287,7 @@ mod tests {
 
         // External attendee whose domain has nothing to do with WordPress VIP.
         let ctx = ctx_with_participants(
-            vec![
-                internal("me@company.com"),
-                external("jane@example.test"),
-            ],
+            vec![internal("me@company.com"), external("jane@example.test")],
             "WordPress VIP planning",
         );
 
@@ -241,7 +298,11 @@ mod tests {
         let service_ctx = test_ctx(&clock, &rng, &ext);
         match rule.evaluate(&service_ctx, &ctx, &db).expect("evaluate") {
             RuleOutcome::Matched(c) => {
-                assert_eq!(c.role, LinkRole::Related, "must demote to Related when externals exist and P4 found nothing");
+                assert_eq!(
+                    c.role,
+                    LinkRole::Related,
+                    "must demote to Related when externals exist and P4 found nothing"
+                );
                 assert_eq!(c.entity.entity_id, "acc-wp");
             }
             RuleOutcome::Skip => panic!("expected Matched(Related), got Skip"),
@@ -259,10 +320,7 @@ mod tests {
             .expect("insert account");
 
         let ctx = ctx_with_participants(
-            vec![
-                internal("me@company.com"),
-                internal("alice@company.com"),
-            ],
+            vec![internal("me@company.com"), internal("alice@company.com")],
             "Acme Corp renewal planning",
         );
 
@@ -273,7 +331,11 @@ mod tests {
         let service_ctx = test_ctx(&clock, &rng, &ext);
         match rule.evaluate(&service_ctx, &ctx, &db).expect("evaluate") {
             RuleOutcome::Matched(c) => {
-                assert_eq!(c.role, LinkRole::Primary, "all-internal meetings keep Primary on title match");
+                assert_eq!(
+                    c.role,
+                    LinkRole::Primary,
+                    "all-internal meetings keep Primary on title match"
+                );
                 assert_eq!(c.entity.entity_id, "acc-acme");
             }
             RuleOutcome::Skip => panic!("expected Matched(Primary), got Skip"),

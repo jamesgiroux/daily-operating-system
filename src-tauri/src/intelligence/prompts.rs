@@ -168,7 +168,9 @@ pub fn load_disambiguators(
         .conn_ref()
         .prepare("SELECT DISTINCT LOWER(domain) FROM account_domains WHERE account_id = ?1")
     {
-        if let Ok(rows) = stmt.query_map(rusqlite::params![entity_id], |row| row.get::<_, String>(0)) {
+        if let Ok(rows) =
+            stmt.query_map(rusqlite::params![entity_id], |row| row.get::<_, String>(0))
+        {
             out.known_domains = rows
                 .filter_map(|r| r.ok())
                 .filter(|d| !d.is_empty())
@@ -230,7 +232,12 @@ pub fn load_disambiguators(
         // REDACTED account ID from metadata JSON (accepts several key spellings).
         if let Some(ref meta) = acct.metadata {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(meta) {
-                for key in &["REDACTED_id", "salesforceAccountId", "sfdc_id", "salesforceId"] {
+                for key in &[
+                    "REDACTED_id",
+                    "salesforceAccountId",
+                    "sfdc_id",
+                    "salesforceId",
+                ] {
                     if let Some(v) = json.get(*key).and_then(|v| v.as_str()) {
                         let s = v.trim();
                         if !s.is_empty() {

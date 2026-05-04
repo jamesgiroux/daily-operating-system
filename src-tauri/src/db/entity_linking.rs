@@ -255,7 +255,8 @@ impl ActionDb {
                         |row| {
                             Ok((
                                 row.get::<_, String>(0)?,
-                                row.get::<_, String>(1).unwrap_or_else(|_| "account".to_string()),
+                                row.get::<_, String>(1)
+                                    .unwrap_or_else(|_| "account".to_string()),
                                 row.get::<_, Option<String>>(2)?,
                             ))
                         },
@@ -278,7 +279,10 @@ impl ActionDb {
                 .query(params![entity_id])
                 .map_err(|e| format!("account_domains query: {e}"))?;
             let mut domains = Vec::new();
-            while let Some(row) = rows2.next().map_err(|e| format!("account_domains row: {e}"))? {
+            while let Some(row) = rows2
+                .next()
+                .map_err(|e| format!("account_domains row: {e}"))?
+            {
                 if let Ok(d) = row.get::<_, String>(0) {
                     domains.push(d);
                 }
@@ -402,8 +406,10 @@ impl ActionDb {
             .map_err(|e| format!("count_sender_account_links row: {e}"))?
         {
             results.push((
-                row.get::<_, String>(0).map_err(|e| format!("sender_links col0: {e}"))?,
-                row.get::<_, i64>(1).map_err(|e| format!("sender_links col1: {e}"))?,
+                row.get::<_, String>(0)
+                    .map_err(|e| format!("sender_links col0: {e}"))?,
+                row.get::<_, i64>(1)
+                    .map_err(|e| format!("sender_links col1: {e}"))?,
             ));
         }
         Ok(results)
@@ -432,10 +438,14 @@ impl ActionDb {
             .map_err(|e| format!("get_entities_for_title_match row: {e}"))?
         {
             results.push((
-                row.get::<_, String>(0).map_err(|e| format!("title_match col0: {e}"))?,
-                row.get::<_, String>(1).map_err(|e| format!("title_match col1: {e}"))?,
-                row.get::<_, String>(2).map_err(|e| format!("title_match col2: {e}"))?,
-                row.get::<_, Option<String>>(3).map_err(|e| format!("title_match col3: {e}"))?,
+                row.get::<_, String>(0)
+                    .map_err(|e| format!("title_match col0: {e}"))?,
+                row.get::<_, String>(1)
+                    .map_err(|e| format!("title_match col1: {e}"))?,
+                row.get::<_, String>(2)
+                    .map_err(|e| format!("title_match col2: {e}"))?,
+                row.get::<_, Option<String>>(3)
+                    .map_err(|e| format!("title_match col3: {e}"))?,
             ));
         }
         Ok(results)
@@ -561,7 +571,14 @@ impl ActionDb {
                 "INSERT OR IGNORE INTO linking_dismissals \
                  (owner_type, owner_id, entity_id, entity_type, dismissed_by, created_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-                params![owner_type, owner_id, entity_id, entity_type, dismissed_by, now],
+                params![
+                    owner_type,
+                    owner_id,
+                    entity_id,
+                    entity_type,
+                    dismissed_by,
+                    now
+                ],
             )
             .map(|_| ())
             .map_err(|e| format!("upsert_linking_dismissal: {e}"))
@@ -679,7 +696,8 @@ impl ActionDb {
             let person_id: String = row.get(0).map_err(|e| format!("pending_stk col0: {e}"))?;
             let name: String = row.get(1).map_err(|e| format!("pending_stk col1: {e}"))?;
             let email: String = row.get(2).map_err(|e| format!("pending_stk col2: {e}"))?;
-            let confidence: Option<f64> = row.get(3).map_err(|e| format!("pending_stk col3: {e}"))?;
+            let confidence: Option<f64> =
+                row.get(3).map_err(|e| format!("pending_stk col3: {e}"))?;
             let data_source: String = row.get(4).map_err(|e| format!("pending_stk col4: {e}"))?;
             let created_at: String = row.get(5).map_err(|e| format!("pending_stk col5: {e}"))?;
 
@@ -717,10 +735,7 @@ impl ActionDb {
     }
 
     /// Pop and return child emails waiting for a thread's primary to be set.
-    pub fn drain_thread_inheritance_queue(
-        &self,
-        thread_id: &str,
-    ) -> Result<Vec<String>, String> {
+    pub fn drain_thread_inheritance_queue(&self, thread_id: &str) -> Result<Vec<String>, String> {
         let mut children = Vec::new();
         {
             let conn = self.conn_ref();
@@ -812,43 +827,43 @@ impl ActionDb {
                 params![email_id],
                 |row| {
                     Ok(crate::db::types::DbEmail {
-                        email_id:            row.get(0)?,
-                        thread_id:           row.get(1)?,
-                        sender_email:        row.get(2)?,
-                        sender_name:         row.get(3)?,
-                        subject:             row.get(4)?,
-                        snippet:             row.get(5)?,
-                        priority:            row.get(6)?,
-                        is_unread:           row.get(7).unwrap_or(false),
-                        received_at:         row.get(8)?,
-                        enrichment_state:    row.get(9).unwrap_or_default(),
+                        email_id: row.get(0)?,
+                        thread_id: row.get(1)?,
+                        sender_email: row.get(2)?,
+                        sender_name: row.get(3)?,
+                        subject: row.get(4)?,
+                        snippet: row.get(5)?,
+                        priority: row.get(6)?,
+                        is_unread: row.get(7).unwrap_or(false),
+                        received_at: row.get(8)?,
+                        enrichment_state: row.get(9).unwrap_or_default(),
                         enrichment_attempts: 0,
-                        last_enrichment_at:  None,
-                        enriched_at:         None,
-                        last_seen_at:        None,
-                        resolved_at:         None,
-                        entity_id:           row.get(10)?,
-                        entity_type:         row.get(11)?,
-                        contextual_summary:  None,
-                        sentiment:           None,
-                        urgency:             None,
+                        last_enrichment_at: None,
+                        enriched_at: None,
+                        last_seen_at: None,
+                        resolved_at: None,
+                        entity_id: row.get(10)?,
+                        entity_type: row.get(11)?,
+                        contextual_summary: None,
+                        sentiment: None,
+                        urgency: None,
                         user_is_last_sender: row.get(12).unwrap_or(false),
-                        last_sender_email:   row.get(13)?,
-                        message_count:       row.get(14).unwrap_or(1),
-                        created_at:          row.get(15).unwrap_or_default(),
-                        updated_at:          row.get(16).unwrap_or_default(),
-                        relevance_score:     None,
-                        score_reason:        None,
-                        pinned_at:           None,
-                        commitments:         None,
-                        questions:           None,
-                        is_noise:            false,
+                        last_sender_email: row.get(13)?,
+                        message_count: row.get(14).unwrap_or(1),
+                        created_at: row.get(15).unwrap_or_default(),
+                        updated_at: row.get(16).unwrap_or_default(),
+                        relevance_score: None,
+                        score_reason: None,
+                        pinned_at: None,
+                        commitments: None,
+                        questions: None,
+                        is_noise: false,
                         // populated so manual_set_primary can rebuild a
                         // LinkingContext with real email participants (P4b/P4c/P4d
                         // fire, and the stakeholder-domain backfill sees real
                         // attendee domains).
-                        to_recipients:       row.get(17).ok(),
-                        cc_recipients:       row.get(18).ok(),
+                        to_recipients: row.get(17).ok(),
+                        cc_recipients: row.get(18).ok(),
                     })
                 },
             )

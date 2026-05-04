@@ -423,16 +423,7 @@ pub async fn generate_monthly_wrapped_if_needed(
         intel_hash_key
     );
     let ctx = state.live_service_context();
-    generate_report(
-        &ctx,
-        state,
-        "user",
-        "user",
-        "monthly_wrapped",
-        None,
-        None,
-    )
-    .await?;
+    generate_report(&ctx, state, "user", "user", "monthly_wrapped", None, None).await?;
     Ok(())
 }
 
@@ -629,15 +620,8 @@ mod tests {
 
         upsert_report(&db, "acc-4", "account", "swot", r#"{"old": true}"#, "h1")
             .expect("initial upsert");
-        save_report(
-            &ctx,
-            &db,
-            "acc-4",
-            "account",
-            "swot",
-            r#"{"edited": true}"#,
-        )
-        .expect("save_report");
+        save_report(&ctx, &db, "acc-4", "account", "swot", r#"{"edited": true}"#)
+            .expect("save_report");
 
         let report = get_report_cached(&db, "acc-4", "account", "swot")
             .expect("get")

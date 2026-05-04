@@ -93,12 +93,7 @@ pub fn recover_archived_transcripts(
         let files: Vec<_> = std::fs::read_dir(&date_dir)
             .map_err(|e| format!("Failed to read {}: {}", date_dir.display(), e))?
             .filter_map(|e| e.ok())
-            .filter(|e| {
-                e.path()
-                    .extension()
-                    .and_then(|ext| ext.to_str())
-                    == Some("md")
-            })
+            .filter(|e| e.path().extension().and_then(|ext| ext.to_str()) == Some("md"))
             .collect();
 
         for file_entry in files {
@@ -125,10 +120,7 @@ pub fn recover_archived_transcripts(
             let meeting_type_str = frontmatter_value(&content, "meeting_type");
 
             // Determine if this is a transcript or record based on filename
-            let filename = file_path
-                .file_name()
-                .and_then(|n| n.to_str())
-                .unwrap_or("");
+            let filename = file_path.file_name().and_then(|n| n.to_str()).unwrap_or("");
             let is_transcript = filename.contains("-transcript");
             let is_record = filename.contains("-record");
 
@@ -203,12 +195,7 @@ pub fn recover_archived_transcripts(
             // Update transcript_path in DB
             let now = chrono::Utc::now().to_rfc3339();
             if let Some(dest_str) = dest_path.to_str() {
-                let _ = db.update_meeting_transcript_metadata(
-                    &meeting_id,
-                    dest_str,
-                    &now,
-                    None,
-                );
+                let _ = db.update_meeting_transcript_metadata(&meeting_id, dest_str, &now, None);
             }
 
             let meeting_title = frontmatter_value(&content, "meeting_title")
@@ -275,9 +262,10 @@ fn resolve_recovery_destination(
     // Try entity links first
     if let Ok(entities) = db.get_meeting_entities(meeting_id) {
         // Account entity
-        if let Some(account_entity) = entities.iter().find(|e| {
-            e.entity_type == crate::entity::EntityType::Account
-        }) {
+        if let Some(account_entity) = entities
+            .iter()
+            .find(|e| e.entity_type == crate::entity::EntityType::Account)
+        {
             let account_dir =
                 crate::processor::transcript::sanitize_account_dir(&account_entity.name);
             return Some((
@@ -291,9 +279,10 @@ fn resolve_recovery_destination(
         }
 
         // Project entity
-        if let Some(project_entity) = entities.iter().find(|e| {
-            e.entity_type == crate::entity::EntityType::Project
-        }) {
+        if let Some(project_entity) = entities
+            .iter()
+            .find(|e| e.entity_type == crate::entity::EntityType::Project)
+        {
             let project_dir =
                 crate::processor::transcript::sanitize_account_dir(&project_entity.name);
             return Some((
@@ -314,9 +303,10 @@ fn resolve_recovery_destination(
                 .unwrap_or(false);
 
         if is_one_on_one {
-            if let Some(person_entity) = entities.iter().find(|e| {
-                e.entity_type == crate::entity::EntityType::Person
-            }) {
+            if let Some(person_entity) = entities
+                .iter()
+                .find(|e| e.entity_type == crate::entity::EntityType::Person)
+            {
                 let person_dir =
                     crate::processor::transcript::sanitize_account_dir(&person_entity.name);
                 return Some((
@@ -345,8 +335,10 @@ fn resolve_recovery_destination(
                         .collect()
                 };
 
-            let domains =
-                crate::signals::event_trigger::extract_domains_from_attendees(&attendees, user_domains);
+            let domains = crate::signals::event_trigger::extract_domains_from_attendees(
+                &attendees,
+                user_domains,
+            );
 
             let mut matched_accounts: Vec<(String, String)> = Vec::new();
             let mut seen_ids: HashSet<String> = HashSet::new();
@@ -362,8 +354,7 @@ fn resolve_recovery_destination(
 
             if matched_accounts.len() == 1 {
                 let (_, ref name) = matched_accounts[0];
-                let account_dir =
-                    crate::processor::transcript::sanitize_account_dir(name);
+                let account_dir = crate::processor::transcript::sanitize_account_dir(name);
                 return Some((
                     workspace
                         .join("Accounts")
@@ -471,8 +462,7 @@ fn resolve_recovery_destination(
                 .count();
 
             if tie_count == 1 {
-                let account_dir =
-                    crate::processor::transcript::sanitize_account_dir(name);
+                let account_dir = crate::processor::transcript::sanitize_account_dir(name);
                 log::info!(
                     "I662: Title-matched '{}' to account '{}' (confidence {:.2})",
                     title,

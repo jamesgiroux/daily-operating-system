@@ -151,14 +151,17 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
     log::info!("Entering dev mode — activating full isolation");
 
     // 0. Production snapshot — authoritative backup, never overwritten during dev mode
-    let snapshot_path = crate::state::live_config_path()?
-        .with_extension("json.production-snapshot");
+    let snapshot_path =
+        crate::state::live_config_path()?.with_extension("json.production-snapshot");
     if !snapshot_path.exists() {
         let live_path = crate::state::live_config_path()?;
         if live_path.exists() {
             std::fs::copy(&live_path, &snapshot_path)
                 .map_err(|e| format!("Failed to create production snapshot: {e}"))?;
-            log::info!("Production config snapshot created at {}", snapshot_path.display());
+            log::info!(
+                "Production config snapshot created at {}",
+                snapshot_path.display()
+            );
         }
     }
 
@@ -221,7 +224,9 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
     if !dev_ws.exists() {
         let entity_mode = {
             let g = state.config.read();
-            g.as_ref().map(|c| c.entity_mode.clone()).unwrap_or_else(|| "account".to_string())
+            g.as_ref()
+                .map(|c| c.entity_mode.clone())
+                .unwrap_or_else(|| "account".to_string())
         };
         crate::state::initialize_workspace(&dev_ws, &entity_mode)?;
     }
@@ -268,7 +273,9 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
             config.normalize();
             // Verify the loaded config doesn't point at the dev workspace
             if config.workspace_path.contains("DailyOS-dev") {
-                log::warn!("Live config.json workspace points to DailyOS-dev — restoring from backup");
+                log::warn!(
+                    "Live config.json workspace points to DailyOS-dev — restoring from backup"
+                );
                 restore_config_backup()?;
                 let content2 = std::fs::read_to_string(&live_path)
                     .map_err(|e| format!("Failed to read restored config: {e}"))?;
@@ -405,8 +412,14 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
 
     let destructive = matches!(
         scenario,
-        "reset" | "full" | "no_connectors" | "pipeline" | "golden"
-            | "linear_connected" | "glean_enriched" | "empty_portfolio"
+        "reset"
+            | "full"
+            | "no_connectors"
+            | "pipeline"
+            | "golden"
+            | "linear_connected"
+            | "glean_enriched"
+            | "empty_portfolio"
     );
 
     // On destructive scenario entry, ensure dev mode isolation is active.
@@ -498,7 +511,9 @@ pub fn restore_live(state: &AppState) -> Result<String, String> {
 
     let ws = {
         let g = state.config.read();
-        g.as_ref().map(|c| c.workspace_path.clone()).unwrap_or_else(|| "unknown".to_string())
+        g.as_ref()
+            .map(|c| c.workspace_path.clone())
+            .unwrap_or_else(|| "unknown".to_string())
     };
     Ok(format!("Restored to live mode — workspace: {}", ws))
 }
@@ -1111,7 +1126,11 @@ fn seed_glean_enriched_data(db: &ActionDb) -> Result<(), String> {
 }
 
 /// Merge a JSON patch into an entity's intelligence_json in entity_assessment.
-fn patch_entity_intelligence(conn: &rusqlite::Connection, entity_id: &str, patch: &serde_json::Value) {
+fn patch_entity_intelligence(
+    conn: &rusqlite::Connection,
+    entity_id: &str,
+    patch: &serde_json::Value,
+) {
     let existing: Option<String> = conn
         .prepare("SELECT intelligence_json FROM entity_assessment WHERE entity_id = ?1")
         .and_then(|mut stmt| stmt.query_row([entity_id], |row| row.get(0)))
@@ -1273,12 +1292,12 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         let g = state.config.read();
         g.as_ref().map(crate::types::UserContext::from_config)
     }
-        .unwrap_or(crate::types::UserContext {
-            name: None,
-            company: None,
-            title: None,
-            focus: None,
-        });
+    .unwrap_or(crate::types::UserContext {
+        name: None,
+        company: None,
+        title: None,
+        focus: None,
+    });
 
     let mut enriched = Vec::new();
 
@@ -2827,16 +2846,32 @@ pub(crate) fn seed_database(db: &ActionDb) -> Result<(), String> {
         ("mock-initech", "mock-priya-sharma", "technical_contact"),
         // Globex Holdings stakeholders
         ("mock-globex-holdings", "mock-chris-anderson", "champion"),
-        ("mock-globex-holdings", "mock-diego-martinez", "technical_lead"),
+        (
+            "mock-globex-holdings",
+            "mock-diego-martinez",
+            "technical_lead",
+        ),
         ("mock-globex-holdings", "mock-priya-shah", "end_user"),
         ("mock-globex-holdings", "mock-miguel-torres", "end_user"),
         ("mock-globex-holdings", "mock-jordan-chen", "associated"),
         ("mock-globex-holdings", "mock-sam-reyes", "associated"),
         ("mock-globex-holdings", "mock-avery-patel", "associated"),
         // Internal team links
-        ("mock-globex-holdings", "mock-riley-park", "account_executive"),
-        ("mock-globex-holdings", "mock-jamie-carter", "relationship_manager"),
-        ("mock-globex-holdings", "mock-taylor-smith", "technical_account_manager"),
+        (
+            "mock-globex-holdings",
+            "mock-riley-park",
+            "account_executive",
+        ),
+        (
+            "mock-globex-holdings",
+            "mock-jamie-carter",
+            "relationship_manager",
+        ),
+        (
+            "mock-globex-holdings",
+            "mock-taylor-smith",
+            "technical_account_manager",
+        ),
     ];
 
     for (account_id, person_id, rel) in &entity_links {

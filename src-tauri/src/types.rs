@@ -3307,8 +3307,14 @@ mod tests {
 
         let flags = build_feature_flags_from_config(&config);
 
-        assert!(flags.book_of_business_enabled, "book_of_business_enabled should be true when set in config");
-        assert!(flags.glean_discovery_enabled, "glean_discovery_enabled should be true when set in config");
+        assert!(
+            flags.book_of_business_enabled,
+            "book_of_business_enabled should be true when set in config"
+        );
+        assert!(
+            flags.glean_discovery_enabled,
+            "glean_discovery_enabled should be true when set in config"
+        );
     }
 
     #[test]
@@ -3319,8 +3325,14 @@ mod tests {
 
         let flags = build_feature_flags_from_config(&config);
 
-        assert!(!flags.book_of_business_enabled, "book_of_business_enabled should default to false");
-        assert!(!flags.glean_discovery_enabled, "glean_discovery_enabled should default to false");
+        assert!(
+            !flags.book_of_business_enabled,
+            "book_of_business_enabled should default to false"
+        );
+        assert!(
+            !flags.glean_discovery_enabled,
+            "glean_discovery_enabled should default to false"
+        );
     }
 
     #[test]
@@ -3334,7 +3346,10 @@ mod tests {
         let flags = build_feature_flags_from_config(&config);
 
         assert!(flags.book_of_business_enabled);
-        assert!(!flags.glean_discovery_enabled, "un-set flags should remain false");
+        assert!(
+            !flags.glean_discovery_enabled,
+            "un-set flags should remain false"
+        );
     }
 
     #[test]

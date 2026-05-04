@@ -4,13 +4,18 @@
 
 use std::collections::HashMap;
 
+use super::super::{
+    evidence, primitives,
+    types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome},
+};
 use crate::db::ActionDb;
-use super::super::{evidence, primitives, types::{Candidate, EntityRef, LinkRole, LinkingContext, RuleOutcome}};
 
 pub struct P4cGroupShared;
 
 impl super::super::phases::Rule for P4cGroupShared {
-    fn id(&self) -> &'static str { "P4c" }
+    fn id(&self) -> &'static str {
+        "P4c"
+    }
 
     fn evaluate(
         &self,
@@ -37,10 +42,7 @@ impl super::super::phases::Rule for P4cGroupShared {
         }
 
         // Exactly one account must have ≥2 votes for this rule to match.
-        let top: Vec<_> = account_votes
-            .iter()
-            .filter(|(_, &v)| v >= 2)
-            .collect();
+        let top: Vec<_> = account_votes.iter().filter(|(_, &v)| v >= 2).collect();
 
         if top.len() != 1 {
             return Ok(RuleOutcome::Skip);
@@ -51,7 +53,10 @@ impl super::super::phases::Rule for P4cGroupShared {
         let ev = evidence::matched_evidence(
             ctx,
             &Candidate {
-                entity: EntityRef { entity_id: account_id.clone(), entity_type: "account".to_string() },
+                entity: EntityRef {
+                    entity_id: account_id.clone(),
+                    entity_type: "account".to_string(),
+                },
                 role: LinkRole::Primary,
                 confidence: 0.90,
                 rule_id: "P4c".to_string(),
@@ -62,7 +67,10 @@ impl super::super::phases::Rule for P4cGroupShared {
         let _ = vote_count;
 
         Ok(RuleOutcome::Matched(Candidate {
-            entity: EntityRef { entity_id: account_id.clone(), entity_type: "account".to_string() },
+            entity: EntityRef {
+                entity_id: account_id.clone(),
+                entity_type: "account".to_string(),
+            },
             role: LinkRole::Primary,
             confidence: 0.90,
             rule_id: "P4c".to_string(),

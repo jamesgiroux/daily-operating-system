@@ -109,7 +109,14 @@ impl ActionDb {
             "INSERT INTO suppression_tombstones \
              (entity_id, field_key, item_key, item_hash, source_scope, expires_at) \
              VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            params![entity_id, field_key, item_key, item_hash, source_scope, expires_at],
+            params![
+                entity_id,
+                field_key,
+                item_key,
+                item_hash,
+                source_scope,
+                expires_at
+            ],
         )?;
         Ok(self.conn_ref().last_insert_rowid())
     }

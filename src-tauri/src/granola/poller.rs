@@ -72,15 +72,17 @@ pub async fn run_granola_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 let clock = crate::services::context::SystemClock;
                 let rng = crate::services::context::SystemRng;
                 let ext = crate::services::context::ExternalClients::default();
-                let svc_ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                let svc_ctx =
+                    crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                 for event in events {
-                    if let Err(e) = crate::services::entity_linking::calendar_adapter::evaluate_meeting(
-                        &svc_ctx,
-                        state.clone(),
-                        &event,
-                        crate::services::entity_linking::Trigger::TranscriptIngest,
-                    )
-                    .await
+                    if let Err(e) =
+                        crate::services::entity_linking::calendar_adapter::evaluate_meeting(
+                            &svc_ctx,
+                            state.clone(),
+                            &event,
+                            crate::services::entity_linking::Trigger::TranscriptIngest,
+                        )
+                        .await
                     {
                         log::warn!(
                             "entity_linking after Granola ingest failed (non-fatal) for {}: {}",
@@ -206,12 +208,8 @@ fn poll_once(
         emit_transcript_processed(state, app_handle, &matched.meeting_id);
 
         if let Ok((_, calendar_event)) = result {
-            let _ = crate::notification::notify_transcript_ready(
-                app_handle,
-                &doc.title,
-                None,
-                state,
-            );
+            let _ =
+                crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
             linkable_events.push(calendar_event);
         }
     }

@@ -29,9 +29,7 @@ pub(super) fn fix_unknown_relationships(
     for person in &people {
         let new_rel = crate::util::classify_relationship_multi(&person.email, user_domains);
         if new_rel != "unknown"
-            && crate::services::hygiene::update_person_relationship(
-                &ctx, db, &person.id, &new_rel,
-            )
+            && crate::services::hygiene::update_person_relationship(&ctx, db, &person.id, &new_rel)
                 .is_ok()
         {
             details.push(HygieneFixDetail {
