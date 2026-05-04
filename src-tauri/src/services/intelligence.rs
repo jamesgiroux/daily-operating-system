@@ -5,11 +5,9 @@ use std::path::Path;
 
 use crate::db::ActionDb;
 use crate::intel_queue::{
-    apply_enrichment_side_writes, compose_enrichment_intelligence,
-    fenced_write_enrichment_intelligence, gather_enrichment_input,
-    invalidate_and_requeue_meeting_preps_with_db, record_enrichment_contamination_rejection,
-    run_enrichment, run_enrichment_post_commit_side_effects, EnrichmentComposition, IntelPriority,
-    IntelRequest,
+    apply_enrichment_side_writes, compose_enrichment_intelligence, gather_enrichment_input,
+    record_enrichment_contamination_rejection, run_enrichment, run_enrichment_finalize_post_commit,
+    EnrichmentComposition, FinalizeMode, IntelPriority, IntelRequest,
 };
 use crate::pty::AiUsageContext;
 use crate::services::context::ServiceContext;
@@ -410,10 +408,6 @@ fn manual_refresh_error(stage: &str, error: &str) -> String {
     )
 }
 
-fn should_persist_inferred_relationships(composition: &EnrichmentComposition) -> bool {
-    matches!(composition, EnrichmentComposition::Persist(_))
-}
-
 /// Enrich an entity via the intelligence queue (split-lock pattern).
 pub async fn enrich_entity(
     ctx: &ServiceContext<'_>,
@@ -770,7 +764,6 @@ pub async fn enrich_entity(
             return Err(manual_refresh_error("write_results", &e));
         }
     };
-    let persist_inferred_relationships = should_persist_inferred_relationships(&composition);
     let final_intel = match composition {
         EnrichmentComposition::Persist(prepared) => {
             if let Err(e) = db.with_transaction(|tx| {
@@ -795,40 +788,15 @@ pub async fn enrich_entity(
                 );
                 return Err(manual_refresh_error("write_results", &e));
             }
-            fenced_write_enrichment_intelligence(&db, &input.entity_dir, prepared.intelligence());
-            run_enrichment_post_commit_side_effects(state, &input, &db, prepared.intelligence());
-            invalidate_and_requeue_meeting_preps_with_db(state, &db, &input.entity_id);
-            crate::self_healing::feedback::record_enrichment_success(&db, &input.entity_id);
-            prepared.into_intelligence()
-        }
-        EnrichmentComposition::SkipDueToContamination {
-            prior, rejection, ..
-        } => {
-            record_enrichment_contamination_rejection(ctx, state, &input, &db, &rejection);
-            prior
-        }
-    };
-    if persist_inferred_relationships && !parsed.inferred_relationships.is_empty() {
-        let engine = state.signals.engine.clone();
-        let entity_id_for_persist = input.entity_id.clone();
-        let entity_type_for_persist = input.entity_type.clone();
-        let inferred = parsed.inferred_relationships.clone();
-        let state_for_ctx = state.clone();
-        state
-            .db_write(move |db| {
-                let ctx = state_for_ctx.live_service_context();
-                upsert_inferred_relationships_from_enrichment(
-                    &ctx,
-                    db,
-                    engine.as_ref(),
-                    &entity_type_for_persist,
-                    &entity_id_for_persist,
-                    &inferred,
-                )
-                .map(|_| ())
-            })
-            .await
-            .map_err(|e| {
+            let final_intel = prepared.into_intelligence();
+            if let Err(e) = run_enrichment_finalize_post_commit(
+                state,
+                &db,
+                &input,
+                &final_intel,
+                &parsed.inferred_relationships,
+                FinalizeMode::ManualRefresh,
+            ) {
                 emit_manual_refresh_failed_best_effort(
                     ctx,
                     app_handle,
@@ -838,9 +806,17 @@ pub async fn enrich_entity(
                     "relationship_persist",
                     &e,
                 );
-                manual_refresh_error("relationship_persist", &e)
-            })?;
-    }
+                return Err(manual_refresh_error("relationship_persist", &e));
+            }
+            final_intel
+        }
+        EnrichmentComposition::SkipDueToContamination {
+            prior, rejection, ..
+        } => {
+            record_enrichment_contamination_rejection(ctx, state, &input, &db, &rejection);
+            prior
+        }
+    };
 
     if let Some(app) = app_handle {
         if let Err(e) = app.emit(
@@ -2340,12 +2316,11 @@ pub fn get_all_recommended_actions(
 
 #[cfg(test)]
 mod mutation_smoke_tests {
-    use crate::db::person_relationships::UpsertRelationship;
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
     use crate::intel_queue::{
         apply_enrichment_side_writes, compose_enrichment_intelligence_with_policy,
-        invalidate_and_requeue_meeting_preps_with_db, EnrichmentComposition, EnrichmentInput,
+        run_enrichment_finalize_post_commit, EnrichmentComposition, EnrichmentInput, FinalizeMode,
     };
     use crate::intelligence::contamination::ContaminationValidation;
     use crate::intelligence::io::{IntelRisk, IntelligenceJson, ItemSource, StakeholderInsight};
@@ -2357,6 +2332,7 @@ mod mutation_smoke_tests {
     use chrono::TimeZone;
     use rusqlite::params;
     use std::path::Path;
+    use std::sync::Arc;
 
     fn test_ctx<'a>(
         clock: &'a FixedClock,
@@ -2765,89 +2741,6 @@ mod mutation_smoke_tests {
     }
 
     #[test]
-    fn enrich_entity_skip_does_not_persist_inferred_relationships() {
-        let db = test_db();
-        let target = make_account("acc-contamination-target");
-        let foreign = make_account("acc-contamination-foreign");
-        db.upsert_account(&target).unwrap();
-        db.upsert_account(&foreign).unwrap();
-        seed_account_domain(&db, "acc-contamination-target", "target.example");
-        seed_account_domain(&db, "acc-contamination-foreign", "vip-test.com");
-        seed_person(&db, "p1", "Alice");
-        seed_person(&db, "p2", "Bob");
-        seed_person(&db, "p3", "Casey");
-        db.upsert_person_relationship(&UpsertRelationship {
-            id: "rel-existing-contamination",
-            from_person_id: "p1",
-            to_person_id: "p2",
-            relationship_type: "peer",
-            direction: "symmetric",
-            confidence: 0.9,
-            context_entity_id: Some("acc-contamination-target"),
-            context_entity_type: Some("account"),
-            source: "user_confirmed",
-            rationale: None,
-        })
-        .expect("seed prior relationship");
-
-        let before_count = count_query(&db, "SELECT COUNT(*) FROM person_relationships");
-        let dir = tempfile::tempdir().expect("tempdir");
-        let input = make_enrichment_input("acc-contamination-target", dir.path());
-        let contaminated = IntelligenceJson {
-            entity_id: "acc-contamination-target".to_string(),
-            entity_type: "account".to_string(),
-            enriched_at: "2026-05-03T01:00:00Z".to_string(),
-            executive_assessment: Some(
-                "WordPress VIP performance at vip-test.com remains stable.".to_string(),
-            ),
-            ..Default::default()
-        };
-        let composition = compose_enrichment_intelligence_with_policy(
-            &db,
-            &input,
-            &contaminated,
-            None,
-            ContaminationValidation::RejectOnHit,
-        )
-        .expect("compose contamination reject");
-        assert!(matches!(
-            &composition,
-            EnrichmentComposition::SkipDueToContamination { .. }
-        ));
-        let persist_inferred_relationships =
-            matches!(&composition, EnrichmentComposition::Persist(_));
-
-        let inferred = vec![InferredRelationship {
-            from_person_id: "p2".to_string(),
-            to_person_id: "p3".to_string(),
-            relationship_type: "collaborator".to_string(),
-            rationale: Some("They coordinate the implementation plan.".to_string()),
-        }];
-        if persist_inferred_relationships {
-            let engine = PropagationEngine::default();
-            let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
-            let rng = SeedableRng::new(42);
-            let ext = ExternalClients::default();
-            let ctx = test_ctx(&clock, &rng, &ext);
-            super::upsert_inferred_relationships_from_enrichment(
-                &ctx,
-                &db,
-                &engine,
-                "account",
-                "acc-contamination-target",
-                &inferred,
-            )
-            .expect("persist inferred relationships");
-        }
-
-        let after_count = count_query(&db, "SELECT COUNT(*) FROM person_relationships");
-        assert_eq!(
-            after_count, before_count,
-            "skip path must leave inferred relationships unchanged"
-        );
-    }
-
-    #[test]
     fn compose_enrichment_full_path_rollback_atomicity() {
         let db = test_db();
         let engine = PropagationEngine::default();
@@ -3182,6 +3075,8 @@ mod mutation_smoke_tests {
         let db = test_db();
         let account = make_account("acc-manual-parity");
         db.upsert_account(&account).unwrap();
+        seed_person(&db, "p-manual-parity-1", "Manual Buyer");
+        seed_person(&db, "p-manual-parity-2", "Manual Champion");
         db.conn_ref()
             .execute(
                 "INSERT INTO entity_assessment (entity_id, entity_type)
@@ -3215,9 +3110,32 @@ mod mutation_smoke_tests {
         let quality_before = crate::self_healing::quality::get_quality(&db, "acc-manual-parity")
             .expect("quality row before success");
 
-        let state = AppState::new();
-        invalidate_and_requeue_meeting_preps_with_db(&state, &db, "acc-manual-parity");
-        crate::self_healing::feedback::record_enrichment_success(&db, "acc-manual-parity");
+        let state = Arc::new(AppState::new());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input("acc-manual-parity", dir.path());
+        let intel = IntelligenceJson {
+            entity_id: "acc-manual-parity".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T01:00:00Z".to_string(),
+            executive_assessment: Some("manual parity assessment".to_string()),
+            ..Default::default()
+        };
+        let inferred = vec![InferredRelationship {
+            from_person_id: "p-manual-parity-1".to_string(),
+            to_person_id: "p-manual-parity-2".to_string(),
+            relationship_type: "collaborator".to_string(),
+            rationale: Some("They coordinate the manual parity rollout.".to_string()),
+        }];
+
+        run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &intel,
+            &inferred,
+            FinalizeMode::ManualRefresh,
+        )
+        .expect("manual finalize");
 
         let prep_frozen: Option<String> = db
             .conn_ref()
@@ -3236,6 +3154,16 @@ mod mutation_smoke_tests {
             1,
             "meeting prep invalidation should emit a prep_invalidated signal"
         );
+        assert_eq!(
+            count_query(
+                &db,
+                "SELECT COUNT(*) FROM person_relationships
+                 WHERE context_entity_id = 'acc-manual-parity'
+                   AND source = 'ai_enrichment'"
+            ),
+            1,
+            "manual finalize should persist inferred relationships before success stamping"
+        );
         let quality_after = crate::self_healing::quality::get_quality(&db, "acc-manual-parity")
             .expect("quality row after success");
         assert!(
@@ -3245,6 +3173,114 @@ mod mutation_smoke_tests {
         assert!(
             quality_after.last_enrichment_at.is_some(),
             "manual enrichment success should stamp last_enrichment_at"
+        );
+    }
+
+    #[test]
+    fn enrichment_finalize_does_not_stamp_success_when_relationship_persist_fails() {
+        let db = test_db();
+        let account = make_account("acc-finalize-rel-fails");
+        db.upsert_account(&account).unwrap();
+        seed_person(&db, "p-finalize-fail-1", "Fail Buyer");
+        seed_person(&db, "p-finalize-fail-2", "Fail Champion");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_assessment (entity_id, entity_type)
+                 VALUES (?1, 'account')",
+                params!["acc-finalize-rel-fails"],
+            )
+            .expect("seed entity assessment");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
+                 VALUES ('mtg-finalize-rel-fails', 'Finalize relationship failure', 'customer',
+                         '2999-01-01T00:00:00Z', '2026-05-03T00:00:00Z')",
+                [],
+            )
+            .expect("seed future meeting");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meeting_prep (meeting_id, prep_frozen_json, prep_frozen_at)
+                 VALUES ('mtg-finalize-rel-fails', '{\"status\":\"ready\"}', '2026-05-03T00:00:00Z')",
+                [],
+            )
+            .expect("seed frozen prep");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
+                 VALUES ('mtg-finalize-rel-fails', 'acc-finalize-rel-fails', 'account')",
+                [],
+            )
+            .expect("link meeting entity");
+        crate::self_healing::quality::ensure_quality_row(&db, "acc-finalize-rel-fails", "account");
+        let quality_before =
+            crate::self_healing::quality::get_quality(&db, "acc-finalize-rel-fails")
+                .expect("quality row before failure");
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_finalize_relationship_insert
+                 BEFORE INSERT ON person_relationships
+                 WHEN NEW.context_entity_id = 'acc-finalize-rel-fails'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced relationship persist failure');
+                 END;",
+            )
+            .expect("install relationship failure trigger");
+
+        let state = Arc::new(AppState::new());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input("acc-finalize-rel-fails", dir.path());
+        let intel = IntelligenceJson {
+            entity_id: "acc-finalize-rel-fails".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T01:00:00Z".to_string(),
+            executive_assessment: Some("relationship persistence should fail".to_string()),
+            ..Default::default()
+        };
+        let inferred = vec![InferredRelationship {
+            from_person_id: "p-finalize-fail-1".to_string(),
+            to_person_id: "p-finalize-fail-2".to_string(),
+            relationship_type: "collaborator".to_string(),
+            rationale: Some("Trigger forces failure before success stamp.".to_string()),
+        }];
+
+        let result = run_enrichment_finalize_post_commit(
+            &state,
+            &db,
+            &input,
+            &intel,
+            &inferred,
+            FinalizeMode::ManualRefresh,
+        );
+        assert!(
+            result.is_err_and(|err| err.contains("forced relationship persist failure")),
+            "relationship persistence failure should abort finalize before success"
+        );
+
+        let prep_frozen: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT prep_frozen_json FROM meeting_prep
+                 WHERE meeting_id = 'mtg-finalize-rel-fails'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read prep_frozen_json");
+        assert!(
+            prep_frozen.is_some(),
+            "prep invalidation must wait until after relationship persistence succeeds"
+        );
+        let quality_after =
+            crate::self_healing::quality::get_quality(&db, "acc-finalize-rel-fails")
+                .expect("quality row after failure");
+        assert_eq!(
+            quality_after.quality_alpha, quality_before.quality_alpha,
+            "success stamp must wait until after relationship persistence succeeds"
+        );
+        assert_eq!(
+            quality_after.last_enrichment_at, quality_before.last_enrichment_at,
+            "failed finalize must not stamp last_enrichment_at"
         );
     }
 
