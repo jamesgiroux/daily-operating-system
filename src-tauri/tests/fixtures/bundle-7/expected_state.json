@@ -1,0 +1,117 @@
+{
+  "post_action_state": {
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-test-closed-renewal-checklist",
+        "subject_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "claim_type": "entity_summary",
+        "field_path": "executiveAssessment",
+        "topic_key": "acct-test-1:renewal-checklist:closed-window",
+        "text": "As of 2025-11-02T12:00:00Z, acme.example.com had completed the renewal checklist.",
+        "data_source": "account_source_ref",
+        "source_ref": {
+          "source_id": "src-test-source-original",
+          "source_system": "account_source_ref",
+          "lifecycle_state": "active",
+          "temporal_scope": "closed",
+          "observed_at_window_end": "2025-11-02T12:00:00Z"
+        },
+        "source_asof": "2025-11-02T12:00:00Z",
+        "observed_at": "2025-11-02T12:00:00Z",
+        "observed_at_window_end": "2025-11-02T12:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "verification_state": "active",
+        "temporal_scope": "closed",
+        "trust_score_before": 0.76,
+        "trust_score": 0.76,
+        "trust_score_changed": false,
+        "trust_band": "likely_current",
+        "trust_version": 1,
+        "corroboration_count": 1,
+        "rejected_corroboration_count": 1,
+        "dominant_penalties": [
+          "freshness_weight",
+          "temporal_scope_validation"
+        ],
+        "metadata": {
+          "closed_window": true,
+          "post_closure_refresh_rejected": true,
+          "rejected_source_id": "src-test-source-stale-postclosure",
+          "days_after_window_end": 150
+        }
+      }
+    ],
+    "claim_corroborations": [
+      {
+        "id": "corroboration-test-source-original",
+        "claim_id": "claim-test-closed-renewal-checklist",
+        "data_source": "account_source_ref",
+        "source_mechanism": "src-test-source-original",
+        "source_asof": "2025-11-02T12:00:00Z",
+        "strength": 0.76,
+        "reinforcement_count": 1,
+        "last_reinforced_at": "2025-11-02T12:00:00Z"
+      }
+    ],
+    "rejected_corroborations": [
+      {
+        "id": "corroboration-test-stale-postclosure-rejected",
+        "claim_id": "claim-test-closed-renewal-checklist",
+        "attempted_data_source": "provider_completion",
+        "source_mechanism": "src-test-source-stale-postclosure",
+        "source_asof": "2026-04-01T12:00:00Z",
+        "observed_at": "2026-04-01T12:00:00Z",
+        "target_observed_at_window_end": "2025-11-02T12:00:00Z",
+        "days_after_window_end": 150,
+        "rejection_reason": "corroboration_outside_temporal_scope",
+        "affected_trust_score": false
+      }
+    ],
+    "confidence_evidence": [
+      {
+        "signal_type": "ConfidenceEvidence",
+        "claim_id": "claim-test-closed-renewal-checklist",
+        "factor": "freshness_weight",
+        "raw_value": 0,
+        "weight": 1,
+        "effective_value": 0,
+        "reason": "post_closure_evidence_cannot_refresh_closed_scope_claim",
+        "temporal_scope_validation": {
+          "claim_temporal_scope": "closed",
+          "claim_observed_at": "2025-11-02T12:00:00Z",
+          "claim_observed_at_window_end": "2025-11-02T12:00:00Z",
+          "evidence_source_id": "src-test-source-stale-postclosure",
+          "evidence_observed_at": "2026-04-01T12:00:00Z",
+          "days_after_window_end": 150,
+          "accepted": false,
+          "warning": "corroboration_outside_temporal_scope"
+        }
+      }
+    ],
+    "sources": [
+      {
+        "source_id": "src-test-source-original",
+        "storage": "account_source_refs.source_record_ref",
+        "lifecycle_state": "active",
+        "observed_at": "2025-11-02T12:00:00Z",
+        "source_asof": "2025-11-02T12:00:00Z",
+        "temporal_scope": "closed",
+        "observed_at_window_end": "2025-11-02T12:00:00Z"
+      },
+      {
+        "source_id": "src-test-source-stale-postclosure",
+        "storage": "account_source_refs.source_record_ref",
+        "lifecycle_state": "active",
+        "observed_at": "2026-04-01T12:00:00Z",
+        "source_asof": "2026-04-01T12:00:00Z",
+        "target_temporal_scope": "closed",
+        "target_observed_at_window_end": "2025-11-02T12:00:00Z",
+        "days_after_window_end": 150
+      }
+    ]
+  }
+}

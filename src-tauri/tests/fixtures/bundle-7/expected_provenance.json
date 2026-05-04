@@ -1,0 +1,295 @@
+{
+  "data": {
+    "entity_id": "acct-test-1",
+    "entity_type": "account",
+    "render_policy": "show-with-warnings",
+    "claim_id": "claim-test-closed-renewal-checklist",
+    "trust_score": 0.76,
+    "trust_score_before": 0.76,
+    "trust_score_changed": false,
+    "trust_band": "likely_current"
+  },
+  "provenance": {
+    "provenance_schema_version": 1,
+    "ability_name": "enrich_account_intelligence",
+    "ability_version": {
+      "major": 1,
+      "minor": 0
+    },
+    "ability_schema_version": 1,
+    "invocation_id": "77777777-7777-4777-8777-777777777777",
+    "produced_at": "2026-05-01T12:00:00Z",
+    "inputs_snapshot": {
+      "newest_signal_at": "2026-04-01T12:00:00Z",
+      "entity_watermarks": {
+        "acct-test-1": {
+          "entity_version": 1,
+          "last_updated": "2026-05-01T12:00:00Z"
+        }
+      },
+      "source_freshness": {
+        "src-test-source-original": "2025-11-02T12:00:00Z",
+        "src-test-source-stale-postclosure": "2026-04-01T12:00:00Z"
+      },
+      "source_lifecycle": {
+        "src-test-source-original": "active",
+        "src-test-source-stale-postclosure": "active"
+      },
+      "temporal_scope_windows": {
+        "claim-test-closed-renewal-checklist": {
+          "temporal_scope": "closed",
+          "observed_at": "2025-11-02T12:00:00Z",
+          "observed_at_window_end": "2025-11-02T12:00:00Z"
+        }
+      },
+      "provider_config_hash": "bundle-7-v1-synthetic-fingerprint",
+      "glean_connected": false
+    },
+    "actor": {
+      "kind": "user"
+    },
+    "mode": "evaluate",
+    "trust": {
+      "effective": "trusted_with_warning",
+      "contributions": [
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 0
+            }
+          },
+          "reason": "original_closed_scope_observation"
+        },
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 1
+            }
+          },
+          "reason": "post_closure_evidence_rejected_by_temporal_scope_gate"
+        }
+      ],
+      "contains_stored_synthesis": false
+    },
+    "sources": [
+      {
+        "data_source": {
+          "other": "account_source_ref"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "src-test-source-original",
+              "provider": "fixture"
+            }
+          }
+        ],
+        "observed_at": "2025-11-02T12:00:00Z",
+        "source_asof": "2025-11-02T12:00:00Z",
+        "evidence_weight": 0.9,
+        "scoring_class": "closed_scope_original",
+        "synthesis_marker": null,
+        "lifecycle_state": "active",
+        "temporal_scope": "closed",
+        "observed_at_window_end": "2025-11-02T12:00:00Z"
+      },
+      {
+        "data_source": {
+          "other": "provider_completion"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "src-test-source-stale-postclosure",
+              "provider": "fixture"
+            }
+          }
+        ],
+        "observed_at": "2026-04-01T12:00:00Z",
+        "source_asof": "2026-04-01T12:00:00Z",
+        "evidence_weight": 0.7,
+        "scoring_class": "post_closure_corroboration_attempt",
+        "synthesis_marker": {
+          "producer_ability": "enrich_account_intelligence",
+          "producer_invocation_id": "77777777-7777-4777-8777-777777777777",
+          "produced_at": "2026-05-01T12:00:00Z"
+        },
+        "lifecycle_state": "active",
+        "target_temporal_scope": "closed",
+        "target_observed_at_window_end": "2025-11-02T12:00:00Z",
+        "days_after_window_end": 150
+      }
+    ],
+    "thread_ids": [
+      "thread-test-closed-renewal-checklist"
+    ],
+    "prompt_fingerprint": {
+      "provider": "fixture",
+      "model": "replay",
+      "prompt_template_id": "account-intelligence-prep",
+      "prompt_template_version": "bundle-7-v1",
+      "canonical_prompt_hash": "bundle-7-v1-synthetic-fingerprint",
+      "temperature": 0,
+      "top_p": null,
+      "seed": 42,
+      "tokens_input": null,
+      "tokens_output": null,
+      "provider_completion_id": "bundle-7-provider-temporal-scope-violation"
+    },
+    "children": [],
+    "field_attributions": {
+      "/executiveAssessment": {
+        "subject": {
+          "subject": {
+            "account": "acct-test-1"
+          },
+          "binding": "direct_input",
+          "supporting_source_refs": [
+            {
+              "source": {
+                "source_index": 0
+              }
+            }
+          ],
+          "competing_subjects": [],
+          "fit": {
+            "status": "confident",
+            "confidence": 1,
+            "method": "direct_input"
+          }
+        },
+        "derivation": "closed_scope_projection",
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            },
+            "temporal_scope": "closed",
+            "observed_at_window_end": "2025-11-02T12:00:00Z"
+          }
+        ],
+        "rejected_source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            },
+            "reason": "corroboration_outside_temporal_scope",
+            "evidence_observed_at": "2026-04-01T12:00:00Z",
+            "target_observed_at_window_end": "2025-11-02T12:00:00Z",
+            "days_after_window_end": 150
+          }
+        ],
+        "confidence": {
+          "value": 0.76,
+          "kind": "computed"
+        },
+        "temporal_scope_validation": {
+          "claim_id": "claim-test-closed-renewal-checklist",
+          "claim_temporal_scope": "closed",
+          "claim_observed_at": "2025-11-02T12:00:00Z",
+          "claim_observed_at_window_end": "2025-11-02T12:00:00Z",
+          "candidate_source_id": "src-test-source-stale-postclosure",
+          "candidate_observed_at": "2026-04-01T12:00:00Z",
+          "match": false,
+          "warning": "corroboration_outside_temporal_scope"
+        },
+        "explanation": "Rendered content uses the original closed-window observation because the candidate corroborator was observed after the window closed."
+      },
+      "/verifyFirstClaims/0": {
+        "subject": {
+          "subject": {
+            "account": "acct-test-1"
+          },
+          "binding": "source_matched",
+          "supporting_source_refs": [
+            {
+              "source": {
+                "source_index": 1
+              }
+            }
+          ],
+          "competing_subjects": [],
+          "fit": {
+            "status": "confident",
+            "confidence": 1,
+            "method": "source_ref_match"
+          }
+        },
+        "derivation": "temporal_scope_gate",
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            },
+            "temporal_scope_mismatch": {
+              "claim_temporal_scope": "closed",
+              "observed_at_window_end": "2025-11-02T12:00:00Z",
+              "evidence_observed_at": "2026-04-01T12:00:00Z"
+            }
+          }
+        ],
+        "confidence": {
+          "value": 0,
+          "kind": "computed"
+        },
+        "explanation": "The attempted corroboration is reported for audit but cannot refresh the closed-scope claim."
+      }
+    },
+    "subject": {
+      "subject": {
+        "account": "acct-test-1"
+      },
+      "binding": "direct_input",
+      "supporting_source_refs": [
+        {
+          "source": {
+            "source_index": 0
+          }
+        }
+      ],
+      "competing_subjects": [],
+      "fit": {
+        "status": "confident",
+        "confidence": 1,
+        "method": "direct_input"
+      }
+    },
+    "warnings": [
+      {
+        "corroboration_outside_temporal_scope": {
+          "field": "/executiveAssessment",
+          "claim_id": "claim-test-closed-renewal-checklist",
+          "source_id": "src-test-source-stale-postclosure",
+          "evidence_observed_at": "2026-04-01T12:00:00Z",
+          "observed_at_window_end": "2025-11-02T12:00:00Z",
+          "days_after_window_end": 150
+        }
+      }
+    ],
+    "claim_attribution": {
+      "claim-test-closed-renewal-checklist": {
+        "attributed_source": "account_source_ref",
+        "source_index": 0,
+        "corroborators": [
+          "src-test-source-original"
+        ],
+        "rejected_corroborators": [
+          "src-test-source-stale-postclosure"
+        ],
+        "contradicts": [],
+        "warnings": [
+          "corroboration_outside_temporal_scope"
+        ]
+      }
+    }
+  },
+  "ability_version": {
+    "major": 1,
+    "minor": 0
+  },
+  "diagnostics": {
+    "warnings": [
+      "corroboration_outside_temporal_scope"
+    ]
+  }
+}

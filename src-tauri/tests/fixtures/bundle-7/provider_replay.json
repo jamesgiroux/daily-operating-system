@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "request_key_hex": "7777777777777777777777777777777777777777777777777777777777777777",
+      "method": "POST",
+      "url": "https://provider.example.com/complete",
+      "auth_scope_id": "test-tenant-1",
+      "response": {
+        "status": 200,
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ]
+        ],
+        "body_base64": "eyJ2ZXJzaW9uIjoxLCJlbnRpdHlJZCI6ImFjY3QtdGVzdC0xIiwiZW50aXR5VHlwZSI6ImFjY291bnQiLCJlbnJpY2hlZEF0IjoiMjAyNi0wNS0wMVQxMjowMDowMFoiLCJzb3VyY2VGaWxlQ291bnQiOjIsInNvdXJjZU1hbmlmZXN0IjpbeyJmaWxlbmFtZSI6InNvdXJjZTovL3NyYy10ZXN0LXNvdXJjZS1vcmlnaW5hbCIsIm1vZGlmaWVkQXQiOiIyMDI1LTExLTAyVDEyOjAwOjAwWiIsImZvcm1hdCI6Impzb24iLCJjb250ZW50VHlwZSI6ImNsb3NlZF9zY29wZV9hY2NvdW50X2ZhY3QifSx7ImZpbGVuYW1lIjoic291cmNlOi8vc3JjLXRlc3Qtc291cmNlLXN0YWxlLXBvc3RjbG9zdXJlIiwibW9kaWZpZWRBdCI6IjIwMjYtMDQtMDFUMTI6MDA6MDBaIiwiZm9ybWF0IjoianNvbiIsImNvbnRlbnRUeXBlIjoicG9zdF9jbG9zdXJlX2FjY291bnRfZmFjdCJ9XSwiZXhlY3V0aXZlQXNzZXNzbWVudCI6ImFjbWUuZXhhbXBsZS5jb20gY29tcGxldGVkIHRoZSByZW5ld2FsIGNoZWNrbGlzdCBhbmQgc2hvdWxkIGJlIHRyZWF0ZWQgYXMgcmVmcmVzaGVkIGN1cnJlbnQgYWNjb3VudCBpbnRlbGxpZ2VuY2UuIiwicmlza3MiOltdLCJyZWNlbnRXaW5zIjpbeyJ0ZXh0IjoiUmVuZXdhbCBjaGVja2xpc3QgaXMgc3RpbGwgY29tcGxldGUgYmFzZWQgb24gdGhlIEFwcmlsIDEgb2JzZXJ2YXRpb24uIiwic291cmNlIjoicHJvdmlkZXIgY29tcGxldGlvbiIsImltcGFjdCI6IkF0dGVtcHRzIHRvIHJlZnJlc2ggYSBjbG9zZWQtd2luZG93IGNsYWltIHdpdGggcG9zdC1jbG9zdXJlIGV2aWRlbmNlLiIsIml0ZW1Tb3VyY2UiOnsic291cmNlIjoicHJvdmlkZXJfY29tcGxldGlvbiIsImNvbmZpZGVuY2UiOjAuODIsInNvdXJjZWRBdCI6IjIwMjYtMDQtMDFUMTI6MDA6MDBaIiwicmVmZXJlbmNlIjoic3JjLXRlc3Qtc291cmNlLXN0YWxlLXBvc3RjbG9zdXJlIn0sImRpc2NyZXBhbmN5Ijp0cnVlfV0sInN0YWtlaG9sZGVySW5zaWdodHMiOltdLCJzb3VyY2VBdHRyaWJ1dGlvbiI6eyJleGVjdXRpdmVBc3Nlc3NtZW50IjpbInByb3ZpZGVyX2NvbXBsZXRpb246c3JjLXRlc3Qtc291cmNlLXN0YWxlLXBvc3RjbG9zdXJlIl0sInJpc2tzIjpbXSwicmVjZW50V2lucyI6WyJwcm92aWRlcl9jb21wbGV0aW9uOnNyYy10ZXN0LXNvdXJjZS1zdGFsZS1wb3N0Y2xvc3VyZSJdLCJzdGFrZWhvbGRlckluc2lnaHRzIjpbXX19"
+      }
+    }
+  ]
+}

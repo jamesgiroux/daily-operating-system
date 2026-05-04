@@ -1,0 +1,112 @@
+{
+  "version": 1,
+  "entityId": "acct-test-1",
+  "entityType": "account",
+  "enrichedAt": "2026-05-01T12:00:00Z",
+  "sourceFileCount": 2,
+  "sourceManifest": [
+    {
+      "filename": "source://src-test-source-original",
+      "modifiedAt": "2025-11-02T12:00:00Z",
+      "format": "json",
+      "contentType": "closed_scope_account_fact"
+    },
+    {
+      "filename": "source://src-test-source-stale-postclosure",
+      "modifiedAt": "2026-04-01T12:00:00Z",
+      "format": "json",
+      "contentType": "post_closure_account_fact"
+    }
+  ],
+  "executiveAssessment": "As of 2025-11-02T12:00:00Z, acme.example.com had completed the renewal checklist.",
+  "risks": [],
+  "recentWins": [
+    {
+      "text": "Closed-window renewal checklist remained recorded as complete at the window close.",
+      "source": "src-test-source-original",
+      "impact": "Rendered from the original closed-scope observation, not refreshed by post-closure evidence.",
+      "itemSource": {
+        "source": "account_source_ref",
+        "confidence": 0.76,
+        "sourcedAt": "2025-11-02T12:00:00Z",
+        "reference": "src-test-source-original"
+      },
+      "discrepancy": false
+    }
+  ],
+  "stakeholderInsights": [],
+  "authoritativeClaims": [
+    {
+      "fieldPath": "executiveAssessment",
+      "claimId": "claim-test-closed-renewal-checklist",
+      "text": "As of 2025-11-02T12:00:00Z, acme.example.com had completed the renewal checklist.",
+      "sourceId": "src-test-source-original",
+      "temporalScope": "closed",
+      "observedAtWindowEnd": "2025-11-02T12:00:00Z",
+      "trustScore": 0.76,
+      "trustBand": "likely_current",
+      "marking": "closed_scope_preserved"
+    }
+  ],
+  "verifyFirstClaims": [
+    {
+      "fieldPath": "executiveAssessment",
+      "claimId": "claim-test-closed-renewal-checklist",
+      "attemptedSourceId": "src-test-source-stale-postclosure",
+      "attemptedObservedAt": "2026-04-01T12:00:00Z",
+      "trustScore": 0.76,
+      "trustBand": "likely_current",
+      "warningBand": "verify_first",
+      "warnings": [
+        "corroboration_outside_temporal_scope"
+      ]
+    }
+  ],
+  "sourceAttribution": {
+    "executiveAssessment": [
+      "account_source_ref:src-test-source-original"
+    ],
+    "risks": [],
+    "recentWins": [
+      "account_source_ref:src-test-source-original"
+    ],
+    "stakeholderInsights": [],
+    "authoritativeClaims": [
+      "account_source_ref:src-test-source-original"
+    ],
+    "verifyFirstClaims": [
+      "provider_completion:src-test-source-stale-postclosure"
+    ]
+  },
+  "consistencyStatus": "flagged",
+  "consistencyFindings": [
+    {
+      "code": "CORROBORATION_OUTSIDE_TEMPORAL_SCOPE",
+      "severity": "high",
+      "fieldPath": "executiveAssessment",
+      "claimText": "As of 2025-11-02T12:00:00Z, acme.example.com had completed the renewal checklist.",
+      "evidenceText": "src-test-source-stale-postclosure was observed on 2026-04-01T12:00:00Z, 150 days after the closed window ended.",
+      "autoFixed": false
+    }
+  ],
+  "renderPolicy": "show-with-warnings",
+  "trustAnnotations": {
+    "executiveAssessment": {
+      "claimId": "claim-test-closed-renewal-checklist",
+      "trustScore": 0.76,
+      "trustScoreBefore": 0.76,
+      "trustScoreChanged": false,
+      "trustBand": "likely_current",
+      "warningBand": "verify_first",
+      "warnings": [
+        "corroboration_outside_temporal_scope"
+      ],
+      "dominantPenalties": [
+        "freshness_weight",
+        "temporal_scope_validation"
+      ],
+      "corroborationCount": 1,
+      "rejectedCorroborationCount": 1
+    }
+  }
+}
