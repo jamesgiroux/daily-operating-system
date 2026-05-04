@@ -1,0 +1,256 @@
+{
+  "data": {
+    "entity_id": "acct-test-1",
+    "entity_type": "account",
+    "render_policy": "suppress",
+    "claim_id": "claim-test-resurrected-inbox-vendor",
+    "trust_score": 0.18,
+    "trust_band": "needs_verification"
+  },
+  "provenance": {
+    "provenance_schema_version": 1,
+    "ability_name": "enrich_account_intelligence",
+    "ability_version": {
+      "major": 1,
+      "minor": 0
+    },
+    "ability_schema_version": 1,
+    "invocation_id": "33333333-3333-4333-8333-333333333333",
+    "produced_at": "2026-05-01T12:00:00Z",
+    "inputs_snapshot": {
+      "newest_signal_at": "2026-05-01T12:00:00Z",
+      "entity_watermarks": {
+        "acct-test-1": {
+          "entity_version": 1,
+          "last_updated": "2026-05-01T12:00:00Z"
+        }
+      },
+      "source_freshness": {
+        "src-test-source-withdrawn": "2026-04-01T12:00:00Z",
+        "src-test-source-original": "2026-04-30T12:00:00Z",
+        "provider-completion": "2026-05-01T12:00:00Z"
+      },
+      "source_lifecycle": {
+        "src-test-source-withdrawn": "withdrawn",
+        "src-test-source-original": "active"
+      },
+      "provider_config_hash": "bundle-3-v1-synthetic-fingerprint",
+      "glean_connected": false
+    },
+    "actor": {
+      "kind": "user"
+    },
+    "mode": "evaluate",
+    "trust": {
+      "effective": "untrusted",
+      "contributions": [
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 0
+            }
+          },
+          "reason": "directly_from_active_reference_source"
+        },
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 1
+            }
+          },
+          "reason": "directly_from_withdrawn_source"
+        },
+        {
+          "source": {
+            "feedback_signal": {
+              "feedback_id": "feedback-test-dismissed-inbox-vendor",
+              "claim_id": "claim-test-dismissed-inbox-vendor"
+            }
+          },
+          "reason": "prior_user_dismissal"
+        }
+      ],
+      "contains_stored_synthesis": false
+    },
+    "sources": [
+      {
+        "data_source": {
+          "other": "account_source_ref"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "src-test-source-original",
+              "provider": "vendor.example.com"
+            }
+          }
+        ],
+        "observed_at": "2026-04-30T12:00:00Z",
+        "source_asof": "2026-04-30T12:00:00Z",
+        "evidence_weight": 0.95,
+        "scoring_class": "reference",
+        "synthesis_marker": null,
+        "lifecycle_state": "active"
+      },
+      {
+        "data_source": {
+          "other": "provider_completion"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "src-test-source-withdrawn",
+              "provider": "vendor.example.com"
+            }
+          }
+        ],
+        "observed_at": "2026-04-01T12:00:00Z",
+        "source_asof": "2026-04-01T12:00:00Z",
+        "evidence_weight": 0.05,
+        "scoring_class": "withdrawn",
+        "synthesis_marker": {
+          "producer_ability": "enrich_account_intelligence",
+          "producer_invocation_id": "33333333-3333-4333-8333-333333333333",
+          "produced_at": "2026-05-01T12:00:00Z"
+        },
+        "lifecycle_state": "withdrawn"
+      }
+    ],
+    "thread_ids": [
+      "thread-test-inbox-vendor"
+    ],
+    "prompt_fingerprint": {
+      "provider": "vendor.example.com",
+      "model": "replay",
+      "prompt_template_id": "account-intelligence-prep",
+      "prompt_template_version": "bundle-3-v1",
+      "canonical_prompt_hash": "bundle-3-v1-synthetic-fingerprint",
+      "temperature": 0,
+      "top_p": null,
+      "seed": 42,
+      "tokens_input": null,
+      "tokens_output": null,
+      "provider_completion_id": "src-test-source-withdrawn"
+    },
+    "children": [],
+    "field_attributions": {
+      "/executiveAssessment": {
+        "subject": {
+          "subject": {
+            "account": "acct-test-1"
+          },
+          "binding": "direct_input",
+          "supporting_source_refs": [],
+          "competing_subjects": [],
+          "fit": {
+            "status": "confident",
+            "confidence": 1,
+            "method": "direct_input"
+          }
+        },
+        "derivation": "llm_synthesis",
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            },
+            "lifecycle_state": "withdrawn"
+          }
+        ],
+        "confidence": {
+          "value": 0.18,
+          "kind": "computed"
+        },
+        "explanation": "Provider completion repeated a claim previously dismissed by the user and attributed it to a withdrawn source."
+      },
+      "/suppressedFields/0": {
+        "subject": {
+          "subject": {
+            "account": "acct-test-1"
+          },
+          "binding": "source_matched",
+          "supporting_source_refs": [
+            {
+              "source": {
+                "source_index": 1
+              }
+            }
+          ],
+          "competing_subjects": [],
+          "fit": {
+            "status": "confident",
+            "confidence": 1,
+            "method": "source_ref_match"
+          }
+        },
+        "derivation": "suppression_policy",
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            },
+            "lifecycle_state": "withdrawn"
+          }
+        ],
+        "confidence": {
+          "value": 0.18,
+          "kind": "computed"
+        },
+        "explanation": "Suppressed by source_withdrawn and prior_user_dismissal gates."
+      }
+    },
+    "subject": {
+      "subject": {
+        "account": "acct-test-1"
+      },
+      "binding": "direct_input",
+      "supporting_source_refs": [],
+      "competing_subjects": [],
+      "fit": {
+        "status": "confident",
+        "confidence": 1,
+        "method": "direct_input"
+      }
+    },
+    "warnings": [
+      {
+        "source_withdrawn": {
+          "field": "/executiveAssessment",
+          "source_id": "src-test-source-withdrawn",
+          "lifecycle_state": "withdrawn"
+        }
+      },
+      {
+        "prior_user_dismissal": {
+          "field": "/executiveAssessment",
+          "feedback_id": "feedback-test-dismissed-inbox-vendor",
+          "prior_claim_id": "claim-test-dismissed-inbox-vendor"
+        }
+      }
+    ],
+    "claim_attribution": {
+      "claim-test-resurrected-inbox-vendor": {
+        "attributed_source": "provider_completion",
+        "source_index": 1,
+        "corroborators": [],
+        "contradicts": [],
+        "warnings": [
+          "source_withdrawn",
+          "prior_user_dismissal",
+          "stale_source_resurrection"
+        ]
+      }
+    }
+  },
+  "ability_version": {
+    "major": 1,
+    "minor": 0
+  },
+  "diagnostics": {
+    "warnings": [
+      "source_withdrawn",
+      "prior_user_dismissal",
+      "stale_source_resurrection"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "request_key_hex": "6b655d93f23360362620d18fa649ae5b8635f5efc5460e793be8a5a96f6277f2",
+      "method": "POST",
+      "url": "https://vendor.example.com/complete",
+      "auth_scope_id": "test-tenant-1",
+      "response": {
+        "status": 200,
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ]
+        ],
+        "body_base64": "eyJ2ZXJzaW9uIjoxLCJlbnRpdHlJZCI6ImFjY3QtdGVzdC0xIiwiZW50aXR5VHlwZSI6ImFjY291bnQiLCJlbnJpY2hlZEF0IjoiMjAyNi0wNS0wMVQxMjowMDowMFoiLCJzb3VyY2VGaWxlQ291bnQiOjIsInNvdXJjZU1hbmlmZXN0IjpbeyJmaWxlbmFtZSI6InNvdXJjZTovL3NyYy10ZXN0LXNvdXJjZS13aXRoZHJhd24iLCJtb2RpZmllZEF0IjoiMjAyNi0wNS0wMVQxMjowMDowMFoiLCJmb3JtYXQiOiJqc29uIiwiY29udGVudFR5cGUiOiJhY2NvdW50X2ZhY3QifSx7ImZpbGVuYW1lIjoic291cmNlOi8vc3JjLXRlc3Qtc291cmNlLW9yaWdpbmFsIiwibW9kaWZpZWRBdCI6IjIwMjYtMDQtMzBUMTI6MDA6MDBaIiwiZm9ybWF0IjoianNvbiIsImNvbnRlbnRUeXBlIjoiYWNjb3VudF9mYWN0In1dLCJleGVjdXRpdmVBc3Nlc3NtZW50IjoiQWNjb3VudCBtb3ZlZCBwcmltYXJ5IGluYm94IHRvIGEgbmV3IHZlbmRvciBhdCBlbmQgb2YgUTEuIiwicmlza3MiOltdLCJyZWNlbnRXaW5zIjpbXSwic3Rha2Vob2xkZXJJbnNpZ2h0cyI6W10sInNvdXJjZUF0dHJpYnV0aW9uIjp7ImV4ZWN1dGl2ZUFzc2Vzc21lbnQiOlsicHJvdmlkZXJfY29tcGxldGlvbjpzcmMtdGVzdC1zb3VyY2Utd2l0aGRyYXduIl0sInJpc2tzIjpbXSwicmVjZW50V2lucyI6W10sInN0YWtlaG9sZGVySW5zaWdodHMiOltdfX0="
+      }
+    }
+  ]
+}

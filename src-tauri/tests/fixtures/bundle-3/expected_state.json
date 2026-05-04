@@ -1,0 +1,80 @@
+{
+  "post_action_state": {
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-test-resurrected-inbox-vendor",
+        "subject_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "claim_type": "entity_summary",
+        "field_path": "executiveAssessment",
+        "topic_key": "acct-test-1:inbox-vendor-migration:q1",
+        "text": "Account moved primary inbox to a new vendor at end of Q1.",
+        "data_source": "provider_completion",
+        "source_ref": {
+          "source_id": "src-test-source-withdrawn",
+          "provider": "vendor.example.com",
+          "attribution": "provider_completion",
+          "lifecycle_state": "withdrawn"
+        },
+        "source_asof": "2026-05-01T12:00:00Z",
+        "observed_at": "2026-05-01T12:00:00Z",
+        "claim_state": "dormant",
+        "surfacing_state": "dormant",
+        "verification_state": "contested",
+        "verification_reason": "source_withdrawn_and_prior_user_dismissal",
+        "trust_score": 0.18,
+        "trust_band": "needs_verification",
+        "trust_version": 1,
+        "corroboration_count": 0,
+        "dominant_penalties": [
+          "user_feedback_weight",
+          "freshness_weight",
+          "source_lifecycle"
+        ],
+        "metadata": {
+          "source_withdrawn": true,
+          "prior_user_dismissal": true,
+          "prior_feedback_id": "feedback-test-dismissed-inbox-vendor",
+          "prior_claim_id": "claim-test-dismissed-inbox-vendor"
+        }
+      }
+    ],
+    "preserved_claims": [
+      "claim-test-dismissed-inbox-vendor: Account moved primary inbox to a new vendor at end of Q1."
+    ],
+    "claim_feedback": [
+      {
+        "id": "feedback-test-dismissed-inbox-vendor",
+        "claim_id": "claim-test-dismissed-inbox-vendor",
+        "feedback_type": "mark_false",
+        "feedback_label": "Dismissed",
+        "actor": "user",
+        "actor_id": null,
+        "payload_json": {
+          "legacy_feedback_label": "Dismissed",
+          "field_path": "executiveAssessment",
+          "reason": "user_dismissed_resurrected_topic"
+        },
+        "submitted_at": "2026-04-16T12:00:00Z",
+        "applied_at": "2026-04-16T12:00:00Z"
+      }
+    ],
+    "sources": [
+      {
+        "source_id": "src-test-source-withdrawn",
+        "storage": "account_source_refs.source_record_ref",
+        "lifecycle_state": "withdrawn",
+        "observed_at": "2026-04-01T12:00:00Z",
+        "withdrawn_at": "2026-04-26T12:00:00Z"
+      },
+      {
+        "source_id": "src-test-source-original",
+        "storage": "account_source_refs.source_record_ref",
+        "lifecycle_state": "active",
+        "observed_at": "2026-04-30T12:00:00Z"
+      }
+    ]
+  }
+}

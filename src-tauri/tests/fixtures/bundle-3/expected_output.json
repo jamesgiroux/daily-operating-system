@@ -1,0 +1,88 @@
+{
+  "version": 1,
+  "entityId": "acct-test-1",
+  "entityType": "account",
+  "enrichedAt": "2026-05-01T12:00:00Z",
+  "sourceFileCount": 2,
+  "sourceManifest": [
+    {
+      "filename": "source://src-test-source-withdrawn",
+      "modifiedAt": "2026-05-01T12:00:00Z",
+      "format": "json",
+      "contentType": "account_fact"
+    },
+    {
+      "filename": "source://src-test-source-original",
+      "modifiedAt": "2026-04-30T12:00:00Z",
+      "format": "json",
+      "contentType": "account_fact"
+    }
+  ],
+  "executiveAssessment": "",
+  "risks": [],
+  "recentWins": [],
+  "stakeholderInsights": [],
+  "sourceAttribution": {
+    "executiveAssessment": [
+      "provider_completion:src-test-source-withdrawn"
+    ],
+    "risks": [],
+    "recentWins": [],
+    "stakeholderInsights": []
+  },
+  "consistencyStatus": "suppressed",
+  "consistencyFindings": [
+    {
+      "code": "STALE_SOURCE_RESURRECTION",
+      "severity": "high",
+      "fieldPath": "executiveAssessment",
+      "claimText": "Account moved primary inbox to a new vendor at end of Q1.",
+      "evidenceText": "Prior user dismissal exists for the same claim and the attributed source is withdrawn.",
+      "autoFixed": false
+    }
+  ],
+  "renderPolicy": "suppress",
+  "suppressedFields": [
+    {
+      "fieldPath": "executiveAssessment",
+      "claimId": "claim-test-resurrected-inbox-vendor",
+      "sourceId": "src-test-source-withdrawn",
+      "trustBand": "needs_verification",
+      "warnings": [
+        "source_withdrawn",
+        "prior_user_dismissal"
+      ]
+    }
+  ],
+  "trustAnnotations": {
+    "executiveAssessment": {
+      "claimId": "claim-test-resurrected-inbox-vendor",
+      "trustScore": 0.18,
+      "trustBand": "needs_verification",
+      "warningBand": "verify_first",
+      "warnings": [
+        "source_withdrawn",
+        "prior_user_dismissal",
+        "stale_source_resurrection"
+      ],
+      "dominantPenalties": [
+        "user_feedback_weight",
+        "freshness_weight",
+        "source_lifecycle"
+      ],
+      "corroborationCount": 0
+    },
+    "risks": {
+      "trustScore": 1,
+      "trustBand": "trusted",
+      "warningBand": null,
+      "warnings": []
+    },
+    "recentWins": {
+      "trustScore": 1,
+      "trustBand": "trusted",
+      "warningBand": null,
+      "warnings": []
+    }
+  }
+}

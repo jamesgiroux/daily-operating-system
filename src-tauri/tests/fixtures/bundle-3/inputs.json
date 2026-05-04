@@ -1,0 +1,11 @@
+{
+  "ability_name": "enrich_account_intelligence",
+  "input_json": {
+    "entity_type": "account",
+    "entity_id": "acct-test-1",
+    "schema_version": 1
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}
