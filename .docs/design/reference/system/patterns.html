@@ -11,16 +11,40 @@
 <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
 <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
 <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
-<link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
+<link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
+<link rel="stylesheet" href="../_shared/styles/AccountHero.module.css">
+<link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
 <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
 <link rel="stylesheet" href="../_shared/styles/editable-inline.module.css">
+<link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
+<link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+<link rel="stylesheet" href="../_shared/styles/MeetingStatusPill.module.css">
+<link rel="stylesheet" href="../_shared/styles/TrustBandBadge.module.css">
+<link rel="stylesheet" href="../_shared/styles/ProvenanceTag.module.css">
+<link rel="stylesheet" href="../_shared/styles/FreshnessIndicator.module.css">
+<link rel="stylesheet" href="../_shared/styles/AsOfTimestamp.module.css">
+<link rel="stylesheet" href="../_shared/styles/SourceCoverageLine.module.css">
+<link rel="stylesheet" href="../_shared/styles/ConfidenceScoreChip.module.css">
+<link rel="stylesheet" href="../_shared/styles/VerificationStatusFlag.module.css">
+<link rel="stylesheet" href="../_shared/styles/DataGapNotice.module.css">
+<link rel="stylesheet" href="../_shared/styles/GlanceCell.module.css">
 <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
 <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
+<link rel="stylesheet" href="../_shared/styles/DayChart.module.css">
+<link rel="stylesheet" href="../_shared/styles/AskAnythingDock.module.css">
+<link rel="stylesheet" href="../_shared/styles/EntityPortraitCard.module.css">
+<link rel="stylesheet" href="../_shared/styles/ThreadMark.module.css">
 <link rel="stylesheet" href="../_shared/styles/PostMeetingIntelligence.module.css">
 <link rel="stylesheet" href="../_shared/styles/AboutThisDossier.module.css">
 <link rel="stylesheet" href="../_shared/styles/health.module.css">
 <link rel="stylesheet" href="../_shared/styles/meeting-intel.module.css">
 <link rel="stylesheet" href="../_shared/styles/report-shell.module.css">
+<link rel="stylesheet" href="../_shared/styles/TrustBand.module.css">
+<link rel="stylesheet" href="../_shared/styles/ClaimRow.module.css">
+<link rel="stylesheet" href="../_shared/styles/ReceiptCallout.module.css">
+<link rel="stylesheet" href="../_shared/styles/GlanceRow.module.css">
+<link rel="stylesheet" href="../_shared/styles/FormRow.module.css">
+<link rel="stylesheet" href="../_shared/styles/SurfaceMasthead.module.css">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <link rel="stylesheet" href="../_shared/inspector.css">
 
@@ -268,37 +292,8 @@
     overflow: hidden;
   }
 
-  .ds-pending p {
-    margin: 0;
-    font-family: var(--font-sans);
-    font-size: 13px;
-    line-height: 1.55;
-    color: var(--color-text-secondary);
-  }
-
-  .ds-pending p + p {
-    margin-top: var(--space-sm);
-  }
-
-  .ds-pending strong {
-    color: var(--color-text-primary);
-    font-weight: 500;
-  }
-
   .ds-demo-mini {
     padding: var(--space-sm) var(--space-md);
-  }
-
-  .ds-canonical-stack {
-    display: grid;
-    gap: var(--space-md);
-  }
-
-  .ds-canonical-compact {
-    display: flex;
-    flex-wrap: wrap;
-    gap: var(--space-sm);
-    align-items: center;
   }
 
   .ds-folio-host .FolioBar_folio {
@@ -367,11 +362,11 @@
   <header class="ds-cover">
     <p class="ds-eyebrow">DailyOS &middot; Design System &middot; Reference</p>
     <h1 class="ds-title">Patterns</h1>
-    <p class="ds-lede">Composed, opinionated UI contracts. This strict pass renders promoted demos with canonical scoped module classes only, and marks proposed work where no canonical CSS has been promoted.</p>
+    <p class="ds-lede">Composed, opinionated UI contracts. This strict pass renders every promoted demo with canonical scoped module classes only.</p>
     <div class="ds-meta">
       <span>31 patterns</span>
-      <span>21 canonical demos</span>
-      <span>10 promotion-needed demos</span>
+      <span>31 canonical demos</span>
+      <span>0 promotion-needed demos</span>
       <span>0 showcase-local demo classes</span>
     </div>
     <nav class="ds-reference-nav" aria-label="Reference sections">
@@ -452,10 +447,39 @@
           <a class="ds-spec-link" href="../../patterns/DayChart.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> legend, hour ticks, positioned meeting bars, and NOW indicator.</p>
-        <div class="ds-variants"><span>default</span><span>legend optional</span><span>height</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="DayChart" data-ds-tier="pattern" data-ds-spec="patterns/DayChart.md">
-          <p><strong>DayChart</strong> (canonical CSS not yet promoted)</p>
-          <p>The spec exists, but there is no scoped `DayChart.module.css` or source-module class set in `_shared/styles` to render the bars without local showcase CSS.</p>
+        <div class="ds-variants"><span>default</span><span>legend optional</span><span>height</span><span>now</span></div>
+        <div class="ds-demo" data-ds-name="DayChart" data-ds-tier="pattern" data-ds-spec="patterns/DayChart.md">
+          <section class="DayChart_dayChart" style="--day-chart-height: 110px; --day-chart-hour-count: 6; --day-chart-grid-column-count: 5;" aria-label="Shape of the day">
+            <div class="DayChart_legend" aria-label="Meeting type legend">
+              <span class="DayChart_legendItem"><span class="DayChart_swatch DayChart_swatchCustomer" aria-hidden="true"></span>Customer</span>
+              <span class="DayChart_legendItem"><span class="DayChart_swatch DayChart_swatchWarn" aria-hidden="true"></span>At risk</span>
+              <span class="DayChart_legendItem"><span class="DayChart_swatch DayChart_swatchOo" aria-hidden="true"></span>1:1</span>
+              <span class="DayChart_legendItem"><span class="DayChart_swatch DayChart_swatchInternal" aria-hidden="true"></span>Internal</span>
+            </div>
+            <div class="DayChart_hourTicks" aria-hidden="true">
+              <span class="DayChart_hourTick">8 AM</span>
+              <span class="DayChart_hourTick">9</span>
+              <span class="DayChart_hourTick">10</span>
+              <span class="DayChart_hourTick">11</span>
+              <span class="DayChart_hourTick DayChart_hourTickMuted">12 PM</span>
+              <span class="DayChart_hourTick">1</span>
+            </div>
+            <div class="DayChart_bars" role="list" aria-label="Meetings plotted across the workday">
+              <div class="DayChart_bar DayChart_internal DayChart_past" style="left: 2%; width: 17%;" role="listitem" aria-label="Pipeline sync, 8:10 to 8:50">
+                <span class="DayChart_barTitle">Pipeline sync</span>
+                <span class="DayChart_barTime">8:10 - 8:50</span>
+              </div>
+              <div class="DayChart_bar DayChart_customer DayChart_nowBar" style="left: 37%; width: 22%;" role="listitem" aria-label="Acme renewal, 10:00 to 10:45">
+                <span class="DayChart_barTitle">Acme renewal</span>
+                <span class="DayChart_barTime">10:00 - 10:45</span>
+              </div>
+              <div class="DayChart_bar DayChart_customer DayChart_warn" style="left: 64%; width: 18%;" role="listitem" aria-label="Meridian pricing, 11:20 to noon">
+                <span class="DayChart_barTitle">Meridian pricing</span>
+                <span class="DayChart_barTime">11:20 - 12:00</span>
+              </div>
+              <span class="DayChart_nowLine" style="left: 48%;" data-now-label="NOW" aria-hidden="true"></span>
+            </div>
+          </section>
         </div>
       </article>
 
@@ -473,7 +497,7 @@
               <div class="editorial-briefing_scheduleContent">
                 <div class="editorial-briefing_scheduleTitleRow">
                   <h4 class="editorial-briefing_scheduleTitle">Acme renewal, pricing and tier 3</h4>
-                  <span class="editorial-briefing_nowPill">Now</span>
+                  <span class="Pill_pill Pill_compact Pill_neutral MeetingStatusPill_status MeetingStatusPill_inProgress"><span class="Pill_dot" aria-hidden="true"></span>Now</span>
                   <span class="editorial-briefing_expandHint">prep</span>
                 </div>
                 <div class="editorial-briefing_scheduleSubtitle">Jen wants the adjusted memo before legal goes deep on MSA.</div>
@@ -489,10 +513,38 @@
           <a class="ds-spec-link" href="../../patterns/EntityPortraitCard.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> entity-tinted aside, state label, stats, lede, and threaded events.</p>
-        <div class="ds-variants"><span>account</span><span>project</span><span>person</span><span>at risk</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="EntityPortraitCard" data-ds-tier="pattern" data-ds-spec="patterns/EntityPortraitCard.md">
-          <p><strong>EntityPortraitCard</strong> (canonical CSS not yet promoted)</p>
-          <p>The spec points to a future dashboard component; no promoted scoped module exists for the portrait-card layout yet.</p>
+        <div class="ds-variants"><span>account</span><span>project</span><span>person</span><span>at risk</span></div>
+        <div class="ds-demo" data-ds-name="EntityPortraitCard" data-ds-tier="pattern" data-ds-spec="patterns/EntityPortraitCard.md">
+          <article class="EntityPortraitCard_card EntityPortraitCard_accentTurmeric" data-entity-type="account">
+            <aside class="EntityPortraitCard_aside" aria-label="Acme summary">
+              <div>
+                <div class="EntityPortraitCard_stateLabel">Renewing</div>
+                <h4 class="EntityPortraitCard_name">Acme</h4>
+              </div>
+              <dl class="EntityPortraitCard_asideStats">
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">ARR</dt><dd class="EntityPortraitCard_statValue">$240k</dd></div>
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Health</dt><dd class="EntityPortraitCard_statValue EntityPortraitCard_directionDown">Softening</dd></div>
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Next</dt><dd class="EntityPortraitCard_statValue">Today</dd></div>
+              </dl>
+            </aside>
+            <div class="EntityPortraitCard_main">
+              <span class="EntityPortraitCard_glyph" aria-hidden="true">A</span>
+              <p class="EntityPortraitCard_lede">Pricing pressure is now explicit, but Sara still has enough internal cover to keep the renewal warm.</p>
+              <ul class="EntityPortraitCard_thread">
+                <li class="EntityPortraitCard_threadItem" data-addressable="true">
+                  <span class="EntityPortraitCard_typeDot EntityPortraitCard_eventMeeting" aria-hidden="true"></span>
+                  <span class="EntityPortraitCard_when">10 AM</span>
+                  <span class="EntityPortraitCard_what">Renewal meeting starts with procurement in the room.</span>
+                  <button class="ThreadMark_threadMark ThreadMark_persistent" type="button">talk</button>
+                </li>
+                <li class="EntityPortraitCard_threadItem EntityPortraitCard_overdue">
+                  <span class="EntityPortraitCard_typeDot EntityPortraitCard_eventAction" aria-hidden="true"></span>
+                  <span class="EntityPortraitCard_when">2 days</span>
+                  <span class="EntityPortraitCard_what">Security appendix still needs owner confirmation.</span>
+                </li>
+              </ul>
+            </div>
+          </article>
         </div>
       </article>
 
@@ -502,10 +554,9 @@
           <a class="ds-spec-link" href="../../patterns/ThreadMark.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> hook-arrow affordance, mono label, and context seed target.</p>
-        <div class="ds-variants"><span>hover-only</span><span>persistent</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-demo-mini ds-pending" data-ds-name="ThreadMark" data-ds-tier="pattern" data-ds-spec="patterns/ThreadMark.md">
-          <p><strong>ThreadMark</strong> (canonical CSS not yet promoted)</p>
-          <p>No scoped module has been promoted for the `talk` affordance.</p>
+        <div class="ds-variants"><span>hover-only</span><span>persistent</span></div>
+        <div class="ds-demo ds-demo-mini" data-ds-name="ThreadMark" data-ds-tier="pattern" data-ds-spec="patterns/ThreadMark.md">
+          <button class="ThreadMark_threadMark ThreadMark_persistent" type="button">talk</button>
         </div>
       </article>
 
@@ -515,10 +566,27 @@
           <a class="ds-spec-link" href="../../patterns/AskAnythingDock.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> editorial input row, suggestion chips, and scoped-source footer.</p>
-        <div class="ds-variants"><span>inline</span><span>fixed-bottom</span><span>chips</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="AskAnythingDock" data-ds-tier="pattern" data-ds-spec="patterns/AskAnythingDock.md">
-          <p><strong>AskAnythingDock</strong> (canonical CSS not yet promoted)</p>
-          <p>The spec is still backed by mockup substrate classes; a scoped module is required before the reference can render it canonically.</p>
+        <div class="ds-variants"><span>inline</span><span>fixed-bottom</span><span>chips</span></div>
+        <div class="ds-demo" data-ds-name="AskAnythingDock" data-ds-tier="pattern" data-ds-spec="patterns/AskAnythingDock.md">
+          <section class="AskAnythingDock_dock AskAnythingDock_inline">
+            <div class="AskAnythingDock_inputRow">
+              <span class="AskAnythingDock_glyph" aria-hidden="true">?</span>
+              <input class="AskAnythingDock_input" type="text" placeholder="What changed on Acme since Friday?" aria-label="Ask anything" />
+              <kbd class="AskAnythingDock_kbd">Cmd K</kbd>
+            </div>
+            <div class="AskAnythingDock_suggestions" aria-label="Suggested questions">
+              <button class="AskAnythingDock_chip" type="button">What's slipping?</button>
+              <button class="AskAnythingDock_chip" type="button">Show last 5 emails</button>
+              <button class="AskAnythingDock_chip" type="button">Who needs a nudge?</button>
+            </div>
+            <div class="AskAnythingDock_scope">
+              <div class="AskAnythingDock_scopeLeft">
+                <span class="AskAnythingDock_scopeSources"><span class="AskAnythingDock_scopeDot" aria-hidden="true"></span>Mail · Calendar · Notes · CRM</span>
+                <span class="AskAnythingDock_scopeDivider">Since Jan 1</span>
+              </div>
+              <span class="AskAnythingDock_scopeWrite">Writes back to briefing</span>
+            </div>
+          </section>
         </div>
       </article>
     </div>
@@ -607,10 +675,19 @@
           <a class="ds-spec-link" href="../../patterns/TrustBand.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> TrustBandBadge, ProvenanceTag, and FreshnessIndicator.</p>
-        <div class="ds-variants"><span>compact</span><span>default</span><span>expanded</span><span>inline</span><span>row</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="TrustBand" data-ds-tier="pattern" data-ds-spec="patterns/TrustBand.md">
-          <p><strong>TrustBand</strong> (canonical CSS not yet promoted)</p>
-          <p>The composed primitives are specified, but no scoped `TrustBand.module.css` is available in `_shared/styles`.</p>
+        <div class="ds-variants"><span>compact</span><span>default</span><span>expanded</span><span>inline</span><span>row</span></div>
+        <div class="ds-demo" data-ds-name="TrustBand" data-ds-tier="pattern" data-ds-spec="patterns/TrustBand.md">
+          <span class="TrustBand_band" data-density="compact" data-align="inline">
+            <span class="Pill_pill Pill_compact Pill_neutral TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_likelyCurrent"><span class="Pill_dot" aria-hidden="true"></span>Likely current</span>
+            <span class="ProvenanceTag_tag">Salesforce</span>
+            <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-staleness="fresh"><span class="FreshnessIndicator_timeText">10m ago</span></span>
+          </span>
+          <br />
+          <span class="TrustBand_band" data-density="default" data-align="inline">
+            <span class="Pill_pill Pill_standard Pill_neutral TrustBandBadge_badge TrustBandBadge_useWithCaution"><span class="Pill_dot" aria-hidden="true"></span>Use with caution</span>
+            <span class="ProvenanceTag_tag ProvenanceTag_discrepancy">Glean discrepancy</span>
+            <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-staleness="aging"><span class="FreshnessIndicator_timeText">2 days ago</span></span>
+          </span>
         </div>
       </article>
 
@@ -620,10 +697,30 @@
           <a class="ds-spec-link" href="../../patterns/ClaimRow.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> subject prefix, claim value, TrustBand, and optional ReceiptCallout.</p>
-        <div class="ds-variants"><span>compact</span><span>default</span><span>rich</span><span>expandable</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="ClaimRow" data-ds-tier="pattern" data-ds-spec="patterns/ClaimRow.md">
-          <p><strong>ClaimRow</strong> (canonical CSS not yet promoted)</p>
-          <p>The spec points to a future intelligence component. The old local mock classes were removed instead of pretending a canonical module exists.</p>
+        <div class="ds-variants"><span>compact</span><span>default</span><span>rich</span><span>expandable</span></div>
+        <div class="ds-demo" data-ds-name="ClaimRow" data-ds-tier="pattern" data-ds-spec="patterns/ClaimRow.md">
+          <article class="ClaimRow_row" data-density="rich" data-state="flagged" data-loading="false">
+            <div class="ClaimRow_stateBanner" role="status">
+              <span class="VerificationStatusFlag_flag" data-status="flagged">Flagged</span>
+              <span>Renewal value conflicts with the last CRM update.</span>
+            </div>
+            <div class="ClaimRow_shell">
+              <div class="ClaimRow_body">
+                <div class="ClaimRow_claimLine">
+                  <span class="Pill_pill Pill_compact Pill_neutral ClaimRow_subject">Acme</span>
+                  <span class="ClaimRow_field">Renewal risk</span>
+                  <span class="ClaimRow_dash" aria-hidden="true">-</span>
+                  <span class="ClaimRow_value">Procurement is asking for a 12% reduction before approving the renewal.</span>
+                </div>
+                <span class="TrustBand_band ClaimRow_richTrust" data-density="expanded" data-align="inline">
+                  <span class="Pill_pill Pill_standard Pill_neutral TrustBandBadge_badge TrustBandBadge_useWithCaution"><span class="Pill_dot" aria-hidden="true"></span>Use with caution</span>
+                  <span class="ProvenanceTag_tag">Meeting transcript</span>
+                  <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-staleness="fresh"><span class="FreshnessIndicator_timeText">today</span></span>
+                </span>
+              </div>
+              <button class="ClaimRow_expandButton" type="button" aria-expanded="true" aria-label="Inspect claim receipt"><span class="ClaimRow_chevron">v</span></button>
+            </div>
+          </article>
         </div>
       </article>
 
@@ -633,10 +730,57 @@
           <a class="ds-spec-link" href="../../patterns/ReceiptCallout.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> ClaimRow, resolver confidence, consistency finding, provenance detail, freshness chain, and actions.</p>
-        <div class="ds-variants"><span>collapsed</span><span>expanded</span><span>inline</span><span>drawer</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="ReceiptCallout" data-ds-tier="pattern" data-ds-spec="patterns/ReceiptCallout.md">
-          <p><strong>ReceiptCallout</strong> (canonical CSS not yet promoted)</p>
-          <p>The receipt inspection contract is specified, but no scoped source module has been promoted for the callout shell.</p>
+        <div class="ds-variants"><span>collapsed</span><span>expanded</span><span>inline</span><span>drawer</span></div>
+        <div class="ds-demo" data-ds-name="ReceiptCallout" data-ds-tier="pattern" data-ds-spec="patterns/ReceiptCallout.md">
+          <section class="ReceiptCallout_root" data-mode="expanded" data-position="inline" data-band="needs_verification">
+            <article class="ClaimRow_row" data-density="default" data-state="ok" data-loading="false">
+              <div class="ClaimRow_shell">
+                <div class="ClaimRow_body">
+                  <div class="ClaimRow_claimLine">
+                    <span class="ClaimRow_field">Contracting owner</span>
+                    <span class="ClaimRow_dash" aria-hidden="true">-</span>
+                    <span class="ClaimRow_value">Aoife owns procurement path.</span>
+                  </div>
+                </div>
+                <span class="TrustBand_band ClaimRow_trust" data-density="compact" data-align="inline">
+                  <span class="Pill_pill Pill_compact Pill_neutral TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_needsVerification"><span class="Pill_dot" aria-hidden="true"></span>Needs verification</span>
+                  <span class="ProvenanceTag_tag">Transcript</span>
+                  <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-staleness="fresh"><span class="FreshnessIndicator_timeText">today</span></span>
+                </span>
+                <button class="ClaimRow_expandButton" type="button" aria-expanded="true" aria-label="Collapse claim receipt"><span class="ClaimRow_chevron">v</span></button>
+              </div>
+            </article>
+            <div class="ReceiptCallout_receipt" role="region" aria-label="Claim receipt">
+              <div class="ReceiptCallout_resolverBand">
+                <div class="ReceiptCallout_resolverCopy">
+                  <span class="ReceiptCallout_kicker">Resolver band</span>
+                  <span class="ReceiptCallout_resolverLabel">Needs verification</span>
+                </div>
+                <div class="ReceiptCallout_resolverSignals">
+                  <span class="ConfidenceScoreChip_chip" data-band="needs_verification">62%</span>
+                  <span class="AsOfTimestamp_timestamp">As of May 2</span>
+                </div>
+              </div>
+              <div class="ReceiptCallout_consistency">
+                <span class="VerificationStatusFlag_flag" data-status="flagged">Flagged</span>
+                <span>Calendar invite names Aoife, but CRM still lists Marco.</span>
+              </div>
+              <div class="ReceiptCallout_section">
+                <p class="ReceiptCallout_sectionTitle">Source detail</p>
+                <ul class="ReceiptCallout_sourceList">
+                  <li class="ReceiptCallout_sourceItem">
+                    <div class="ReceiptCallout_sourceHeader"><span class="ProvenanceTag_tag">Granola</span><span class="ReceiptCallout_sourceLabel">Primary source</span></div>
+                    <div class="ReceiptCallout_sourceMeta"><span>Captured today</span><span>Transcript excerpt</span></div>
+                    <blockquote class="ReceiptCallout_rawValue">"Our CFO will need to see the pricing walk before approval."</blockquote>
+                  </li>
+                </ul>
+              </div>
+              <div class="ReceiptCallout_actions">
+                <button class="FormRow_button FormRow_buttonGhost FormRow_buttonCompact" type="button">Correct</button>
+                <button class="FormRow_button FormRow_buttonGhost FormRow_buttonCompact" type="button">Dismiss</button>
+              </div>
+            </div>
+          </section>
         </div>
       </article>
 
@@ -726,10 +870,31 @@
           <a class="ds-spec-link" href="../../patterns/SurfaceMasthead.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> mono eyebrow, serif title, lede, accessory slot, and optional GlanceRow slot.</p>
-        <div class="ds-variants"><span>compact</span><span>default</span><span>rich</span><span>accessory</span><span>glance</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
-          <p><strong>SurfaceMasthead</strong> (canonical CSS not yet promoted)</p>
-          <p>The pattern consolidates Settings and MeetingDetail mastheads, but no shared scoped module exists yet.</p>
+        <div class="ds-variants"><span>compact</span><span>default</span><span>rich</span><span>accessory</span><span>glance</span></div>
+        <div class="ds-demo" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
+          <header class="SurfaceMasthead_masthead SurfaceMasthead_default SurfaceMasthead_widthReading">
+            <div class="SurfaceMasthead_topRow">
+              <div class="SurfaceMasthead_titleBlock">
+                <p class="SurfaceMasthead_eyebrow">Meeting Recap · Tuesday Apr 17 · 11:00 AM</p>
+                <h4 class="SurfaceMasthead_title">Meridian Harbor Q2 review</h4>
+                <p class="SurfaceMasthead_lede">Marco raised pricing first; procurement is active, but a joint follow-up is already on the calendar.</p>
+              </div>
+              <div class="SurfaceMasthead_accessory">
+                <span class="Pill_pill Pill_compact Pill_neutral MeetingStatusPill_status MeetingStatusPill_past"><span class="Pill_dot" aria-hidden="true"></span>Wrapped</span>
+              </div>
+            </div>
+            <div class="SurfaceMasthead_glance">
+              <div class="GlanceRow_row GlanceRow_compact">
+                <div class="GlanceRow_cellSlot">
+                  <span class="GlanceCell_cell"><span class="GlanceCell_label">Duration</span><span class="GlanceCell_valueRow"><span class="GlanceCell_dot GlanceCell_neutral" aria-hidden="true"></span><span class="GlanceCell_value">56 min</span></span></span>
+                </div>
+                <div class="GlanceRow_cellSlot">
+                  <span class="GlanceCell_cell"><span class="GlanceCell_label">Risk</span><span class="GlanceCell_valueRow"><span class="GlanceCell_dot GlanceCell_warn" aria-hidden="true"></span><span class="GlanceCell_value">Pricing</span></span></span>
+                </div>
+              </div>
+            </div>
+            <div class="SurfaceMasthead_rule"></div>
+          </header>
         </div>
       </article>
 
@@ -739,10 +904,19 @@
           <a class="ds-spec-link" href="../../patterns/GlanceRow.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> GlanceCell instances in a horizontal masthead stat row.</p>
-        <div class="ds-variants"><span>default</span><span>compact</span><span>wrap</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
-          <p><strong>GlanceRow</strong> (canonical CSS not yet promoted)</p>
-          <p>The spec points to future layout components; the reference will render it once `GlanceRow.module.css` is promoted.</p>
+        <div class="ds-variants"><span>default</span><span>compact</span><span>wrap</span></div>
+        <div class="ds-demo" data-ds-name="GlanceRow" data-ds-tier="pattern" data-ds-spec="patterns/GlanceRow.md">
+          <div class="GlanceRow_row GlanceRow_default GlanceRow_wrap">
+            <div class="GlanceRow_cellSlot">
+              <span class="GlanceCell_cell"><span class="GlanceCell_label">Connectors</span><span class="GlanceCell_valueRow"><span class="GlanceCell_dot GlanceCell_healthy" aria-hidden="true"></span><span class="GlanceCell_value">4 healthy</span></span></span>
+            </div>
+            <div class="GlanceRow_cellSlot">
+              <span class="GlanceCell_cell"><span class="GlanceCell_label">Database</span><span class="GlanceCell_valueRow"><span class="GlanceCell_dot GlanceCell_healthy" aria-hidden="true"></span><span class="GlanceCell_value">Synced</span></span></span>
+            </div>
+            <div class="GlanceRow_cellSlot">
+              <span class="GlanceCell_cell"><span class="GlanceCell_label">AI</span><span class="GlanceCell_valueRow"><span class="GlanceCell_dot GlanceCell_warn" aria-hidden="true"></span><span class="GlanceCell_value">Retrying</span></span></span>
+            </div>
+          </div>
         </div>
       </article>
 
@@ -752,10 +926,20 @@
           <a class="ds-spec-link" href="../../patterns/FormRow.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> label/help block, control slot, and optional right-aligned aux slot.</p>
-        <div class="ds-variants"><span>default</span><span>dense</span><span>stacked</span><span>readonly</span><span class="ds-promotion">promotion needed</span></div>
-        <div class="ds-demo ds-pending" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md">
-          <p><strong>FormRow</strong> (canonical CSS not yet promoted)</p>
-          <p>Settings uses local substrate today; a scoped module is needed before this can be demoed canonically.</p>
+        <div class="ds-variants"><span>default</span><span>dense</span><span>stacked</span><span>readonly</span></div>
+        <div class="ds-demo" data-ds-name="FormRow" data-ds-tier="pattern" data-ds-spec="patterns/FormRow.md">
+          <div class="FormRow_row">
+            <div class="FormRow_copy">
+              <label class="FormRow_label" for="form-row-demo">Workspace name</label>
+              <p class="FormRow_help">Used in folios, reports, and generated recap drafts.</p>
+            </div>
+            <div class="FormRow_control">
+              <input id="form-row-demo" class="FormRow_input FormRow_inputWidth240" value="DailyOS" aria-label="Workspace name" />
+            </div>
+            <div class="FormRow_aux">
+              <button class="FormRow_button FormRow_buttonPrimary FormRow_buttonCompact" type="button">Save</button>
+            </div>
+          </div>
         </div>
       </article>
     </div>

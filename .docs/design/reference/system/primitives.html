@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width,initial-scale=1" />
-<title>Primitives - DailyOS Design System</title>
+<title>Primitives | DailyOS Design System</title>
 
 <link rel="stylesheet" href="../_shared/fonts.css">
 <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
@@ -11,11 +11,24 @@
 <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
 <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
 <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+<link rel="stylesheet" href="../_shared/styles/EntityChip.module.css">
+<link rel="stylesheet" href="../_shared/styles/RemovableChip.module.css">
 <link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
 <link rel="stylesheet" href="../_shared/styles/AccountHero.module.css">
-<link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
+<link rel="stylesheet" href="../_shared/styles/MeetingStatusPill.module.css">
+<link rel="stylesheet" href="../_shared/styles/TrustBandBadge.module.css">
 <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
-<link rel="stylesheet" href="../_shared/styles/editable-inline.module.css">
+<link rel="stylesheet" href="../_shared/styles/ConfidenceScoreChip.module.css">
+<link rel="stylesheet" href="../_shared/styles/VerificationStatusFlag.module.css">
+<link rel="stylesheet" href="../_shared/styles/ProvenanceTag.module.css">
+<link rel="stylesheet" href="../_shared/styles/FreshnessIndicator.module.css">
+<link rel="stylesheet" href="../_shared/styles/AsOfTimestamp.module.css">
+<link rel="stylesheet" href="../_shared/styles/SourceCoverageLine.module.css">
+<link rel="stylesheet" href="../_shared/styles/DataGapNotice.module.css">
+<link rel="stylesheet" href="../_shared/styles/Switch.module.css">
+<link rel="stylesheet" href="../_shared/styles/Segmented.module.css">
+<link rel="stylesheet" href="../_shared/styles/GlanceCell.module.css">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <link rel="stylesheet" href="../_shared/inspector.css">
 
@@ -26,67 +39,70 @@
     border-bottom: 1px solid var(--color-rule-heavy);
   }
 
-  .ref-eyebrow {
+  .ref-eyebrow,
+  .ref-summary,
+  .ref-nav,
+  .family-nav,
+  .family-count,
+  .tier-label,
+  .status-badge,
+  .variant-line,
+  .card-link,
+  .card-note,
+  .audit-title,
+  .audit-list,
+  .fallback-label {
     font-family: var(--font-mono);
+    text-transform: uppercase;
+  }
+
+  .ref-eyebrow {
+    margin: 0 0 var(--space-md);
+    color: var(--color-text-tertiary);
     font-size: 11px;
     font-weight: 500;
     letter-spacing: 0.12em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
-    margin: 0 0 var(--space-md);
   }
 
   .ref-title {
+    margin: 0;
+    color: var(--color-text-primary);
     font-family: var(--font-serif);
     font-size: 80px;
     font-weight: 400;
     letter-spacing: 0;
     line-height: 1.02;
-    color: var(--color-text-primary);
-    margin: 0;
   }
 
   .ref-lede {
-    font-family: var(--font-serif);
-    font-style: italic;
-    font-weight: 300;
-    font-size: 22px;
-    line-height: 1.5;
-    color: var(--color-text-secondary);
     max-width: 720px;
     margin: var(--space-lg) 0 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-serif);
+    font-size: 22px;
+    font-style: italic;
+    font-weight: 300;
+    line-height: 1.5;
   }
 
   .ref-summary {
     display: flex;
-    gap: var(--space-lg);
     flex-wrap: wrap;
+    gap: var(--space-md) var(--space-lg);
     margin-top: var(--space-2xl);
-    font-family: var(--font-mono);
+    color: var(--color-text-tertiary);
     font-size: 11px;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
   }
 
-  .ref-summary span + span::before {
-    content: "/";
-    margin-right: var(--space-lg);
-    opacity: 0.45;
-  }
-
-  .tier-nav,
+  .ref-nav,
   .family-nav {
     display: flex;
-    gap: var(--space-sm);
     flex-wrap: wrap;
-    font-family: var(--font-mono);
-    font-size: 10px;
-    letter-spacing: 0.08em;
-    text-transform: uppercase;
+    gap: var(--space-sm);
   }
 
-  .tier-nav {
+  .ref-nav {
     margin-top: var(--space-xl);
   }
 
@@ -95,34 +111,28 @@
     border-bottom: 1px solid var(--color-rule-light);
   }
 
-  .tier-nav a,
-  .family-nav a,
-  .card-link,
-  .audit-link {
-    color: var(--color-text-tertiary);
-    text-decoration: none;
-    border-bottom: 1px solid transparent;
-    transition: color var(--transition-normal), border-color var(--transition-normal);
-  }
-
-  .tier-nav a:hover,
-  .family-nav a:hover,
-  .card-link:hover,
-  .audit-link:hover {
-    color: var(--color-person);
-    border-color: currentColor;
-  }
-
-  .tier-nav .is-active {
-    color: var(--color-person);
-    border-color: currentColor;
-  }
-
+  .ref-nav a,
   .family-nav a {
-    padding: 5px 10px;
+    display: inline-flex;
+    align-items: center;
+    min-height: 32px;
+    padding: 0 var(--space-md);
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-decoration: none;
+    background: var(--color-paper-warm-white);
     border: 1px solid var(--color-rule-light);
     border-radius: 999px;
-    background: var(--color-paper-warm-white);
+    transition: background var(--transition-normal), border-color var(--transition-normal), color var(--transition-normal);
+  }
+
+  .ref-nav a:hover,
+  .family-nav a:hover,
+  .ref-nav .is-active {
+    color: var(--color-text-primary);
+    background: var(--color-person-8);
+    border-color: var(--color-rule-heavy);
   }
 
   .family-section {
@@ -132,52 +142,51 @@
   }
 
   .family-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: baseline;
-    gap: var(--space-md);
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: var(--space-lg);
+    align-items: end;
     margin-bottom: var(--space-md);
   }
 
   .family-title {
+    margin: 0;
+    color: var(--color-text-primary);
     font-family: var(--font-serif);
     font-size: 36px;
     font-weight: 400;
     letter-spacing: 0;
-    color: var(--color-text-primary);
-    margin: 0;
+    line-height: 1.1;
   }
 
   .family-count {
-    font-family: var(--font-mono);
+    color: var(--color-text-tertiary);
     font-size: 11px;
     letter-spacing: 0.08em;
-    text-transform: uppercase;
-    color: var(--color-text-tertiary);
+    text-align: right;
   }
 
   .family-lede {
+    max-width: 720px;
+    margin: 0 0 var(--space-xl);
+    color: var(--color-text-secondary);
     font-family: var(--font-serif);
     font-size: 17px;
     font-style: italic;
     font-weight: 300;
     line-height: 1.55;
-    color: var(--color-text-secondary);
-    max-width: 720px;
-    margin: 0 0 var(--space-xl);
   }
 
   .catalog-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
     gap: var(--space-md);
   }
 
   .catalog-card {
     display: flex;
     flex-direction: column;
-    min-height: 330px;
+    min-height: 390px;
     padding: var(--space-lg);
     background: var(--color-paper-warm-white);
     border: 1px solid var(--color-rule-light);
@@ -186,7 +195,7 @@
 
   .card-head {
     display: grid;
-    grid-template-columns: 1fr auto;
+    grid-template-columns: minmax(0, 1fr) auto;
     gap: var(--space-sm) var(--space-md);
     align-items: start;
     padding-bottom: var(--space-md);
@@ -194,47 +203,74 @@
   }
 
   .card-title {
+    margin: 0;
+    color: var(--color-text-primary);
     font-family: var(--font-serif);
     font-size: 24px;
     font-weight: 400;
     letter-spacing: 0;
     line-height: 1.15;
-    color: var(--color-text-primary);
-    margin: 0;
-  }
-
-  .tier-label,
-  .status-badge,
-  .variant-line,
-  .card-link,
-  .card-note,
-  .audit-title {
-    font-family: var(--font-mono);
-    text-transform: uppercase;
   }
 
   .tier-label {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    justify-self: start;
-    font-size: 9px;
-    letter-spacing: 0.09em;
+    padding: 3px 7px;
     color: var(--color-paper-warm-white);
     background: var(--color-person);
     border-radius: 3px;
-    padding: 3px 7px;
+    font-size: 9px;
+    letter-spacing: 0.09em;
     white-space: nowrap;
+  }
+
+  .card-summary {
+    grid-column: 1 / -1;
+    margin: 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+  }
+
+  .card-meta {
+    grid-column: 1 / -1;
+    display: grid;
+    gap: 7px;
+  }
+
+  .card-link {
+    justify-self: start;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    text-decoration: none;
+  }
+
+  .card-link:hover {
+    color: var(--color-person);
+    text-decoration: underline;
+    text-decoration-thickness: 1px;
+    text-underline-offset: 3px;
+  }
+
+  .variant-line {
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    line-height: 1.45;
   }
 
   .status-badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
+    padding: 4px 8px;
+    border-radius: 999px;
     font-size: 9px;
     letter-spacing: 0.08em;
-    border-radius: 999px;
-    padding: 4px 8px;
+    text-decoration: none;
     white-space: nowrap;
   }
 
@@ -250,42 +286,12 @@
     border: 1px solid var(--color-spice-turmeric-15);
   }
 
-  .card-summary {
-    grid-column: 1 / -1;
-    font-family: var(--font-serif);
-    font-size: 14px;
-    font-style: italic;
-    font-weight: 300;
-    line-height: 1.45;
-    color: var(--color-text-secondary);
-    margin: 0;
-  }
-
-  .card-meta {
-    grid-column: 1 / -1;
-    display: grid;
-    gap: 7px;
-  }
-
-  .card-link {
-    justify-self: start;
-    font-size: 10px;
-    letter-spacing: 0.04em;
-  }
-
-  .variant-line {
-    font-size: 10px;
-    letter-spacing: 0.04em;
-    line-height: 1.45;
-    color: var(--color-text-tertiary);
-  }
-
   .sample-area {
     display: flex;
     align-items: center;
     flex-wrap: wrap;
     gap: var(--space-sm);
-    min-height: 92px;
+    min-height: 124px;
     margin-top: auto;
     padding-top: var(--space-lg);
   }
@@ -297,19 +303,39 @@
 
   .sample-grid {
     display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(112px, 1fr));
+    grid-template-columns: repeat(auto-fit, minmax(132px, 1fr));
     align-items: start;
     width: 100%;
+    gap: var(--space-md);
+  }
+
+  .sample-cell {
+    display: flex;
+    min-height: 52px;
+    align-items: center;
+  }
+
+  .fallback-label {
+    display: inline-flex;
+    align-items: center;
+    min-height: 24px;
+    padding: 0 8px;
+    color: var(--color-text-tertiary);
+    background: var(--color-desk-charcoal-4);
+    border: 1px dashed var(--color-rule-heavy);
+    border-radius: 999px;
+    font-size: 9px;
+    letter-spacing: 0.08em;
   }
 
   .card-note {
     margin: var(--space-md) 0 0;
     padding-top: var(--space-sm);
+    color: var(--color-text-tertiary);
     border-top: 1px solid var(--color-rule-light);
     font-size: 10px;
     letter-spacing: 0.05em;
     line-height: 1.5;
-    color: var(--color-text-tertiary);
   }
 
   .audit-note {
@@ -317,26 +343,75 @@
   }
 
   .audit-title {
+    margin: 0 0 var(--space-sm);
+    color: var(--color-text-tertiary);
     font-size: 11px;
     letter-spacing: 0.12em;
-    color: var(--color-text-tertiary);
-    margin: 0 0 var(--space-sm);
   }
 
   .audit-copy {
+    max-width: 760px;
+    margin: 0 0 var(--space-md);
+    color: var(--color-text-secondary);
     font-family: var(--font-serif);
     font-size: 17px;
     font-style: italic;
     font-weight: 300;
     line-height: 1.55;
-    color: var(--color-text-secondary);
-    max-width: 760px;
+  }
+
+  .audit-list {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-xs);
     margin: 0;
+    padding: 0;
+    color: var(--color-text-tertiary);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+    list-style: none;
+  }
+
+  .audit-list li {
+    padding: 4px 7px;
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    border-radius: 4px;
+  }
+
+  .finis {
+    padding: 72px 0 48px;
+    text-align: center;
+  }
+
+  .finis-mark {
+    display: flex;
+    justify-content: center;
+    gap: 0.4em;
+    color: var(--color-person);
+  }
+
+  .finis-copy {
+    margin: var(--space-md) 0 0;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-serif);
+    font-size: 16px;
+    font-style: italic;
+    line-height: 1.5;
+  }
+
+  code {
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-size: 0.86em;
   }
 
   @media (max-width: 720px) {
     .ref-title { font-size: 54px; }
+    .family-header { grid-template-columns: 1fr; }
+    .family-count { text-align: left; }
     .family-title { font-size: 28px; }
+    .catalog-grid { grid-template-columns: 1fr; }
     .catalog-card { min-height: 0; }
     .card-head { grid-template-columns: 1fr; }
     .status-badge { justify-self: start; }
@@ -356,15 +431,15 @@
     <p class="ref-eyebrow">DailyOS / Design System / Reference</p>
     <h1 class="ref-title">Primitives</h1>
     <p class="ref-lede">
-      The smallest reusable units in the system: labels, chips, timestamps, controls, and trust markers. This reference only renders promoted demos with scoped canonical classes.
+      The smallest reusable units in the system, rendered under strict canonical-class discipline. Promoted demos use scoped module classes from <code>_shared/styles</code>; gaps are called out instead of mocked.
     </p>
     <div class="ref-summary" aria-label="Primitive inventory summary">
       <span>18 primitives</span>
-      <span>5 families</span>
-      <span>3 canonical module demos</span>
-      <span>15 promotion-needed demos</span>
+      <span>4 families</span>
+      <span>17 canonical-class demos</span>
+      <span>1 promotion-needed demo</span>
     </div>
-    <nav class="tier-nav" aria-label="Reference tiers">
+    <nav class="ref-nav" aria-label="Reference tiers">
       <a href="../index.html">Reference home</a>
       <a href="tokens.html">Tokens</a>
       <a href="primitives.html" class="is-active">Primitives</a>
@@ -373,20 +448,19 @@
   </header>
 
   <nav class="family-nav" aria-label="Primitive families">
-    <a href="#identity">Identity and Marks</a>
-    <a href="#state">Intelligence State</a>
-    <a href="#trust">Trust UI</a>
-    <a href="#controls">Form Controls</a>
-    <a href="#editorial">Editorial</a>
+    <a href="#labels-identity">Labels and Identity</a>
+    <a href="#trust-evidence">Trust and Evidence</a>
+    <a href="#controls-input">Controls and Input</a>
+    <a href="#glance-metrics">Glance Metrics</a>
   </nav>
 
-  <section class="family-section" id="identity">
+  <section class="family-section" id="labels-identity">
     <div class="family-header">
-      <h2 class="family-title">Identity and Marks</h2>
-      <span class="family-count">4 primitives</span>
+      <h2 class="family-title">Labels and Identity</h2>
+      <span class="family-count">5 primitives</span>
     </div>
     <p class="family-lede">
-      Compact labels and entity markers. These identify a thing, category, or removable value without owning workflow.
+      Compact identifiers, categories, and meeting state markers. These name what something is without owning the surrounding workflow.
     </p>
     <div class="catalog-grid">
 
@@ -397,18 +471,22 @@
           <p class="card-summary">The visual primitive for any inline status, label, or category badge.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/Pill.md">primitives/Pill.md</a>
-            <span class="variant-line">Variants demoed: sage, turmeric, terracotta, larkspur, neutral</span>
+            <span class="variant-line">Variants demoed: sage, turmeric, terracotta, larkspur, olive, eucalyptus, neutral, compact, dot</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area" data-ds-name="Pill" data-ds-tier="primitive" data-ds-spec="primitives/Pill.md">
-          <span data-ds-variant="tone=sage">Ready</span>
-          <span data-ds-variant="tone=turmeric">Active</span>
-          <span data-ds-variant="tone=terracotta">Overdue</span>
-          <span data-ds-variant="tone=larkspur">Internal</span>
-          <span data-ds-variant="tone=neutral">Draft</span>
+        <div class="sample-area">
+          <span class="Pill_pill Pill_sage Pill_standard" data-tone="sage" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">
+            <span class="Pill_dot" aria-hidden="true"></span>Ready
+          </span>
+          <span class="Pill_pill Pill_turmeric Pill_standard" data-tone="turmeric" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Active</span>
+          <span class="Pill_pill Pill_terracotta Pill_standard" data-tone="terracotta" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Overdue</span>
+          <span class="Pill_pill Pill_larkspur Pill_standard" data-tone="larkspur" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Internal</span>
+          <span class="Pill_pill Pill_olive Pill_standard" data-tone="olive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Project</span>
+          <span class="Pill_pill Pill_eucalyptus Pill_standard" data-tone="eucalyptus" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Self</span>
+          <span class="Pill_pill Pill_neutral Pill_compact" data-tone="neutral" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Draft</span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - structural demo only until a scoped Pill module exists.</p>
+        <p class="card-note">Rendered with <code>Pill.module.css</code>.</p>
       </article>
 
       <article class="catalog-card" id="entity-chip">
@@ -418,16 +496,32 @@
           <p class="card-summary">Render an inline reference to an entity, color-coded by account, project, or person type.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/EntityChip.md">primitives/EntityChip.md</a>
-            <span class="variant-line">Variants demoed: account, project, person</span>
+            <span class="variant-line">Variants demoed: account, project, person, compact, removable</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area" data-ds-name="EntityChip" data-ds-tier="primitive" data-ds-spec="primitives/EntityChip.md">
-          <span data-ds-variant="entityType=account">Account: Acme Corp</span>
-          <span data-ds-variant="entityType=project">Project: Q2 Launch</span>
-          <span data-ds-variant="entityType=person">Person: Jen Park</span>
+        <div class="sample-area">
+          <span class="Pill_pill Pill_neutral Pill_standard EntityChip_chip EntityChip_chip-account" data-tone="neutral" data-entity-type="account" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md">
+            <svg class="EntityChip_icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/><path d="M9 9h1"/><path d="M9 13h1"/><path d="M9 17h1"/></svg>
+            <span class="EntityChip_name">Acme Corp</span>
+          </span>
+          <span class="Pill_pill Pill_neutral Pill_standard EntityChip_chip EntityChip_chip-project" data-tone="neutral" data-entity-type="project" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md">
+            <svg class="EntityChip_icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M4 20h16a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7l-2-2H4a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2Z"/><path d="M8 12h8"/><path d="M8 16h5"/></svg>
+            <span class="EntityChip_name">Q2 Launch</span>
+          </span>
+          <span class="Pill_pill Pill_neutral Pill_compact EntityChip_chip EntityChip_chip-person" data-tone="neutral" data-entity-type="person" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md">
+            <svg class="EntityChip_icon" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 21a8 8 0 0 0-16 0"/><circle cx="12" cy="7" r="4"/></svg>
+            <span class="EntityChip_name">Priya Raman</span>
+          </span>
+          <span class="Pill_pill Pill_neutral Pill_standard RemovableChip_chip EntityChip_chip EntityChip_chip-account" data-tone="neutral" data-entity-type="account" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md">
+            <span class="RemovableChip_label">
+              <svg class="EntityChip_icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M3 21h18"/><path d="M5 21V7l8-4v18"/><path d="M19 21V11l-6-4"/></svg>
+              <span class="EntityChip_name">Northstar</span>
+            </span>
+            <button type="button" class="RemovableChip_remove" aria-label="Remove Northstar"><span aria-hidden="true">&times;</span></button>
+          </span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - current meeting and email chips are inline-styled source implementations.</p>
+        <p class="card-note">Rendered with <code>EntityChip.module.css</code>, <code>Pill.module.css</code>, and <code>RemovableChip.module.css</code> for the removable composition.</p>
       </article>
 
       <article class="catalog-card" id="type-badge">
@@ -437,16 +531,22 @@
           <p class="card-summary">Render an account-type categorical badge such as Customer, Internal, or Partner.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/TypeBadge.md">primitives/TypeBadge.md</a>
-            <span class="variant-line">Variants demoed: customer, internal, partner</span>
+            <span class="variant-line">Variants demoed: customer, internal, partner, editable</span>
           </div>
-          <span class="status-badge status-canonical">Canonical module</span>
+          <span class="status-badge status-canonical">Canonical source classes</span>
         </div>
-        <div class="sample-area" data-ds-name="TypeBadge" data-ds-tier="primitive" data-ds-spec="primitives/TypeBadge.md">
-          <span class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_customerBadge" data-ds-variant="accountType=customer">Customer</span>
-          <span class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_internalBadge" data-ds-variant="accountType=internal">Internal</span>
-          <span class="AccountHero_badge EntityHeroBase_heroBadge AccountHero_partnerBadge" data-ds-variant="accountType=partner">Partner</span>
+        <div class="sample-area">
+          <span class="EntityHeroBase_heroBadge AccountHero_badge AccountHero_customerBadge" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md">Customer</span>
+          <span class="EntityHeroBase_heroBadge AccountHero_badge AccountHero_internalBadge" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md">Internal</span>
+          <span class="EntityHeroBase_heroBadge AccountHero_badge AccountHero_partnerBadge" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md">Partner</span>
+          <span class="AccountHero_typeBadgeWrapper" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md">
+            <button type="button" class="EntityHeroBase_heroBadge AccountHero_badge AccountHero_customerBadge AccountHero_typeBadgeButton">
+              Customer
+              <svg class="AccountHero_typeBadgeChevron" xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg>
+            </button>
+          </span>
         </div>
-        <p class="card-note">Rendered with AccountHero and EntityHeroBase scoped classes from the current AccountTypeBadge source.</p>
+        <p class="card-note">Rendered with the current source-local <code>AccountHero.module.css</code> classes documented in the TypeBadge spec.</p>
       </article>
 
       <article class="catalog-card" id="removable-chip">
@@ -456,29 +556,103 @@
           <p class="card-summary">Display a selected or applied item with a built-in removal affordance.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/RemovableChip.md">primitives/RemovableChip.md</a>
-            <span class="variant-line">Variants demoed: default, disabled copy state</span>
+            <span class="variant-line">Variants demoed: default, compact, suggested, removing, disabled</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area" data-ds-name="RemovableChip" data-ds-tier="primitive" data-ds-spec="primitives/RemovableChip.md">
-          <button type="button" data-ds-variant="default" aria-label="Remove gmail.com">gmail.com x</button>
-          <button type="button" data-ds-variant="default" aria-label="Remove Product">Product x</button>
+        <div class="sample-area">
+          <span class="Pill_pill Pill_neutral Pill_standard RemovableChip_chip" data-tone="neutral" data-ds-name="RemovableChip" data-ds-spec="primitives/RemovableChip.md">
+            <span class="RemovableChip_label">gmail.com</span>
+            <button type="button" class="RemovableChip_remove" aria-label="Remove gmail.com"><span aria-hidden="true">&times;</span></button>
+          </span>
+          <span class="Pill_pill Pill_neutral Pill_compact RemovableChip_chip RemovableChip_compact" data-tone="neutral" data-ds-name="RemovableChip" data-ds-spec="primitives/RemovableChip.md">
+            <span class="RemovableChip_label">Product</span>
+            <button type="button" class="RemovableChip_remove" aria-label="Remove Product"><span aria-hidden="true">&times;</span></button>
+          </span>
+          <span class="Pill_pill Pill_neutral Pill_standard RemovableChip_chip" data-tone="neutral" data-suggested="true" data-ds-name="RemovableChip" data-ds-spec="primitives/RemovableChip.md">
+            <span class="RemovableChip_label">suggested.com</span>
+            <button type="button" class="RemovableChip_remove" aria-label="Remove suggested.com"><span aria-hidden="true">&times;</span></button>
+          </span>
+          <span class="Pill_pill Pill_neutral Pill_standard RemovableChip_chip RemovableChip_removing" data-tone="neutral" data-ds-name="RemovableChip" data-ds-spec="primitives/RemovableChip.md">
+            <span class="RemovableChip_label">northstar.io</span>
+            <button type="button" class="RemovableChip_remove" aria-label="Remove northstar.io" disabled><span aria-hidden="true">&times;</span></button>
+          </span>
+          <span class="Pill_pill Pill_neutral Pill_standard RemovableChip_chip RemovableChip_disabled" data-tone="neutral" data-ds-name="RemovableChip" data-ds-spec="primitives/RemovableChip.md">
+            <span class="RemovableChip_label">locked</span>
+            <button type="button" class="RemovableChip_remove" aria-label="Remove locked" disabled><span aria-hidden="true">&times;</span></button>
+          </span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - Settings mockup chip styles are not in a scoped module.</p>
+        <p class="card-note">Rendered with <code>RemovableChip.module.css</code> and the Pill classes it composes in source.</p>
+      </article>
+
+      <article class="catalog-card" id="meeting-status-pill">
+        <div class="card-head">
+          <h3 class="card-title">MeetingStatusPill</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Show the calendar state of a meeting in one compact, readable pill.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/MeetingStatusPill.md">primitives/MeetingStatusPill.md</a>
+            <span class="variant-line">Variants demoed: upcoming, in-progress, past, cancelled</span>
+          </div>
+          <span class="status-badge status-canonical">Canonical classes</span>
+        </div>
+        <div class="sample-area">
+          <span class="Pill_pill Pill_sage Pill_standard MeetingStatusPill_status MeetingStatusPill_upcoming" data-tone="sage" data-state="upcoming" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md">
+            <span class="Pill_dot" aria-hidden="true"></span>Upcoming
+          </span>
+          <span class="Pill_pill Pill_turmeric Pill_standard MeetingStatusPill_status MeetingStatusPill_inProgress" data-tone="turmeric" data-state="in-progress" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md">
+            <span class="Pill_dot" aria-hidden="true"></span>In progress
+          </span>
+          <span class="Pill_pill Pill_neutral Pill_standard MeetingStatusPill_status MeetingStatusPill_past" data-tone="neutral" data-state="past" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md">
+            <span class="Pill_dot" aria-hidden="true"></span>Past
+          </span>
+          <span class="Pill_pill Pill_terracotta Pill_standard MeetingStatusPill_status MeetingStatusPill_cancelled" data-tone="terracotta" data-state="cancelled" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md">
+            <span class="Pill_dot" aria-hidden="true"></span>Cancelled
+          </span>
+        </div>
+        <p class="card-note">Rendered with <code>MeetingStatusPill.module.css</code> and <code>Pill.module.css</code>.</p>
       </article>
 
     </div>
   </section>
 
-  <section class="family-section" id="state">
+  <section class="family-section" id="trust-evidence">
     <div class="family-header">
-      <h2 class="family-title">Intelligence State</h2>
-      <span class="family-count">5 primitives</span>
+      <h2 class="family-title">Trust and Evidence</h2>
+      <span class="family-count">9 primitives</span>
     </div>
     <p class="family-lede">
-      Small state signals for completeness, timing, and surface readiness. They describe what exists before a user decides how much to rely on it.
+      Compact signals for whether intelligence is complete, current, sourced, consistent, and safe to act on.
     </p>
     <div class="catalog-grid">
+
+      <article class="catalog-card" id="trust-band-badge">
+        <div class="card-head">
+          <h3 class="card-title">TrustBandBadge</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render the surface trust band on a piece of intelligence.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/TrustBandBadge.md">primitives/TrustBandBadge.md</a>
+            <span class="variant-line">Variants demoed: likely_current, use_with_caution, needs_verification, compact</span>
+          </div>
+          <span class="status-badge status-canonical">Canonical classes</span>
+        </div>
+        <div class="sample-area">
+          <span class="Pill_pill Pill_sage Pill_standard TrustBandBadge_badge TrustBandBadge_likelyCurrent" data-tone="sage" data-band="likely_current" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">
+            <span class="Pill_dot" aria-hidden="true"></span>Likely current
+          </span>
+          <span class="Pill_pill Pill_turmeric Pill_standard TrustBandBadge_badge TrustBandBadge_useWithCaution" data-tone="turmeric" data-band="use_with_caution" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">
+            <span class="Pill_dot" aria-hidden="true"></span>Use with caution
+          </span>
+          <span class="Pill_pill Pill_terracotta Pill_standard TrustBandBadge_badge TrustBandBadge_needsVerification" data-tone="terracotta" data-band="needs_verification" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">
+            <span class="Pill_dot" aria-hidden="true"></span>Needs verification
+          </span>
+          <span class="Pill_pill Pill_turmeric Pill_compact TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_useWithCaution" data-tone="turmeric" data-band="use_with_caution" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">
+            <span class="Pill_dot" aria-hidden="true"></span>Caution
+          </span>
+        </div>
+        <p class="card-note">Rendered with <code>TrustBandBadge.module.css</code> and <code>Pill.module.css</code>.</p>
+      </article>
 
       <article class="catalog-card" id="intelligence-quality-badge">
         <div class="card-head">
@@ -487,51 +661,107 @@
           <p class="card-summary">Render the completeness of intelligence on an entity or meeting prep surface.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/IntelligenceQualityBadge.md">primitives/IntelligenceQualityBadge.md</a>
-            <span class="variant-line">Variants demoed: sparse, developing, ready, fresh</span>
+            <span class="variant-line">Variants demoed: sparse, developing, ready, fresh, new signal</span>
           </div>
-          <span class="status-badge status-canonical">Canonical module</span>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area" data-ds-name="IntelligenceQualityBadge" data-ds-tier="primitive" data-ds-spec="primitives/IntelligenceQualityBadge.md">
-          <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=sparse">
-            <span class="IntelligenceQualityBadge_dot IntelligenceQualityBadge_mutedDot HealthBadge_dotMuted"></span>
-            <span class="IntelligenceQualityBadge_label HealthBadge_scoreMuted">Sparse</span>
-          </span>
-          <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=developing">
-            <span class="IntelligenceQualityBadge_dot HealthBadge_dotYellow"></span>
-            <span class="IntelligenceQualityBadge_label HealthBadge_trendVolatile">Limited</span>
-          </span>
-          <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=ready">
-            <span class="IntelligenceQualityBadge_dot HealthBadge_dotGreen"></span>
-            <span class="IntelligenceQualityBadge_label HealthBadge_trendImproving">Ready</span>
-          </span>
-          <span class="IntelligenceQualityBadge_root" data-ds-variant="quality=fresh">
+        <div class="sample-area sample-stack">
+          <span class="IntelligenceQualityBadge_root" data-ds-name="IntelligenceQualityBadge" data-ds-spec="primitives/IntelligenceQualityBadge.md">
             <span class="IntelligenceQualityBadge_structuredDotShell">
-              <span class="IntelligenceQualityBadge_dot HealthBadge_dotGreen"></span>
+              <span class="IntelligenceQualityBadge_dot IntelligenceQualityBadge_mutedDot" style="background: var(--color-text-tertiary);"></span>
+            </span>
+            <span class="IntelligenceQualityBadge_label" style="color: var(--color-text-tertiary);">Sparse</span>
+          </span>
+          <span class="IntelligenceQualityBadge_root" data-ds-name="IntelligenceQualityBadge" data-ds-spec="primitives/IntelligenceQualityBadge.md">
+            <span class="IntelligenceQualityBadge_structuredDotShell">
+              <span class="IntelligenceQualityBadge_dot" style="background: var(--color-spice-turmeric);"></span>
+            </span>
+            <span class="IntelligenceQualityBadge_label" style="color: var(--color-spice-turmeric);">Limited</span>
+          </span>
+          <span class="IntelligenceQualityBadge_root" data-ds-name="IntelligenceQualityBadge" data-ds-spec="primitives/IntelligenceQualityBadge.md">
+            <span class="IntelligenceQualityBadge_structuredDotShell">
+              <span class="IntelligenceQualityBadge_dot" style="background: var(--color-garden-sage);"></span>
+            </span>
+            <span class="IntelligenceQualityBadge_label" style="color: var(--color-garden-sage);">Ready</span>
+          </span>
+          <span class="IntelligenceQualityBadge_root" data-ds-name="IntelligenceQualityBadge" data-ds-spec="primitives/IntelligenceQualityBadge.md">
+            <span class="IntelligenceQualityBadge_structuredDotShell">
+              <span class="IntelligenceQualityBadge_dot" style="background: var(--color-garden-sage);"></span>
               <span class="IntelligenceQualityBadge_newSignalDot"></span>
             </span>
-            <span class="IntelligenceQualityBadge_label HealthBadge_trendImproving">Fresh</span>
+            <span class="IntelligenceQualityBadge_label" style="color: var(--color-garden-sage);">Fresh</span>
           </span>
         </div>
-        <p class="card-note">Rendered with IntelligenceQualityBadge scoped classes; token color classes come from HealthBadge rather than local CSS.</p>
+        <p class="card-note">Rendered with <code>IntelligenceQualityBadge.module.css</code>. The color styles mirror the source TSX runtime token styles.</p>
       </article>
 
-      <article class="catalog-card" id="trust-band-badge">
+      <article class="catalog-card" id="confidence-score-chip">
         <div class="card-head">
-          <h3 class="card-title">TrustBandBadge</h3>
+          <h3 class="card-title">ConfidenceScoreChip</h3>
           <span class="tier-label">primitive</span>
-          <p class="card-summary">Render the v1.4.0 surface trust band on a piece of intelligence.</p>
+          <p class="card-summary">Render a numerical confidence score in a compact chip.</p>
           <div class="card-meta">
-            <a class="card-link" href="../../primitives/TrustBandBadge.md">primitives/TrustBandBadge.md</a>
-            <span class="variant-line">Variants demoed: likely_current, use_with_caution, needs_verification</span>
+            <a class="card-link" href="../../primitives/ConfidenceScoreChip.md">primitives/ConfidenceScoreChip.md</a>
+            <span class="variant-line">Variants demoed: likely_current, use_with_caution, needs_verification, unavailable</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area" data-ds-name="TrustBandBadge" data-ds-tier="primitive" data-ds-spec="primitives/TrustBandBadge.md">
-          <span data-ds-variant="band=likely_current">Likely current</span>
-          <span data-ds-variant="band=use_with_caution">Use with caution</span>
-          <span data-ds-variant="band=needs_verification">Needs verification</span>
+        <div class="sample-area">
+          <span class="ConfidenceScoreChip_chip" data-band="likely_current" data-state="available" data-ds-name="ConfidenceScoreChip" data-ds-spec="primitives/ConfidenceScoreChip.md">93%</span>
+          <span class="ConfidenceScoreChip_chip" data-band="use_with_caution" data-state="available" data-ds-name="ConfidenceScoreChip" data-ds-spec="primitives/ConfidenceScoreChip.md">72%</span>
+          <span class="ConfidenceScoreChip_chip" data-band="needs_verification" data-state="available" data-ds-name="ConfidenceScoreChip" data-ds-spec="primitives/ConfidenceScoreChip.md">41%</span>
+          <span class="ConfidenceScoreChip_chip" data-state="unavailable" data-ds-name="ConfidenceScoreChip" data-ds-spec="primitives/ConfidenceScoreChip.md">--</span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - no scoped TrustBandBadge module exists.</p>
+        <p class="card-note">Rendered with <code>ConfidenceScoreChip.module.css</code>.</p>
+      </article>
+
+      <article class="catalog-card" id="verification-status-flag">
+        <div class="card-head">
+          <h3 class="card-title">VerificationStatusFlag</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render the consistency state for intelligence as a small icon plus mono label.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/VerificationStatusFlag.md">primitives/VerificationStatusFlag.md</a>
+            <span class="variant-line">Variants demoed: ok, corrected, flagged</span>
+          </div>
+          <span class="status-badge status-canonical">Canonical classes</span>
+        </div>
+        <div class="sample-area sample-stack">
+          <span class="VerificationStatusFlag_flag" data-status="ok" data-ds-name="VerificationStatusFlag" data-ds-spec="primitives/VerificationStatusFlag.md">
+            <svg class="VerificationStatusFlag_icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M20 6 9 17l-5-5"/></svg>
+            OK
+          </span>
+          <span class="VerificationStatusFlag_flag" data-status="corrected" data-ds-name="VerificationStatusFlag" data-ds-spec="primitives/VerificationStatusFlag.md">
+            <svg class="VerificationStatusFlag_icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M14.7 6.3a1 1 0 0 0-1.4 0l-7 7a2 2 0 0 0-.6 1.4V18h3.3a2 2 0 0 0 1.4-.6l7-7a1 1 0 0 0 0-1.4l-2.7-2.7Z"/><path d="m12 8 4 4"/></svg>
+            Corrected
+          </span>
+          <span class="VerificationStatusFlag_flag" data-status="flagged" data-ds-name="VerificationStatusFlag" data-ds-spec="primitives/VerificationStatusFlag.md">
+            <svg class="VerificationStatusFlag_icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="m21.7 18-8.8-15a1 1 0 0 0-1.8 0L2.3 18a1 1 0 0 0 .9 1.5h17.6a1 1 0 0 0 .9-1.5Z"/><path d="M12 9v4"/><path d="M12 17h.01"/></svg>
+            Flagged
+          </span>
+        </div>
+        <p class="card-note">Rendered with <code>VerificationStatusFlag.module.css</code>.</p>
+      </article>
+
+      <article class="catalog-card" id="provenance-tag">
+        <div class="card-head">
+          <h3 class="card-title">ProvenanceTag</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Render a muted source-attribution label for a piece of intelligence.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/ProvenanceTag.md">primitives/ProvenanceTag.md</a>
+            <span class="variant-line">Variants demoed: default, discrepancy, synthesized suppressed note</span>
+          </div>
+          <span class="status-badge status-canonical">Canonical classes</span>
+        </div>
+        <div class="sample-area sample-stack">
+          <span class="ProvenanceTag_tag" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from Glean</span>
+          <span class="ProvenanceTag_tag" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">
+            <span class="ProvenanceTag_discrepancy" title="Multiple sources disagree on this item">! </span>from Salesforce
+          </span>
+          <span class="ProvenanceTag_tag" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">pty_synthesis hidden by default</span>
+        </div>
+        <p class="card-note">Rendered with <code>ProvenanceTag.module.css</code>.</p>
       </article>
 
       <article class="catalog-card" id="freshness-indicator">
@@ -541,16 +771,26 @@
           <p class="card-summary">Render raw recency as relative age, absolute time, or both without trust judgment.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/FreshnessIndicator.md">primitives/FreshnessIndicator.md</a>
-            <span class="variant-line">Variants demoed: relative, absolute, both, stale</span>
+            <span class="variant-line">Variants demoed: relative, absolute, both, fresh, aging, stale, strip</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area sample-stack" data-ds-name="FreshnessIndicator" data-ds-tier="primitive" data-ds-spec="primitives/FreshnessIndicator.md">
-          <span data-ds-variant="format=relative">3h ago</span>
-          <span data-ds-variant="format=absolute">Apr 22, 10:30am</span>
-          <span data-ds-variant="format=both">stale 5d / Apr 28 09:00</span>
+        <div class="sample-area sample-stack">
+          <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-staleness="fresh" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">
+            <span class="FreshnessIndicator_timeText">3h ago</span>
+          </span>
+          <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-staleness="aging" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">
+            <span class="FreshnessIndicator_timeText">Apr 22, 10:30am</span>
+          </span>
+          <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-staleness="stale" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">
+            <span class="FreshnessIndicator_timeText">stale 5d · Apr 28 09:00</span>
+          </span>
+          <span class="FreshnessIndicator_root FreshnessIndicator_strip" data-staleness="stale" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">
+            <span class="FreshnessIndicator_part"><span class="FreshnessIndicator_text">CRM</span></span>
+            <span class="FreshnessIndicator_part" data-stale="true"><span class="FreshnessIndicator_separator" aria-hidden="true">·</span><span class="FreshnessIndicator_text FreshnessIndicator_timeText">Updated Apr 22</span></span>
+          </span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - closest source is ChapterFreshness, which is a chapter pattern.</p>
+        <p class="card-note">Rendered with <code>FreshnessIndicator.module.css</code>.</p>
       </article>
 
       <article class="catalog-card" id="as-of-timestamp">
@@ -562,124 +802,38 @@
             <a class="card-link" href="../../primitives/AsOfTimestamp.md">primitives/AsOfTimestamp.md</a>
             <span class="variant-line">Variants demoed: relative, absolute, both, unavailable</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area sample-stack" data-ds-name="AsOfTimestamp" data-ds-tier="primitive" data-ds-spec="primitives/AsOfTimestamp.md">
-          <span data-ds-variant="format=relative">As of 3h ago</span>
-          <span data-ds-variant="format=absolute">As of Apr 22, 10:30am</span>
-          <span data-ds-variant="format=both">As of 3h ago / Apr 22 10:30</span>
-          <span data-ds-variant="unavailable">As of unavailable</span>
+        <div class="sample-area sample-stack">
+          <span class="AsOfTimestamp_timestamp" data-state="available" data-ds-name="AsOfTimestamp" data-ds-spec="primitives/AsOfTimestamp.md">As of 3h ago</span>
+          <span class="AsOfTimestamp_timestamp" data-state="available" data-ds-name="AsOfTimestamp" data-ds-spec="primitives/AsOfTimestamp.md">As of Apr 22, 10:30am</span>
+          <span class="AsOfTimestamp_timestamp" data-state="available" data-ds-name="AsOfTimestamp" data-ds-spec="primitives/AsOfTimestamp.md">As of 3h ago · Apr 22 10:30</span>
+          <span class="AsOfTimestamp_timestamp" data-state="unavailable" data-ds-name="AsOfTimestamp" data-ds-spec="primitives/AsOfTimestamp.md">As of unavailable</span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - no scoped AsOfTimestamp module exists.</p>
-      </article>
-
-      <article class="catalog-card" id="meeting-status-pill">
-        <div class="card-head">
-          <h3 class="card-title">MeetingStatusPill</h3>
-          <span class="tier-label">primitive</span>
-          <p class="card-summary">Show the extraction state of a meeting recap in one compact, readable pill.</p>
-          <div class="card-meta">
-            <a class="card-link" href="../../primitives/MeetingStatusPill.md">primitives/MeetingStatusPill.md</a>
-            <span class="variant-line">Variants demoed: wrapped, processing, failed</span>
-          </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
-        </div>
-        <div class="sample-area sample-stack" data-ds-name="MeetingStatusPill" data-ds-tier="primitive" data-ds-spec="primitives/MeetingStatusPill.md">
-          <span data-ds-variant="wrapped">Wrapped 8 min ago / 56 min recorded</span>
-          <span data-ds-variant="processing">Processing transcript</span>
-          <span data-ds-variant="failed">Extraction failed</span>
-        </div>
-        <p class="card-note">Canonical CSS not yet promoted - no scoped MeetingStatusPill module exists.</p>
-      </article>
-
-    </div>
-  </section>
-
-  <section class="family-section" id="trust">
-    <div class="family-header">
-      <h2 class="family-title">Trust UI</h2>
-      <span class="family-count">5 primitives</span>
-    </div>
-    <p class="family-lede">
-      Evidence and verification cues. These stay compact so receipt, claim, and inspection patterns can compose them without inventing new trust language.
-    </p>
-    <div class="catalog-grid">
-
-      <article class="catalog-card" id="provenance-tag">
-        <div class="card-head">
-          <h3 class="card-title">ProvenanceTag</h3>
-          <span class="tier-label">primitive</span>
-          <p class="card-summary">Render a muted source-attribution label when the source is meaningful to users.</p>
-          <div class="card-meta">
-            <a class="card-link" href="../../primitives/ProvenanceTag.md">primitives/ProvenanceTag.md</a>
-            <span class="variant-line">Variants demoed: plain, discrepancy</span>
-          </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
-        </div>
-        <div class="sample-area" data-ds-name="ProvenanceTag" data-ds-tier="primitive" data-ds-spec="primitives/ProvenanceTag.md">
-          <span data-ds-variant="plain">from Salesforce</span>
-          <span data-ds-variant="plain">from email</span>
-          <span data-ds-variant="discrepancy">from Glean / disagreement</span>
-        </div>
-        <p class="card-note">Canonical CSS not yet promoted - current ProvenanceTag uses global classes, not scoped module classes.</p>
+        <p class="card-note">Rendered with <code>AsOfTimestamp.module.css</code>.</p>
       </article>
 
       <article class="catalog-card" id="source-coverage-line">
         <div class="card-head">
           <h3 class="card-title">SourceCoverageLine</h3>
           <span class="tier-label">primitive</span>
-          <p class="card-summary">Render a compact line summarizing which source system contributed and how much coverage exists.</p>
+          <p class="card-summary">Render a compact line summarizing source coverage for intelligence.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/SourceCoverageLine.md">primitives/SourceCoverageLine.md</a>
             <span class="variant-line">Variants demoed: default, withStaleCount, empty</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area sample-stack" data-ds-name="SourceCoverageLine" data-ds-tier="primitive" data-ds-spec="primitives/SourceCoverageLine.md">
-          <span data-ds-variant="default">Glean / 4 sources</span>
-          <span data-ds-variant="withStaleCount">Salesforce / 8 sources / 2 stale</span>
-          <span data-ds-variant="empty">No source coverage</span>
+        <div class="sample-area sample-stack">
+          <span class="SourceCoverageLine_line" data-variant="default" data-ds-name="SourceCoverageLine" data-ds-spec="primitives/SourceCoverageLine.md">
+            <span>Glean</span><span class="SourceCoverageLine_separator" aria-hidden="true">·</span><span>4 sources</span>
+          </span>
+          <span class="SourceCoverageLine_line" data-variant="withStaleCount" data-ds-name="SourceCoverageLine" data-ds-spec="primitives/SourceCoverageLine.md">
+            <span>Salesforce</span><span class="SourceCoverageLine_separator" aria-hidden="true">·</span><span>6 sources</span><span class="SourceCoverageLine_separator" aria-hidden="true">·</span><span class="SourceCoverageLine_stale">2 stale</span>
+          </span>
+          <span class="SourceCoverageLine_line" data-variant="empty" data-ds-name="SourceCoverageLine" data-ds-spec="primitives/SourceCoverageLine.md">No source coverage</span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - no scoped SourceCoverageLine module exists.</p>
-      </article>
-
-      <article class="catalog-card" id="confidence-score-chip">
-        <div class="card-head">
-          <h3 class="card-title">ConfidenceScoreChip</h3>
-          <span class="tier-label">primitive</span>
-          <p class="card-summary">Render a numerical confidence score in a compact chip while mapping color to trust bands.</p>
-          <div class="card-meta">
-            <a class="card-link" href="../../primitives/ConfidenceScoreChip.md">primitives/ConfidenceScoreChip.md</a>
-            <span class="variant-line">Variants demoed: likely_current, use_with_caution, needs_verification, unavailable</span>
-          </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
-        </div>
-        <div class="sample-area" data-ds-name="ConfidenceScoreChip" data-ds-tier="primitive" data-ds-spec="primitives/ConfidenceScoreChip.md">
-          <span data-ds-variant="band=likely_current">94%</span>
-          <span data-ds-variant="band=use_with_caution">72%</span>
-          <span data-ds-variant="band=needs_verification">38%</span>
-          <span data-ds-variant="unavailable">--</span>
-        </div>
-        <p class="card-note">Canonical CSS not yet promoted - no scoped ConfidenceScoreChip module exists.</p>
-      </article>
-
-      <article class="catalog-card" id="verification-status-flag">
-        <div class="card-head">
-          <h3 class="card-title">VerificationStatusFlag</h3>
-          <span class="tier-label">primitive</span>
-          <p class="card-summary">Render consistency state as a small icon plus mono label for verified, corrected, or flagged claims.</p>
-          <div class="card-meta">
-            <a class="card-link" href="../../primitives/VerificationStatusFlag.md">primitives/VerificationStatusFlag.md</a>
-            <span class="variant-line">Variants demoed: ok, corrected, flagged</span>
-          </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
-        </div>
-        <div class="sample-area" data-ds-name="VerificationStatusFlag" data-ds-tier="primitive" data-ds-spec="primitives/VerificationStatusFlag.md">
-          <span data-ds-variant="status=ok">OK</span>
-          <span data-ds-variant="status=corrected">Corrected</span>
-          <span data-ds-variant="status=flagged">Flagged</span>
-        </div>
-        <p class="card-note">Canonical CSS not yet promoted - no scoped VerificationStatusFlag module exists.</p>
+        <p class="card-note">Rendered with <code>SourceCoverageLine.module.css</code>.</p>
       </article>
 
       <article class="catalog-card" id="data-gap-notice">
@@ -691,46 +845,33 @@
             <a class="card-link" href="../../primitives/DataGapNotice.md">primitives/DataGapNotice.md</a>
             <span class="variant-line">Variants demoed: info, warning</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area sample-stack" data-ds-name="DataGapNotice" data-ds-tier="primitive" data-ds-spec="primitives/DataGapNotice.md">
-          <span data-ds-variant="severity=info">Missing stakeholder roles</span>
-          <span data-ds-variant="severity=warning">No recent meetings on this account</span>
+        <div class="sample-area sample-stack">
+          <span class="DataGapNotice_notice" data-severity="info" data-ds-name="DataGapNotice" data-ds-spec="primitives/DataGapNotice.md">
+            <svg class="DataGapNotice_icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 16v-4"/><path d="M12 8h.01"/></svg>
+            No recent meetings
+          </span>
+          <span class="DataGapNotice_notice" data-severity="warning" data-ds-name="DataGapNotice" data-ds-spec="primitives/DataGapNotice.md">
+            <svg class="DataGapNotice_icon" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><path d="M12 8v4"/><path d="M12 16h.01"/></svg>
+            Stakeholder roles unknown
+          </span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - no scoped DataGapNotice module exists.</p>
+        <p class="card-note">Rendered with <code>DataGapNotice.module.css</code>.</p>
       </article>
 
     </div>
   </section>
 
-  <section class="family-section" id="controls">
+  <section class="family-section" id="controls-input">
     <div class="family-header">
-      <h2 class="family-title">Form Controls</h2>
+      <h2 class="family-title">Controls and Input</h2>
       <span class="family-count">3 primitives</span>
     </div>
     <p class="family-lede">
-      Quiet, settings-friendly controls. Each keeps interaction localized and leaves explanatory copy to the surrounding row or pattern.
+      Small controls for binary choices, compact mode selection, and in-place editing inside dense settings surfaces.
     </p>
     <div class="catalog-grid">
-
-      <article class="catalog-card" id="inline-input">
-        <div class="card-head">
-          <h3 class="card-title">InlineInput</h3>
-          <span class="tier-label">primitive</span>
-          <p class="card-summary">Let users edit a short piece of text in place without leaving the surrounding settings row.</p>
-          <div class="card-meta">
-            <a class="card-link" href="../../primitives/InlineInput.md">primitives/InlineInput.md</a>
-            <span class="variant-line">Variants demoed: display, placeholder, editing input</span>
-          </div>
-          <span class="status-badge status-canonical">Canonical module</span>
-        </div>
-        <div class="sample-area sample-stack" data-ds-name="InlineInput" data-ds-tier="primitive" data-ds-spec="primitives/InlineInput.md">
-          <span class="editable-inline_display" data-ds-variant="display"><span>James Giroux</span></span>
-          <span class="editable-inline_display" data-ds-variant="placeholder"><span class="editable-inline_placeholder">Add profile URL</span></span>
-          <input class="editable-inline_input" data-ds-variant="editing" value="sam@subsidiary.com" aria-label="Profile email">
-        </div>
-        <p class="card-note">Rendered with the existing editable-inline scoped module used by EditableInline.</p>
-      </article>
 
       <article class="catalog-card" id="switch">
         <div class="card-head">
@@ -739,16 +880,22 @@
           <p class="card-summary">Give users a compact on/off control for a single binary setting.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/Switch.md">primitives/Switch.md</a>
-            <span class="variant-line">Variants demoed: on, off, disabled</span>
+            <span class="variant-line">Variants demoed: off, on, disabled, size=sm</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area" data-ds-name="Switch" data-ds-tier="primitive" data-ds-spec="primitives/Switch.md">
-          <button type="button" role="switch" aria-checked="true" data-ds-variant="on">On</button>
-          <button type="button" role="switch" aria-checked="false" data-ds-variant="off">Off</button>
-          <button type="button" role="switch" aria-checked="false" disabled data-ds-variant="disabled">Disabled</button>
+        <div class="sample-area">
+          <button type="button" role="switch" aria-checked="false" class="Switch_switch" data-checked="false" data-size="sm" data-ds-name="Switch" data-ds-spec="primitives/Switch.md">
+            <span class="Switch_thumb" aria-hidden="true"></span>
+          </button>
+          <button type="button" role="switch" aria-checked="true" class="Switch_switch" data-checked="true" data-size="sm" data-ds-name="Switch" data-ds-spec="primitives/Switch.md">
+            <span class="Switch_thumb" aria-hidden="true"></span>
+          </button>
+          <button type="button" role="switch" aria-checked="false" class="Switch_switch" data-checked="false" data-size="sm" data-ds-name="Switch" data-ds-spec="primitives/Switch.md" disabled>
+            <span class="Switch_thumb" aria-hidden="true"></span>
+          </button>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - current settings toggles are local to NotificationSection, not a Switch module.</p>
+        <p class="card-note">Rendered with <code>Switch.module.css</code>.</p>
       </article>
 
       <article class="catalog-card" id="segmented">
@@ -758,34 +905,58 @@
           <p class="card-summary">Let users choose one value from a small fixed set without opening a menu.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/Segmented.md">primitives/Segmented.md</a>
-            <span class="variant-line">Variants demoed: turmeric, eucalyptus, larkspur</span>
+            <span class="variant-line">Variants demoed: turmeric, eucalyptus, larkspur, selected, disabled</span>
+          </div>
+          <span class="status-badge status-canonical">Canonical classes</span>
+        </div>
+        <div class="sample-area sample-stack">
+          <div role="group" aria-label="Settings density" class="Segmented_group Segmented_turmeric" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+            <button type="button" class="Segmented_option">Compact</button>
+            <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">Regular</button>
+            <button type="button" class="Segmented_option">Comfy</button>
+          </div>
+          <div role="group" aria-label="System tone" class="Segmented_group Segmented_eucalyptus" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+            <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">System</button>
+            <button type="button" class="Segmented_option">Manual</button>
+          </div>
+          <div role="group" aria-label="People mode" class="Segmented_group Segmented_larkspur" data-disabled="true" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+            <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true" disabled>People</button>
+            <button type="button" class="Segmented_option" disabled>Accounts</button>
+          </div>
+        </div>
+        <p class="card-note">Rendered with <code>Segmented.module.css</code>.</p>
+      </article>
+
+      <article class="catalog-card" id="inline-input">
+        <div class="card-head">
+          <h3 class="card-title">InlineInput</h3>
+          <span class="tier-label">primitive</span>
+          <p class="card-summary">Let users edit a short piece of text in place without leaving the surrounding settings row.</p>
+          <div class="card-meta">
+            <a class="card-link" href="../../primitives/InlineInput.md">primitives/InlineInput.md</a>
+            <span class="variant-line">Variants demoed: font=sans, font=mono, disabled</span>
           </div>
           <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
         </div>
-        <div class="sample-area sample-stack" data-ds-name="Segmented" data-ds-tier="primitive" data-ds-spec="primitives/Segmented.md">
-          <div role="group" aria-label="Density" data-ds-variant="tint=turmeric">
-            <button type="button" aria-pressed="false">Compact</button>
-            <button type="button" aria-pressed="true">Regular</button>
-            <button type="button" aria-pressed="false">Comfy</button>
-          </div>
-          <div role="group" aria-label="Tone" data-ds-variant="tint=larkspur">
-            <button type="button" aria-pressed="true">Calm</button>
-            <button type="button" aria-pressed="false">Direct</button>
-          </div>
+        <div class="sample-area sample-stack">
+          <input value="Daily digest" aria-label="Profile name example" readonly style="font-family:var(--font-sans);font-size:14px;min-width:176px;padding:2px 0;border:0;border-bottom:1px solid var(--color-rule-light);outline:0;">
+          <input value="https://dailyos.local" aria-label="URL example" readonly style="font-family:var(--font-mono);font-size:14px;min-width:176px;padding:2px 0;border:0;border-bottom:1px solid var(--color-rule-light);outline:0;">
+          <input value="Locked value" aria-label="Disabled inline input example" disabled style="font-family:var(--font-sans);font-size:14px;min-width:176px;padding:2px 0;border:0;border-bottom:1px solid var(--color-rule-light);outline:0;">
+          <span class="fallback-label">canonical CSS not yet promoted</span>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - Settings mockup segmented styles are not in a scoped module.</p>
+        <p class="card-note">No <code>InlineInput.module.css</code> exists in <code>_shared/styles</code> yet, so this card is explicitly marked for promotion rather than borrowing unrelated editable classes.</p>
       </article>
 
     </div>
   </section>
 
-  <section class="family-section" id="editorial">
+  <section class="family-section" id="glance-metrics">
     <div class="family-header">
-      <h2 class="family-title">Editorial</h2>
+      <h2 class="family-title">Glance Metrics</h2>
       <span class="family-count">1 primitive</span>
     </div>
     <p class="family-lede">
-      Primitive-level editorial rhythm: small, scannable facts that slot into mastheads and glance rows without becoming a full analytics pattern.
+      Compact key/value stats that sit inside masthead glance rows and carry light status context.
     </p>
     <div class="catalog-grid">
 
@@ -796,36 +967,65 @@
           <p class="card-summary">Present one compact key/value stat for a masthead glance row.</p>
           <div class="card-meta">
             <a class="card-link" href="../../primitives/GlanceCell.md">primitives/GlanceCell.md</a>
-            <span class="variant-line">Variants demoed: none, healthy, warn</span>
+            <span class="variant-line">Variants demoed: none, healthy, warn, neutral</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-canonical">Canonical classes</span>
         </div>
-        <div class="sample-area sample-grid" data-ds-name="GlanceCell" data-ds-tier="primitive" data-ds-spec="primitives/GlanceCell.md">
-          <dl data-ds-variant="status=none">
-            <dt>Connectors</dt>
-            <dd>6</dd>
-          </dl>
-          <dl data-ds-variant="status=healthy">
-            <dt>Database</dt>
-            <dd>220.8 MB</dd>
-          </dl>
-          <dl data-ds-variant="status=warn">
-            <dt>AI today</dt>
-            <dd>82%</dd>
-          </dl>
+        <div class="sample-area sample-grid">
+          <div class="GlanceCell_cell" data-status="none" data-ds-name="GlanceCell" data-ds-spec="primitives/GlanceCell.md">
+            <span class="GlanceCell_label">AI today</span>
+            <span class="GlanceCell_valueRow">
+              <span class="GlanceCell_value">82%</span>
+            </span>
+          </div>
+          <div class="GlanceCell_cell" data-status="healthy" data-ds-name="GlanceCell" data-ds-spec="primitives/GlanceCell.md">
+            <span class="GlanceCell_label">Database</span>
+            <span class="GlanceCell_valueRow">
+              <span class="GlanceCell_dot GlanceCell_healthy" aria-hidden="true"></span>
+              <span class="GlanceCell_value">220.8 MB</span>
+            </span>
+          </div>
+          <div class="GlanceCell_cell" data-status="warn" data-ds-name="GlanceCell" data-ds-spec="primitives/GlanceCell.md">
+            <span class="GlanceCell_label">Queue</span>
+            <span class="GlanceCell_valueRow">
+              <span class="GlanceCell_dot GlanceCell_warn" aria-hidden="true"></span>
+              <span class="GlanceCell_value">9 pending</span>
+            </span>
+          </div>
+          <div class="GlanceCell_cell" data-status="neutral" data-ds-name="GlanceCell" data-ds-spec="primitives/GlanceCell.md">
+            <span class="GlanceCell_label">Sync</span>
+            <span class="GlanceCell_valueRow">
+              <span class="GlanceCell_dot GlanceCell_neutral" aria-hidden="true"></span>
+              <span class="GlanceCell_value">Idle</span>
+            </span>
+          </div>
         </div>
-        <p class="card-note">Canonical CSS not yet promoted - Settings masthead glance cells only exist in mockup CSS.</p>
+        <p class="card-note">Rendered with <code>GlanceCell.module.css</code>.</p>
       </article>
 
     </div>
   </section>
 
-  <section class="audit-note" id="promotion-audit" aria-label="Promotion audit note">
-    <p class="audit-title">Promotion audit note</p>
+  <section class="audit-note" id="promotion-audit">
+    <p class="audit-title">Promotion Audit</p>
     <p class="audit-copy">
-      Promotion-needed cards intentionally avoid local visual classes. They remain structural examples until the named primitive gets a scoped module in the canonical CSS substrate.
-      <a class="audit-link" href="../../primitives/README.md">Read the primitive index</a>.
+      The catalogue includes every primitive spec. Demos with promoted CSS render through scoped classes. The only remaining gap is left visible so a future promotion can replace the fallback without guessing.
     </p>
+    <ul class="audit-list">
+      <li>17 canonical-class demos</li>
+      <li>1 promotion-needed primitive</li>
+      <li>InlineInput needs <code>InlineInput.module.css</code></li>
+      <li>TypeBadge currently uses AccountHero source-local classes</li>
+    </ul>
+  </section>
+
+  <section class="finis" aria-label="End mark">
+    <div class="finis-mark" aria-hidden="true">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+    </div>
+    <p class="finis-copy">A primitive should change here only when its canonical module changes.</p>
   </section>
 
 </main>

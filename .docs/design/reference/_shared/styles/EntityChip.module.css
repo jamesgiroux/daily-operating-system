@@ -1,0 +1,44 @@
+.EntityChip_chip.EntityChip_chip {
+  --entity-chip-color: var(--color-account);
+  --entity-chip-background: var(--color-account-8);
+  --pill-background: var(--entity-chip-background);
+  --pill-color: var(--entity-chip-color);
+  --pill-dot-color: var(--entity-chip-color);
+}
+
+.EntityChip_chip-account {
+  --entity-chip-color: var(--color-account);
+  --entity-chip-background: var(--color-account-8);
+}
+
+.EntityChip_chip-project {
+  --entity-chip-color: var(--color-project);
+  --entity-chip-background: var(--color-project-8);
+}
+
+.EntityChip_chip-person {
+  --entity-chip-color: var(--color-person);
+  --entity-chip-background: var(--color-person-8);
+}
+
+.EntityChip_chip[data-suggested="true"] {
+  --pill-background: transparent;
+  --pill-border: currentColor;
+
+  border-style: dashed;
+  opacity: 0.65;
+}
+
+.EntityChip_icon {
+  flex-shrink: 0;
+}
+
+.EntityChip_name {
+  min-width: 0;
+  color: inherit;
+}
+
+.EntityChip_chip a {
+  color: inherit;
+  text-decoration: none;
+}

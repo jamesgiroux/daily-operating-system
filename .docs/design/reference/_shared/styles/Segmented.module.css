@@ -1,0 +1,94 @@
+.Segmented_group {
+  --segmented-background: var(--color-spice-turmeric-8);
+  --segmented-selected-background: var(--color-spice-turmeric-15);
+  --segmented-selected-color: var(--color-spice-turmeric);
+  --segmented-focus-color: var(--color-spice-turmeric);
+
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  padding: var(--space-xs);
+  border: 1px solid var(--color-rule-light);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--segmented-background);
+}
+
+.Segmented_turmeric {
+  --segmented-background: var(--color-spice-turmeric-8);
+  --segmented-selected-background: var(--color-spice-turmeric-15);
+  --segmented-selected-color: var(--color-spice-turmeric);
+  --segmented-focus-color: var(--color-spice-turmeric);
+}
+
+.Segmented_eucalyptus {
+  --segmented-background: var(--color-garden-eucalyptus-6);
+  --segmented-selected-background: var(--color-garden-eucalyptus-10);
+  --segmented-selected-color: var(--color-garden-eucalyptus);
+  --segmented-focus-color: var(--color-garden-eucalyptus);
+}
+
+.Segmented_larkspur {
+  --segmented-background: var(--color-garden-larkspur-8);
+  --segmented-selected-background: var(--color-garden-larkspur-15);
+  --segmented-selected-color: var(--color-garden-larkspur);
+  --segmented-focus-color: var(--color-garden-larkspur);
+}
+
+.Segmented_option {
+  min-height: 24px;
+  padding: 4px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius-editorial-sm);
+  background: transparent;
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.Segmented_option:hover:not(:disabled):not(.Segmented_selected) {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-primary);
+}
+
+.Segmented_option:focus-visible {
+  outline: 2px solid var(--segmented-focus-color);
+  outline-offset: 1px;
+}
+
+.Segmented_selected {
+  border-color: currentColor;
+  background: var(--segmented-selected-background);
+  color: var(--segmented-selected-color);
+}
+
+.Segmented_option:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.Segmented_group[data-disabled="true"] {
+  opacity: 0.65;
+}
+
+@media (max-width: 560px) {
+  .Segmented_group {
+    display: flex;
+    width: 100%;
+  }
+
+  .Segmented_option {
+    flex: 1;
+    min-width: 0;
+  }
+}
