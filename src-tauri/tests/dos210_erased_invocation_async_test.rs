@@ -8,7 +8,7 @@ use dailyos_lib::abilities::{
     AbilityContext, AbilityRegistry, AbilityResult, Actor, NOOP_ABILITY_TRACER,
 };
 use dailyos_lib::intelligence::provider::ReplayProvider;
-use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+use dailyos_lib::services::context::{FixedClock, SeedableRng, ServiceContext};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -88,8 +88,7 @@ async fn invoke_by_name_json_works_inside_async_runtime() {
     let registry = AbilityRegistry::from_inventory_checked().unwrap();
     let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 1, 12, 0, 0).unwrap());
     let rng = SeedableRng::new(42);
-    let external = ExternalClients::default();
-    let services = ServiceContext::new_evaluate(&clock, &rng, &external);
+    let services = ServiceContext::new_evaluate_default(&clock, &rng);
     let provider = ReplayProvider::new(std::collections::HashMap::new());
     let ctx = AbilityContext::new(
         &services,

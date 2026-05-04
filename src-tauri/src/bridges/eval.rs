@@ -81,7 +81,7 @@ mod tests {
         Completion, ModelName, ModelTier, PromptInput, ProviderError, ProviderKind,
         ReplayProvider,
     };
-    use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
+    use crate::services::context::{FixedClock, SeedableRng};
 
     const SYSTEM_ACTORS: &[Actor] = &[Actor::System];
     const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
@@ -93,7 +93,6 @@ mod tests {
     struct FixtureServices {
         clock: FixedClock,
         rng: SeedableRng,
-        external: ExternalClients,
     }
 
     impl FixtureServices {
@@ -101,15 +100,13 @@ mod tests {
             Self {
                 clock: FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap()),
                 rng: SeedableRng::new(217),
-                external: ExternalClients::default(),
             }
         }
     }
 
     impl EvalFixtureServices for FixtureServices {
         fn service_context(&self) -> ServiceContext<'_> {
-            ServiceContext::new_evaluate(&self.clock, &self.rng, &self.external)
-                .with_actor("eval_fixture")
+            ServiceContext::new_evaluate_default(&self.clock, &self.rng).with_actor("eval_fixture")
         }
     }
 

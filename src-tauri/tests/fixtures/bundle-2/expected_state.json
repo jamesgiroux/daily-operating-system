@@ -14,7 +14,7 @@
         "data_source": "provider_completion",
         "source_ref": {
           "source_id": "src-test-user-1",
-          "provider": "provider.example.com",
+          "provider": "vendor.example.com",
           "attribution": "provider_completion"
         },
         "source_asof": "2026-05-01T12:00:00Z",

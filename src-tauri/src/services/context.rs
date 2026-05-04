@@ -27,7 +27,7 @@
 //! - DB plumbing — `with_transaction_async` lands in a follow-up phase
 //!   once the mutator migration starts.
 
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 use chrono::{DateTime, Utc};
 use http::HeaderMap;
@@ -35,8 +35,11 @@ use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 
 use crate::services::external_replay::{
-    ExternalReplayFixture, ExternalReplayFixtureMissing, ReplayResponse, RequestKey,
+    ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
+    ReplayResponse, RequestKey,
 };
+
+const DEFAULT_EVALUATE_AUTH_SCOPE_ID: &str = "test-tenant-default";
 
 /// Execution mode for ability + service workflows per ADR-0104.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -210,6 +213,13 @@ impl ExternalClients {
             gmail: ReplayGmailClient::new(fixture.clone(), auth_scope_id.clone()).into(),
             REDACTED: ReplaySalesforceClient::new(fixture, auth_scope_id).into(),
         }
+    }
+
+    pub fn is_replay_mode(&self) -> bool {
+        self.glean.is_replay()
+            && self.slack.is_replay()
+            && self.gmail.is_replay()
+            && self.REDACTED.is_replay()
     }
 }
 
@@ -763,9 +773,8 @@ impl<'a> ServiceContext<'a> {
     /// `Evaluate` constructor — fixture DB only.
     ///
     /// `external` MUST contain replay/fixture client wrappers — Live
-    /// wrappers are a programming error in this mode. The wrapper types
-    /// do not enforce this themselves; the caller invariant is that
-    /// replay fixtures populate `external` before construction.
+    /// wrappers are a programming error in this mode. This constructor
+    /// asserts that replay fixtures populate `external` before construction.
     ///
     /// **Boot-time guard for production-DB-path rejection** lands in
     /// the DB-plumbing phase; the fixture-DB invariant is documented
@@ -775,6 +784,11 @@ impl<'a> ServiceContext<'a> {
         rng: &'a dyn SeededRng,
         external: &'a ExternalClients,
     ) -> Self {
+        assert!(
+            external.is_replay_mode(),
+            "Evaluate ServiceContext requires replay-mode ExternalClients"
+        );
+
         Self {
             mode: ExecutionMode::Evaluate,
             clock,
@@ -783,6 +797,12 @@ impl<'a> ServiceContext<'a> {
             external,
             tx: None,
         }
+    }
+
+    /// Convenience constructor for trivial Evaluate-mode tests that do not
+    /// need fixture-specific external responses.
+    pub fn new_evaluate_default(clock: &'a dyn Clock, rng: &'a dyn SeededRng) -> Self {
+        Self::new_evaluate(clock, rng, default_evaluate_external_clients())
     }
 
     /// Override the actor label associated with this service call.
@@ -822,6 +842,23 @@ impl<'a> ServiceContext<'a> {
             Err(ServiceError::WriteBlockedByMode(self.mode))
         }
     }
+}
+
+fn default_evaluate_external_clients() -> &'static ExternalClients {
+    static DEFAULT_CLIENTS: OnceLock<ExternalClients> = OnceLock::new();
+
+    DEFAULT_CLIENTS.get_or_init(|| {
+        let fixture = JsonExternalReplayFixture::from_json_value(
+            &serde_json::json!({
+                "version": 1,
+                "fixtures": [],
+            }),
+            "default",
+        )
+        .expect("empty default external replay fixture must load");
+
+        ExternalClients::from_replay(Arc::new(fixture), DEFAULT_EVALUATE_AUTH_SCOPE_ID.to_string())
+    })
 }
 
 #[cfg(test)]
@@ -973,7 +1010,7 @@ mod tests {
     fn check_mutation_allowed_rejects_evaluate() {
         let clk = fixture_clock();
         let rng = fixture_rng();
-        let ext = fixture_external();
+        let ext = replay_external(StaticReplayFixture::default(), "auth-scope-test-evaluate");
         let ctx = ServiceContext::test_evaluate(&clk, &rng, &ext);
         match ctx.check_mutation_allowed() {
             Err(ServiceError::WriteBlockedByMode(ExecutionMode::Evaluate)) => {}
@@ -997,13 +1034,57 @@ mod tests {
     fn constructors_set_expected_modes() {
         let clk = fixture_clock();
         let rng = fixture_rng();
-        let ext = fixture_external();
-        let live = ServiceContext::test_live(&clk, &rng, &ext);
+        let live_ext = fixture_external();
+        let eval_ext = replay_external(StaticReplayFixture::default(), "auth-scope-test-evaluate");
+        let live = ServiceContext::test_live(&clk, &rng, &live_ext);
         assert_eq!(live.mode, ExecutionMode::Live);
-        let sim = ServiceContext::new_simulate(&clk, &rng, &ext);
+        let sim = ServiceContext::new_simulate(&clk, &rng, &live_ext);
         assert_eq!(sim.mode, ExecutionMode::Simulate);
-        let eval = ServiceContext::test_evaluate(&clk, &rng, &ext);
+        let eval = ServiceContext::test_evaluate(&clk, &rng, &eval_ext);
         assert_eq!(eval.mode, ExecutionMode::Evaluate);
+    }
+
+    #[test]
+    fn service_context_new_evaluate_with_replay_external_clients_is_consistent() {
+        let clk = fixture_clock();
+        let rng = fixture_rng();
+        let ext = replay_external(StaticReplayFixture::default(), "auth-scope-test-evaluate");
+
+        let ctx = ServiceContext::new_evaluate(&clk, &rng, &ext);
+
+        assert_eq!(ctx.mode, ExecutionMode::Evaluate);
+        assert!(ctx.external.is_replay_mode());
+        assert!(std::ptr::eq(ctx.external, &ext));
+    }
+
+    #[test]
+    #[should_panic(expected = "Evaluate ServiceContext requires replay-mode ExternalClients")]
+    fn service_context_new_evaluate_panics_or_errors_on_live_external_clients() {
+        let clk = fixture_clock();
+        let rng = fixture_rng();
+        let ext = ExternalClients::default();
+
+        let _ = ServiceContext::new_evaluate(&clk, &rng, &ext);
+    }
+
+    #[test]
+    fn service_context_new_evaluate_default_constructor_uses_replay_with_empty_fixture() {
+        let clk = fixture_clock();
+        let rng = fixture_rng();
+
+        let ctx = ServiceContext::new_evaluate_default(&clk, &rng);
+        let err = ctx
+            .external
+            .glean
+            .fetch_account_facts("acct-empty-fixture")
+            .unwrap_err();
+
+        assert_eq!(ctx.mode, ExecutionMode::Evaluate);
+        assert!(ctx.external.is_replay_mode());
+        assert!(matches!(
+            err,
+            ExternalClientError::ReplayFixtureMissing(_)
+        ));
     }
 
     #[test]
@@ -1021,6 +1102,7 @@ mod tests {
     fn external_clients_from_replay_constructs_all_clients_in_replay_mode() {
         let clients = replay_external(StaticReplayFixture::default(), "auth-scope-test-1");
 
+        assert!(clients.is_replay_mode());
         assert!(clients.glean.is_replay());
         assert!(clients.slack.is_replay());
         assert!(clients.gmail.is_replay());

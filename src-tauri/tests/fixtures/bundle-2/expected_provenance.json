@@ -89,7 +89,7 @@
           {
             "provider_completion": {
               "completion_id": "src-test-user-1",
-              "provider": "provider.example.com"
+              "provider": "vendor.example.com"
             }
           }
         ],
@@ -106,7 +106,7 @@
     ],
     "thread_ids": [],
     "prompt_fingerprint": {
-      "provider": "provider.example.com",
+      "provider": "vendor.example.com",
       "model": "replay",
       "prompt_template_id": "account-intelligence-prep",
       "prompt_template_version": "bundle-2-v1",

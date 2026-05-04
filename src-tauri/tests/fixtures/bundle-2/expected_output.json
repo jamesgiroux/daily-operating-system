@@ -16,7 +16,7 @@
   "risks": [
     {
       "text": "Expansion risk is low because all 2026 expansion work has been cancelled.",
-      "source": "provider.example.com completion",
+      "source": "vendor.example.com completion",
       "urgency": "watch",
       "headline": "Expansion cancelled",
       "evidence": "The provider response says there is no 2026 expansion motion for acme.example.com.",
@@ -24,13 +24,13 @@
         "source": "provider_completion",
         "confidence": 0.86,
         "sourcedAt": "2026-05-01T12:00:00Z",
-        "reference": "provider.example.com completion for acct-test-1"
+        "reference": "vendor.example.com completion for acct-test-1"
       },
       "discrepancy": true
     },
     {
       "text": "EU launch risk is critical because the Q3 2026 EU expansion is still committed and under-resourced.",
-      "source": "provider.example.com completion",
+      "source": "vendor.example.com completion",
       "urgency": "critical",
       "headline": "EU launch under-resourced",
       "evidence": "The same provider response also assumes the EU expansion remains committed for Q3 2026.",
@@ -38,7 +38,7 @@
         "source": "provider_completion",
         "confidence": 0.84,
         "sourcedAt": "2026-05-01T12:00:00Z",
-        "reference": "provider.example.com completion for acct-test-1"
+        "reference": "vendor.example.com completion for acct-test-1"
       },
       "discrepancy": true
     }
@@ -46,25 +46,25 @@
   "recentWins": [
     {
       "text": "EU expansion is fully approved for Q3 2026 and has no material blockers.",
-      "source": "provider.example.com completion",
+      "source": "vendor.example.com completion",
       "impact": "Contradicts the cancellation assessment and the low-risk expansion statement.",
       "itemSource": {
         "source": "provider_completion",
         "confidence": 0.85,
         "sourcedAt": "2026-05-01T12:00:00Z",
-        "reference": "provider.example.com completion for acct-test-1"
+        "reference": "vendor.example.com completion for acct-test-1"
       },
       "discrepancy": true
     },
     {
       "text": "Stakeholder alignment is strong because expansion work is cancelled and no launch coordination is required.",
-      "source": "provider.example.com completion",
+      "source": "vendor.example.com completion",
       "impact": "Conflicts with the claimed approved EU launch.",
       "itemSource": {
         "source": "provider_completion",
         "confidence": 0.82,
         "sourcedAt": "2026-05-01T12:00:00Z",
-        "reference": "provider.example.com completion for acct-test-1"
+        "reference": "vendor.example.com completion for acct-test-1"
       },
       "discrepancy": true
     }
@@ -75,14 +75,14 @@
       "role": "Expansion sponsor",
       "assessment": "Provider describes Jane Doe as both sponsoring the Q3 EU plan and no longer owning any expansion motion.",
       "engagement": "ambiguous",
-      "source": "provider.example.com completion",
+      "source": "vendor.example.com completion",
       "personId": "person-test-1",
       "verified": false,
       "itemSource": {
         "source": "provider_completion",
         "confidence": 0.8,
         "sourcedAt": "2026-05-01T12:00:00Z",
-        "reference": "provider.example.com completion for acct-test-1"
+        "reference": "vendor.example.com completion for acct-test-1"
       },
       "discrepancy": true
     }

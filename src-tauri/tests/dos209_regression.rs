@@ -118,13 +118,12 @@ fn no_raw_thread_rng_in_services() {
 fn evaluate_mode_ctx_blocks_mutations() {
     use chrono::TimeZone;
     use dailyos_lib::services::context::{
-        ExecutionMode, ExternalClients, FixedClock, SeedableRng, ServiceContext, ServiceError,
+        ExecutionMode, FixedClock, SeedableRng, ServiceContext, ServiceError,
     };
 
     let clk = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 1, 0, 0, 0).unwrap());
     let rng = SeedableRng::new(42);
-    let ext = ExternalClients::default();
-    let ctx = ServiceContext::new_evaluate(&clk, &rng, &ext);
+    let ctx = ServiceContext::new_evaluate_default(&clk, &rng);
 
     let result = ctx.check_mutation_allowed();
     assert!(
