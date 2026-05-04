@@ -409,6 +409,10 @@ fn manual_refresh_error(stage: &str, error: &str) -> String {
     )
 }
 
+fn should_persist_inferred_relationships(composition: &EnrichmentComposition) -> bool {
+    matches!(composition, EnrichmentComposition::Persist(_))
+}
+
 /// Enrich an entity via the intelligence queue (split-lock pattern).
 pub async fn enrich_entity(
     ctx: &ServiceContext<'_>,
@@ -765,6 +769,7 @@ pub async fn enrich_entity(
             return Err(manual_refresh_error("write_results", &e));
         }
     };
+    let persist_inferred_relationships = should_persist_inferred_relationships(&composition);
     let final_intel = match composition {
         EnrichmentComposition::Persist(prepared) => {
             if let Err(e) = db.with_transaction(|tx| {
@@ -800,7 +805,7 @@ pub async fn enrich_entity(
             prior
         }
     };
-    if !parsed.inferred_relationships.is_empty() {
+    if persist_inferred_relationships && !parsed.inferred_relationships.is_empty() {
         let engine = state.signals.engine.clone();
         let entity_id_for_persist = input.entity_id.clone();
         let entity_type_for_persist = input.entity_type.clone();
@@ -2332,6 +2337,7 @@ pub fn get_all_recommended_actions(
 
 #[cfg(test)]
 mod mutation_smoke_tests {
+    use crate::db::person_relationships::UpsertRelationship;
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
     use crate::intel_queue::{
@@ -2339,7 +2345,8 @@ mod mutation_smoke_tests {
         EnrichmentComposition, EnrichmentInput,
     };
     use crate::intelligence::contamination::ContaminationValidation;
-    use crate::intelligence::io::{IntelligenceJson, StakeholderInsight};
+    use crate::intelligence::io::{IntelRisk, IntelligenceJson, ItemSource, StakeholderInsight};
+    use crate::intelligence::prompts::InferredRelationship;
     use crate::intelligence::write_fence::post_commit_fenced_write;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
@@ -2395,6 +2402,22 @@ mod mutation_smoke_tests {
                 params![account_id, domain],
             )
             .expect("seed account domain");
+    }
+
+    fn seed_person(db: &crate::db::ActionDb, id: &str, name: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at)
+                 VALUES (?1, ?2, ?3, '2026-05-03T00:00:00Z')",
+                params![id, format!("{id}@example.com"), name],
+            )
+            .expect("seed person");
+    }
+
+    fn count_query(db: &crate::db::ActionDb, sql: &str) -> i64 {
+        db.conn_ref()
+            .query_row(sql, [], |row| row.get(0))
+            .expect("count query")
     }
 
     fn make_enrichment_input(entity_id: &str, entity_dir: &Path) -> EnrichmentInput {
@@ -2739,12 +2762,110 @@ mod mutation_smoke_tests {
     }
 
     #[test]
+    fn enrich_entity_skip_does_not_persist_inferred_relationships() {
+        let db = test_db();
+        let target = make_account("acc-contamination-target");
+        let foreign = make_account("acc-contamination-foreign");
+        db.upsert_account(&target).unwrap();
+        db.upsert_account(&foreign).unwrap();
+        seed_account_domain(&db, "acc-contamination-target", "target.example");
+        seed_account_domain(&db, "acc-contamination-foreign", "vip-test.com");
+        seed_person(&db, "p1", "Alice");
+        seed_person(&db, "p2", "Bob");
+        seed_person(&db, "p3", "Casey");
+        db.upsert_person_relationship(&UpsertRelationship {
+            id: "rel-existing-contamination",
+            from_person_id: "p1",
+            to_person_id: "p2",
+            relationship_type: "peer",
+            direction: "symmetric",
+            confidence: 0.9,
+            context_entity_id: Some("acc-contamination-target"),
+            context_entity_type: Some("account"),
+            source: "user_confirmed",
+            rationale: None,
+        })
+        .expect("seed prior relationship");
+
+        let before_count = count_query(&db, "SELECT COUNT(*) FROM person_relationships");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input("acc-contamination-target", dir.path());
+        let contaminated = IntelligenceJson {
+            entity_id: "acc-contamination-target".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T01:00:00Z".to_string(),
+            executive_assessment: Some(
+                "WordPress VIP performance at vip-test.com remains stable.".to_string(),
+            ),
+            ..Default::default()
+        };
+        let composition = compose_enrichment_intelligence_with_policy(
+            &db,
+            &input,
+            &contaminated,
+            None,
+            ContaminationValidation::RejectOnHit,
+        )
+        .expect("compose contamination reject");
+        assert!(matches!(
+            &composition,
+            EnrichmentComposition::SkipDueToContamination { .. }
+        ));
+
+        let inferred = vec![InferredRelationship {
+            from_person_id: "p2".to_string(),
+            to_person_id: "p3".to_string(),
+            relationship_type: "collaborator".to_string(),
+            rationale: Some("They coordinate the implementation plan.".to_string()),
+        }];
+        if super::should_persist_inferred_relationships(&composition) {
+            let engine = PropagationEngine::default();
+            let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
+            let rng = SeedableRng::new(42);
+            let ext = ExternalClients::default();
+            let ctx = test_ctx(&clock, &rng, &ext);
+            super::upsert_inferred_relationships_from_enrichment(
+                &ctx,
+                &db,
+                &engine,
+                "account",
+                "acc-contamination-target",
+                &inferred,
+            )
+            .expect("persist inferred relationships");
+        }
+
+        let after_count = count_query(&db, "SELECT COUNT(*) FROM person_relationships");
+        assert_eq!(
+            after_count, before_count,
+            "skip path must leave inferred relationships unchanged"
+        );
+    }
+
+    #[test]
     fn compose_enrichment_full_path_rollback_atomicity() {
         let db = test_db();
         let engine = PropagationEngine::default();
         let account = make_account("acc-compose-rollback");
         db.upsert_account(&account).unwrap();
         seed_account_domain(&db, "acc-compose-rollback", "compose.example");
+        seed_person(&db, "p-compose-rollback", "Existing Buyer");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_stakeholders
+                 (account_id, person_id, engagement, data_source_engagement, assessment, data_source_assessment, data_source)
+                 VALUES (?1, ?2, 'neutral', 'ai', 'prior assessment', 'ai', 'ai')",
+                params!["acc-compose-rollback", "p-compose-rollback"],
+            )
+            .expect("seed account stakeholder");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO suppression_tombstones
+                 (entity_id, field_key, item_key, dismissed_at)
+                 VALUES (?1, 'risks', ?2, 'not-a-timestamp')",
+                params!["acc-compose-rollback", "Rollback malformed risk"],
+            )
+            .expect("seed malformed suppression tombstone");
 
         let dir = tempfile::tempdir().expect("tempdir");
         let prior = IntelligenceJson {
@@ -2776,10 +2897,30 @@ mod mutation_smoke_tests {
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T01:00:00Z".to_string(),
             executive_assessment: Some("new compose state".to_string()),
-            stakeholder_insights: vec![StakeholderInsight {
-                name: "New Buyer".to_string(),
-                role: Some("economic buyer".to_string()),
-                engagement: Some("engaged".to_string()),
+            stakeholder_insights: vec![
+                StakeholderInsight {
+                    name: "Existing Buyer".to_string(),
+                    person_id: Some("p-compose-rollback".to_string()),
+                    role: Some("technical champion".to_string()),
+                    assessment: Some("new assessment".to_string()),
+                    engagement: Some("strong_advocate".to_string()),
+                    ..Default::default()
+                },
+                StakeholderInsight {
+                    name: "New Buyer".to_string(),
+                    role: Some("economic buyer".to_string()),
+                    engagement: Some("engaged".to_string()),
+                    ..Default::default()
+                },
+            ],
+            risks: vec![IntelRisk {
+                text: "Rollback malformed risk".to_string(),
+                item_source: Some(ItemSource {
+                    source: "pty_synthesis".to_string(),
+                    confidence: 0.5,
+                    sourced_at: "2026-05-03T00:30:00Z".to_string(),
+                    reference: None,
+                }),
                 ..Default::default()
             }],
             ..Default::default()
@@ -2804,6 +2945,28 @@ mod mutation_smoke_tests {
         let ext = ExternalClients::default();
         let ctx = test_ctx(&clock, &rng, &ext);
         let state = AppState::new();
+        let stakeholder_count_before = count_query(
+            &db,
+            "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = 'acc-compose-rollback'",
+        );
+        let role_count_before = count_query(
+            &db,
+            "SELECT COUNT(*) FROM account_stakeholder_roles
+             WHERE account_id = 'acc-compose-rollback'
+               AND person_id = 'p-compose-rollback'
+               AND role = 'technical champion'",
+        );
+        let malformed_count_before = count_query(
+            &db,
+            "SELECT COUNT(*) FROM suppression_malformed_log
+             WHERE entity_id = 'acc-compose-rollback'",
+        );
+        let signal_count_before = count_query(
+            &db,
+            "SELECT COUNT(*) FROM signal_events
+             WHERE entity_type = 'account'
+               AND entity_id = 'acc-compose-rollback'",
+        );
 
         let result = db.with_transaction(|tx| {
             apply_enrichment_side_writes(&ctx, tx, &input, &prepared)?;
@@ -2845,6 +3008,58 @@ mod mutation_smoke_tests {
         assert_eq!(
             suggestion_count, 0,
             "compose stakeholder side writes must roll back with enrichment upsert"
+        );
+        let stakeholder_count_after = count_query(
+            &db,
+            "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = 'acc-compose-rollback'",
+        );
+        assert_eq!(
+            stakeholder_count_after, stakeholder_count_before,
+            "stakeholder rows must roll back with enrichment upsert"
+        );
+        let engagement_after: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT engagement FROM account_stakeholders
+                 WHERE account_id = 'acc-compose-rollback'
+                   AND person_id = 'p-compose-rollback'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read stakeholder engagement");
+        assert_eq!(
+            engagement_after, "neutral",
+            "stakeholder engagement must roll back with enrichment upsert"
+        );
+        let role_count_after = count_query(
+            &db,
+            "SELECT COUNT(*) FROM account_stakeholder_roles
+             WHERE account_id = 'acc-compose-rollback'
+               AND person_id = 'p-compose-rollback'
+               AND role = 'technical champion'",
+        );
+        assert_eq!(
+            role_count_after, role_count_before,
+            "stakeholder roles must roll back with enrichment upsert"
+        );
+        let malformed_count_after = count_query(
+            &db,
+            "SELECT COUNT(*) FROM suppression_malformed_log
+             WHERE entity_id = 'acc-compose-rollback'",
+        );
+        assert_eq!(
+            malformed_count_after, malformed_count_before,
+            "malformed suppression audits must roll back with enrichment upsert"
+        );
+        let signal_count_after = count_query(
+            &db,
+            "SELECT COUNT(*) FROM signal_events
+             WHERE entity_type = 'account'
+               AND entity_id = 'acc-compose-rollback'",
+        );
+        assert_eq!(
+            signal_count_after, signal_count_before,
+            "signals must roll back with enrichment upsert"
         );
         let after_disk = std::fs::read_to_string(dir.path().join("intelligence.json"))
             .expect("read disk after rollback");
