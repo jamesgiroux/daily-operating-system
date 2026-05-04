@@ -2340,7 +2340,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         let body = serde_json::json!({
             "version": 4,
-            "entityId": "person-jane",
+            "entityId": "person-acme",
             "entityType": "person",
             "enrichedAt": "2026-04-01T00:00:00Z",
             "sourceFileCount": 0,
@@ -2353,7 +2353,7 @@ mod tests {
         write_intel_json(
             workspace.path(),
             "People",
-            "person-jane",
+            "person-acme",
             &serde_json::to_string_pretty(&body).unwrap(),
         );
 

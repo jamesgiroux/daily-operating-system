@@ -3803,14 +3803,14 @@ mod dos258_reclassify_tests {
         db.conn_ref()
             .execute(
                 "INSERT INTO people (id, name, email, relationship, updated_at) \
-                 VALUES ('p-jane', 'Jane', 'jane@example.test', 'external', '2026-04-20')",
+                 VALUES ('p-acme', 'Jane', 'jane@example.test', 'external', '2026-04-20')",
                 [],
             )
             .expect("seed person");
         db.conn_ref()
             .execute(
                 "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, confidence, created_at) \
-                 VALUES ('acc-wp', 'p-jane', 'test', 'active', 1.0, '2026-04-20')",
+                 VALUES ('acc-wp', 'p-acme', 'test', 'active', 1.0, '2026-04-20')",
                 [],
             )
             .expect("seed stakeholder");

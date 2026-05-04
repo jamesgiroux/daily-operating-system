@@ -457,7 +457,7 @@ mod tests {
     #[test]
     fn detects_foreign_domain_in_text() {
         let db = test_db();
-        insert_account(&db, "target", "Jane", &["example.com"]);
+        insert_account(&db, "target", "Acme", &["example.com"]);
         insert_account(&db, "other", "Acme", &["acme.com"]);
 
         let text =
@@ -475,14 +475,14 @@ mod tests {
     #[test]
     fn allows_target_domain_in_text() {
         let db = test_db();
-        insert_account(&db, "target", "Jane", &["example.com", "jane.io"]);
+        insert_account(&db, "target", "Acme", &["example.com", "example.io"]);
         insert_account(&db, "other", "Acme", &["acme.com"]);
 
         let text = "Jane's deployment at example.com is healthy.";
         let hits = detect_cross_entity_contamination(
             text,
             "target",
-            &["example.com".into(), "jane.io".into()],
+            &["example.com".into(), "example.io".into()],
             &[],
             &db,
         );
@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn detects_wpvip_host_pattern_not_in_target_domains() {
         let db = test_db();
-        insert_account(&db, "target", "Jane", &["example.com"]);
+        insert_account(&db, "target", "Acme", &["example.com"]);
         // The account domain list is intentionally omitted to verify
         // infrastructure-host detection.
         let text = "Performance at vip-test.com is concerning.";
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn case_insensitive_matching() {
         let db = test_db();
-        insert_account(&db, "target", "Jane", &["example.com"]);
+        insert_account(&db, "target", "Acme", &["example.com"]);
         insert_account(&db, "other", "Acme", &["ACME.com"]);
 
         let text = "Reference to ACME.COM in the notes.";
@@ -679,7 +679,7 @@ mod tests {
     fn rejects_write_when_output_contains_foreign_domain() {
         use crate::intelligence::io::*;
         let db = test_db();
-        insert_account(&db, "target", "Jane", &["example.com"]);
+        insert_account(&db, "target", "Acme", &["example.com"]);
         insert_account(&db, "acme", "Acme", &["vip-test.com", "acme.com"]);
 
         let intel = IntelligenceJson {
@@ -701,7 +701,7 @@ mod tests {
     fn allows_write_when_output_is_clean() {
         use crate::intelligence::io::*;
         let db = test_db();
-        insert_account(&db, "target", "Jane", &["example.com"]);
+        insert_account(&db, "target", "Acme", &["example.com"]);
         insert_account(&db, "acme", "Acme", &["vip-test.com"]);
 
         let intel = IntelligenceJson {
@@ -719,7 +719,7 @@ mod tests {
     #[test]
     fn reject_hit_carries_source_account_id_when_attributable() {
         let db = test_db();
-        insert_account(&db, "target", "Jane", &["example.com"]);
+        insert_account(&db, "target", "Acme", &["example.com"]);
         insert_account(&db, "acme", "Acme", &["acme.com"]);
 
         let text = "Reference to acme.com in the notes.";
@@ -800,7 +800,7 @@ mod tests {
     #[test]
     fn whole_word_bounded_not_substring() {
         let db = test_db();
-        insert_account(&db, "target", "Jane", &["example.com"]);
+        insert_account(&db, "target", "Acme", &["example.com"]);
         insert_account(&db, "other", "Acme", &["acme.com"]);
 
         // Domains embedded between non-alphanumeric boundaries still match.

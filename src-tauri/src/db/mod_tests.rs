@@ -3572,7 +3572,7 @@ fn test_create_action_all_fields() {
         context: Some("Jane mentioned churn risk in standup".to_string()),
         waiting_on: None,
         updated_at: now.clone(),
-        person_id: Some("person-jane".to_string()),
+        person_id: Some("person-acme".to_string()),
         account_name: None,
         next_meeting_title: None,
         next_meeting_start: None,
@@ -3597,7 +3597,7 @@ fn test_create_action_all_fields() {
         fetched.context.as_deref(),
         Some("Jane mentioned churn risk in standup")
     );
-    assert_eq!(fetched.person_id.as_deref(), Some("person-jane"));
+    assert_eq!(fetched.person_id.as_deref(), Some("person-acme"));
 }
 
 #[test]
