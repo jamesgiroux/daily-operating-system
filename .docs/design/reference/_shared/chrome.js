@@ -102,6 +102,11 @@
     hearthandshake:'M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7|m12 6 8 8|M16.5 17.5 18 19',
     bookopen:      'M12 7v14|M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
     hand:          'M18 11V6a2 2 0 0 0-4 0|M14 10V4a2 2 0 0 0-4 0v2|M10 10.5V6a2 2 0 0 0-4 0v8|M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15',
+
+    // Onboarding chapter icons — for the wizard chapter pill (data-nav-mode="chapters-only")
+    sparkles:      'm12 3-1.91 5.18L5 10.09l5.18 1.91L12 17l1.91-5L19 10.09l-5.09-1.91Z|M5 17v4|M19 17v4|M3 19h4|M17 19h4|M21 3v4|M19 5h4',
+    terminal:      'M4 17l6-6-6-6|M12 19h8',
+    globe:         'M12 22a10 10 0 1 0 0-20 10 10 0 0 0 0 20z|M2 12h20|M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z',
   };
 
   function lucide(name, opts) {
@@ -323,9 +328,12 @@
 
     chapters.forEach((c, idx) => {
       const isActiveChapter = activeChapter ? c.id === activeChapter : idx === 0;
+      // Chapters-only mode: each dot is a sibling file (welcome.html, google.html, …);
+      // standard mode keeps hash-anchors for in-page jumps.
+      const href = navMode === 'chapters-only' ? c.id + '.html' : '#' + c.id;
       const node = el('a', {
         class: N('navIslandLocalItem') + (isActiveChapter ? ' ' + activeClass : ''),
-        href: '#' + c.id,
+        href,
         title: c.label,
         'data-label': c.label,
         'aria-label': c.label,
@@ -366,15 +374,48 @@
     return t;
   }
 
+  // Wire onboarding action buttons to advance through chapters. Mirrors
+  // OnboardingFlow.tsx's goToChapter() — non-functional in the actual app
+  // logic, but lets reviewers click through the static reference end-to-end.
+  function wireOnboardingNav(body) {
+    if (body.dataset.navMode !== 'chapters-only') return;
+    const chaptersRaw = body.dataset.chapters || '';
+    const chapters = chaptersRaw.split('|').map(s => s.split(':')[0].trim()).filter(Boolean);
+    const active = body.dataset.activeChapter || chapters[0];
+    const idx = chapters.indexOf(active);
+    if (idx === -1) return;
+    const nextChapter = idx < chapters.length - 1 ? chapters[idx + 1] : null;
+
+    // Every button/link inside the content column advances to the next step.
+    // Disabled buttons (e.g. claude-code "Continue" before sign-in) get
+    // ignored. On the final chapter, buttons fall back to briefing.html.
+    const content = body.querySelector('.onboarding_contentColumn');
+    if (!content) return;
+    const targets = content.querySelectorAll('button, a');
+    targets.forEach((btn) => {
+      if (btn.hasAttribute('disabled')) return;
+      btn.style.cursor = 'pointer';
+      btn.addEventListener('click', (e) => {
+        e.preventDefault();
+        window.location.href = nextChapter
+          ? nextChapter + '.html'
+          : '../briefing.html';
+      });
+    });
+  }
+
   function inject() {
     const body = document.body;
     body.dataset.chrome = body.dataset.chrome || 'on';
 
     // MagazinePageLayout.tsx structure: atmosphere + folio + nav island all
     // live INSIDE the magazinePage div so the cream background doesn't cover
-    // the atmosphere gradient. If the surface HTML provides the wrapper, inject
-    // there; otherwise fall back to body-level (legacy).
-    const wrapper = body.querySelector('.MagazinePageLayout_magazinePage');
+    // the atmosphere gradient. Onboarding uses .onboarding_wrapper for the same
+    // role. If the surface HTML provides either wrapper, inject there;
+    // otherwise fall back to body-level (legacy).
+    const wrapper =
+      body.querySelector('.MagazinePageLayout_magazinePage') ||
+      body.querySelector('.onboarding_wrapper');
     const target = wrapper || body;
 
     target.prepend(buildAtmosphere(body));
@@ -385,6 +426,8 @@
 
     // Chrome toggle is a reference-only control, body-level is fine.
     body.append(buildChromeToggle());
+
+    wireOnboardingNav(body);
   }
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', inject);
