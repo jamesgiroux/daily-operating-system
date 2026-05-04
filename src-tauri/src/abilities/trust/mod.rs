@@ -5,7 +5,13 @@
 //! them into the pure compiler.
 
 pub mod config;
+pub mod factors;
 pub mod types;
+
+use factors::{
+    contradiction_penalty, corroboration_weight, cross_entity_coherence, freshness_weight,
+    source_reliability, subject_fit_confidence, user_feedback_weight,
+};
 
 pub use config::{TrustConfig, TrustConfigError, TrustFactorWeights};
 pub use types::{
@@ -13,3 +19,543 @@ pub use types::{
     CrossEntityHitKind, EntityFootprint, FactorEvidence, FreshnessContext, TargetFootprint,
     TrustBand, TrustComputation, TrustContext, TrustFactorInputs, TrustScore, UserFeedbackSignal,
 };
+
+pub type ClaimRow = crate::db::claims::IntelligenceClaim;
+
+const FACTOR_CEILING: f64 = 1.0;
+
+#[derive(Debug, Clone, Copy)]
+struct NamedFactor {
+    name: &'static str,
+    raw_value: f64,
+    weight: f64,
+}
+
+pub fn compile_trust(
+    claim: &ClaimRow,
+    ctx: TrustContext,
+) -> Result<TrustComputation, TrustConfigError> {
+    validate_config(&ctx.config)?;
+    validate_weights(ctx.config.weights)?;
+
+    let cross_entity = cross_entity_coherence(&ctx.cross_entity, &ctx.config);
+    let factors = [
+        NamedFactor {
+            name: "source_reliability",
+            raw_value: source_reliability(&ctx.factor_inputs),
+            weight: ctx.config.weights.source_reliability,
+        },
+        NamedFactor {
+            name: "freshness_weight",
+            raw_value: freshness_weight(
+                &ctx.factor_inputs.freshness,
+                &claim.temporal_scope,
+                &ctx.config,
+            ),
+            weight: ctx.config.weights.freshness_weight,
+        },
+        NamedFactor {
+            name: "corroboration_weight",
+            raw_value: corroboration_weight(&ctx.factor_inputs),
+            weight: ctx.config.weights.corroboration_weight,
+        },
+        NamedFactor {
+            name: "contradiction_penalty",
+            raw_value: contradiction_penalty(&ctx.factor_inputs, &ctx.config),
+            weight: ctx.config.weights.contradiction_penalty,
+        },
+        NamedFactor {
+            name: "user_feedback_weight",
+            raw_value: user_feedback_weight(&ctx.factor_inputs, &ctx.config),
+            weight: ctx.config.weights.user_feedback_weight,
+        },
+        NamedFactor {
+            name: "subject_fit_confidence",
+            raw_value: subject_fit_confidence(&ctx.factor_inputs),
+            weight: ctx.config.weights.subject_fit_confidence,
+        },
+        NamedFactor {
+            name: "cross_entity_coherence",
+            raw_value: cross_entity.value,
+            weight: ctx.config.weights.cross_entity_coherence,
+        },
+    ];
+
+    let score = aggregate_geometric_mean(&factors, ctx.config.clamp_floor)?;
+    let band = band_for_score(score, &ctx.config);
+    let evidence = confidence_evidence(
+        claim,
+        score,
+        band,
+        &factors,
+        ctx.config.clamp_floor,
+        &ctx,
+        cross_entity.hits.len(),
+    );
+
+    Ok(TrustComputation {
+        score: TrustScore(score),
+        band,
+        evidence,
+    })
+}
+
+fn validate_config(config: &TrustConfig) -> Result<(), TrustConfigError> {
+    let finite_values = [
+        ("clamp_floor", config.clamp_floor),
+        ("likely_current_min", config.likely_current_min),
+        ("use_with_caution_min", config.use_with_caution_min),
+        ("freshness_half_life_days", config.freshness_half_life_days),
+        (
+            "unknown_timestamp_penalty",
+            config.unknown_timestamp_penalty,
+        ),
+        ("contradiction_multiplier", config.contradiction_multiplier),
+        ("feedback_boost", config.feedback_boost),
+        ("feedback_penalty", config.feedback_penalty),
+        ("cross_entity_hit_penalty", config.cross_entity_hit_penalty),
+    ];
+
+    for (name, value) in finite_values {
+        if !value.is_finite() {
+            return Err(TrustConfigError::NonFiniteValue { name });
+        }
+    }
+
+    if !(0.0..=FACTOR_CEILING).contains(&config.clamp_floor) || config.clamp_floor == 0.0 {
+        return Err(TrustConfigError::InvalidValue {
+            name: "clamp_floor",
+        });
+    }
+    if config.freshness_half_life_days <= 0.0 {
+        return Err(TrustConfigError::InvalidValue {
+            name: "freshness_half_life_days",
+        });
+    }
+    if !(0.0..=1.0).contains(&config.likely_current_min) {
+        return Err(TrustConfigError::InvalidValue {
+            name: "likely_current_min",
+        });
+    }
+    if !(0.0..=1.0).contains(&config.use_with_caution_min) {
+        return Err(TrustConfigError::InvalidValue {
+            name: "use_with_caution_min",
+        });
+    }
+    if config.likely_current_min < config.use_with_caution_min {
+        return Err(TrustConfigError::InvalidValue {
+            name: "likely_current_min",
+        });
+    }
+
+    Ok(())
+}
+
+fn validate_weights(weights: TrustFactorWeights) -> Result<(), TrustConfigError> {
+    let mut positive_count = 0usize;
+    let mut denominator = 0.0;
+
+    for (name, weight) in weights.as_named_weights() {
+        if !weight.is_finite() {
+            return Err(TrustConfigError::NonFiniteWeight { name });
+        }
+        if weight < 0.0 {
+            return Err(TrustConfigError::NegativeWeight { name });
+        }
+        if weight > 0.0 {
+            positive_count += 1;
+            denominator += weight;
+        }
+    }
+
+    if positive_count == 0 {
+        return Err(TrustConfigError::NoPositiveWeights);
+    }
+    if denominator <= 0.0 || !denominator.is_finite() {
+        return Err(TrustConfigError::NonPositiveDenominator);
+    }
+
+    Ok(())
+}
+
+fn aggregate_geometric_mean(
+    factors: &[NamedFactor],
+    clamp_floor: f64,
+) -> Result<f64, TrustConfigError> {
+    let mut weighted_log_sum = 0.0;
+    let mut denominator = 0.0;
+    let mut positive_count = 0usize;
+
+    for factor in factors {
+        if !factor.raw_value.is_finite() {
+            return Err(TrustConfigError::NonFiniteValue { name: factor.name });
+        }
+        if !factor.weight.is_finite() {
+            return Err(TrustConfigError::NonFiniteWeight { name: factor.name });
+        }
+        if factor.weight < 0.0 {
+            return Err(TrustConfigError::NegativeWeight { name: factor.name });
+        }
+        if factor.weight == 0.0 {
+            continue;
+        }
+
+        let clamped = clamp_factor(factor.raw_value, clamp_floor);
+        weighted_log_sum += factor.weight * clamped.ln();
+        denominator += factor.weight;
+        positive_count += 1;
+    }
+
+    if positive_count == 0 {
+        return Err(TrustConfigError::NoPositiveWeights);
+    }
+    if denominator <= 0.0 || !denominator.is_finite() {
+        return Err(TrustConfigError::NonPositiveDenominator);
+    }
+
+    Ok((weighted_log_sum / denominator)
+        .exp()
+        .clamp(TrustScore::MIN, TrustScore::MAX))
+}
+
+fn clamp_factor(value: f64, clamp_floor: f64) -> f64 {
+    value.clamp(clamp_floor, FACTOR_CEILING)
+}
+
+fn band_for_score(score: f64, config: &TrustConfig) -> TrustBand {
+    if score >= config.likely_current_min {
+        TrustBand::LikelyCurrent
+    } else if score >= config.use_with_caution_min {
+        TrustBand::UseWithCaution
+    } else {
+        TrustBand::NeedsVerification
+    }
+}
+
+fn confidence_evidence(
+    claim: &ClaimRow,
+    score: f64,
+    band: TrustBand,
+    factors: &[NamedFactor],
+    clamp_floor: f64,
+    ctx: &TrustContext,
+    cross_entity_hit_count: usize,
+) -> ConfidenceEvidence {
+    let factor_breakdown = factors
+        .iter()
+        .map(|factor| {
+            let clamped = clamp_factor(factor.raw_value, clamp_floor);
+            FactorEvidence {
+                name: factor.name.to_string(),
+                weight: factor.weight,
+                raw_value: factor.raw_value,
+                value: clamped,
+                contribution: if factor.weight == 0.0 {
+                    0.0
+                } else {
+                    factor.weight * clamped.ln()
+                },
+            }
+        })
+        .collect();
+
+    ConfidenceEvidence {
+        score,
+        band_label: band_label(band).to_string(),
+        factor_breakdown,
+        caveats: caveats(claim, ctx, cross_entity_hit_count),
+    }
+}
+
+fn caveats(
+    claim: &ClaimRow,
+    ctx: &TrustContext,
+    cross_entity_hit_count: usize,
+) -> Vec<ConfidenceCaveat> {
+    let mut caveats = Vec::new();
+
+    if ctx.factor_inputs.corroboration_strength <= 0.0 {
+        caveats.push(ConfidenceCaveat::FewSources);
+    }
+    if !ctx.factor_inputs.freshness.timestamp_known {
+        caveats.push(ConfidenceCaveat::UnknownTimestamp);
+    }
+    if ctx.factor_inputs.freshness.age_days > ctx.config.freshness_half_life_days {
+        caveats.push(ConfidenceCaveat::StaleSource {
+            source: claim.data_source.clone(),
+            age_days: ctx.factor_inputs.freshness.age_days,
+        });
+    }
+    if ctx.factor_inputs.contradiction_count > 0 {
+        caveats.push(ConfidenceCaveat::UnresolvedContradiction);
+    }
+    if cross_entity_hit_count > 0 {
+        caveats.push(ConfidenceCaveat::CrossEntityReferences {
+            hit_count: cross_entity_hit_count,
+        });
+    }
+
+    caveats
+}
+
+fn band_label(band: TrustBand) -> &'static str {
+    match band {
+        TrustBand::LikelyCurrent => "likely_current",
+        TrustBand::UseWithCaution => "use_with_caution",
+        TrustBand::NeedsVerification => "needs_verification",
+        TrustBand::Unscored => "unscored",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use chrono::{TimeZone, Utc};
+
+    use super::*;
+    use crate::abilities::provenance::SubjectRef;
+    use crate::db::claims::{
+        ClaimSensitivity, ClaimState, ClaimVerificationState, SurfacingState, TemporalScope,
+    };
+
+    fn test_claim() -> ClaimRow {
+        ClaimRow {
+            id: "claim-1".to_string(),
+            subject_ref: r#"{"account":"acct-target"}"#.to_string(),
+            claim_type: "risk".to_string(),
+            field_path: Some("risk.summary".to_string()),
+            topic_key: None,
+            text: "The target account has elevated renewal risk.".to_string(),
+            dedup_key: "dedup-1".to_string(),
+            item_hash: Some("hash-1".to_string()),
+            actor: "agent:test".to_string(),
+            data_source: "glean".to_string(),
+            source_ref: None,
+            source_asof: Some("2026-05-01T00:00:00Z".to_string()),
+            observed_at: "2026-05-01T00:00:00Z".to_string(),
+            created_at: "2026-05-01T00:00:00Z".to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            claim_state: ClaimState::Active,
+            surfacing_state: SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score: None,
+            trust_computed_at: None,
+            trust_version: None,
+            thread_id: None,
+            temporal_scope: TemporalScope::State,
+            sensitivity: ClaimSensitivity::Internal,
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
+        }
+    }
+
+    fn test_context() -> TrustContext {
+        TrustContext {
+            now: Utc.with_ymd_and_hms(2026, 5, 4, 0, 0, 0).unwrap(),
+            config: TrustConfig::default(),
+            factor_inputs: TrustFactorInputs {
+                source_reliability: 1.0,
+                freshness: FreshnessContext {
+                    timestamp_known: true,
+                    age_days: 0.0,
+                },
+                corroboration_strength: 1.0,
+                contradiction_count: 0,
+                user_feedback: UserFeedbackSignal::None,
+                subject_fit_confidence: 1.0,
+            },
+            cross_entity: CrossEntityCoherenceInput {
+                claim_text: "The target account has elevated renewal risk.".to_string(),
+                target_footprint: TargetFootprint {
+                    subject: SubjectRef::Account("acct-target".to_string()),
+                    names: vec!["Target Account".to_string()],
+                    domains: vec!["target.example".to_string()],
+                    related_subjects: Vec::new(),
+                    allowed_aliases: Vec::new(),
+                },
+                portfolio_footprints: vec![EntityFootprint {
+                    subject: SubjectRef::Account("acct-other".to_string()),
+                    names: vec!["Other Company".to_string()],
+                    domains: vec!["other.example".to_string()],
+                    infrastructure_ids: Vec::new(),
+                }],
+                cross_entity_context_expected: false,
+            },
+        }
+    }
+
+    fn factors(values: &[f64]) -> Vec<NamedFactor> {
+        values
+            .iter()
+            .enumerate()
+            .map(|(idx, value)| NamedFactor {
+                name: match idx {
+                    0 => "factor_0",
+                    1 => "factor_1",
+                    2 => "factor_2",
+                    3 => "factor_3",
+                    4 => "factor_4",
+                    5 => "factor_5",
+                    _ => "factor_6",
+                },
+                raw_value: *value,
+                weight: 1.0,
+            })
+            .collect()
+    }
+
+    fn assert_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-12,
+            "expected {expected}, got {actual}"
+        );
+    }
+
+    #[test]
+    fn trust_geometric_mean_all_floor_05_returns_floor() {
+        let score = aggregate_geometric_mean(&factors(&[0.0; 7]), 0.05).unwrap();
+        assert_close(score, 0.05);
+    }
+
+    #[test]
+    fn trust_geometric_mean_all_one_returns_one() {
+        let score = aggregate_geometric_mean(&factors(&[1.0; 7]), 0.05).unwrap();
+        assert_close(score, 1.0);
+    }
+
+    #[test]
+    fn trust_geometric_mean_mixed_08_in_band() {
+        let score = aggregate_geometric_mean(&factors(&[0.64, 1.0]), 0.05).unwrap();
+        assert_close(score, 0.8);
+        assert_eq!(
+            band_for_score(score, &TrustConfig::default()),
+            TrustBand::LikelyCurrent
+        );
+    }
+
+    #[test]
+    fn trust_rejects_non_finite_factor() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.factor_inputs.source_reliability = f64::NAN;
+
+        assert!(matches!(
+            compile_trust(&claim, ctx),
+            Err(TrustConfigError::NonFiniteValue {
+                name: "source_reliability"
+            })
+        ));
+    }
+
+    #[test]
+    fn trust_rejects_non_finite_weight() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.config.weights.source_reliability = f64::INFINITY;
+
+        assert!(matches!(
+            compile_trust(&claim, ctx),
+            Err(TrustConfigError::NonFiniteWeight {
+                name: "source_reliability"
+            })
+        ));
+    }
+
+    #[test]
+    fn trust_rejects_negative_weight() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.config.weights.source_reliability = -0.1;
+
+        assert!(matches!(
+            compile_trust(&claim, ctx),
+            Err(TrustConfigError::NegativeWeight {
+                name: "source_reliability"
+            })
+        ));
+    }
+
+    #[test]
+    fn trust_rejects_zero_positive_weight_denominator() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.config.weights = TrustFactorWeights {
+            source_reliability: 0.0,
+            freshness_weight: 0.0,
+            corroboration_weight: 0.0,
+            contradiction_penalty: 0.0,
+            user_feedback_weight: 0.0,
+            subject_fit_confidence: 0.0,
+            cross_entity_coherence: 0.0,
+        };
+
+        assert!(matches!(
+            compile_trust(&claim, ctx),
+            Err(TrustConfigError::NoPositiveWeights)
+        ));
+    }
+
+    #[test]
+    fn trust_band_mapping_at_canonical_thresholds() {
+        let config = TrustConfig::default();
+
+        assert_eq!(band_for_score(0.75, &config), TrustBand::LikelyCurrent);
+        assert_eq!(
+            band_for_score(0.749_999, &config),
+            TrustBand::UseWithCaution
+        );
+        assert_eq!(band_for_score(0.50, &config), TrustBand::UseWithCaution);
+        assert_eq!(
+            band_for_score(0.499_999, &config),
+            TrustBand::NeedsVerification
+        );
+    }
+
+    #[test]
+    fn trust_clamps_factor_to_floor_before_log() {
+        let score = aggregate_geometric_mean(&factors(&[0.0, 1.0]), 0.05).unwrap();
+        assert_close(score, 0.05_f64.sqrt());
+    }
+
+    #[test]
+    fn trust_random_factor_tuples_nan_never_produced() {
+        let mut state = 0xD05_0002_5EED_u64;
+
+        for _ in 0..1_000 {
+            let mut tuple = Vec::with_capacity(7);
+            for idx in 0..7 {
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                let raw = ((state >> 32) % 20_001) as f64 / 10_000.0 - 0.5;
+                state = state
+                    .wrapping_mul(6_364_136_223_846_793_005)
+                    .wrapping_add(1_442_695_040_888_963_407);
+                let weight = ((state >> 32) % 1_001) as f64 / 100.0;
+                tuple.push(NamedFactor {
+                    name: match idx {
+                        0 => "factor_0",
+                        1 => "factor_1",
+                        2 => "factor_2",
+                        3 => "factor_3",
+                        4 => "factor_4",
+                        5 => "factor_5",
+                        _ => "factor_6",
+                    },
+                    raw_value: raw,
+                    weight,
+                });
+            }
+            tuple[0].weight = tuple[0].weight.max(0.1);
+
+            let score = aggregate_geometric_mean(&tuple, 0.05).unwrap();
+            assert!(score.is_finite());
+            assert!((0.0..=1.0).contains(&score));
+        }
+    }
+}

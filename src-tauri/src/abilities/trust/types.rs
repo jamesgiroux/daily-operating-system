@@ -46,6 +46,8 @@ pub struct ConfidenceEvidence {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct FactorEvidence {
     pub name: String,
+    pub weight: f64,
+    pub raw_value: f64,
     pub value: f64,
     pub contribution: f64,
 }

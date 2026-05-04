@@ -26,7 +26,7 @@ impl Default for TrustConfig {
             weights: TrustFactorWeights::default(),
             clamp_floor: 0.05,
             likely_current_min: 0.75,
-            use_with_caution_min: 0.45,
+            use_with_caution_min: 0.50,
             freshness_half_life_days: 90.0,
             unknown_timestamp_penalty: 0.8,
             contradiction_multiplier: 0.35,
@@ -80,6 +80,8 @@ impl TrustFactorWeights {
 pub enum TrustConfigError {
     #[error("trust config value {name} must be finite")]
     NonFiniteValue { name: &'static str },
+    #[error("trust config value {name} is invalid")]
+    InvalidValue { name: &'static str },
     #[error("trust factor weight {name} must be finite")]
     NonFiniteWeight { name: &'static str },
     #[error("trust factor weight {name} must be non-negative")]
