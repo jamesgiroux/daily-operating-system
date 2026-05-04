@@ -5,29 +5,42 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Accounts · DailyOS Reference</title>
 
+  <!-- Fonts FIRST so the rest of the cascade has them -->
   <link rel="stylesheet" href="../_shared/fonts.css">
   <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — injected by chrome.js from body data attributes -->
   <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
   <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
   <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
   <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Surface-specific modules used by AccountsPage.tsx -->
   <link rel="stylesheet" href="../_shared/styles/AccountsPage.module.css">
   <link rel="stylesheet" href="../_shared/styles/EditorialPageHeader.module.css">
   <link rel="stylesheet" href="../_shared/styles/EntityListShell.module.css">
   <link rel="stylesheet" href="../_shared/styles/EntityRow.module.css">
   <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
+  <link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
   <link rel="stylesheet" href="../_shared/chrome.css">
   <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
   data-folio-label="Accounts"
+  data-folio-crumbs="Reference > Surfaces > Accounts"
   data-tint="turmeric"
   data-active-page="accounts"
   data-nav-base="."
-  data-folio-date="WEDNESDAY, APRIL 22, 2026"
+  data-folio-date="MONDAY, MAY 4, 2026"
   data-folio-readiness="9 active,sage"
   data-folio-actions="archive,new">
 
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
@@ -35,7 +48,7 @@
   <section class="EditorialPageHeader_header EditorialPageHeader_scaleStandard EditorialPageHeader_widthStandard EditorialPageHeader_ruleSubtle">
     <div class="EditorialPageHeader_topRow">
       <div class="EditorialPageHeader_titleBlock">
-        <div class="EditorialPageHeader_title">Your Book</div>
+        <h1 class="EditorialPageHeader_title">Your Book</h1>
       </div>
       <div class="EditorialPageHeader_meta">9 active</div>
     </div>
@@ -43,13 +56,13 @@
     <div class="EditorialPageHeader_after">
       <div class="EntityListShell_headerContent">
         <div class="EntityListShell_tabs">
-          <button class="EntityListShell_tabButton EntityListShell_tabButtonActive">all</button>
-          <button class="EntityListShell_tabButton">expansion</button>
-          <button class="EntityListShell_tabButton">implementation</button>
-          <button class="EntityListShell_tabButton">renewal</button>
-          <button class="EntityListShell_tabButton">steady-state</button>
+          <button type="button" class="EntityListShell_tabButton EntityListShell_tabButtonActive">all</button>
+          <button type="button" class="EntityListShell_tabButton">expansion</button>
+          <button type="button" class="EntityListShell_tabButton">implementation</button>
+          <button type="button" class="EntityListShell_tabButton">renewal</button>
+          <button type="button" class="EntityListShell_tabButton">steady-state</button>
         </div>
-        <input type="text" value="" placeholder="&#8984;  Search accounts..." class="EntityListShell_searchInput" />
+        <input type="text" value="" placeholder="⌘  Search accounts..." class="EntityListShell_searchInput" />
       </div>
     </div>
   </section>
@@ -63,12 +76,12 @@
     </div>
     <div class="AccountsPage_accountSectionList">
       <div>
-        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-spice-saffron);"></div>
+        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="0">
+          <div class="EntityRow_dot" data-dot-color="saffron"></div>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Acme Corp</span>
-              <button class="AccountsPage_expandToggle">&#9662; 2 BUs</button>
+              <button type="button" class="AccountsPage_expandToggle">▾ 2 BUs</button>
             </div>
           </div>
           <div class="EntityRow_meta">
@@ -76,8 +89,8 @@
           </div>
         </a>
         <div>
-          <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 28px;">
-            <div class="EntityRow_dot" style="background: var(--color-garden-sage);"></div>
+          <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="1">
+            <div class="EntityRow_dot" data-dot-color="sage"></div>
             <div class="EntityRow_content">
               <div class="EntityRow_nameRow">
                 <span class="EntityRow_name">Acme Corp Enterprise</span>
@@ -89,8 +102,8 @@
           </a>
         </div>
         <div>
-          <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 28px;">
-            <div class="EntityRow_dot" style="background: var(--color-spice-saffron);"></div>
+          <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="1">
+            <div class="EntityRow_dot" data-dot-color="saffron"></div>
             <div class="EntityRow_content">
               <div class="EntityRow_nameRow">
                 <span class="EntityRow_name">Acme Corp EMEA</span>
@@ -104,8 +117,8 @@
       </div>
 
       <div>
-        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-spice-terracotta);"></div>
+        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="0">
+          <div class="EntityRow_dot" data-dot-color="terracotta"></div>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Globex Inc</span>
@@ -118,8 +131,8 @@
       </div>
 
       <div>
-        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-garden-sage);"></div>
+        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="0">
+          <div class="EntityRow_dot" data-dot-color="sage"></div>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Northwind Traders</span>
@@ -132,12 +145,12 @@
       </div>
 
       <div>
-        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-garden-sage);"></div>
+        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="0">
+          <div class="EntityRow_dot" data-dot-color="sage"></div>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Stark Industries</span>
-              <button class="AccountsPage_expandToggle">&#9662; 1 BU</button>
+              <button type="button" class="AccountsPage_expandToggle">▾ 1 BU</button>
             </div>
           </div>
           <div class="EntityRow_meta">
@@ -145,8 +158,8 @@
           </div>
         </a>
         <div>
-          <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 28px;">
-            <div class="EntityRow_dot" style="background: var(--color-garden-sage);"></div>
+          <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="1">
+            <div class="EntityRow_dot" data-dot-color="sage"></div>
             <div class="EntityRow_content">
               <div class="EntityRow_nameRow">
                 <span class="EntityRow_name">Stark Industries Applied AI</span>
@@ -160,8 +173,11 @@
       </div>
 
       <div>
-        <a href="account.html" class="EntityRow_row" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-spice-saffron);"></div>
+        <a href="account.html" class="EntityRow_row" data-depth="0">
+          <span class="HealthBadge_badge" title="Insufficient data for health score">
+            <span class="HealthBadge_dot HealthBadge_dotCompact HealthBadge_dotMuted"></span>
+            <span class="HealthBadge_score HealthBadge_scoreCompact HealthBadge_scoreMuted">N/A</span>
+          </span>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Meridian Harbor</span>
@@ -184,8 +200,8 @@
     </div>
     <div class="AccountsPage_accountSectionList">
       <div>
-        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-garden-larkspur);"></div>
+        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="0">
+          <div class="EntityRow_dot" data-dot-color="larkspur"></div>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Customer Success</span>
@@ -195,8 +211,8 @@
         </a>
       </div>
       <div>
-        <a href="account.html" class="EntityRow_row" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-garden-larkspur);"></div>
+        <a href="account.html" class="EntityRow_row" data-depth="0">
+          <div class="EntityRow_dot" data-dot-color="larkspur"></div>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Revenue Operations</span>
@@ -217,8 +233,8 @@
     </div>
     <div class="AccountsPage_accountSectionList">
       <div>
-        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-garden-rosemary);"></div>
+        <a href="account.html" class="EntityRow_row EntityRow_rowBorder" data-depth="0">
+          <div class="EntityRow_dot" data-dot-color="rosemary"></div>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Glean</span>
@@ -228,8 +244,8 @@
         </a>
       </div>
       <div>
-        <a href="account.html" class="EntityRow_row" style="padding-left: 0px;">
-          <div class="EntityRow_dot" style="background: var(--color-garden-rosemary);"></div>
+        <a href="account.html" class="EntityRow_row" data-depth="0">
+          <div class="EntityRow_dot" data-dot-color="rosemary"></div>
           <div class="EntityRow_content">
             <div class="EntityRow_nameRow">
               <span class="EntityRow_name">Channel Alliance</span>
@@ -241,14 +257,79 @@
     </div>
   </section>
 
-  <div style="text-align:center; padding:72px 0 24px;">
-    <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+  <!-- EntityListEndMark -> FinisMarker. enrichedAt is undefined, so no timestamp renders. -->
+  <div class="finis-marker">
+    <div class="finis-marker-marks">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
     </div>
   </div>
 </div>
+
+<template data-accounts-conditional-branches>
+  <div class="AccountsPage_emptyContainer">
+    <h1 class="AccountsPage_emptyTitle"></h1>
+    <div class="AccountsPage_emptyCreateForm"></div>
+  </div>
+  <div class="AccountsPage_discoveryPanel">
+    <div class="AccountsPage_discoveryHeader">
+      <h3 class="AccountsPage_discoveryTitle"></h3>
+      <button type="button" class="AccountsPage_discoveryCloseButton"></button>
+    </div>
+    <p class="AccountsPage_discoveryLoading"></p>
+    <p class="AccountsPage_discoveryEmpty"></p>
+    <input class="AccountsPage_discoveryFilterInput" />
+    <div class="AccountsPage_discoveryList">
+      <div class="AccountsPage_discoveryRow AccountsPage_discoveryRowBorder">
+        <div class="AccountsPage_discoveryRowContent">
+          <div class="AccountsPage_discoveryRowHeader">
+            <span class="AccountsPage_discoveryAccountName"></span>
+            <span class="AccountsPage_discoveryDomain"></span>
+            <span class="AccountsPage_discoveryIndustry"></span>
+          </div>
+          <p class="AccountsPage_discoveryContextPreview"></p>
+        </div>
+        <div class="AccountsPage_discoveryRowActions">
+          <span class="AccountsPage_discoveryAddedLabel"></span>
+          <button type="button" class="AccountsPage_discoveryAddButton"></button>
+        </div>
+      </div>
+    </div>
+    <p class="AccountsPage_discoveryOverflowHint"></p>
+    <hr class="AccountsPage_discoveryDivider" />
+  </div>
+  <div class="AccountsPage_ephemeralContainer">
+    <form class="AccountsPage_ephemeralForm">
+      <input class="AccountsPage_ephemeralInput" />
+      <button type="submit" class="AccountsPage_ephemeralSubmitButton AccountsPage_ephemeralSubmitActive AccountsPage_ephemeralSubmitDisabled"></button>
+    </form>
+    <hr class="AccountsPage_ephemeralDivider" />
+  </div>
+  <div class="AccountsPage_createForm">
+    <div class="AccountsPage_createFormRow">
+      <div class="AccountsPage_typeSelectorContainer">
+        <button type="button" class="AccountsPage_typeSelectorButton AccountsPage_typeSelectorButtonActive AccountsPage_typeSelectorDivider"></button>
+        <button type="button" class="AccountsPage_typeSelectorButton AccountsPage_typeSelectorButtonInactive"></button>
+      </div>
+      <div class="AccountsPage_parentSelectorRow">
+        <label class="AccountsPage_parentSelectorLabel"></label>
+        <button type="button" class="AccountsPage_parentSelectorTrigger AccountsPage_parentSelectorTriggerActive AccountsPage_parentSelectorTriggerPlaceholder"></button>
+      </div>
+      <div class="AccountsPage_parentSelectorContent">
+        <div class="AccountsPage_parentSelectorItem AccountsPage_parentSelectorItemNone AccountsPage_parentSelectorItemChild"></div>
+      </div>
+      <div class="AccountsPage_createFormInlineRow">
+        <button type="button" class="AccountsPage_bulkButton"></button>
+      </div>
+    </div>
+  </div>
+  <div class="AccountsPage_archivedList"></div>
+  <button type="button" class="AccountsPage_folioButtonArchive"></button>
+  <button type="button" class="AccountsPage_folioButtonArchiveActive"></button>
+  <button type="button" class="AccountsPage_folioButtonDiscover"></button>
+  <button type="button" class="AccountsPage_folioButtonNew"></button>
+</template>
 
 </main>
 </div>

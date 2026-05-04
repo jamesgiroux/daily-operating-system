@@ -60,6 +60,17 @@ a { color: inherit; }
   margin-left: auto; margin-right: auto;
 }
 
+.finis-marker {
+  text-align: center;
+  padding: 72px 0 24px;
+}
+.finis-marker-marks {
+  display: flex;
+  justify-content: center;
+  gap: 0.4em;
+  color: var(--color-spice-turmeric);
+}
+
 /* ── Chrome toggle (reference-only control, not in app) ──────────────────── */
 .chrome-toggle {
   position: fixed; bottom: 16px; left: 16px;

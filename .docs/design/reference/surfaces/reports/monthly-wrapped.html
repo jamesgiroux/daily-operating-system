@@ -3,21 +3,22 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Monthly Wrapped · DailyOS Reference</title>
+  <title>Monthly Wrapped &middot; DailyOS Reference</title>
 
   <!-- Fonts FIRST so the rest of the cascade has them -->
   <link rel="stylesheet" href="../../_shared/fonts.css">
   <link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
 
-  <!-- Chrome modules — verbatim copies of src/components/layout/*.module.css,
-       scoped via _shared/scope-modules.py -->
+  <!-- Chrome modules — injected by chrome.js from body data attributes -->
   <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
   <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
   <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
   <link rel="stylesheet" href="../../_shared/styles/MagazinePageLayout.module.css">
 
-  <!-- Surface-specific module used by MonthlyWrappedPage.tsx and its slides -->
+  <!-- Surface-specific modules used by MonthlyWrappedPage.tsx -->
   <link rel="stylesheet" href="../../_shared/styles/monthly-wrapped.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../../_shared/styles/tailwind-shims.css">
 
   <!-- Reference-only chrome (chrome toggle, baseline reset) -->
   <link rel="stylesheet" href="../../_shared/chrome.css">
@@ -25,43 +26,37 @@
 </head>
 <body
   data-folio-label="Monthly Wrapped"
+  data-folio-crumbs="Reference > Surfaces > Reports > Monthly Wrapped"
   data-tint="eucalyptus"
   data-active-page="me"
   data-nav-base=".."
   data-folio-actions="regenerate"
-  data-chapters="splash:bookopen:March 2026|volume:activity:You Showed Up|top-account:building:Top Account|moments:network:The Moments|hidden-pattern:eye:You Missed This|personality:user:Your Type|priority:target:Priority Check|top-win:checksquare:Your Win|carry-forward:trendingup:Carry Forward|close:compass:See You Next Month">
+  data-folio-regenerate-label="Regenerate"
+  data-folio-action-accent="var(--color-garden-eucalyptus)"
+  data-chapters="splash:bookopen:March 2026|volume:barchart2:You Showed Up|top-account:star:Top Account|moments:layoutgrid:The Moments|hidden-pattern:eye:You Missed This|personality:sparkles:Your Type|priority:target:Priority Check|top-win:star:Your Win|carry-forward:arrowright:Carry Forward|close:compass:See You Next Month">
 
-<!-- MagazinePageLayout shell mirrors src/components/layout/MagazinePageLayout.tsx.
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
      Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
+<!-- MonthlyWrappedPage loaded-report rest state: all 10 scroll-snap slides. -->
 <div class="monthly-wrapped_viewportBreakout">
   <div class="monthly-wrapped_slideContainer">
 
     <section id="splash" class="monthly-wrapped_slide monthly-wrapped_bgInk">
-      <div
-        aria-hidden="true"
-        class="monthly-wrapped_bgTexture"
-        style="background:radial-gradient(ellipse at 20% 80%, color-mix(in srgb, var(--color-garden-eucalyptus) 8%, transparent) 0%, transparent 60%), radial-gradient(ellipse at 80% 20%, var(--color-spice-turmeric-6) 0%, transparent 50%);"
-      ></div>
+      <div aria-hidden="true" class="monthly-wrapped_bgTexture monthly-wrapped_splashTexture"></div>
 
       <div class="monthly-wrapped_contentLayer">
         <div class="monthly-wrapped_overlineSmall monthly-wrapped_splashOverline monthly-wrapped_animSlideUp">
           Monthly Wrapped
         </div>
 
-        <h1
-          class="monthly-wrapped_slideTitle monthly-wrapped_splashMonth monthly-wrapped_animSlideUpSlow"
-          style="--anim-delay:200ms;"
-        >
+        <h1 class="monthly-wrapped_slideTitle monthly-wrapped_splashMonth monthly-wrapped_animSlideUpSlow monthly-wrapped_delay200">
           March
         </h1>
 
-        <div
-          class="monthly-wrapped_splashYear monthly-wrapped_animSlideUpSlow"
-          style="--anim-delay:400ms;"
-        >
+        <div class="monthly-wrapped_splashYear monthly-wrapped_animSlideUpSlow monthly-wrapped_delay400">
           2026
         </div>
       </div>
@@ -72,24 +67,15 @@
         You showed up.
       </div>
 
-      <div
-        class="monthly-wrapped_statNumber monthly-wrapped_volumeStat monthly-wrapped_animFadeIn"
-        style="--anim-delay:100ms;"
-      >
+      <div class="monthly-wrapped_statNumber monthly-wrapped_volumeStat monthly-wrapped_animFadeIn monthly-wrapped_delay100">
         <span>64</span>
       </div>
 
-      <div
-        class="monthly-wrapped_statLabel monthly-wrapped_volumeStatLabel monthly-wrapped_animSlideUp"
-        style="--anim-delay:200ms;"
-      >
+      <div class="monthly-wrapped_statLabel monthly-wrapped_volumeStatLabel monthly-wrapped_animSlideUp monthly-wrapped_delay200">
         conversations
       </div>
 
-      <div
-        class="monthly-wrapped_subStats monthly-wrapped_volumeSubStats monthly-wrapped_animSlideUp"
-        style="--anim-delay:400ms;"
-      >
+      <div class="monthly-wrapped_subStats monthly-wrapped_volumeSubStats monthly-wrapped_animSlideUp monthly-wrapped_delay400">
         <span>14</span> accounts
         &nbsp;&middot;&nbsp;
         <span>31</span> people
@@ -103,17 +89,11 @@
         Your most active account.
       </div>
 
-      <h2
-        class="monthly-wrapped_slideTitle monthly-wrapped_topAccountName monthly-wrapped_animScaleReveal"
-        style="--anim-delay:150ms;"
-      >
+      <h2 class="monthly-wrapped_slideTitle monthly-wrapped_topAccountName monthly-wrapped_animScaleReveal monthly-wrapped_delay150">
         Acme Corp
       </h2>
 
-      <div
-        class="monthly-wrapped_topAccountTouches monthly-wrapped_animSlideUp"
-        style="--anim-delay:350ms;"
-      >
+      <div class="monthly-wrapped_topAccountTouches monthly-wrapped_animSlideUp monthly-wrapped_delay350">
         <span>17</span> touchpoints this month
       </div>
     </section>
@@ -136,10 +116,7 @@
           </div>
         </div>
 
-        <div
-          class="monthly-wrapped_momentItem monthly-wrapped_animSlideUp"
-          style="--anim-delay:200ms;"
-        >
+        <div class="monthly-wrapped_momentItem monthly-wrapped_animSlideUp monthly-wrapped_delay200">
           <div class="monthly-wrapped_momentLabel">
             The turning point
           </div>
@@ -151,10 +128,7 @@
           </div>
         </div>
 
-        <div
-          class="monthly-wrapped_animSlideUp"
-          style="--anim-delay:400ms;"
-        >
+        <div class="monthly-wrapped_animSlideUp monthly-wrapped_delay400">
           <div class="monthly-wrapped_momentLabel">
             The long game
           </div>
@@ -173,51 +147,32 @@
         Something you might have missed.
       </div>
 
-      <p
-        class="monthly-wrapped_serifQuote monthly-wrapped_hiddenPatternQuote monthly-wrapped_animSlideUpLong"
-        style="--anim-delay:200ms;"
-      >
+      <p class="monthly-wrapped_serifQuote monthly-wrapped_hiddenPatternQuote monthly-wrapped_animSlideUpLong monthly-wrapped_delay200">
         Your best progress came when renewal risk was named early: Acme Corp, Meridian Harbor, and Globex Inc all moved faster once the uncomfortable question was on the table.
       </p>
     </section>
 
     <section id="personality" class="monthly-wrapped_slide monthly-wrapped_bgRosemary">
-      <div
-        aria-hidden="true"
-        class="monthly-wrapped_bgTexture"
-        style="top:40%; left:50%; transform:translate(-50%, -50%); width:600px; height:400px; inset:auto; background:radial-gradient(ellipse at center, var(--color-spice-saffron-12) 0%, transparent 70%);"
-      ></div>
+      <div aria-hidden="true" class="monthly-wrapped_bgTexture monthly-wrapped_personalityGlow"></div>
 
       <div class="monthly-wrapped_contentLayer">
         <div class="monthly-wrapped_overlineSmall monthly-wrapped_personalityOverline monthly-wrapped_animFadeIn">
           Your type this month
         </div>
 
-        <h2
-          class="monthly-wrapped_slideTitle monthly-wrapped_personalityTypeName monthly-wrapped_animScaleReveal"
-          style="--anim-delay:150ms;"
-        >
+        <h2 class="monthly-wrapped_slideTitle monthly-wrapped_personalityTypeName monthly-wrapped_animScaleReveal monthly-wrapped_delay150">
           The Signal Keeper
         </h2>
 
-        <p
-          class="monthly-wrapped_slideSubtitle monthly-wrapped_personalityDescription monthly-wrapped_animSlideUp"
-          style="--anim-delay:400ms;"
-        >
+        <p class="monthly-wrapped_slideSubtitle monthly-wrapped_personalityDescription monthly-wrapped_animSlideUp monthly-wrapped_delay400">
           You noticed the quiet shifts before they became work: stakeholder changes, renewal friction, and the accounts that needed one more human touch.
         </p>
 
-        <div
-          class="monthly-wrapped_personalityKeyTrait monthly-wrapped_animSlideUp"
-          style="--anim-delay:550ms;"
-        >
+        <div class="monthly-wrapped_personalityKeyTrait monthly-wrapped_animSlideUp monthly-wrapped_delay550">
           Your strongest signal was translating scattered updates into next actions.
         </div>
 
-        <div
-          class="monthly-wrapped_rarityDivider monthly-wrapped_overlineSmall monthly-wrapped_personalityRarity monthly-wrapped_animSlideUp"
-          style="--anim-delay:700ms;"
-        >
+        <div class="monthly-wrapped_rarityDivider monthly-wrapped_overlineSmall monthly-wrapped_personalityRarity monthly-wrapped_animSlideUp monthly-wrapped_delay700">
           A rare month: customer memory became operating rhythm.
         </div>
       </div>
@@ -228,14 +183,11 @@
         Were you spending time where it matters?
       </div>
 
-      <div
-        class="monthly-wrapped_animSlideUp"
-        style="--anim-delay:100ms;"
-      >
+      <div class="monthly-wrapped_animSlideUp monthly-wrapped_delay100">
         <p class="monthly-wrapped_slideSubtitle monthly-wrapped_priorityEmptyText">
           Set priorities on your profile to track alignment month over month.
         </p>
-        <button class="monthly-wrapped_ctaButton monthly-wrapped_priorityEmptyCta">
+        <button type="button" class="monthly-wrapped_ctaButton monthly-wrapped_priorityEmptyCta">
           Go to /me
         </button>
       </div>
@@ -246,17 +198,11 @@
         Your biggest win.
       </div>
 
-      <p
-        class="monthly-wrapped_serifQuote monthly-wrapped_topWinQuote monthly-wrapped_animSlideUpSlow"
-        style="--anim-delay:200ms;"
-      >
+      <p class="monthly-wrapped_serifQuote monthly-wrapped_topWinQuote monthly-wrapped_animSlideUpSlow monthly-wrapped_delay200">
         The Acme Corp MSA Renewal stopped feeling like a forecast risk after Jen Park and Dan Mitchell aligned on the executive narrative.
       </p>
 
-      <div
-        class="monthly-wrapped_flourish monthly-wrapped_topWinFlourish monthly-wrapped_animFadeInSlow"
-        style="--anim-delay:600ms;"
-      >
+      <div class="monthly-wrapped_flourish monthly-wrapped_topWinFlourish monthly-wrapped_animFadeInSlow monthly-wrapped_delay600">
         &#10022;
       </div>
     </section>
@@ -266,37 +212,22 @@
         Into next month.
       </div>
 
-      <p
-        class="monthly-wrapped_slideSubtitle monthly-wrapped_carryForwardText monthly-wrapped_animSlideUpSlow"
-        style="--anim-delay:200ms;"
-      >
+      <p class="monthly-wrapped_slideSubtitle monthly-wrapped_carryForwardText monthly-wrapped_animSlideUpSlow monthly-wrapped_delay200">
         Carry the early-risk habit into April: write down the awkward question, name the owner, and give every priority account a next moment before the week gets full.
       </p>
 
-      <div
-        class="monthly-wrapped_animSlideUp"
-        style="--anim-delay:400ms;"
-      >
+      <div class="monthly-wrapped_animSlideUp monthly-wrapped_delay400">
         <div class="monthly-wrapped_momentLabel monthly-wrapped_carryForwardWordsLabel">
           March 2026 in three words
         </div>
         <div class="monthly-wrapped_carryForwardWordRow">
-          <span
-            class="monthly-wrapped_wordPill monthly-wrapped_animSlideUp"
-            style="--anim-delay:400ms; color:var(--color-text-primary); border:1px solid var(--color-spice-turmeric);"
-          >
+          <span class="monthly-wrapped_wordPill monthly-wrapped_animSlideUp monthly-wrapped_delay400 monthly-wrapped_wordPillTurmeric">
             Early
           </span>
-          <span
-            class="monthly-wrapped_wordPill monthly-wrapped_animSlideUp"
-            style="--anim-delay:520ms; color:var(--color-text-primary); border:1px solid var(--color-garden-larkspur);"
-          >
+          <span class="monthly-wrapped_wordPill monthly-wrapped_animSlideUp monthly-wrapped_delay520 monthly-wrapped_wordPillLarkspur">
             Specific
           </span>
-          <span
-            class="monthly-wrapped_wordPill monthly-wrapped_animSlideUp"
-            style="--anim-delay:640ms; color:var(--color-text-primary); border:1px solid var(--color-garden-eucalyptus);"
-          >
+          <span class="monthly-wrapped_wordPill monthly-wrapped_animSlideUp monthly-wrapped_delay640 monthly-wrapped_wordPillEucalyptus">
             Steady
           </span>
         </div>
@@ -304,28 +235,18 @@
     </section>
 
     <section id="close" class="monthly-wrapped_slide monthly-wrapped_bgInk">
-      <div
-        aria-hidden="true"
-        class="monthly-wrapped_bgTexture"
-        style="background:radial-gradient(ellipse at 80% 30%, var(--color-garden-eucalyptus-6) 0%, transparent 60%);"
-      ></div>
+      <div aria-hidden="true" class="monthly-wrapped_bgTexture monthly-wrapped_closeTexture"></div>
 
       <div class="monthly-wrapped_contentLayer">
         <h2 class="monthly-wrapped_slideTitle monthly-wrapped_closeHeadline monthly-wrapped_animSlideUpLong">
           See you in April.
         </h2>
 
-        <div
-          class="monthly-wrapped_closeSubLabel monthly-wrapped_animFadeInSlow"
-          style="--anim-delay:300ms;"
-        >
+        <div class="monthly-wrapped_closeSubLabel monthly-wrapped_animFadeInSlow monthly-wrapped_delay300">
           Your March 2026.
         </div>
 
-        <button
-          class="monthly-wrapped_ctaButton monthly-wrapped_closeExportCta monthly-wrapped_animFadeInSlow"
-          style="--anim-delay:600ms;"
-        >
+        <button type="button" class="monthly-wrapped_ctaButton monthly-wrapped_closeExportCta monthly-wrapped_animFadeInSlow monthly-wrapped_delay600">
           Save as PDF
         </button>
       </div>
@@ -334,29 +255,16 @@
   </div>
 </div>
 
+<template data-reference-conditional-classes="loading skeletons, empty branch, and generating folio state classes from MonthlyWrappedPage.tsx">
+  <div class="monthly-wrapped_loadingSkeleton monthly-wrapped_skeletonBar"></div>
+  <div class="monthly-wrapped_emptyState monthly-wrapped_emptyOverline monthly-wrapped_emptyTitle monthly-wrapped_emptyDescription monthly-wrapped_emptyError"></div>
+  <button class="monthly-wrapped_folioAction monthly-wrapped_folioActionActive monthly-wrapped_folioActionDisabled"></button>
+</template>
+
 </main>
 </div>
 
 <script src="../../_shared/chrome.js"></script>
-<script>
-  (function () {
-    function installMonthlyWrappedFolioAction() {
-      if (document.body.dataset.folioActions !== 'regenerate') return;
-      var actions = document.querySelector('.FolioBar_folioActions');
-      if (!actions) return;
-      actions.textContent = '';
-      var button = document.createElement('button');
-      button.className = 'monthly-wrapped_folioAction monthly-wrapped_folioActionActive';
-      button.textContent = 'Regenerate';
-      actions.appendChild(button);
-    }
-    if (document.readyState === 'loading') {
-      document.addEventListener('DOMContentLoaded', installMonthlyWrappedFolioAction);
-    } else {
-      installMonthlyWrappedFolioAction();
-    }
-  })();
-</script>
 <script src="../../_shared/inspector.js"></script>
 </body>
 </html>

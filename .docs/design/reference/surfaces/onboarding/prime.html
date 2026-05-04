@@ -10,110 +10,52 @@
 <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
 <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
 <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../_shared/styles/ChapterHeading.module.css">
 <link rel="stylesheet" href="../../_shared/styles/onboarding.module.css">
+<link rel="stylesheet" href="../../_shared/styles/ui-button.css">
+<link rel="stylesheet" href="../../_shared/styles/tailwind-shims.css">
 <link rel="stylesheet" href="../../_shared/chrome.css">
 <link rel="stylesheet" href="../../_shared/inspector.css">
-
-<style>
-  /* Onboarding wizard stand-in for the Tailwind primary Button.
-     Mirrors src/components/ui/button.tsx size=lg variant=default:
-     h-10 (40px) · px-6 (24px) · rounded-md · bg-primary · text-primary-foreground.
-     Tokens from design-tokens.css; values match Tailwind theme.css mapping. */
-  .ob-button-primary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
-    height: 40px;
-    padding: 0 24px;
-    border-radius: 6px;
-    border: 0;
-    background: var(--color-text-primary);
-    color: var(--color-paper-cream);
-    font-family: var(--font-sans);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-  }
-  .ob-button-primary:hover { opacity: 0.9; }
-  .ob-button-primary svg { width: 16px; height: 16px; }
-</style>
 </head>
 <body
   data-folio-label="Setup"
-  data-folio-crumbs="Reference > Surfaces > Onboarding > Prime"
   data-tint="turmeric"
-  data-active-page=""
   data-nav-mode="chapters-only"
   data-active-chapter="prime"
-  data-chapters="welcome:sparkles:Welcome|google:mail:Google|claude-code:terminal:Claude|glean:globe:Glean|youcard:user:About You|first-account:building:Account|role:briefcase:Your Role|prime:sparkles:Prime">
+  data-chapters="welcome:sparkles:Welcome|google:mail:Google|claude-code:terminal:Claude|glean:globe:Glean|youcard:user:About You|first-account:building:Account|role:briefcase:Your Role|prime:sparkles:Prime"
+  data-folio-crumbs="Reference > Surfaces > Onboarding > Prime">
 
 <div class="onboarding_wrapper">
   <div class="onboarding_contentColumn">
     <div class="onboarding_flexCol onboarding_gap24">
 
-      <div style="margin-bottom: var(--space-xl);">
-        <hr style="border: none; border-top: 1px solid var(--color-rule-heavy); margin: 0 0 var(--space-md);" />
-        <div style="display: flex; align-items: center; gap: var(--space-sm);">
-          <h2 style="margin: 0; font-family: var(--font-serif); font-size: 28px; font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; color: var(--color-text-primary);">
-            Your book is getting ready
-          </h2>
+      <!-- ChapterHeading: default initial rest state, title + epigraph, primary variant -->
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule">
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Prime Your Briefings</h2>
         </div>
-        <p style="max-width: 540px; margin: var(--space-md) 0 0; font-family: var(--font-serif); font-size: 17px; font-style: italic; font-weight: 300; line-height: 1.55; color: var(--color-text-tertiary);">
-          Keep going now. Account enrichment continues in the background and your briefings will sharpen as it lands.
-        </p>
+        <p class="ChapterHeading_epigraph">Give DailyOS context about your work — the more it knows, the better your briefings.</p>
       </div>
 
-      <div class="onboarding_ruleSection">
-        <div class="onboarding_flexCol onboarding_gap8">
-          <div class="onboarding_discoveryRow">
-            <span class="onboarding_bodyText">Acme Corp</span>
-            <span class="onboarding_tertiaryText">Ready</span>
-          </div>
-          <div class="onboarding_discoveryRow">
-            <span class="onboarding_bodyText">Initech</span>
-            <span class="onboarding_tertiaryText">Queued</span>
-          </div>
-          <p class="onboarding_bodyText">Already usable now: 1/2 accounts finished.</p>
-        </div>
-      </div>
+      <!-- Account enrichment branch omitted: importedAccountNames defaults to [] so bookReady is false. -->
 
+      <!-- Path A: Drop zone, idle rest state -->
       <div class="onboarding_dropZone">
-        <svg class="onboarding_uploadIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M12 3v12"/>
-          <path d="m17 8-5-5-5 5"/>
-          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
-        </svg>
+        <svg class="onboarding_uploadIcon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 3v12"/><path d="m17 8-5-5-5 5"/><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/></svg>
         <p class="onboarding_dropZoneLabel">Drop files here or click to browse</p>
         <p class="onboarding_dropZoneHint">.txt, .md, .pdf, .docx — meeting notes, account briefs, anything relevant</p>
       </div>
 
-      <div class="onboarding_flexCol onboarding_gap8">
-        <div class="onboarding_flexRow onboarding_gap8">
-          <svg class="onboarding_sageColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M20 6 9 17l-5-5"/>
-          </svg>
-          <span class="onboarding_fileAddedName">acme-kickoff-notes.md</span>
-        </div>
-        <div class="onboarding_flexRow onboarding_gap8">
-          <svg class="onboarding_sageColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M20 6 9 17l-5-5"/>
-          </svg>
-          <span class="onboarding_fileAddedName">initech-account-brief.pdf</span>
-        </div>
-        <p class="onboarding_fileAddedMessage">
-          DailyOS is primed. Context will build from what you just gave it, and from your connectors as they run.
-        </p>
-      </div>
+      <!-- Files added branch omitted: filesAdded defaults to [] in the idle rest state. -->
 
+      <!-- Path B: Connect feeders -->
       <div class="onboarding_ruleSection">
         <p class="onboarding_sectionLabelLg">Or connect a source</p>
         <div class="onboarding_flexWrapRow">
           <div class="onboarding_sourceCard">
             <div class="onboarding_sourceHeader">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/>
-              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 14h3a2 2 0 0 1 2 2v3a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-7a9 9 0 0 1 18 0v7a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3"/></svg>
               <span class="onboarding_sourceName">Quill</span>
             </div>
             <p class="onboarding_sourceDesc">Meeting transcripts</p>
@@ -121,13 +63,7 @@
           </div>
           <div class="onboarding_sourceCard">
             <div class="onboarding_sourceHeader">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/>
-                <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
-                <path d="M10 9H8"/>
-                <path d="M16 13H8"/>
-                <path d="M16 17H8"/>
-              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z"/><path d="M14 2v4a2 2 0 0 0 2 2h4"/><path d="M10 9H8"/><path d="M16 13H8"/><path d="M16 17H8"/></svg>
               <span class="onboarding_sourceName">Granola</span>
             </div>
             <p class="onboarding_sourceDesc">Meeting notes</p>
@@ -135,12 +71,7 @@
           </div>
           <div class="onboarding_sourceCard">
             <div class="onboarding_sourceHeader">
-              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-                <line x1="22" x2="2" y1="12" y2="12"/>
-                <path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/>
-                <line x1="6" x2="6.01" y1="16" y2="16"/>
-                <line x1="10" x2="10.01" y1="16" y2="16"/>
-              </svg>
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="22" x2="2" y1="12" y2="12"/><path d="M5.45 5.11 2 12v6a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-6l-3.45-6.89A2 2 0 0 0 16.76 4H7.24a2 2 0 0 0-1.79 1.11z"/><line x1="6" x2="6.01" y1="16" y2="16"/><line x1="10" x2="10.01" y1="16" y2="16"/></svg>
               <span class="onboarding_sourceName">Google Drive</span>
             </div>
             <p class="onboarding_sourceDesc">Shared documents</p>
@@ -150,28 +81,21 @@
         <p class="onboarding_settingsHint">You can set these up any time in Settings.</p>
       </div>
 
-      <div class="onboarding_ruleSection" style="display: flex; align-items: center; justify-content: space-between; gap: var(--space-md);">
+      <!-- Actions -->
+      <div class="flex justify-between onboarding_ruleSection">
         <button type="button" class="onboarding_skipLink">Continue to DailyOS</button>
-        <button type="button" class="ob-button-primary">
+        <button type="button" class="ui-button ui-button-default ui-button-default-size" data-slot="button" data-variant="default" data-size="default">
           Continue to DailyOS
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-            <path d="M5 12h14"/>
-            <path d="m12 5 7 7-7 7"/>
-          </svg>
+          <svg class="ml-2 size-4" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
         </button>
       </div>
 
-      <div style="text-align: center; padding: 72px 0 24px;">
-        <div style="display: flex; justify-content: center; gap: 0.4em; color: var(--color-spice-turmeric);">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true">
-            <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
-          </svg>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true">
-            <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
-          </svg>
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true">
-            <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/>
-          </svg>
+      <!-- FinisMarker: enrichedAt is undefined, so no timestamp renders. -->
+      <div class="finis-marker">
+        <div class="finis-marker-marks">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
         </div>
       </div>
 

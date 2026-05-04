@@ -42,3 +42,29 @@
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+.IntelligenceQualityBadge_root[data-quality-level="fresh"] .IntelligenceQualityBadge_dot,
+.IntelligenceQualityBadge_root[data-quality-level="ready"] .IntelligenceQualityBadge_dot {
+  background: var(--color-garden-sage);
+}
+
+.IntelligenceQualityBadge_root[data-quality-level="fresh"] .IntelligenceQualityBadge_label,
+.IntelligenceQualityBadge_root[data-quality-level="ready"] .IntelligenceQualityBadge_label {
+  color: var(--color-garden-sage);
+}
+
+.IntelligenceQualityBadge_root[data-quality-level="developing"] .IntelligenceQualityBadge_dot {
+  background: var(--color-spice-turmeric);
+}
+
+.IntelligenceQualityBadge_root[data-quality-level="developing"] .IntelligenceQualityBadge_label {
+  color: var(--color-spice-turmeric);
+}
+
+.IntelligenceQualityBadge_root[data-quality-level="sparse"] .IntelligenceQualityBadge_dot {
+  background: var(--color-text-tertiary);
+}
+
+.IntelligenceQualityBadge_root[data-quality-level="sparse"] .IntelligenceQualityBadge_label {
+  color: var(--color-text-tertiary);
+}

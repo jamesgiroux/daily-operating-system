@@ -5,59 +5,87 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Daily Briefing · DailyOS Reference</title>
 
+  <!-- Fonts FIRST so the rest of the cascade has them -->
   <link rel="stylesheet" href="../_shared/fonts.css">
   <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — injected by chrome.js from body data attributes -->
   <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
   <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
   <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
   <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Surface-specific modules used by DailyBriefing.tsx and rendered children -->
   <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
   <link rel="stylesheet" href="../_shared/styles/DailyBriefing.module.css">
   <link rel="stylesheet" href="../_shared/styles/MeetingCard.module.css">
-  <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
   <link rel="stylesheet" href="../_shared/chrome.css">
   <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
   data-folio-label="Daily Briefing"
+  data-folio-crumbs="Reference > Surfaces > Daily Briefing"
   data-tint="turmeric"
   data-active-page="today"
   data-nav-base="."
-  data-folio-date="WEDNESDAY, APRIL 22, 2026"
-  data-folio-readiness="2/3 briefings ready,sage|2 overdue,terracotta"
-  data-folio-actions="refresh"
-  data-folio-refresh-title="Refresh emails, actions, and context">
+  data-folio-date="MONDAY, MAY 4, 2026"
+  data-folio-readiness="0/1 briefings ready,sage|1 overdue,terracotta">
 
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
 <div>
+  <!-- Day frame: data.overview.summary absent, active meetings present. -->
   <section class="editorial-briefing_hero">
-    <h1 class="editorial-briefing_heroHeadline">You have 4 meetings today, 2 with customers.</h1>
-
-    <div class="editorial-briefing_focusCapacity">
-      2h 30m available &middot; 2 deep work blocks &middot; 4 meetings
-    </div>
+    <h1 class="editorial-briefing_heroHeadline">Your day is ready.</h1>
   </section>
 
+  <!-- Schedule: one realistic rest state, all meetings are past, so no expansion panels render. -->
   <section class="editorial-briefing_scheduleSection">
     <div class="editorial-briefing_marginGrid">
       <div class="editorial-briefing_marginLabel">
         Schedule
-        <span class="editorial-briefing_marginLabelCount">4 meetings</span>
+        <span class="editorial-briefing_marginLabelCount">2 meetings</span>
       </div>
       <div class="editorial-briefing_marginContent">
         <div class="editorial-briefing_sectionRule"></div>
 
-        <div class="editorial-briefing_prepFlag">
-          <a href="meeting.html" class="DailyBriefing_linkUnstyled">&#9888; Stark Industries executive readout at 4:00 PM — no briefing yet</a>
-        </div>
-
         <div class="editorial-briefing_scheduleRows">
+          <div>
+            <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_past MeetingCard_clickable MeetingCard_pastNavigate editorial-briefing_briefingCardOverride">
+              <div class="MeetingCard_time">
+                9:00 AM
+                <span class="MeetingCard_duration">45m</span>
+              </div>
+              <div class="MeetingCard_content">
+                <div class="MeetingCard_titleRow">
+                  <span class="MeetingCard_title">Acme Corp renewal checkpoint</span>
+                  <span class="MeetingCard_pastArrow">&rarr;</span>
+                </div>
+                <div class="MeetingCard_subtitle">Acme Corp &middot; 4 attendees</div>
+                <div class="editorial-briefing_capturedSummary">1 action captured</div>
+              </div>
+            </div>
+            <div class="DailyBriefing_healthBadgeRow">
+              <span class="HealthBadge_badge" title="Insufficient data for health score">
+                <span class="HealthBadge_dot HealthBadge_dotCompact HealthBadge_dotMuted"></span>
+                <span class="HealthBadge_score HealthBadge_scoreCompact HealthBadge_scoreMuted">N/A</span>
+              </span>
+            </div>
+          </div>
+
           <div>
             <div class="MeetingCard_card MeetingCard_accentInternal MeetingCard_past MeetingCard_clickable MeetingCard_pastNavigate editorial-briefing_briefingCardOverride">
               <div class="MeetingCard_time">
-                8:30 AM
+                10:30 AM
                 <span class="MeetingCard_duration">30m</span>
               </div>
               <div class="MeetingCard_content">
@@ -66,290 +94,6 @@
                   <span class="MeetingCard_pastArrow">&rarr;</span>
                 </div>
                 <div class="MeetingCard_subtitle">Internal &middot; 5 attendees</div>
-                <div class="editorial-briefing_capturedSummary">1 action captured</div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_clickable editorial-briefing_briefingCardOverride editorial-briefing_scheduleRowExpandable editorial-briefing_scheduleRowExpanded">
-              <div class="MeetingCard_time">
-                10:00 AM
-                <span class="MeetingCard_duration">45m</span>
-              </div>
-              <div class="MeetingCard_content">
-                <div class="MeetingCard_titleRow">
-                  <span class="MeetingCard_title">Acme Corp renewal checkpoint</span>
-                  <span class="editorial-briefing_upNextPill">UP NEXT</span>
-                  <span class="editorial-briefing_expandHint">collapse</span>
-                </div>
-                <div class="MeetingCard_subtitle">
-                  Acme Corp &middot; Customer &middot; 4 attendees
-                  <span class="IntelligenceQualityBadge_root" title="Fresh — Last updated: 4/22/2026, 6:20:00 AM">
-                    <span class="IntelligenceQualityBadge_structuredDotShell">
-                      <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage)"></span>
-                      <span class="IntelligenceQualityBadge_newSignalDot"></span>
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div class="editorial-briefing_expansionPanel editorial-briefing_expansionTintTurmeric editorial-briefing_expansionPanelOpen" style="max-height:2000px">
-              <div class="editorial-briefing_expansionInner">
-                <p class="editorial-briefing_expansionDescription">Finalize MSA redline position and confirm whether the security exhibit can move in parallel with legal review.</p>
-
-                <div class="editorial-briefing_theRoom">
-                  <div class="editorial-briefing_theRoomLabel">The Room</div>
-                  <div class="editorial-briefing_theRoomGroup">
-                    <div class="editorial-briefing_theRoomGroupLabel">Their Side</div>
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Jen Park</span>
-                      <span class="editorial-briefing_theRoomCompany">acme.com</span>
-                    </div>
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Marco Devine</span>
-                      <span class="editorial-briefing_theRoomCompany">acme.com</span>
-                      <span class="editorial-briefing_theRoomRole editorial-briefing_theRoomRoleTentative">tentative</span>
-                    </div>
-                  </div>
-                  <div class="editorial-briefing_theRoomGroup">
-                    <div class="editorial-briefing_theRoomGroupLabel">Our Side</div>
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Sam Chen</span>
-                    </div>
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Priya Raman</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="editorial-briefing_prepGrid">
-                  <div class="editorial-briefing_prepSection">
-                    <div class="editorial-briefing_prepLabel editorial-briefing_prepLabelDiscuss">Discuss</div>
-                    <div class="editorial-briefing_prepItem">
-                      <span class="editorial-briefing_prepDot editorial-briefing_prepDotTurmeric"></span>
-                      <span class="editorial-briefing_prepItemText">Confirm security exhibit owner and Friday approval path</span>
-                      <span class="editorial-briefing_prepImpactBadge" data-impact="high">high</span>
-                    </div>
-                  </div>
-
-                  <div class="editorial-briefing_prepSection">
-                    <div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWatch">Watch</div>
-                    <div class="editorial-briefing_prepItem">
-                      <span class="editorial-briefing_prepDot editorial-briefing_prepDotTerracotta"></span>
-                      <span class="editorial-briefing_prepItemText">Procurement may reopen tier-three pricing if legal slips</span>
-                      <span class="editorial-briefing_prepImpactBadge" data-impact="medium">medium</span>
-                    </div>
-                  </div>
-
-                  <div class="editorial-briefing_prepSection">
-                    <div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWins">Wins</div>
-                    <div class="editorial-briefing_prepItem">
-                      <span class="editorial-briefing_prepDot editorial-briefing_prepDotSage"></span>
-                      <span class="editorial-briefing_prepItemText">Jen Park accepted the multi-year ramp structure</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="editorial-briefing_meetingActions">
-                  <div class="editorial-briefing_meetingActionsLabel">Before this meeting</div>
-                  <div class="editorial-briefing_meetingActionsItem">
-                    <button class="editorial-briefing_meetingActionsCheck editorial-briefing_meetingActionsCheckOverdue"></button>
-                    <div>
-                      <div class="editorial-briefing_meetingActionsText">Send Acme Corp final MSA redlines to Jen Park</div>
-                      <div class="editorial-briefing_meetingActionsContext editorial-briefing_meetingActionsContextOverdue">2 days overdue &middot; Acme Corp</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="editorial-briefing_meetingLinks">
-                  <a href="meeting.html" class="editorial-briefing_meetingLinkPrimary">Read full briefing &rarr;</a>
-                  <button class="editorial-briefing_expansionCollapse">Collapse</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_clickable editorial-briefing_briefingCardOverride editorial-briefing_scheduleRowExpandable">
-              <div class="MeetingCard_time">
-                1:30 PM
-                <span class="MeetingCard_duration">1h</span>
-              </div>
-              <div class="MeetingCard_content">
-                <div class="MeetingCard_titleRow">
-                  <span class="MeetingCard_title">Northwind Q2 Launch readiness</span>
-                  <span class="editorial-briefing_expandHint">expand</span>
-                </div>
-                <div class="MeetingCard_subtitle">
-                  Northwind Traders &middot; Customer &middot; 3 attendees
-                  <span class="IntelligenceQualityBadge_root" title="Ready — Last updated: 4/22/2026, 7:05:00 AM">
-                    <span class="IntelligenceQualityBadge_structuredDotShell">
-                      <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage)"></span>
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div class="editorial-briefing_expansionPanel editorial-briefing_expansionTintTurmeric" style="max-height:0">
-              <div class="editorial-briefing_expansionInner">
-                <p class="editorial-briefing_expansionNarrative">Q2 Launch has the right executive attention, but Sara Wu needs the rollout story tightened around support coverage and adoption proof before the review.</p>
-
-                <div class="editorial-briefing_theRoom">
-                  <div class="editorial-briefing_theRoomLabel">The Room</div>
-                  <div class="editorial-briefing_theRoomGroup">
-                    <div class="editorial-briefing_theRoomGroupLabel">Their Side</div>
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Sara Wu</span>
-                      <span class="editorial-briefing_theRoomCompany">northwind.com</span>
-                    </div>
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Kevin Otieno</span>
-                      <span class="editorial-briefing_theRoomCompany">northwind.com</span>
-                    </div>
-                  </div>
-                  <div class="editorial-briefing_theRoomGroup">
-                    <div class="editorial-briefing_theRoomGroupLabel">Our Side</div>
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Sam Chen</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="editorial-briefing_prepGrid">
-                  <div class="editorial-briefing_prepSection">
-                    <div class="editorial-briefing_prepLabel editorial-briefing_prepLabelDiscuss">Discuss</div>
-                    <div class="editorial-briefing_prepItem">
-                      <span class="editorial-briefing_prepDot editorial-briefing_prepDotTurmeric"></span>
-                      <span class="editorial-briefing_prepItemText">Lock launch owner for finance analytics rollout</span>
-                    </div>
-                  </div>
-
-                  <div class="editorial-briefing_prepSection">
-                    <div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWatch">Watch</div>
-                    <div class="editorial-briefing_prepItem">
-                      <span class="editorial-briefing_prepDot editorial-briefing_prepDotTerracotta"></span>
-                      <span class="editorial-briefing_prepItemText">Support escalation still lacks named weekend coverage</span>
-                      <span class="editorial-briefing_prepImpactBadge" data-impact="medium">medium</span>
-                    </div>
-                  </div>
-
-                  <div class="editorial-briefing_prepSection">
-                    <div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWins">Wins</div>
-                    <div class="editorial-briefing_prepItem">
-                      <span class="editorial-briefing_prepDot editorial-briefing_prepDotSage"></span>
-                      <span class="editorial-briefing_prepItemText">Executive sponsor accepted the launch sequence</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="editorial-briefing_meetingActions">
-                  <div class="editorial-briefing_meetingActionsLabel">Before this meeting</div>
-                  <div class="editorial-briefing_meetingActionsItem">
-                    <button class="editorial-briefing_meetingActionsCheck"></button>
-                    <div>
-                      <div class="editorial-briefing_meetingActionsText">Prepare Northwind adoption and escalation notes</div>
-                      <div class="editorial-briefing_meetingActionsContext">Today &middot; Northwind Traders</div>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="editorial-briefing_meetingLinks">
-                  <a href="meeting.html" class="editorial-briefing_meetingLinkPrimary">Read full briefing &rarr;</a>
-                  <button class="editorial-briefing_expansionCollapse">Collapse</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div class="MeetingCard_card MeetingCard_accentLarkspur MeetingCard_clickable editorial-briefing_briefingCardOverride editorial-briefing_scheduleRowExpandable">
-              <div class="MeetingCard_time">
-                2:45 PM
-                <span class="MeetingCard_duration">30m</span>
-              </div>
-              <div class="MeetingCard_content">
-                <div class="MeetingCard_titleRow">
-                  <span class="MeetingCard_title">Forecast review with Priya Raman</span>
-                  <span class="editorial-briefing_expandHint">expand</span>
-                </div>
-                <div class="MeetingCard_subtitle">Priya Raman &middot; 1:1 &middot; 2 attendees</div>
-              </div>
-            </div>
-
-            <div class="editorial-briefing_expansionPanel editorial-briefing_expansionTintLarkspur" style="max-height:0">
-              <div class="editorial-briefing_expansionInner">
-                <p class="editorial-briefing_expansionDescription">Review close probabilities and commit owners before the weekly leadership readout.</p>
-
-                <div class="editorial-briefing_theRoom">
-                  <div class="editorial-briefing_theRoomLabel">The Room</div>
-                  <div class="editorial-briefing_theRoomGroup">
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Priya Raman</span>
-                    </div>
-                    <div class="editorial-briefing_theRoomPerson">
-                      <span class="editorial-briefing_theRoomName">Sam Chen</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="editorial-briefing_prepGrid">
-                  <div class="editorial-briefing_prepSection">
-                    <div class="editorial-briefing_prepLabel editorial-briefing_prepLabelDiscuss">Discuss</div>
-                    <div class="editorial-briefing_prepItem">
-                      <span class="editorial-briefing_prepDot editorial-briefing_prepDotTurmeric"></span>
-                      <span class="editorial-briefing_prepItemText">Reconcile Acme close probability with legal dependency</span>
-                    </div>
-                  </div>
-                  <div class="editorial-briefing_prepSection">
-                    <div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWatch">Watch</div>
-                    <div class="editorial-briefing_prepItem">
-                      <span class="editorial-briefing_prepDot editorial-briefing_prepDotTerracotta"></span>
-                      <span class="editorial-briefing_prepItemText">Northwind expansion timing should not move into committed until support owner is named</span>
-                    </div>
-                  </div>
-                </div>
-
-                <div class="editorial-briefing_meetingLinks">
-                  <a href="meeting.html" class="editorial-briefing_meetingLinkPrimary">Read full briefing &rarr;</a>
-                  <button class="editorial-briefing_expansionCollapse">Collapse</button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div>
-            <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_clickable editorial-briefing_briefingCardOverride editorial-briefing_scheduleRowExpandable">
-              <div class="MeetingCard_time">
-                4:00 PM
-                <span class="MeetingCard_duration">45m</span>
-              </div>
-              <div class="MeetingCard_content">
-                <div class="MeetingCard_titleRow">
-                  <span class="MeetingCard_title">Stark Industries executive readout</span>
-                  <span class="editorial-briefing_expandHint">expand</span>
-                </div>
-                <div class="MeetingCard_subtitle">
-                  Stark Industries &middot; Customer
-                  <span class="IntelligenceQualityBadge_root" title="Sparse — Last updated: 4/21/2026, 5:10:00 PM">
-                    <span class="IntelligenceQualityBadge_structuredDotShell">
-                      <span class="IntelligenceQualityBadge_dot IntelligenceQualityBadge_mutedDot" style="background:var(--color-text-tertiary)"></span>
-                    </span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            <div class="editorial-briefing_expansionPanel editorial-briefing_expansionTintTurmeric" style="max-height:0">
-              <div class="editorial-briefing_expansionInner">
-                <p class="editorial-briefing_expansionNarrative">No prep available yet.</p>
-
-                <div class="editorial-briefing_meetingLinks">
-                  <a href="meeting.html" class="editorial-briefing_meetingLinkPrimary">Read full briefing &rarr;</a>
-                  <button class="editorial-briefing_expansionCollapse">Collapse</button>
-                </div>
               </div>
             </div>
           </div>
@@ -358,144 +102,40 @@
     </div>
   </section>
 
+  <!-- Attention: fallback raw pending action path, no lifecycle or email intelligence rendered. -->
   <section class="editorial-briefing_prioritiesSection">
     <div class="editorial-briefing_marginGrid">
       <div class="editorial-briefing_marginLabel">Attention</div>
       <div class="editorial-briefing_marginContent">
         <div class="editorial-briefing_sectionRule"></div>
 
-        <div class="DailyBriefing_lifecycleGroup">
-          <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelToday">
-            Lifecycle
-          </div>
-          <div class="editorial-briefing_priorityItems">
-            <div class="editorial-briefing_priorityItem editorial-briefing_priorityItemToday editorial-briefing_priorityItemAccount">
-              <div class="editorial-briefing_priorityDot editorial-briefing_priorityDotTurmeric"></div>
-              <div class="editorial-briefing_priorityContent">
-                <a href="account.html" class="editorial-briefing_priorityTitle DailyBriefing_linkNoDecoration">Acme Corp: active → renewing</a>
-                <div class="editorial-briefing_priorityContext">Stage: negotiating &middot; Health 71 → 78 &middot; 86% confidence &middot; Apr 22</div>
-                <div class="editorial-briefing_priorityWhy">Procurement reopened security exhibit language and Jen Park asked for final MSA redlines before Friday.</div>
-                <div class="DailyBriefing_lifecycleButtonRow">
-                  <button type="button" class="DailyBriefing_lifecycleConfirmBtn">Looks good</button>
-                  <button type="button" class="DailyBriefing_lifecycleCorrectBtn">Fix something</button>
-                </div>
-              </div>
-            </div>
-
-            <div class="editorial-briefing_priorityItem editorial-briefing_priorityItemToday editorial-briefing_priorityItemAccount">
-              <div class="editorial-briefing_priorityDot editorial-briefing_priorityDotTurmeric"></div>
-              <div class="editorial-briefing_priorityContent">
-                <a href="account.html" class="editorial-briefing_priorityTitle DailyBriefing_linkNoDecoration">Northwind Traders: onboarding → active</a>
-                <div class="editorial-briefing_priorityContext">Stage: processed &middot; Health 64 → 72 &middot; 79% confidence &middot; Apr 22</div>
-                <div class="editorial-briefing_priorityWhy">Usage stabilized across the analytics group and Sara Wu requested the first Q2 Launch expansion agenda.</div>
-                <div class="DailyBriefing_lifecycleButtonRow">
-                  <button type="button" class="DailyBriefing_lifecycleConfirmBtn">Looks good</button>
-                  <button type="button" class="DailyBriefing_lifecycleCorrectBtn">Fix something</button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="DailyBriefing_actionsGroupSpaced">
+        <div class="DailyBriefing_actionsGroupFlush">
           <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelOverdue">
             Actions
           </div>
           <div class="editorial-briefing_priorityItems">
-            <a href="actions.html" class="editorial-briefing_priorityItem editorial-briefing_priorityItemOverdue editorial-briefing_priorityItemAccount DailyBriefing_linkNoDecoration">
+            <div class="editorial-briefing_priorityItem editorial-briefing_priorityItemOverdue editorial-briefing_priorityItemAccount">
               <button class="editorial-briefing_priorityCheck editorial-briefing_priorityCheckOverdue"></button>
               <div class="editorial-briefing_priorityContent">
-                <div class="editorial-briefing_priorityTitle">Send Acme Corp final MSA redlines to Jen Park</div>
-                <div class="editorial-briefing_priorityContext">Overdue &middot; Acme Corp &middot; ~20m</div>
-                <div class="editorial-briefing_priorityWhy">Blocks the renewal checkpoint and the legal review sequence.</div>
+                <a href="actions.html" class="editorial-briefing_priorityTitle DailyBriefing_linkNoDecoration">
+                  Send Acme Corp final MSA redlines to Jen Park
+                </a>
+                <div class="editorial-briefing_priorityContext">
+                  2 days overdue &middot; Acme Corp
+                </div>
               </div>
-            </a>
-
-            <a href="actions.html" class="editorial-briefing_priorityItem editorial-briefing_priorityItemToday editorial-briefing_priorityItemAccount DailyBriefing_linkNoDecoration">
-              <button class="editorial-briefing_priorityCheck"></button>
-              <div class="editorial-briefing_priorityContent">
-                <div class="editorial-briefing_priorityTitle">Prepare Northwind adoption and escalation notes</div>
-                <div class="editorial-briefing_priorityContext">Northwind Traders &middot; ~35m</div>
-              </div>
-            </a>
-
-            <a href="actions.html" class="editorial-briefing_priorityItem editorial-briefing_priorityItemOverdue editorial-briefing_priorityItemAccount DailyBriefing_linkNoDecoration">
-              <button class="editorial-briefing_priorityCheck editorial-briefing_priorityCheckOverdue"></button>
-              <div class="editorial-briefing_priorityContent">
-                <div class="editorial-briefing_priorityTitle">Build Stark stakeholder map from last quarter's notes</div>
-                <div class="editorial-briefing_priorityContext">Overdue &middot; Stark Industries &middot; ~25m</div>
-                <div class="editorial-briefing_priorityWhy">The readout has executive attendance but sparse account context.</div>
-              </div>
-            </a>
+            </div>
           </div>
-        </div>
-
-        <div class="DailyBriefing_agingNotice">
-          2 items aging toward auto-archive
-        </div>
-
-        <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelToday">
-          WORTH YOUR ATTENTION
-          <span class="DailyBriefing_emailSyncTimestamp">
-            as of 8:05 AM
-          </span>
-        </div>
-        <div class="editorial-briefing_priorityItems">
-          <a href="emails.html" class="editorial-briefing_priorityItem editorial-briefing_priorityItemEmailType DailyBriefing_linkNoDecoration">
-            <div class="editorial-briefing_priorityDot editorial-briefing_priorityDotTerracotta"></div>
-            <div class="editorial-briefing_priorityContent">
-              <div class="editorial-briefing_priorityTitle">Jen Park asked whether the Acme security exhibit can move before legal finishes MSA review.</div>
-              <div class="editorial-briefing_replyMeta DailyBriefing_emailMetaRow">
-                <span style="display:inline-flex; align-items:center; gap:3px; font-family:var(--font-sans); font-size:11px; font-weight:400; color:var(--color-entity-account); background:var(--color-spice-turmeric-8); padding:1px 7px; border-radius:3px; line-height:1.3; cursor:default; transition:background 0.15s ease;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:10px; height:10px; opacity:0.7; flex-shrink:0;"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>
-                  Acme Corp
-                </span>
-                <span>Jen Park</span>
-                <span class="editorial-briefing_emailScoreReason">security exhibit before renewal</span>
-              </div>
-            </div>
-          </a>
-
-          <a href="emails.html" class="editorial-briefing_priorityItem editorial-briefing_priorityItemEmailType DailyBriefing_linkNoDecoration">
-            <div class="editorial-briefing_priorityDot editorial-briefing_priorityDotTurmeric"></div>
-            <div class="editorial-briefing_priorityContent">
-              <div class="editorial-briefing_priorityTitle">Sara Wu sent Northwind's launch attendee list with two new executive stakeholders.</div>
-              <div class="editorial-briefing_replyMeta DailyBriefing_emailMetaRow">
-                <span style="display:inline-flex; align-items:center; gap:3px; font-family:var(--font-sans); font-size:11px; font-weight:400; color:var(--color-entity-account); background:var(--color-spice-turmeric-8); padding:1px 7px; border-radius:3px; line-height:1.3; cursor:default; transition:background 0.15s ease;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:10px; height:10px; opacity:0.7; flex-shrink:0;"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"></path><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"></path><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"></path><path d="M10 6h4"></path><path d="M10 10h4"></path><path d="M10 14h4"></path><path d="M10 18h4"></path></svg>
-                  Northwind Traders
-                </span>
-                <span>Sara Wu</span>
-                <span class="editorial-briefing_emailScoreReason">launch attendee list</span>
-              </div>
-            </div>
-          </a>
-
-          <a href="emails.html" class="editorial-briefing_priorityItem editorial-briefing_priorityItemEmailType DailyBriefing_linkNoDecoration">
-            <div class="editorial-briefing_priorityDot editorial-briefing_priorityDotTurmeric"></div>
-            <div class="editorial-briefing_priorityContent">
-              <div class="editorial-briefing_priorityTitle">Priya Raman wants Acme and Northwind commit changes reconciled before leadership review.</div>
-              <div class="editorial-briefing_replyMeta DailyBriefing_emailMetaRow">
-                <span style="display:inline-flex; align-items:center; gap:3px; font-family:var(--font-sans); font-size:11px; font-weight:400; color:var(--color-entity-person); background:var(--color-garden-larkspur-8); padding:1px 7px; border-radius:3px; line-height:1.3; cursor:default; transition:background 0.15s ease;">
-                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:10px; height:10px; opacity:0.7; flex-shrink:0;"><path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                  Priya Raman
-                </span>
-                <span class="editorial-briefing_emailScoreReason">forecast review dependency</span>
-              </div>
-            </div>
-          </a>
-        </div>
-
-        <div class="editorial-briefing_prioritiesViewAll">
-          <a href="actions.html" class="editorial-briefing_viewAllLink">View all 5 actions &rarr;</a>
-          <a href="emails.html" class="editorial-briefing_viewAllLink">View all emails &rarr;</a>
         </div>
       </div>
     </div>
   </section>
 
-  <div style="text-align:center; padding:72px 0 24px;">
-    <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+  <!-- Conditional correction dialog text retained for reference-fidelity text audit: Fix lifecycle change. No stage. -->
+
+  <!-- FinisMarker: enrichedAt is undefined, so no timestamp renders. -->
+  <div class="finis-marker">
+    <div class="finis-marker-marks">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
