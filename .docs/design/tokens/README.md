@@ -20,4 +20,4 @@ Tokens are the lowest-level design decisions. Color values, type ramps, spacing 
 
 - **Markdown specs:** this directory (canonical)
 - **Runtime CSS (current):** `src/styles/design-tokens.css`
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/tokens.css` (will move to `.docs/design/reference/_shared/tokens.css` per DS-XCUT-02)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/tokens.css` (will move to `.docs/design/reference/_shared/tokens.css` per DS-XCUT-02)

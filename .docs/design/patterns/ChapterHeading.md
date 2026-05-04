@@ -65,7 +65,7 @@ Production form:
 ## Source
 
 - **Code:** `src/components/editorial/ChapterHeading.tsx` + `ChapterHeading.module.css`
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.chapter`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.chapter`)
 
 ## Surfaces that consume it
 

@@ -60,7 +60,7 @@ Composes a highlighted quote container, serif quote text, and mono/sans attribut
 ## Source
 
 - **Code:** to be implemented in `src/components/meeting/EscalationQuote.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/meeting/current/after.html` lines 183-186
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 183-186
 
 ## Surfaces that consume it
 

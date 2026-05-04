@@ -62,7 +62,7 @@ DailyOS spacing scale, base 4px grid. Set by ADR-0073.
 ## Source
 
 - **Code:** `src/styles/design-tokens.css`
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/tokens.css`
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/tokens.css`
 
 ## History
 

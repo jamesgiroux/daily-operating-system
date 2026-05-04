@@ -57,7 +57,7 @@ type DataGapNoticeProps = {
 
 - **Spec:** new for Wave 2
 - **Substrate contract:** v1.4.0 source and enrichment metadata can expose missing source manifests, missing capture inputs, and verification needs
-- **Mockup origin:** `.docs/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
 - **Code:** to be implemented in `src/components/ui/DataGapNotice.tsx`
 
 ## Surfaces that consume it

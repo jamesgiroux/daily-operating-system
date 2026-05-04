@@ -59,7 +59,7 @@ Composes person name text, two `Pill` primitive instances, and a transition arro
 ## Source
 
 - **Code:** to be implemented in `src/components/meeting/RoleTransitionRow.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/meeting/current/after.html` lines 328-343
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 328-343
 
 ## Surfaces that consume it
 

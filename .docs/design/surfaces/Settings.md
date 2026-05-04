@@ -9,7 +9,7 @@
 **Canonical name:** `Settings`
 **Source files:**
 - `src/features/settings-ui/` (current implementation directory)
-- Settings redesign mockup: `.docs/mockups/claude-design-project/mockups/surfaces/settings/`
+- Settings redesign mockup: `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/`
 
 **Design system version introduced:** 0.3.0
 

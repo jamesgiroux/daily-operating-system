@@ -81,7 +81,7 @@ Composes:
 - **Spec:** v1.4.0 trust compiler consistency finding contract
 - **Related pattern:** `ClaimRow`
 - **Related pattern:** `ReceiptCallout`
-- **Mockup origin:** `.docs/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
 - **Note:** Wave 2 follow-on for v1.4.4
 
 ## Surfaces that consume it

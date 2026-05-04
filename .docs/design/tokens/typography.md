@@ -41,7 +41,7 @@ Used widely across editorial surfaces:
 ## Source
 
 - **Code:** `src/styles/design-tokens.css` (declarations); `src/styles/fonts.css` (`@font-face`)
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/{tokens,fonts}.css`
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/{tokens,fonts}.css`
 
 ## History
 

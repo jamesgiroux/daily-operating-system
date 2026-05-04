@@ -69,7 +69,7 @@ Production form:
 ## Source
 
 - **Code:** `src/components/layout/AtmosphereLayer.tsx` + `AtmosphereLayer.module.css`
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/chrome.css` (`.atmosphere`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/chrome.css` (`.atmosphere`)
 
 ## Surfaces that consume it
 

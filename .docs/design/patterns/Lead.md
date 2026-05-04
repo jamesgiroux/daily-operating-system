@@ -59,7 +59,7 @@ The `.sharp` inline highlight (subtle turmeric underline gradient) marks the mos
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.lead`, `.lead-sentence`, `.lead-eyebrow`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.lead`, `.lead-sentence`, `.lead-eyebrow`)
 - **Code:** to be implemented in `src/components/dashboard/Lead.tsx` (Wave 1 follow-on for v1.4.3)
 
 ## Surfaces that consume it

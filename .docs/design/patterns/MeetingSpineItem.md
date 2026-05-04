@@ -82,7 +82,7 @@ Footer changes per prep state:
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.meeting`, `.meeting-time`, `.meeting-eyebrow`, `.meeting-title`, `.meeting-context`, `.meeting-foot`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.meeting`, `.meeting-time`, `.meeting-eyebrow`, `.meeting-title`, `.meeting-context`, `.meeting-foot`)
 - **Code:** to be implemented in `src/components/dashboard/MeetingSpineItem.tsx`
 
 ## Surfaces that consume it

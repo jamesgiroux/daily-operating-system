@@ -15,7 +15,7 @@
 - `src/hooks/useDashboardData.ts`
 - `src/styles/editorial-briefing.module.css`
 - `src/components/onboarding/chapters/DashboardTour.tsx`
-- v1.4.3 redesign references `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html`
+- v1.4.3 redesign references `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html`
 
 **Design system version introduced:** 0.1.0
 

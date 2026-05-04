@@ -60,7 +60,7 @@ type VerificationStatusFlagProps = {
 
 - **Spec:** new for Wave 2
 - **Substrate contract:** v1.4.0 consistency trust metadata: `ok`, `corrected`, or `flagged`, with findings carrying code, severity, claim text, evidence text, and auto-fix state
-- **Mockup origin:** `.docs/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
 - **Code:** to be implemented in `src/components/ui/VerificationStatusFlag.tsx`
 
 ## Surfaces that consume it

@@ -64,7 +64,7 @@ Defined in `src/styles/design-tokens.css`:
 ## Source
 
 - **Code:** `src/styles/design-tokens.css`
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/tokens.css` + `chrome.css`
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/tokens.css` + `chrome.css`
 
 ## History
 

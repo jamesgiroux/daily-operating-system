@@ -52,7 +52,7 @@ GlanceCell presents one compact key/value stat for a masthead glance row. It giv
 
 ## Source
 
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/surfaces/settings/app.jsx` lines 57-74 (masthead glance section)
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/app.jsx` lines 57-74 (masthead glance section)
 - **Code:** to be implemented in `src/components/ui/GlanceCell.tsx`
 
 ## Surfaces that consume it

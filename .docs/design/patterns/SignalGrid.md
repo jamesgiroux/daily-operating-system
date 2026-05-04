@@ -67,7 +67,7 @@ Summarize the conversation's behavioral signals in a compact 2x2 grid so the use
 ## Source
 
 - **Code:** to be implemented in `src/components/meeting/SignalGrid.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/meeting/current/after.html:176-181`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:176-181`
 - **Reference render:** Meeting "Conversation" chapter.
 
 ## Surfaces that consume it

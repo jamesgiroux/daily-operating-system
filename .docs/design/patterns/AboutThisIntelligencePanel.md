@@ -80,7 +80,7 @@ Composes trust primitives in a short explanatory stack:
 
 - **Code:** `src/components/health/AboutIntelligence.tsx`
 - **Code:** `src/components/context/AboutThisDossier.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
 - **Note:** Wave 2 follow-on for v1.4.4
 
 ## Surfaces that consume it

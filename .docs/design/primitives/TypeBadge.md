@@ -56,7 +56,7 @@ Visually composes `Pill` (compact variant) + uppercase label + optional chevron 
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.type-badge`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.type-badge`)
 - **Existing src/ component:** `AccountTypeBadge` inside `src/components/account/AccountHero.tsx` (lines 113-166) — local dropdown reimplementation flagged in Audit 02. Wave 1 extracts as canonical primitive; AccountHero migrates to consume.
 
 ## Surfaces that consume it

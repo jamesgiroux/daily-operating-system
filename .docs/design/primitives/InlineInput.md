@@ -59,7 +59,7 @@ InlineInput lets users edit a short piece of text in place without leaving the s
 
 ## Source
 
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 18-29 (`InlineInput`)
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 18-29 (`InlineInput`)
 - **Code:** to be implemented in `src/components/ui/InlineInput.tsx`
 
 ## Surfaces that consume it

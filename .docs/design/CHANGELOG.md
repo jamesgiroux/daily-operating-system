@@ -27,7 +27,7 @@ Format:
 ### Added
 
 **Substrate promotion (DOS-358):**
-- `_shared/{tokens,primitives,chrome,fonts}.css + chrome.js` moved from `.docs/mockups/claude-design-project/mockups/surfaces/_shared/` to canonical `.docs/design/reference/_shared/`. Mockup `<link>` and `<script>` paths updated.
+- `_shared/{tokens,primitives,chrome,fonts}.css + chrome.js` moved from `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/` to canonical `.docs/design/reference/_shared/`. Mockup `<link>` and `<script>` paths updated.
 - `chrome.js` enhanced with `data-nav-base` support: when set on body, `FloatingNavIsland` renders nav items as anchor tags linking to peer surface files (`<base>/<id>.html`). When unset, items render as buttons (mockup default — backward compatible).
 
 **Reference renders (17 HTML files):**
@@ -134,7 +134,7 @@ Format:
 - `VERSION.md`, `CHANGELOG.md` — versioning ground truth
 - `reference/_shared/inspector.js` + `inspector.css` — opt-in hover inspector for reference renders
 - `data-ds-*` convention documented in `SYSTEM-MAP.md`
-- `.docs/mockups/` demoted to exploration-only with `current/` and `_archive/` subdirs
+- `.docs/_archive/mockups/` demoted to exploration-only with `current/` and `_archive/` subdirs
 
 ### Notes
 

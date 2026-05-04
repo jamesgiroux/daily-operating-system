@@ -57,7 +57,7 @@ type AsOfTimestampProps = {
 
 - **Spec:** new for Wave 2
 - **Substrate contract:** v1.4.0 `source_asof` timestamp rendered in neutral receipt and inspection contexts
-- **Mockup origin:** `.docs/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
 - **Code:** to be implemented in `src/components/ui/AsOfTimestamp.tsx`
 
 ## Surfaces that consume it

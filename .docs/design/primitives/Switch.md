@@ -56,7 +56,7 @@ Switch gives users a compact on/off control for a single binary setting. It is o
 
 ## Source
 
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 31-37 (`Switch`)
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 31-37 (`Switch`)
 - **Code:** to be implemented in `src/components/ui/Switch.tsx`
 
 ## Surfaces that consume it

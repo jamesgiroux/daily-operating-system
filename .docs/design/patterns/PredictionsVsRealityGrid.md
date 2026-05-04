@@ -72,7 +72,7 @@ Compare the meeting's actual outcome against the pre-meeting briefing so the use
 ## Source
 
 - **Code:** to be implemented in `src/components/meeting/PredictionsVsRealityGrid.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/meeting/current/after.html:116-162`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:116-162`
 - **Reference render:** Meeting "Predictions vs. Reality" chapter.
 
 ## Surfaces that consume it

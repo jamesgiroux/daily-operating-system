@@ -21,10 +21,10 @@ Every entry passes through three states:
 
 ```
 exploration         →    promotion       →    canonical          →    superseded
-.docs/mockups/           audit + decision      .docs/design/           _archive/
+.docs/_archive/mockups/           audit + decision      .docs/design/           _archive/
 ```
 
-- **Exploration** — Mockups, research, "what if" experiments. Lives in `.docs/mockups/`. Not load-bearing.
+- **Exploration** — Mockups, research, "what if" experiments. Lives in `.docs/_archive/mockups/`. Not load-bearing.
 - **Promotion** — A decision (audit, PR review) elevates an entry from exploration to canonical. Adds an `.md` file under the right tier.
 - **Canonical** — The contract. Every primitive/pattern/surface in this dir has a `.md` spec, a code reference (`src/...`), and where applicable a reference render.
 - **Superseded** — When something is replaced, it moves to `_archive/` with a note pointing at the replacement. We don't delete history.
@@ -90,10 +90,10 @@ Templates and entries declare their `data-ds-name` value as part of the spec —
 
 ## What lives outside this directory
 
-- `.docs/mockups/` — exploration only. Iteration projects from Claude Design / hand-drawn / variations. Never canonical.
+- `.docs/_archive/mockups/` — exploration only. Iteration projects from Claude Design / hand-drawn / variations. Never canonical.
 - `src/` — implementation. Consumes from this directory.
 - `.docs/plans/` — version briefs and acceptance criteria. References this directory, doesn't duplicate it.
 
 ## Status (2026-05-02)
 
-The structure exists. Population is in progress, driven by four audits (see `.docs/mockups/claude-design-project/_audits/`). Until those land, the existing top-level `.md` files in this directory (DESIGN-SYSTEM.md, COMPONENT-INVENTORY.md, etc.) remain the working reference. Post-audit, those move to `_archive/` and per-entry `.md` files become canonical.
+The structure exists. Population is in progress, driven by four audits (see `.docs/_archive/mockups/claude-design-project/_audits/`). Until those land, the existing top-level `.md` files in this directory (DESIGN-SYSTEM.md, COMPONENT-INVENTORY.md, etc.) remain the working reference. Post-audit, those move to `_archive/` and per-entry `.md` files become canonical.

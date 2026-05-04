@@ -85,7 +85,7 @@ CSS grid 200px aside | 1fr main; min-height 220px.
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.acc-card`, `.acc-aside`, `.acc-main`, `.acc-thread`, `.ent-acme`, `.ent-northwind`, `.ent-priya`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.acc-card`, `.acc-aside`, `.acc-main`, `.acc-thread`, `.ent-acme`, `.ent-northwind`, `.ent-priya`)
 - **Code:** to be implemented in `src/components/dashboard/EntityPortraitCard.tsx`
 
 ## Surfaces that consume it

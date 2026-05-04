@@ -105,7 +105,7 @@ Chapter-only mode: pass `chapters` without `onNavigate`.
 ## Source
 
 - **Code:** `src/components/layout/FloatingNavIsland.tsx` + `FloatingNavIsland.module.css` — production, canonical
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/chrome.css` (`.nav-island`) + `chrome.js` `buildNav()` — single-pill simplified version of the production component (does not implement local pill or chapters); for spec / mockup purposes the production component is canonical
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/chrome.css` (`.nav-island`) + `chrome.js` `buildNav()` — single-pill simplified version of the production component (does not implement local pill or chapters); for spec / mockup purposes the production component is canonical
 
 ## Surfaces that consume it
 

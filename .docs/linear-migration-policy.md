@@ -22,7 +22,6 @@ The goal is to keep git focused on durable knowledge while using Linear for live
 - ADRs / decisions
 - design system and implementation guidance
 - research
-- audits
 - runbooks
 - release history (`CHANGELOG.md`)
 - high-level product/design framing
@@ -33,7 +32,7 @@ If a markdown file is primarily tracking work rather than preserving knowledge, 
 
 ## Issue docs
 
-- `.docs/issues/**` is now considered legacy migration material.
+- `.docs/_archive/issues/**` is legacy migration material.
 - New issue tracking should happen in Linear.
 - Before deleting an issue doc, extract any durable knowledge into the right permanent home.
 
@@ -45,7 +44,7 @@ If a markdown file is primarily tracking work rather than preserving knowledge, 
 
 ## Backlog docs
 
-- `.docs/BACKLOG.md` is migration source only, not the future canonical backlog.
+- `.docs/_archive/BACKLOG.md` is migration source only, not the future canonical backlog.
 
 ## Durable knowledge extraction rule
 
@@ -60,6 +59,6 @@ If yes, extract that material before retiring the tracker doc.
 ## Practical outcome
 
 Over time:
-- `.docs/issues/` should disappear or shrink to a tiny migration note
+- `.docs/_archive/issues/` should remain historical reference only, or shrink once durable knowledge is extracted
 - `.docs/plans/` should disappear or shrink to an index that points to Linear
 - `.docs/` should become a cleaner internal knowledge base rather than a second project manager

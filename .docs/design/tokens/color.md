@@ -128,7 +128,7 @@ Full tint list lives in `src/styles/design-tokens.css`.
 ## Source
 
 - **Code:** `src/styles/design-tokens.css`
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/tokens.css` (will move to `.docs/design/reference/_shared/tokens.css` per DS-XCUT-02)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/tokens.css` (will move to `.docs/design/reference/_shared/tokens.css` per DS-XCUT-02)
 
 ## History
 

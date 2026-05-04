@@ -88,7 +88,7 @@ Receives context seeded by `ThreadMark` clicks (via global event or context prov
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.ask`, `.ask-bar`, `.ask-bar-input`, `.ask-bar-suggestions`, `.ask-bar-scope`, `.ask-chip`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.ask`, `.ask-bar`, `.ask-bar-input`, `.ask-bar-suggestions`, `.ask-bar-scope`, `.ask-chip`)
 - **Code:** to be implemented in `src/components/dashboard/AskAnythingDock.tsx` (Wave 1 follow-on)
 
 ## Surfaces that consume it

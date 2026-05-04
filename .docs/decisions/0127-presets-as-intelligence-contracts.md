@@ -1,9 +1,10 @@
-# ADR-0101 — Presets as Intelligence Contracts
+# ADR-0127 — Presets as Intelligence Contracts
 
 **Status:** Accepted
 **Date:** 2026-04-24
 **Authors:** James Giroux, Claude
 **Issues:** DOS-177, DOS-178, DOS-179, DOS-180, DOS-176
+**Note:** Renumbered from `adr-0101` during the 2026-05-03 ADR consolidation because `0101-service-boundary-enforcement.md` already owns ADR-0101 in `.docs/decisions/`.
 
 ---
 
