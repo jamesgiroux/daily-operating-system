@@ -53,12 +53,49 @@ pub enum ContaminationKind {
 /// so this module has no circular-dependency risk and can be unit-tested in
 /// isolation.
 const STOPLIST: &[&str] = &[
-    "open", "pilot", "plan", "monday", "notion", "mercury", "ramp",
-    "handshake", "bridge", "flow", "base", "peak", "note", "space",
-    "link", "next", "sync", "ready", "clear", "front", "core", "post",
-    "meet", "call", "talk", "chat", "dash", "pulse", "track", "task",
-    "work", "team", "loop", "zoom", "slack", "linear", "email",
-    "meeting", "customer", "account", "company", "product", "group",
+    "open",
+    "pilot",
+    "plan",
+    "monday",
+    "notion",
+    "mercury",
+    "ramp",
+    "handshake",
+    "bridge",
+    "flow",
+    "base",
+    "peak",
+    "note",
+    "space",
+    "link",
+    "next",
+    "sync",
+    "ready",
+    "clear",
+    "front",
+    "core",
+    "post",
+    "meet",
+    "call",
+    "talk",
+    "chat",
+    "dash",
+    "pulse",
+    "track",
+    "task",
+    "work",
+    "team",
+    "loop",
+    "zoom",
+    "slack",
+    "linear",
+    "email",
+    "meeting",
+    "customer",
+    "account",
+    "company",
+    "product",
+    "group",
 ];
 
 /// Scan `text` for references to accounts OTHER than `target_account_id`.
@@ -85,9 +122,7 @@ pub fn detect_cross_entity_contamination(
     let accounts = match db.get_all_accounts_with_domains(false) {
         Ok(a) => a,
         Err(e) => {
-            log::warn!(
-                "[DOS-287] contamination scan: failed to load accounts: {e}; failing open"
-            );
+            log::warn!("[DOS-287] contamination scan: failed to load accounts: {e}; failing open");
             return Vec::new();
         }
     };
@@ -281,7 +316,11 @@ impl ContaminationValidation {
     /// Read the policy from the `DAILYOS_CONTAMINATION_VALIDATION` env var.
     /// Unknown / unset values produce the default (`ShadowMode`).
     pub fn from_env() -> Self {
-        Self::from_env_value(std::env::var("DAILYOS_CONTAMINATION_VALIDATION").ok().as_deref())
+        Self::from_env_value(
+            std::env::var("DAILYOS_CONTAMINATION_VALIDATION")
+                .ok()
+                .as_deref(),
+        )
     }
 
     /// Pure decoder — parses a raw string (or absent) into a policy.
@@ -425,7 +464,8 @@ mod tests {
 
         let text =
             "The latest review mentions vip-test.com performance and acme.com customer success.";
-        let hits = detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
         let domains: Vec<&str> = hits
             .iter()
             .filter(|h| h.kind == ContaminationKind::Domain)
@@ -476,7 +516,8 @@ mod tests {
         insert_account(&db, "other", "Globex Corporation", &["globex.com"]);
 
         let text = "Met with Globex Corporation leadership today.";
-        let hits = detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
         assert!(hits
             .iter()
             .any(|h| h.kind == ContaminationKind::CompanyName
@@ -489,9 +530,9 @@ mod tests {
         insert_account(&db, "target", "Test Software", &["example.com"]);
         insert_account(&db, "other", "Globex Corporation", &["globex.com"]);
 
-        let text =
-            "Compared Test Software's approach with Globex Corporation's during the review.";
-        let hits = detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
+        let text = "Compared Test Software's approach with Globex Corporation's during the review.";
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
         // Globex should be suppressed — target name is also in the text.
         assert!(!hits
             .iter()
@@ -508,13 +549,16 @@ mod tests {
         insert_account(&db, "c", "Chat", &[]);
 
         let text = "Quick sync call via Abc Chat for Jane's team.";
-        let hits = detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
         // None of Abc / sync / Chat should trigger — short / stoplist.
-        assert!(!hits
-            .iter()
-            .any(|h| h.kind == ContaminationKind::CompanyName),
+        assert!(
+            !hits
+                .iter()
+                .any(|h| h.kind == ContaminationKind::CompanyName),
             "unexpected CompanyName hits: {:?}",
-            hits);
+            hits
+        );
     }
 
     #[test]
@@ -524,7 +568,8 @@ mod tests {
         insert_account(&db, "other", "Acme", &["ACME.com"]);
 
         let text = "Reference to ACME.COM in the notes.";
-        let hits = detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
         assert!(hits
             .iter()
             .any(|h| h.kind == ContaminationKind::Domain && h.foreign_token == "acme.com"));
@@ -549,7 +594,6 @@ mod tests {
                 discrepancy: None,
 
                 ..Default::default()
-
             }],
             recent_wins: vec![IntelWin {
                 text: "Saved $50K".into(),
@@ -600,7 +644,13 @@ mod tests {
     #[test]
     fn contamination_validation_strict_mode_parse() {
         // Strict rejection is opt-in via explicit env var values.
-        for raw in ["strict", "reject", "reject-on-hit", "reject_on_hit", "STRICT"] {
+        for raw in [
+            "strict",
+            "reject",
+            "reject-on-hit",
+            "reject_on_hit",
+            "STRICT",
+        ] {
             let p = ContaminationValidation::from_env_value(Some(raw));
             assert_eq!(p, ContaminationValidation::RejectOnHit, "raw={raw}");
             assert!(p.is_enabled());
@@ -626,7 +676,7 @@ mod tests {
     // Integration-style: hit on a cross-entity narrative field produces hits
     // that the write-site would reject. Uses `collect_narrative_text` + the
     // scanner directly so we exercise the same code path as the production
-    // integration point in `intel_queue::write_enrichment_results`.
+    // integration point in `intel_queue::compose_enrichment_intelligence`.
     #[test]
     fn rejects_write_when_output_contains_foreign_domain() {
         use crate::intelligence::io::*;
@@ -644,10 +694,9 @@ mod tests {
         let hits =
             detect_cross_entity_contamination(&narrative, "target", &["example.com".into()], &[], &db);
         assert!(!hits.is_empty(), "expected at least one contamination hit");
-        assert!(hits
-            .iter()
-            .any(|h| h.foreign_token == "vip-test.com" || h.foreign_token == "acme"
-                || h.kind == ContaminationKind::InfrastructureId));
+        assert!(hits.iter().any(|h| h.foreign_token == "vip-test.com"
+            || h.foreign_token == "acme"
+            || h.kind == ContaminationKind::InfrastructureId));
     }
 
     #[test]
@@ -676,7 +725,8 @@ mod tests {
         insert_account(&db, "acme", "Acme", &["acme.com"]);
 
         let text = "Reference to acme.com in the notes.";
-        let hits = detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
         let acme_hit = hits.iter().find(|h| h.foreign_token == "acme.com").unwrap();
         assert_eq!(acme_hit.source_account_id.as_deref(), Some("acme"));
     }
@@ -687,13 +737,8 @@ mod tests {
         let db = test_db();
         insert_account(&db, "target", "Globex", &["globex.com"]);
         let text = "Performance at vip.globex.com remains stable.";
-        let hits = detect_cross_entity_contamination(
-            text,
-            "target",
-            &["globex.com".into()],
-            &[],
-            &db,
-        );
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["globex.com".into()], &[], &db);
         assert!(
             hits.is_empty(),
             "expected zero hits for target's own subdomain, got: {:?}",
@@ -706,13 +751,8 @@ mod tests {
         let db = test_db();
         insert_account(&db, "target", "Globex", &["globex.com"]);
         let text = "Routed via internal.privacy.globex.com tonight.";
-        let hits = detect_cross_entity_contamination(
-            text,
-            "target",
-            &["globex.com".into()],
-            &[],
-            &db,
-        );
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["globex.com".into()], &[], &db);
         assert!(
             hits.is_empty(),
             "expected zero hits for multi-level target subdomain, got: {:?}",
@@ -725,13 +765,8 @@ mod tests {
         let db = test_db();
         insert_account(&db, "target", "Globex", &["globex.com"]);
         let text = "Performance at vip-othercustomer.com is degraded.";
-        let hits = detect_cross_entity_contamination(
-            text,
-            "target",
-            &["globex.com".into()],
-            &[],
-            &db,
-        );
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["globex.com".into()], &[], &db);
         let infra_hits: Vec<_> = hits
             .iter()
             .filter(|h| h.kind == ContaminationKind::InfrastructureId)
@@ -772,7 +807,8 @@ mod tests {
 
         // "acme.com" as a pure substring inside another word shouldn't match.
         let text = "See prefix-acme.com-suffix.foo.";
-        let hits = detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
+        let hits =
+            detect_cross_entity_contamination(text, "target", &["example.com".into()], &[], &db);
         // Domains use `.` / `-` as boundaries, so prefix- and -suffix both
         // make this a valid whole-word match. That's the desired behavior for
         // a domain (dots and hyphens are boundaries). The test documents it.

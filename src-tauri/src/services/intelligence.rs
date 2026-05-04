@@ -5,7 +5,8 @@ use std::path::Path;
 
 use crate::db::ActionDb;
 use crate::intel_queue::{
-    gather_enrichment_input, run_enrichment, write_enrichment_results, IntelPriority, IntelRequest,
+    compose_enrichment_intelligence, fenced_write_enrichment_intelligence, gather_enrichment_input,
+    run_enrichment, run_enrichment_post_commit_side_effects, IntelPriority, IntelRequest,
 };
 use crate::pty::AiUsageContext;
 use crate::services::context::ServiceContext;
@@ -728,22 +729,56 @@ pub async fn enrich_entity(
         }
     };
 
-    let final_intel = match write_enrichment_results(state, &input, &parsed.intel, Some(&ai_config))
-    {
-        Ok(intel) => intel,
-        Err(e) => {
-            emit_manual_refresh_failed_best_effort(
-                ctx,
-                app_handle,
-                &input.entity_id,
-                &input.entity_type,
-                &input.entity_name,
-                "write_results",
-                &e,
-            );
-            return Err(manual_refresh_error("write_results", &e));
-        }
-    };
+    let final_intel =
+        match compose_enrichment_intelligence(state, &input, &parsed.intel, Some(&ai_config)) {
+            Ok(intel) => intel,
+            Err(e) => {
+                emit_manual_refresh_failed_best_effort(
+                    ctx,
+                    app_handle,
+                    &input.entity_id,
+                    &input.entity_type,
+                    &input.entity_name,
+                    "write_results",
+                    &e,
+                );
+                return Err(manual_refresh_error("write_results", &e));
+            }
+        };
+    let db = ActionDb::open().map_err(|e| {
+        let e = format!("Failed to open DB: {e}");
+        emit_manual_refresh_failed_best_effort(
+            ctx,
+            app_handle,
+            &input.entity_id,
+            &input.entity_type,
+            &input.entity_name,
+            "write_results",
+            &e,
+        );
+        manual_refresh_error("write_results", &e)
+    })?;
+    if let Err(e) = upsert_assessment_from_enrichment(
+        ctx,
+        &db,
+        &state.signals.engine,
+        &input.entity_type,
+        &input.entity_id,
+        &final_intel,
+    ) {
+        emit_manual_refresh_failed_best_effort(
+            ctx,
+            app_handle,
+            &input.entity_id,
+            &input.entity_type,
+            &input.entity_name,
+            "write_results",
+            &e,
+        );
+        return Err(manual_refresh_error("write_results", &e));
+    }
+    fenced_write_enrichment_intelligence(&db, &input.entity_dir, &final_intel);
+    run_enrichment_post_commit_side_effects(state, &input, &db, &final_intel);
     if !parsed.inferred_relationships.is_empty() {
         let engine = state.signals.engine.clone();
         let entity_id_for_persist = input.entity_id.clone();
@@ -1351,7 +1386,7 @@ pub async fn update_stakeholders(
             )?;
 
             // Capture linked stakeholders with scoring-relevant roles before
-            // the vec is consumed by apply_stakeholders_update.
+            // the vec is consumed by the in-memory intelligence update.
             let scoring_roles: Vec<(String, String)> = if entity_type == "account" {
                 stakeholders
                     .iter()
@@ -1395,10 +1430,7 @@ pub async fn update_stakeholders(
                 crate::intelligence::apply_stakeholders_update_in_memory(existing, stakeholders)?
             } else {
                 let disk_intel = crate::intelligence::io::read_intelligence_json(&dir)?;
-                crate::intelligence::apply_stakeholders_update_in_memory(
-                    disk_intel,
-                    stakeholders,
-                )?
+                crate::intelligence::apply_stakeholders_update_in_memory(disk_intel, stakeholders)?
             };
 
             // DB-first ordering. The legacy file cache is written AFTER
@@ -2264,7 +2296,7 @@ pub fn get_all_recommended_actions(
 mod mutation_smoke_tests {
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
-    use crate::intelligence::io::IntelligenceJson;
+    use crate::intelligence::io::{write_intelligence_json, IntelligenceJson, StakeholderInsight};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::signals::propagation::PropagationEngine;
     use chrono::TimeZone;
@@ -2386,6 +2418,179 @@ mod mutation_smoke_tests {
         assert!(
             signal_count(&db, "acc-intel", "entity_intelligence_updated") > 0,
             "Expected entity_intelligence_updated signal"
+        );
+    }
+
+    #[test]
+    fn update_stakeholders_disk_db_atomicity_under_rollback() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-stakeholder-rollback");
+        db.upsert_account(&account).unwrap();
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let old_intel = IntelligenceJson {
+            entity_id: "acc-stakeholder-rollback".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T00:00:00Z".to_string(),
+            executive_assessment: Some("old stakeholder state".to_string()),
+            stakeholder_insights: vec![StakeholderInsight {
+                name: "Old Owner".to_string(),
+                role: Some("buyer".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&old_intel).unwrap();
+        write_intelligence_json(dir.path(), &old_intel).expect("seed disk intelligence");
+        let before_disk =
+            std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_stakeholders_updated_signal
+                 BEFORE INSERT ON signal_events
+                 WHEN NEW.signal_type = 'stakeholders_updated'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced stakeholders_updated rollback');
+                 END;",
+            )
+            .expect("install rollback trigger");
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let new_intel = crate::intelligence::apply_stakeholders_update_in_memory(
+            old_intel.clone(),
+            vec![StakeholderInsight {
+                name: "New Owner".to_string(),
+                role: Some("champion".to_string()),
+                ..Default::default()
+            }],
+        )
+        .expect("compose stakeholder update");
+
+        let result = db.with_transaction(|tx| {
+            tx.upsert_entity_intelligence(&new_intel)
+                .map_err(|e| e.to_string())?;
+            crate::services::signals::emit_and_propagate(
+                &ctx,
+                tx,
+                &engine,
+                "account",
+                "acc-stakeholder-rollback",
+                "stakeholders_updated",
+                "user_edit",
+                None,
+                0.9,
+            )
+            .map_err(|e| format!("signal emit failed: {e}"))?;
+            Ok(())
+        });
+        if result.is_ok() {
+            crate::intelligence::write_fence::post_commit_fenced_write(
+                &db,
+                dir.path(),
+                &new_intel,
+                "test stakeholder rollback",
+            );
+        }
+
+        assert!(
+            result.is_err_and(|err| err.contains("forced stakeholders_updated rollback")),
+            "transaction should surface forced rollback"
+        );
+        let after_disk = std::fs::read_to_string(dir.path().join("intelligence.json"))
+            .expect("read disk after rollback");
+        assert_eq!(
+            after_disk, before_disk,
+            "disk cache must not change when stakeholder DB transaction rolls back"
+        );
+        let persisted = db
+            .get_entity_intelligence("acc-stakeholder-rollback")
+            .expect("read DB intelligence")
+            .expect("existing DB intelligence");
+        assert_eq!(
+            persisted.executive_assessment.as_deref(),
+            Some("old stakeholder state"),
+            "DB intelligence must roll back to the pre-update state"
+        );
+    }
+
+    #[test]
+    fn enrich_entity_disk_db_atomicity_under_rollback() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-enrich-rollback");
+        db.upsert_account(&account).unwrap();
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let old_intel = IntelligenceJson {
+            entity_id: "acc-enrich-rollback".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T00:00:00Z".to_string(),
+            executive_assessment: Some("old enrichment state".to_string()),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&old_intel).unwrap();
+        write_intelligence_json(dir.path(), &old_intel).expect("seed disk intelligence");
+        let before_disk =
+            std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_entity_intelligence_updated_signal
+                 BEFORE INSERT ON signal_events
+                 WHEN NEW.signal_type = 'entity_intelligence_updated'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced entity_intelligence_updated rollback');
+                 END;",
+            )
+            .expect("install rollback trigger");
+
+        let new_intel = IntelligenceJson {
+            entity_id: "acc-enrich-rollback".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T01:00:00Z".to_string(),
+            executive_assessment: Some("new enrichment state".to_string()),
+            ..Default::default()
+        };
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let result = super::upsert_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &engine,
+            "account",
+            "acc-enrich-rollback",
+            &new_intel,
+        );
+        if result.is_ok() {
+            crate::intel_queue::fenced_write_enrichment_intelligence(&db, dir.path(), &new_intel);
+        }
+
+        assert!(
+            result.is_err_and(|err| err.contains("forced entity_intelligence_updated rollback")),
+            "enrichment persistence should surface forced rollback"
+        );
+        let after_disk = std::fs::read_to_string(dir.path().join("intelligence.json"))
+            .expect("read disk after rollback");
+        assert_eq!(
+            after_disk, before_disk,
+            "disk cache must not change when enrichment DB transaction rolls back"
+        );
+        let persisted = db
+            .get_entity_intelligence("acc-enrich-rollback")
+            .expect("read DB intelligence")
+            .expect("existing DB intelligence");
+        assert_eq!(
+            persisted.executive_assessment.as_deref(),
+            Some("old enrichment state"),
+            "DB intelligence must roll back to the pre-enrichment state"
         );
     }
 
@@ -2865,7 +3070,10 @@ mod live_acceptance_tests {
     use super::enrich_entity;
     use crate::db::data_lifecycle::{purge_source, DataSource};
     use crate::db::{ActionDb, DbPerson};
-    use crate::intel_queue::{write_enrichment_results, EnrichmentInput};
+    use crate::intel_queue::{
+        compose_enrichment_intelligence, fenced_write_enrichment_intelligence,
+        run_enrichment_post_commit_side_effects, EnrichmentInput,
+    };
     use crate::intelligence::{
         write_intelligence_json, AccountHealth, ConsistencyStatus, DimensionScore, HealthSource,
         HealthTrend, IntelRisk, IntelligenceJson, RelationshipDimensions,
@@ -3177,8 +3385,21 @@ mod live_acceptance_tests {
             active_preset: None,
         };
 
-        let first = write_enrichment_results(&state, &input, &contradictory, None)
-            .expect("first write_enrichment_results failed");
+        let first = compose_enrichment_intelligence(&state, &input, &contradictory, None)
+            .expect("first compose_enrichment_intelligence failed");
+        let db = ActionDb::open().expect("open DB for first enrichment persistence");
+        let ctx = state.live_service_context();
+        super::upsert_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &state.signals.engine,
+            &input.entity_type,
+            &input.entity_id,
+            &first,
+        )
+        .expect("first enrichment DB persistence failed");
+        fenced_write_enrichment_intelligence(&db, &input.entity_dir, &first);
+        run_enrichment_post_commit_side_effects(&state, &input, &db, &first);
 
         let first_assessment = first
             .executive_assessment
@@ -3209,8 +3430,21 @@ mod live_acceptance_tests {
             executive_assessment: Some("Fresh validated summary from later refresh.".to_string()),
             ..Default::default()
         };
-        let second = write_enrichment_results(&state, &input, &clean, None)
-            .expect("second write_enrichment_results failed");
+        let second = compose_enrichment_intelligence(&state, &input, &clean, None)
+            .expect("second compose_enrichment_intelligence failed");
+        let db = ActionDb::open().expect("open DB for second enrichment persistence");
+        let ctx = state.live_service_context();
+        super::upsert_assessment_from_enrichment(
+            &ctx,
+            &db,
+            &state.signals.engine,
+            &input.entity_type,
+            &input.entity_id,
+            &second,
+        )
+        .expect("second enrichment DB persistence failed");
+        fenced_write_enrichment_intelligence(&db, &input.entity_dir, &second);
+        run_enrichment_post_commit_side_effects(&state, &input, &db, &second);
 
         assert!(
             second

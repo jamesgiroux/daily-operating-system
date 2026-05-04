@@ -776,10 +776,8 @@ impl GleanIntelligenceProvider {
         entity_name: &str,
         disambiguators: Option<&super::prompts::EntityDisambiguators>,
     ) -> Result<super::glean_leading_signals::HealthOutlookSignals, String> {
-        let prompt = super::glean_leading_signals::build_leading_signals_prompt(
-            entity_name,
-            disambiguators,
-        );
+        let prompt =
+            super::glean_leading_signals::build_leading_signals_prompt(entity_name, disambiguators);
         let client = GleanMcpClient::new(&self.endpoint);
 
         let response_text =
@@ -847,7 +845,12 @@ Cite sources."
         )
         .await
         .map_err(|_| format!("Glean peer-benchmark chat timed out for {}", account_name))?
-        .map_err(|e| format!("Glean peer-benchmark chat failed for {}: {}", account_name, e))?;
+        .map_err(|e| {
+            format!(
+                "Glean peer-benchmark chat failed for {}: {}",
+                account_name, e
+            )
+        })?;
 
         log::info!(
             "[DOS-204] Glean peer-benchmark response for {} — {} chars, {} sources",
@@ -1595,7 +1598,7 @@ pub fn reconcile_enrichment(
 
     // stakeholder_insights is now write-only context in intelligence.json.
     // Real stakeholder protection is structural (data_source columns on account_stakeholders).
-    // Always take the fresh AI output — intel_queue::write_enrichment_results routes
+    // Always take the fresh AI output — intel_queue::compose_enrichment_intelligence routes
     // insights to DB columns or stakeholder_suggestions table.
     result.stakeholder_insights = new_output.stakeholder_insights;
 
@@ -1938,8 +1941,8 @@ pub fn extract_products_from_response(
 #[allow(clippy::items_after_test_module)]
 #[cfg(test)]
 mod provider_trait_tests {
-    use super::*;
     use super::super::provider::{IntelligenceProvider, ProviderKind};
+    use super::*;
 
     fn fixture() -> GleanIntelligenceProvider {
         GleanIntelligenceProvider::new("https://example.invalid/glean")
@@ -1956,7 +1959,10 @@ mod provider_trait_tests {
         let p = fixture();
         assert_eq!(p.provider_kind(), ProviderKind::Other("glean"));
         assert_eq!(p.current_model(ModelTier::Synthesis).as_str(), "glean-chat");
-        assert_eq!(p.current_model(ModelTier::Extraction).as_str(), "glean-chat");
+        assert_eq!(
+            p.current_model(ModelTier::Extraction).as_str(),
+            "glean-chat"
+        );
     }
 }
 
