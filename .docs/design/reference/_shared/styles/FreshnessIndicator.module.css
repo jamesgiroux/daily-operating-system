@@ -1,0 +1,52 @@
+.FreshnessIndicator_root {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 var(--space-xs);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.FreshnessIndicator_inline {
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-desk-charcoal-4);
+  white-space: nowrap;
+}
+
+.FreshnessIndicator_strip {
+  display: flex;
+  margin: 6px 0 32px;
+  text-transform: uppercase;
+}
+
+.FreshnessIndicator_part {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.FreshnessIndicator_separator {
+  color: var(--color-text-tertiary);
+}
+
+.FreshnessIndicator_text {
+  color: inherit;
+}
+
+.FreshnessIndicator_timeText {
+  color: inherit;
+}
+
+.FreshnessIndicator_root[data-staleness="aging"] .FreshnessIndicator_timeText {
+  color: var(--color-text-quaternary);
+}
+
+.FreshnessIndicator_root[data-staleness="stale"] .FreshnessIndicator_timeText,
+.FreshnessIndicator_part[data-stale="true"] .FreshnessIndicator_text {
+  color: var(--color-spice-saffron);
+}

@@ -1,0 +1,28 @@
+.VerificationStatusFlag_flag {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.VerificationStatusFlag_flag[data-status="corrected"] {
+  color: var(--color-spice-saffron);
+}
+
+.VerificationStatusFlag_flag[data-status="flagged"] {
+  color: var(--color-trust-needs-verification);
+}
+
+.VerificationStatusFlag_icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  stroke-width: 2;
+}

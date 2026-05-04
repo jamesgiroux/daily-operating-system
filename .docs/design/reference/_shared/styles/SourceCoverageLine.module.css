@@ -1,0 +1,24 @@
+.SourceCoverageLine_line {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  width: fit-content;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.SourceCoverageLine_line[data-variant="empty"] {
+  color: var(--color-text-quaternary);
+}
+
+.SourceCoverageLine_separator {
+  color: var(--color-text-quaternary);
+}
+
+.SourceCoverageLine_stale {
+  color: var(--color-spice-saffron);
+}

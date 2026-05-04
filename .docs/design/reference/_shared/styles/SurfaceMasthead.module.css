@@ -1,0 +1,133 @@
+.SurfaceMasthead_masthead {
+  --surface-masthead-width: var(--page-content-width-standard);
+  --surface-masthead-rule-color: var(--color-desk-charcoal);
+  --surface-masthead-rule-height: 2px;
+
+  max-width: var(--surface-masthead-width);
+  margin-right: auto;
+  margin-left: auto;
+}
+
+.SurfaceMasthead_widthStandard {
+  --surface-masthead-width: var(--page-content-width-standard);
+}
+
+.SurfaceMasthead_widthReading {
+  --surface-masthead-width: var(--page-content-width-reading);
+}
+
+.SurfaceMasthead_compact {
+  padding-top: var(--space-4xl);
+  padding-bottom: var(--space-lg);
+}
+
+.SurfaceMasthead_default {
+  padding-top: var(--space-5xl);
+  padding-bottom: 40px;
+}
+
+.SurfaceMasthead_rich {
+  padding-top: var(--space-5xl);
+  padding-bottom: var(--space-2xl);
+}
+
+.SurfaceMasthead_topRow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: start;
+  gap: var(--space-lg);
+}
+
+.SurfaceMasthead_titleBlock {
+  min-width: 0;
+}
+
+.SurfaceMasthead_eyebrow {
+  margin: 0 0 var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.SurfaceMasthead_title {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-weight: 400;
+  line-height: 1.08;
+  letter-spacing: 0;
+  color: var(--color-text-primary);
+}
+
+.SurfaceMasthead_compact .SurfaceMasthead_title {
+  font-size: 28px;
+}
+
+.SurfaceMasthead_default .SurfaceMasthead_title {
+  font-size: 42px;
+}
+
+.SurfaceMasthead_rich .SurfaceMasthead_title {
+  max-width: 780px;
+  font-size: 76px;
+  line-height: 1.06;
+}
+
+.SurfaceMasthead_lede {
+  max-width: 760px;
+  margin: var(--space-sm) 0 0;
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-weight: 300;
+  line-height: 1.55;
+  letter-spacing: 0;
+  color: var(--color-text-secondary);
+}
+
+.SurfaceMasthead_compact .SurfaceMasthead_lede {
+  display: none;
+}
+
+.SurfaceMasthead_accessory {
+  min-width: 0;
+  justify-self: end;
+}
+
+.SurfaceMasthead_rule {
+  height: var(--surface-masthead-rule-height);
+  margin-top: var(--space-md);
+  background: var(--surface-masthead-rule-color);
+}
+
+.SurfaceMasthead_glance {
+  margin-top: var(--space-md);
+}
+
+@media (max-width: 1000px) {
+  .SurfaceMasthead_rich .SurfaceMasthead_title {
+    font-size: 60px;
+  }
+}
+
+@media (max-width: 820px) {
+  .SurfaceMasthead_topRow {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .SurfaceMasthead_accessory {
+    justify-self: start;
+  }
+
+  .SurfaceMasthead_rich .SurfaceMasthead_title {
+    font-size: 48px;
+  }
+}
+
+@media (max-width: 768px) {
+  .SurfaceMasthead_default .SurfaceMasthead_title {
+    font-size: 38px;
+  }
+}

@@ -1,0 +1,241 @@
+.EntityPortraitCard_card {
+  position: relative;
+  display: grid;
+  grid-template-columns: 200px minmax(0, 1fr);
+  min-height: 220px;
+  overflow: hidden;
+  border: 1px solid var(--color-rule-medium, var(--color-rule-heavy));
+  border-radius: 2px;
+  background: var(--entity-portrait-bg, var(--color-paper-warm-white));
+}
+
+.EntityPortraitCard_aside {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: var(--space-lg);
+  padding: 34px 24px 24px;
+  border-right: 1px solid var(--color-rule-medium, var(--color-rule-heavy));
+  background:
+    linear-gradient(180deg, var(--entity-portrait-accent) 0 6px, var(--entity-portrait-aside-bg) 6px),
+    var(--entity-portrait-aside-bg);
+}
+
+.EntityPortraitCard_stateLabel {
+  margin-bottom: var(--space-md);
+  color: var(--entity-portrait-accent);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.EntityPortraitCard_name {
+  margin: 0 0 14px;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 30px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.05;
+  text-wrap: balance;
+}
+
+.EntityPortraitCard_asideStats {
+  display: grid;
+  gap: 2px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 1.7;
+}
+
+.EntityPortraitCard_statRow {
+  display: flex;
+  justify-content: space-between;
+  gap: var(--space-sm);
+}
+
+.EntityPortraitCard_statLabel {
+  min-width: 0;
+  margin: 0;
+}
+
+.EntityPortraitCard_statValue {
+  color: var(--color-text-primary);
+  font-weight: 500;
+  margin: 0;
+  text-align: right;
+}
+
+.EntityPortraitCard_directionUp {
+  color: var(--color-garden-rosemary);
+}
+
+.EntityPortraitCard_directionDown {
+  color: var(--color-spice-terracotta);
+}
+
+.EntityPortraitCard_main {
+  position: relative;
+  min-width: 0;
+  padding: 28px 32px 26px;
+}
+
+.EntityPortraitCard_glyph {
+  position: absolute;
+  top: 16px;
+  right: 18px;
+  color: var(--entity-portrait-accent);
+  font-family: var(--font-serif);
+  font-size: 110px;
+  font-style: italic;
+  font-weight: 300;
+  line-height: 1;
+  opacity: 0.1;
+  pointer-events: none;
+  user-select: none;
+}
+
+.EntityPortraitCard_lede {
+  position: relative;
+  z-index: 1;
+  max-width: 540px;
+  margin: 0 0 22px;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.42;
+  text-wrap: pretty;
+}
+
+.EntityPortraitCard_thread {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin: 0;
+  padding: 14px 0 0;
+  border-top: 1px solid var(--color-rule-light);
+  list-style: none;
+}
+
+.EntityPortraitCard_threadItem {
+  display: grid;
+  grid-template-columns: 14px 56px minmax(0, 1fr) auto;
+  gap: 0 12px;
+  align-items: baseline;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 14.5px;
+  letter-spacing: 0;
+  line-height: 1.4;
+}
+
+.EntityPortraitCard_typeDot {
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-top: 7px;
+  border-radius: 50%;
+}
+
+.EntityPortraitCard_eventMeeting {
+  background: var(--color-spice-turmeric);
+}
+
+.EntityPortraitCard_eventAction {
+  background: var(--color-spice-terracotta);
+}
+
+.EntityPortraitCard_eventMail {
+  background: var(--color-garden-larkspur);
+}
+
+.EntityPortraitCard_eventLifecycle {
+  background: var(--color-garden-rosemary);
+}
+
+.EntityPortraitCard_when {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  text-align: right;
+  text-transform: uppercase;
+}
+
+.EntityPortraitCard_overdue .EntityPortraitCard_when {
+  color: var(--color-spice-terracotta);
+  font-weight: 700;
+}
+
+.EntityPortraitCard_what {
+  min-width: 0;
+}
+
+.EntityPortraitCard_what em {
+  color: var(--color-text-secondary);
+  font-style: normal;
+}
+
+.EntityPortraitCard_accentTurmeric {
+  --entity-portrait-accent: var(--color-spice-turmeric);
+  --entity-portrait-bg: linear-gradient(180deg, var(--color-spice-turmeric-7) 0%, var(--color-paper-warm-white) 50%);
+  --entity-portrait-aside-bg: var(--color-spice-turmeric-7);
+}
+
+.EntityPortraitCard_accentTerracotta {
+  --entity-portrait-accent: var(--color-spice-terracotta);
+  --entity-portrait-bg: linear-gradient(180deg, var(--color-spice-terracotta-8) 0%, var(--color-paper-warm-white) 50%);
+  --entity-portrait-aside-bg: var(--color-spice-terracotta-8);
+}
+
+.EntityPortraitCard_accentOlive {
+  --entity-portrait-accent: var(--color-garden-olive);
+  --entity-portrait-bg: linear-gradient(180deg, var(--color-garden-olive-8) 0%, var(--color-paper-warm-white) 55%);
+  --entity-portrait-aside-bg: var(--color-garden-olive-8);
+}
+
+.EntityPortraitCard_accentLarkspur {
+  --entity-portrait-accent: var(--color-garden-larkspur);
+  --entity-portrait-bg: linear-gradient(180deg, var(--color-garden-larkspur-12) 0%, var(--color-paper-warm-white) 60%);
+  --entity-portrait-aside-bg: var(--color-garden-larkspur-12);
+}
+
+.EntityPortraitCard_accentRosemary {
+  --entity-portrait-accent: var(--color-garden-rosemary);
+  --entity-portrait-bg: linear-gradient(180deg, var(--color-garden-rosemary-12) 0%, var(--color-paper-warm-white) 55%);
+  --entity-portrait-aside-bg: var(--color-garden-rosemary-12);
+}
+
+@media (max-width: 720px) {
+  .EntityPortraitCard_card {
+    grid-template-columns: 1fr;
+  }
+
+  .EntityPortraitCard_aside {
+    border-right: none;
+    border-bottom: 1px solid var(--color-rule-medium, var(--color-rule-heavy));
+  }
+
+  .EntityPortraitCard_main {
+    padding: 24px;
+  }
+
+  .EntityPortraitCard_threadItem {
+    grid-template-columns: 14px 52px minmax(0, 1fr);
+  }
+
+  .EntityPortraitCard_threadItem > :last-child {
+    grid-column: 3;
+  }
+}

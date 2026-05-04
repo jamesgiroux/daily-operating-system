@@ -170,18 +170,6 @@
   max-width: 640px;
 }
 
-.editorial-briefing_nowPillInline {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  background: var(--color-spice-turmeric-15);
-  color: var(--color-spice-turmeric);
-  margin-left: 8px;
-}
-
 /* =============================================================================
    THE ROOM — Grouped attendee display (their side / our side)
    ============================================================================= */
@@ -697,30 +685,6 @@
   font-weight: 400;
   color: var(--color-text-primary);
   line-height: 1.35;
-}
-
-.editorial-briefing_nowPill {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  background: var(--color-spice-turmeric-18);
-  color: var(--color-spice-turmeric);
-  flex-shrink: 0;
-}
-
-.editorial-briefing_upNextPill {
-  font-family: var(--font-mono);
-  font-size: 9px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding: 2px 8px;
-  background: var(--color-garden-sage-15);
-  color: var(--color-garden-sage);
-  flex-shrink: 0;
 }
 
 .editorial-briefing_scheduleSubtitle {
