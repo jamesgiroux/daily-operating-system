@@ -1,0 +1,131 @@
+{
+  "_comment": "Maps each reference HTML to its canonical TSX source(s). Used by audit-reference.py to verify HTML mirrors TSX. Paths are relative to repo root. The 'primary' field is the main TSX/component the HTML mirrors; 'composes' lists imported sub-components that should also be reflected in the HTML.",
+  "surfaces": [
+    {
+      "html": ".docs/design/reference/surfaces/briefing.html",
+      "primary": "src/components/dashboard/DailyBriefing.tsx",
+      "module": "src/components/dashboard/DailyBriefing.module.css",
+      "module_prefix": "DailyBriefing"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/account.html",
+      "primary": "src/pages/AccountDetailEditorial.tsx",
+      "module": "src/pages/AccountDetailPage.module.css",
+      "module_prefix": "AccountDetailPage"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/accounts.html",
+      "primary": "src/pages/AccountsPage.tsx",
+      "module": "src/pages/AccountsPage.module.css",
+      "module_prefix": "AccountsPage"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/actions.html",
+      "primary": "src/pages/ActionsPage.tsx",
+      "module": "src/pages/ActionsPage.module.css",
+      "module_prefix": "ActionsPage"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/inbox.html",
+      "primary": "src/pages/InboxPage.tsx",
+      "module": "src/pages/InboxPage.module.css",
+      "module_prefix": "InboxPage"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/me.html",
+      "primary": "src/pages/MePage.tsx",
+      "module": "src/pages/MePage.module.css",
+      "module_prefix": "MePage"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/meeting.html",
+      "primary": "src/pages/MeetingDetailPage.tsx",
+      "module": null,
+      "module_prefix": null
+    },
+    {
+      "html": ".docs/design/reference/surfaces/people.html",
+      "primary": "src/pages/PeoplePage.tsx",
+      "module": null,
+      "module_prefix": null
+    },
+    {
+      "html": ".docs/design/reference/surfaces/person.html",
+      "primary": "src/pages/PersonDetailEditorial.tsx",
+      "module": "src/pages/PersonDetailEditorial.module.css",
+      "module_prefix": "PersonDetailEditorial"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/project.html",
+      "primary": "src/pages/ProjectDetailEditorial.tsx",
+      "module": "src/pages/ProjectDetailEditorial.module.css",
+      "module_prefix": "ProjectDetailEditorial"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/projects.html",
+      "primary": "src/pages/ProjectsPage.tsx",
+      "module": null,
+      "module_prefix": null
+    },
+    {
+      "html": ".docs/design/reference/surfaces/settings.html",
+      "primary": "src/pages/SettingsPage.tsx",
+      "module": "src/pages/SettingsPage.module.css",
+      "module_prefix": "SettingsPage"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/week.html",
+      "primary": "src/pages/WeekPage.tsx",
+      "module": "src/pages/WeekPage.module.css",
+      "module_prefix": "WeekPage"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/onboarding/welcome.html",
+      "primary": "src/components/onboarding/chapters/Welcome.tsx",
+      "module": "src/components/onboarding/onboarding.module.css",
+      "module_prefix": "onboarding"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/onboarding/google.html",
+      "primary": "src/components/onboarding/chapters/GoogleConnect.tsx",
+      "module": "src/components/onboarding/onboarding.module.css",
+      "module_prefix": "onboarding"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/onboarding/claude-code.html",
+      "primary": "src/components/onboarding/chapters/ClaudeCode.tsx",
+      "module": "src/components/onboarding/onboarding.module.css",
+      "module_prefix": "onboarding"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/onboarding/glean.html",
+      "primary": "src/components/onboarding/chapters/GleanConnect.tsx",
+      "module": "src/components/onboarding/onboarding.module.css",
+      "module_prefix": "onboarding"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/onboarding/youcard.html",
+      "primary": "src/components/onboarding/chapters/YouCardStep.tsx",
+      "module": "src/components/onboarding/onboarding.module.css",
+      "module_prefix": "onboarding"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/onboarding/first-account.html",
+      "primary": "src/components/onboarding/chapters/FirstAccountStep.tsx",
+      "module": "src/components/onboarding/onboarding.module.css",
+      "module_prefix": "onboarding"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/onboarding/role.html",
+      "primary": "src/components/onboarding/chapters/EntityMode.tsx",
+      "module": "src/components/onboarding/onboarding.module.css",
+      "module_prefix": "onboarding"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/onboarding/prime.html",
+      "primary": "src/components/onboarding/chapters/PrimeBriefing.tsx",
+      "module": "src/components/onboarding/onboarding.module.css",
+      "module_prefix": "onboarding"
+    }
+  ]
+}
