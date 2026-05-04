@@ -6,6 +6,9 @@ CLAUDE.md
 daybreak/
 .context/
 
+# Codex agent logs (ephemeral debug output)
+.docs/plans/**/_prompts/_logs/
+
 # Credentials and secrets
 .config/
 *.credentials
