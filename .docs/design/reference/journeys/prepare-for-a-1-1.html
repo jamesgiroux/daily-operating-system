@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Prepare for a 1:1 · Journey</title>
+
+<link rel="stylesheet" href="../_shared/fonts.css">
+<link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+
+<style>
+  /* Lean journey template — surfaces in sequence, light annotations only. */
+
+  .jp-cover {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-2xl);
+    border-bottom: 1px solid var(--color-rule-heavy);
+  }
+  .jp-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-md);
+  }
+  .jp-eyebrow a { color: inherit; border-bottom: 1px solid currentColor; text-decoration: none; }
+  .jp-title {
+    font-family: var(--font-serif);
+    font-size: 56px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.04;
+    margin: 0;
+  }
+  .jp-frame {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 18px;
+    color: var(--color-text-secondary);
+    max-width: 640px;
+    margin: var(--space-md) 0 0;
+    line-height: 1.5;
+  }
+  .jp-meta {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-lg);
+    display: flex;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+  }
+
+  /* Step list — compact rows: thumbnail | step meta */
+  .jp-steps {
+    padding: var(--space-2xl) 0;
+  }
+  .jp-step {
+    display: grid;
+    grid-template-columns: 280px 1fr;
+    gap: var(--space-xl);
+    padding: var(--space-lg) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+    align-items: center;
+  }
+  .jp-step:last-of-type { border-bottom: none; }
+
+  .jp-step-thumb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 16 / 10;
+    background: var(--color-paper-cream);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-sm);
+    overflow: hidden;
+    transition: border-color var(--transition-normal);
+  }
+  .jp-step-thumb:hover { border-color: var(--color-rule-heavy); }
+  .jp-step-thumb iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 800px;
+    transform: scale(0.22);
+    transform-origin: 0 0;
+    pointer-events: none;
+    border: 0;
+  }
+  .jp-step-thumb a {
+    position: absolute;
+    inset: 0;
+    z-index: 2;
+  }
+
+  .jp-step-meta {
+    display: grid;
+    grid-template-columns: 40px 1fr;
+    gap: var(--space-md);
+    align-items: baseline;
+  }
+  .jp-step-num {
+    font-family: var(--font-mono);
+    font-size: 24px;
+    font-weight: 300;
+    color: var(--color-text-tertiary);
+    line-height: 1;
+    text-align: right;
+  }
+  .jp-step-info { min-width: 0; }
+  .jp-step-name {
+    font-family: var(--font-serif);
+    font-size: 24px;
+    font-weight: 400;
+    color: var(--color-text-primary);
+    margin: 0;
+    line-height: 1.2;
+  }
+  .jp-step-name a { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; transition: border-color var(--transition-normal); }
+  .jp-step-name a:hover { border-bottom-color: var(--color-rule-heavy); }
+  .jp-step-route {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 4px 0 0;
+  }
+  .jp-step-note {
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    margin: var(--space-sm) 0 0;
+    max-width: 520px;
+  }
+
+  @media (max-width: 760px) {
+    .jp-step { grid-template-columns: 1fr; gap: var(--space-md); }
+    .jp-title { font-size: 40px; }
+    .jp-step-thumb { max-width: 360px; }
+  }
+</style>
+</head>
+<body
+  data-folio-label="Journey"
+  data-folio-crumbs="Reference > Journeys > Prepare for a 1:1"
+  data-tint="eucalyptus"
+  data-active-page="today">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <section class="jp-cover">
+    <p class="jp-eyebrow"><a href="index.html">← Journeys</a></p>
+    <h1 class="jp-title">Prepare for a 1:1</h1>
+    <p class="jp-frame">
+      Open the person, jump to their next 1:1 briefing.
+    </p>
+    <div class="jp-meta">
+      <span>2 surfaces</span>
+      <span>~2 minutes</span>
+      <span>JTBD: prepare for a 1:1</span>
+    </div>
+  </section>
+
+  <div class="jp-steps">
+
+    <section class="jp-step">
+      <div class="jp-step-thumb">
+        <iframe src="../surfaces/person.html" loading="lazy" title="Person Detail preview"></iframe>
+        <a href="../surfaces/person.html" aria-label="Open Person Detail"></a>
+      </div>
+      <div class="jp-step-meta">
+        <span class="jp-step-num">01</span>
+        <div class="jp-step-info">
+          <h2 class="jp-step-name"><a href="../surfaces/person.html">Person Detail</a></h2>
+          <p class="jp-step-route">surfaces/person.html · /people/$id</p>
+          <p class="jp-step-note">Open the person. Scan The Dynamic and The Record for what's been said, what's pending.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="jp-step">
+      <div class="jp-step-thumb">
+        <iframe src="../surfaces/meeting.html" loading="lazy" title="Meeting Briefing preview"></iframe>
+        <a href="../surfaces/meeting.html" aria-label="Open Meeting Briefing"></a>
+      </div>
+      <div class="jp-step-meta">
+        <span class="jp-step-num">02</span>
+        <div class="jp-step-info">
+          <h2 class="jp-step-name"><a href="../surfaces/meeting.html">Meeting Briefing</a></h2>
+          <p class="jp-step-route">surfaces/meeting.html · /meeting/$id</p>
+          <p class="jp-step-note">The 1:1's brief — recent threads, open items, what to drive in this conversation.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>
