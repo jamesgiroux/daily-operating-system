@@ -27,6 +27,9 @@ from typing import Any
 REPO = Path(__file__).resolve().parents[3]
 MANIFEST = REPO / ".docs/design/_audits/surface-manifest.json"
 REPORT = REPO / ".docs/design/_audits/reference-fidelity.md"
+BASELINE = REPO / ".docs/design/_audits/.fidelity-baseline.json"
+
+SEVERITY_RANK = {"clean": 0, "minor": 1, "major": 2, "critical": 3}
 
 # --- regexes ----------------------------------------------------------------
 
@@ -317,11 +320,28 @@ def render_md(all_findings: list[dict[str, Any]]) -> str:
     return "".join(out)
 
 
+def load_baseline() -> dict[str, str]:
+    """Returns {html_path: severity} from baseline file, or {} if absent."""
+    if not BASELINE.exists():
+        return {}
+    return json.loads(BASELINE.read_text())
+
+
+def write_baseline(findings: list[dict[str, Any]]) -> None:
+    """Snapshot current severity per surface."""
+    snapshot = {f["html"]: severity(f) for f in findings}
+    BASELINE.write_text(json.dumps(snapshot, indent=2, sort_keys=True) + "\n")
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--surface", help="Audit only the surface whose HTML basename matches")
     ap.add_argument("--json", action="store_true", help="Emit JSON to stdout instead of writing markdown")
     ap.add_argument("--strict", action="store_true", help="Exit non-zero if any critical or major findings")
+    ap.add_argument("--enforce-baseline", action="store_true",
+                    help="Exit non-zero if any surface regressed vs baseline (used by pre-commit hook)")
+    ap.add_argument("--write-baseline", action="store_true",
+                    help="Snapshot current findings as the new baseline")
     args = ap.parse_args()
 
     manifest = json.loads(MANIFEST.read_text())
@@ -333,6 +353,35 @@ def main() -> int:
             return 2
 
     all_findings = [audit_surface(e) for e in entries]
+
+    if args.write_baseline:
+        write_baseline(all_findings)
+        print(f"Baseline written: {BASELINE.relative_to(REPO)}")
+        return 0
+
+    if args.enforce_baseline:
+        baseline = load_baseline()
+        regressions: list[tuple[str, str, str]] = []
+        improvements: list[tuple[str, str, str]] = []
+        for f in all_findings:
+            current = severity(f)
+            previous = baseline.get(f["html"], "clean")
+            if SEVERITY_RANK[current] > SEVERITY_RANK[previous]:
+                regressions.append((f["html"], previous, current))
+            elif SEVERITY_RANK[current] < SEVERITY_RANK[previous]:
+                improvements.append((f["html"], previous, current))
+        if improvements:
+            print("Reference fidelity improvements (run --write-baseline to lock these in):", file=sys.stderr)
+            for path, prev, curr in improvements:
+                print(f"  {prev} → {curr}: {path}", file=sys.stderr)
+        if regressions:
+            print("\n🚫 Reference fidelity REGRESSED — block commit:", file=sys.stderr)
+            for path, prev, curr in regressions:
+                print(f"  {prev} → {curr}: {path}", file=sys.stderr)
+            print("\nRun  python3 .docs/design/_audits/audit-reference.py", file=sys.stderr)
+            print("for the full report. Fix or rebaseline before committing.", file=sys.stderr)
+            return 1
+        return 0
 
     if args.json:
         json.dump({"findings": all_findings}, sys.stdout, indent=2)

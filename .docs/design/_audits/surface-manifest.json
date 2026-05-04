@@ -126,6 +126,48 @@
       "primary": "src/components/onboarding/chapters/PrimeBriefing.tsx",
       "module": "src/components/onboarding/onboarding.module.css",
       "module_prefix": "onboarding"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/reports/risk-briefing.html",
+      "primary": "src/pages/RiskBriefingPage.tsx",
+      "module": "src/pages/report-slides.module.css",
+      "module_prefix": "report-slides"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/reports/swot.html",
+      "primary": "src/pages/SwotPage.tsx",
+      "module": "src/pages/report-slides.module.css",
+      "module_prefix": "report-slides"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/reports/account-health.html",
+      "primary": "src/pages/AccountHealthPage.tsx",
+      "module": "src/pages/report-slides.module.css",
+      "module_prefix": "report-slides"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/reports/ebr-qbr.html",
+      "primary": "src/pages/EbrQbrPage.tsx",
+      "module": "src/pages/report-slides.module.css",
+      "module_prefix": "report-slides"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/reports/weekly-impact.html",
+      "primary": "src/pages/WeeklyImpactPage.tsx",
+      "module": "src/pages/report-slides.module.css",
+      "module_prefix": "report-slides"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/reports/monthly-wrapped.html",
+      "primary": "src/pages/monthly-wrapped/MonthlyWrappedPage.tsx",
+      "module": "src/pages/monthly-wrapped/monthly-wrapped.module.css",
+      "module_prefix": "monthly-wrapped"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/reports/book-of-business.html",
+      "primary": "src/pages/BookOfBusinessPage.tsx",
+      "module": "src/pages/book-of-business.module.css",
+      "module_prefix": "book-of-business"
     }
   ]
 }
