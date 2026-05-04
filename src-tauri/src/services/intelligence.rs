@@ -7,8 +7,9 @@ use crate::db::ActionDb;
 use crate::intel_queue::{
     apply_enrichment_side_writes, compose_enrichment_intelligence,
     fenced_write_enrichment_intelligence, gather_enrichment_input,
-    record_enrichment_contamination_rejection, run_enrichment,
-    run_enrichment_post_commit_side_effects, EnrichmentComposition, IntelPriority, IntelRequest,
+    invalidate_and_requeue_meeting_preps_with_db, record_enrichment_contamination_rejection,
+    run_enrichment, run_enrichment_post_commit_side_effects, EnrichmentComposition, IntelPriority,
+    IntelRequest,
 };
 use crate::pty::AiUsageContext;
 use crate::services::context::ServiceContext;
@@ -796,6 +797,8 @@ pub async fn enrich_entity(
             }
             fenced_write_enrichment_intelligence(&db, &input.entity_dir, prepared.intelligence());
             run_enrichment_post_commit_side_effects(state, &input, &db, prepared.intelligence());
+            invalidate_and_requeue_meeting_preps_with_db(state, &db, &input.entity_id);
+            crate::self_healing::feedback::record_enrichment_success(&db, &input.entity_id);
             prepared.into_intelligence()
         }
         EnrichmentComposition::SkipDueToContamination {
@@ -2342,7 +2345,7 @@ mod mutation_smoke_tests {
     use crate::db::{AccountType, DbAccount};
     use crate::intel_queue::{
         apply_enrichment_side_writes, compose_enrichment_intelligence_with_policy,
-        EnrichmentComposition, EnrichmentInput,
+        invalidate_and_requeue_meeting_preps_with_db, EnrichmentComposition, EnrichmentInput,
     };
     use crate::intelligence::contamination::ContaminationValidation;
     use crate::intelligence::io::{IntelRisk, IntelligenceJson, ItemSource, StakeholderInsight};
@@ -2811,6 +2814,8 @@ mod mutation_smoke_tests {
             &composition,
             EnrichmentComposition::SkipDueToContamination { .. }
         ));
+        let persist_inferred_relationships =
+            matches!(&composition, EnrichmentComposition::Persist(_));
 
         let inferred = vec![InferredRelationship {
             from_person_id: "p2".to_string(),
@@ -2818,7 +2823,7 @@ mod mutation_smoke_tests {
             relationship_type: "collaborator".to_string(),
             rationale: Some("They coordinate the implementation plan.".to_string()),
         }];
-        if super::should_persist_inferred_relationships(&composition) {
+        if persist_inferred_relationships {
             let engine = PropagationEngine::default();
             let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
             let rng = SeedableRng::new(42);
@@ -3075,6 +3080,171 @@ mod mutation_smoke_tests {
             persisted.executive_assessment.as_deref(),
             Some("old compose state"),
             "DB intelligence must roll back to the pre-compose state"
+        );
+    }
+
+    #[test]
+    fn compose_enrichment_side_write_failure_aborts_upsert() {
+        let db = test_db();
+        let engine = PropagationEngine::default();
+        let account = make_account("acc-side-write-fails");
+        db.upsert_account(&account).unwrap();
+
+        let dir = tempfile::tempdir().expect("tempdir");
+        let prior = IntelligenceJson {
+            entity_id: "acc-side-write-fails".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T00:00:00Z".to_string(),
+            executive_assessment: Some("prior side-write state".to_string()),
+            ..Default::default()
+        };
+        db.upsert_entity_intelligence(&prior).unwrap();
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_stakeholder_suggestion_side_write
+                 BEFORE INSERT ON stakeholder_suggestions
+                 WHEN NEW.account_id = 'acc-side-write-fails'
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced stakeholder suggestion failure');
+                 END;",
+            )
+            .expect("install side-write failure trigger");
+
+        let input = make_enrichment_input("acc-side-write-fails", dir.path());
+        let incoming = IntelligenceJson {
+            entity_id: "acc-side-write-fails".to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T01:00:00Z".to_string(),
+            executive_assessment: Some("new state that must not persist".to_string()),
+            stakeholder_insights: vec![StakeholderInsight {
+                name: "Blocked Buyer".to_string(),
+                role: Some("economic buyer".to_string()),
+                engagement: Some("engaged".to_string()),
+                ..Default::default()
+            }],
+            ..Default::default()
+        };
+        let prepared = match compose_enrichment_intelligence_with_policy(
+            &db,
+            &input,
+            &incoming,
+            None,
+            ContaminationValidation::Off,
+        )
+        .expect("compose side-write failure input")
+        {
+            EnrichmentComposition::Persist(prepared) => prepared,
+            EnrichmentComposition::SkipDueToContamination { .. } => {
+                panic!("clean enrichment unexpectedly rejected for contamination")
+            }
+        };
+
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+
+        let result = db.with_transaction(|tx| {
+            apply_enrichment_side_writes(&ctx, tx, &input, &prepared)?;
+            super::upsert_assessment_from_enrichment_in_active_transaction(
+                &ctx,
+                tx,
+                &engine,
+                "account",
+                "acc-side-write-fails",
+                prepared.intelligence(),
+            )
+        });
+
+        assert!(
+            result.is_err_and(|err| err.contains("forced stakeholder suggestion failure")),
+            "side-write failure should abort the enrichment transaction"
+        );
+        let persisted = db
+            .get_entity_intelligence("acc-side-write-fails")
+            .expect("read DB intelligence")
+            .expect("existing DB intelligence");
+        assert_eq!(
+            persisted.executive_assessment.as_deref(),
+            Some("prior side-write state"),
+            "DB intelligence must remain unchanged when side-writes fail"
+        );
+        assert_eq!(
+            signal_count(&db, "acc-side-write-fails", "entity_intelligence_updated"),
+            0,
+            "upsert signal must not emit after side-write failure"
+        );
+    }
+
+    #[test]
+    fn enrich_entity_invalidates_meeting_preps_and_records_success() {
+        let db = test_db();
+        let account = make_account("acc-manual-parity");
+        db.upsert_account(&account).unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_assessment (entity_id, entity_type)
+                 VALUES (?1, 'account')",
+                params!["acc-manual-parity"],
+            )
+            .expect("seed entity assessment");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
+                 VALUES ('mtg-manual-parity', 'Manual parity review', 'customer',
+                         '2999-01-01T00:00:00Z', '2026-05-03T00:00:00Z')",
+                [],
+            )
+            .expect("seed future meeting");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meeting_prep (meeting_id, prep_frozen_json, prep_frozen_at)
+                 VALUES ('mtg-manual-parity', '{\"status\":\"ready\"}', '2026-05-03T00:00:00Z')",
+                [],
+            )
+            .expect("seed frozen prep");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
+                 VALUES ('mtg-manual-parity', 'acc-manual-parity', 'account')",
+                [],
+            )
+            .expect("link meeting entity");
+        crate::self_healing::quality::ensure_quality_row(&db, "acc-manual-parity", "account");
+        let quality_before = crate::self_healing::quality::get_quality(&db, "acc-manual-parity")
+            .expect("quality row before success");
+
+        let state = AppState::new();
+        invalidate_and_requeue_meeting_preps_with_db(&state, &db, "acc-manual-parity");
+        crate::self_healing::feedback::record_enrichment_success(&db, "acc-manual-parity");
+
+        let prep_frozen: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT prep_frozen_json FROM meeting_prep WHERE meeting_id = 'mtg-manual-parity'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read prep_frozen_json");
+        assert!(
+            prep_frozen.is_none(),
+            "manual enrichment post-commit should invalidate frozen meeting prep"
+        );
+        assert_eq!(
+            signal_count(&db, "mtg-manual-parity", "prep_invalidated"),
+            1,
+            "meeting prep invalidation should emit a prep_invalidated signal"
+        );
+        let quality_after = crate::self_healing::quality::get_quality(&db, "acc-manual-parity")
+            .expect("quality row after success");
+        assert!(
+            quality_after.quality_alpha > quality_before.quality_alpha,
+            "manual enrichment success should increment self-healing quality alpha"
+        );
+        assert!(
+            quality_after.last_enrichment_at.is_some(),
+            "manual enrichment success should stamp last_enrichment_at"
         );
     }
 

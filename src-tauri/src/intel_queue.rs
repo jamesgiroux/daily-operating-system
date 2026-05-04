@@ -12,6 +12,7 @@ use std::sync::Arc;
 use std::time::Instant;
 
 use chrono::Utc;
+use rusqlite::OptionalExtension;
 
 use tauri::{AppHandle, Emitter};
 
@@ -2662,7 +2663,12 @@ fn apply_enrichment_stakeholder_side_writes(
                     rusqlite::params![&input.entity_id, pid],
                     |row| row.get::<_, i64>(0),
                 )
-                .unwrap_or(0)
+                .map_err(|e| {
+                    format!(
+                        "stakeholder existence read failed for {}:{}: {e}",
+                        input.entity_id, pid
+                    )
+                })?
                 > 0;
 
             if row_exists {
@@ -2675,7 +2681,14 @@ fn apply_enrichment_stakeholder_side_writes(
                             rusqlite::params![&input.entity_id, pid],
                             |row| row.get(0),
                         )
-                        .unwrap_or_else(|_| "ai".to_string());
+                        .optional()
+                        .map_err(|e| {
+                            format!(
+                                "stakeholder engagement data-source read failed for {}:{}: {e}",
+                                input.entity_id, pid
+                            )
+                        })?
+                        .unwrap_or_else(|| "ai".to_string());
                     if ds == "ai" {
                         db.conn_ref()
                             .execute(
@@ -2710,7 +2723,14 @@ fn apply_enrichment_stakeholder_side_writes(
                             rusqlite::params![&input.entity_id, pid],
                             |row| row.get(0),
                         )
-                        .unwrap_or_else(|_| "ai".to_string());
+                        .optional()
+                        .map_err(|e| {
+                            format!(
+                                "stakeholder assessment data-source read failed for {}:{}: {e}",
+                                input.entity_id, pid
+                            )
+                        })?
+                        .unwrap_or_else(|| "ai".to_string());
                     if ds == "ai" {
                         db.conn_ref()
                             .execute(
@@ -2739,7 +2759,13 @@ fn apply_enrichment_stakeholder_side_writes(
                             rusqlite::params![&input.entity_id, pid, role],
                             |row| Ok((row.get(0)?, row.get(1)?)),
                         )
-                        .ok();
+                        .optional()
+                        .map_err(|e| {
+                            format!(
+                                "stakeholder role existence read failed for {}:{}:{}: {e}",
+                                input.entity_id, pid, role
+                            )
+                        })?;
                     let is_user_owned = matches!(
                         existing.as_ref().and_then(|(ds, _)| ds.as_deref()),
                         Some("user")
@@ -2964,7 +2990,12 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) -> Res
                 rusqlite::params![account_id, pid],
                 |row| row.get::<_, i64>(0),
             )
-            .unwrap_or(0)
+            .map_err(|e| {
+                format!(
+                    "stakeholder suggestion dedupe read failed for {}:{}: {e}",
+                    account_id, pid
+                )
+            })?
             > 0
     } else {
         db.conn_ref()
@@ -2973,7 +3004,12 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) -> Res
                 rusqlite::params![account_id, &insight.name],
                 |row| row.get::<_, i64>(0),
             )
-            .unwrap_or(0)
+            .map_err(|e| {
+                format!(
+                    "stakeholder suggestion dedupe read failed for {}:{}: {e}",
+                    account_id, insight.name
+                )
+            })?
             > 0
     };
     if already_pending {
@@ -3103,6 +3139,16 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
         }
     };
 
+    invalidate_and_requeue_meeting_preps_with_db(state, &db, entity_id);
+}
+
+/// Variant for callers that already own the authoritative DB connection for
+/// the just-committed enrichment path.
+pub(crate) fn invalidate_and_requeue_meeting_preps_with_db(
+    state: &AppState,
+    db: &crate::db::ActionDb,
+    entity_id: &str,
+) {
     let now = Utc::now().to_rfc3339();
 
     // Find future meetings linked to this entity and clear their frozen prep
@@ -3130,7 +3176,7 @@ pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: 
     // Clear prep_frozen_json so the queue processor regenerates them
     let ctx = state.live_service_context();
     for mid in &meeting_ids {
-        let _ = crate::services::meetings::clear_meeting_prep_frozen(&ctx, &db, mid);
+        let _ = crate::services::meetings::clear_meeting_prep_frozen(&ctx, db, mid);
     }
 
     // Enqueue for regeneration at Background priority
