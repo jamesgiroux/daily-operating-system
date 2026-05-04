@@ -30,7 +30,13 @@
 use std::sync::Arc;
 
 use chrono::{DateTime, Utc};
+use http::HeaderMap;
 use parking_lot::Mutex;
+use serde::de::DeserializeOwned;
+
+use crate::services::external_replay::{
+    ExternalReplayFixture, ExternalReplayFixtureMissing, ReplayResponse, RequestKey,
+};
 
 /// Execution mode for ability + service workflows per ADR-0104.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -183,9 +189,8 @@ impl SeededRng for SeedableRng {
 
 /// External-services wrapper struct. Each field is a thin handle that
 /// delegates to live clients in `Live` and replay/fixture in
-/// `Simulate`/`Evaluate`. Live wrappers hold concrete client `Arc`s;
-/// non-Live wrappers hold `None` and any side-effecting call returns
-/// `WriteBlockedByMode` from the caller's `check_mutation_allowed` gate.
+/// `Simulate`/`Evaluate`. Default construction stays live; callers opt
+/// into replay with `ExternalClients::from_replay`.
 #[derive(Default, Clone)]
 pub struct ExternalClients {
     pub glean: GleanClientHandle,
@@ -194,35 +199,420 @@ pub struct ExternalClients {
     pub REDACTED: SalesforceClientHandle,
 }
 
+impl ExternalClients {
+    pub fn from_replay(
+        fixture: Arc<dyn ExternalReplayFixture>,
+        auth_scope_id: String,
+    ) -> Self {
+        Self {
+            glean: ReplayGleanClient::new(fixture.clone(), auth_scope_id.clone()).into(),
+            slack: ReplaySlackClient::new(fixture.clone(), auth_scope_id.clone()).into(),
+            gmail: ReplayGmailClient::new(fixture.clone(), auth_scope_id.clone()).into(),
+            REDACTED: ReplaySalesforceClient::new(fixture, auth_scope_id).into(),
+        }
+    }
+}
+
+#[derive(Debug, thiserror::Error)]
+pub enum ExternalClientError {
+    #[error(transparent)]
+    ReplayFixtureMissing(#[from] ExternalReplayFixtureMissing),
+
+    #[error("{client} replay response decode failed: {source}")]
+    ReplayResponseDecode {
+        client: &'static str,
+        #[source]
+        source: serde_json::Error,
+    },
+
+    #[error("{client} live client is not configured")]
+    LiveClientUnavailable { client: &'static str },
+}
+
 /// Mode-aware Glean client wrapper. Holds `Some(arc)` when configured;
-/// `None` in Local Live mode and in Simulate/Evaluate.
-#[derive(Default, Clone)]
+/// `None` in Local Live mode. Replay mode holds a fixture-backed client.
+#[derive(Clone, Default)]
 pub struct GleanClientHandle {
-    inner: Option<Arc<dyn std::any::Any + Send + Sync>>,
+    mode: GleanClientMode,
 }
 
 impl GleanClientHandle {
     pub fn is_configured(&self) -> bool {
-        self.inner.is_some()
+        match &self.mode {
+            GleanClientMode::Live(inner) => inner.is_some(),
+            GleanClientMode::Replay(_) => true,
+        }
     }
+
+    pub fn is_live(&self) -> bool {
+        matches!(self.mode, GleanClientMode::Live(_))
+    }
+
+    pub fn is_replay(&self) -> bool {
+        matches!(self.mode, GleanClientMode::Replay(_))
+    }
+
+    pub fn fetch_account_facts(
+        &self,
+        account_id: &str,
+    ) -> Result<GleanAccountFacts, ExternalClientError> {
+        match &self.mode {
+            GleanClientMode::Live(_) => Err(ExternalClientError::LiveClientUnavailable {
+                client: "glean",
+            }),
+            GleanClientMode::Replay(client) => client.fetch_account_facts(account_id),
+        }
+    }
+
+    pub fn request_key_for_fetch_account_facts(
+        account_id: &str,
+        auth_scope_id: &str,
+    ) -> RequestKey {
+        replay_request_key(
+            "GET",
+            &glean_account_facts_url(account_id),
+            b"",
+            auth_scope_id,
+        )
+    }
+}
+
+impl From<ReplayGleanClient> for GleanClientHandle {
+    fn from(client: ReplayGleanClient) -> Self {
+        Self {
+            mode: GleanClientMode::Replay(client),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub enum GleanClientMode {
+    Live(Option<Arc<dyn std::any::Any + Send + Sync>>),
+    Replay(ReplayGleanClient),
+}
+
+impl Default for GleanClientMode {
+    fn default() -> Self {
+        Self::Live(None)
+    }
+}
+
+#[derive(Clone)]
+pub struct ReplayGleanClient {
+    fixture: Arc<dyn ExternalReplayFixture>,
+    auth_scope_id: String,
+}
+
+impl ReplayGleanClient {
+    pub fn new(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: String) -> Self {
+        Self {
+            fixture,
+            auth_scope_id,
+        }
+    }
+
+    pub fn fetch_account_facts(
+        &self,
+        account_id: &str,
+    ) -> Result<GleanAccountFacts, ExternalClientError> {
+        let url = glean_account_facts_url(account_id);
+        let key = replay_request_key("GET", &url, b"", &self.auth_scope_id);
+        let response = lookup_replay(&self.fixture, &key, "GET", &url)?;
+        decode_replay_json("glean", response)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize)]
+pub struct GleanAccountFacts {
+    pub account_id: String,
+    pub facts: Vec<String>,
 }
 
 /// Mode-aware Slack client wrapper. Placeholder — Slack integration
 /// lands in; the seam reserves the API surface so abilities
 /// can call it without re-plumbing later.
-#[derive(Default, Clone)]
-pub struct SlackClientHandle;
+#[derive(Clone, Default)]
+pub struct SlackClientHandle {
+    mode: SlackClientMode,
+}
+
+impl SlackClientHandle {
+    pub fn is_live(&self) -> bool {
+        matches!(self.mode, SlackClientMode::Live)
+    }
+
+    pub fn is_replay(&self) -> bool {
+        matches!(self.mode, SlackClientMode::Replay(_))
+    }
+
+    pub fn replay_json<T>(
+        &self,
+        method: &str,
+        url: &str,
+        body: &[u8],
+    ) -> Result<T, ExternalClientError>
+    where
+        T: DeserializeOwned,
+    {
+        match &self.mode {
+            SlackClientMode::Live => Err(ExternalClientError::LiveClientUnavailable {
+                client: "slack",
+            }),
+            SlackClientMode::Replay(client) => client.replay_json(method, url, body),
+        }
+    }
+}
+
+impl From<ReplaySlackClient> for SlackClientHandle {
+    fn from(client: ReplaySlackClient) -> Self {
+        Self {
+            mode: SlackClientMode::Replay(client),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub enum SlackClientMode {
+    #[default]
+    Live,
+    Replay(ReplaySlackClient),
+}
+
+#[derive(Clone)]
+pub struct ReplaySlackClient {
+    fixture: Arc<dyn ExternalReplayFixture>,
+    auth_scope_id: String,
+}
+
+impl ReplaySlackClient {
+    pub fn new(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: String) -> Self {
+        Self {
+            fixture,
+            auth_scope_id,
+        }
+    }
+
+    pub fn replay_json<T>(
+        &self,
+        method: &str,
+        url: &str,
+        body: &[u8],
+    ) -> Result<T, ExternalClientError>
+    where
+        T: DeserializeOwned,
+    {
+        let key = replay_request_key(method, url, body, &self.auth_scope_id);
+        let response = lookup_replay(&self.fixture, &key, method, url)?;
+        decode_replay_json("slack", response)
+    }
+}
 
 /// Mode-aware Gmail client wrapper. Live mode wraps `crate::google_api`;
-/// non-Live modes return `WriteBlockedByMode` from any send/modify call
-/// via the caller's gate.
-#[derive(Default, Clone)]
-pub struct GmailClientHandle;
+/// replay mode resolves calls from external replay fixtures.
+#[derive(Clone, Default)]
+pub struct GmailClientHandle {
+    mode: GmailClientMode,
+}
+
+impl GmailClientHandle {
+    pub fn is_live(&self) -> bool {
+        matches!(self.mode, GmailClientMode::Live)
+    }
+
+    pub fn is_replay(&self) -> bool {
+        matches!(self.mode, GmailClientMode::Replay(_))
+    }
+
+    pub fn replay_json<T>(
+        &self,
+        method: &str,
+        url: &str,
+        body: &[u8],
+    ) -> Result<T, ExternalClientError>
+    where
+        T: DeserializeOwned,
+    {
+        match &self.mode {
+            GmailClientMode::Live => Err(ExternalClientError::LiveClientUnavailable {
+                client: "gmail",
+            }),
+            GmailClientMode::Replay(client) => client.replay_json(method, url, body),
+        }
+    }
+}
+
+impl From<ReplayGmailClient> for GmailClientHandle {
+    fn from(client: ReplayGmailClient) -> Self {
+        Self {
+            mode: GmailClientMode::Replay(client),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub enum GmailClientMode {
+    #[default]
+    Live,
+    Replay(ReplayGmailClient),
+}
+
+#[derive(Clone)]
+pub struct ReplayGmailClient {
+    fixture: Arc<dyn ExternalReplayFixture>,
+    auth_scope_id: String,
+}
+
+impl ReplayGmailClient {
+    pub fn new(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: String) -> Self {
+        Self {
+            fixture,
+            auth_scope_id,
+        }
+    }
+
+    pub fn replay_json<T>(
+        &self,
+        method: &str,
+        url: &str,
+        body: &[u8],
+    ) -> Result<T, ExternalClientError>
+    where
+        T: DeserializeOwned,
+    {
+        let key = replay_request_key(method, url, body, &self.auth_scope_id);
+        let response = lookup_replay(&self.fixture, &key, method, url)?;
+        decode_replay_json("gmail", response)
+    }
+}
 
 /// Mode-aware REDACTED client wrapper. Placeholder — Glean is the REDACTED
 /// data plane today; the seam reserves direct-integration scope.
-#[derive(Default, Clone)]
-pub struct SalesforceClientHandle;
+#[derive(Clone, Default)]
+pub struct SalesforceClientHandle {
+    mode: SalesforceClientMode,
+}
+
+impl SalesforceClientHandle {
+    pub fn is_live(&self) -> bool {
+        matches!(self.mode, SalesforceClientMode::Live)
+    }
+
+    pub fn is_replay(&self) -> bool {
+        matches!(self.mode, SalesforceClientMode::Replay(_))
+    }
+
+    pub fn fetch_account(
+        &self,
+        account_id: &str,
+    ) -> Result<SalesforceAccountRecord, ExternalClientError> {
+        match &self.mode {
+            SalesforceClientMode::Live => Err(ExternalClientError::LiveClientUnavailable {
+                client: "REDACTED",
+            }),
+            SalesforceClientMode::Replay(client) => client.fetch_account(account_id),
+        }
+    }
+
+    pub fn request_key_for_fetch_account(account_id: &str, auth_scope_id: &str) -> RequestKey {
+        replay_request_key(
+            "GET",
+            &REDACTED_account_url(account_id),
+            b"",
+            auth_scope_id,
+        )
+    }
+}
+
+impl From<ReplaySalesforceClient> for SalesforceClientHandle {
+    fn from(client: ReplaySalesforceClient) -> Self {
+        Self {
+            mode: SalesforceClientMode::Replay(client),
+        }
+    }
+}
+
+#[derive(Clone, Default)]
+pub enum SalesforceClientMode {
+    #[default]
+    Live,
+    Replay(ReplaySalesforceClient),
+}
+
+#[derive(Clone)]
+pub struct ReplaySalesforceClient {
+    fixture: Arc<dyn ExternalReplayFixture>,
+    auth_scope_id: String,
+}
+
+impl ReplaySalesforceClient {
+    pub fn new(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: String) -> Self {
+        Self {
+            fixture,
+            auth_scope_id,
+        }
+    }
+
+    pub fn fetch_account(
+        &self,
+        account_id: &str,
+    ) -> Result<SalesforceAccountRecord, ExternalClientError> {
+        let url = REDACTED_account_url(account_id);
+        let key = replay_request_key("GET", &url, b"", &self.auth_scope_id);
+        let response = lookup_replay(&self.fixture, &key, "GET", &url)?;
+        decode_replay_json("REDACTED", response)
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, serde::Deserialize)]
+pub struct SalesforceAccountRecord {
+    pub account_id: String,
+    pub account_name: String,
+}
+
+fn lookup_replay(
+    fixture: &Arc<dyn ExternalReplayFixture>,
+    key: &RequestKey,
+    method: &str,
+    url: &str,
+) -> Result<ReplayResponse, ExternalReplayFixtureMissing> {
+    fixture
+        .lookup(key)
+        .map_err(|_| ExternalReplayFixtureMissing::new(key, method, url))
+}
+
+fn decode_replay_json<T>(
+    client: &'static str,
+    response: ReplayResponse,
+) -> Result<T, ExternalClientError>
+where
+    T: DeserializeOwned,
+{
+    serde_json::from_slice(&response.body).map_err(|source| {
+        ExternalClientError::ReplayResponseDecode { client, source }
+    })
+}
+
+fn replay_request_key(method: &str, url: &str, body: &[u8], auth_scope_id: &str) -> RequestKey {
+    RequestKey::canonicalize(method, url, &HeaderMap::new(), body, auth_scope_id)
+}
+
+fn glean_account_facts_url(account_id: &str) -> String {
+    format!(
+        "https://glean.example.com/v1/facts?account_id={}",
+        url_encode(account_id)
+    )
+}
+
+fn REDACTED_account_url(account_id: &str) -> String {
+    format!(
+        "https://REDACTED.example.com/v1/accounts/{}",
+        url_encode(account_id)
+    )
+}
+
+fn url_encode(value: &str) -> String {
+    url::form_urlencoded::byte_serialize(value.as_bytes()).collect()
+}
 
 /// Service-layer error surface.
 ///
@@ -438,6 +828,44 @@ impl<'a> ServiceContext<'a> {
 mod tests {
     use super::*;
     use chrono::TimeZone;
+    use std::collections::HashMap;
+
+    #[derive(Default)]
+    struct StaticReplayFixture {
+        responses: HashMap<RequestKey, ReplayResponse>,
+    }
+
+    impl StaticReplayFixture {
+        fn with_response(mut self, key: RequestKey, body: &[u8]) -> Self {
+            self.responses.insert(
+                key,
+                ReplayResponse {
+                    status: 200,
+                    headers: vec![("Content-Type".to_string(), "application/json".to_string())],
+                    body: body.to_vec(),
+                },
+            );
+            self
+        }
+    }
+
+    impl ExternalReplayFixture for StaticReplayFixture {
+        fn lookup(
+            &self,
+            key: &RequestKey,
+        ) -> Result<ReplayResponse, ExternalReplayFixtureMissing> {
+            self.responses
+                .get(key)
+                .cloned()
+                .ok_or_else(|| {
+                    ExternalReplayFixtureMissing::new(
+                        key,
+                        "GET",
+                        "https://fixture.example.com/missing",
+                    )
+                })
+        }
+    }
 
     fn fixture_external() -> ExternalClients {
         ExternalClients::default()
@@ -447,6 +875,26 @@ mod tests {
     }
     fn fixture_rng() -> SeedableRng {
         SeedableRng::new(42)
+    }
+
+    fn replay_external(fixture: StaticReplayFixture, auth_scope_id: &str) -> ExternalClients {
+        ExternalClients::from_replay(Arc::new(fixture), auth_scope_id.to_string())
+    }
+
+    fn assert_replay_missing(
+        err: ExternalClientError,
+        expected_key: RequestKey,
+        expected_method: &str,
+        expected_url: &str,
+    ) {
+        match err {
+            ExternalClientError::ReplayFixtureMissing(missing) => {
+                assert_eq!(missing.request_key_hex, expected_key.to_hex());
+                assert_eq!(missing.method, expected_method);
+                assert_eq!(missing.url_redacted, expected_url);
+            }
+            other => panic!("expected ReplayFixtureMissing, got {other:?}"),
+        }
     }
 
     #[test]
@@ -567,5 +1015,143 @@ mod tests {
         shuffle_in_place(&r1, &mut a);
         shuffle_in_place(&r2, &mut b);
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn external_clients_from_replay_constructs_all_clients_in_replay_mode() {
+        let clients = replay_external(StaticReplayFixture::default(), "auth-scope-test-1");
+
+        assert!(clients.glean.is_replay());
+        assert!(clients.slack.is_replay());
+        assert!(clients.gmail.is_replay());
+        assert!(clients.REDACTED.is_replay());
+        assert!(!clients.glean.is_live());
+        assert!(!clients.slack.is_live());
+        assert!(!clients.gmail.is_live());
+        assert!(!clients.REDACTED.is_live());
+    }
+
+    #[test]
+    fn replay_glean_client_returns_fixture_response_for_known_request_key() {
+        let key = GleanClientHandle::request_key_for_fetch_account_facts(
+            "acct-test-1",
+            "auth-scope-test-1",
+        );
+        let fixture = StaticReplayFixture::default().with_response(
+            key,
+            br#"{"account_id":"acct-test-1","facts":["example fact"]}"#,
+        );
+        let clients = replay_external(fixture, "auth-scope-test-1");
+
+        let response = clients
+            .glean
+            .fetch_account_facts("acct-test-1")
+            .unwrap();
+
+        assert_eq!(
+            response,
+            GleanAccountFacts {
+                account_id: "acct-test-1".to_string(),
+                facts: vec!["example fact".to_string()],
+            }
+        );
+    }
+
+    #[test]
+    fn replay_glean_client_returns_typed_missing_error_for_unknown_request_key() {
+        let clients = replay_external(StaticReplayFixture::default(), "auth-scope-test-1");
+        let expected_key = GleanClientHandle::request_key_for_fetch_account_facts(
+            "acct-test-1",
+            "auth-scope-test-1",
+        );
+
+        let err = clients
+            .glean
+            .fetch_account_facts("acct-test-1")
+            .unwrap_err();
+
+        assert_replay_missing(
+            err,
+            expected_key,
+            "GET",
+            "https://glean.example.com/v1/facts",
+        );
+    }
+
+    #[test]
+    fn replay_REDACTED_client_returns_typed_missing_error_for_unknown_request_key() {
+        let clients = replay_external(StaticReplayFixture::default(), "auth-scope-test-1");
+        let expected_key = SalesforceClientHandle::request_key_for_fetch_account(
+            "acct-test-1",
+            "auth-scope-test-1",
+        );
+
+        let err = clients.REDACTED.fetch_account("acct-test-1").unwrap_err();
+
+        assert_replay_missing(
+            err,
+            expected_key,
+            "GET",
+            "https://REDACTED.example.com/v1/accounts/acct-test-1",
+        );
+    }
+
+    #[test]
+    fn replay_clients_use_auth_scope_id_for_tenant_isolation() {
+        let scoped_key = GleanClientHandle::request_key_for_fetch_account_facts(
+            "acct-test-1",
+            "auth-scope-test-1",
+        );
+        let other_key = GleanClientHandle::request_key_for_fetch_account_facts(
+            "acct-test-1",
+            "auth-scope-test-2",
+        );
+        let fixture = StaticReplayFixture::default().with_response(
+            scoped_key,
+            br#"{"account_id":"acct-test-1","facts":["scoped fixture fact"]}"#,
+        );
+        let fixture = Arc::new(fixture);
+        let scoped_clients =
+            ExternalClients::from_replay(fixture.clone(), "auth-scope-test-1".to_string());
+        let other_clients =
+            ExternalClients::from_replay(fixture, "auth-scope-test-2".to_string());
+
+        let scoped_response = scoped_clients
+            .glean
+            .fetch_account_facts("acct-test-1")
+            .unwrap();
+        let other_err = other_clients
+            .glean
+            .fetch_account_facts("acct-test-1")
+            .unwrap_err();
+
+        assert_ne!(scoped_key, other_key);
+        assert_eq!(
+            scoped_response,
+            GleanAccountFacts {
+                account_id: "acct-test-1".to_string(),
+                facts: vec!["scoped fixture fact".to_string()],
+            }
+        );
+        assert_replay_missing(
+            other_err,
+            other_key,
+            "GET",
+            "https://glean.example.com/v1/facts",
+        );
+    }
+
+    #[test]
+    fn external_clients_default_lives_in_live_mode_not_replay() {
+        let clients = ExternalClients::default();
+
+        assert!(clients.glean.is_live());
+        assert!(clients.slack.is_live());
+        assert!(clients.gmail.is_live());
+        assert!(clients.REDACTED.is_live());
+        assert!(!clients.glean.is_replay());
+        assert!(!clients.slack.is_replay());
+        assert!(!clients.gmail.is_replay());
+        assert!(!clients.REDACTED.is_replay());
     }
 }
