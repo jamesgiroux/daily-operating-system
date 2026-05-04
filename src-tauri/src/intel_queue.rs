@@ -936,26 +936,6 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            let written_intel = match compose_enrichment_intelligence(
-                &state,
-                input,
-                intel,
-                if is_background_priority(request.priority) {
-                    None
-                } else {
-                    Some(&ai_config)
-                },
-            ) {
-                Ok(intel) => intel,
-                Err(e) => {
-                    log::warn!(
-                        "IntelProcessor: failed to write results for {}: {}",
-                        request.entity_id,
-                        e
-                    );
-                    continue;
-                }
-            };
             let db = match crate::db::ActionDb::open() {
                 Ok(db) => db,
                 Err(e) => {
@@ -968,14 +948,45 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             };
             let ctx = state.live_service_context();
-            if let Err(e) = crate::services::intelligence::upsert_assessment_from_enrichment(
-                &ctx,
+            let composition = match compose_enrichment_intelligence(
+                &state,
                 &db,
-                &state.signals.engine,
-                &input.entity_type,
-                &input.entity_id,
-                &written_intel,
+                input,
+                intel,
+                if is_background_priority(request.priority) {
+                    None
+                } else {
+                    Some(&ai_config)
+                },
             ) {
+                Ok(composition) => composition,
+                Err(e) => {
+                    log::warn!(
+                        "IntelProcessor: failed to write results for {}: {}",
+                        request.entity_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+            let prepared = match composition {
+                EnrichmentComposition::Persist(prepared) => prepared,
+                EnrichmentComposition::SkipDueToContamination { rejection, .. } => {
+                    record_enrichment_contamination_rejection(&ctx, &state, input, &db, &rejection);
+                    continue;
+                }
+            };
+            if let Err(e) = db.with_transaction(|tx| {
+                apply_enrichment_side_writes(&ctx, tx, input, &prepared)?;
+                crate::services::intelligence::upsert_assessment_from_enrichment_in_active_transaction(
+                    &ctx,
+                    tx,
+                    &state.signals.engine,
+                    &input.entity_type,
+                    &input.entity_id,
+                    prepared.intelligence(),
+                )
+            }) {
                 log::warn!(
                     "IntelProcessor: failed to persist DB assessment for {}: {}",
                     request.entity_id,
@@ -983,8 +994,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 );
                 continue;
             }
-            fenced_write_enrichment_intelligence(&db, &input.entity_dir, &written_intel);
-            run_enrichment_post_commit_side_effects(&state, input, &db, &written_intel);
+            fenced_write_enrichment_intelligence(&db, &input.entity_dir, prepared.intelligence());
+            run_enrichment_post_commit_side_effects(&state, input, &db, prepared.intelligence());
+            let written_intel = prepared.into_intelligence();
 
             // Emit tiered Glean signals after successful enrichment
             if state.context_provider().is_remote() {
@@ -2202,22 +2214,83 @@ fn run_consistency_repair_retry(
     )
 }
 
+/// Prepared intelligence plus side writes that must share the upsert transaction.
+#[derive(Debug, Clone)]
+pub struct PreparedEnrichment {
+    intelligence: IntelligenceJson,
+    side_writes: EnrichmentSideWrites,
+}
+
+impl PreparedEnrichment {
+    pub fn intelligence(&self) -> &IntelligenceJson {
+        &self.intelligence
+    }
+
+    pub fn into_intelligence(self) -> IntelligenceJson {
+        self.intelligence
+    }
+}
+
+#[derive(Debug, Clone)]
+pub struct ContaminationRejection {
+    signal_payload: String,
+    event_payload: serde_json::Value,
+}
+
+#[derive(Debug, Clone)]
+pub enum EnrichmentComposition {
+    Persist(PreparedEnrichment),
+    SkipDueToContamination {
+        reason: String,
+        prior: IntelligenceJson,
+        rejection: ContaminationRejection,
+    },
+}
+
+#[derive(Debug, Clone, Default)]
+struct EnrichmentSideWrites {
+    malformed_suppression_audits: Vec<MalformedSuppressionAudit>,
+}
+
+#[derive(Debug, Clone)]
+struct MalformedSuppressionAudit {
+    record_id: String,
+    reason: String,
+    field_key: &'static str,
+    caller_context: &'static str,
+}
+
 /// Phase 3: Compose enrichment results for DB-first persistence.
-/// Opens own DB connection to avoid blocking foreground IPC commands.
-///  suppression filtering is fail-closed: if the feedback DB cannot
-/// open, risks/wins are dropped for that round and the rest of the composition continues.
+/// This phase prepares the intelligence payload and records deferred side
+/// writes that the caller applies in the same transaction as the DB upsert.
 /// Public so manual enrichment commands can reuse the split-lock pattern.
 pub fn compose_enrichment_intelligence(
-    state: &AppState,
+    _state: &AppState,
+    db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
     ai_config: Option<&AiModelConfig>,
-) -> Result<IntelligenceJson, String> {
+) -> Result<EnrichmentComposition, String> {
+    compose_enrichment_intelligence_with_policy(
+        db,
+        input,
+        intel,
+        ai_config,
+        crate::intelligence::contamination::ContaminationValidation::from_env(),
+    )
+}
+
+pub(crate) fn compose_enrichment_intelligence_with_policy(
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+    ai_config: Option<&AiModelConfig>,
+    contamination_policy: crate::intelligence::contamination::ContaminationValidation,
+) -> Result<EnrichmentComposition, String> {
     // Source-aware reconciliation + preserve user-edited fields
     let mut final_intel = intel.clone();
-    let existing_intel = crate::db::ActionDb::open()
-        .ok()
-        .and_then(|db| db.get_entity_intelligence(&input.entity_id).ok().flatten());
+    let mut side_writes = EnrichmentSideWrites::default();
+    let existing_intel = db.get_entity_intelligence(&input.entity_id).ok().flatten();
     if let Some(existing) = existing_intel.as_ref() {
         // Apply source-aware reconciliation (preserves user corrections,
         // non-refreshed source items, and dismissed tombstones).
@@ -2240,152 +2313,6 @@ pub fn compose_enrichment_intelligence(
         }
     }
 
-    // Route AI stakeholder insights to DB columns or suggestions table.
-    // Person-first architecture: enrichment never overwrites user-designated data.
-    // AI can update columns it previously wrote (data_source='ai'), and new
-    // discoveries go to stakeholder_suggestions for user review.
-    if input.entity_type == "account" && !final_intel.stakeholder_insights.is_empty() {
-        if let Ok(db_sh) = crate::db::ActionDb::open() {
-            for insight in &final_intel.stakeholder_insights {
-                let ai_source = insight
-                    .item_source
-                    .as_ref()
-                    .map(|s| s.source.as_str())
-                    .unwrap_or("pty_synthesis");
-
-                if let Some(ref pid) = insight.person_id {
-                    // Check if this person_id exists in account_stakeholders for this account
-                    let row_exists: bool = db_sh
-                        .conn_ref()
-                        .query_row(
-                            "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
-                            rusqlite::params![&input.entity_id, pid],
-                            |row| row.get::<_, i64>(0),
-                        )
-                        .unwrap_or(0)
-                        > 0;
-
-                    if row_exists {
-                        // Update engagement if AI-owned
-                        if let Some(ref engagement) = insight.engagement {
-                            let ds: String = db_sh
-                                .conn_ref()
-                                .query_row(
-                                    "SELECT data_source_engagement FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
-                                    rusqlite::params![&input.entity_id, pid],
-                                    |row| row.get(0),
-                                )
-                                .unwrap_or_else(|_| "ai".to_string());
-                            if ds == "ai" {
-                                if let Err(e) = db_sh.conn_ref().execute(
-                                    "UPDATE account_stakeholders SET engagement = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_engagement = 'ai'",
-                                    rusqlite::params![engagement, &input.entity_id, pid],
-                                ) {
-                                    log::warn!(
-                                        "update AI-owned stakeholder engagement failed for {}:{}: {e}",
-                                        input.entity_id,
-                                        pid
-                                    );
-                                }
-                            } else {
-                                // AI disagrees with user-owned engagement — write suggestion
-                                write_stakeholder_suggestion(&StakeholderSuggestionParams {
-                                    db: &db_sh,
-                                    account_id: &input.entity_id,
-                                    person_id: Some(pid),
-                                    insight,
-                                    source: ai_source,
-                                });
-                            }
-                        }
-
-                        // Update assessment if AI-owned
-                        if let Some(ref assessment) = insight.assessment {
-                            let ds: String = db_sh
-                                .conn_ref()
-                                .query_row(
-                                    "SELECT data_source_assessment FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
-                                    rusqlite::params![&input.entity_id, pid],
-                                    |row| row.get(0),
-                                )
-                                .unwrap_or_else(|_| "ai".to_string());
-                            if ds == "ai" {
-                                if let Err(e) = db_sh.conn_ref().execute(
-                                    "UPDATE account_stakeholders SET assessment = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_assessment = 'ai'",
-                                    rusqlite::params![assessment, &input.entity_id, pid],
-                                ) {
-                                    log::warn!(
-                                        "update AI-owned stakeholder assessment failed for {}:{}: {e}",
-                                        input.entity_id,
-                                        pid
-                                    );
-                                }
-                            }
-                        }
-
-                        // Upsert roles: skip user-owned, update/insert AI-owned
-                        if let Some(ref role) = insight.role {
-                            // Existence check returns data_source AND
-                            // dismissed_at so we can distinguish three
-                            // states: not-present, active-ai-owned,
-                            // active-user-owned, soft-deleted. Soft-
-                            // deleted rows are treated the same as
-                            // user-owned: do not touch. Without this,
-                            // AI would re-UPDATE a dismissed row and
-                            // (via ON CONFLICT) keep writing data_source=
-                            // 'ai' on every enrichment, even though the
-                            // dismissal filter keeps it hidden.
-                            let existing: Option<(Option<String>, Option<String>)> = db_sh
-                                .conn_ref()
-                                .query_row(
-                                    "SELECT data_source, dismissed_at FROM account_stakeholder_roles
-                                     WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
-                                    rusqlite::params![&input.entity_id, pid, role],
-                                    |row| Ok((row.get(0)?, row.get(1)?)),
-                                )
-                                .ok();
-                            let is_user_owned = matches!(
-                                existing.as_ref().and_then(|(ds, _)| ds.as_deref()),
-                                Some("user")
-                            );
-                            let is_dismissed = existing.as_ref().is_some_and(|(_, d)| d.is_some());
-                            if !is_user_owned && !is_dismissed {
-                                if let Err(e) = db_sh.conn_ref().execute(
-                                    "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
-                                    rusqlite::params![&input.entity_id, pid, role],
-                                ) {
-                                    log::warn!(
-                                        "upsert AI-owned stakeholder role failed for {}:{}: {e}",
-                                        input.entity_id,
-                                        pid
-                                    );
-                                }
-                            }
-                        }
-                    } else {
-                        // Person has a person_id but is not in account_stakeholders — suggest
-                        write_stakeholder_suggestion(&StakeholderSuggestionParams {
-                            db: &db_sh,
-                            account_id: &input.entity_id,
-                            person_id: Some(pid),
-                            insight,
-                            source: ai_source,
-                        });
-                    }
-                } else {
-                    // No person_id — write to suggestions table
-                    write_stakeholder_suggestion(&StakeholderSuggestionParams {
-                        db: &db_sh,
-                        account_id: &input.entity_id,
-                        person_id: None,
-                        insight,
-                        source: ai_source,
-                    });
-                }
-            }
-        }
-    }
-
     // Prevent sparse refreshes from wiping narrative intelligence.
     // If the new response is structurally valid JSON but contains little/no
     // usable narrative, keep prior core fields until enrichment recovers.
@@ -2393,50 +2320,47 @@ pub fn compose_enrichment_intelligence(
 
     // Deterministic contradiction checks + balanced repair pass.
     if input.entity_type == "account" || input.entity_type == "project" {
-        if let Ok(db_for_consistency) = crate::db::ActionDb::open() {
-            if let Ok(facts) = crate::intelligence::build_fact_context(
-                &db_for_consistency,
-                &input.entity_id,
-                &input.entity_type,
-            ) {
-                let initial_report = crate::intelligence::check_consistency(&final_intel, &facts);
-                let repaired_intel = crate::intelligence::apply_deterministic_repairs(
-                    &final_intel,
-                    &initial_report,
-                    &facts,
-                );
-                let mut unresolved_report =
-                    crate::intelligence::check_consistency(&repaired_intel, &facts);
-                let mut post_repair_intel = repaired_intel;
+        if let Ok(facts) =
+            crate::intelligence::build_fact_context(db, &input.entity_id, &input.entity_type)
+        {
+            let initial_report = crate::intelligence::check_consistency(&final_intel, &facts);
+            let repaired_intel = crate::intelligence::apply_deterministic_repairs(
+                &final_intel,
+                &initial_report,
+                &facts,
+            );
+            let mut unresolved_report =
+                crate::intelligence::check_consistency(&repaired_intel, &facts);
+            let mut post_repair_intel = repaired_intel;
 
-                // Balanced mode: one retry for unresolved high-severity findings.
-                if unresolved_report.has_high() {
-                    if let Some(cfg) = ai_config {
-                        if let Ok(retry_intel) = run_consistency_repair_retry(
-                            input,
-                            &post_repair_intel,
-                            &unresolved_report,
-                            &facts,
-                            cfg,
-                        ) {
-                            let retry_unresolved =
-                                crate::intelligence::check_consistency(&retry_intel, &facts);
-                            if retry_unresolved.findings.len() <= unresolved_report.findings.len() {
-                                post_repair_intel = retry_intel;
-                                unresolved_report = retry_unresolved;
-                            }
+            // Balanced mode: one retry for unresolved high-severity findings.
+            if unresolved_report.has_high() {
+                if let Some(cfg) = ai_config {
+                    if let Ok(retry_intel) = run_consistency_repair_retry(
+                        input,
+                        &post_repair_intel,
+                        &unresolved_report,
+                        &facts,
+                        cfg,
+                    ) {
+                        let retry_unresolved =
+                            crate::intelligence::check_consistency(&retry_intel, &facts);
+                        if retry_unresolved.findings.len() <= unresolved_report.findings.len() {
+                            post_repair_intel = retry_intel;
+                            unresolved_report = retry_unresolved;
                         }
                     }
                 }
-
-                post_repair_intel.consistency_status = Some(
-                    crate::intelligence::status_from_reports(&initial_report, &unresolved_report),
-                );
-                post_repair_intel.consistency_findings =
-                    crate::intelligence::merge_fixed_flags(&initial_report, &unresolved_report);
-                post_repair_intel.consistency_checked_at = Some(Utc::now().to_rfc3339());
-                final_intel = post_repair_intel;
             }
+
+            post_repair_intel.consistency_status = Some(crate::intelligence::status_from_reports(
+                &initial_report,
+                &unresolved_report,
+            ));
+            post_repair_intel.consistency_findings =
+                crate::intelligence::merge_fixed_flags(&initial_report, &unresolved_report);
+            post_repair_intel.consistency_checked_at = Some(Utc::now().to_rfc3339());
+            final_intel = post_repair_intel;
         }
     }
 
@@ -2444,115 +2368,86 @@ pub fn compose_enrichment_intelligence(
     // Fail-closed: if we cannot open the feedback DB to check suppression,
     // drop risks/wins for this round rather than writing potentially-tombstoned
     // items. One lost enrichment round is recoverable; tombstone resurrection is not.
-    match crate::db::ActionDb::open() {
-        Ok(feedback_db) => {
-            use crate::db::intelligence_feedback::SuppressionDecision;
-            use crate::intelligence::canonicalization::{
-                item_hash as canonical_item_hash, ItemKind,
-            };
+    {
+        use crate::db::intelligence_feedback::SuppressionDecision;
+        use crate::intelligence::canonicalization::{item_hash as canonical_item_hash, ItemKind};
 
-            let pre_risk_count = final_intel.risks.len();
-            final_intel.risks.retain(|risk| {
-                let item_key = Some(risk.text.as_str());
-                let hash = canonical_item_hash(ItemKind::Risk, &risk.text);
-                match feedback_db.is_suppressed(
-                    &input.entity_id,
-                    "risks",
-                    item_key,
-                    Some(&hash),
-                    risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
-                ) {
-                    SuppressionDecision::Suppressed { .. } => false,
-                    SuppressionDecision::NotSuppressed => true,
-                    SuppressionDecision::Malformed { record_id, reason } => {
-                        log::error!(
-                            "[is_suppressed] malformed tombstone {:?} for entity {} field risks; \
-                             failing closed: {:?}",
-                            record_id,
-                            input.entity_id,
-                            reason
-                        );
-                        let reason_label = format!("{:?}", reason);
-                        if let Err(audit_err) = feedback_db.record_malformed_suppression(
-                            &record_id.0,
-                            &reason_label,
-                            &input.entity_id,
-                            "risks",
-                            Some("intel_queue.compose_enrichment_intelligence.risks"),
-                        ) {
-                            log::warn!(
-                                "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
-                                input.entity_id,
-                                audit_err
-                            );
-                        }
-                        false
-                    }
+        let pre_risk_count = final_intel.risks.len();
+        final_intel.risks.retain(|risk| {
+            let item_key = Some(risk.text.as_str());
+            let hash = canonical_item_hash(ItemKind::Risk, &risk.text);
+            match db.is_suppressed(
+                &input.entity_id,
+                "risks",
+                item_key,
+                Some(&hash),
+                risk.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+            ) {
+                SuppressionDecision::Suppressed { .. } => false,
+                SuppressionDecision::NotSuppressed => true,
+                SuppressionDecision::Malformed { record_id, reason } => {
+                    log::error!(
+                        "[is_suppressed] malformed tombstone {:?} for entity {} field risks; \
+                         failing closed: {:?}",
+                        record_id,
+                        input.entity_id,
+                        reason
+                    );
+                    side_writes
+                        .malformed_suppression_audits
+                        .push(MalformedSuppressionAudit {
+                            record_id: record_id.0,
+                            reason: format!("{:?}", reason),
+                            field_key: "risks",
+                            caller_context: "intel_queue.compose_enrichment_intelligence.risks",
+                        });
+                    false
                 }
-            });
-            let pre_win_count = final_intel.recent_wins.len();
-            final_intel.recent_wins.retain(|win| {
-                let item_key = Some(win.text.as_str());
-                let hash = canonical_item_hash(ItemKind::Win, &win.text);
-                match feedback_db.is_suppressed(
-                    &input.entity_id,
-                    "recentWins",
-                    item_key,
-                    Some(&hash),
-                    win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
-                ) {
-                    SuppressionDecision::Suppressed { .. } => false,
-                    SuppressionDecision::NotSuppressed => true,
-                    SuppressionDecision::Malformed { record_id, reason } => {
-                        log::error!(
-                            "[is_suppressed] malformed tombstone {:?} for entity {} field recentWins; \
-                             failing closed: {:?}",
-                            record_id,
-                            input.entity_id,
-                            reason
-                        );
-                        let reason_label = format!("{:?}", reason);
-                        if let Err(audit_err) = feedback_db.record_malformed_suppression(
-                            &record_id.0,
-                            &reason_label,
-                            &input.entity_id,
-                            "recentWins",
-                            Some("intel_queue.compose_enrichment_intelligence.recentWins"),
-                        ) {
-                            log::warn!(
-                                "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
-                                input.entity_id,
-                                audit_err
-                            );
-                        }
-                        false
-                    }
-                }
-            });
-            let risks_suppressed = pre_risk_count - final_intel.risks.len();
-            let wins_suppressed = pre_win_count - final_intel.recent_wins.len();
-            if risks_suppressed > 0 || wins_suppressed > 0 {
-                log::info!(
-                    "[I645] Suppression filter for {}: {} risks, {} wins removed",
-                    input.entity_id,
-                    risks_suppressed,
-                    wins_suppressed,
-                );
             }
-        }
-        Err(e) => {
-            log::error!(
-                "[I645] DOS-308 fail-closed: cannot open feedback DB to check suppression \
-                 for entity {}: {}; dropping {} risks and {} wins to avoid tombstone resurrection",
+        });
+        let pre_win_count = final_intel.recent_wins.len();
+        final_intel.recent_wins.retain(|win| {
+            let item_key = Some(win.text.as_str());
+            let hash = canonical_item_hash(ItemKind::Win, &win.text);
+            match db.is_suppressed(
+                &input.entity_id,
+                "recentWins",
+                item_key,
+                Some(&hash),
+                win.item_source.as_ref().map(|s| s.sourced_at.as_str()),
+            ) {
+                SuppressionDecision::Suppressed { .. } => false,
+                SuppressionDecision::NotSuppressed => true,
+                SuppressionDecision::Malformed { record_id, reason } => {
+                    log::error!(
+                        "[is_suppressed] malformed tombstone {:?} for entity {} field recentWins; \
+                         failing closed: {:?}",
+                        record_id,
+                        input.entity_id,
+                        reason
+                    );
+                    side_writes
+                        .malformed_suppression_audits
+                        .push(MalformedSuppressionAudit {
+                            record_id: record_id.0,
+                            reason: format!("{:?}", reason),
+                            field_key: "recentWins",
+                            caller_context:
+                                "intel_queue.compose_enrichment_intelligence.recentWins",
+                        });
+                    false
+                }
+            }
+        });
+        let risks_suppressed = pre_risk_count - final_intel.risks.len();
+        let wins_suppressed = pre_win_count - final_intel.recent_wins.len();
+        if risks_suppressed > 0 || wins_suppressed > 0 {
+            log::info!(
+                "[I645] Suppression filter for {}: {} risks, {} wins removed",
                 input.entity_id,
-                e,
-                final_intel.risks.len(),
-                final_intel.recent_wins.len(),
+                risks_suppressed,
+                wins_suppressed,
             );
-            // TODO: add integration coverage once DB-open failure is injectable.
-            // TODO: emit durable audit event so operator sees this.
-            final_intel.risks.clear();
-            final_intel.recent_wins.clear();
         }
     }
 
@@ -2575,9 +2470,6 @@ pub fn compose_enrichment_intelligence(
             ..computed.clone()
         });
     }
-
-    // Own DB connection for cache update + user-fact reconciliation
-    let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
 
     // Reconcile user-entered facts with AI-inferred values.
     // User-edited fields (source weight 1.0) override AI guesses.
@@ -2602,101 +2494,287 @@ pub fn compose_enrichment_intelligence(
 
     // Cross-entity contamination check — second-line defense against
     // Glean/PTY bleeding a different customer's content into this account's
-    // narrative fields. Runs before any persistence. On hit + RejectOnHit, we
-    // emit a signal + Tauri event and refuse to write. Shadow mode logs only.
-    if input.entity_type == "account" {
-        let policy = crate::intelligence::contamination::ContaminationValidation::from_env();
-        if policy.is_enabled() {
-            let narrative =
-                crate::intelligence::contamination::collect_narrative_text(&final_intel);
-            let target_domains: Vec<String> = db
-                .conn_ref()
-                .prepare("SELECT domain FROM account_domains WHERE account_id = ?1")
-                .and_then(|mut stmt| {
-                    stmt.query_map(rusqlite::params![&input.entity_id], |row| {
-                        row.get::<_, String>(0)
-                    })
-                    .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+    // narrative fields. Runs before any persistence. On hit + RejectOnHit,
+    // return an explicit skip so the caller can record the rejection and
+    // preserve the prior intelligence. Shadow mode logs only.
+    if input.entity_type == "account" && contamination_policy.is_enabled() {
+        let narrative = crate::intelligence::contamination::collect_narrative_text(&final_intel);
+        let target_domains: Vec<String> = db
+            .conn_ref()
+            .prepare("SELECT domain FROM account_domains WHERE account_id = ?1")
+            .and_then(|mut stmt| {
+                stmt.query_map(rusqlite::params![&input.entity_id], |row| {
+                    row.get::<_, String>(0)
                 })
-                .unwrap_or_default();
+                .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+            })
+            .unwrap_or_default();
 
-            let hits = crate::intelligence::contamination::detect_cross_entity_contamination(
-                &narrative,
-                &input.entity_id,
-                &target_domains,
-                &[],
-                &db,
+        let hits = crate::intelligence::contamination::detect_cross_entity_contamination(
+            &narrative,
+            &input.entity_id,
+            &target_domains,
+            &[],
+            db,
+        );
+
+        if !hits.is_empty() {
+            let event_payload = serde_json::json!({
+                "entity_id": input.entity_id,
+                "entity_type": input.entity_type,
+                "hits": hits.clone(),
+                "rejected": contamination_policy.rejects(),
+            });
+            let payload = event_payload.to_string();
+
+            log::warn!(
+                "Cross-entity contamination detected in enrichment for {} \
+                     ({} hit{}): {:?} — validation policy={:?}",
+                input.entity_id,
+                hits.len(),
+                if hits.len() == 1 { "" } else { "s" },
+                hits,
+                contamination_policy,
             );
 
-            if !hits.is_empty() {
-                let payload = serde_json::json!({
-                    "entity_id": input.entity_id,
-                    "entity_type": input.entity_type,
-                    "hits": hits,
-                    "rejected": policy.rejects(),
-                })
-                .to_string();
-
-                log::warn!(
-                    "Cross-entity contamination detected in enrichment for {} \
-                     ({} hit{}): {:?} — validation policy={:?}",
-                    input.entity_id,
-                    hits.len(),
-                    if hits.len() == 1 { "" } else { "s" },
-                    hits,
-                    policy,
-                );
-
-                // Emit a signal for the propagation engine + audit trail.
-                let _ = crate::signals::bus::emit_signal(
-                    &db,
-                    &input.entity_type,
-                    &input.entity_id,
-                    "enrichment_contamination_rejected",
-                    "dos_287_contamination",
-                    Some(&payload),
-                    0.95,
-                );
-
-                // Emit a Tauri event so the frontend can surface a toast.
-                if let Some(handle) = state.app_handle() {
-                    let _ = handle.emit(
-                        "enrichment-contamination-rejected",
-                        serde_json::json!({
-                            "entity_id": input.entity_id,
-                            "entity_type": input.entity_type,
-                            "hits": hits,
-                            "rejected": policy.rejects(),
-                        }),
-                    );
-                }
-
-                if policy.rejects() {
-                    // Graceful rejection: skip the writes, preserve prior
-                    // intelligence as the fallback. The Tauri event has
-                    // already been emitted above so the frontend surfaces
-                    // a toast; the audit signal has been recorded; the
-                    // warn log captured the hits. Returning Ok with the
-                    // prior row (or empty when none exists) lets the
-                    // caller treat this as a soft skip rather than a
-                    // hard error that takes over the screen.
-                    log::info!(
-                        "Cross-entity contamination guard rejected enrichment for {}; \
+            if contamination_policy.rejects() {
+                // Graceful rejection: skip the writes, preserve prior
+                // intelligence as the fallback while the caller records
+                // the rejection signal/event separately.
+                log::info!(
+                    "Cross-entity contamination guard rejected enrichment for {}; \
                          prior intelligence preserved",
-                        input.entity_id
-                    );
-                    return Ok(existing_intel.unwrap_or(IntelligenceJson {
-                        entity_id: input.entity_id.clone(),
-                        entity_type: input.entity_type.clone(),
-                        ..Default::default()
-                    }));
-                }
-                // ShadowMode: fall through and persist anyway.
+                    input.entity_id
+                );
+                let prior = existing_intel.unwrap_or(IntelligenceJson {
+                    entity_id: input.entity_id.clone(),
+                    entity_type: input.entity_type.clone(),
+                    ..Default::default()
+                });
+                return Ok(EnrichmentComposition::SkipDueToContamination {
+                    reason: "cross-entity contamination detected".to_string(),
+                    prior,
+                    rejection: ContaminationRejection {
+                        signal_payload: payload,
+                        event_payload,
+                    },
+                });
             }
+            // ShadowMode: fall through and persist anyway.
         }
     }
 
-    Ok(final_intel)
+    Ok(EnrichmentComposition::Persist(PreparedEnrichment {
+        intelligence: final_intel,
+        side_writes,
+    }))
+}
+
+pub fn record_enrichment_contamination_rejection(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    state: &AppState,
+    input: &EnrichmentInput,
+    db: &crate::db::ActionDb,
+    rejection: &ContaminationRejection,
+) {
+    if let Err(e) = db.with_transaction(|tx| {
+        crate::services::signals::emit(
+            ctx,
+            tx,
+            &input.entity_type,
+            &input.entity_id,
+            "enrichment_contamination_rejected",
+            "dos_287_contamination",
+            Some(&rejection.signal_payload),
+            0.95,
+        )
+        .map(|_| ())
+    }) {
+        log::warn!(
+            "failed to record enrichment contamination rejection for {}: {}",
+            input.entity_id,
+            e
+        );
+    }
+
+    if let Some(handle) = state.app_handle() {
+        let _ = handle.emit(
+            "enrichment-contamination-rejected",
+            rejection.event_payload.clone(),
+        );
+    }
+}
+
+pub fn apply_enrichment_side_writes(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    tx: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    prepared: &PreparedEnrichment,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    apply_enrichment_stakeholder_side_writes(tx, input, &prepared.intelligence);
+
+    for audit in &prepared.side_writes.malformed_suppression_audits {
+        if let Err(audit_err) = tx.record_malformed_suppression(
+            &audit.record_id,
+            &audit.reason,
+            &input.entity_id,
+            audit.field_key,
+            Some(audit.caller_context),
+        ) {
+            log::warn!(
+                "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
+                input.entity_id,
+                audit_err
+            );
+        }
+    }
+
+    Ok(())
+}
+
+fn apply_enrichment_stakeholder_side_writes(
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    final_intel: &IntelligenceJson,
+) {
+    // Route AI stakeholder insights to DB columns or suggestions table.
+    // Person-first architecture: enrichment never overwrites user-designated data.
+    // AI can update columns it previously wrote (data_source='ai'), and new
+    // discoveries go to stakeholder_suggestions for user review.
+    if input.entity_type != "account" || final_intel.stakeholder_insights.is_empty() {
+        return;
+    }
+
+    for insight in &final_intel.stakeholder_insights {
+        let ai_source = insight
+            .item_source
+            .as_ref()
+            .map(|s| s.source.as_str())
+            .unwrap_or("pty_synthesis");
+
+        if let Some(ref pid) = insight.person_id {
+            // Check if this person_id exists in account_stakeholders for this account
+            let row_exists: bool = db
+                .conn_ref()
+                .query_row(
+                    "SELECT COUNT(*) FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
+                    rusqlite::params![&input.entity_id, pid],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap_or(0)
+                > 0;
+
+            if row_exists {
+                // Update engagement if AI-owned
+                if let Some(ref engagement) = insight.engagement {
+                    let ds: String = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT data_source_engagement FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
+                            rusqlite::params![&input.entity_id, pid],
+                            |row| row.get(0),
+                        )
+                        .unwrap_or_else(|_| "ai".to_string());
+                    if ds == "ai" {
+                        if let Err(e) = db.conn_ref().execute(
+                            "UPDATE account_stakeholders SET engagement = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_engagement = 'ai'",
+                            rusqlite::params![engagement, &input.entity_id, pid],
+                        ) {
+                            log::warn!(
+                                "update AI-owned stakeholder engagement failed for {}:{}: {e}",
+                                input.entity_id,
+                                pid
+                            );
+                        }
+                    } else {
+                        // AI disagrees with user-owned engagement — write suggestion
+                        write_stakeholder_suggestion(&StakeholderSuggestionParams {
+                            db,
+                            account_id: &input.entity_id,
+                            person_id: Some(pid),
+                            insight,
+                            source: ai_source,
+                        });
+                    }
+                }
+
+                // Update assessment if AI-owned
+                if let Some(ref assessment) = insight.assessment {
+                    let ds: String = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT data_source_assessment FROM account_stakeholders WHERE account_id = ?1 AND person_id = ?2",
+                            rusqlite::params![&input.entity_id, pid],
+                            |row| row.get(0),
+                        )
+                        .unwrap_or_else(|_| "ai".to_string());
+                    if ds == "ai" {
+                        if let Err(e) = db.conn_ref().execute(
+                            "UPDATE account_stakeholders SET assessment = ?1 WHERE account_id = ?2 AND person_id = ?3 AND data_source_assessment = 'ai'",
+                            rusqlite::params![assessment, &input.entity_id, pid],
+                        ) {
+                            log::warn!(
+                                "update AI-owned stakeholder assessment failed for {}:{}: {e}",
+                                input.entity_id,
+                                pid
+                            );
+                        }
+                    }
+                }
+
+                // Upsert roles: skip user-owned, update/insert AI-owned
+                if let Some(ref role) = insight.role {
+                    // Existence check returns data_source AND dismissed_at so
+                    // AI does not reinsert user-dismissed role rows.
+                    let existing: Option<(Option<String>, Option<String>)> = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT data_source, dismissed_at FROM account_stakeholder_roles
+                             WHERE account_id = ?1 AND person_id = ?2 AND role = ?3",
+                            rusqlite::params![&input.entity_id, pid, role],
+                            |row| Ok((row.get(0)?, row.get(1)?)),
+                        )
+                        .ok();
+                    let is_user_owned = matches!(
+                        existing.as_ref().and_then(|(ds, _)| ds.as_deref()),
+                        Some("user")
+                    );
+                    let is_dismissed = existing.as_ref().is_some_and(|(_, d)| d.is_some());
+                    if !is_user_owned && !is_dismissed {
+                        if let Err(e) = db.conn_ref().execute(
+                            "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source) VALUES (?1, ?2, ?3, 'ai') ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'ai'",
+                            rusqlite::params![&input.entity_id, pid, role],
+                        ) {
+                            log::warn!(
+                                "upsert AI-owned stakeholder role failed for {}:{}: {e}",
+                                input.entity_id,
+                                pid
+                            );
+                        }
+                    }
+                }
+            } else {
+                // Person has a person_id but is not in account_stakeholders — suggest
+                write_stakeholder_suggestion(&StakeholderSuggestionParams {
+                    db,
+                    account_id: &input.entity_id,
+                    person_id: Some(pid),
+                    insight,
+                    source: ai_source,
+                });
+            }
+        } else {
+            // No person_id — write to suggestions table
+            write_stakeholder_suggestion(&StakeholderSuggestionParams {
+                db,
+                account_id: &input.entity_id,
+                person_id: None,
+                insight,
+                source: ai_source,
+            });
+        }
+    }
 }
 
 /// Best-effort post-commit disk cache write for composed enrichment.
