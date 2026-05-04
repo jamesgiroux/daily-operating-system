@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>EBR / QBR · DailyOS Reference</title>
+
+  <!-- Fonts FIRST so the rest of the cascade has them -->
+  <link rel="stylesheet" href="../../_shared/fonts.css">
+  <link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — verbatim copies of src/components/layout/*.module.css,
+       scoped via _shared/scope-modules.py -->
+  <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Surface-specific modules used by EbrQbrPage.tsx -->
+  <link rel="stylesheet" href="../../_shared/styles/report-slides.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/IntelligenceFeedback.module.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
+  <link rel="stylesheet" href="../../_shared/chrome.css">
+  <link rel="stylesheet" href="../../_shared/inspector.css">
+</head>
+<body
+  data-folio-label="EBR / QBR"
+  data-folio-crumbs="Accounts>Account>EBR / QBR"
+  data-tint="turmeric"
+  data-active-page="accounts"
+  data-nav-base=".."
+  data-folio-actions="regenerate"
+  data-folio-action-accent="var(--color-garden-larkspur)"
+  data-folio-regenerate-label="Regenerate"
+  data-chapters="cover:building:Cover|the-story:bookopen:The Story|value-delivered:star:Value Delivered|by-the-numbers:barchart2:By the Numbers|what-we-navigated:compass:What We Navigated|whats-ahead:arrowright:What's Ahead|next-steps:target:Next Steps">
+
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<!-- EbrQbrPage generated-report branch -->
+<div class="report-slides_slideContainer" data-ds-name="EbrQbrPage" data-ds-tier="surface" data-ds-spec="surfaces/EbrQbrPage.md">
+
+  <!-- Slide 1: Cover -->
+  <section id="cover" class="report-slides_slideSection">
+    <div style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start;">
+      <div style="font-family:var(--font-mono); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-larkspur); margin-bottom:24px;">
+        Business Review
+      </div>
+
+      <h1 style="font-family:var(--font-serif); font-size:52px; font-weight:400; line-height:1.1; letter-spacing:-0.02em; color:var(--color-text-primary); margin:0 0 20px; max-width:700px;">
+        Acme Corp
+      </h1>
+
+      <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:28px; font-weight:400; color:var(--color-garden-larkspur); margin-bottom:32px;">
+        Q2 2026 Business Review
+      </div>
+
+      <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-style:italic; font-size:18px; font-weight:400; line-height:1.65; color:var(--color-text-secondary); max-width:680px; margin:0 0 40px;">
+        Acme moved from rollout stabilization into a clearer operating cadence this quarter. The work centered on Helpline Rollout adoption, Q2 Launch readiness, and a tighter renewal path that gives Jen Park and Dan Mitchell a shared executive narrative.
+      </p>
+
+      <div style="display:flex; gap:16px; align-items:baseline; font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary); letter-spacing:0.04em;">
+        <span>April 22, 2026</span>
+        <span>·</span>
+        <span style="display:inline-flex; align-items:baseline; gap:4px;">
+          Prepared by
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary);">Add name</span>
+        </span>
+      </div>
+    </div>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </section>
+
+  <!-- Slide 2: The Story -->
+  <div>
+    <section id="the-story" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start; scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-larkspur); margin-bottom:48px;">
+        The Story
+      </div>
+
+      <div style="max-width:760px;">
+        <div style="display:flex; align-items:flex-start; gap:20px; margin-bottom:32px;">
+          <span style="font-family:var(--font-serif); font-size:28px; line-height:1.3; color:var(--color-garden-larkspur); flex-shrink:0; user-select:none;">·</span>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:20px; line-height:1.5; color:var(--color-text-primary); flex:1;">Acme moved from Helpline Rollout stabilization into a repeatable support cadence across three regions.</span>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:2px;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; align-items:flex-start; gap:20px; margin-bottom:32px;">
+          <span style="font-family:var(--font-serif); font-size:28px; line-height:1.3; color:var(--color-garden-larkspur); flex-shrink:0; user-select:none;">·</span>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:20px; line-height:1.5; color:var(--color-text-primary); flex:1;">Jen Park and Dan Mitchell aligned the renewal story around business continuity, adoption proof, and Q2 Launch readiness.</span>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:2px;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; align-items:flex-start; gap:20px; margin-bottom:32px;">
+          <span style="font-family:var(--font-serif); font-size:28px; line-height:1.3; color:var(--color-garden-larkspur); flex-shrink:0; user-select:none;">·</span>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:20px; line-height:1.5; color:var(--color-text-primary); flex:1;">Sara Wu and Marco Devine converted escalation history into an enablement plan that the support team can operate without weekly rescue calls.</span>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:2px;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; align-items:flex-start; gap:20px; margin-bottom:32px;">
+          <span style="font-family:var(--font-serif); font-size:28px; line-height:1.3; color:var(--color-garden-larkspur); flex-shrink:0; user-select:none;">·</span>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:20px; line-height:1.5; color:var(--color-text-primary); flex:1;">Next quarter is about proving the operating model at executive altitude before the MSA Renewal enters final legal review.</span>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:2px;" aria-label="Remove">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; opacity:0.5; background:none; border:none; cursor:pointer; padding:4px 0; color:var(--color-text-secondary); margin-left:48px;">
+          + Add point
+        </button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 3: Value Delivered -->
+  <div>
+    <section id="value-delivered" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start; scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-larkspur); margin-bottom:36px;">
+        Value Delivered
+      </div>
+
+      <div style="max-width:760px; margin-bottom:40px;">
+        <div style="position:relative; border-left:3px solid var(--color-garden-larkspur); padding:16px 20px; margin-bottom:16px;">
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:18px; font-weight:500; color:var(--color-text-primary); display:block; margin-bottom:6px;">Helpline Rollout moved from pilot to full Acme support team adoption.</span>
+          <div style="margin-bottom:6px;"><span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; color:var(--color-spice-turmeric); font-weight:500;">87 agents enabled across 3 regions</span></div>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary); font-style:italic; display:block;">Apr 6 Helpline Rollout retro · Marco Devine</span>
+          <button style="position:absolute; top:12px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary);" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="position:relative; border-left:3px solid var(--color-garden-larkspur); padding:16px 20px; margin-bottom:16px;">
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:18px; font-weight:500; color:var(--color-text-primary); display:block; margin-bottom:6px;">Q2 Launch readiness path cleared with owner-level blockers mapped.</span>
+          <div style="margin-bottom:6px;"><span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; color:var(--color-spice-turmeric); font-weight:500;">Launch decision moved up one week</span></div>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary); font-style:italic; display:block;">Apr 14 Q2 Launch checkpoint · Sara Wu</span>
+          <button style="position:absolute; top:12px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary);" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="position:relative; border-left:3px solid var(--color-garden-larkspur); padding:16px 20px; margin-bottom:16px;">
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:18px; font-weight:500; color:var(--color-text-primary); display:block; margin-bottom:6px;">MSA Renewal materials aligned with procurement and security inputs before executive review.</span>
+          <div style="margin-bottom:6px;"><span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; color:var(--color-spice-turmeric); font-weight:500;">Renewal package ready for May legal review</span></div>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary); font-style:italic; display:block;">Apr 20 commercial prep · Priya Raman</span>
+          <button style="position:absolute; top:12px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary);" aria-label="Remove">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; opacity:0.5; background:none; border:none; cursor:pointer; padding:4px 0; color:var(--color-text-secondary); margin-left:24px;">
+          + Add outcome
+        </button>
+      </div>
+
+      <div style="max-width:760px; position:relative;">
+        <div style="font-family:var(--font-serif); font-size:60px; line-height:0.5; color:var(--color-garden-larkspur); margin-bottom:16px; user-select:none;">
+          "
+        </div>
+
+        <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-style:italic; font-size:20px; line-height:1.6; color:var(--color-text-primary); max-width:700px; margin:0 0 12px;">
+          The rollout finally feels like one motion instead of three separate workstreams.
+        </p>
+
+        <div style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary);">
+          — Customer
+        </div>
+
+        <button style="position:absolute; top:0; right:0; opacity:0.4; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary);" aria-label="Remove quote">✕</button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 4: By the Numbers -->
+  <div>
+    <section id="by-the-numbers" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start; scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-larkspur); margin-bottom:36px;">
+        By the Numbers
+      </div>
+
+      <div style="max-width:700px;">
+        <div style="display:flex; align-items:center; gap:16px; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <div style="flex:1;"><span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; color:var(--color-text-primary);">Active support agents using Helpline Rollout</span></div>
+          <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; color:var(--color-text-tertiary);">24</span>
+            <span style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary);">→</span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; font-weight:600; color:var(--color-text-primary);">87</span>
+          </div>
+          <div style="font-family:var(--font-mono); font-size:18px; font-weight:600; color:var(--color-garden-sage); flex-shrink:0; width:24px; text-align:center;">↑</div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:16px; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <div style="flex:1;"><span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; color:var(--color-text-primary);">Executive sponsors engaged</span></div>
+          <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; color:var(--color-text-tertiary);">1</span>
+            <span style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary);">→</span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; font-weight:600; color:var(--color-text-primary);">3</span>
+          </div>
+          <div style="font-family:var(--font-mono); font-size:18px; font-weight:600; color:var(--color-garden-sage); flex-shrink:0; width:24px; text-align:center;">↑</div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:16px; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <div style="flex:1;"><span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; color:var(--color-text-primary);">Q2 Launch enablement completion</span></div>
+          <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; color:var(--color-text-tertiary);">40%</span>
+            <span style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary);">→</span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; font-weight:600; color:var(--color-text-primary);">86%</span>
+          </div>
+          <div style="font-family:var(--font-mono); font-size:18px; font-weight:600; color:var(--color-garden-sage); flex-shrink:0; width:24px; text-align:center;">↑</div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; align-items:center; gap:16px; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <div style="flex:1;"><span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; color:var(--color-text-primary);">Renewal workstream readiness</span></div>
+          <div style="display:flex; align-items:center; gap:6px; flex-shrink:0;">
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; font-weight:600; color:var(--color-text-primary);">On track</span>
+          </div>
+          <div style="font-family:var(--font-mono); font-size:18px; font-weight:600; color:var(--color-text-secondary); flex-shrink:0; width:24px; text-align:center;">→</div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; opacity:0.5; background:none; border:none; cursor:pointer; padding:12px 0 4px; color:var(--color-text-secondary);">
+          + Add metric
+        </button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 5: What We Navigated -->
+  <div>
+    <section id="what-we-navigated" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start; scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-larkspur); margin-bottom:36px;">
+        What We Navigated
+      </div>
+
+      <div style="max-width:800px;">
+        <div style="position:relative; border-left:3px solid var(--color-spice-turmeric); padding:16px 20px; margin-bottom:16px; background:transparent;">
+          <div style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-spice-turmeric); margin-bottom:8px;">mitigated</div>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; font-weight:500; color:var(--color-text-primary); display:block; margin-bottom:8px;">Procurement requested MSA language changes after Acme legal review.</span>
+          <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-style:italic; font-size:15px; color:var(--color-text-secondary); margin:0;">Dan Mitchell and Priya Raman mapped the redlines into a May review path with clear executive escalation criteria.</p>
+          <button style="position:absolute; top:12px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary);" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="position:relative; border-left:3px solid var(--color-garden-sage); padding:16px 20px; margin-bottom:16px; background:transparent;">
+          <div style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-garden-sage); margin-bottom:8px;">resolved</div>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; font-weight:500; color:var(--color-text-primary); display:block; margin-bottom:8px;">Data residency questions paused the analytics expansion path.</span>
+          <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-style:italic; font-size:15px; color:var(--color-text-secondary); margin:0;">Liu Kang confirmed the control set and documented the approval path before the next steering committee.</p>
+          <button style="position:absolute; top:12px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary);" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="position:relative; border-left:3px solid var(--color-spice-terracotta); padding:16px 20px; margin-bottom:16px; background:transparent;">
+          <div style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-spice-terracotta); margin-bottom:8px;">open</div>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; font-weight:500; color:var(--color-text-primary); display:block; margin-bottom:8px;">Helpline reporting owners remain split between support and operations.</span>
+          <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-style:italic; font-size:15px; color:var(--color-text-secondary); margin:0;">Jen Park will name a single reporting owner before the next adoption review.</p>
+          <button style="position:absolute; top:12px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary);" aria-label="Remove">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; opacity:0.5; background:none; border:none; cursor:pointer; padding:4px 0; color:var(--color-text-secondary); margin-left:24px;">
+          + Add item
+        </button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 6: What's Ahead -->
+  <div>
+    <section id="whats-ahead" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start; scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-larkspur); margin-bottom:48px;">
+        What's Ahead
+      </div>
+
+      <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:24px; font-weight:400; line-height:1.7; color:var(--color-text-primary); max-width:700px; margin:0;">
+        Next quarter should shift the partnership from rollout recovery to operating cadence. The immediate work is to close the MSA Renewal path, use Q2 Launch as the executive proof point, and turn the Helpline Rollout operating model into a repeatable playbook that Acme can expand without depending on weekly escalation calls.
+      </p>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 7: Next Steps -->
+  <div>
+    <section id="next-steps" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start; scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-larkspur); margin-bottom:36px;">
+        Next Steps
+      </div>
+
+      <div style="max-width:800px;">
+        <div style="display:flex; gap:16px; align-items:baseline; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-garden-larkspur); min-width:24px; flex-shrink:0;">1</span>
+          <div style="flex:1;">
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary); display:block; margin-bottom:4px;">Share final MSA Renewal package with Acme legal.</span>
+            <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Priya Raman</span>
+              <span style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">·</span>
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Apr 27</span>
+            </div>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:baseline; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-garden-larkspur); min-width:24px; flex-shrink:0;">2</span>
+          <div style="flex:1;">
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary); display:block; margin-bottom:4px;">Run executive Q2 Launch readout with Jen Park and Dan Mitchell.</span>
+            <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Sara Wu</span>
+              <span style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">·</span>
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Apr 30</span>
+            </div>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:baseline; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-garden-larkspur); min-width:24px; flex-shrink:0;">3</span>
+          <div style="flex:1;">
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary); display:block; margin-bottom:4px;">Confirm Helpline Rollout reporting owner and adoption cadence.</span>
+            <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Marco Devine</span>
+              <span style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">·</span>
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">May 1</span>
+            </div>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:baseline; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-garden-larkspur); min-width:24px; flex-shrink:0;">4</span>
+          <div style="flex:1;">
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary); display:block; margin-bottom:4px;">Draft next-quarter analytics expansion scope for the Acme steering committee.</span>
+            <div style="display:flex; gap:8px; align-items:center; margin-top:4px;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Kevin Otieno</span>
+              <span style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">·</span>
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">May 6</span>
+            </div>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; opacity:0.5; background:none; border:none; cursor:pointer; padding:12px 0 4px; color:var(--color-text-secondary);">
+          + Add step
+        </button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Finis marker -->
+  <div>
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); letter-spacing:0.06em; margin-top:16px;">
+        Last updated: 2026-04-22
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script src="../../_shared/chrome.js"></script>
+<script src="../../_shared/inspector.js"></script>
+</body>
+</html>

@@ -1,0 +1,312 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>SWOT · DailyOS Reference</title>
+
+  <!-- Fonts FIRST so the rest of the cascade has them -->
+  <link rel="stylesheet" href="../../_shared/fonts.css">
+  <link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — verbatim copies of src/components/layout/*.module.css,
+       scoped via _shared/scope-modules.py -->
+  <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Surface-specific modules and source globals used by SwotPage.tsx -->
+  <link rel="stylesheet" href="../../_shared/styles/report-slides.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/report-surfaces.css">
+  <link rel="stylesheet" href="../../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/IntelligenceFeedback.module.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
+  <link rel="stylesheet" href="../../_shared/chrome.css">
+  <link rel="stylesheet" href="../../_shared/inspector.css">
+</head>
+<body
+  data-folio-label="SWOT"
+  data-folio-crumbs="Accounts>Account>SWOT"
+  data-tint="turmeric"
+  data-active-page="accounts"
+  data-nav-base=".."
+  data-folio-actions="regenerate"
+  data-chapters="cover:layoutgrid:Cover|strengths:trendingup:Strengths|weaknesses:alerttriangle:Weaknesses|opportunities:lightbulb:Opportunities|threats:compass:Threats">
+
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div class="report-slides_slideContainer">
+  <!-- Slide 1: Cover -->
+  <section id="cover" class="report-slides_slideSection">
+    <div class="report-surface-slide">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-sage); margin-bottom:24px;">
+        SWOT Analysis
+      </div>
+
+      <h1 style="font-family:var(--font-serif); font-size:52px; font-weight:400; line-height:1.1; letter-spacing:-0.02em; color:var(--color-text-primary); margin:0 0 32px; max-width:700px;">
+        Acme Corp
+      </h1>
+
+      <div style="width:40px; height:1px; background:var(--color-garden-sage); margin-bottom:16px;"></div>
+      <p class="EditableText_editable" style="font-family:var(--font-serif); font-size:20px; font-style:italic; line-height:1.7; color:var(--color-text-primary); max-width:700px; margin:0 0 40px;" title="Click to edit" data-editable-text="">Acme Corp has the sponsorship and usage proof to carry the MSA Renewal, but procurement language and launch sequencing need to tighten before Jen Park can defend the next step with finance.</p>
+
+      <div style="display:flex; gap:24px; align-items:baseline; margin-top:0;">
+        <span style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary); letter-spacing:0.04em;">April 22, 2026</span>
+        <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-secondary); display:inline-flex; align-items:baseline; gap:4px;">
+          Prepared by
+          <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-secondary);" title="Click to edit" data-editable-text="">Add name</span>
+        </span>
+      </div>
+    </div>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+        </button>
+      </span>
+    </span>
+  </section>
+
+  <!-- Slide 2: Strengths -->
+  <div>
+    <section id="strengths" class="report-surface-slide" style="scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-sage); margin-bottom:24px;">
+        Strengths
+      </div>
+
+      <div style="max-width:800px;">
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-garden-sage); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Jen Park remains an active executive sponsor for the MSA Renewal and has kept Acme's finance review focused on operational continuity rather than price alone.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Apr 22 renewal checkpoint with Jen Park</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-garden-sage); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Usage proof from Q2 Launch gives the team a concrete customer story to reuse in the executive readout.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Northwind Traders Q2 Launch prep</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-garden-sage); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Dan Mitchell and Sara Wu have already reviewed the technical fallback, reducing the chance that implementation questions stall the commercial path.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Stark Industries executive readout prep</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); background:none; border:none; cursor:pointer; padding:12px 0 0; opacity:0.5; transition:opacity 0.15s; letter-spacing:0.06em;">
+          + Add item
+        </button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 3: Weaknesses -->
+  <div>
+    <section id="weaknesses" class="report-surface-slide" style="scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-spice-turmeric); margin-bottom:24px;">
+        Weaknesses
+      </div>
+
+      <div style="max-width:800px;">
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-spice-turmeric); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">The pricing memo is still not forwardable to Acme finance, leaving Jen Park without clean language for Friday's review.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Acme Corp commercial prep</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-spice-turmeric); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Northwind Traders has not confirmed the rollout sequence, so customer-facing enablement may split into two parallel tracks.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Helpline Rollout sequencing note</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-spice-turmeric); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Marco Devine is waiting on a single owner for go/no-go communication, which keeps the executive packet from feeling settled.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">MSA Renewal action review</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); background:none; border:none; cursor:pointer; padding:12px 0 0; opacity:0.5; transition:opacity 0.15s; letter-spacing:0.06em;">
+          + Add item
+        </button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 4: Opportunities -->
+  <div>
+    <section id="opportunities" class="report-surface-slide" style="scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-garden-larkspur); margin-bottom:24px;">
+        Opportunities
+      </div>
+
+      <div style="max-width:800px;">
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-garden-larkspur); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">A clean Acme renewal story can become the proof point for Globex Inc and Meridian Harbor, especially where rollout risk is the shared objection.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Globex helpline rollout sync</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-garden-larkspur); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Priya Raman can pull Q2 Launch metrics into the executive readout, turning launch readiness into a measurable expansion conversation.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Q2 Launch metric review</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-garden-larkspur); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Aoife Murphy has opened a path to package Helpline Rollout learnings as a repeatable implementation plan for the next renewal cohort.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Meridian Harbor procurement review</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); background:none; border:none; cursor:pointer; padding:12px 0 0; opacity:0.5; transition:opacity 0.15s; letter-spacing:0.06em;">
+          + Add item
+        </button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 5: Threats -->
+  <div>
+    <section id="threats" class="report-surface-slide" style="scroll-margin-top:60px;">
+      <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-spice-terracotta); margin-bottom:24px;">
+        Threats
+      </div>
+
+      <div style="max-width:800px;">
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-spice-terracotta); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">If pricing language misses Friday's finance review, the MSA Renewal could slide into a compressed approval cycle with less executive cover.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Acme Corp renewal checkpoint</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-spice-terracotta); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Liu Kang still needs rollout ownership clarified; without it, the Helpline Rollout plan can look like a vendor dependency instead of a joint operating plan.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Globex Inc implementation thread</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <div style="display:flex; gap:16px; align-items:flex-start; padding:14px 0; border-bottom:1px solid var(--color-rule-light);">
+          <span style="width:8px; height:8px; border-radius:50%; background:var(--color-spice-terracotta); flex-shrink:0; margin-top:8px;"></span>
+          <div style="flex:1; min-width:0;">
+            <span class="EditableText_editable" style="font-family:var(--font-sans); font-size:17px; line-height:1.5; color:var(--color-text-primary); display:block;" title="Click to edit" data-editable-text="">Kevin Otieno has asked for a decision path before the executive readout; delay would make Stark Industries' comparison against incumbent support harder to control.</span>
+            <span class="EditableText_editable" style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); font-style:italic; display:block; margin-top:4px;" title="Click to edit" data-editable-text="">Stark Industries executive readout</span>
+          </div>
+          <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0; margin-top:4px;" aria-label="Remove item">✕</button>
+        </div>
+
+        <button style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); background:none; border:none; cursor:pointer; padding:12px 0 0; opacity:0.5; transition:opacity 0.15s; letter-spacing:0.06em;">
+          + Add item
+        </button>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Finis marker -->
+  <div>
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); letter-spacing:0.06em; margin-top:16px;">
+        Last updated: 2026-04-22
+      </div>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script src="../../_shared/chrome.js"></script>
+<script src="../../_shared/inspector.js"></script>
+</body>
+</html>

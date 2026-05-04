@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Weekly Impact · DailyOS Reference</title>
+
+  <!-- Fonts FIRST so the rest of the cascade has them -->
+  <link rel="stylesheet" href="../../_shared/fonts.css">
+  <link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — verbatim copies of src/components/layout/*.module.css,
+       scoped via _shared/scope-modules.py -->
+  <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Surface-specific modules used by WeeklyImpactPage.tsx -->
+  <link rel="stylesheet" href="../../_shared/styles/report-slides.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/IntelligenceFeedback.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/report-surfaces.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
+  <link rel="stylesheet" href="../../_shared/chrome.css">
+  <link rel="stylesheet" href="../../_shared/inspector.css">
+</head>
+<body
+  data-folio-label="Weekly Impact"
+  data-folio-crumbs="Me>Weekly Impact"
+  data-tint="eucalyptus"
+  data-active-page="me"
+  data-nav-base=".."
+  data-folio-actions="regenerate"
+  data-folio-regenerate-label="Regenerate"
+  data-folio-action-accent="var(--color-garden-eucalyptus)"
+  data-chapters="cover:calendar:Cover|priorities:target:Priorities|the-work:checksquare:The Work|watch:eye:Watch|next-week:arrowright:Next Week">
+
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<!-- WeeklyImpactPage renders the loaded report state as a 5-slide scroll-snap deck. -->
+<div class="report-slides_slideContainer" data-ds-name="WeeklyImpactPage" data-ds-tier="surface" data-ds-spec="surfaces/WeeklyImpactPage.md">
+
+  <!-- Slide 1: Cover. WeeklyImpactPage wraps CoverSlide in an outer section with the same id. -->
+  <section id="cover" class="report-slides_slideSection">
+    <section id="cover" class="report-surface-slide" style="scroll-margin-top: 60px;">
+      <div style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--color-garden-eucalyptus); margin-bottom: 24px;">
+        Weekly Impact
+      </div>
+
+      <h1 style="font-family: var(--font-serif); font-size: 48px; font-weight: 400; line-height: 1.1; letter-spacing: -0.02em; color: var(--color-text-primary); margin: 0 0 16px;">
+        Week 16 · Apr 13 – Apr 17
+      </h1>
+
+      <p class="EditableText_editable" style="font-family: var(--font-serif); font-size: 22px; font-style: italic; font-weight: 400; line-height: 1.5; color: var(--color-text-secondary); max-width: 700px; margin: 0 0 32px;" title="Click to edit" data-editable-text="">
+        The week moved from renewal risk to operational clarity: Acme’s MSA path narrowed, Northwind’s Q2 Launch picked up named owners, and Globex’s Helpline Rollout turned into a reusable playbook.
+      </p>
+
+      <div style="font-family: var(--font-mono); font-size: 14px; color: var(--color-text-tertiary); letter-spacing: 0.04em;">
+        18 meetings · 11 actions closed
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </section>
+
+  <!-- Slide 2: Priorities Moved. Static reference omits scroll-triggered reveal classes. -->
+  <div>
+    <section id="priorities" class="report-surface-slide" style="scroll-margin-top: 60px;">
+      <div style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--color-text-secondary); margin-bottom: 24px;">
+        Priorities Moved
+      </div>
+
+      <div style="max-width: 800px;">
+        <div style="display: flex; gap: 16px; align-items: flex-start; padding: 16px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <div style="flex: 1;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: 6px;">
+              MSA Renewal
+            </div>
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 17px; line-height: 1.5; color: var(--color-text-primary); display: block; margin-bottom: 6px;" title="Click to edit" data-editable-text="">Acme Corp moved from open commercial questions to a legal-owner sequence after Jen Park aligned Dan Mitchell on the risk story.</span>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-style: italic; color: var(--color-text-tertiary);">
+              Acme Corp MSA Renewal review · Apr 14
+            </div>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 16px; align-items: flex-start; padding: 16px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <div style="flex: 1;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: 6px;">
+              Q2 Launch
+            </div>
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 17px; line-height: 1.5; color: var(--color-text-primary); display: block; margin-bottom: 6px;" title="Click to edit" data-editable-text="">Northwind Traders left launch prep with Sara Wu owning customer milestones and Priya Raman clearing the implementation dependency list.</span>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-style: italic; color: var(--color-text-tertiary);">
+              Northwind Q2 Launch working session · Apr 16
+            </div>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 16px; align-items: flex-start; padding: 16px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <div style="flex: 1;">
+            <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-tertiary); margin-bottom: 6px;">
+              Helpline Rollout
+            </div>
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 17px; line-height: 1.5; color: var(--color-text-primary); display: block; margin-bottom: 6px;" title="Click to edit" data-editable-text="">Globex Inc agreed to pilot the support-owner map with Liu Kang and Kevin Otieno before expanding to the full frontline group.</span>
+            <div style="font-family: var(--font-mono); font-size: 11px; font-style: italic; color: var(--color-text-tertiary);">
+              Globex rollout sync · Apr 17
+            </div>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+      </div>
+
+      <button style="margin-top: 20px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); background: none; border: 1px dashed var(--color-rule-light); border-radius: 4px; padding: 6px 16px; cursor: pointer; align-self: flex-start;">
+        + Add
+      </button>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 3: The Work -->
+  <div>
+    <section id="the-work" class="report-surface-slide" style="scroll-margin-top: 60px;">
+      <div style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--color-text-secondary); margin-bottom: 24px;">
+        The Work
+      </div>
+
+      <div style="max-width: 800px; margin-bottom: 48px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-secondary); margin-bottom: 16px;">
+          Wins
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <div style="flex: 1;">
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 16px; line-height: 1.5; color: var(--color-text-primary); display: block;" title="Click to edit" data-editable-text="">Closed the Stark Industries executive readout with a concrete adoption baseline and next-step owner.</span>
+            <span style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; display: inline-block; letter-spacing: 0.04em;">Stark Industries readout · Apr 15</span>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <div style="flex: 1;">
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 16px; line-height: 1.5; color: var(--color-text-primary); display: block;" title="Click to edit" data-editable-text="">Converted Meridian Harbor procurement concerns into two renewal asks instead of a broad escalation.</span>
+            <span style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; display: inline-block; letter-spacing: 0.04em;">Meridian Harbor procurement review · Apr 16</span>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 10px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <div style="flex: 1;">
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 16px; line-height: 1.5; color: var(--color-text-primary); display: block;" title="Click to edit" data-editable-text="">Finished the Q2 Launch decision log so Northwind can separate customer-facing milestones from internal cleanup.</span>
+            <span style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; display: inline-block; letter-spacing: 0.04em;">Northwind prep note · Apr 17</span>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+
+        <button style="margin-top: 12px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); background: none; border: 1px dashed var(--color-rule-light); border-radius: 4px; padding: 6px 16px; cursor: pointer;">
+          + Add
+        </button>
+      </div>
+
+      <div style="border-top: 1px solid var(--color-rule-light); margin-bottom: 32px;"></div>
+
+      <div style="max-width: 800px;">
+        <div style="font-family: var(--font-mono); font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.1em; color: var(--color-text-secondary); margin-bottom: 16px;">
+          What Happened
+        </div>
+
+        <p class="EditableText_editable" style="font-family: var(--font-serif); font-size: 20px; font-weight: 400; line-height: 1.6; color: var(--color-text-primary); margin: 0;" title="Click to edit" data-editable-text="">
+          You turned a scattered week into a cleaner operating cadence: renewal ambiguity became named legal work, launch planning became owned milestones, and the rollout playbook became concrete enough to reuse. The strongest pattern was narrowing big account risk into small decisions that a named person could actually carry.
+        </p>
+      </div>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 4: Watch -->
+  <div>
+    <section id="watch" class="report-surface-slide" style="scroll-margin-top: 60px;">
+      <div style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--color-spice-terracotta); margin-bottom: 24px;">
+        Watch
+      </div>
+
+      <div style="max-width: 800px;">
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <div style="flex: 1;">
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 16px; line-height: 1.5; color: var(--color-text-primary); display: block;" title="Click to edit" data-editable-text="">Acme Corp still needs Dan Mitchell’s legal reviewer named before the MSA Renewal can hold its April timeline.</span>
+            <span style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; display: inline-block; letter-spacing: 0.04em;">Acme commercial prep · Apr 17</span>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 12px; align-items: flex-start; padding: 12px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <div style="flex: 1;">
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 16px; line-height: 1.5; color: var(--color-text-primary); display: block;" title="Click to edit" data-editable-text="">Globex Inc has adoption momentum, but the Helpline Rollout support-owner map will stall if Kevin Otieno joins after migration planning is already locked.</span>
+            <span style="font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); margin-top: 4px; display: inline-block; letter-spacing: 0.04em;">Globex rollout sync · Apr 17</span>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+      </div>
+
+      <button style="margin-top: 20px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); background: none; border: 1px dashed var(--color-rule-light); border-radius: 4px; padding: 6px 16px; cursor: pointer; align-self: flex-start;">
+        + Add
+      </button>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Slide 5: Into Next Week -->
+  <div>
+    <section id="next-week" class="report-surface-slide" style="scroll-margin-top: 60px;">
+      <div style="font-family: var(--font-mono); font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.12em; color: var(--color-garden-eucalyptus); margin-bottom: 24px;">
+        Into Next Week
+      </div>
+
+      <div style="max-width: 800px; margin-bottom: 24px;">
+        <div style="display: flex; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <span style="font-family: var(--font-mono); font-size: 20px; font-weight: 600; color: var(--color-garden-eucalyptus); min-width: 24px; flex-shrink: 0;">1</span>
+          <div style="flex: 1;">
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 17px; line-height: 1.5; color: var(--color-text-primary);" title="Click to edit" data-editable-text="">Confirm Acme’s legal reviewer and send Jen Park the narrowed MSA Renewal decision memo.</span>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <span style="font-family: var(--font-mono); font-size: 20px; font-weight: 600; color: var(--color-garden-eucalyptus); min-width: 24px; flex-shrink: 0;">2</span>
+          <div style="flex: 1;">
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 17px; line-height: 1.5; color: var(--color-text-primary);" title="Click to edit" data-editable-text="">Use Northwind’s Q2 Launch decision log as the template for Sara Wu’s customer milestone review.</span>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+
+        <div style="display: flex; gap: 16px; align-items: baseline; padding: 12px 0; border-bottom: 1px solid var(--color-rule-light);">
+          <span style="font-family: var(--font-mono); font-size: 20px; font-weight: 600; color: var(--color-garden-eucalyptus); min-width: 24px; flex-shrink: 0;">3</span>
+          <div style="flex: 1;">
+            <span class="EditableText_editable" style="font-family: var(--font-sans); font-size: 17px; line-height: 1.5; color: var(--color-text-primary);" title="Click to edit" data-editable-text="">Schedule the Globex support-owner pilot with Liu Kang before Kevin Otieno’s migration-plan review.</span>
+          </div>
+          <button style="opacity: 0; transition: opacity 0.15s; background: none; border: none; cursor: pointer; padding: 4px 6px; font-size: 14px; color: var(--color-text-tertiary); flex-shrink: 0;" aria-label="Remove">✕</button>
+        </div>
+      </div>
+
+      <button style="margin-top: 8px; font-family: var(--font-mono); font-size: 12px; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--color-text-tertiary); background: none; border: 1px dashed var(--color-rule-light); border-radius: 4px; padding: 6px 16px; cursor: pointer; align-self: flex-start;">
+        + Add
+      </button>
+    </section>
+
+    <span class="IntelligenceFeedback_wrapper">
+      <span class="IntelligenceFeedback_container">
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/><path d="M7 10v12"/></svg>
+        </button>
+        <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/><path d="M17 14V2"/></svg>
+        </button>
+      </span>
+    </span>
+  </div>
+
+  <!-- Finis marker. WeeklyImpactPage passes report.generatedAt.split("T")[0]. -->
+  <div>
+    <div style="text-align: center; padding: 72px 0 24px;">
+      <div style="display: flex; justify-content: center; gap: 0.4em; color: var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+      <div style="font-family: var(--font-mono); font-size: 10px; color: var(--color-text-tertiary); letter-spacing: 0.06em; margin-top: 16px;">
+        Last updated: 2026-04-22
+      </div>
+    </div>
+  </div>
+
+</div>
+
+</main>
+</div>
+
+<script src="../../_shared/chrome.js"></script>
+<script src="../../_shared/inspector.js"></script>
+</body>
+</html>

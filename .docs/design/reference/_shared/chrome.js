@@ -84,16 +84,24 @@
     filetext:      'M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z|M14 2v6h6|M16 13H8|M16 17H8|M10 9H8',
     paperclip:     'm16 6-8.414 8.586a2 2 0 0 0 2.829 2.829l8.414-8.586a4 4 0 1 0-5.657-5.657l-8.379 8.551a6 6 0 1 0 8.485 8.485l8.379-8.551',
     alignleft:     'M21 5H3|M15 12H3|M17 19H3',
+    crosshair:     'M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0|M22 12h-4|M6 12H2|M12 6V2|M12 22v-4',
     alerttriangle: 'M21.73 18l-8-14a2 2 0 0 0-3.46 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3z|M12 9v4|M12 17h.01',
     network:       'M16 17a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z|M2 17a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z|M9 3a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v4a1 1 0 0 1-1 1h-4a1 1 0 0 1-1-1z|M5 16v-3a1 1 0 0 1 1-1h12a1 1 0 0 1 1 1v3|M12 12V8',
     eye:           'M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7z|M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z',
     activity:      'M22 12h-2.48a2 2 0 0 0-1.93 1.46l-2.35 8.36a.25.25 0 0 1-.48 0L9.24 2.18a.25.25 0 0 0-.48 0l-2.35 8.36A2 2 0 0 1 4.49 12H2',
+    barchart2:     'M18 20V10|M12 20V4|M6 20v-6',
+    star:          'm12 2 3.09 6.26 6.91 1-5 4.87 1.18 6.88L12 17.77l-6.18 3.24L7 14.13 2 9.27l6.91-1L12 2z',
+    arrowright:    'M5 12h14|m12 5 7 7-7 7',
     compass:       'M16.24 7.76l-2.12 6.36-6.36 2.12 2.12-6.36 6.36-2.12z|M2 12a10 10 0 1 0 20 0a10 10 0 1 0 -20 0',
+    layoutgrid:    'M4 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z|M15 3h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1z|M15 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1h-5a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z|M4 14h5a1 1 0 0 1 1 1v5a1 1 0 0 1-1 1H4a1 1 0 0 1-1-1v-5a1 1 0 0 1 1-1z',
+    lightbulb:     'M15 14c.2-1 .7-1.7 1.5-2.5 1-.9 1.5-2.2 1.5-3.5A6 6 0 0 0 6 8c0 1 .2 2.2 1.5 3.5.7.7 1.3 1.5 1.5 2.5|M9 18h6|M10 22h4',
     trendingup:    'M16 7h6v6|m22 7-8.5 8.5-5-5L2 17',
+    trendingdown:  'M16 17h6v-6|M22 17 13.5 8.5 8.5 13.5 2 7',
     briefcase:     'M16 20V4a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16|M2 8a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v10a2 2 0 0 1-2 2h-16a2 2 0 0 1-2-2z',
     notebookpen:   'M13.4 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-7.4|M2 6h4|M2 10h4|M2 14h4|M2 18h4|M21.378 5.626a1 1 0 1 0-3.004-3.004l-5.01 5.012a2 2 0 0 0-.506.854l-.837 2.87a.5.5 0 0 0 .62.62l2.87-.837a2 2 0 0 0 .854-.506z',
     hearthandshake:'M19 14c1.49-1.46 3-3.21 3-5.5A5.5 5.5 0 0 0 16.5 3c-1.76 0-3 .5-4.5 2-1.5-1.5-2.74-2-4.5-2A5.5 5.5 0 0 0 2 8.5c0 2.29 1.51 4.04 3 5.5l7 7|m12 6 8 8|M16.5 17.5 18 19',
     bookopen:      'M12 7v14|M3 18a1 1 0 0 1-1-1V4a1 1 0 0 1 1-1h5a4 4 0 0 1 4 4 4 4 0 0 1 4-4h5a1 1 0 0 1 1 1v13a1 1 0 0 1-1 1h-6a3 3 0 0 0-3 3 3 3 0 0 0-3-3z',
+    hand:          'M18 11V6a2 2 0 0 0-4 0|M14 10V4a2 2 0 0 0-4 0v2|M10 10.5V6a2 2 0 0 0-4 0v8|M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15',
   };
 
   function lucide(name, opts) {
@@ -188,6 +196,12 @@
             title: refreshTitle,
             style: "font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-text-tertiary); background:none; border:1px solid var(--color-rule-heavy); border-radius:4px; padding:2px 10px; cursor:pointer; transition: color 150ms, border-color 150ms;",
           }, 'Refresh'));
+        } else if (a === 'regenerate') {
+          actWrap.append(el('button', {
+            type: 'button',
+            class: 'report-slides_folioAction',
+            style: '--report-accent:' + (body.dataset.folioActionAccent || 'var(--color-garden-sage)'),
+          }, body.dataset.folioRegenerateLabel || 'Regenerate'));
         }
       }
       right.append(actWrap);
