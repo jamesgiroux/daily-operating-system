@@ -1,0 +1,20 @@
+{
+  "bundle": 8,
+  "scenario_id": "sensitivity-class-leak",
+  "invariant": "A public-class assessment must not contain content sourced from private-class claims. The substrate enforces sensitivity-aware filtering at the claim-aggregation boundary: claims with sensitivity = private contribute to private-class outputs only; their content must not bleed into public-class rendered surfaces.",
+  "expected_render_policy": "show-public-only",
+  "surfaces_exercised": ["account-intelligence-prep", "public-summary-render"],
+  "source_lifecycle_refs": ["seeded-source-public", "seeded-source-private"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-04",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-8-v1-synthetic-fingerprint",
+  "trust_factors_dominant": ["sensitivity_aware_filtering"],
+  "pass_fail_definition": "PASS = public-class assessment output contains zero text segments traceable to private-class claims AND the trust scoring path enforces the sensitivity boundary either by claim selection (private claims excluded from public aggregations) or by a new sensitivity factor in compile_trust if the design requires one. FAIL = private-class content appears in public-class output.",
+  "fixture_design_notes": {
+    "state_sql": "Seed 1 account (acme.example.com) with 2 claims: a public-class claim with sensitivity = 'public' (e.g., the company's stated public goal) and a private-class claim with sensitivity = 'private' (e.g., internal stakeholder concern). Both claims have legitimate provenance; the test is purely about the public-vs-private boundary.",
+    "provider_replay": "IntelligenceJson where the executive_assessment (intended for a public-class surface) blends content from both claims, including verbatim text from the private-class claim.",
+    "expected_state": "After commit_claim path: both claims persist with their original sensitivity values. The public-class rendered output (separate query path) contains text from the public claim only. The private claim's text is absent from public output.",
+    "expected_provenance": "Sources include both seeded sources. Field attribution shows the sensitivity boundary. Warnings include 'private_content_filtered_from_public_render' if the substrate suppresses; or 'sensitivity_mismatch_at_aggregation' if the substrate flags but doesn't suppress.",
+    "expected_output": "Public-class rendered output contains only public-claim content. Private-class output (if rendered to a private surface) may contain both. This bundle may require introducing a new sensitivity_aware_filtering factor in compile_trust if the existing factors don't already catch it; surface as a design open question during implementation."
+  }
+}

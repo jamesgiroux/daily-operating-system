@@ -1,0 +1,20 @@
+{
+  "bundle": 2,
+  "scenario_id": "provider-hallucination",
+  "invariant": "Trust score for hallucinated content with corroboration_count = 0 and low internal_consistency stays below the NeedsVerification threshold (0.5). The substrate flags the hallucination at the trust-factor layer; consumer policy can suppress display but the substrate does not silently absorb it as truth.",
+  "expected_render_policy": "show-with-warnings",
+  "surfaces_exercised": ["account-intelligence-prep"],
+  "source_lifecycle_refs": ["seeded-glean-1"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-04",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-2-v1-synthetic-fingerprint",
+  "trust_factors_dominant": ["source_reliability", "internal_consistency"],
+  "pass_fail_definition": "PASS = hallucinated claim's trust_score < 0.5 AND ConfidenceEvidence records source_reliability AND internal_consistency among the dominant penalties. FAIL = trust_score >= 0.5 (substrate failed to flag) OR contradicting source's own claim got mutated by the hallucination.",
+  "fixture_design_notes": {
+    "state_sql": "Seed 1 account (acme.example.com), 1 stakeholder (jane.doe@example.com), 1 source (glean fact with source_asof = clock.txt - 7 days), 1 prior claim from that source (the ground truth), and 0 corroborating claims for the hallucinated topic.",
+    "provider_replay": "IntelligenceJson where the executive_assessment text contradicts the seeded source's claim. Risks list internally contradicts the wins list (low internal_consistency). Provider attribution present so it looks legit at surface level.",
+    "expected_state": "After commit_claim: hallucinated claim row exists with trust_score < 0.5, trust_band = 'needs_verification' or below. Ground-truth claim from the seeded source is present and unaltered.",
+    "expected_provenance": "Sources include seeded-glean-1. Field attribution shows the hallucinated claim as provider-attributed with no corroborators. Warnings include 'low_internal_consistency' or equivalent.",
+    "expected_output": "Rendered output marks the hallucinated content with a warning band; the trust score is exposed on the rendered claim."
+  }
+}

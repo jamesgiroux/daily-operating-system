@@ -1,0 +1,20 @@
+{
+  "bundle": 6,
+  "scenario_id": "adversarial-corroboration-spam",
+  "invariant": "Multiple weak/low-reliability sources independently corroborating a false claim must not outweigh one strong/high-reliability source contradicting it. The trust factor source_reliability must aggregate by source weight, not by raw count, so that 'n weak sources' cannot drown a single authoritative contradiction.",
+  "expected_render_policy": "show-with-warnings",
+  "surfaces_exercised": ["account-intelligence-prep"],
+  "source_lifecycle_refs": ["seeded-source-strong", "seeded-source-weak-1", "seeded-source-weak-2", "seeded-source-weak-3", "seeded-source-weak-4", "seeded-source-weak-5"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-04",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-6-v1-synthetic-fingerprint",
+  "trust_factors_dominant": ["source_reliability", "contradiction_penalty"],
+  "pass_fail_definition": "PASS = false claim corroborated by 5 weak sources scores below 0.5 trust because the 1 strong-source contradiction dominates AND ConfidenceEvidence enumerates source_reliability as the dominant penalty. FAIL = trust_score >= 0.5 (false claim wins by raw count).",
+  "fixture_design_notes": {
+    "state_sql": "Seed 1 account (acme.example.com) with 6 sources: 1 strong (e.g., user-authored fact at evidence_weight 1.0) + 5 weak (e.g., third-party scraped data at evidence_weight 0.2). The strong source asserts X; the 5 weak sources assert NOT X.",
+    "provider_replay": "IntelligenceJson where the executive_assessment leans on the corroborated-but-false claim (the 5-weak NOT X side), with source attribution to all 5 weak sources.",
+    "expected_state": "After commit_claim: the false claim row has trust_score < 0.5. The strong source's contradicting claim retains its trust_score above 0.7 (LikelyCurrent or higher). source_reliability factor in ConfidenceEvidence shows weighted aggregation, not naive averaging.",
+    "expected_provenance": "Sources include all 6 seeded sources with their evidence_weight values. Field attribution shows the contradiction. Warnings include 'corroboration_spam_detected' or equivalent.",
+    "expected_output": "Rendered output shows both views with the strong source's contradiction marked as authoritative; the weak-corroborated side is shown under a verify-first band."
+  }
+}

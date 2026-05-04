@@ -1,0 +1,20 @@
+{
+  "bundle": 4,
+  "scenario_id": "cross-entity-ambiguity-person-shape",
+  "invariant": "When the same Person is linked to two distinct Accounts (legitimately or via ambiguous email-domain inference), an enrichment for Account A must not pull context from Person's interactions on Account B. cross_entity_coherence applied to Person subjects prevents the bleed; this is the Person-shaped sibling of the Account-shaped Bundle 1.",
+  "expected_render_policy": "show",
+  "surfaces_exercised": ["account-intelligence-prep", "person-context-prep"],
+  "source_lifecycle_refs": ["seeded-account-a", "seeded-account-b", "seeded-person-shared"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-04",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-4-v1-synthetic-fingerprint",
+  "trust_factors_dominant": ["cross_entity_coherence", "subject_fit_confidence"],
+  "pass_fail_definition": "PASS = enrichment for Account A produces no claims whose subject_ref points to Person on Account B's project/meeting context AND cross_entity_coherence factor scores below 0.3 on the bleeding content. FAIL = Account A intelligence absorbs Account B's stakeholder insights for the shared Person.",
+  "fixture_design_notes": {
+    "state_sql": "Seed 2 accounts (acme.example.com, subsidiary.example.com), 1 Person (jane.doe@example.com) linked to both accounts via account_stakeholders. Account A has 2 prior project claims; Account B has 2 prior project claims, distinct from A's. Provider context for Account A enrichment includes meeting transcripts where jane.doe discussed Account B-specific projects (ambiguity source).",
+    "provider_replay": "IntelligenceJson for Account A enrichment includes stakeholder_insights for jane.doe that reference Account B's project names verbatim. The bleed shape: subject Person but topic is Account B exclusive.",
+    "expected_state": "Claims with subject_ref pointing to Account B's project rows do NOT land on Account A. cross_entity_coherence ConfidenceEvidence on the affected claims is < 0.3 with hits enumerating the Account B project tokens.",
+    "expected_provenance": "Sources include all three seeded sources. Field attribution shows the bleed origin (Person's Account B context). Warnings include 'cross_entity_subject_ambiguity'.",
+    "expected_output": "Rendered output for Account A omits Account B's project mentions in stakeholder insights, even though they appear in the raw provider response."
+  }
+}

@@ -1,0 +1,20 @@
+{
+  "bundle": 3,
+  "scenario_id": "stale-source-resurrection",
+  "invariant": "Provider returning content sourced from a previously-withdrawn (tombstoned) or user-dismissed claim does not re-promote that content. The trust factors feedback_signal (typed ClaimFeedback per ADR-0123) and temporal_freshness combine to keep the resurrected claim's trust below NeedsVerification.",
+  "expected_render_policy": "suppress",
+  "surfaces_exercised": ["account-intelligence-prep"],
+  "source_lifecycle_refs": ["seeded-source-withdrawn", "seeded-source-fresh"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-04",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-3-v1-synthetic-fingerprint",
+  "trust_factors_dominant": ["user_feedback_weight", "freshness_weight"],
+  "pass_fail_definition": "PASS = resurrected claim's trust_score < 0.4 (NeedsVerification or below) AND feedback_signal contributes a negative ConfidenceEvidence entry (WrongSubject or Dismissed feedback type per ADR-0123). FAIL = trust_score >= 0.5 (substrate forgot the user correction).",
+  "fixture_design_notes": {
+    "state_sql": "Seed 1 account (acme.example.com) with prior history: a claim from source-1 was committed at T-30d, then user dismissed it at T-15d via ClaimFeedback (Dismissed). Source-1 is then withdrawn (its source row has lifecycle_state = withdrawn). At T0 (clock.txt), provider returns content from source-1 again as if it were fresh.",
+    "provider_replay": "IntelligenceJson where executive_assessment includes content matching the previously-dismissed claim. Provider attribution points to source-1 (the withdrawn one).",
+    "expected_state": "After commit_claim path: the resurrected claim either gets created with trust_score < 0.4, OR is rejected at the corroboration/feedback layer (depends on substrate path). Either way, the user's prior dismissal is preserved.",
+    "expected_provenance": "Sources include seeded-source-withdrawn flagged as withdrawn. Field attribution captures the source's lifecycle_state. Warnings include 'source_withdrawn' AND 'prior_user_dismissal'.",
+    "expected_output": "Rendered output suppresses the resurrected content (or shows it under a verify-first band). Stakeholder insights for the original (dismissed) topic remain absent."
+  }
+}

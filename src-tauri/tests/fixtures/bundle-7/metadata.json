@@ -1,0 +1,20 @@
+{
+  "bundle": 7,
+  "scenario_id": "temporal-scope-violation",
+  "invariant": "A claim with temporal_scope = closed (the original observation's window has ended) cannot be re-corroborated by data observed after the closure. temporal_freshness factor must penalize attempts to refresh closed-scope claims with stale or post-closure evidence; the closed claim retains its original trust_score band rather than getting refreshed by inappropriate evidence.",
+  "expected_render_policy": "show",
+  "surfaces_exercised": ["account-intelligence-prep"],
+  "source_lifecycle_refs": ["seeded-source-original", "seeded-source-stale-postclosure"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-04",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-7-v1-synthetic-fingerprint",
+  "trust_factors_dominant": ["freshness_weight", "temporal_scope_validation"],
+  "pass_fail_definition": "PASS = the closed-scope claim's trust_score does NOT increase when post-closure evidence arrives AND the freshness_weight ConfidenceEvidence reflects the temporal_scope penalty. FAIL = trust_score increases as if the claim were still open-scope (substrate ignored temporal_scope).",
+  "fixture_design_notes": {
+    "state_sql": "Seed 1 account (acme.example.com) with 1 prior claim X committed at T-180d with temporal_scope = closed and observed_at_window_end = T-180d. The claim's original trust_score is recorded.",
+    "provider_replay": "IntelligenceJson at T0 (clock.txt) returns content that purports to corroborate X with new data observed at T-30d (i.e., 150d after the closed-scope window ended).",
+    "expected_state": "After commit_claim path: the closed claim X's trust_score is unchanged (no inappropriate refresh). A new corroboration row is rejected at the temporal-scope gate, OR is added but does not affect the closed claim's score. freshness_weight ConfidenceEvidence on any new corroborated claim shows the closed-scope penalty.",
+    "expected_provenance": "Sources include both seeded sources with their observed_at timestamps. Field attribution shows the temporal_scope mismatch. Warnings include 'corroboration_outside_temporal_scope'.",
+    "expected_output": "Rendered output shows X as it was at closure; no inappropriate refresh."
+  }
+}
