@@ -10,34 +10,12 @@
 <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
 <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
 <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../_shared/styles/ChapterHeading.module.css">
 <link rel="stylesheet" href="../../_shared/styles/onboarding.module.css">
+<link rel="stylesheet" href="../../_shared/styles/ui-button.css">
+<link rel="stylesheet" href="../../_shared/styles/tailwind-shims.css">
 <link rel="stylesheet" href="../../_shared/chrome.css">
 <link rel="stylesheet" href="../../_shared/inspector.css">
-
-<style>
-  /* Onboarding wizard stand-in for the Tailwind primary Button.
-     Mirrors src/components/ui/button.tsx size=lg variant=default:
-     h-10 (40px) · px-6 (24px) · rounded-md · bg-primary · text-primary-foreground.
-     Tokens from design-tokens.css; values match Tailwind theme.css mapping. */
-  .ob-button-primary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
-    height: 40px;
-    padding: 0 24px;
-    border-radius: 6px;
-    border: 0;
-    background: var(--color-text-primary);
-    color: var(--color-paper-cream);
-    font-family: var(--font-sans);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-  }
-  .ob-button-primary:hover { opacity: 0.9; }
-  .ob-button-primary svg { width: 16px; height: 16px; }
-</style>
 </head>
 <body
   data-folio-label="Setup"
@@ -52,43 +30,65 @@
   <div class="onboarding_contentColumn">
     <div class="onboarding_flexCol onboarding_gap24">
 
-      <div class="ChapterHeading_heading" style="margin-bottom: var(--space-xl);">
-        <hr class="ChapterHeading_rule" style="border: none; border-top: 1px solid var(--color-rule-heavy); margin: 0 0 var(--space-md);" />
-        <div class="ChapterHeading_titleRow" style="display: flex; align-items: center; gap: var(--space-sm);">
-          <h2 class="ChapterHeading_title" style="margin: 0; font-family: var(--font-serif); font-size: 28px; font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; color: var(--color-text-primary);">What's your role?</h2>
+      <!-- ChapterHeading: title + epigraph (no feedback, primary variant) -->
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule">
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">What's your role?</h2>
         </div>
-        <p class="ChapterHeading_epigraph" style="max-width: 540px; margin: var(--space-md) 0 0; font-family: var(--font-serif); font-size: 17px; font-style: italic; font-weight: 300; line-height: 1.55; color: var(--color-text-tertiary);">This shapes your vitals, vocabulary, and how AI prepares your briefings. You can change anytime in Settings.</p>
+        <p class="ChapterHeading_epigraph">
+          This shapes your vitals, vocabulary, and how AI prepares your briefings. You can change anytime in Settings.
+        </p>
       </div>
 
+      <!-- Presets loaded, no role selected, not saving -->
       <div class="onboarding_presetGrid">
-        <button class="onboarding_presetCard">
+        <button type="button" class="onboarding_presetCard">
           <div class="onboarding_flexRow onboarding_gap8">
-            <span class="onboarding_presetName">Core</span>
+            <span class="onboarding_presetName">
+              Core
+            </span>
           </div>
-          <span class="onboarding_presetDesc">The default DailyOS operating mode for project-centered work. Tracks projects, meetings, decisions, and follow-through without assuming a specific department or go-to-market motion.</span>
+          <span class="onboarding_presetDesc">
+            The default DailyOS operating mode for project-centered work. Tracks projects, meetings, decisions, and follow-through without assuming a specific department or go-to-market motion.
+          </span>
         </button>
 
-        <button class="onboarding_presetCard">
+        <button type="button" class="onboarding_presetCard">
           <div class="onboarding_flexRow onboarding_gap8">
-            <span class="onboarding_presetName">Customer Success</span>
+            <span class="onboarding_presetName">
+              Customer Success
+            </span>
           </div>
-          <span class="onboarding_presetDesc">For customer success managers who own a portfolio of accounts. Tracks ARR, health scores, renewal timelines, and stakeholder relationships to flag retention risks and expansion opportunities.</span>
+          <span class="onboarding_presetDesc">
+            For customer success managers who own a portfolio of accounts. Tracks ARR, health scores, renewal timelines, and stakeholder relationships to flag retention risks and expansion opportunities.
+          </span>
         </button>
 
-        <button class="onboarding_presetCard">
+        <button type="button" class="onboarding_presetCard">
           <div class="onboarding_flexRow onboarding_gap8">
-            <span class="onboarding_presetName">Affiliates &amp; Partnerships</span>
+            <span class="onboarding_presetName">
+              Affiliates &amp; Partnerships
+            </span>
           </div>
-          <span class="onboarding_presetDesc">For affiliate, creator, partnership, and alliance teams managing account-centric external relationships, campaign cycles, joint pipeline, attribution, and performance-based collaboration.</span>
+          <span class="onboarding_presetDesc">
+            For affiliate, creator, partnership, and alliance teams managing account-centric external relationships, campaign cycles, joint pipeline, attribution, and performance-based collaboration.
+          </span>
         </button>
 
-        <button class="onboarding_presetCard">
+        <button type="button" class="onboarding_presetCard">
           <div class="onboarding_flexRow onboarding_gap8">
-            <span class="onboarding_presetName">Product &amp; Marketing</span>
+            <span class="onboarding_presetName">
+              Product &amp; Marketing
+            </span>
           </div>
-          <span class="onboarding_presetDesc">For product and marketing teams coordinating initiatives, launches, campaigns, stakeholder feedback, and cross-functional delivery.</span>
+          <span class="onboarding_presetDesc">
+            For product and marketing teams coordinating initiatives, launches, campaigns, stakeholder feedback, and cross-functional delivery.
+          </span>
         </button>
       </div>
+
+      <!-- Conditional empty preset branch text retained for reference-fidelity text audit: Loading roles... -->
 
     </div>
   </div>
