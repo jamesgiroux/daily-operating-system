@@ -79,8 +79,14 @@ enclosing_fn_name() {
         sub(/^.*(^|[^[:alnum:]_])fn[[:space:]]+/, "", fn_line)
         sub(/[[:space:]]*[<(].*$/, "", fn_line)
         current_fn = fn_line
+        pending_fn_body = 1
+        fn_depth = 0
+      }
+
+      if (pending_fn_body && opens > 0) {
         fn_depth = depth + opens - closes
         if (fn_depth <= depth) fn_depth = depth + 1
+        pending_fn_body = 0
       }
 
       if (NR == target) {
@@ -89,7 +95,7 @@ enclosing_fn_name() {
       }
 
       depth += opens - closes
-      if (fn_depth > 0 && depth < fn_depth) {
+      if (!pending_fn_body && fn_depth > 0 && depth < fn_depth) {
         current_fn = ""
         fn_depth = 0
       }

@@ -75,6 +75,34 @@ fn refresh_post_commit_cache() {
 }
 
 #[test]
+fn intelligence_disk_write_lint_handles_multiline_post_commit_signature() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src = tmp.path().join("src-tauri/src");
+    std::fs::create_dir_all(&src).expect("mkdir src");
+    std::fs::write(
+        src.join("good_multiline.rs"),
+        r#"
+fn refresh_post_commit_helper(
+    cycle: &Cycle,
+    db: &Db,
+    dir: &Path,
+    intel: &Intel,
+) -> Result<(), Error> {
+    write_intelligence_json(dir, intel).unwrap();
+    Ok(())
+}
+"#,
+    )
+    .expect("write fixture");
+
+    let (ok, stdout, stderr) = run_lint(tmp.path());
+    assert!(
+        ok,
+        "lint must allow multiline post-commit helper. stdout: {stdout}, stderr: {stderr}"
+    );
+}
+
+#[test]
 fn intelligence_disk_write_lint_passes_current_tree() {
     let root = repo_root();
     let (ok, stdout, stderr) = run_lint(&root);
