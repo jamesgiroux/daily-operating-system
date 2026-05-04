@@ -3,15 +3,19 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Jen Park · DailyOS Reference</title>
+  <title>Sarah Chen · DailyOS Reference</title>
 
+  <!-- Fonts FIRST so the rest of the cascade has them -->
   <link rel="stylesheet" href="../_shared/fonts.css">
   <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — injected by chrome.js from body data attributes -->
   <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
   <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
   <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
   <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
 
+  <!-- Surface-specific modules used by PersonDetailEditorial.tsx and rendered children -->
   <link rel="stylesheet" href="../_shared/styles/entity-detail.module.css">
   <link rel="stylesheet" href="../_shared/styles/PersonDetailEditorial.module.css">
   <link rel="stylesheet" href="../_shared/styles/EntityHeroBase.module.css">
@@ -19,6 +23,7 @@
   <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
   <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
   <link rel="stylesheet" href="../_shared/styles/VitalsStrip.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditableVitalsStrip.module.css">
   <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
   <link rel="stylesheet" href="../_shared/styles/StateBlock.module.css">
   <link rel="stylesheet" href="../_shared/styles/IntelligenceFeedback.module.css">
@@ -30,55 +35,54 @@
   <link rel="stylesheet" href="../_shared/styles/AddToRecord.module.css">
   <link rel="stylesheet" href="../_shared/styles/RecommendedActions.module.css">
   <link rel="stylesheet" href="../_shared/styles/TheWork.module.css">
-  <link rel="stylesheet" href="../_shared/styles/MeetingRow.module.css">
-  <link rel="stylesheet" href="../_shared/styles/FileListSection.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
 
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
   <link rel="stylesheet" href="../_shared/chrome.css">
   <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
 <body
   data-folio-label="Person"
-  data-folio-crumbs="People>Jen Park"
   data-tint="larkspur"
   data-active-page="people"
+  data-folio-crumbs="Reference > Surfaces > Person"
   data-nav-base="."
   data-chapters="headline:alignleft:The Profile|the-dynamic:activity:The Dynamic|their-orbit:network:Their Orbit|their-network:users:Their Network|the-landscape:eye:The Landscape|the-record:activity:The Record|the-work:checksquare:The Work">
 
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
+  <!-- Chapter 1: The Profile (PersonHero + fallback VitalsStrip branch). -->
   <section id="headline" class="entity-detail_chapterSection">
     <div class="PersonHero_hero EntityHeroBase_hero">
       <div class="PersonHero_heroDate EntityHeroBase_heroDate">
-        <span class="IntelligenceQualityBadge_root" title="Fresh — Last updated: 4/22/2026, 8:15:00 AM">
-          <span class="IntelligenceQualityBadge_dot" style="background:var(--color-garden-sage)"></span>
+        <span class="IntelligenceQualityBadge_root" title="Fresh — Last updated: 5/4/2026, 9:00:00 AM" data-quality-level="fresh">
+          <span class="IntelligenceQualityBadge_dot"></span>
         </span>
-        Last updated Today · Clay Yesterday
+        Last updated Today · Clay Today
       </div>
 
       <div class="PersonHero_nameRow">
-        <div style="width:48px; height:48px; border-radius:50%; background:var(--color-paper-linen); display:flex; align-items:center; justify-content:center; font-family:var(--font-sans); font-size:19.2px; font-weight:500; color:var(--color-text-tertiary); flex-shrink:0;">J</div>
+        <div class="PersonHero_avatar" data-avatar-size="48">S</div>
         <h1 class="PersonHero_name EntityHeroBase_heroTitle">
-          <span class="EditableText_editable" title="Click to edit" data-editable-text="">Jen Park</span>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text="">Sarah Chen</span>
         </h1>
       </div>
 
-      <p class="PersonHero_lede EntityHeroBase_heroLede">Jen is Acme Corp's executive sponsor for the MSA Renewal. She is active, direct, and still carrying the renewal internally, but she needs commercial precision before she puts the agreement back in front of finance.</p>
+      <p class="PersonHero_lede EntityHeroBase_heroLede">Sarah Chen is our strongest executive sponsor across the portfolio. She independently secured budget approval for Phase 2 and proactively advocates for our platform within Acme's leadership team.</p>
 
       <div class="PersonHero_subtitle PersonHero_subtitleRow">
-        <span>jen.park@acme.example</span>
+        <span>sarah.chen@acme.com</span>
         <span> — </span>
         <span>Acme Corp</span>
         <span> · </span>
-        <span class="EditableText_editable" title="Click to edit" data-editable-text="">CTO</span>
+        <span class="EditableText_editable" title="Click to edit" data-editable-text="">VP Engineering</span>
       </div>
 
-      <p class="PersonHero_bio PersonHero_bioWithLede">Executive sponsor for Acme Corp's platform program. Jen tends to move quickly once risk is translated into implementation detail, and she expects concise follow-through after every commercial conversation.</p>
-
-      <div class="PersonHero_socialLinks">
-        <a href="https://www.linkedin.com/in/jen-park" target="_blank" rel="noopener noreferrer" title="https://www.linkedin.com/in/jen-park" class="PersonHero_socialLink">LinkedIn ↗</a>
-        <a href="tel:+14165550138" title="+1 (416) 555-0138" class="PersonHero_socialLink PersonHero_socialLinkMuted">+1 (416) 555-0138</a>
-      </div>
+      <p class="PersonHero_bio PersonHero_bioWithLede">Executive sponsor for Phase 2. Strong advocate — secured budget approval.</p>
 
       <div class="PersonHero_badges EntityHeroBase_heroBadges PersonHero_badgesWithTopMargin">
         <span class="PersonHero_badge EntityHeroBase_heroBadge PersonHero_relationshipExternal">external</span>
@@ -86,37 +90,37 @@
       </div>
 
       <div class="PersonHero_meta EntityHeroBase_heroMeta PersonHero_metaRow">
-        <button type="button" title="Refresh" style="font-family:var(--font-mono); font-size:11px; font-weight:600; letter-spacing:0.06em; text-transform:uppercase; color:var(--color-text-tertiary); background:none; border:1px solid var(--color-rule-heavy); border-radius:4px; padding:2px 10px; cursor:pointer; opacity:1; transition:color 150ms, border-color 150ms, opacity 150ms;">Refresh</button>
+        <button type="button" title="Refresh" class="PersonDetailEditorial_refreshButton">Refresh</button>
         <button type="button" class="PersonHero_metaButton EntityHeroBase_heroMetaButton">Merge Into…</button>
         <button type="button" class="PersonHero_metaButton EntityHeroBase_heroMetaButton">Archive</button>
         <button type="button" class="PersonHero_metaButtonDanger PersonHero_metaButton EntityHeroBase_heroMetaButton">Delete</button>
       </div>
     </div>
 
-    <div>
+    <div class="editorial-reveal">
       <div class="VitalsStrip_strip">
         <div class="VitalsStrip_items">
           <span class="VitalsStrip_item">
             <span class="VitalsStrip_fieldStack">
-              <span class="VitalsStrip_vitalText" style="color:var(--color-garden-larkspur)">hot</span>
+              <span class="VitalsStrip_vitalText" data-highlight="larkspur">hot</span>
             </span>
           </span>
           <span class="VitalsStrip_item">
             <span class="VitalsStrip_separatorDot"></span>
             <span class="VitalsStrip_fieldStack">
-              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">4 meetings / 30d ↑</span>
+              <span class="VitalsStrip_vitalText">4 meetings / 30d</span>
             </span>
           </span>
           <span class="VitalsStrip_item">
             <span class="VitalsStrip_separatorDot"></span>
             <span class="VitalsStrip_fieldStack">
-              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">Last: Apr 21</span>
+              <span class="VitalsStrip_vitalText">Last: May 4</span>
             </span>
           </span>
           <span class="VitalsStrip_item">
             <span class="VitalsStrip_separatorDot"></span>
             <span class="VitalsStrip_fieldStack">
-              <span class="VitalsStrip_vitalText" style="color:var(--color-text-secondary)">12 total meetings</span>
+              <span class="VitalsStrip_vitalText">8 total meetings</span>
             </span>
           </span>
         </div>
@@ -124,8 +128,24 @@
     </div>
   </section>
 
-  <div id="the-dynamic" class="entity-detail_chapterSectionWithPadding">
-    <section id="the-dynamic" style="scroll-margin-top:60px; padding-top:80px;">
+  <!-- Conditional preset branch retained in a template so the imported EditableVitalsStrip module is represented without showing a second state. -->
+  <template data-conditional-branch="editable-vitals-strip">
+    <div class="EditableVitalsStrip_strip">
+      <div class="EditableVitalsStrip_stripItems">
+        <span class="EditableVitalsStrip_itemWithSeparator">
+          <span class="EditableVitalsStrip_fieldStack">
+            <span class="EditableVitalsStrip_fieldRow">
+              <span class="EditableVitalsStrip_clickableFieldValue" data-highlight="larkspur" title="Click to change relationship">external</span>
+            </span>
+          </span>
+        </span>
+      </div>
+    </div>
+  </template>
+
+  <!-- Chapter 2: The Dynamic. -->
+  <div id="the-dynamic" class="editorial-reveal entity-detail_chapterSectionWithPadding">
+    <section class="PersonDetailEditorial_insightSection">
       <div class="ChapterHeading_heading">
         <hr class="ChapterHeading_rule" />
         <div class="ChapterHeading_titleRow">
@@ -134,10 +154,10 @@
             <span class="IntelligenceFeedback_wrapper">
               <span class="IntelligenceFeedback_container">
                 <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
                 </button>
                 <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
                 </button>
               </span>
             </span>
@@ -145,58 +165,48 @@
         </div>
       </div>
 
-      <div class="StateBlock_container" style="--state-block-color:var(--color-garden-sage)">
+      <div class="StateBlock_container" data-state-color="sage">
         <div class="StateBlock_label">Relationship Strengths</div>
         <div class="StateBlock_itemList">
           <div class="StateBlock_itemRow">
             <div class="StateBlock_itemContent">
-              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Jen still sponsors the MSA Renewal when the conversation is framed around launch risk and operational continuity.</p>
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Strong internal advocacy</p>
             </div>
           </div>
           <div class="StateBlock_itemRow">
             <div class="StateBlock_itemContent">
-              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">She responds fastest to concise written follow-ups with a clear owner, date, and decision requested.</p>
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Proactive communication on status and blockers</p>
+            </div>
+          </div>
+          <div class="StateBlock_itemRow">
+            <div class="StateBlock_itemContent">
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Budget approval secured for Phase 2</p>
             </div>
           </div>
         </div>
       </div>
 
-      <div class="StateBlock_container" style="--state-block-color:var(--color-spice-terracotta)">
+      <div class="StateBlock_container" data-state-color="terracotta">
         <div class="StateBlock_label">Relationship Gaps</div>
         <div class="StateBlock_itemList">
           <div class="StateBlock_itemRow">
             <div class="StateBlock_itemContent">
-              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Procurement pressure is giving Jen less room to advocate unless pricing language is clean before Friday's finance review.</p>
-            </div>
-          </div>
-          <div class="StateBlock_itemRow">
-            <div class="StateBlock_itemContent">
-              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">Dan Mitchell and Sara Wu are not yet aligned on the technical fallback plan, which leaves Jen exposed in the exec readout.</p>
+              <p class="EditableText_editable StateBlock_itemText" title="Click to edit" data-editable-text="">NPS detractors in her engineering team need her attention</p>
             </div>
           </div>
         </div>
       </div>
 
-      <blockquote style="margin:0; padding:72px 0; text-align:center; position:relative;">
-        <div aria-hidden="true" style="width:120px; height:1px; background:var(--color-rule-heavy); margin:0 auto 48px;"></div>
-        <p style="font-family:var(--font-serif); font-size:28px; font-weight:400; font-style:italic; line-height:1.45; color:var(--color-text-primary); max-width:580px; margin:0 auto;">"If the commercial language is crisp, Jen can keep the renewal moving; if it stays fuzzy, she will let finance slow it down."</p>
-        <div aria-hidden="true" style="width:120px; height:1px; background:var(--color-rule-heavy); margin:48px auto 0;"></div>
-      </blockquote>
-
-      <div style="font-family:var(--font-mono); font-size:11px; color:var(--color-text-tertiary); margin-top:24px; margin-bottom:8px;">
-        <span><span style="color:var(--color-garden-olive)">4 meetings / 30d ↑</span></span>
-        <span><span style="margin:0 8px; opacity:0.4;">&middot;</span><span>hot</span></span>
-        <span><span style="margin:0 8px; opacity:0.4;">&middot;</span><span>last met Apr 21</span></span>
-      </div>
-
-      <div style="margin-top:24px;">
-        <p style="font-family:var(--font-sans); font-size:15px; line-height:1.65; color:var(--color-text-primary); max-width:620px; margin:0 0 16px;">Jen's strongest signal is still responsiveness: she answered the commercial memo thread inside an hour and asked for one clean owner rather than reopening the full negotiation.</p>
-        <p style="font-family:var(--font-sans); font-size:15px; line-height:1.65; color:var(--color-text-primary); max-width:620px; margin:0;">The next interaction should make it easy for her to forward a single decision packet to finance and Sara without rewriting the story herself.</p>
+      <div class="PersonDetailEditorial_cadenceStrip">
+        <span><span class="PersonDetailEditorial_cadenceTrendIncreasing">4 meetings / 30d</span></span>
+        <span><span class="PersonDetailEditorial_cadenceSeparator">&middot;</span><span>hot</span></span>
+        <span><span class="PersonDetailEditorial_cadenceSeparator">&middot;</span><span>last met May 4</span></span>
       </div>
     </section>
   </div>
 
-  <div id="their-orbit" class="entity-detail_chapterSectionWithPadding">
+  <!-- Chapter 3: Their Orbit. -->
+  <div id="their-orbit" class="editorial-reveal entity-detail_chapterSectionWithPadding">
     <section class="PersonNetwork_section">
       <div class="ChapterHeading_heading">
         <hr class="ChapterHeading_rule" />
@@ -205,19 +215,23 @@
         </div>
       </div>
 
-      <div class="PersonNetwork_grid PersonNetwork_gridTwoCol">
+      <div class="PersonNetwork_grid PersonNetwork_gridOneCol">
         <div>
           <div class="PersonNetwork_columnLabel">Accounts</div>
           <div class="PersonNetwork_columnList">
             <div class="PersonNetwork_entityRow">
               <div class="PersonNetwork_entityContent">
                 <a href="account.html" class="PersonNetwork_entityLink">
-                  <span class="PersonNetwork_entityDot" style="background:var(--color-spice-turmeric)"></span>
+                  <span class="PersonNetwork_entityDot" data-entity-type="account"></span>
                   <span class="PersonNetwork_entityName">Acme Corp</span>
                   <span class="PersonNetwork_entityType">account</span>
                 </a>
                 <div class="PersonNetwork_roleBadges">
-                  <div style="position:relative; display:inline-block;">
+                  <span class="PersonNetwork_roleBadge" data-role="executive_sponsor">
+                    Exec Sponsor
+                    <button type="button" class="PersonNetwork_roleRemove">&times;</button>
+                  </span>
+                  <div data-role-picker-anchor>
                     <button type="button" class="PersonNetwork_addRoleBtn">+</button>
                   </div>
                 </div>
@@ -226,40 +240,16 @@
             </div>
           </div>
         </div>
-
-        <div>
-          <div class="PersonNetwork_columnLabel">Projects</div>
-          <div class="PersonNetwork_columnList">
-            <div class="PersonNetwork_entityRow">
-              <a href="project.html" class="PersonNetwork_entityLink">
-                <span class="PersonNetwork_entityDot" style="background:var(--color-garden-olive)"></span>
-                <span class="PersonNetwork_entityName">MSA Renewal</span>
-                <span class="PersonNetwork_entityType">project</span>
-              </a>
-              <button type="button" class="PersonNetwork_unlinkBtn">Unlink</button>
-            </div>
-            <div class="PersonNetwork_entityRow">
-              <a href="project.html" class="PersonNetwork_entityLink">
-                <span class="PersonNetwork_entityDot" style="background:var(--color-garden-olive)"></span>
-                <span class="PersonNetwork_entityName">Q2 Launch</span>
-                <span class="PersonNetwork_entityType">project</span>
-              </a>
-              <button type="button" class="PersonNetwork_unlinkBtn">Unlink</button>
-            </div>
-          </div>
-        </div>
       </div>
 
       <div class="PersonNetwork_pickerWrap">
-        <button type="button" data-slot="popover-trigger">
-          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m7 15 5 5 5-5"/><path d="m7 9 5-5 5 5"/></svg>
-          Link account or project…
-        </button>
+        <button type="button" class="ui-button ui-button-outline ui-button-sm">Link account or project…</button>
       </div>
     </section>
   </div>
 
-  <div id="their-network" class="entity-detail_chapterSectionWithPadding">
+  <!-- Chapter 4: Their Network. -->
+  <div id="their-network" class="editorial-reveal entity-detail_chapterSectionWithPadding">
     <section class="PersonRelationships_chapter">
       <div class="ChapterHeading_heading">
         <hr class="ChapterHeading_rule" />
@@ -268,46 +258,53 @@
         </div>
       </div>
 
-      <p class="PersonRelationships_clusterSummary">Jen is the central sponsor for the Acme renewal circle. Sara Wu shapes technical confidence, Dan Mitchell owns contract language, and Marco Devine is the escalation path when procurement slows.</p>
+      <p class="PersonRelationships_clusterSummary">Core Acme executive cluster</p>
 
       <div class="PersonRelationships_calloutList">
-        <div class="PersonRelationships_calloutRisk">Sara and Dan are converging from different directions; if they stay out of sync, Jen becomes the translation layer.</div>
+        <div class="PersonRelationships_calloutRisk">Alex Torres departure may reduce her effectiveness</div>
       </div>
 
       <div class="PersonRelationships_calloutList">
-        <div class="PersonRelationships_calloutOpportunity">A short prep note that names Sara's technical caveat and Dan's contract owner gives Jen a forwardable artifact.</div>
+        <div class="PersonRelationships_calloutOpportunity">Could introduce us to APAC leadership</div>
       </div>
 
       <div class="PersonRelationships_edgeGroup">
         <div class="PersonRelationships_groupLabel">account: Acme Corp</div>
+
         <div class="PersonRelationships_edgeRow">
-          <a href="person.html" class="PersonRelationships_edgeLink">Sara Wu</a>
-          <span class="PersonRelationships_edgeBadge">Ally</span>
-          <span class="PersonRelationships_edgeMeta"></span>
-          <button type="button" class="PersonRelationships_deleteBtn" title="Remove connection">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-          </button>
-        </div>
-        <div class="PersonRelationships_edgeRow">
-          <a href="person.html" class="PersonRelationships_edgeLink">Dan Mitchell</a>
-          <span class="PersonRelationships_edgeBadge">Partner</span>
+          <a href="person.html" class="PersonRelationships_edgeLink">Alex Torres</a>
+          <span class="PersonRelationships_edgeBadge">Peer</span>
           <span class="PersonRelationships_edgeMeta">
-            <span class="PersonRelationships_edgeDate">4/21/2026</span>
+            <span class="PersonRelationships_edgeConfidence">90%</span>
+            <span class="PersonRelationships_edgeDate">5/4/2026</span>
           </span>
           <button type="button" class="PersonRelationships_deleteBtn" title="Remove connection">
-            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+          </button>
+        </div>
+
+        <div class="PersonRelationships_edgeRow">
+          <a href="person.html" class="PersonRelationships_edgeLink">Pat Kim</a>
+          <span class="PersonRelationships_edgeBadge">Manager</span>
+          <span class="PersonRelationships_edgeMeta">
+            <span class="PersonRelationships_edgeConfidence">85%</span>
+            <span class="PersonRelationships_edgeDate">5/4/2026</span>
+          </span>
+          <button type="button" class="PersonRelationships_deleteBtn" title="Remove connection">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
           </button>
         </div>
       </div>
 
       <button type="button" class="PersonRelationships_addBtn">
-        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="M12 5v14"/></svg>
         Add connection
       </button>
     </section>
   </div>
 
-  <div id="the-landscape" class="entity-detail_chapterSectionWithPadding">
+  <!-- Chapter 5: The Landscape. -->
+  <div id="the-landscape" class="editorial-reveal entity-detail_chapterSectionWithPadding">
     <section id="the-landscape" class="WatchList_section">
       <div class="ChapterHeading_heading">
         <hr class="ChapterHeading_rule" />
@@ -320,43 +317,22 @@
         <div class="WatchList_sectionLabel">Risks</div>
         <div class="WatchList_itemRow">
           <div class="WatchList_itemText">
-            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Pricing language is still not forwardable to Acme finance, and Jen has signaled she will not defend ambiguity for another cycle.</p>
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">May face internal pressure if NPS detractors aren't addressed</p>
           </div>
-          <span class="WatchList_badge WatchList_badgeTerracotta">high</span>
+          <span class="WatchList_badge WatchList_badgeTerracotta">watch</span>
           <div class="WatchList_itemActions">
             <span class="IntelligenceFeedback_wrapper">
               <span class="IntelligenceFeedback_container">
                 <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
                 </button>
                 <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
                 </button>
               </span>
             </span>
             <button type="button" title="Remove" class="WatchList_dismissButton">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
-            </button>
-          </div>
-        </div>
-        <div class="WatchList_itemRow">
-          <div class="WatchList_itemText">
-            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Sara Wu's review comments are still open, which could force Jen to delay the executive packet until engineering signs off.</p>
-          </div>
-          <span class="WatchList_badge WatchList_badgeTerracotta">medium</span>
-          <div class="WatchList_itemActions">
-            <span class="IntelligenceFeedback_wrapper">
-              <span class="IntelligenceFeedback_container">
-                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
-                </button>
-                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
-                </button>
-              </span>
-            </span>
-            <button type="button" title="Remove" class="WatchList_dismissButton">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>
         </div>
@@ -366,21 +342,41 @@
         <div class="WatchList_sectionLabel">Wins</div>
         <div class="WatchList_itemRow">
           <div class="WatchList_itemText">
-            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Jen replied to the renewal checkpoint within the hour and named the exact finance concern blocking her next step.</p>
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Secured Phase 2 budget approval independently</p>
           </div>
           <div class="WatchList_itemActions">
             <span class="IntelligenceFeedback_wrapper">
               <span class="IntelligenceFeedback_container">
                 <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
                 </button>
                 <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
                 </button>
               </span>
             </span>
             <button type="button" title="Remove" class="WatchList_dismissButton">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+            </button>
+          </div>
+        </div>
+        <div class="WatchList_itemRow">
+          <div class="WatchList_itemText">
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Confirmed executive sponsorship for expansion</p>
+          </div>
+          <div class="WatchList_itemActions">
+            <span class="IntelligenceFeedback_wrapper">
+              <span class="IntelligenceFeedback_container">
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                </button>
+                <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                </button>
+              </span>
+            </span>
+            <button type="button" title="Remove" class="WatchList_dismissButton">
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>
         </div>
@@ -390,21 +386,21 @@
         <div class="WatchList_sectionLabel">Unknowns</div>
         <div class="WatchList_itemRow">
           <div class="WatchList_itemText">
-            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Whether Marco Devine will join the finance checkpoint or stay outside the commercial thread.</p>
+            <p class="EditableText_editable WatchList_itemTextContent" title="Click to edit" data-editable-text="">Her stance on APAC expansion timeline</p>
           </div>
           <div class="WatchList_itemActions">
             <span class="IntelligenceFeedback_wrapper">
               <span class="IntelligenceFeedback_container">
                 <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M7 10v12"/><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"/></svg>
                 </button>
                 <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
-                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
+                  <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M17 14V2"/><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"/></svg>
                 </button>
               </span>
             </span>
             <button type="button" title="Remove" class="WatchList_dismissButton">
-              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
+              <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M18 6 6 18"/><path d="m6 6 12 12"/></svg>
             </button>
           </div>
         </div>
@@ -412,8 +408,9 @@
     </section>
   </div>
 
-  <div id="the-record" class="entity-detail_chapterSectionWithPadding">
-    <section>
+  <!-- Chapter 6: The Record. -->
+  <div id="the-record" class="editorial-reveal entity-detail_chapterSectionWithPadding">
+    <section class="UnifiedTimeline_section">
       <div class="ChapterHeading_heading">
         <hr class="ChapterHeading_rule" />
         <div class="ChapterHeading_titleRow">
@@ -421,27 +418,39 @@
         </div>
       </div>
 
-      <button type="button" data-slot="button" data-variant="outline" data-size="sm" class="AddToRecord_addButton">+ Add note</button>
+      <button type="button" class="ui-button ui-button-outline ui-button-sm AddToRecord_addButton">+ Add note</button>
 
       <div class="TimelineEntry_timeline">
+        <a href="meeting.html" class="TimelineEntry_entryLink">
+          <div class="TimelineEntry_entry">
+            <div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div>
+            <div class="TimelineEntry_dateLine">
+              <span class="TimelineEntry_date">May 2</span>
+              <span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span>
+            </div>
+            <div class="TimelineEntry_title">Acme Corp Status Call</div>
+            <div class="TimelineEntry_detail">Customer</div>
+          </div>
+        </a>
+
         <div class="TimelineEntry_entry">
           <div class="TimelineEntry_dot TimelineEntry_dotEmail"></div>
           <div class="TimelineEntry_dateLine">
-            <span class="TimelineEntry_date">Apr 22</span>
+            <span class="TimelineEntry_date">May 1</span>
             <span class="TimelineEntry_typeBadge TimelineEntry_typeEmail">Email</span>
           </div>
-          <div class="TimelineEntry_title">Jen asked for one owner on pricing language before Friday's finance review.</div>
-          <div class="TimelineEntry_detail">jen.park@acme.example</div>
+          <div class="TimelineEntry_title">Sarah Chen confirms Phase 2 budget approved — will confirm exact allocation by Friday</div>
+          <div class="TimelineEntry_detail">sarah.chen@acme.com</div>
         </div>
 
         <a href="meeting.html" class="TimelineEntry_entryLink">
           <div class="TimelineEntry_entry">
             <div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div>
             <div class="TimelineEntry_dateLine">
-              <span class="TimelineEntry_date">Apr 21</span>
+              <span class="TimelineEntry_date">Apr 27</span>
               <span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span>
             </div>
-            <div class="TimelineEntry_title">Acme Corp renewal checkpoint</div>
+            <div class="TimelineEntry_title">Acme Corp Weekly Sync</div>
             <div class="TimelineEntry_detail">Customer</div>
           </div>
         </a>
@@ -449,65 +458,42 @@
         <div class="TimelineEntry_entry">
           <div class="TimelineEntry_dot TimelineEntry_dotContext"></div>
           <div class="TimelineEntry_dateLine">
-            <span class="TimelineEntry_date">Apr 20</span>
+            <span class="TimelineEntry_date">Apr 25</span>
             <span class="TimelineEntry_typeBadge TimelineEntry_typeContext">Note</span>
           </div>
-          <div class="TimelineEntry_title">Finance packet preference</div>
-          <div class="TimelineEntry_detail">Jen prefers a single-page packet with owner, decision, and fallback rather than threaded debate. · Added by you</div>
+          <div class="TimelineEntry_title">Phase 2 sponsor stance</div>
+          <div class="TimelineEntry_detail">Sarah confirmed executive sponsorship for Phase 2 expansion. · Added by you</div>
         </div>
-
-        <a href="meeting.html" class="TimelineEntry_entryLink">
-          <div class="TimelineEntry_entry">
-            <div class="TimelineEntry_dot TimelineEntry_dotMeeting"></div>
-            <div class="TimelineEntry_dateLine">
-              <span class="TimelineEntry_date">Apr 17</span>
-              <span class="TimelineEntry_typeBadge TimelineEntry_typeMeeting">Meeting</span>
-            </div>
-            <div class="TimelineEntry_title">Stark Industries executive readout</div>
-            <div class="TimelineEntry_detail">QBR</div>
-          </div>
-        </a>
-
-        <a href="meeting.html" class="TimelineEntry_entryLink">
-          <div class="TimelineEntry_entry">
-            <div class="TimelineEntry_dot TimelineEntry_dotCapture"></div>
-            <div class="TimelineEntry_dateLine">
-              <span class="TimelineEntry_date"></span>
-              <span class="TimelineEntry_typeBadge TimelineEntry_typeCapture">Capture</span>
-            </div>
-            <div class="TimelineEntry_title">"Send me the clean version Dan can defend."</div>
-            <div class="TimelineEntry_detail">Acme Corp renewal checkpoint</div>
-          </div>
-        </a>
       </div>
     </section>
   </div>
 
-  <div id="the-work" class="entity-detail_chapterSectionWithPadding">
+  <!-- Chapter 7: The Work. -->
+  <div id="the-work" class="editorial-reveal entity-detail_chapterSectionWithPadding">
     <div class="RecommendedActions_root">
       <div class="RecommendedActions_label">Recommended</div>
       <div class="RecommendedActions_action">
         <div class="RecommendedActions_content">
           <div class="RecommendedActions_metaRow">
-            <span class="RecommendedActions_priority" style="color:var(--color-spice-turmeric)">High</span>
-            <span class="RecommendedActions_dueDate">Due Apr 23</span>
+            <span class="RecommendedActions_priority" data-priority="2">High</span>
+            <span class="RecommendedActions_dueDate">Due 2026-05-07</span>
           </div>
-          <div class="RecommendedActions_title">Send Jen the forwardable pricing packet</div>
-          <div class="RecommendedActions_rationale">She has asked for one owner and one clean artifact before the finance checkpoint. A concise packet keeps her sponsor position strong.</div>
+          <div class="RecommendedActions_title">Schedule executive review with Sarah Chen</div>
+          <div class="RecommendedActions_rationale">Phase 2 budget is approved but scoping hasn't started. Sarah is the sponsor — get alignment before Alex departs.</div>
           <div class="RecommendedActions_source">Based on account intelligence</div>
         </div>
         <div class="RecommendedActions_actions">
           <button type="button" title="Track" class="RecommendedActions_iconButton RecommendedActions_trackButton">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M3 7L6 10L11 4" stroke="var(--color-garden-sage)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
           </button>
           <button type="button" title="Dismiss" class="RecommendedActions_iconButton RecommendedActions_dismissButton">
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" stroke-width="2" stroke-linecap="round"/></svg>
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" aria-hidden="true"><path d="M4 4L10 10M10 4L4 10" stroke="var(--color-spice-terracotta)" stroke-width="2" stroke-linecap="round"/></svg>
           </button>
         </div>
       </div>
     </div>
 
-    <section id="the-work" class="TheWork_section TheWork_scrollTarget">
+    <section class="TheWork_section TheWork_scrollTarget">
       <div class="TheWork_headerRow">
         <div class="ChapterHeading_heading">
           <hr class="ChapterHeading_rule" />
@@ -519,127 +505,70 @@
 
       <div class="TheWork_actionSection">
         <div class="TheWork_sectionLabel">Actions</div>
-
         <div class="TheWork_actionGroup">
-          <div class="TheWork_groupLabel" style="--label-color:var(--color-spice-terracotta)">Overdue</div>
+          <div class="TheWork_groupLabel" data-label-color="terracotta">Overdue</div>
           <div class="TheWork_linkableActionRow">
             <div class="TheWork_linkableActionMain">
-              <a href="action.html" style="display:block; position:relative; padding:14px 0 14px 20px; border-bottom:1px solid var(--color-rule-light); text-decoration:none; color:inherit;">
-                <div style="position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:2px; background:var(--color-spice-terracotta);"></div>
-                <div style="font-family:var(--font-sans); font-size:14px; line-height:1.55; font-weight:500; color:var(--color-text-primary);">Resolve Sara's architecture caveat before the finance packet</div>
-                <div style="display:flex; gap:16px; margin-top:4px;">
-                  <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.04em; color:var(--color-spice-terracotta);">Apr 20</span>
-                  <span style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary);">Q2 Launch review</span>
+              <a href="actions.html" class="TheWork_actionLink">
+                <span class="TheWork_actionAccent" data-accent="terracotta"></span>
+                <div class="TheWork_actionTitle TheWork_actionTitleBold">Send updated SOW to Acme legal team</div>
+                <div class="TheWork_actionMeta">
+                  <span class="TheWork_actionDate" data-date-color="terracotta">May 3</span>
+                  <span class="TheWork_actionSource">briefing</span>
                 </div>
               </a>
             </div>
           </div>
         </div>
-
-        <div class="TheWork_actionGroup">
-          <div class="TheWork_groupLabel" style="--label-color:var(--color-spice-turmeric)">This Week</div>
-          <div class="TheWork_linkableActionRow">
-            <div class="TheWork_linkableActionMain">
-              <a href="action.html" style="display:block; position:relative; padding:14px 0 14px 20px; border-bottom:1px solid var(--color-rule-light); text-decoration:none; color:inherit;">
-                <div style="position:absolute; left:0; top:14px; bottom:14px; width:3px; border-radius:2px; background:var(--color-spice-turmeric);"></div>
-                <div style="font-family:var(--font-sans); font-size:14px; line-height:1.55; font-weight:400; color:var(--color-text-primary);">Send Jen the commercial owner matrix</div>
-                <div style="display:flex; gap:16px; margin-top:4px;">
-                  <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.04em; color:var(--color-text-tertiary);">Apr 24</span>
-                  <span style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary);">MSA Renewal</span>
-                </div>
-              </a>
-            </div>
-          </div>
-        </div>
-
-        <div class="TheWork_actionGroup">
-          <div class="TheWork_groupLabel" style="--label-color:var(--color-text-tertiary)">Upcoming</div>
-          <div class="TheWork_linkableActionRow">
-            <div class="TheWork_linkableActionMain">
-              <a href="action.html" style="display:block; position:relative; padding:14px 0 14px 20px; border-bottom:1px solid var(--color-rule-light); text-decoration:none; color:inherit;">
-                <div style="font-family:var(--font-sans); font-size:14px; line-height:1.55; font-weight:400; color:var(--color-text-primary);">Schedule renewal dry run with Jen and Dan</div>
-                <div style="display:flex; gap:16px; margin-top:4px;">
-                  <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; letter-spacing:0.04em; color:var(--color-text-tertiary);">May 8</span>
-                  <span style="font-family:var(--font-sans); font-size:12px; color:var(--color-text-tertiary);">Account plan</span>
-                </div>
-              </a>
-            </div>
-          </div>
-        </div>
-
         <div class="TheWork_actionComposer">
           <button type="button" class="TheWork_inlineAdder">+ Add Action</button>
         </div>
       </div>
-
-      <div class="TheWork_meetingSection">
-        <div class="TheWork_sectionLabel">Upcoming Meetings</div>
-        <div class="MeetingRow_row">
-          <span class="MeetingRow_date">Apr 24 Fri</span>
-          <span class="MeetingRow_title">Acme Corp finance packet review</span>
-          <span class="MeetingRow_badgeWrap">
-            <span style="font-family:var(--font-mono); font-size:9px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; padding:2px 7px; border-radius:3px; white-space:nowrap; background:rgba(201,162,39,0.10); color:var(--color-spice-turmeric);">Customer</span>
-          </span>
-        </div>
-        <div class="MeetingRow_row">
-          <span class="MeetingRow_date">Apr 28 Tue</span>
-          <span class="MeetingRow_title">Jen Park renewal dry run</span>
-          <span class="MeetingRow_badgeWrap">
-            <span style="font-family:var(--font-mono); font-size:9px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; padding:2px 7px; border-radius:3px; white-space:nowrap; background:rgba(143,163,196,0.12); color:var(--color-garden-larkspur);">1:1</span>
-          </span>
-        </div>
-      </div>
     </section>
   </div>
 
-  <div>
-    <section id="appendix" style="scroll-margin-top:60px; padding-top:80px;">
-      <div style="border-top:3px double var(--color-rule-heavy); padding-top:32px;">
-        <div style="font-family:var(--font-mono); font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-text-tertiary); margin-bottom:16px;">Appendix</div>
+  <!-- Appendix. -->
+  <div class="editorial-reveal">
+    <section id="appendix" class="PersonDetailEditorial_appendixSection">
+      <div class="PersonDetailEditorial_appendixFrame">
+        <div class="PersonDetailEditorial_appendixLabel">Appendix</div>
 
-        <div style="border-top:2px solid var(--color-rule-heavy); padding-top:24px; margin-top:32px;">
-          <div style="font-family:var(--font-mono); font-size:11px; font-weight:500; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-text-tertiary); margin-bottom:16px;">Details</div>
-          <div style="display:grid; grid-template-columns:100px 1fr; gap:12px 24px;">
-            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary); padding-top:6px;">Email</span>
-            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); padding-top:4px;">jen.park@acme.example</span>
+        <div class="PersonDetailEditorial_appendixRule">
+          <div class="PersonDetailEditorial_appendixLabel">Details</div>
+          <div class="PersonDetailEditorial_appendixGrid">
+            <span class="PersonDetailEditorial_fieldLabel">Email</span>
+            <span class="PersonDetailEditorial_fieldValue">sarah.chen@acme.com</span>
 
-            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary); padding-top:6px;">Organization</span>
-            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); padding-top:4px;">Acme Corp</span>
+            <span class="PersonDetailEditorial_fieldLabel">Organization</span>
+            <span class="PersonDetailEditorial_fieldValue">Acme Corp</span>
 
-            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary); padding-top:6px;">Relationship</span>
-            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); padding-top:4px; text-transform:capitalize;">external</span>
+            <span class="PersonDetailEditorial_fieldLabel">Relationship</span>
+            <span class="PersonDetailEditorial_fieldValue PersonDetailEditorial_fieldValueCapitalize">external</span>
 
-            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary); padding-top:6px;">First Seen</span>
-            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); padding-top:4px;">Jan 8</span>
+            <span class="PersonDetailEditorial_fieldLabel">First Seen</span>
+            <span class="PersonDetailEditorial_fieldValue">Mar 5</span>
 
-            <span style="font-family:var(--font-mono); font-size:10px; font-weight:500; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-tertiary); padding-top:6px;">Last Seen</span>
-            <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); padding-top:4px;">Apr 21</span>
-          </div>
-        </div>
-
-        <div style="border-top:2px solid var(--color-rule-heavy); padding-top:24px; margin-top:32px;">
-          <div class="FileListSection_section">
-            <div class="FileListSection_header">
-              <div class="FileListSection_sectionTitle">Files</div>
-              <div class="FileListSection_headerActions">
-                <button type="button" class="FileListSection_actionButton">Re-index</button>
-              </div>
-            </div>
-            <p class="FileListSection_emptyMessage">No files indexed.</p>
+            <span class="PersonDetailEditorial_fieldLabel">Last Seen</span>
+            <span class="PersonDetailEditorial_fieldValue">May 4</span>
           </div>
         </div>
       </div>
     </section>
   </div>
 
-  <div>
-    <div style="text-align:center; padding:72px 0 24px;">
-      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+  <!-- Conditional dialog strings retained for reference-fidelity text audit:
+       Search for the person to merge into. All meetings, entity links, and actions will transfer to the selected person.
+       Search by name or email... No matching people found Cancel Merge Merging… Delete Deleting… -->
+
+  <!-- FinisMarker. -->
+  <div class="editorial-reveal">
+    <div class="finis-marker">
+      <div class="finis-marker-marks">
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
         <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
       </div>
-      <div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); letter-spacing:0.06em; margin-top:16px;">Last updated: 2026-04-22T08:15:00-04:00</div>
+      <div class="PersonDetailEditorial_finisDate">Last updated: 2026-05-04T09:00:00-04:00</div>
     </div>
   </div>
 

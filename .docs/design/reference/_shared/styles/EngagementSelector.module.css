@@ -59,3 +59,26 @@
   font-size: 12px;
   color: var(--color-text-primary);
 }
+
+/* Reference mirror: EngagementSelector computes badge and option-dot colors
+   inline from the selected value. Data variants keep account.html compliant. */
+.EngagementSelector_badge[data-engagement="strong_advocate"] {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+}
+
+.EngagementSelector_badge[data-engagement="engaged"] {
+  background: var(--color-garden-rosemary-14);
+  color: var(--color-garden-rosemary);
+}
+
+.EngagementSelector_badge[data-engagement="neutral"] {
+  background: var(--color-garden-larkspur-14, rgba(143, 163, 196, 0.14));
+  color: var(--color-garden-larkspur);
+}
+
+.EngagementSelector_badge[data-engagement="disengaged"],
+.EngagementSelector_badge[data-engagement="unknown"] {
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-tertiary);
+}

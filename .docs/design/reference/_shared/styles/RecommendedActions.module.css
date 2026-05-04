@@ -39,6 +39,16 @@
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+/* React colors priority labels inline; mirror the same priority map. */
+.RecommendedActions_priority[data-priority="1"] {
+  color: var(--color-spice-terracotta);
+}
+
+.RecommendedActions_priority[data-priority="2"] {
+  color: var(--color-spice-turmeric);
 }
 
 .RecommendedActions_dueDate {

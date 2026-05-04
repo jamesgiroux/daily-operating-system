@@ -178,3 +178,235 @@
 .SettingsPage_bottomSpacer {
   height: 80px;
 }
+
+/* ── Reference inline-style extractions ──────────────────────────────────
+   Several Settings child components still render canonical layout through
+   React inline style objects. The reference surface cannot use style=""
+   attributes, so these scoped helpers mirror those inline branches without
+   changing the production components. */
+
+.SettingsPage_contextSource {
+  margin-bottom: 32px;
+}
+
+.SettingsPage_contextModeRow {
+  display: flex;
+  gap: 12px;
+  margin-bottom: 20px;
+}
+
+.SettingsPage_connectorRow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  padding: 14px 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  cursor: pointer;
+  text-align: left;
+}
+
+.SettingsPage_connectorName {
+  flex: 1;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.SettingsPage_connectorStatus {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.02em;
+}
+
+.SettingsPage_connectorChevron {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  color: var(--color-text-tertiary);
+  transition: transform 0.2s ease;
+}
+
+.SettingsPage_recoveryCard {
+  margin-bottom: 24px;
+}
+
+.SettingsPage_panelSecondary {
+  padding: 14px;
+  margin-bottom: 12px;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+  background: var(--color-surface-secondary);
+}
+
+.SettingsPage_panelHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.SettingsPage_stack4 {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.SettingsPage_actionRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.SettingsPage_backupList {
+  overflow: hidden;
+  border: 1px solid var(--color-rule-light);
+  border-radius: 6px;
+}
+
+.SettingsPage_backupEmpty {
+  padding: 10px 12px;
+}
+
+.SettingsPage_dataCopyBlock {
+  margin-bottom: 24px;
+}
+
+.SettingsPage_dataCountWrap {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 24px;
+  margin-bottom: 24px;
+}
+
+.SettingsPage_countLine {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+}
+
+.SettingsPage_dataActionBlock {
+  padding: 16px 0;
+}
+
+.SettingsPage_dangerZone {
+  padding: 16px;
+  margin-top: 8px;
+  border: 1px solid var(--color-spice-terracotta);
+  border-radius: 6px;
+}
+
+.SettingsPage_dangerHeader {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.SettingsPage_dangerLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-terracotta);
+}
+
+.SettingsPage_dangerConfirmRow {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 12px;
+}
+
+.SettingsPage_healthOneLiner {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 16px;
+}
+
+.SettingsPage_syncStack {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.SettingsPage_syncRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 0;
+}
+
+.SettingsPage_syncLabelGroup,
+.SettingsPage_syncMetaGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.SettingsPage_systemColumn {
+  display: flex;
+  flex-direction: column;
+}
+
+.SettingsPage_advancedToggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  cursor: pointer;
+}
+
+.SettingsPage_advancedChevron {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  transition: transform 0.2s ease;
+}
+
+.SettingsPage_advancedChevronOpen {
+  transform: rotate(90deg);
+}
+
+.SettingsPage_advancedPanel {
+  display: flex;
+  flex-direction: column;
+  gap: 32px;
+  margin-top: 24px;
+}
+
+.SettingsPage_iconSage {
+  color: var(--color-garden-sage);
+}
+
+.SettingsPage_iconTerracotta {
+  color: var(--color-spice-terracotta);
+}
+
+.SettingsPage_finisMarker {
+  text-align: center;
+  padding: 72px 0 24px;
+}
+
+.SettingsPage_finisMarks {
+  display: flex;
+  justify-content: center;
+  gap: 0.4em;
+  color: var(--color-spice-turmeric);
+}

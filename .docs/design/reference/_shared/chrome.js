@@ -10,7 +10,7 @@
      data-folio-status   italic mono status text on right
      data-folio-date     mono center text (e.g. "WEEK 17 · APR 20-24, 2026")
      data-folio-readiness CSV "label,color" pairs ("3 ready,sage|2 building,terracotta")
-     data-folio-actions   csv: refresh, reports, tools  (search is always present)
+     data-folio-actions   csv: refresh, reports, tools, add  (search is always present)
      data-folio-mark      "pulsing"  → animates the brand mark (saffron pulse)
      data-active-page     today|week|emails|actions|me|people|accounts|projects|dropbox|settings
      data-tint            turmeric|larkspur|terracotta|eucalyptus|olive
@@ -221,6 +221,11 @@
             type: 'button',
             class: 'AccountsPage_folioButtonNew',
           }, '+ New'));
+        } else if (a === 'add' && body.dataset.activePage === 'actions') {
+          actWrap.append(el('button', {
+            type: 'button',
+            class: 'ActionsPage_folioAddButton',
+          }, '+ Add'));
         } else if (a === 'regenerate') {
           actWrap.append(el('button', {
             type: 'button',

@@ -5,14 +5,23 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Inbox · DailyOS Reference</title>
 
+  <!-- Fonts FIRST so the rest of the cascade has them -->
   <link rel="stylesheet" href="../_shared/fonts.css">
   <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <!-- Chrome modules — injected by chrome.js from body data attributes -->
   <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
   <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
   <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
   <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <!-- Surface-specific modules used by InboxPage.tsx -->
   <link rel="stylesheet" href="../_shared/styles/InboxPage.module.css">
   <link rel="stylesheet" href="../_shared/styles/EditorialPageHeader.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
+
+  <!-- Reference-only chrome (chrome toggle, baseline reset) -->
   <link rel="stylesheet" href="../_shared/chrome.css">
   <link rel="stylesheet" href="../_shared/inspector.css">
 </head>
@@ -20,23 +29,28 @@
   data-folio-label="Inbox"
   data-tint="larkspur"
   data-active-page="dropbox"
+  data-folio-crumbs="Reference > Surfaces > Inbox"
   data-nav-base="."
-  data-folio-actions="refresh">
+  data-folio-actions="inbox">
 
+<!-- MagazinePageLayout shell — mirrors src/components/layout/MagazinePageLayout.tsx.
+     Folio bar, atmosphere, and floating nav are injected by chrome.js. -->
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
 <div class="InboxPage_pageContainer">
+  <!-- EditorialPageHeader: <EditorialPageHeader title="Inbox" scale="standard" width="standard" meta="4 files" /> -->
   <section class="EditorialPageHeader_header EditorialPageHeader_scaleStandard EditorialPageHeader_widthStandard EditorialPageHeader_ruleStandard">
     <div class="EditorialPageHeader_topRow">
       <div class="EditorialPageHeader_titleBlock">
-        <div class="EditorialPageHeader_title">Inbox</div>
+        <h1 class="EditorialPageHeader_title">Inbox</h1>
       </div>
-      <div class="EditorialPageHeader_meta">6 files</div>
+      <div class="EditorialPageHeader_meta">4 files</div>
     </div>
     <div class="EditorialPageHeader_rule"></div>
   </section>
 
+  <!-- Rest state: files present, none processing, none expanded, no dialogs. -->
   <div class="InboxPage_dropZoneCompact">
     <span class="InboxPage_dropZoneTextCompact">Drop files here</span>
   </div>
@@ -45,18 +59,18 @@
     <div class="InboxPage_fileList">
       <div>
         <div class="InboxPage_rowContainer InboxPage_rowBorder">
-          <span class="InboxPage_rowDot" style="background:var(--color-spice-terracotta)"></span>
+          <span class="InboxPage_rowDot" data-dot-color="terracotta"></span>
           <button type="button" class="InboxPage_rowTitleButton">
             <span class="InboxPage_rowTitle">Acme Renewal Notes</span>
             <span class="InboxPage_rowClassificationLabel">Meeting Notes</span>
           </button>
           <div class="InboxPage_rowRight">
             <span class="InboxPage_statusGroup" title="">
-              <span class="InboxPage_statusDot" style="background:var(--color-text-tertiary)"></span>
+              <span class="InboxPage_statusDot" data-status-color="tertiary"></span>
               <span class="InboxPage_statusLabel">New</span>
             </span>
             <span class="InboxPage_rowTime">2h ago</span>
-            <button class="InboxPage_rowProcessButton">Process</button>
+            <button type="button" class="InboxPage_rowProcessButton">Process</button>
             <span class="InboxPage_expandIndicator">v</span>
           </div>
         </div>
@@ -64,18 +78,18 @@
 
       <div>
         <div class="InboxPage_rowContainer InboxPage_rowBorder">
-          <span class="InboxPage_rowDot" style="background:var(--color-spice-turmeric)"></span>
+          <span class="InboxPage_rowDot" data-dot-color="turmeric"></span>
           <button type="button" class="InboxPage_rowTitleButton">
             <span class="InboxPage_rowTitle">Northwind Q2 Launch Blockers</span>
             <span class="InboxPage_rowClassificationLabel">Spreadsheet</span>
           </button>
           <div class="InboxPage_rowRight">
-            <span class="InboxPage_statusGroup" title="This file needs AI analysis to determine where it belongs">
-              <span class="InboxPage_statusDot" style="background:var(--color-spice-turmeric)"></span>
-              <span class="InboxPage_statusLabel">Needs AI</span>
+            <span class="InboxPage_statusGroup" title="">
+              <span class="InboxPage_statusDot" data-status-color="tertiary"></span>
+              <span class="InboxPage_statusLabel">New</span>
             </span>
             <span class="InboxPage_rowTime">45m ago</span>
-            <button class="InboxPage_rowProcessButton">Process</button>
+            <button type="button" class="InboxPage_rowProcessButton">Process</button>
             <span class="InboxPage_expandIndicator">v</span>
           </div>
         </div>
@@ -83,67 +97,18 @@
 
       <div>
         <div class="InboxPage_rowContainer InboxPage_rowBorder">
-          <span class="InboxPage_rowDot" style="background:var(--color-spice-terracotta)"></span>
+          <span class="InboxPage_rowDot" data-dot-color="terracotta"></span>
           <button type="button" class="InboxPage_rowTitleButton">
             <span class="InboxPage_rowTitle">Globex Helpline Rollout Sync</span>
             <span class="InboxPage_rowClassificationLabel">Meeting Notes</span>
           </button>
           <div class="InboxPage_rowRight">
-            <span class="InboxPage_statusGroup" title="AI has analyzed this file &mdash; confirm which account or project it belongs to">
-              <span class="InboxPage_statusDot" style="background:var(--color-spice-turmeric)"></span>
-              <span class="InboxPage_statusLabel">Needs assignment</span>
-            </span>
-            <span class="InboxPage_rowTime">28m ago</span>
-            <button class="InboxPage_rowProcessButton">Process</button>
-            <span class="InboxPage_expandIndicator">v</span>
-          </div>
-        </div>
-        <div class="InboxPage_entityPickerRow InboxPage_rowBorder">
-          <span class="InboxPage_entityPickerSuggestion">Suggested: Globex Inc</span>
-          <select class="InboxPage_entityPickerSelect">
-            <option value="" disabled selected>Assign to account...</option>
-            <option value="acme">Acme Corp</option>
-            <option value="globex">Globex Inc</option>
-            <option value="northwind">Northwind Traders</option>
-            <option value="stark">Stark Industries</option>
-            <option value="meridian">Meridian Harbor</option>
-          </select>
-        </div>
-      </div>
-
-      <div>
-        <div class="InboxPage_rowContainer InboxPage_rowBorder">
-          <span class="InboxPage_rowDot" style="background:var(--color-garden-sage)"></span>
-          <button type="button" class="InboxPage_rowTitleButton">
-            <span class="InboxPage_rowTitle">Q2 Launch Context Brief</span>
-            <span class="InboxPage_rowClassificationLabel">Context</span>
-          </button>
-          <div class="InboxPage_rowRight">
             <span class="InboxPage_statusGroup" title="">
-              <span class="InboxPage_statusDot" style="background:var(--color-text-tertiary)"></span>
+              <span class="InboxPage_statusDot" data-status-color="tertiary"></span>
               <span class="InboxPage_statusLabel">New</span>
             </span>
-            <span class="InboxPage_rowTime">Apr 21</span>
-            <button class="InboxPage_rowProcessButton">Process</button>
-            <span class="InboxPage_expandIndicator">v</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="InboxPage_rowContainer InboxPage_rowBorder">
-          <span class="InboxPage_rowDot" style="background:var(--color-text-tertiary)"></span>
-          <button type="button" class="InboxPage_rowTitleButton">
-            <span class="InboxPage_rowTitle">Meridian Harbor Procurement Review</span>
-            <span class="InboxPage_rowClassificationLabel">Text</span>
-          </button>
-          <div class="InboxPage_rowRight">
-            <span class="InboxPage_statusGroup" title="This file has been classified and filed">
-              <span class="InboxPage_statusDot" style="background:var(--color-garden-sage)"></span>
-              <span class="InboxPage_statusLabel">Processed</span>
-            </span>
-            <span class="InboxPage_rowTime">Apr 21</span>
-            <button class="InboxPage_rowProcessButton">Process</button>
+            <span class="InboxPage_rowTime">28m ago</span>
+            <button type="button" class="InboxPage_rowProcessButton">Process</button>
             <span class="InboxPage_expandIndicator">v</span>
           </div>
         </div>
@@ -151,35 +116,163 @@
 
       <div>
         <div class="InboxPage_rowContainer">
-          <span class="InboxPage_rowDot" style="background:var(--color-text-tertiary)"></span>
+          <span class="InboxPage_rowDot" data-dot-color="tertiary"></span>
           <button type="button" class="InboxPage_rowTitleButton">
-            <span class="InboxPage_rowTitle">Stark Industries Executive Readout</span>
-            <span class="InboxPage_rowClassificationLabel">Document</span>
+            <span class="InboxPage_rowTitle">Meridian Harbor Procurement Review</span>
+            <span class="InboxPage_rowClassificationLabel">Text</span>
           </button>
           <div class="InboxPage_rowRight">
-            <span class="InboxPage_statusGroup" title="Something went wrong processing this file">
-              <span class="InboxPage_statusDot" style="background:var(--color-spice-terracotta)"></span>
-              <span class="InboxPage_statusLabel InboxPage_statusLabelError">Error</span>
+            <span class="InboxPage_statusGroup" title="">
+              <span class="InboxPage_statusDot" data-status-color="tertiary"></span>
+              <span class="InboxPage_statusLabel">New</span>
             </span>
-            <button class="InboxPage_rowProcessButton">Process</button>
+            <span class="InboxPage_rowTime">Apr 30</span>
+            <button type="button" class="InboxPage_rowProcessButton">Process</button>
             <span class="InboxPage_expandIndicator">v</span>
           </div>
-        </div>
-        <div class="InboxPage_errorInline">
-          AI could not identify a destination. Confirm the account or project and try again.
         </div>
       </div>
     </div>
   </section>
 
-  <div style="text-align:center; padding:72px 0 24px;">
-    <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+  <!-- FinisMarker. enrichedAt is undefined, so no timestamp renders. -->
+  <div class="finis-marker">
+    <div class="finis-marker-marks">
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
       <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
     </div>
   </div>
 </div>
+
+<template data-inbox-conditional-branches>
+  <!-- Folio actions from useRegisterMagazineShell; rendered by the app shell, not the page body. -->
+  <div class="InboxPage_folioActions">
+    <button type="button" class="InboxPage_folioButtonDefault">Google Drive</button>
+    <button type="button" class="InboxPage_folioButtonCancel">Cancel</button>
+    <button type="button" class="InboxPage_folioButtonDefault">Process All</button>
+    <button type="button" class="InboxPage_folioButtonDisabled" disabled>...</button>
+    <button type="button" class="InboxPage_folioButtonDefault">Refresh</button>
+    <button type="button" class="InboxPage_helpButton" title="How inbox works">?</button>
+  </div>
+
+  <!-- Empty/dragging state branches. -->
+  <div class="InboxPage_pageContainer">
+    <section class="EditorialPageHeader_header EditorialPageHeader_scaleStandard EditorialPageHeader_widthStandard EditorialPageHeader_ruleStandard">
+      <div class="EditorialPageHeader_topRow">
+        <div class="EditorialPageHeader_titleBlock">
+          <h1 class="EditorialPageHeader_title">Inbox</h1>
+        </div>
+      </div>
+      <div class="EditorialPageHeader_rule"></div>
+    </section>
+    <div class="InboxPage_dropZoneLarge InboxPage_dropZoneLargeDragging">
+      <p class="InboxPage_dropZoneText InboxPage_dropZoneTextDragging">Drop files here</p>
+      <p class="InboxPage_dropZoneHint">Drop files here and DailyOS will analyze them, match them to your accounts, and file them for you.</p>
+      <button type="button" class="InboxPage_driveImportButton">Import from Google Drive</button>
+    </div>
+    <div class="InboxPage_dropZoneCompact InboxPage_dropZoneCompactDragging">
+      <span class="InboxPage_dropZoneTextCompactDragging">Drop to add</span>
+    </div>
+  </div>
+
+  <!-- Result, batch, and processing branches. -->
+  <div class="InboxPage_dropResultToast">1 file added to inbox</div>
+  <div class="InboxPage_resultBanner">
+    <div class="InboxPage_resultBannerStats">
+      <span class="InboxPage_resultStatProcessed">1 processed</span>
+      <span class="InboxPage_resultStatFailed">1 failed</span>
+      <span class="InboxPage_resultStatEmpty">Nothing to process</span>
+    </div>
+    <button type="button" class="InboxPage_resultDismiss">Dismiss</button>
+  </div>
+  <div class="InboxPage_batchBanner">
+    <div class="InboxPage_batchProgressTrack">
+      <div class="InboxPage_batchProgressBar"></div>
+    </div>
+    <p class="InboxPage_batchQuote">Doing the boring parts. You're welcome.</p>
+  </div>
+  <div>
+    <div class="InboxPage_rowContainer InboxPage_rowBorder">
+      <span class="InboxPage_rowDot" data-dot-color="turmeric"></span>
+      <button type="button" class="InboxPage_rowTitleButton" disabled>
+        <span class="InboxPage_rowTitle InboxPage_rowTitleProcessing">Processing File</span>
+        <span class="InboxPage_rowClassificationLabel">File</span>
+      </button>
+      <div class="InboxPage_rowRight">
+        <span class="InboxPage_statusProcessing">Processing...</span>
+        <button type="button" class="InboxPage_rowCancelButton InboxPage_rowCancelButtonVisible">Cancel</button>
+        <button type="button" class="InboxPage_rowProcessButton InboxPage_rowProcessButtonHovered">Process</button>
+        <span class="InboxPage_expandIndicator InboxPage_expandIndicatorOpen">v</span>
+      </div>
+    </div>
+    <div class="InboxPage_progressTrack">
+      <div class="InboxPage_progressBar"></div>
+    </div>
+  </div>
+
+  <!-- Error, entity assignment, and expanded preview branches. -->
+  <div>
+    <div class="InboxPage_errorInline InboxPage_rowBorder">Assignment failed</div>
+    <div class="InboxPage_entityPickerRow InboxPage_rowBorder">
+      <span class="InboxPage_entityPickerSuggestion">Suggested: Globex Inc</span>
+      <select class="InboxPage_entityPickerSelect">
+        <option value="" disabled>Assign to account...</option>
+      </select>
+    </div>
+    <div class="InboxPage_statusGroup" title="Something went wrong processing this file">
+      <span class="InboxPage_statusDot" data-status-color="terracotta"></span>
+      <span class="InboxPage_statusLabel InboxPage_statusLabelError">Error</span>
+    </div>
+    <div class="InboxPage_expandedContent InboxPage_rowBorder">
+      <div class="InboxPage_expandedLoadingSkeleton">
+        <div class="InboxPage_skeletonLine1"></div>
+        <div class="InboxPage_skeletonLine2"></div>
+        <div class="InboxPage_skeletonLine3"></div>
+      </div>
+      <div class="InboxPage_fileMetaLine">example.md</div>
+      <pre class="InboxPage_fileContentPre">No content available.</pre>
+    </div>
+  </div>
+
+  <!-- Help dialog branch. -->
+  <div class="InboxPage_helpOverlay">
+    <div class="InboxPage_helpCard">
+      <h3 class="InboxPage_helpTitle">How your inbox works</h3>
+      <div class="InboxPage_helpSteps">
+        <div class="InboxPage_helpStep">
+          <span class="InboxPage_helpStepNumber">1</span>
+          <div>
+            <strong>Drop</strong>
+            <p>Drag meeting notes, transcripts, or documents into the inbox.</p>
+          </div>
+        </div>
+        <div class="InboxPage_helpStep">
+          <span class="InboxPage_helpStepNumber">2</span>
+          <div>
+            <strong>Classify</strong>
+            <p>DailyOS detects the file type and content.</p>
+          </div>
+        </div>
+        <div class="InboxPage_helpStep">
+          <span class="InboxPage_helpStepNumber">3</span>
+          <div>
+            <strong>Match</strong>
+            <p>AI identifies which account or project the file relates to.</p>
+          </div>
+        </div>
+        <div class="InboxPage_helpStep">
+          <span class="InboxPage_helpStepNumber">4</span>
+          <div>
+            <strong>File</strong>
+            <p>Content is routed to the right place automatically.</p>
+          </div>
+        </div>
+      </div>
+      <button type="button" class="InboxPage_helpCloseButton">Got it</button>
+    </div>
+  </div>
+</template>
 
 </main>
 </div>

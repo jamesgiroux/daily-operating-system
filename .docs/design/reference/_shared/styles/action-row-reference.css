@@ -1,0 +1,248 @@
+/* =============================================================================
+   action-row-reference.css
+
+   Reference-only stand-ins for src/components/shared/ActionRow.tsx and
+   src/components/shared/SuggestedActionRow.tsx. Those components currently use
+   inline style objects instead of CSS modules; reference HTML cannot use
+   style="" attributes, so these classes preserve the same tokenized visual
+   output without pretending a source module exists.
+============================================================================= */
+
+.action-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: none;
+  opacity: 1;
+  transition: opacity 0.15s ease;
+}
+
+.action-row--bordered {
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.action-row--completed {
+  opacity: 0.4;
+}
+
+.action-row__check {
+  width: 20px;
+  height: 20px;
+  border-radius: 10px;
+  border: 2px solid var(--color-rule-heavy);
+  background: transparent;
+  cursor: pointer;
+  flex-shrink: 0;
+  margin-top: 2px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  padding: 0;
+}
+
+.action-row__check--overdue {
+  border-color: var(--color-spice-terracotta);
+}
+
+.action-row__check--completed {
+  background: var(--color-garden-sage);
+}
+
+.action-row__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.action-row__title {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  text-decoration: none;
+  line-height: 1.4;
+}
+
+.action-row__title--completed {
+  text-decoration: line-through;
+}
+
+.action-row__decision-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-saffron-12);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+}
+
+.action-row__linear-badge {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  border-radius: 3px;
+  padding: 1px 6px;
+  margin-left: 8px;
+  vertical-align: middle;
+  cursor: pointer;
+  transition: color 0.1s ease;
+}
+
+.action-row__linear-badge:hover {
+  color: var(--color-text-secondary);
+}
+
+.action-row__context {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+.action-row__meta {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  margin-top: 6px;
+}
+
+.action-row__meta--overdue {
+  font-weight: 500;
+  color: var(--color-spice-terracotta);
+}
+
+.action-row__priority {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.action-row__priority--urgent {
+  color: var(--color-spice-terracotta);
+}
+
+.action-row__priority--high {
+  color: var(--color-spice-turmeric);
+}
+
+.suggested-action-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 14px 0;
+  border-bottom: none;
+  border-left: 2px dashed var(--color-spice-turmeric);
+  padding-left: 16px;
+}
+
+.suggested-action-row--bordered {
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.suggested-action-row__content {
+  flex: 1;
+  min-width: 0;
+}
+
+.suggested-action-row__kicker-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 2px;
+}
+
+.suggested-action-row__label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-spice-turmeric);
+}
+
+.suggested-action-row__priority {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  color: var(--color-text-tertiary);
+}
+
+.suggested-action-row__priority--urgent {
+  color: var(--color-spice-terracotta);
+}
+
+.suggested-action-row__priority--high {
+  color: var(--color-spice-turmeric);
+}
+
+.suggested-action-row__title {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  font-weight: 400;
+  color: var(--color-text-primary);
+  line-height: 1.4;
+}
+
+.suggested-action-row__context {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 400;
+  color: var(--color-text-secondary);
+  margin-top: 4px;
+  line-height: 1.45;
+}
+
+.suggested-action-row__meta {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  font-weight: 300;
+  color: var(--color-text-tertiary);
+  margin-top: 6px;
+}
+
+.suggested-action-row__controls {
+  display: flex;
+  gap: 6px;
+  flex-shrink: 0;
+  margin-top: 4px;
+}
+
+.suggested-action-row__button {
+  width: 28px;
+  height: 28px;
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.suggested-action-row__button--accept {
+  border: 1px solid var(--color-garden-sage);
+}
+
+.suggested-action-row__button--dismiss {
+  border: 1px solid var(--color-spice-terracotta);
+}

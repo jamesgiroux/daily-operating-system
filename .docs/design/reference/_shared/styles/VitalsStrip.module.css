@@ -41,6 +41,29 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+/* Runtime VitalDisplay highlight colors are inline in React; the reference
+   mirror uses the same finite set through data attributes. */
+.VitalsStrip_vitalText[data-highlight="larkspur"] {
+  color: var(--color-garden-larkspur);
+}
+
+.VitalsStrip_vitalText[data-highlight="turmeric"] {
+  color: var(--color-spice-turmeric);
+}
+
+.VitalsStrip_vitalText[data-highlight="olive"] {
+  color: var(--color-garden-olive);
+}
+
+.VitalsStrip_vitalText[data-highlight="saffron"] {
+  color: var(--color-spice-saffron);
+}
+
+.VitalsStrip_vitalText[data-highlight="secondary"] {
+  color: var(--color-text-secondary);
 }
 
 .VitalsStrip_attribution {

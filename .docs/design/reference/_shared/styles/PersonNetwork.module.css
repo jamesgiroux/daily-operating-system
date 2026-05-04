@@ -81,6 +81,16 @@
   flex-shrink: 0;
 }
 
+/* Entity dots and role badge colors are data-driven in React. The mirror keeps
+   the same finite mappings as tokenized data-attribute variants. */
+.PersonNetwork_entityDot[data-entity-type="account"] {
+  background: var(--color-spice-turmeric);
+}
+
+.PersonNetwork_entityDot[data-entity-type="project"] {
+  background: var(--color-garden-olive);
+}
+
 .PersonNetwork_entityName {
   font-family: var(--font-sans);
   font-size: 15px;
@@ -133,6 +143,41 @@
   letter-spacing: 0.04em;
   line-height: 1.4;
   white-space: nowrap;
+}
+
+.PersonNetwork_roleBadge[data-role="champion"] {
+  background: var(--color-spice-turmeric-12);
+  color: var(--color-spice-turmeric);
+}
+
+.PersonNetwork_roleBadge[data-role="executive_sponsor"],
+.PersonNetwork_roleBadge[data-role="decision_maker"] {
+  background: var(--color-garden-rosemary-14);
+  color: var(--color-garden-rosemary);
+}
+
+.PersonNetwork_roleBadge[data-role="economic_buyer"] {
+  background: var(--color-garden-sage-14);
+  color: var(--color-garden-sage);
+}
+
+.PersonNetwork_roleBadge[data-role="technical_buyer"],
+.PersonNetwork_roleBadge[data-role="primary_user"],
+.PersonNetwork_roleBadge[data-role="technical_user"] {
+  background: var(--color-person-14);
+  color: var(--color-person);
+}
+
+.PersonNetwork_roleBadge[data-role="associated"],
+.PersonNetwork_roleBadge[data-role="csm"],
+.PersonNetwork_roleBadge[data-role="implementation"] {
+  background: var(--color-text-tertiary-8);
+  color: var(--color-text-tertiary);
+}
+
+.PersonNetwork_roleBadges [data-role-picker-anchor] {
+  position: relative;
+  display: inline-block;
 }
 
 .PersonNetwork_roleRemove {

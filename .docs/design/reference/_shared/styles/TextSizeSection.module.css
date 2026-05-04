@@ -55,6 +55,11 @@
   border-top: 1px solid var(--color-rule-light);
 }
 
+/* Mirrors TextSizeSection's inline preview font-size at the 100% rest state. */
+.TextSizeSection_previewScale100 {
+  font-size: 14px;
+}
+
 /* ── Save indicator ── */
 
 .TextSizeSection_saveStatus {

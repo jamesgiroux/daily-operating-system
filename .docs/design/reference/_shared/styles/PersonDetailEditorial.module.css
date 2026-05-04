@@ -5,3 +5,154 @@
 /* (Person page has minimal page-specific styles — most patterns are in the
    shared entity-detail module. This file exists for future person-specific
    additions and to maintain the consistent import pattern.) */
+
+/* Reference mirror helpers for PersonInsightChapter, PullQuote, FinisMarker,
+   and PersonAppendix. The routed components currently express these pieces
+   with React inline styles; the static mirror needs tokenized classes instead
+   so person.html can remain inline-style-free. */
+
+.PersonDetailEditorial_insightSection,
+.PersonDetailEditorial_appendixSection {
+  scroll-margin-top: 60px;
+  padding-top: 80px;
+}
+
+.PersonDetailEditorial_pullQuote {
+  margin: 0;
+  padding: 72px 0;
+  text-align: center;
+  position: relative;
+}
+
+.PersonDetailEditorial_pullQuoteRule {
+  width: 120px;
+  height: 1px;
+  background: var(--color-rule-heavy);
+  margin: 0 auto 48px;
+}
+
+.PersonDetailEditorial_pullQuoteRuleBottom {
+  margin: 48px auto 0;
+}
+
+.PersonDetailEditorial_pullQuoteText {
+  font-family: var(--font-serif);
+  font-size: 28px;
+  font-weight: 400;
+  font-style: italic;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+  max-width: 580px;
+  margin: 0 auto;
+}
+
+.PersonDetailEditorial_cadenceStrip {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  margin-top: 24px;
+  margin-bottom: 8px;
+}
+
+.PersonDetailEditorial_cadenceTrendIncreasing {
+  color: var(--color-garden-olive);
+}
+
+.PersonDetailEditorial_cadenceSeparator {
+  margin: 0 8px;
+  opacity: 0.4;
+}
+
+.PersonDetailEditorial_paragraphStack {
+  margin-top: 24px;
+}
+
+.PersonDetailEditorial_paragraph {
+  font-family: var(--font-sans);
+  font-size: 15px;
+  line-height: 1.65;
+  color: var(--color-text-primary);
+  max-width: 620px;
+  margin: 0 0 16px;
+}
+
+.PersonDetailEditorial_paragraphLast {
+  margin-bottom: 0;
+}
+
+.PersonDetailEditorial_refreshButton {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+  background: none;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 4px;
+  padding: 2px 10px;
+  cursor: pointer;
+  opacity: 1;
+  transition: color 150ms, border-color 150ms, opacity 150ms;
+}
+
+.PersonDetailEditorial_refreshButton:hover {
+  color: var(--color-text-secondary);
+  border-color: var(--color-text-tertiary);
+}
+
+.PersonDetailEditorial_appendixFrame {
+  border-top: 3px double var(--color-rule-heavy);
+  padding-top: 32px;
+}
+
+.PersonDetailEditorial_appendixRule {
+  border-top: 2px solid var(--color-rule-heavy);
+  padding-top: 24px;
+  margin-top: 32px;
+}
+
+.PersonDetailEditorial_appendixLabel {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--color-text-tertiary);
+  margin-bottom: 16px;
+}
+
+.PersonDetailEditorial_appendixGrid {
+  display: grid;
+  grid-template-columns: 100px 1fr;
+  gap: 12px 24px;
+}
+
+.PersonDetailEditorial_fieldLabel {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+  padding-top: 6px;
+}
+
+.PersonDetailEditorial_fieldValue {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+  padding-top: 4px;
+}
+
+.PersonDetailEditorial_fieldValueCapitalize {
+  text-transform: capitalize;
+}
+
+.PersonDetailEditorial_finisDate {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.06em;
+  margin-top: 16px;
+}
