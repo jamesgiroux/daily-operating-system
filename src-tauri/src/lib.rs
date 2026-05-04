@@ -41,6 +41,27 @@ pub mod gravatar;
 pub mod helpers;
 mod hygiene;
 mod intel_queue;
+#[doc(hidden)]
+pub mod substrate_test_api {
+    pub use crate::intel_queue::{
+        ContaminationRejection, EnrichmentComposition, EnrichmentInput, PreparedEnrichment,
+    };
+
+    pub fn compose_enrichment_intelligence_with_policy(
+        db: &crate::db::ActionDb,
+        input: &EnrichmentInput,
+        intel: &crate::intelligence::IntelligenceJson,
+        contamination_policy: crate::intelligence::contamination::ContaminationValidation,
+    ) -> Result<EnrichmentComposition, String> {
+        crate::intel_queue::compose_enrichment_intelligence_with_policy(
+            db,
+            input,
+            intel,
+            None,
+            contamination_policy,
+        )
+    }
+}
 pub mod intelligence;
 pub mod observability;
 pub mod json_loader;
