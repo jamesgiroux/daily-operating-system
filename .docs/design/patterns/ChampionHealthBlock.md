@@ -72,7 +72,7 @@ Render the current state of a champion relationship in one focused block so the 
 ## Source
 
 - **Code:** to be implemented in `src/components/meeting/ChampionHealthBlock.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/meeting/current/after.html:243-259`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:243-259`
 - **Reference render:** Meeting "Champion Health" chapter.
 
 ## Surfaces that consume it

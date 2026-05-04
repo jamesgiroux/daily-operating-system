@@ -64,7 +64,7 @@ Quality dot color (per `_shared/primitives.css`):
 - **Code:** `src/components/entity/IntelligenceQualityBadge.tsx`
 - **CSS:** `src/components/entity/IntelligenceQualityBadge.module.css`
 - **Mockup substrate (compatible):** `_shared/primitives.css` `.hero-eyebrow .quality-dot`
-- **D-spine `prep-state` consumer:** `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` lines 683-702
+- **D-spine `prep-state` consumer:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` lines 683-702
 
 ## Surfaces that consume it
 

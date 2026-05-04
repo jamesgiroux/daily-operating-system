@@ -33,4 +33,4 @@ Reference render HTML files set `<body data-nav-base="../surfaces">` (or whateve
 
 ## How `_shared/` got here
 
-Promoted from `.docs/mockups/claude-design-project/mockups/surfaces/_shared/` per **D8** (synthesis decision). The mockup-side files now `<link>` and `<script src=>` directly at this canonical location.
+Promoted from `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/` per **D8** (synthesis decision). The mockup-side files now `<link>` and `<script src=>` directly at this canonical location.

@@ -64,8 +64,8 @@ Render a confirmed commitment captured from the meeting, making ownership explic
 ## Source
 
 - **Code:** to be implemented in `src/components/meeting/CommitmentRow.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/meeting/current/after.html:261-277`
-- **Contrast reference:** `SuggestedActionRow` mockup begins at `.docs/mockups/claude-design-project/mockups/meeting/current/after.html:279-325`
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:261-277`
+- **Contrast reference:** `SuggestedActionRow` mockup begins at `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:279-325`
 - **Reference render:** Meeting "Commitments & Actions" chapter.
 
 ## Surfaces that consume it

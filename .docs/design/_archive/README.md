@@ -14,6 +14,6 @@ _(empty — populates once the audits land and the existing `.docs/design/*.md` 
 
 ## What does NOT go here
 
-- Mockup variations that didn't get picked → those live in `.docs/mockups/_archive/`
+- Mockup variations that didn't get picked → those live in `.docs/_archive/mockups/_archive/`
 - Code branches / experiments → git history handles that
 - Anything that's still being decided → keep it in active dirs until the decision lands

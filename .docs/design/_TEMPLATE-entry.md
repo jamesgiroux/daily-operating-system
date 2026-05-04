@@ -47,7 +47,7 @@ For surfaces: omit.
 
 - **Code:** `src/path/to/file.tsx` (and related files)
 - **Reference render:** `reference/[name].html` (if applicable)
-- **Mockup origin:** `.docs/mockups/...` (if recently promoted)
+- **Mockup origin:** `.docs/_archive/mockups/...` (if recently promoted)
 
 ## Surfaces that consume it
 
@@ -59,6 +59,6 @@ Canonical name, current code name (if different), rename status. See `NAMING.md`
 
 ## History
 
-- YYYY-MM-DD — Promoted from `.docs/mockups/[origin]`
+- YYYY-MM-DD — Promoted from `.docs/_archive/mockups/[origin]`
 - YYYY-MM-DD — [change]
 - YYYY-MM-DD — Superseded by `[name]` (only if status is `superseded`)

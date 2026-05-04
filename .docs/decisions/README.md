@@ -138,6 +138,12 @@ Architectural decisions for DailyOS, recorded as lightweight ADRs.
 | [0119](0119-runtime-evaluator-pass-for-transform-abilities.md) | Runtime evaluator pass for Transform abilities (resolves [0118](0118-dailyos-as-ai-harness-principles-and-residual-gaps.md) Gap A) | Proposed |
 | [0120](0120-observability-contract.md) | Observability contract — invocation records, correlation, NDJSON (resolves persona-review S1/S9/A7) | Proposed |
 | [0121](0121-team-intelligence-architecture.md) | Team intelligence architecture — open strategic question, option classes, next-action triggers | Proposed (Open) |
+| [0122](0122-chapter-enrichment.md) | Chapter-level enrichment strategy | Proposed |
+| [0123](0123-typed-claim-feedback-semantics.md) | Typed claim feedback semantics | Accepted |
+| [0124](0124-longitudinal-topic-threading.md) | Longitudinal topic threading — substrate allowance and deferred decision | Accepted |
+| [0125](0125-claim-anatomy-temporal-sensitivity-typeregistry.md) | Claim anatomy v2 — temporal scope, sensitivity, claim type registry | Accepted |
+| [0126](0126-memory-substrate-invariants.md) | Memory substrate invariants | Proposed |
+| [0127](0127-presets-as-intelligence-contracts.md) | Presets as intelligence contracts | Accepted |
 
 ---
 

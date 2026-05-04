@@ -46,7 +46,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### RemovableChip
 
 - **Spec:** `.docs/design/primitives/RemovableChip.md`
-- **Current CSS location:** No `src/` implementation exists. Mockup origin: `.docs/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx:73-80` (`Chip` component with inline styles). No CSS module or TSX component in production code.
+- **Current CSS location:** No `src/` implementation exists. Mockup origin: `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx:73-80` (`Chip` component with inline styles). No CSS module or TSX component in production code.
 - **Used in surfaces/components:** Not yet in production. Spec targets Settings (Wave 3) as canonical consumer.
 - **Recommendation:** **Extract**
 - **Rationale:** Greenfield Wave 3 primitive. Creating it canonical from the start avoids Settings inventing yet another local chip pattern. ~20 lines CSS, 1 initial consumer.
@@ -94,7 +94,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### MeetingStatusPill
 
 - **Spec:** `.docs/design/primitives/MeetingStatusPill.md`
-- **Current CSS location:** No `src/` implementation. Proposed Wave 4 primitive; mockup origin `.docs/mockups/claude-design-project/mockups/meeting/current/after.html:39-43`. No TSX component or CSS module exists.
+- **Current CSS location:** No `src/` implementation. Proposed Wave 4 primitive; mockup origin `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:39-43`. No TSX component or CSS module exists.
 - **Used in surfaces/components:** Not yet used. Intended for MeetingDetail SurfaceMasthead accessory slot.
 - **Recommendation:** **Extract**
 - **Rationale:** Greenfield Wave 4 primitive. Composes Pill with meeting-specific state tokens. Must be canonical from the start — it is the canonical accessory for SurfaceMasthead on MeetingDetail.
@@ -178,7 +178,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### Segmented
 
 - **Spec:** `.docs/design/primitives/Segmented.md`
-- **Current CSS location:** No `src/` implementation. Proposed Wave 3 primitive; mockup origin `.docs/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx:39-51`. No TSX component or CSS module.
+- **Current CSS location:** No `src/` implementation. Proposed Wave 3 primitive; mockup origin `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx:39-51`. No TSX component or CSS module.
 - **Used in surfaces/components:** Not yet used. Intended for Settings (Wave 3).
 - **Recommendation:** **Extract**
 - **Rationale:** Greenfield Wave 3 primitive. Creating canonical from the start is the only valid path before Wave 3 Settings work begins.
@@ -190,7 +190,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### GlanceCell
 
 - **Spec:** `.docs/design/primitives/GlanceCell.md`
-- **Current CSS location:** No `src/` implementation. Proposed Wave 3 primitive; mockup origin `.docs/mockups/claude-design-project/mockups/surfaces/settings/app.jsx:57-74`. No TSX component or CSS module.
+- **Current CSS location:** No `src/` implementation. Proposed Wave 3 primitive; mockup origin `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/app.jsx:57-74`. No TSX component or CSS module.
 - **Used in surfaces/components:** Not yet used. Intended for Settings masthead via GlanceRow (Wave 3).
 - **Recommendation:** **Extract**
 - **Rationale:** Greenfield Wave 3 primitive. Key/value stat cell with optional status dot ≈ 25 CSS lines.
@@ -204,7 +204,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### DayChart
 
 - **Spec:** `.docs/design/patterns/DayChart.md`
-- **Current CSS location:** No `src/` implementation. Mockup substrate: `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` — classes `.day-chart`, `.day-bars`, `.bar`, `.bar.past`, `.bar.now-bar`, `.now-line`. Planned component: `src/components/dashboard/DayChart.tsx`.
+- **Current CSS location:** No `src/` implementation. Mockup substrate: `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` — classes `.day-chart`, `.day-bars`, `.bar`, `.bar.past`, `.bar.now-bar`, `.now-line`. Planned component: `src/components/dashboard/DayChart.tsx`.
 - **Used in surfaces/components:** Not yet implemented. Canonical for DailyBriefing's Today section.
 - **Recommendation:** **Extract**
 - **Rationale:** Greenfield Wave pattern. Visually complex self-contained layout (absolutely positioned meeting bars, NOW indicator, hour ticks, legend). Cannot live inside a parent module — it is too structurally distinct.
@@ -216,7 +216,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### EntityPortraitCard
 
 - **Spec:** `.docs/design/patterns/EntityPortraitCard.md`
-- **Current CSS location:** No `src/` implementation. Mockup substrate: `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` — classes `.acc-card`, `.acc-aside`, `.acc-main`, `.acc-thread`, `.ent-acme`, `.ent-northwind`, `.ent-priya`. Planned component: `src/components/dashboard/EntityPortraitCard.tsx`.
+- **Current CSS location:** No `src/` implementation. Mockup substrate: `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` — classes `.acc-card`, `.acc-aside`, `.acc-main`, `.acc-thread`, `.ent-acme`, `.ent-northwind`, `.ent-priya`. Planned component: `src/components/dashboard/EntityPortraitCard.tsx`.
 - **Used in surfaces/components:** Not yet implemented. Canonical for DailyBriefing's Moving section.
 - **Recommendation:** **Extract**
 - **Rationale:** Magazine-style portrait card with a CSS grid layout (200px aside | 1fr main), entity-tinted aside band, thread list with typed dots, and stat grid. Self-contained — will never live inside a parent module.
@@ -228,7 +228,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### ThreadMark
 
 - **Spec:** `.docs/design/patterns/ThreadMark.md`
-- **Current CSS location:** No `src/` implementation. Mockup substrate: `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` — class `.thread-mark`. Planned component: `src/components/ui/ThreadMark.tsx`.
+- **Current CSS location:** No `src/` implementation. Mockup substrate: `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` — class `.thread-mark`. Planned component: `src/components/ui/ThreadMark.tsx`.
 - **Used in surfaces/components:** Not yet implemented. Intended for DailyBriefing (WatchListRow, EntityThreadList, MeetingSpineItem foot) and cross-version for all entity surfaces with addressable lines.
 - **Recommendation:** **Extract**
 - **Rationale:** Universal "talk about this" hover affordance. Must be canonical so it can be dropped into any addressable line without parent-surface CSS coupling.
@@ -240,7 +240,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### AskAnythingDock
 
 - **Spec:** `.docs/design/patterns/AskAnythingDock.md`
-- **Current CSS location:** No `src/` implementation. Mockup substrate: `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` — classes `.ask`, `.ask-bar`, `.ask-bar-input`, `.ask-bar-suggestions`, `.ask-bar-scope`, `.ask-chip`. Planned component: `src/components/dashboard/AskAnythingDock.tsx`.
+- **Current CSS location:** No `src/` implementation. Mockup substrate: `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` — classes `.ask`, `.ask-bar`, `.ask-bar-input`, `.ask-bar-suggestions`, `.ask-bar-scope`, `.ask-chip`. Planned component: `src/components/dashboard/AskAnythingDock.tsx`.
 - **Used in surfaces/components:** Not yet implemented. Canonical for DailyBriefing; cross-version foundational for v1.4.6.
 - **Recommendation:** **Extract**
 - **Rationale:** Three-row editorial input dock with frosted-glass background, suggestion chips, and scope footer. Will be used globally in v1.4.6 — must be self-contained canonical from the start.
@@ -303,7 +303,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 ### GlanceRow
 
 - **Spec:** `.docs/design/patterns/GlanceRow.md`
-- **Current CSS location:** No `src/` implementation. Mockup origin: `.docs/mockups/claude-design-project/mockups/surfaces/settings/app.jsx:57-74` — `.s-glance`, `.gcell`. Planned: `src/components/layout/GlanceRow.tsx` and `GlanceCell.tsx`.
+- **Current CSS location:** No `src/` implementation. Mockup origin: `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/app.jsx:57-74` — `.s-glance`, `.gcell`. Planned: `src/components/layout/GlanceRow.tsx` and `GlanceCell.tsx`.
 - **Used in surfaces/components:** Not yet implemented. Primary consumer: Settings masthead via SurfaceMasthead.
 - **Recommendation:** **Extract**
 - **Rationale:** Horizontal GlanceCell layout row. ~25 lines CSS for default/compact/wrap variants. Greenfield; no migration. Depends on GlanceCell (Cluster D).

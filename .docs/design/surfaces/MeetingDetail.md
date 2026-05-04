@@ -9,7 +9,7 @@
 **Canonical name:** `MeetingDetail`
 **Source files:**
 - Existing: `src/pages/MeetingDetail*` (verify path during implementation)
-- Mockup: `.docs/mockups/claude-design-project/mockups/meeting/current/after.html`
+- Mockup: `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html`
 
 **Design system version introduced:** 0.4.0
 

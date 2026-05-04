@@ -72,7 +72,7 @@ Production form:
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.margin-section`); also reused by D-spine as `.margin-grid` (slightly different class name, same shape)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.margin-section`); also reused by D-spine as `.margin-grid` (slightly different class name, same shape)
 - **Code:** existing in `src/components/editorial/MarginSection.tsx` — Wave 1 reconciles the two class names
 
 ## Surfaces that consume it

@@ -64,7 +64,7 @@ Segmented lets users choose one value from a small fixed set without opening a m
 
 ## Source
 
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 39-51 (`Segmented`)
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 39-51 (`Segmented`)
 - **Code:** to be implemented in `src/components/ui/Segmented.tsx`
 
 ## Surfaces that consume it

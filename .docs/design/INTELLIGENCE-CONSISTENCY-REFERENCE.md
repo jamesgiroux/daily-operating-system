@@ -10,7 +10,7 @@ This is the troubleshooting reference for logical contradictions in briefing int
 
 - `.docs/design/SIGNAL-SCORING-REFERENCE.md` (signal math and linking thresholds),
 - `.docs/architecture/PIPELINES.md` (pipeline flow),
-- `.docs/issues/i527.md` (guardrail contract).
+- `.docs/_archive/issues/i527.md` (guardrail contract).
 
 ## End-to-End Flow (Scoring + Context + Guardrails)
 

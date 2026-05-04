@@ -70,7 +70,7 @@ CSS pattern: a `.thread-mark` button inside any addressable line; parent line `:
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.thread-mark`, plus the click handler at lines 1923-1936 that wires it to the Ask input)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.thread-mark`, plus the click handler at lines 1923-1936 that wires it to the Ask input)
 - **Code:** to be implemented as a small React component, likely in `src/components/ui/ThreadMark.tsx`
 
 ## Surfaces that consume it

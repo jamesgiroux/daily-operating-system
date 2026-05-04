@@ -62,7 +62,7 @@ Composes icon markers, text labels, and metadata text in a vertical list. Icons 
 ## Source
 
 - **Code:** to be implemented in `src/components/meeting/AgendaThreadList.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/meeting/current/after.html` lines 67-113
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 67-113
 
 ## Surfaces that consume it
 

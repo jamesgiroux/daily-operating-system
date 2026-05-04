@@ -60,7 +60,7 @@ Composes `Button` primitive instances in a horizontal sub-row: icon-only buttons
 ## Source
 
 - **Code:** to be implemented in `src/components/meeting/FolioActions.tsx`
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/meeting/current/after.html` lines 29-34
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 29-34
 
 ## Surfaces that consume it
 

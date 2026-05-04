@@ -1,7 +1,7 @@
 # DOS-204 — Chapter-by-Chapter Enrichment: tl;dr
 
 **Date:** 2026-04-23
-**Full ADR:** `.docs/adrs/adr-0122-chapter-enrichment.md`
+**Full ADR:** `.docs/decisions/0122-chapter-enrichment.md`
 
 ---
 

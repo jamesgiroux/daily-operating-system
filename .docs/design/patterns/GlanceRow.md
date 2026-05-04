@@ -88,8 +88,8 @@ type GlanceRowProps = {
 
 ## Source
 
-- **Mockup origin:** `.docs/mockups/claude-design-project/mockups/surfaces/settings/app.jsx` lines 57-74 (`.s-glance` with four `.gcell` instances).
-- **Host mockup:** `.docs/mockups/claude-design-project/mockups/surfaces/settings/app.jsx` lines 51-75 (`.s-masthead` hosting the glance row).
+- **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/app.jsx` lines 57-74 (`.s-glance` with four `.gcell` instances).
+- **Host mockup:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/app.jsx` lines 51-75 (`.s-masthead` hosting the glance row).
 - **Host pattern:** `.docs/design/patterns/SurfaceMasthead.md` lines 20-23, 30-38, and 56-60 define the glance slot and Settings composition.
 - **Consumer reference:** `.docs/design/surfaces/Settings.md` lines 24-29 and 58-70 name the Settings masthead `GlanceRow` and `GlanceCell` usage.
 - **Code:** to be implemented in `src/components/layout/GlanceRow.tsx` and `src/components/layout/GlanceCell.tsx`.

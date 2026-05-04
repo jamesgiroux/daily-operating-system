@@ -85,7 +85,7 @@ Tinting per surface tint (`data-tint="larkspur" | "terracotta" | ...`) — the b
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/chrome.css` (`.folio`) + `chrome.js` `buildFolio()`
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/chrome.css` (`.folio`) + `chrome.js` `buildFolio()`
 - **Code:** to be implemented as React pattern in `src/components/layout/FolioBar.tsx` (currently rendered by per-page React + a magazine layout shell — see `src/components/layout/MagazinePageLayout.tsx`)
 
 ## Surfaces that consume it

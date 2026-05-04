@@ -1,7 +1,7 @@
 @import '../../styles/design-tokens.css';
 
 /* Sentiment journal hero — editorial treatment per
-   .docs/mockups/account-health-outlook-globex.html lines 599-635. */
+   .docs/_archive/mockups/account-health-outlook-globex.html lines 599-635. */
 
 .SentimentHero_hero {
   padding-top: var(--space-md, 16px);

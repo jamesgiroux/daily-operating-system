@@ -63,7 +63,7 @@ CSS class form (matches `_shared/.pill`):
 
 ## Source
 
-- **Mockup substrate:** `.docs/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.pill`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.pill`)
 - **Code:** to be implemented as React primitive in `src/components/ui/Pill.tsx` (Wave 1 follow-on); current ad-hoc usages live across surfaces (see Audit 03 for the 7+ pill drift cases)
 
 ## Surfaces that consume it

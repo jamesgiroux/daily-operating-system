@@ -1,8 +1,8 @@
 # Account Detail Page — Content Design Principles
 **Related Linear:** DOS-48 (parent IA redesign), DOS-113 (sentiment), new issues for Context and Work tabs
 **Session date:** 2026-04-17
-**Mockup:** `.docs/mockups/account-health-outlook-globex.html`
-**Glean prompt:** `.docs/mockups/glean-prompt-health-outlook-signals.md`
+**Mockup:** `.docs/_archive/mockups/account-health-outlook-globex.html`
+**Glean prompt:** `.docs/_archive/mockups/glean-prompt-health-outlook-signals.md`
 
 ---
 
@@ -134,7 +134,7 @@ These are data/intelligence gaps identified, ranked by impact. Five are addresse
 
 ## Glean prompt — leading signals enrichment
 
-Full prompt at `.docs/mockups/glean-prompt-health-outlook-signals.md`. Tested live on Globex Holdings.
+Full prompt at `.docs/_archive/mockups/glean-prompt-health-outlook-signals.md`. Tested live on Globex Holdings.
 
 **What worked:**
 - Evidence quality excellent — every signal dated, cited with ticket/call URLs

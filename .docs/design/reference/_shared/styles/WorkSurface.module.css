@@ -7,7 +7,7 @@
  *   SharedRefRow, RecentlyLandedRow, ReportCard, NudgeRow, VisibilityPill.
  *
  * Token + typography fidelity verified against
- *   .docs/mockups/account-work-globex.html
+ *   .docs/_archive/mockups/account-work-globex.html
  * ========================================================================= */
 
 /* Pull in design tokens explicitly. The global load from index.css can
