@@ -1,6 +1,7 @@
 //! Runtime-surface bridges for ability invocation.
 
 pub mod eval;
+pub mod mcp;
 pub mod tauri;
 pub mod types;
 pub mod worker;
