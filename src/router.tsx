@@ -9,7 +9,6 @@ import {
 } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { toast } from "sonner";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SidebarProvider, SidebarInset } from "@/components/ui/sidebar";
 import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
@@ -265,53 +264,6 @@ function RootLayout() {
     return () => {
       cancelled = true;
       if (settleTimer) clearTimeout(settleTimer);
-      unlisten?.();
-    };
-  }, [startupGate]);
-
-  // Cross-entity contamination guard: when the enrichment pipeline detects
-  // foreign-entity tokens in an account's narrative output, the write is
-  // rejected and the prior intelligence row stays in place. The backend
-  // emits this event so the user sees a non-blocking notification with
-  // enough detail to decide whether to investigate the false positive or
-  // accept the rejection.
-  useEffect(() => {
-    if (startupGate !== "app") return;
-    let cancelled = false;
-    let unlisten: UnlistenFn | undefined;
-
-    listen<{
-      entity_id: string;
-      entity_type: string;
-      hits: Array<{
-        foreignToken: string;
-        kind: "domain" | "infrastructure_id" | "company_name";
-        sourceAccountId: string | null;
-      }>;
-      rejected: boolean;
-    }>("enrichment-contamination-rejected", (event) => {
-      const { entity_id, hits, rejected } = event.payload;
-      if (!rejected) return; // shadow mode — no toast
-      const summary = hits
-        .map((h) => {
-          const target = h.sourceAccountId ? ` (from ${h.sourceAccountId})` : "";
-          return `${h.foreignToken}${target} [${h.kind.replace("_", " ")}]`;
-        })
-        .join(", ");
-      toast.warning(`Refresh skipped for ${entity_id}`, {
-        description: `Foreign reference detected: ${summary}. Prior intelligence kept.`,
-        duration: 8000,
-      });
-    }).then((fn) => {
-      if (cancelled) {
-        fn();
-        return;
-      }
-      unlisten = fn;
-    });
-
-    return () => {
-      cancelled = true;
       unlisten?.();
     };
   }, [startupGate]);

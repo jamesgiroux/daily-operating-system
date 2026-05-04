@@ -6,8 +6,7 @@ use std::path::Path;
 use crate::db::ActionDb;
 use crate::intel_queue::{
     apply_enrichment_side_writes, compose_enrichment_intelligence, gather_enrichment_input,
-    record_enrichment_contamination_rejection, run_enrichment, run_enrichment_finalize_post_commit,
-    EnrichmentComposition, FinalizeMode, IntelPriority, IntelRequest,
+    run_enrichment, run_enrichment_finalize_post_commit, FinalizeMode, IntelPriority, IntelRequest,
 };
 use crate::pty::AiUsageContext;
 use crate::services::context::ServiceContext;
@@ -743,7 +742,7 @@ pub async fn enrich_entity(
         );
         manual_refresh_error("write_results", &e)
     })?;
-    let composition = match compose_enrichment_intelligence(
+    let prepared = match compose_enrichment_intelligence(
         state,
         &db,
         &input,
@@ -764,59 +763,48 @@ pub async fn enrich_entity(
             return Err(manual_refresh_error("write_results", &e));
         }
     };
-    let final_intel = match composition {
-        EnrichmentComposition::Persist(prepared) => {
-            if let Err(e) = db.with_transaction(|tx| {
-                apply_enrichment_side_writes(ctx, tx, &input, &prepared)?;
-                upsert_assessment_from_enrichment_in_active_transaction(
-                    ctx,
-                    tx,
-                    &state.signals.engine,
-                    &input.entity_type,
-                    &input.entity_id,
-                    prepared.intelligence(),
-                )
-            }) {
-                emit_manual_refresh_failed_best_effort(
-                    ctx,
-                    app_handle,
-                    &input.entity_id,
-                    &input.entity_type,
-                    &input.entity_name,
-                    "write_results",
-                    &e,
-                );
-                return Err(manual_refresh_error("write_results", &e));
-            }
-            let final_intel = prepared.into_intelligence();
-            if let Err(e) = run_enrichment_finalize_post_commit(
-                state,
-                &db,
-                &input,
-                &final_intel,
-                &parsed.inferred_relationships,
-                FinalizeMode::ManualRefresh,
-            ) {
-                emit_manual_refresh_failed_best_effort(
-                    ctx,
-                    app_handle,
-                    &input.entity_id,
-                    &input.entity_type,
-                    &input.entity_name,
-                    "relationship_persist",
-                    &e,
-                );
-                return Err(manual_refresh_error("relationship_persist", &e));
-            }
-            final_intel
-        }
-        EnrichmentComposition::SkipDueToContamination {
-            prior, rejection, ..
-        } => {
-            record_enrichment_contamination_rejection(ctx, state, &input, &db, &rejection);
-            prior
-        }
-    };
+    if let Err(e) = db.with_transaction(|tx| {
+        apply_enrichment_side_writes(ctx, tx, &input, &prepared)?;
+        upsert_assessment_from_enrichment_in_active_transaction(
+            ctx,
+            tx,
+            &state.signals.engine,
+            &input.entity_type,
+            &input.entity_id,
+            prepared.intelligence(),
+        )
+    }) {
+        emit_manual_refresh_failed_best_effort(
+            ctx,
+            app_handle,
+            &input.entity_id,
+            &input.entity_type,
+            &input.entity_name,
+            "write_results",
+            &e,
+        );
+        return Err(manual_refresh_error("write_results", &e));
+    }
+    let final_intel = prepared.into_intelligence();
+    if let Err(e) = run_enrichment_finalize_post_commit(
+        state,
+        &db,
+        &input,
+        &final_intel,
+        &parsed.inferred_relationships,
+        FinalizeMode::ManualRefresh,
+    ) {
+        emit_manual_refresh_failed_best_effort(
+            ctx,
+            app_handle,
+            &input.entity_id,
+            &input.entity_type,
+            &input.entity_name,
+            "relationship_persist",
+            &e,
+        );
+        return Err(manual_refresh_error("relationship_persist", &e));
+    }
 
     if let Some(app) = app_handle {
         if let Err(e) = app.emit(
@@ -2319,10 +2307,9 @@ mod mutation_smoke_tests {
     use crate::db::test_utils::test_db;
     use crate::db::{AccountType, DbAccount};
     use crate::intel_queue::{
-        apply_enrichment_side_writes, compose_enrichment_intelligence_with_policy,
-        run_enrichment_finalize_post_commit, EnrichmentComposition, EnrichmentInput, FinalizeMode,
+        apply_enrichment_side_writes, compose_enrichment_intelligence_payload,
+        run_enrichment_finalize_post_commit, EnrichmentInput, FinalizeMode,
     };
-    use crate::intelligence::contamination::ContaminationValidation;
     use crate::intelligence::io::{
         IntelRisk, IntelligenceJson, ItemSource, OrgHealthData, StakeholderInsight, SupportHealth,
     };
@@ -2943,78 +2930,6 @@ mod mutation_smoke_tests {
     }
 
     #[test]
-    fn compose_enrichment_skips_persistence_on_contamination_reject() {
-        let db = test_db();
-        let target = make_account("acc-contamination-target");
-        let foreign = make_account("acc-contamination-foreign");
-        db.upsert_account(&target).unwrap();
-        db.upsert_account(&foreign).unwrap();
-        seed_account_domain(&db, "acc-contamination-target", "target.example");
-        seed_account_domain(&db, "acc-contamination-foreign", "vip-test.com");
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        let prior = IntelligenceJson {
-            entity_id: "acc-contamination-target".to_string(),
-            entity_type: "account".to_string(),
-            enriched_at: "2026-05-03T00:00:00Z".to_string(),
-            executive_assessment: Some("prior trusted assessment".to_string()),
-            ..Default::default()
-        };
-        db.upsert_entity_intelligence(&prior).unwrap();
-        post_commit_fenced_write(&db, dir.path(), &prior, "seed disk intelligence");
-        let before_disk =
-            std::fs::read_to_string(dir.path().join("intelligence.json")).expect("read seed disk");
-
-        let input = make_enrichment_input("acc-contamination-target", dir.path());
-        let contaminated = IntelligenceJson {
-            entity_id: "acc-contamination-target".to_string(),
-            entity_type: "account".to_string(),
-            enriched_at: "2026-05-03T01:00:00Z".to_string(),
-            executive_assessment: Some(
-                "WordPress VIP performance at vip-test.com remains stable.".to_string(),
-            ),
-            ..Default::default()
-        };
-
-        let composition = compose_enrichment_intelligence_with_policy(
-            &db,
-            &input,
-            &contaminated,
-            None,
-            ContaminationValidation::RejectOnHit,
-        )
-        .expect("compose contamination reject");
-
-        match composition {
-            EnrichmentComposition::SkipDueToContamination { prior, .. } => {
-                assert_eq!(
-                    prior.executive_assessment.as_deref(),
-                    Some("prior trusted assessment")
-                );
-            }
-            EnrichmentComposition::Persist(_) => {
-                panic!("contaminated enrichment should skip persistence")
-            }
-        }
-
-        let after_disk = std::fs::read_to_string(dir.path().join("intelligence.json"))
-            .expect("read disk after reject");
-        assert_eq!(
-            after_disk, before_disk,
-            "disk cache must not change when contamination rejects enrichment"
-        );
-        let persisted = db
-            .get_entity_intelligence("acc-contamination-target")
-            .expect("read DB intelligence")
-            .expect("existing DB intelligence");
-        assert_eq!(
-            persisted.executive_assessment.as_deref(),
-            Some("prior trusted assessment"),
-            "DB intelligence must preserve the prior row on contamination reject"
-        );
-    }
-
-    #[test]
     fn compose_enrichment_full_path_rollback_atomicity() {
         let db = test_db();
         let engine = PropagationEngine::default();
@@ -3097,20 +3012,8 @@ mod mutation_smoke_tests {
             }],
             ..Default::default()
         };
-        let prepared = match compose_enrichment_intelligence_with_policy(
-            &db,
-            &input,
-            &incoming,
-            None,
-            ContaminationValidation::Off,
-        )
-        .expect("compose full path")
-        {
-            EnrichmentComposition::Persist(prepared) => prepared,
-            EnrichmentComposition::SkipDueToContamination { .. } => {
-                panic!("clean enrichment unexpectedly rejected for contamination")
-            }
-        };
+        let prepared = compose_enrichment_intelligence_payload(&db, &input, &incoming, None)
+            .expect("compose full path");
 
         let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
@@ -3292,20 +3195,8 @@ mod mutation_smoke_tests {
             }],
             ..Default::default()
         };
-        let prepared = match compose_enrichment_intelligence_with_policy(
-            &db,
-            &input,
-            &incoming,
-            None,
-            ContaminationValidation::Off,
-        )
-        .expect("compose side-write failure input")
-        {
-            EnrichmentComposition::Persist(prepared) => prepared,
-            EnrichmentComposition::SkipDueToContamination { .. } => {
-                panic!("clean enrichment unexpectedly rejected for contamination")
-            }
-        };
+        let prepared = compose_enrichment_intelligence_payload(&db, &input, &incoming, None)
+            .expect("compose side-write failure input");
 
         let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 3, 0, 0, 0).unwrap());
         let rng = SeedableRng::new(42);
@@ -3974,7 +3865,7 @@ mod live_acceptance_tests {
     use crate::intel_queue::{
         apply_enrichment_side_writes, compose_enrichment_intelligence,
         fenced_write_enrichment_intelligence, run_enrichment_post_commit_side_effects,
-        EnrichmentComposition, EnrichmentInput,
+        EnrichmentInput,
     };
     use crate::intelligence::{
         write_intelligence_json, AccountHealth, ConsistencyStatus, DimensionScore, HealthSource,
@@ -4290,14 +4181,8 @@ mod live_acceptance_tests {
         let db = ActionDb::open().expect("open DB for first enrichment persistence");
         let ctx = state.live_service_context();
         let first_prepared =
-            match compose_enrichment_intelligence(&state, &db, &input, &contradictory, None)
-                .expect("first compose_enrichment_intelligence failed")
-            {
-                EnrichmentComposition::Persist(prepared) => prepared,
-                EnrichmentComposition::SkipDueToContamination { .. } => {
-                    panic!("first enrichment unexpectedly rejected for contamination")
-                }
-            };
+            compose_enrichment_intelligence(&state, &db, &input, &contradictory, None)
+                .expect("first compose_enrichment_intelligence failed");
         db.with_transaction(|tx| {
             apply_enrichment_side_writes(&ctx, tx, &input, &first_prepared)?;
             super::upsert_assessment_from_enrichment_in_active_transaction(
@@ -4345,15 +4230,8 @@ mod live_acceptance_tests {
         };
         let db = ActionDb::open().expect("open DB for second enrichment persistence");
         let ctx = state.live_service_context();
-        let second_prepared =
-            match compose_enrichment_intelligence(&state, &db, &input, &clean, None)
-                .expect("second compose_enrichment_intelligence failed")
-            {
-                EnrichmentComposition::Persist(prepared) => prepared,
-                EnrichmentComposition::SkipDueToContamination { .. } => {
-                    panic!("second enrichment unexpectedly rejected for contamination")
-                }
-            };
+        let second_prepared = compose_enrichment_intelligence(&state, &db, &input, &clean, None)
+            .expect("second compose_enrichment_intelligence failed");
         db.with_transaction(|tx| {
             apply_enrichment_side_writes(&ctx, tx, &input, &second_prepared)?;
             super::upsert_assessment_from_enrichment_in_active_transaction(

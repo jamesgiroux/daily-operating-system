@@ -1,7 +1,6 @@
 pub mod canonicalization;
 pub mod compute;
 pub mod consistency;
-pub mod contamination;
 pub mod dimension_prompts;
 pub mod glean_leading_signals;
 pub mod glean_prompts;

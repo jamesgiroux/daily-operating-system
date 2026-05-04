@@ -13,8 +13,6 @@
  */
 import { useState } from "react";
 import type { EntityIntelligence } from "@/types";
-import { hasBleedFlag } from "@/lib/contamination-guard";
-import { ContaminationWarning } from "@/components/ui/ContaminationWarning";
 import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
 import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
@@ -110,8 +108,6 @@ export function ValueCommitments({
 
   if (!hasValue && !hasMetrics) return null;
 
-  const metricsBleed = hasBleedFlag(intelligence.consistencyFindings, "successMetrics");
-
   return (
     <section className={css.section}>
       {hasValue && (
@@ -157,50 +153,46 @@ export function ValueCommitments({
       {hasMetrics && (
         <>
           <div className={css.subsectionLabel}>Success metrics</div>
-          {metricsBleed ? (
-            <ContaminationWarning />
-          ) : (
-            <div className={css.metricRow}>
-              {successMetrics.map(({ item: metric, index }, i) => {
-                const status = metricStatus(metric.status);
-                const path = `successMetrics[${index}].name`;
-                return (
-                  <article key={i} className={css.metricCard}>
-                    <div className={css.metricName}>{metric.name}</div>
-                    <div className={css.metricValues}>
-                      <span className={css.metricCurrent}>{metric.current ?? "\u2014"}</span>
-                      {metric.target && (
-                        <span className={css.metricTarget}>/ {metric.target}</span>
-                      )}
-                    </div>
-                    <div className={css.metricFooter}>
-                      {status && (
-                        <span className={`${css.metricStatus} ${status.cls}`}>
-                          {status.label}
-                        </span>
-                      )}
-                      {metric.owner && (
-                        <span className={css.metricOwner}>Owner: {metric.owner}</span>
-                      )}
-                    </div>
-                    {onUpdateField && (
-                      <IntelligenceCorrection
-                        entityId={intelligence.entityId}
-                        entityType="account"
-                        field="successMetrics"
-                        itemKey={metric.name}
-                        onDismissed={async () => {
-                          suppressions.markSuppressed("successMetrics", metric.name);
-                          setHiddenPaths((prev) => new Set(prev).add(path));
-                          await onUpdateField(path, "");
-                        }}
-                      />
+          <div className={css.metricRow}>
+            {successMetrics.map(({ item: metric, index }, i) => {
+              const status = metricStatus(metric.status);
+              const path = `successMetrics[${index}].name`;
+              return (
+                <article key={i} className={css.metricCard}>
+                  <div className={css.metricName}>{metric.name}</div>
+                  <div className={css.metricValues}>
+                    <span className={css.metricCurrent}>{metric.current ?? "\u2014"}</span>
+                    {metric.target && (
+                      <span className={css.metricTarget}>/ {metric.target}</span>
                     )}
-                  </article>
-                );
-              })}
-            </div>
-          )}
+                  </div>
+                  <div className={css.metricFooter}>
+                    {status && (
+                      <span className={`${css.metricStatus} ${status.cls}`}>
+                        {status.label}
+                      </span>
+                    )}
+                    {metric.owner && (
+                      <span className={css.metricOwner}>Owner: {metric.owner}</span>
+                    )}
+                  </div>
+                  {onUpdateField && (
+                    <IntelligenceCorrection
+                      entityId={intelligence.entityId}
+                      entityType="account"
+                      field="successMetrics"
+                      itemKey={metric.name}
+                      onDismissed={async () => {
+                        suppressions.markSuppressed("successMetrics", metric.name);
+                        setHiddenPaths((prev) => new Set(prev).add(path));
+                        await onUpdateField(path, "");
+                      }}
+                    />
+                  )}
+                </article>
+              );
+            })}
+          </div>
         </>
       )}
     </section>

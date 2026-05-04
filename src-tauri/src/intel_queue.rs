@@ -952,7 +952,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             };
             let ctx = state.live_service_context();
-            let composition = match compose_enrichment_intelligence(
+            let prepared = match compose_enrichment_intelligence(
                 &state,
                 &db,
                 input,
@@ -970,13 +970,6 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         request.entity_id,
                         e
                     );
-                    continue;
-                }
-            };
-            let prepared = match composition {
-                EnrichmentComposition::Persist(prepared) => prepared,
-                EnrichmentComposition::SkipDueToContamination { rejection, .. } => {
-                    record_enrichment_contamination_rejection(&ctx, &state, input, &db, &rejection);
                     continue;
                 }
             };
@@ -1990,22 +1983,6 @@ impl PreparedEnrichment {
     }
 }
 
-#[derive(Debug, Clone)]
-pub struct ContaminationRejection {
-    signal_payload: String,
-    event_payload: serde_json::Value,
-}
-
-#[derive(Debug, Clone)]
-pub enum EnrichmentComposition {
-    Persist(PreparedEnrichment),
-    SkipDueToContamination {
-        reason: String,
-        prior: IntelligenceJson,
-        rejection: ContaminationRejection,
-    },
-}
-
 #[derive(Debug, Clone, Default)]
 struct EnrichmentSideWrites {
     malformed_suppression_audits: Vec<MalformedSuppressionAudit>,
@@ -2029,23 +2006,16 @@ pub fn compose_enrichment_intelligence(
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
     ai_config: Option<&AiModelConfig>,
-) -> Result<EnrichmentComposition, String> {
-    compose_enrichment_intelligence_with_policy(
-        db,
-        input,
-        intel,
-        ai_config,
-        crate::intelligence::contamination::ContaminationValidation::from_env(),
-    )
+) -> Result<PreparedEnrichment, String> {
+    compose_enrichment_intelligence_payload(db, input, intel, ai_config)
 }
 
-pub(crate) fn compose_enrichment_intelligence_with_policy(
+pub(crate) fn compose_enrichment_intelligence_payload(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
     ai_config: Option<&AiModelConfig>,
-    contamination_policy: crate::intelligence::contamination::ContaminationValidation,
-) -> Result<EnrichmentComposition, String> {
+) -> Result<PreparedEnrichment, String> {
     // Source-aware reconciliation + preserve user-edited fields
     let mut final_intel = intel.clone();
     let mut side_writes = EnrichmentSideWrites::default();
@@ -2251,117 +2221,10 @@ pub(crate) fn compose_enrichment_intelligence_with_policy(
         }
     }
 
-    // Cross-entity contamination check — second-line defense against
-    // Glean/PTY bleeding a different customer's content into this account's
-    // narrative fields. Runs before any persistence. On hit + RejectOnHit,
-    // return an explicit skip so the caller can record the rejection and
-    // preserve the prior intelligence. Shadow mode logs only.
-    if input.entity_type == "account" && contamination_policy.is_enabled() {
-        let narrative = crate::intelligence::contamination::collect_narrative_text(&final_intel);
-        let target_domains: Vec<String> = db
-            .conn_ref()
-            .prepare("SELECT domain FROM account_domains WHERE account_id = ?1")
-            .and_then(|mut stmt| {
-                stmt.query_map(rusqlite::params![&input.entity_id], |row| {
-                    row.get::<_, String>(0)
-                })
-                .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
-            })
-            .unwrap_or_default();
-
-        let hits = crate::intelligence::contamination::detect_cross_entity_contamination(
-            &narrative,
-            &input.entity_id,
-            &target_domains,
-            &[],
-            db,
-        );
-
-        if !hits.is_empty() {
-            let event_payload = serde_json::json!({
-                "entity_id": input.entity_id,
-                "entity_type": input.entity_type,
-                "hits": hits.clone(),
-                "rejected": contamination_policy.rejects(),
-            });
-            let payload = event_payload.to_string();
-
-            log::warn!(
-                "Cross-entity contamination detected in enrichment for {} \
-                     ({} hit{}): {:?} — validation policy={:?}",
-                input.entity_id,
-                hits.len(),
-                if hits.len() == 1 { "" } else { "s" },
-                hits,
-                contamination_policy,
-            );
-
-            if contamination_policy.rejects() {
-                // Graceful rejection: skip the writes, preserve prior
-                // intelligence as the fallback while the caller records
-                // the rejection signal/event separately.
-                log::info!(
-                    "Cross-entity contamination guard rejected enrichment for {}; \
-                         prior intelligence preserved",
-                    input.entity_id
-                );
-                let prior = existing_intel.unwrap_or(IntelligenceJson {
-                    entity_id: input.entity_id.clone(),
-                    entity_type: input.entity_type.clone(),
-                    ..Default::default()
-                });
-                return Ok(EnrichmentComposition::SkipDueToContamination {
-                    reason: "cross-entity contamination detected".to_string(),
-                    prior,
-                    rejection: ContaminationRejection {
-                        signal_payload: payload,
-                        event_payload,
-                    },
-                });
-            }
-            // ShadowMode: fall through and persist anyway.
-        }
-    }
-
-    Ok(EnrichmentComposition::Persist(PreparedEnrichment {
+    Ok(PreparedEnrichment {
         intelligence: final_intel,
         side_writes,
-    }))
-}
-
-pub fn record_enrichment_contamination_rejection(
-    ctx: &crate::services::context::ServiceContext<'_>,
-    state: &AppState,
-    input: &EnrichmentInput,
-    db: &crate::db::ActionDb,
-    rejection: &ContaminationRejection,
-) {
-    if let Err(e) = db.with_transaction(|tx| {
-        crate::services::signals::emit(
-            ctx,
-            tx,
-            &input.entity_type,
-            &input.entity_id,
-            "enrichment_contamination_rejected",
-            "dos_287_contamination",
-            Some(&rejection.signal_payload),
-            0.95,
-        )
-        .map(|_| ())
-    }) {
-        log::warn!(
-            "failed to record enrichment contamination rejection for {}: {}",
-            input.entity_id,
-            e
-        );
-    }
-
-    if let Some(handle) = state.app_handle() {
-        let _ = handle.emit(
-            "enrichment-contamination-rejected",
-            rejection.event_payload.clone(),
-        );
-    }
+    })
 }
 
 pub fn apply_enrichment_side_writes(

@@ -44,23 +44,14 @@ mod hygiene;
 mod intel_queue;
 #[doc(hidden)]
 pub mod substrate_test_api {
-    pub use crate::intel_queue::{
-        ContaminationRejection, EnrichmentComposition, EnrichmentInput, PreparedEnrichment,
-    };
+    pub use crate::intel_queue::{EnrichmentInput, PreparedEnrichment};
 
-    pub fn compose_enrichment_intelligence_with_policy(
+    pub fn compose_enrichment_intelligence_payload(
         db: &crate::db::ActionDb,
         input: &EnrichmentInput,
         intel: &crate::intelligence::IntelligenceJson,
-        contamination_policy: crate::intelligence::contamination::ContaminationValidation,
-    ) -> Result<EnrichmentComposition, String> {
-        crate::intel_queue::compose_enrichment_intelligence_with_policy(
-            db,
-            input,
-            intel,
-            None,
-            contamination_policy,
-        )
+    ) -> Result<PreparedEnrichment, String> {
+        crate::intel_queue::compose_enrichment_intelligence_payload(db, input, intel, None)
     }
 }
 pub mod intelligence;
@@ -752,9 +743,7 @@ pub fn run() {
             commands::dev_clean_artifacts,
             commands::dev_set_auth_override,
             commands::dev_onboarding_scenario,
-            // Cross-entity contamination audit + cleanup
-            commands::devtools_audit_cross_contamination,
-            commands::devtools_clear_contaminated_enrichment,
+            // Standalone contamination audit/cleanup retired by DOS-5.
             // Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,

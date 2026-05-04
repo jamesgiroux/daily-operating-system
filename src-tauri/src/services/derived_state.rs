@@ -1140,22 +1140,6 @@ pub fn upsert_health_outlook_signals_legacy_projection(
     Ok(())
 }
 
-pub fn clear_contaminated_enrichment_projection(
-    db: &ActionDb,
-    account_id: &str,
-) -> Result<(), rusqlite::Error> {
-    db.conn_ref().execute(
-        "UPDATE entity_assessment SET executive_assessment = NULL WHERE entity_id = ?1",
-        rusqlite::params![account_id],
-    )?;
-    db.conn_ref().execute(
-        "UPDATE accounts SET company_overview = NULL, strategic_programs = NULL, notes = NULL \
-         WHERE id = ?1",
-        rusqlite::params![account_id],
-    )?;
-    Ok(())
-}
-
 pub fn update_account_ai_field_projection(
     db: &ActionDb,
     id: &str,
