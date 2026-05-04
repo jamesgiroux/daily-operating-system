@@ -2673,6 +2673,8 @@ pub(crate) enum FinalizeMode {
     /// Manual refresh emits `background-work-status:completed` from its command
     /// path and is a different actor than the background sync loop.
     ManualRefresh,
+    /// Explicit trust recompute: run shared finalize work plus claim trust scoring.
+    TrustRecompute,
 }
 
 pub(crate) fn run_enrichment_finalize_post_commit(
@@ -2686,9 +2688,15 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     fenced_write_enrichment_intelligence(db, &input.entity_dir, intel);
     run_enrichment_post_commit_side_effects(state.as_ref(), input, db, intel);
 
-    if let FinalizeMode::QueueWorker { is_background } = mode {
-        emit_queue_worker_glean_signals(state.as_ref(), db, input, intel);
-        spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
+    match mode {
+        FinalizeMode::QueueWorker { is_background } => {
+            emit_queue_worker_glean_signals(state.as_ref(), db, input, intel);
+            spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
+        }
+        FinalizeMode::TrustRecompute => {
+            run_finalize_trust_recompute(state.as_ref(), db, input)?;
+        }
+        FinalizeMode::ManualRefresh => {}
     }
 
     if !inferred_relationships.is_empty() {
@@ -2734,6 +2742,538 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     }
 
     Ok(())
+}
+
+fn run_finalize_trust_recompute(
+    state: &AppState,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+) -> Result<(), String> {
+    let Some(subject_ref) = claim_subject_ref_json_for_entity(&input.entity_type, &input.entity_id)
+    else {
+        log::debug!(
+            "TrustRecompute: skipping unsupported entity subject {}:{}",
+            input.entity_type,
+            input.entity_id
+        );
+        return Ok(());
+    };
+
+    let claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
+        .map_err(|e| format!("load claims for trust recompute: {e}"))?;
+    let ctx = state.live_service_context();
+
+    for claim in claims {
+        let subject = match trust_subject_from_claim_json(&claim.subject_ref) {
+            Ok(subject) => subject,
+            Err(e) => {
+                log::warn!(
+                    "TrustRecompute: skipping claim {} with invalid subject_ref: {}",
+                    claim.id,
+                    e
+                );
+                continue;
+            }
+        };
+
+        match crate::services::trust_extraction::extract_target_footprint(
+            db,
+            &subject,
+            &input.entity_type,
+            &input.entity_id,
+        ) {
+            Ok(crate::services::trust_extraction::ExtractionOutcome::SkipExtractorMismatch {
+                reason,
+            }) => {
+                log::debug!(
+                    "TrustRecompute: extractor mismatch for claim {} on {}:{} ({:?}); preserving prior trust",
+                    claim.id,
+                    input.entity_type,
+                    input.entity_id,
+                    reason
+                );
+                record_trust_recompute_pipeline_failure(
+                    &ctx,
+                    db,
+                    input,
+                    "extractor_mismatch",
+                    Some(&format!("claim_id={} reason={reason:?}", claim.id)),
+                );
+                continue;
+            }
+            Ok(crate::services::trust_extraction::ExtractionOutcome::Ok {
+                footprint,
+                portfolio_footprints,
+            }) => {
+                let trust_ctx = build_trust_context_for_claim(
+                    &ctx,
+                    db,
+                    input,
+                    &claim,
+                    footprint,
+                    portfolio_footprints,
+                );
+                let previous_score = claim.trust_score;
+                let previous_band =
+                    previous_score.and_then(|score| trust_band_for_score(score, &trust_ctx.config));
+                let trust_version = claim.trust_version.unwrap_or(0) + 1;
+
+                let computation = match crate::abilities::trust::compile_trust(&claim, trust_ctx) {
+                    Ok(computation) => computation,
+                    Err(e) => {
+                        log::error!(
+                            "TrustRecompute: compile_trust failed for claim {}; preserving prior trust: {}",
+                            claim.id,
+                            e
+                        );
+                        continue;
+                    }
+                };
+
+                if let Err(e) = crate::services::claims::update_claim_trust(
+                    db,
+                    &claim.id,
+                    computation.score,
+                    trust_version,
+                    &ctx,
+                ) {
+                    log::error!(
+                        "TrustRecompute: update_claim_trust failed for claim {}; preserving prior signals: {}",
+                        claim.id,
+                        e
+                    );
+                    continue;
+                }
+
+                if previous_band.is_some() && previous_band != Some(computation.band) {
+                    emit_claim_trust_changed_signal(
+                        &ctx,
+                        db,
+                        input,
+                        &claim,
+                        previous_score,
+                        previous_band,
+                        computation.score.value(),
+                        computation.band,
+                        trust_version,
+                    );
+                }
+                emit_confidence_evidence_signals(
+                    &ctx,
+                    db,
+                    input,
+                    &claim.id,
+                    &computation.evidence,
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "TrustRecompute: extractor error for claim {} on {}:{}: {}",
+                    claim.id,
+                    input.entity_type,
+                    input.entity_id,
+                    e
+                );
+                record_trust_recompute_pipeline_failure(
+                    &ctx,
+                    db,
+                    input,
+                    "extractor_error",
+                    Some(&format!("claim_id={} error={e}", claim.id)),
+                );
+                continue;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn build_trust_context_for_claim(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    claim: &crate::db::claims::IntelligenceClaim,
+    footprint: crate::abilities::trust::TargetFootprint,
+    portfolio_footprints: Vec<crate::abilities::trust::EntityFootprint>,
+) -> crate::abilities::trust::TrustContext {
+    let feedback_signal = trust_feedback_signal_for_claim(db, &claim.id);
+    crate::abilities::trust::TrustContext {
+        now: ctx.clock.now(),
+        config: crate::abilities::trust::TrustConfig::default(),
+        factor_inputs: crate::abilities::trust::TrustFactorInputs {
+            source_reliability: source_reliability_for_claim(db, input, claim),
+            freshness: freshness_context_for_claim(ctx.clock.now(), claim),
+            corroboration_strength: corroboration_strength_for_claim(db, &claim.id),
+            contradiction_count: contradiction_count_for_claim(db, &claim.id),
+            user_feedback: feedback_signal,
+            subject_fit_confidence: subject_fit_confidence_for_feedback(feedback_signal),
+        },
+        cross_entity: crate::abilities::trust::CrossEntityCoherenceInput {
+            claim_text: claim.text.clone(),
+            target_footprint: footprint,
+            portfolio_footprints,
+            cross_entity_context_expected: cross_entity_context_expected(claim),
+        },
+    }
+}
+
+fn claim_subject_ref_json_for_entity(entity_type: &str, entity_id: &str) -> Option<String> {
+    let kind = match entity_type.trim().to_ascii_lowercase().as_str() {
+        "account" | "accounts" => "account",
+        "meeting" | "meetings" => "meeting",
+        "person" | "people" => "person",
+        "project" | "projects" => "project",
+        "email" | "emails" => "email",
+        _ => return None,
+    };
+    Some(serde_json::json!({ "kind": kind, "id": entity_id }).to_string())
+}
+
+fn trust_subject_from_claim_json(
+    subject_ref: &str,
+) -> Result<crate::abilities::provenance::SubjectRef, String> {
+    let value: serde_json::Value =
+        serde_json::from_str(subject_ref).map_err(|e| format!("not JSON: {e}"))?;
+
+    if let Some(id) = value.get("account").and_then(|v| v.as_str()) {
+        return Ok(crate::abilities::provenance::SubjectRef::Account(
+            id.to_string(),
+        ));
+    }
+    if let Some(id) = value.get("project").and_then(|v| v.as_str()) {
+        return Ok(crate::abilities::provenance::SubjectRef::Project(
+            id.to_string(),
+        ));
+    }
+    if let Some(id) = value.get("person").and_then(|v| v.as_str()) {
+        return Ok(crate::abilities::provenance::SubjectRef::Person(
+            id.to_string(),
+        ));
+    }
+    if let Some(id) = value.get("meeting").and_then(|v| v.as_str()) {
+        return Ok(crate::abilities::provenance::SubjectRef::Meeting(
+            id.to_string(),
+        ));
+    }
+    if value.get("global").is_some() {
+        return Ok(crate::abilities::provenance::SubjectRef::Global);
+    }
+
+    let kind = value
+        .get("kind")
+        .or_else(|| value.get("type"))
+        .or_else(|| value.get("entity_type"))
+        .and_then(|v| v.as_str())
+        .ok_or_else(|| "missing kind/type".to_string())?
+        .to_ascii_lowercase();
+    let id = value
+        .get("id")
+        .or_else(|| value.get("entity_id"))
+        .and_then(|v| v.as_str())
+        .unwrap_or_default()
+        .to_string();
+
+    match kind.as_str() {
+        "account" | "accounts" => Ok(crate::abilities::provenance::SubjectRef::Account(id)),
+        "project" | "projects" => Ok(crate::abilities::provenance::SubjectRef::Project(id)),
+        "person" | "people" => Ok(crate::abilities::provenance::SubjectRef::Person(id)),
+        "meeting" | "meetings" => Ok(crate::abilities::provenance::SubjectRef::Meeting(id)),
+        "user" | "users" => Ok(crate::abilities::provenance::SubjectRef::User(id)),
+        "global" => Ok(crate::abilities::provenance::SubjectRef::Global),
+        other => Err(format!("unsupported subject kind/type '{other}'")),
+    }
+}
+
+fn source_reliability_for_claim(
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    claim: &crate::db::claims::IntelligenceClaim,
+) -> f64 {
+    match db.get_signal_weight(&claim.data_source, &input.entity_type, "enrichment_quality") {
+        Ok(Some((alpha, beta, _))) => alpha / (alpha + beta),
+        _ => 1.0,
+    }
+}
+
+fn freshness_context_for_claim(
+    now: chrono::DateTime<Utc>,
+    claim: &crate::db::claims::IntelligenceClaim,
+) -> crate::abilities::trust::FreshnessContext {
+    if let Some(source_asof) = claim.source_asof.as_deref() {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(source_asof) {
+            return crate::abilities::trust::FreshnessContext {
+                timestamp_known: true,
+                age_days: age_days(now, parsed.with_timezone(&Utc)),
+            };
+        }
+    }
+
+    for fallback in [&claim.observed_at, &claim.created_at] {
+        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(fallback) {
+            return crate::abilities::trust::FreshnessContext {
+                timestamp_known: false,
+                age_days: age_days(now, parsed.with_timezone(&Utc)),
+            };
+        }
+    }
+
+    crate::abilities::trust::FreshnessContext {
+        timestamp_known: false,
+        age_days: 0.0,
+    }
+}
+
+fn age_days(now: chrono::DateTime<Utc>, source_time: chrono::DateTime<Utc>) -> f64 {
+    (now - source_time).num_seconds() as f64 / 86_400.0
+}
+
+fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> f64 {
+    let mut stmt = match db
+        .conn_ref()
+        .prepare("SELECT strength FROM claim_corroborations WHERE claim_id = ?1")
+    {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            log::warn!("TrustRecompute: failed to prepare corroboration read for {claim_id}: {e}");
+            return 0.0;
+        }
+    };
+    let strengths = match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0)) {
+        Ok(rows) => rows,
+        Err(e) => {
+            log::warn!("TrustRecompute: failed to read corroborations for {claim_id}: {e}");
+            return 0.0;
+        }
+    };
+
+    let mut any = false;
+    let mut miss_probability = 1.0;
+    for strength in strengths {
+        match strength {
+            Ok(value) => {
+                any = true;
+                miss_probability *= 1.0 - value;
+            }
+            Err(e) => {
+                log::warn!("TrustRecompute: malformed corroboration for {claim_id}: {e}");
+            }
+        }
+    }
+
+    if any {
+        1.0 - miss_probability
+    } else {
+        0.0
+    }
+}
+
+fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> u32 {
+    let count = db
+        .conn_ref()
+        .query_row(
+            "SELECT COUNT(*) FROM claim_contradictions
+             WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1)
+               AND reconciled_at IS NULL
+               AND winner_claim_id IS NULL
+               AND merged_claim_id IS NULL",
+            rusqlite::params![claim_id],
+            |row| row.get::<_, i64>(0),
+        )
+        .unwrap_or(0);
+    count.max(0) as u32
+}
+
+fn trust_feedback_signal_for_claim(
+    db: &crate::db::ActionDb,
+    claim_id: &str,
+) -> crate::abilities::trust::UserFeedbackSignal {
+    let mut stmt = match db.conn_ref().prepare(
+        "SELECT feedback_type FROM claim_feedback
+         WHERE claim_id = ?1
+         ORDER BY submitted_at DESC, rowid DESC",
+    ) {
+        Ok(stmt) => stmt,
+        Err(e) => {
+            log::warn!("TrustRecompute: failed to prepare feedback read for {claim_id}: {e}");
+            return crate::abilities::trust::UserFeedbackSignal::None;
+        }
+    };
+    let rows = match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, String>(0)) {
+        Ok(rows) => rows,
+        Err(e) => {
+            log::warn!("TrustRecompute: failed to read feedback for {claim_id}: {e}");
+            return crate::abilities::trust::UserFeedbackSignal::None;
+        }
+    };
+
+    for row in rows.flatten() {
+        match row.as_str() {
+            "confirm_current" => return crate::abilities::trust::UserFeedbackSignal::Confirmed,
+            "mark_false" => return crate::abilities::trust::UserFeedbackSignal::Retracted,
+            "wrong_subject" => return crate::abilities::trust::UserFeedbackSignal::WrongSubject,
+            "mark_outdated" | "wrong_source" | "needs_nuance" => {
+                return crate::abilities::trust::UserFeedbackSignal::Corrected
+            }
+            _ => {}
+        }
+    }
+
+    crate::abilities::trust::UserFeedbackSignal::None
+}
+
+fn subject_fit_confidence_for_feedback(
+    feedback: crate::abilities::trust::UserFeedbackSignal,
+) -> f64 {
+    match feedback {
+        crate::abilities::trust::UserFeedbackSignal::WrongSubject => 0.05,
+        _ => 1.0,
+    }
+}
+
+fn cross_entity_context_expected(claim: &crate::db::claims::IntelligenceClaim) -> bool {
+    if claim
+        .field_path
+        .as_deref()
+        .is_some_and(|path| path.contains("peer_benchmark"))
+    {
+        return true;
+    }
+
+    claim
+        .metadata_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| {
+            value
+                .get("cross_entity_context_expected")
+                .and_then(|flag| flag.as_bool())
+        })
+        .unwrap_or(false)
+}
+
+fn trust_band_for_score(
+    score: f64,
+    config: &crate::abilities::trust::TrustConfig,
+) -> Option<crate::abilities::trust::TrustBand> {
+    if !score.is_finite() {
+        return None;
+    }
+    if score >= config.likely_current_min {
+        Some(crate::abilities::trust::TrustBand::LikelyCurrent)
+    } else if score >= config.use_with_caution_min {
+        Some(crate::abilities::trust::TrustBand::UseWithCaution)
+    } else {
+        Some(crate::abilities::trust::TrustBand::NeedsVerification)
+    }
+}
+
+fn trust_band_label(band: crate::abilities::trust::TrustBand) -> &'static str {
+    match band {
+        crate::abilities::trust::TrustBand::LikelyCurrent => "likely_current",
+        crate::abilities::trust::TrustBand::UseWithCaution => "use_with_caution",
+        crate::abilities::trust::TrustBand::NeedsVerification => "needs_verification",
+        crate::abilities::trust::TrustBand::Unscored => "unscored",
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_claim_trust_changed_signal(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    claim: &crate::db::claims::IntelligenceClaim,
+    previous_score: Option<f64>,
+    previous_band: Option<crate::abilities::trust::TrustBand>,
+    score: f64,
+    band: crate::abilities::trust::TrustBand,
+    trust_version: i64,
+) {
+    let payload = serde_json::json!({
+        "claim_id": &claim.id,
+        "from_score": previous_score,
+        "to_score": score,
+        "from_band": previous_band.map(trust_band_label),
+        "to_band": trust_band_label(band),
+        "trust_version": trust_version,
+    })
+    .to_string();
+
+    if let Err(e) = crate::services::signals::emit(
+        ctx,
+        db,
+        &input.entity_type,
+        &input.entity_id,
+        "ClaimTrustChanged",
+        "trust_recompute",
+        Some(&payload),
+        1.0,
+    ) {
+        log::warn!(
+            "TrustRecompute: failed to emit ClaimTrustChanged for claim {}: {}",
+            claim.id,
+            e
+        );
+    }
+}
+
+fn emit_confidence_evidence_signals(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    claim_id: &str,
+    evidence: &crate::abilities::trust::ConfidenceEvidence,
+) {
+    for factor in &evidence.factor_breakdown {
+        let payload = serde_json::json!({
+            "claim_id": claim_id,
+            "score": evidence.score,
+            "band_label": &evidence.band_label,
+            "factor": factor,
+            "caveats": &evidence.caveats,
+        })
+        .to_string();
+        if let Err(e) = crate::services::signals::emit(
+            ctx,
+            db,
+            &input.entity_type,
+            &input.entity_id,
+            "ConfidenceEvidence",
+            "trust_recompute",
+            Some(&payload),
+            evidence.score,
+        ) {
+            log::warn!(
+                "TrustRecompute: failed to emit ConfidenceEvidence for claim {claim_id}: {e}"
+            );
+        }
+    }
+}
+
+fn record_trust_recompute_pipeline_failure(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    error_type: &str,
+    error_message: Option<&str>,
+) {
+    if let Err(e) = crate::services::mutations::record_pipeline_failure(
+        ctx,
+        db,
+        "trust_recompute",
+        Some(&input.entity_id),
+        Some(&input.entity_type),
+        error_type,
+        error_message,
+        0,
+    ) {
+        log::warn!(
+            "TrustRecompute: failed to record non-content extractor error for {}:{}: {}",
+            input.entity_type,
+            input.entity_id,
+            e
+        );
+    }
 }
 
 fn emit_queue_worker_glean_signals(
@@ -3400,6 +3940,220 @@ fn dual_write_enrichment_products(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abilities::feedback::FeedbackAction;
+    use crate::services::claims::{
+        commit_claim, record_claim_feedback, record_corroboration, update_claim_trust,
+        ClaimFeedbackInput, ClaimProposal, CommittedClaim,
+    };
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::TimeZone;
+    use rusqlite::params;
+    use std::path::Path;
+
+    const TRUST_TS: &str = "2999-01-01T00:00:00+00:00";
+
+    fn trust_test_db() -> crate::db::ActionDb {
+        crate::db::test_utils::test_db()
+    }
+
+    fn trust_ctx_parts() -> (FixedClock, SeedableRng, ExternalClients) {
+        (
+            FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap()),
+            SeedableRng::new(5),
+            ExternalClients::default(),
+        )
+    }
+
+    fn with_trust_ctx<T>(f: impl FnOnce(&ServiceContext<'_>) -> T) -> T {
+        let (clock, rng, external) = trust_ctx_parts();
+        let ctx = ServiceContext::test_live(&clock, &rng, &external);
+        f(&ctx)
+    }
+
+    fn seed_trust_account(db: &crate::db::ActionDb, account_id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params![account_id, format!("Account {account_id}"), TRUST_TS],
+            )
+            .expect("seed account");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO account_domains (account_id, domain, source)
+                 VALUES (?1, ?2, 'test')",
+                params![account_id, format!("{account_id}.example.com")],
+            )
+            .expect("seed account domain");
+    }
+
+    fn trust_claim_proposal(account_id: &str, text: &str, data_source: &str) -> ClaimProposal {
+        ClaimProposal {
+            subject_ref: serde_json::json!({ "kind": "account", "id": account_id }).to_string(),
+            claim_type: "risk".to_string(),
+            field_path: Some("health.risk".to_string()),
+            topic_key: None,
+            text: text.to_string(),
+            actor: "agent:test".to_string(),
+            data_source: data_source.to_string(),
+            source_ref: None,
+            source_asof: Some(TRUST_TS.to_string()),
+            observed_at: TRUST_TS.to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(crate::db::claims::TemporalScope::State),
+            sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+            tombstone: None,
+        }
+    }
+
+    fn inserted_claim_id(result: CommittedClaim) -> String {
+        match result {
+            CommittedClaim::Inserted { claim } | CommittedClaim::Tombstoned { claim } => claim.id,
+            other => panic!("expected inserted claim, got {other:?}"),
+        }
+    }
+
+    fn seed_trust_claim(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+        text: &str,
+        data_source: &str,
+    ) -> String {
+        with_trust_ctx(|ctx| {
+            inserted_claim_id(
+                commit_claim(ctx, db, trust_claim_proposal(account_id, text, data_source))
+                    .expect("commit claim"),
+            )
+        })
+    }
+
+    fn seed_trust_corroboration(db: &crate::db::ActionDb, claim_id: &str, source: &str) {
+        with_trust_ctx(|ctx| {
+            record_corroboration(ctx, db, claim_id, source, Some(TRUST_TS), Some("test"))
+                .expect("record corroboration");
+        });
+    }
+
+    fn seed_prior_trust(db: &crate::db::ActionDb, claim_id: &str, score: f64, version: i64) {
+        with_trust_ctx(|ctx| {
+            update_claim_trust(
+                db,
+                claim_id,
+                crate::abilities::trust::TrustScore(score),
+                version,
+                ctx,
+            )
+            .expect("seed prior trust");
+        });
+    }
+
+    fn seed_claim_feedback(
+        db: &crate::db::ActionDb,
+        claim_id: &str,
+        action: FeedbackAction,
+    ) {
+        with_trust_ctx(|ctx| {
+            record_claim_feedback(
+                ctx,
+                db,
+                ClaimFeedbackInput {
+                    claim_id: claim_id.to_string(),
+                    action,
+                    actor: "user".to_string(),
+                    actor_id: Some("user-fixture".to_string()),
+                    payload_json: None,
+                },
+            )
+            .expect("record claim feedback");
+        });
+    }
+
+    fn trust_input(entity_id: &str, entity_dir: &Path) -> EnrichmentInput {
+        EnrichmentInput {
+            workspace: entity_dir.to_path_buf(),
+            entity_dir: entity_dir.to_path_buf(),
+            entity_id: entity_id.to_string(),
+            entity_type: "account".to_string(),
+            prompt: String::new(),
+            file_manifest: Vec::new(),
+            file_count: 0,
+            computed_health: None,
+            entity_name: format!("Account {entity_id}"),
+            relationship: None,
+            intelligence_context: None,
+            active_preset: None,
+        }
+    }
+
+    fn trust_intel(entity_id: &str) -> IntelligenceJson {
+        IntelligenceJson {
+            entity_id: entity_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: TRUST_TS.to_string(),
+            executive_assessment: Some("Trust recompute fixture".to_string()),
+            ..Default::default()
+        }
+    }
+
+    fn run_trust_finalize(
+        db: &crate::db::ActionDb,
+        account_id: &str,
+        mode: FinalizeMode,
+    ) {
+        let state = Arc::new(AppState::new());
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = trust_input(account_id, dir.path());
+        let intel = trust_intel(account_id);
+        run_enrichment_finalize_post_commit(&state, db, &input, &intel, &[], mode)
+            .expect("run finalize");
+    }
+
+    fn read_trust_columns(
+        db: &crate::db::ActionDb,
+        claim_id: &str,
+    ) -> (Option<f64>, Option<String>, Option<i64>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version
+                 FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read trust columns")
+    }
+
+    fn signal_count(db: &crate::db::ActionDb, signal_type: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM signal_events WHERE signal_type = ?1",
+                params![signal_type],
+                |row| row.get(0),
+            )
+            .expect("count signals")
+    }
+
+    fn pipeline_failure_count(db: &crate::db::ActionDb, error_type: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM pipeline_failures
+                 WHERE pipeline = 'trust_recompute' AND error_type = ?1",
+                params![error_type],
+                |row| row.get(0),
+            )
+            .expect("count pipeline failures")
+    }
+
+    fn seed_malformed_source_weight(db: &crate::db::ActionDb, data_source: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO signal_weights
+                    (source, entity_type, signal_type, alpha, beta, update_count)
+                 VALUES (?1, 'account', 'enrichment_quality', 0.0, 0.0, 5)",
+                params![data_source],
+            )
+            .expect("seed malformed source weight");
+    }
 
     #[test]
     fn dos311_pause_rejects_new_enqueue() {
@@ -3537,6 +4291,154 @@ mod tests {
         // Drain timeout remains configurable with a 60s default.
         // The constant lives in this module; the migration script consumes it.
         assert_eq!(DEFAULT_DRAIN_TIMEOUT_SECS, 60);
+    }
+
+    #[test]
+    fn finalize_mode_trust_recompute_runs_recompute_once() {
+        let db = trust_test_db();
+        let account_id = "acct-trust-recompute-once";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "The account has a current renewal risk.",
+            "unit_test_source",
+        );
+        seed_trust_corroboration(&db, &claim_id, "glean");
+
+        run_trust_finalize(&db, account_id, FinalizeMode::ManualRefresh);
+        assert_eq!(read_trust_columns(&db, &claim_id), (None, None, None));
+
+        run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
+        let (score, computed_at, version) = read_trust_columns(&db, &claim_id);
+        assert!(score.is_some_and(|value| value > 0.75));
+        assert!(computed_at.is_some());
+        assert_eq!(version, Some(1));
+        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 7);
+    }
+
+    #[test]
+    fn finalize_mode_manual_refresh_does_not_recompute_trust() {
+        let db = trust_test_db();
+        let account_id = "acct-manual-no-trust";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "The account has a prior trust score.",
+            "unit_test_source",
+        );
+        seed_trust_corroboration(&db, &claim_id, "glean");
+        seed_prior_trust(&db, &claim_id, 0.82, 7);
+        let before = read_trust_columns(&db, &claim_id);
+
+        run_trust_finalize(&db, account_id, FinalizeMode::ManualRefresh);
+
+        assert_eq!(read_trust_columns(&db, &claim_id), before);
+        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 0);
+    }
+
+    #[test]
+    fn finalize_mode_queue_worker_does_not_recompute_trust() {
+        let db = trust_test_db();
+        let account_id = "acct-queue-no-trust";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "The account has a queued prior trust score.",
+            "unit_test_source",
+        );
+        seed_trust_corroboration(&db, &claim_id, "glean");
+        seed_prior_trust(&db, &claim_id, 0.82, 7);
+        let before = read_trust_columns(&db, &claim_id);
+
+        run_trust_finalize(
+            &db,
+            account_id,
+            FinalizeMode::QueueWorker {
+                is_background: false,
+            },
+        );
+        assert_eq!(read_trust_columns(&db, &claim_id), before);
+
+        run_trust_finalize(
+            &db,
+            account_id,
+            FinalizeMode::QueueWorker {
+                is_background: true,
+            },
+        );
+        assert_eq!(read_trust_columns(&db, &claim_id), before);
+        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 0);
+    }
+
+    #[test]
+    fn finalize_mode_trust_recompute_skips_on_extractor_mismatch_and_preserves_prior() {
+        let db = trust_test_db();
+        let account_id = "acct-missing-for-extractor";
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "The missing account claim keeps its prior score.",
+            "unit_test_source",
+        );
+        seed_prior_trust(&db, &claim_id, 0.82, 7);
+        let before = read_trust_columns(&db, &claim_id);
+
+        run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
+
+        assert_eq!(read_trust_columns(&db, &claim_id), before);
+        assert_eq!(pipeline_failure_count(&db, "extractor_mismatch"), 1);
+        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 0);
+    }
+
+    #[test]
+    fn finalize_mode_trust_recompute_emits_band_change_signal_only_on_boundary() {
+        let db = trust_test_db();
+        let account_id = "acct-band-boundary";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "The account has sparse corroboration.",
+            "unit_test_source",
+        );
+        seed_prior_trust(&db, &claim_id, 0.80, 3);
+
+        run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
+        assert_eq!(signal_count(&db, "ClaimTrustChanged"), 1);
+        let (score, _, version) = read_trust_columns(&db, &claim_id);
+        assert!(score.is_some_and(|value| value >= 0.50 && value < 0.75));
+        assert_eq!(version, Some(4));
+
+        run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
+        assert_eq!(signal_count(&db, "ClaimTrustChanged"), 1);
+        assert_eq!(read_trust_columns(&db, &claim_id).2, Some(5));
+    }
+
+    #[test]
+    fn finalize_mode_trust_recompute_handles_compile_error_without_corrupting_state() {
+        let db = trust_test_db();
+        let account_id = "acct-compile-error";
+        let data_source = "bad_source_weight";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "The account has malformed source reliability input.",
+            data_source,
+        );
+        seed_trust_corroboration(&db, &claim_id, "glean");
+        seed_prior_trust(&db, &claim_id, 0.82, 7);
+        seed_malformed_source_weight(&db, data_source);
+        let before = read_trust_columns(&db, &claim_id);
+
+        run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
+
+        assert_eq!(read_trust_columns(&db, &claim_id), before);
+        assert_eq!(signal_count(&db, "ClaimTrustChanged"), 0);
+        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 0);
     }
 
     #[test]
