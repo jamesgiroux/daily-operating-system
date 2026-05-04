@@ -1398,6 +1398,19 @@ mod tests {
     }
 
     #[test]
+    #[should_panic(expected = "schema closure")]
+    fn registry_build_panics_on_descriptor_without_additional_properties_false() {
+        let result = AbilityRegistry::from_descriptors_checked(vec![with_input_schema(
+            descriptor("open_schema_without_additional_properties_false", AbilityCategory::Read),
+            open_object_schema,
+        )]);
+
+        if let Err(violations) = result {
+            panic!("schema closure violation rejected registry build: {violations:?}");
+        }
+    }
+
+    #[test]
     fn ability_context_exposes_provider_and_tracer() {
         let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap());
         let rng = SeedableRng::new(217);

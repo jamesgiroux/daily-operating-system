@@ -71,6 +71,9 @@ jobs:
       - name: Enforce SubjectRef::Global spine restriction
         run: ./scripts/check_no_global_subject_in_spine.sh
 
+      - name: Enforce ability surface drift guard
+        run: bash src-tauri/scripts/check_ability_surface_drift.sh
+
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh
 

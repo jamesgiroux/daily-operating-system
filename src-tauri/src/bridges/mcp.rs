@@ -144,6 +144,7 @@ impl<'registry> McpAbilityBridge<'registry> {
                     .policy
                     .allowed_modes
                     .contains(&ExecutionMode::Live)
+                    && descriptor.mutates.is_empty()
             })
             .collect();
 
@@ -337,6 +338,27 @@ mod tests {
         })
     }
 
+    fn internal_provenance_erased<'a>(
+        ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            let mut envelope = envelope_json(
+                ctx,
+                json!({
+                    "input": input,
+                    "actor": format!("{:?}", ctx.actor),
+                    "mode": ctx.mode().as_str(),
+                }),
+            );
+            envelope["provenance"]["internal_id"] = json!("internal-account-217");
+            envelope["provenance"]["prompt_hash"] = json!("prompt-hash-217");
+            envelope["provenance"]["seed"] = json!(217);
+            envelope["provenance"]["children"] = json!([{ "internal_id": "child-217" }]);
+            Ok(envelope)
+        })
+    }
+
     fn envelope_json(ctx: &AbilityContext<'_>, data: serde_json::Value) -> serde_json::Value {
         let invocation_id = data
             .get("invocation_id")
@@ -412,7 +434,11 @@ mod tests {
     fn closed_object_schema() -> serde_json::Value {
         json!({
             "type": "object",
-            "additionalProperties": false
+            "additionalProperties": false,
+            "properties": {
+                "subject": { "type": "string" },
+                "value": {}
+            }
         })
     }
 
@@ -467,6 +493,22 @@ mod tests {
             ttl_seconds,
             token: "fixture-token".to_string(),
         }
+    }
+
+    fn with_invoke_erased(
+        mut descriptor: AbilityDescriptor,
+        invoke_erased: for<'a> fn(&'a AbilityContext<'a>, serde_json::Value) -> ErasedFuture<'a>,
+    ) -> AbilityDescriptor {
+        descriptor.invoke_erased = invoke_erased;
+        descriptor
+    }
+
+    fn with_mutates(
+        mut descriptor: AbilityDescriptor,
+        mutates: &'static [&'static str],
+    ) -> AbilityDescriptor {
+        descriptor.mutates = mutates;
+        descriptor
     }
 
     #[derive(Default)]
@@ -537,6 +579,40 @@ mod tests {
         let names = descriptor_names(&bridge);
 
         assert_eq!(names, vec!["agent_read"]);
+    }
+
+    #[test]
+    fn mcp_list_tools_derives_from_registry_iter_for_agent() {
+        let registry = registry_with_abilities(vec![
+            descriptor(
+                "agent_read",
+                AbilityCategory::Read,
+                AGENT_ACTORS,
+                LIVE_MODES,
+            ),
+            descriptor("user_read", AbilityCategory::Read, USER_ACTORS, LIVE_MODES),
+        ]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        assert_eq!(descriptor_names(&bridge), vec!["agent_read"]);
+    }
+
+    #[test]
+    fn mcp_list_tools_filters_agent_actor() {
+        let registry = registry_with_abilities(vec![
+            descriptor(
+                "agent_read",
+                AbilityCategory::Read,
+                AGENT_ACTORS,
+                LIVE_MODES,
+            ),
+            descriptor("user_read", AbilityCategory::Read, USER_ACTORS, LIVE_MODES),
+        ]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        let names = descriptor_names(&bridge);
+        assert!(names.contains(&"agent_read"));
+        assert!(!names.contains(&"user_read"));
     }
 
     #[test]
@@ -617,6 +693,87 @@ mod tests {
         .await;
 
         assert_eq!(unauthorized, unknown);
+    }
+
+    #[tokio::test]
+    async fn mcp_hidden_ability_error_bytes_match_unknown_ability() {
+        let unknown = error_bytes_for(registry_with_abilities(vec![]), "unknown").await;
+        let unauthorized = error_bytes_for(
+            registry_with_abilities(vec![descriptor(
+                "user_only",
+                AbilityCategory::Read,
+                USER_ACTORS,
+                LIVE_MODES,
+            )]),
+            "user_only",
+        )
+        .await;
+        let maintenance = error_bytes_for(
+            registry_with_abilities(vec![descriptor(
+                "agent_maintenance",
+                AbilityCategory::Maintenance,
+                AGENT_SYSTEM_ACTORS,
+                LIVE_MODES,
+            )]),
+            "agent_maintenance",
+        )
+        .await;
+        let mode_hidden = error_bytes_for(
+            registry_with_abilities(vec![descriptor(
+                "evaluate_only",
+                AbilityCategory::Read,
+                AGENT_ACTORS,
+                EVALUATE_MODES,
+            )]),
+            "evaluate_only",
+        )
+        .await;
+
+        assert_eq!(unauthorized, unknown);
+        assert_eq!(maintenance, unknown);
+        assert_eq!(mode_hidden, unknown);
+        assert_eq!(unknown, br#""ability_unavailable""#);
+    }
+
+    #[tokio::test]
+    async fn mcp_maintenance_synthetic_actor_rejected_requires_user_actor() {
+        let registry = registry_with_abilities(vec![descriptor(
+            "synthetic_maintenance",
+            AbilityCategory::Maintenance,
+            AGENT_SYSTEM_ACTORS,
+            LIVE_MODES,
+        )]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        assert!(!descriptor_names(&bridge).contains(&"synthetic_maintenance"));
+        let err = bridge
+            .invoke_ability(session(1), "synthetic_maintenance", json!({}), false, None)
+            .await
+            .unwrap_err();
+
+        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    #[tokio::test]
+    async fn agent_entity_mutation_blocked_until_dos_379() {
+        let registry = registry_with_abilities(vec![with_mutates(
+            descriptor(
+                "agent_entity_mutation",
+                AbilityCategory::Publish,
+                AGENT_ACTORS,
+                LIVE_MODES,
+            ),
+            &["entity_members"],
+        )]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        assert!(!descriptor_names(&bridge).contains(&"agent_entity_mutation"));
+        let err = bridge
+            .invoke_ability(session(1), "agent_entity_mutation", json!({}), false, None)
+            .await
+            .unwrap_err();
+
+        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
     }
 
     #[tokio::test]
@@ -786,6 +943,86 @@ mod tests {
             .expect("successful MCP invoke should cache provenance");
         assert_eq!(cached.surface, BridgeSurface::McpToolDetail);
         assert_eq!(cached.value, response.rendered_provenance.value);
+    }
+
+    #[tokio::test]
+    async fn mcp_response_includes_actor_filtered_rendered_provenance() {
+        let registry = registry_with_abilities(vec![descriptor(
+            "agent_read",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        )]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        let response = bridge
+            .invoke_ability(session(1), "agent_read", json!({}), false, None)
+            .await
+            .unwrap();
+
+        assert_eq!(response.rendered_provenance.surface, BridgeSurface::McpTool);
+        assert_eq!(response.rendered_provenance.value["actor"], "Agent");
+        assert_eq!(response.rendered_provenance.value["mode"], "live");
+    }
+
+    #[test]
+    fn mcp_session_id_is_process_scoped_and_cleared_on_restart() {
+        let first_process_session = McpSessionId::new_process_scoped();
+        let second_process_session = McpSessionId::new_process_scoped();
+        assert_ne!(first_process_session, second_process_session);
+
+        let registry = registry_with_abilities(vec![]);
+        let first_process_bridge = McpAbilityBridge::new(&registry);
+        first_process_bridge.insert_provenance(
+            first_process_session,
+            invocation(1),
+            rendered(1),
+        );
+        let restarted_bridge = McpAbilityBridge::new(&registry);
+
+        assert_eq!(
+            restarted_bridge.get_provenance(first_process_session, invocation(1)),
+            None
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_get_provenance_redacts_internal_ids_for_agent() {
+        let registry = registry_with_abilities(vec![with_invoke_erased(
+            descriptor(
+                "agent_internal_provenance",
+                AbilityCategory::Read,
+                AGENT_ACTORS,
+                LIVE_MODES,
+            ),
+            internal_provenance_erased,
+        )]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let session = session(1);
+
+        let response = bridge
+            .invoke_ability(
+                session,
+                "agent_internal_provenance",
+                json!({}),
+                false,
+                None,
+            )
+            .await
+            .unwrap();
+        let detail = bridge
+            .get_provenance(session, response.invocation_id)
+            .expect("successful invocation caches detail provenance");
+
+        assert_eq!(response.rendered_provenance.surface, BridgeSurface::McpTool);
+        assert_eq!(detail.surface, BridgeSurface::McpToolDetail);
+        for rendered in [&response.rendered_provenance.value, &detail.value] {
+            assert!(rendered.get("internal_id").is_none());
+            assert!(rendered.get("prompt_hash").is_none());
+            assert!(rendered.get("seed").is_none());
+            assert!(rendered.get("children").is_none());
+            assert_eq!(rendered["invocation_id"], "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+        }
     }
 
     #[test]

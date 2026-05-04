@@ -217,7 +217,7 @@ mod tests {
     use super::*;
     use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
     use crate::abilities::{
-        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, Actor,
+        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor,
     };
     use crate::bridges::confirmation_args_hash;
     use crate::bridges::types::{BridgeRejectReason, PRE_DISPATCH_RESOLUTION_ORDER};
@@ -292,6 +292,27 @@ mod tests {
         })
     }
 
+    fn panic_if_dispatched_erased<'a>(
+        _ctx: &'a AbilityContext<'a>,
+        _input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            panic!("schema-invalid bridge input reached ability dispatch")
+        })
+    }
+
+    fn leaking_error_erased<'a>(
+        _ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            Err(AbilityError {
+                kind: AbilityErrorKind::HardError("provider prompt leaked".to_string()),
+                message: format!("raw prompt was {}", input["prompt"]),
+            })
+        })
+    }
+
     fn envelope_json(ctx: &AbilityContext<'_>, data: serde_json::Value) -> serde_json::Value {
         json!({
             "data": data,
@@ -348,12 +369,38 @@ mod tests {
     fn closed_object_schema() -> serde_json::Value {
         json!({
             "type": "object",
-            "additionalProperties": false
+            "additionalProperties": false,
+            "properties": {
+                "prompt": { "type": "string" },
+                "subject": { "type": "string" },
+                "value": {}
+            }
         })
     }
 
     fn open_object_schema() -> serde_json::Value {
         json!({ "type": "object" })
+    }
+
+    fn strict_subject_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["subject"],
+            "properties": {
+                "subject": { "type": "string" }
+            }
+        })
+    }
+
+    fn actor_override_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "actor": { "type": "string" }
+            }
+        })
     }
 
     fn with_input_schema(
@@ -582,6 +629,28 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn invoke_ability_rejects_unknown_ability_without_enumeration() {
+        let registry = registry(vec![descriptor(
+            "visible_read",
+            AbilityCategory::Read,
+            USER_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
+        let state = AppState::new();
+        let bridge = TauriAbilityBridge::new(&registry);
+
+        let err = bridge
+            .invoke(&state, "not_registered", json!({}), false, None)
+            .await
+            .unwrap_err();
+        let serialized = serde_json::to_vec(&err).unwrap();
+
+        assert_eq!(serialized, br#""ability_unavailable""#);
+        assert!(!String::from_utf8_lossy(&serialized).contains("visible_read"));
+    }
+
+    #[tokio::test]
     async fn tauri_bridge_documents_lock_as_pre_admission_only() {
         let registry = registry(vec![descriptor(
             "pre_admission",
@@ -642,6 +711,143 @@ mod tests {
         let response = response.unwrap();
         assert_eq!(response.data["provider_before"], "first-model");
         assert_eq!(response.data["provider_after"], "first-model");
+    }
+
+    #[tokio::test]
+    async fn invoke_ability_schema_invalid_input_fails_before_dispatch() {
+        let registry = registry(vec![with_input_schema(
+            descriptor(
+                "strict_subject",
+                AbilityCategory::Read,
+                USER_ACTORS,
+                LIVE_MODES,
+                panic_if_dispatched_erased,
+            ),
+            strict_subject_schema,
+        )]);
+        let state = AppState::new();
+        let bridge = TauriAbilityBridge::new(&registry);
+
+        let err = bridge
+            .invoke(
+                &state,
+                "strict_subject",
+                json!({ "subject": 217 }),
+                false,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    #[tokio::test]
+    async fn invoke_ability_rejects_actor_override_in_input_json() {
+        let registry = registry(vec![with_input_schema(
+            descriptor(
+                "actor_echo",
+                AbilityCategory::Read,
+                USER_ACTORS,
+                LIVE_MODES,
+                success_erased,
+            ),
+            actor_override_schema,
+        )]);
+        let state = AppState::new();
+        let bridge = TauriAbilityBridge::new(&registry);
+
+        let err = bridge
+            .invoke(
+                &state,
+                "actor_echo",
+                json!({ "actor": "System" }),
+                false,
+                None,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    #[tokio::test]
+    async fn invoke_ability_returns_ability_response_json_with_tauri_provenance() {
+        let registry = registry(vec![descriptor(
+            "tauri_response",
+            AbilityCategory::Read,
+            USER_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
+        let state = AppState::new();
+        let bridge = TauriAbilityBridge::new(&registry);
+
+        let response = bridge
+            .invoke(&state, "tauri_response", json!({}), false, None)
+            .await
+            .unwrap();
+
+        assert_eq!(response.ability_name, "tauri_response");
+        assert_eq!(response.ability_version, "1.0.0");
+        assert_eq!(response.schema_version, 1);
+        assert_eq!(response.data["actor"], "User");
+        assert_eq!(response.data["mode"], "live");
+        assert_eq!(response.rendered_provenance.surface, BridgeSurface::TauriApp);
+        assert_eq!(response.rendered_provenance.value["actor"], "User");
+    }
+
+    #[tokio::test]
+    async fn bridge_provenance_tests_compare_rendered_surface_output_only() {
+        let registry = registry(vec![descriptor(
+            "rendered_surface_only",
+            AbilityCategory::Read,
+            USER_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
+        let state = AppState::new();
+        let bridge = TauriAbilityBridge::new(&registry);
+
+        let response = bridge
+            .invoke(&state, "rendered_surface_only", json!({}), false, None)
+            .await
+            .unwrap();
+
+        let rendered = response.rendered_provenance;
+        assert_eq!(rendered.surface, BridgeSurface::TauriApp);
+        assert_eq!(rendered.value["mode"], "live");
+        assert_eq!(rendered.value["ability_name"], "fixture");
+    }
+
+    #[tokio::test]
+    async fn bridge_errors_do_not_include_input_or_prompt_content() {
+        let registry = registry(vec![descriptor(
+            "leaking_error",
+            AbilityCategory::Read,
+            USER_ACTORS,
+            LIVE_MODES,
+            leaking_error_erased,
+        )]);
+        let state = AppState::new();
+        let bridge = TauriAbilityBridge::new(&registry);
+        let secret = "PROMPT_SECRET_DOS_217";
+
+        let err = bridge
+            .invoke(
+                &state,
+                "leaking_error",
+                json!({ "prompt": secret }),
+                false,
+                None,
+            )
+            .await
+            .unwrap_err();
+        let serialized = String::from_utf8(serde_json::to_vec(&err).unwrap()).unwrap();
+
+        assert_eq!(serialized, "\"ability_unavailable\"");
+        assert!(!serialized.contains(secret));
+        assert!(!serialized.contains("provider prompt leaked"));
     }
 
     #[tokio::test]

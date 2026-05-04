@@ -193,6 +193,12 @@ pub(crate) async fn invoke_registry_json<'a>(
     let ability_version = descriptor.version.to_string();
     let schema_version = descriptor.schema_version;
     let canonical_ability_name = descriptor.name.to_string();
+    let input_schema = (descriptor.input_schema)();
+
+    reject_reserved_input_fields(&input_json)?;
+    validate_input_json_against_schema(&input_schema, &input_json)
+        .map_err(|_| BridgeSurfaceError::AbilityUnavailable)?;
+
     let args_hash = confirmation_args_hash(&input_json);
 
     verify_confirmation_token(
@@ -283,6 +289,10 @@ pub(crate) fn resolve_pre_dispatch<'a>(
     }
 
     if descriptor.experimental && actor != Actor::System {
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    if actor == Actor::Agent && !descriptor.mutates.is_empty() {
         return Err(BridgeSurfaceError::AbilityUnavailable);
     }
 
@@ -430,7 +440,13 @@ fn parse_invocation_id(provenance: &serde_json::Value) -> Result<InvocationId, A
 }
 
 fn render_provenance(surface: BridgeSurface, provenance: serde_json::Value) -> RenderedProvenance {
-    RenderedProvenance::new(surface, provenance)
+    let value = match surface {
+        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
+            redact_mcp_provenance(provenance)
+        }
+        BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => provenance,
+    };
+    RenderedProvenance::new(surface, value)
 }
 
 pub(crate) fn surface_error(error: AbilityInvokeError) -> BridgeSurfaceError {
@@ -441,6 +457,257 @@ pub(crate) fn surface_error(error: AbilityInvokeError) -> BridgeSurfaceError {
         | AbilityInvokeError::ProvenanceTooLarge
         | AbilityInvokeError::ProvenanceSerialize(_) => BridgeSurfaceError::AbilityUnavailable,
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct InputSchemaValidationError;
+
+fn reject_reserved_input_fields(input: &serde_json::Value) -> Result<(), BridgeSurfaceError> {
+    let Some(object) = input.as_object() else {
+        return Ok(());
+    };
+
+    for reserved in ["actor", "bridge_actor", "confirmation"] {
+        if object.contains_key(reserved) {
+            return Err(BridgeSurfaceError::AbilityUnavailable);
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_input_json_against_schema(
+    schema: &serde_json::Value,
+    input: &serde_json::Value,
+) -> Result<(), InputSchemaValidationError> {
+    validate_schema_keywords(schema, input)
+}
+
+fn validate_schema_keywords(
+    schema: &serde_json::Value,
+    input: &serde_json::Value,
+) -> Result<(), InputSchemaValidationError> {
+    let Some(schema_object) = schema.as_object() else {
+        return Ok(());
+    };
+
+    if let Some(enum_values) = schema_object
+        .get("enum")
+        .and_then(serde_json::Value::as_array)
+    {
+        if !enum_values.iter().any(|candidate| candidate == input) {
+            return Err(InputSchemaValidationError);
+        }
+    }
+
+    if let Some(const_value) = schema_object.get("const") {
+        if const_value != input {
+            return Err(InputSchemaValidationError);
+        }
+    }
+
+    if let Some(all_of) = schema_object
+        .get("allOf")
+        .and_then(serde_json::Value::as_array)
+    {
+        for child in all_of {
+            validate_schema_keywords(child, input)?;
+        }
+    }
+
+    if let Some(any_of) = schema_object
+        .get("anyOf")
+        .and_then(serde_json::Value::as_array)
+    {
+        if !any_of
+            .iter()
+            .any(|child| validate_schema_keywords(child, input).is_ok())
+        {
+            return Err(InputSchemaValidationError);
+        }
+    }
+
+    if let Some(one_of) = schema_object
+        .get("oneOf")
+        .and_then(serde_json::Value::as_array)
+    {
+        let matches = one_of
+            .iter()
+            .filter(|child| validate_schema_keywords(child, input).is_ok())
+            .count();
+        if matches != 1 {
+            return Err(InputSchemaValidationError);
+        }
+    }
+
+    if let Some(schema_types) = schema_object.get("type") {
+        if !schema_type_matches(schema_types, input) {
+            return Err(InputSchemaValidationError);
+        }
+    }
+
+    if schema_is_object_like(schema_object) {
+        validate_object_schema(schema_object, input)?;
+    }
+
+    if schema_type_contains(schema_object.get("type"), "array") {
+        validate_array_schema(schema_object, input)?;
+    }
+
+    Ok(())
+}
+
+fn validate_object_schema(
+    schema_object: &serde_json::Map<String, serde_json::Value>,
+    input: &serde_json::Value,
+) -> Result<(), InputSchemaValidationError> {
+    let input_object = input.as_object().ok_or(InputSchemaValidationError)?;
+    let properties = schema_object
+        .get("properties")
+        .and_then(serde_json::Value::as_object);
+
+    if let Some(required) = schema_object
+        .get("required")
+        .and_then(serde_json::Value::as_array)
+    {
+        for required_field in required {
+            let Some(required_name) = required_field.as_str() else {
+                continue;
+            };
+            if !input_object.contains_key(required_name) {
+                return Err(InputSchemaValidationError);
+            }
+        }
+    }
+
+    if schema_object.get("additionalProperties") == Some(&serde_json::Value::Bool(false)) {
+        for key in input_object.keys() {
+            if properties.is_none_or(|properties| !properties.contains_key(key)) {
+                return Err(InputSchemaValidationError);
+            }
+        }
+    }
+
+    if let Some(properties) = properties {
+        for (key, property_schema) in properties {
+            if let Some(value) = input_object.get(key) {
+                validate_schema_keywords(property_schema, value)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn validate_array_schema(
+    schema_object: &serde_json::Map<String, serde_json::Value>,
+    input: &serde_json::Value,
+) -> Result<(), InputSchemaValidationError> {
+    let input_array = input.as_array().ok_or(InputSchemaValidationError)?;
+    let Some(items) = schema_object.get("items") else {
+        return Ok(());
+    };
+
+    match items {
+        serde_json::Value::Array(item_schemas) => {
+            if input_array.len() > item_schemas.len() {
+                return Err(InputSchemaValidationError);
+            }
+            for (value, item_schema) in input_array.iter().zip(item_schemas) {
+                validate_schema_keywords(item_schema, value)?;
+            }
+        }
+        item_schema => {
+            for value in input_array {
+                validate_schema_keywords(item_schema, value)?;
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn schema_is_object_like(schema_object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    schema_type_contains(schema_object.get("type"), "object")
+        || schema_object.contains_key("properties")
+        || schema_object.contains_key("additionalProperties")
+}
+
+fn schema_type_contains(schema_type: Option<&serde_json::Value>, expected: &str) -> bool {
+    match schema_type {
+        Some(serde_json::Value::String(value)) => value == expected,
+        Some(serde_json::Value::Array(values)) => values
+            .iter()
+            .any(|value| value.as_str() == Some(expected)),
+        _ => false,
+    }
+}
+
+fn schema_type_matches(schema_type: &serde_json::Value, input: &serde_json::Value) -> bool {
+    match schema_type {
+        serde_json::Value::String(value) => single_schema_type_matches(value, input),
+        serde_json::Value::Array(values) => values.iter().any(|value| {
+            value
+                .as_str()
+                .is_some_and(|schema_type| single_schema_type_matches(schema_type, input))
+        }),
+        _ => true,
+    }
+}
+
+fn single_schema_type_matches(schema_type: &str, input: &serde_json::Value) -> bool {
+    match schema_type {
+        "null" => input.is_null(),
+        "boolean" => input.is_boolean(),
+        "object" => input.is_object(),
+        "array" => input.is_array(),
+        "number" => input.is_number(),
+        "integer" => input.as_i64().is_some() || input.as_u64().is_some(),
+        "string" => input.is_string(),
+        _ => true,
+    }
+}
+
+fn redact_mcp_provenance(value: serde_json::Value) -> serde_json::Value {
+    match value {
+        serde_json::Value::Object(object) => serde_json::Value::Object(
+            object
+                .into_iter()
+                .filter_map(|(key, value)| {
+                    if should_redact_mcp_provenance_key(&key) {
+                        None
+                    } else {
+                        Some((key, redact_mcp_provenance(value)))
+                    }
+                })
+                .collect(),
+        ),
+        serde_json::Value::Array(values) => {
+            serde_json::Value::Array(values.into_iter().map(redact_mcp_provenance).collect())
+        }
+        scalar => scalar,
+    }
+}
+
+fn should_redact_mcp_provenance_key(key: &str) -> bool {
+    matches!(
+        key,
+        "children"
+            | "child_spans"
+            | "completion"
+            | "completions"
+            | "internal_id"
+            | "internal_ids"
+            | "prompt"
+            | "prompts"
+            | "prompt_hash"
+            | "raw_completion"
+            | "raw_prompt"
+            | "seed"
+    ) || key.ends_with("_internal_id")
+        || key.ends_with("_internal_ids")
+        || key.ends_with("_prompt_hash")
+        || key.ends_with("_seed")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

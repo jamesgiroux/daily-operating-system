@@ -64,6 +64,7 @@ impl<'registry, 'deps> EvalAbilityBridge<'registry, 'deps> {
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
+    use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Mutex;
 
     use async_trait::async_trait;
@@ -78,11 +79,13 @@ mod tests {
     use crate::abilities::SpanHandle;
     use crate::intelligence::provider::{
         Completion, ModelName, ModelTier, PromptInput, ProviderError, ProviderKind,
+        ReplayProvider,
     };
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
 
     const SYSTEM_ACTORS: &[Actor] = &[Actor::System];
     const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
+    static ERASED_INVOCATION_COUNT: AtomicUsize = AtomicUsize::new(0);
 
     type ErasedFuture<'a> =
         Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
@@ -175,6 +178,47 @@ mod tests {
         })
     }
 
+    fn replay_provider_erased<'a>(
+        ctx: &'a AbilityContext<'a>,
+        _input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            let completion = ctx
+                .provider
+                .complete(PromptInput::new("eval replay prompt"), ModelTier::Synthesis)
+                .await
+                .map_err(|error| AbilityError {
+                    kind: crate::abilities::AbilityErrorKind::HardError(error.to_string()),
+                    message: "replay provider fixture missing".to_string(),
+                })?;
+            Ok(envelope_json(
+                ctx,
+                json!({
+                    "completion": completion.text,
+                    "provider_kind": ctx.provider.provider_kind().as_str(),
+                    "provider_model": ctx.provider.current_model(ModelTier::Synthesis).as_str(),
+                    "mode": ctx.mode().as_str(),
+                }),
+            ))
+        })
+    }
+
+    fn counted_erased_registry_path<'a>(
+        ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            ERASED_INVOCATION_COUNT.fetch_add(1, Ordering::SeqCst);
+            Ok(envelope_json(
+                ctx,
+                json!({
+                    "input": input,
+                    "count": ERASED_INVOCATION_COUNT.load(Ordering::SeqCst),
+                }),
+            ))
+        })
+    }
+
     fn envelope_json(ctx: &AbilityContext<'_>, data: serde_json::Value) -> serde_json::Value {
         json!({
             "data": data,
@@ -218,6 +262,14 @@ mod tests {
         }
     }
 
+    fn descriptor_with_invoke(
+        mut descriptor: AbilityDescriptor,
+        invoke_erased: for<'a> fn(&'a AbilityContext<'a>, serde_json::Value) -> ErasedFuture<'a>,
+    ) -> AbilityDescriptor {
+        descriptor.invoke_erased = invoke_erased;
+        descriptor
+    }
+
     fn registry() -> AbilityRegistry {
         AbilityRegistry::from_descriptors_checked(vec![descriptor()]).unwrap()
     }
@@ -225,12 +277,16 @@ mod tests {
     fn closed_object_schema() -> serde_json::Value {
         json!({
             "type": "object",
-            "additionalProperties": false
+            "additionalProperties": false,
+            "properties": {
+                "value": {},
+                "subject": { "type": "string" }
+            }
         })
     }
 
     #[tokio::test]
-    async fn eval_bridge_passes_fixture_provider_and_tracer_through_to_ability_context() {
+    async fn eval_bridge_constructs_evaluate_context_with_fixture_services_provider_tracer() {
         let registry = registry();
         let fixture_services = FixtureServices::new();
         let provider = FixtureProvider;
@@ -260,6 +316,69 @@ mod tests {
             events.as_slice(),
             ["span:eval_context_echo", "event:217:ability_context_seen"]
         );
+    }
+
+    #[tokio::test]
+    async fn eval_bridge_uses_replay_provider_and_never_live_provider() {
+        let registry = AbilityRegistry::from_descriptors_checked(vec![descriptor_with_invoke(
+            descriptor(),
+            replay_provider_erased,
+        )])
+        .unwrap();
+        let fixture_services = FixtureServices::new();
+        let provider = ReplayProvider::from_prompt_pairs([(
+            "eval replay prompt",
+            "fixture completion",
+        )]);
+        let tracer = FixtureTracer::default();
+        let bridge = EvalAbilityBridge::new(
+            &registry,
+            EvalAbilityDeps {
+                fixture_services: &fixture_services,
+                provider: &provider,
+                tracer: &tracer,
+            },
+        );
+
+        let response = bridge
+            .invoke_json("eval_context_echo", json!({}), false)
+            .await
+            .unwrap();
+
+        assert_eq!(response.data["completion"], "fixture completion");
+        assert_eq!(response.data["provider_kind"], "replay");
+        assert_eq!(response.data["provider_model"], "replay");
+        assert_eq!(response.data["mode"], "evaluate");
+    }
+
+    #[tokio::test]
+    async fn eval_bridge_invokes_same_erased_registry_path_as_runtime_bridges() {
+        ERASED_INVOCATION_COUNT.store(0, Ordering::SeqCst);
+        let registry = AbilityRegistry::from_descriptors_checked(vec![descriptor_with_invoke(
+            descriptor(),
+            counted_erased_registry_path,
+        )])
+        .unwrap();
+        let fixture_services = FixtureServices::new();
+        let provider = FixtureProvider;
+        let tracer = FixtureTracer::default();
+        let bridge = EvalAbilityBridge::new(
+            &registry,
+            EvalAbilityDeps {
+                fixture_services: &fixture_services,
+                provider: &provider,
+                tracer: &tracer,
+            },
+        );
+
+        let response = bridge
+            .invoke_json("eval_context_echo", json!({ "value": 217 }), false)
+            .await
+            .unwrap();
+
+        assert_eq!(ERASED_INVOCATION_COUNT.load(Ordering::SeqCst), 1);
+        assert_eq!(response.data["count"], 1);
+        assert_eq!(response.data["input"]["value"], 217);
     }
 
     #[tokio::test]

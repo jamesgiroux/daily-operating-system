@@ -1077,7 +1077,10 @@ mod tests {
     fn closed_object_schema() -> serde_json::Value {
         json!({
             "type": "object",
-            "additionalProperties": false
+            "additionalProperties": false,
+            "properties": {
+                "subject": { "type": "string" }
+            }
         })
     }
 
@@ -1188,9 +1191,33 @@ mod tests {
             request_confirmation_tool
                 .input_schema
                 .get("additionalProperties")
-                .and_then(serde_json::Value::as_bool),
+            .and_then(serde_json::Value::as_bool),
             Some(false)
         );
+    }
+
+    #[test]
+    fn mcp_tool_descriptor_uses_registry_input_schema() {
+        let descriptor = descriptor(
+            "agent_fixture_ability",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        );
+        let expected_schema = match (descriptor.input_schema)() {
+            serde_json::Value::Object(object) => object,
+            _ => JsonObject::new(),
+        };
+        let registry = registry_with(vec![descriptor]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        let tools = list_hybrid_tools_for_bridge(&bridge);
+        let ability_tool = tools
+            .iter()
+            .find(|tool| tool.name == "agent_fixture_ability")
+            .expect("registry ability tool descriptor");
+
+        assert_eq!(ability_tool.input_schema.as_ref(), &expected_schema);
     }
 
     #[test]
