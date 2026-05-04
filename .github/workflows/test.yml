@@ -72,7 +72,9 @@ jobs:
         run: ./scripts/check_no_global_subject_in_spine.sh
 
       - name: Enforce ability surface drift guard
-        run: bash src-tauri/scripts/check_ability_surface_drift.sh
+        run: |
+          bash src-tauri/scripts/check_ability_surface_drift.sh
+          bash src-tauri/scripts/check_no_live_external_clients_in_eval.sh
 
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh
