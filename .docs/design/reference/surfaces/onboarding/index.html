@@ -1,0 +1,255 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Onboarding · DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../_shared/fonts.css">
+<link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../../_shared/chrome.css">
+<link rel="stylesheet" href="../../_shared/inspector.css">
+
+<style>
+  .ob-cover {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-2xl);
+    border-bottom: 1px solid var(--color-rule-heavy);
+  }
+  .ob-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-md);
+  }
+  .ob-eyebrow a { color: inherit; border-bottom: 1px solid currentColor; text-decoration: none; }
+  .ob-title {
+    font-family: var(--font-serif);
+    font-size: 64px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.04;
+    margin: 0;
+  }
+  .ob-lede {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 19px;
+    color: var(--color-text-secondary);
+    max-width: 640px;
+    margin: var(--space-md) 0 0;
+  }
+  .ob-stats {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-lg);
+    display: flex;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+  }
+
+  .ob-section {
+    padding: var(--space-3xl) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .ob-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--space-lg);
+  }
+  .ob-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-md);
+    overflow: hidden;
+    transition: border-color var(--transition-normal), transform var(--transition-normal);
+  }
+  .ob-card:hover {
+    border-color: var(--color-rule-heavy);
+    transform: translateY(-2px);
+  }
+  .ob-card-thumb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 21 / 9;
+    background: var(--color-paper-cream);
+    overflow: hidden;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+  .ob-card-thumb iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 800px;
+    transform: scale(0.25);
+    transform-origin: 0 0;
+    pointer-events: none;
+    border: 0;
+  }
+  .ob-card-body { padding: var(--space-md) var(--space-lg) var(--space-lg); }
+  .ob-card-step {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-xs);
+  }
+  .ob-card-name {
+    font-family: var(--font-serif);
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--color-text-primary);
+    margin: 0;
+    line-height: 1.25;
+  }
+  .ob-card-jtbd {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    margin-top: var(--space-sm);
+  }
+
+  @media (max-width: 720px) {
+    .ob-title { font-size: 44px; }
+    .ob-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body
+  data-folio-label="Onboarding"
+  data-folio-crumbs="Reference > Surfaces > Onboarding"
+  data-tint="turmeric"
+  data-active-page="">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <section class="ob-cover">
+    <p class="ob-eyebrow"><a href="../index.html">← Surfaces</a></p>
+    <h1 class="ob-title">Onboarding</h1>
+    <p class="ob-lede">
+      First-run wizard — eight steps that take a fresh install from welcome screen to a primed daily briefing. Click any step to see its rendered surface.
+    </p>
+    <div class="ob-stats">
+      <span>8 steps</span>
+      <span>3 connectors</span>
+      <span>turmeric tint throughout</span>
+    </div>
+  </section>
+
+  <section class="ob-section">
+    <div class="ob-grid">
+
+      <a class="ob-card" href="welcome.html">
+        <div class="ob-card-thumb"><iframe src="welcome.html" loading="lazy" title="Welcome"></iframe></div>
+        <div class="ob-card-body">
+          <p class="ob-card-step">Step 1 · welcome</p>
+          <p class="ob-card-name">Welcome</p>
+          <p class="ob-card-jtbd">Set the frame. Get started, explore demo, or skip.</p>
+        </div>
+      </a>
+
+      <a class="ob-card" href="google.html">
+        <div class="ob-card-thumb"><iframe src="google.html" loading="lazy" title="Google"></iframe></div>
+        <div class="ob-card-body">
+          <p class="ob-card-step">Step 2 · google</p>
+          <p class="ob-card-name">Google</p>
+          <p class="ob-card-jtbd">Connect Google so calendar and email can flow in.</p>
+        </div>
+      </a>
+
+      <a class="ob-card" href="claude-code.html">
+        <div class="ob-card-thumb"><iframe src="claude-code.html" loading="lazy" title="Claude Code"></iframe></div>
+        <div class="ob-card-body">
+          <p class="ob-card-step">Step 3 · claude-code</p>
+          <p class="ob-card-name">Claude Code</p>
+          <p class="ob-card-jtbd">Install the local agent that does the work — recommended, skippable.</p>
+        </div>
+      </a>
+
+      <a class="ob-card" href="glean.html">
+        <div class="ob-card-thumb"><iframe src="glean.html" loading="lazy" title="Glean"></iframe></div>
+        <div class="ob-card-body">
+          <p class="ob-card-step">Step 4 · glean</p>
+          <p class="ob-card-name">Glean</p>
+          <p class="ob-card-jtbd">Optional — pre-fill your profile and discover accounts.</p>
+        </div>
+      </a>
+
+      <a class="ob-card" href="youcard.html">
+        <div class="ob-card-thumb"><iframe src="youcard.html" loading="lazy" title="About You"></iframe></div>
+        <div class="ob-card-body">
+          <p class="ob-card-step">Step 5 · youcard</p>
+          <p class="ob-card-name">About You</p>
+          <p class="ob-card-jtbd">Name, company, role, internal domains.</p>
+        </div>
+      </a>
+
+      <a class="ob-card" href="first-account.html">
+        <div class="ob-card-thumb"><iframe src="first-account.html" loading="lazy" title="First Account"></iframe></div>
+        <div class="ob-card-body">
+          <p class="ob-card-step">Step 6 · first-account</p>
+          <p class="ob-card-name">First Account</p>
+          <p class="ob-card-jtbd">Add or import the first customer account.</p>
+        </div>
+      </a>
+
+      <a class="ob-card" href="role.html">
+        <div class="ob-card-thumb"><iframe src="role.html" loading="lazy" title="Your Role"></iframe></div>
+        <div class="ob-card-body">
+          <p class="ob-card-step">Step 7 · role</p>
+          <p class="ob-card-name">Your Role</p>
+          <p class="ob-card-jtbd">Pick the entity mode that matches how you work.</p>
+        </div>
+      </a>
+
+      <a class="ob-card" href="prime.html">
+        <div class="ob-card-thumb"><iframe src="prime.html" loading="lazy" title="Prime"></iframe></div>
+        <div class="ob-card-body">
+          <p class="ob-card-step">Step 8 · prime</p>
+          <p class="ob-card-name">Prime the Briefing</p>
+          <p class="ob-card-jtbd">Kick off the first run. From here it's just DailyOS.</p>
+        </div>
+      </a>
+
+    </div>
+  </section>
+
+  <section>
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+    </div>
+    <p style="font-family:var(--font-serif); font-style:italic; color:var(--color-text-tertiary); text-align:center; padding-bottom:48px;">
+      Eight steps from cold start to primed briefing.
+    </p>
+  </section>
+
+</main>
+</div>
+
+<script src="../../_shared/chrome.js"></script>
+<script src="../../_shared/inspector.js"></script>
+</body>
+</html>

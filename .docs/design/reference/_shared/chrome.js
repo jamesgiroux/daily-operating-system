@@ -227,6 +227,8 @@
     const tint = body.dataset.tint || 'turmeric';
     const navBase = body.dataset.navBase;
     const entityMode = body.dataset.entityMode || 'account';
+    const navMode = body.dataset.navMode || 'full';
+    const activeChapter = body.dataset.activeChapter || '';
 
     const accountsItem = { id: 'accounts', label: 'Accounts', icon: 'building', group: 'entity' };
     const projectsItem = { id: 'projects', label: 'Projects', icon: 'folder',   group: 'entity' };
@@ -320,8 +322,9 @@
     });
 
     chapters.forEach((c, idx) => {
+      const isActiveChapter = activeChapter ? c.id === activeChapter : idx === 0;
       const node = el('a', {
-        class: N('navIslandLocalItem') + (idx === 0 ? ' ' + activeClass : ''),
+        class: N('navIslandLocalItem') + (isActiveChapter ? ' ' + activeClass : ''),
         href: '#' + c.id,
         title: c.label,
         'data-label': c.label,
@@ -330,6 +333,12 @@
       node.append(lucide(c.icon, { size: 18, weight: 1.5 }));
       localPill.append(node);
     });
+
+    // Chapters-only mode (onboarding): hide global pill, keep only chapter dots.
+    // Mirrors FloatingNavIsland.tsx behavior when onNavigate is absent.
+    if (navMode === 'chapters-only') {
+      return el('div', { class: N('navIslandContainer') }, localPill);
+    }
 
     // Container — local pill goes first (left), global pill goes second (right).
     return el('div', { class: N('navIslandContainer') }, localPill, globalPill);

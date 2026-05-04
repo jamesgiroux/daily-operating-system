@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Onboarding · About You — DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../_shared/fonts.css">
+<link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../_shared/styles/onboarding.module.css">
+<link rel="stylesheet" href="../../_shared/chrome.css">
+<link rel="stylesheet" href="../../_shared/inspector.css">
+
+<style>
+  /* Onboarding wizard stand-in for the Tailwind primary Button.
+     Mirrors src/components/ui/button.tsx size=lg variant=default:
+     h-10 (40px) · px-6 (24px) · rounded-md · bg-primary · text-primary-foreground.
+     Tokens from design-tokens.css; values match Tailwind theme.css mapping. */
+  .ob-button-primary {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-sm);
+    height: 40px;
+    padding: 0 24px;
+    border-radius: 6px;
+    border: 0;
+    background: var(--color-text-primary);
+    color: var(--color-paper-cream);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+  }
+  .ob-button-primary:hover { opacity: 0.9; }
+  .ob-button-primary svg { width: 16px; height: 16px; }
+</style>
+</head>
+<body
+  data-folio-label="Setup"
+  data-folio-crumbs="Reference > Surfaces > Onboarding > About You"
+  data-tint="turmeric"
+  data-active-page=""
+  data-nav-mode="chapters-only"
+  data-active-chapter="youcard"
+  data-chapters="welcome:sparkles:Welcome|google:mail:Google|claude-code:terminal:Claude|glean:globe:Glean|youcard:user:About You|first-account:building:Account|role:briefcase:Your Role|prime:sparkles:Prime">
+
+<div class="onboarding_wrapper">
+  <div class="onboarding_contentColumn">
+    <div class="onboarding_flexCol onboarding_gap24">
+
+      <div style="margin-bottom: var(--space-xl);">
+        <hr style="border: none; border-top: 1px solid var(--color-rule-heavy); margin: 0 0 var(--space-md);" />
+        <div style="display: flex; align-items: center; gap: var(--space-sm);">
+          <h2 style="margin: 0; font-family: var(--font-serif); font-size: 28px; font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; color: var(--color-text-primary);">About you</h2>
+        </div>
+        <p style="max-width: 540px; margin: var(--space-md) 0 0; font-family: var(--font-serif); font-size: 17px; font-style: italic; font-weight: 300; line-height: 1.55; color: var(--color-text-tertiary);">
+          A little context helps tailor your briefings. Everything here is optional.
+        </p>
+      </div>
+
+      <p class="onboarding_helperText">
+        Pre-filled from your company directory. Edit anything that needs updating.
+      </p>
+
+      <div class="onboarding_flexCol onboarding_gap20">
+        <!-- Name -->
+        <div>
+          <label class="onboarding_fieldLabel">Your name</label>
+          <input
+            type="text"
+            placeholder="e.g. Alex Chen"
+            value="Alex Chen"
+            class="onboarding_editorialInput"
+            style="box-sizing: border-box; width: 100%; min-width: 0; height: 36px; padding: 0 var(--space-sm); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none;"
+          />
+        </div>
+
+        <!-- Company -->
+        <div>
+          <label class="onboarding_fieldLabel">Company</label>
+          <input
+            type="text"
+            placeholder="e.g. Acme Inc."
+            value="Acme Corp"
+            class="onboarding_editorialInput"
+            style="box-sizing: border-box; width: 100%; min-width: 0; height: 36px; padding: 0 var(--space-sm); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none;"
+          />
+        </div>
+
+        <!-- Title -->
+        <div>
+          <label class="onboarding_fieldLabel">Title</label>
+          <input
+            type="text"
+            placeholder="e.g. Customer Success Manager"
+            value="Customer Success Manager"
+            class="onboarding_editorialInput"
+            style="box-sizing: border-box; width: 100%; min-width: 0; height: 36px; padding: 0 var(--space-sm); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none;"
+          />
+        </div>
+
+        <!-- Domains -->
+        <div>
+          <label class="onboarding_fieldLabel">Company email domains</label>
+          <div style="display: flex; align-items: center; gap: var(--space-xs);">
+            <input
+              type="text"
+              placeholder="e.g. acme.com"
+              value=""
+              class="onboarding_editorialInput"
+              style="box-sizing: border-box; flex: 1 1 auto; width: 100%; min-width: 0; height: 36px; padding: 0 var(--space-sm); font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary); outline: none;"
+            />
+            <button
+              type="button"
+              disabled
+              aria-label="Add domain"
+              style="display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: 0 0 36px; border: 1px solid var(--color-rule-heavy); border-radius: 6px; background: var(--color-paper-warm-white); color: var(--color-text-tertiary); opacity: 0.45; cursor: not-allowed; padding: 0;"
+            >
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
+            </button>
+          </div>
+          <div class="onboarding_flexWrap onboarding_mt8">
+            <span class="onboarding_domainChip">
+              @acme.example.com
+              <button type="button" class="onboarding_ghostButton" aria-label="Remove acme.example.com">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+              </button>
+            </span>
+          </div>
+          <p class="onboarding_helperText">
+            Helps distinguish internal meetings from external ones.
+          </p>
+        </div>
+      </div>
+
+      <!-- Continue / Skip -->
+      <div class="onboarding_flexBetween">
+        <button type="button" class="onboarding_skipButton">Skip</button>
+        <button type="button" class="ob-button-primary">
+          Continue
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<script src="../../_shared/chrome.js"></script>
+<script src="../../_shared/inspector.js"></script>
+</body>
+</html>
