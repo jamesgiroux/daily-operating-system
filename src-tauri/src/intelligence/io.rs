@@ -13,6 +13,7 @@ use std::path::Path;
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
 
+#[cfg(test)]
 use crate::accounts::CompanyOverview;
 use crate::db::{ActionDb, DbAccount};
 use crate::util::atomic_write_str;
@@ -1464,7 +1465,6 @@ const INTEL_FILENAME: &str = "intelligence.json";
 /// Read intelligence.json from an entity directory.
 ///
 /// Deprecated for Tauri app call sites — DB is the sole source of truth.
-/// Remaining callers: MCP sidecar (mcp/main.rs), internal io.rs (apply_stakeholders_update).
 /// Do NOT add new callers — use `db.get_entity_intelligence()` instead.
 pub fn read_intelligence_json(dir: &Path) -> Result<IntelligenceJson, String> {
     let path = dir.join(INTEL_FILENAME);
@@ -1662,80 +1662,10 @@ fn normalize_legacy_intelligence_refs(intel: &mut IntelligenceJson) {
     }
 }
 
-/// Apply a field update to an intelligence.json on disk.
-///
-/// Reads the file, applies the update via JSON path navigation,
-/// records a UserEdit entry, validates by re-parsing, and writes back.
-pub fn apply_intelligence_field_update(
-    dir: &Path,
-    field_path: &str,
-    value: &str,
-) -> Result<IntelligenceJson, String> {
-    let field_path = normalize_legacy_intelligence_path(field_path);
-    let field_path = field_path.as_str();
-    let intel_path = dir.join(INTEL_FILENAME);
-    let content = std::fs::read_to_string(&intel_path)
-        .map_err(|e| format!("Failed to read {}: {}", intel_path.display(), e))?;
-
-    let mut json_val: serde_json::Value = serde_json::from_str(&content)
-        .map_err(|e| format!("Failed to parse {}: {}", intel_path.display(), e))?;
-
-    // Apply the update
-    let new_value: serde_json::Value = serde_json::from_str(value)
-        .unwrap_or_else(|_| serde_json::Value::String(value.to_string()));
-    set_json_path(&mut json_val, field_path, new_value)?;
-
-    // Tag edited items with user_correction source attribution.
-    // If the edited path points to an item in a Vec (e.g., "risks[0]"),
-    // set the itemSource on that item.
-    if let Ok(segments) = parse_path_segments(field_path) {
-        if let Some(PathSegment::Index(arr_name, idx)) = segments.last() {
-            if let Some(arr) = json_val
-                .get_mut(arr_name.as_str())
-                .and_then(|v| v.as_array_mut())
-            {
-                if let Some(item) = arr.get_mut(*idx) {
-                    if item.is_object() {
-                        item["itemSource"] = serde_json::json!({
-                            "source": "user_correction",
-                            "confidence": 1.0,
-                            "sourcedAt": Utc::now().to_rfc3339(),
-                            "reference": "user edit"
-                        });
-                    }
-                }
-            }
-        }
-    }
-
-    // Record user edit (dedup: replace existing edit for same path)
-    let edits = json_val.get_mut("userEdits").and_then(|v| v.as_array_mut());
-    let edit_entry = serde_json::json!({
-        "fieldPath": field_path,
-        "editedAt": Utc::now().to_rfc3339(),
-    });
-    if let Some(arr) = edits {
-        arr.retain(|e| e.get("fieldPath").and_then(|v| v.as_str()) != Some(field_path));
-        arr.push(edit_entry);
-    } else {
-        json_val["userEdits"] = serde_json::json!([edit_entry]);
-    }
-
-    // Validate by re-parsing into typed struct
-    let intel: IntelligenceJson =
-        serde_json::from_value(json_val).map_err(|e| format!("Updated JSON is invalid: {}", e))?;
-
-    // Write back
-    write_intelligence_json(dir, &intel)?;
-
-    Ok(intel)
-}
-
 /// Apply a field update to an in-memory IntelligenceJson (DB-sourced).
 ///
-/// Same logic as `apply_intelligence_field_update` but operates on a struct
-/// instead of reading from disk. Used when the DB is the source of truth
-/// (post-, Glean enrichment writes directly to DB).
+/// Used when the DB is the source of truth and the disk cache is written only
+/// after the DB transaction commits.
 pub fn apply_intelligence_field_update_in_memory(
     existing: IntelligenceJson,
     field_path: &str,
@@ -1792,33 +1722,10 @@ pub fn apply_intelligence_field_update_in_memory(
     Ok(intel)
 }
 
-/// Replace the stakeholderInsights array and record as user-edited.
-pub fn apply_stakeholders_update(
-    dir: &Path,
-    stakeholders: Vec<StakeholderInsight>,
-) -> Result<IntelligenceJson, String> {
-    let mut intel = read_intelligence_json(dir)?;
-    intel.stakeholder_insights = stakeholders;
-
-    // Record user edit
-    let now = Utc::now().to_rfc3339();
-    intel
-        .user_edits
-        .retain(|e| e.field_path != "stakeholderInsights");
-    intel.user_edits.push(UserEdit {
-        field_path: "stakeholderInsights".to_string(),
-        edited_at: now,
-    });
-
-    write_intelligence_json(dir, &intel)?;
-    Ok(intel)
-}
-
 /// Replace the stakeholderInsights array in-memory (DB-first path).
 ///
-/// Same logic as `apply_stakeholders_update` but operates on an existing
-/// `IntelligenceJson` instead of reading from disk, allowing the caller
-/// to prefer DB-sourced intelligence over disk.
+/// Operates on an existing `IntelligenceJson` instead of reading from disk,
+/// allowing the caller to prefer DB-sourced intelligence over the file cache.
 pub fn apply_stakeholders_update_in_memory(
     existing: IntelligenceJson,
     stakeholders: Vec<StakeholderInsight>,
@@ -2004,6 +1911,7 @@ fn get_json_path<'a>(root: &'a serde_json::Value, path: &str) -> Option<&'a serd
 /// Non-destructive: creates intelligence.json if it doesn't exist and
 /// dashboard.json has a company_overview. Leaves dashboard.json untouched.
 /// Returns the created IntelligenceJson, or None if no migration needed.
+#[cfg(test)]
 pub fn migrate_company_overview_to_intelligence(
     workspace: &Path,
     account: &DbAccount,

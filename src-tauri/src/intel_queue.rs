@@ -7,7 +7,7 @@
 
 use parking_lot::Mutex;
 use std::collections::{HashMap, VecDeque};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Instant;
 
@@ -936,7 +936,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            let written_intel = match write_enrichment_results(
+            let written_intel = match compose_enrichment_intelligence(
                 &state,
                 input,
                 intel,
@@ -956,6 +956,35 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     continue;
                 }
             };
+            let db = match crate::db::ActionDb::open() {
+                Ok(db) => db,
+                Err(e) => {
+                    log::warn!(
+                        "IntelProcessor: failed to open DB for {} persistence: {}",
+                        request.entity_id,
+                        e
+                    );
+                    continue;
+                }
+            };
+            let ctx = state.live_service_context();
+            if let Err(e) = crate::services::intelligence::upsert_assessment_from_enrichment(
+                &ctx,
+                &db,
+                &state.signals.engine,
+                &input.entity_type,
+                &input.entity_id,
+                &written_intel,
+            ) {
+                log::warn!(
+                    "IntelProcessor: failed to persist DB assessment for {}: {}",
+                    request.entity_id,
+                    e
+                );
+                continue;
+            }
+            fenced_write_enrichment_intelligence(&db, &input.entity_dir, &written_intel);
+            run_enrichment_post_commit_side_effects(&state, input, &db, &written_intel);
 
             // Emit tiered Glean signals after successful enrichment
             if state.context_provider().is_remote() {
@@ -2001,8 +2030,8 @@ fn run_parallel_enrichment(
 /// Write the current progressive state of intelligence to DB after a dimension completes.
 ///
 /// Opens a short-lived DB connection, reads existing entity_assessment, merges the
-/// new combined state, and writes back. Non-fatal on error — the final write in
-/// `write_enrichment_results` is the authoritative write.
+/// new combined state, and writes back. Non-fatal on error — the committed
+/// enrichment persistence path is the authoritative write.
 fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &IntelligenceJson) {
     let db = match crate::db::ActionDb::open() {
         Ok(db) => db,
@@ -2173,12 +2202,12 @@ fn run_consistency_repair_retry(
     )
 }
 
-/// Phase 3: Write enrichment results to disk and DB.
+/// Phase 3: Compose enrichment results for DB-first persistence.
 /// Opens own DB connection to avoid blocking foreground IPC commands.
 ///  suppression filtering is fail-closed: if the feedback DB cannot
-/// open, risks/wins are dropped for that round and the rest of the write continues.
+/// open, risks/wins are dropped for that round and the rest of the composition continues.
 /// Public so manual enrichment commands can reuse the split-lock pattern.
-pub fn write_enrichment_results(
+pub fn compose_enrichment_intelligence(
     state: &AppState,
     input: &EnrichmentInput,
     intel: &IntelligenceJson,
@@ -2449,7 +2478,7 @@ pub fn write_enrichment_results(
                             &reason_label,
                             &input.entity_id,
                             "risks",
-                            Some("intel_queue.write_enrichment_results.risks"),
+                            Some("intel_queue.compose_enrichment_intelligence.risks"),
                         ) {
                             log::warn!(
                                 "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
@@ -2488,7 +2517,7 @@ pub fn write_enrichment_results(
                             &reason_label,
                             &input.entity_id,
                             "recentWins",
-                            Some("intel_queue.write_enrichment_results.recentWins"),
+                            Some("intel_queue.compose_enrichment_intelligence.recentWins"),
                         ) {
                             log::warn!(
                                 "[DOS-308] failed to persist malformed suppression audit for entity {}: {}",
@@ -2667,63 +2696,44 @@ pub fn write_enrichment_results(
         }
     }
 
-    // capture schema_epoch + write through the fence. Migration
-    // sequences drain in-flight workers via the FenceCycle RAII
-    // counter before bumping the epoch; EpochAdvanced here means a migration
-    // ran mid-cycle and we must skip the write so the migration backfill stays canonical.
-    let fence_cycle = crate::intelligence::write_fence::FenceCycle::capture(&db)
-        .map_err(|e| format!("schema_epoch capture failed for {}: {e}", input.entity_id))?;
-    if let Err(e) = crate::intelligence::write_fence::fenced_write_intelligence_json(
-        &fence_cycle,
-        &db,
-        &input.entity_dir,
-        &final_intel,
-    ) {
-        match e {
-            crate::intelligence::write_fence::FenceError::EpochAdvanced { captured, current } => {
-                log::warn!(
-                    "IntelProcessor: schema_epoch advanced mid-cycle for {} \
-                     (captured={captured}, current={current}); skipping write — \
-                     work will be re-queued after migration completes",
-                    input.entity_id,
-                );
-                return Err(format!(
-                    "fence rejected write for {}: schema_epoch advanced",
-                    input.entity_id,
-                ));
-            }
-            other => {
-                return Err(format!(
-                    "fence write failed for {}: {other}",
-                    input.entity_id
-                ));
-            }
-        }
-    }
-    let ctx = state.live_service_context();
-    crate::services::intelligence::upsert_assessment_from_enrichment(
-        &ctx,
-        &db,
-        &state.signals.engine,
-        &input.entity_type,
-        &input.entity_id,
-        &final_intel,
-    )?;
+    Ok(final_intel)
+}
 
-    // Invalidate cached reports when entity intelligence is refreshed
-    let _ = crate::reports::invalidation::mark_reports_stale(&db, &input.entity_id);
+/// Best-effort post-commit disk cache write for composed enrichment.
+pub fn fenced_write_enrichment_intelligence(
+    db: &crate::db::ActionDb,
+    dir: &Path,
+    intel: &IntelligenceJson,
+) {
+    crate::intelligence::write_fence::post_commit_fenced_write(
+        db,
+        dir,
+        intel,
+        &format!("entity={} source=ai_enrichment", intel.entity_id),
+    );
+}
 
-    // Dual-write commitments from Glean enrichment to captured_commitments
+/// Non-authoritative follow-up work after the DB write has committed.
+pub fn run_enrichment_post_commit_side_effects(
+    state: &AppState,
+    input: &EnrichmentInput,
+    db: &crate::db::ActionDb,
+    final_intel: &IntelligenceJson,
+) {
+    // Invalidate cached reports when entity intelligence is refreshed.
+    let _ = crate::reports::invalidation::mark_reports_stale(db, &input.entity_id);
+
+    // Dual-write commitments from Glean enrichment to captured_commitments.
     if input.entity_type == "account" {
-        dual_write_enrichment_commitments(&db, &input.entity_id, &final_intel);
-        dual_write_enrichment_products(&db, &input.entity_id, &final_intel);
+        dual_write_enrichment_commitments(db, &input.entity_id, final_intel);
+        dual_write_enrichment_products(db, &input.entity_id, final_intel);
     }
 
-    // Regenerate person files after intelligence enrichment
+    // Regenerate person files after intelligence enrichment.
     if input.entity_type == "person" {
         if let Ok(Some(person)) = db.get_person(&input.entity_id) {
-            let _ = crate::people::write_person_markdown(&input.workspace, &person, &db);
-            let _ = crate::people::write_person_dashboard_json(&input.workspace, &person, &db);
+            let _ = crate::people::write_person_markdown(&input.workspace, &person, db);
+            let _ = crate::people::write_person_dashboard_json(&input.workspace, &person, db);
         }
     }
 
@@ -2770,11 +2780,9 @@ pub fn write_enrichment_results(
     }
 
     log::debug!(
-        "IntelProcessor: wrote intelligence for {} to file + DB",
+        "IntelProcessor: wrote intelligence for {} to DB + post-commit file cache",
         input.entity_id,
     );
-
-    Ok(final_intel)
 }
 
 /// Return true when the intelligence payload lacks meaningful narrative signal.

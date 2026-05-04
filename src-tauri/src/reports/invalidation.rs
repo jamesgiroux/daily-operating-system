@@ -1,6 +1,6 @@
 //! Report staleness management.
 //!
-//! Called from intel_queue.rs after write_enrichment_results to mark
+//! Called from intel_queue.rs after committed enrichment writes to mark
 //! cached reports as stale when entity intelligence is refreshed.
 
 use crate::db::ActionDb;
