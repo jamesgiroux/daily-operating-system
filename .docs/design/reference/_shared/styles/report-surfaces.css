@@ -1,0 +1,23 @@
+/* Global report surface classes mirrored from src/styles/report-surfaces.css.
+   These are literal className strings used by slide report components. */
+
+.report-surface-slide {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 120px 120px 80px;
+  scroll-snap-align: start;
+}
+
+@media (max-width: 1024px) {
+  .report-surface-slide {
+    padding: 96px 72px 64px;
+  }
+}
+
+@media (max-width: 768px) {
+  .report-surface-slide {
+    padding: 72px 32px 48px;
+  }
+}

@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Risk Briefing · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../../_shared/fonts.css">
+  <link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../../_shared/styles/report-slides.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/IntelligenceFeedback.module.css">
+
+  <link rel="stylesheet" href="../../_shared/chrome.css">
+  <link rel="stylesheet" href="../../_shared/inspector.css">
+</head>
+<body
+  data-folio-label="Risk Briefing"
+  data-folio-crumbs="Accounts>Account>Risk Briefing"
+  data-tint="terracotta"
+  data-active-page="accounts"
+  data-nav-base=".."
+  data-folio-actions="regenerate"
+  data-folio-action-accent="var(--color-spice-terracotta)"
+  data-chapters="cover:alignleft:Cover|bottom-line:crosshair:Bottom Line|what-happened:bookopen:What Happened|stakes:trendingdown:The Stakes|the-plan:target:The Plan|the-ask:hand:The Ask">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <div class="report-slides_slideContainer">
+    <section id="cover" class="report-slides_slideSection">
+      <div style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start;">
+        <div style="font-family:var(--font-mono); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-spice-terracotta); margin-bottom:24px;">
+          Risk Briefing
+        </div>
+
+        <h1 style="font-family:var(--font-serif); font-size:52px; font-weight:400; line-height:1.1; letter-spacing:-0.02em; color:var(--color-text-primary); margin:0 0 24px; max-width:700px;">
+          Acme Corp
+        </h1>
+
+        <div style="display:inline-flex; align-items:center; gap:8px; margin-bottom:24px;">
+          <span style="width:10px; height:10px; border-radius:50%; background:var(--color-spice-chili);"></span>
+          <span style="font-family:var(--font-mono); font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-spice-chili);">
+            High risk
+          </span>
+        </div>
+
+        <div style="font-family:var(--font-mono); font-size:28px; font-weight:600; color:var(--color-spice-terracotta); margin-bottom:32px;">
+          $620K ARR at Risk
+        </div>
+
+        <div style="display:flex; gap:24px; align-items:baseline;">
+          <span style="font-family:var(--font-mono); font-size:12px; color:var(--color-text-tertiary); letter-spacing:0.04em;">
+            Wed Apr 22, 2026
+          </span>
+          <span style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-secondary); display:inline-flex; align-items:baseline; gap:4px;">
+            Prepared by
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-secondary);">Sam Chen</span>
+          </span>
+        </div>
+      </div>
+    </section>
+
+    <div>
+      <section id="bottom-line" class="report-slides_slideSection" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start;">
+        <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-spice-terracotta); margin-bottom:24px;">
+          Bottom Line
+        </div>
+
+        <h2 class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:36px; font-weight:400; line-height:1.3; letter-spacing:-0.01em; color:var(--color-text-primary); max-width:800px; margin:0 0 32px;">
+          Acme Corp's renewal risk is now concentrated in executive confidence: product value is still visible, but procurement delay and sponsor drift put $620K ARR at risk unless Jen Park re-anchors the MSA path this week.
+        </h2>
+
+        <div style="display:flex; gap:24px; align-items:center;">
+          <div style="display:inline-flex; align-items:center; gap:10px;">
+            <span style="width:10px; height:10px; border-radius:50%; background:var(--color-spice-chili);"></span>
+            <span style="font-family:var(--font-mono); font-size:13px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-spice-chili);">
+              High risk
+            </span>
+          </div>
+          <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; color:var(--color-text-secondary); letter-spacing:0.04em;">Renewal window: May 31, 2026</span>
+        </div>
+      </section>
+      <span class="IntelligenceFeedback_wrapper">
+        <span class="IntelligenceFeedback_container">
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path><path d="M7 10v12"></path></svg>
+          </button>
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path></svg>
+          </button>
+        </span>
+      </span>
+    </div>
+
+    <div>
+      <section id="what-happened" class="report-slides_slideSection" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start;">
+        <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-text-secondary); margin-bottom:24px;">
+          What Happened
+        </div>
+
+        <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:22px; line-height:1.6; color:var(--color-text-primary); max-width:800px; margin:0 0 36px;">
+          Acme entered April with Jen Park sponsoring Q2 Launch, but the MSA Renewal stalled when Dan Mitchell reopened procurement terms. Sara Wu kept implementation moving, yet executive attention shifted from expansion value to contract uncertainty. The account is not lost, but the recovery path now depends on converting scattered concerns into one decision-ready plan.
+        </p>
+
+        <div style="display:flex; gap:4px; margin-bottom:36px; max-width:800px;">
+          <div style="flex:1; display:flex; flex-direction:column; gap:8px; position:relative;">
+            <button style="position:absolute; top:-8px; right:-4px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); z-index:1;" aria-label="Remove">
+              ✕
+            </button>
+            <div style="height:6px; border-radius:3px; background:var(--color-garden-sage);"></div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:12px; font-weight:600; color:var(--color-text-primary);">Mar</div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:13px; color:var(--color-text-secondary);">Jen Park aligned Q2 Launch to renewal value.</div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; gap:8px; position:relative;">
+            <button style="position:absolute; top:-8px; right:-4px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); z-index:1;" aria-label="Remove">
+              ✕
+            </button>
+            <div style="height:6px; border-radius:3px; background:var(--color-spice-terracotta);"></div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:12px; font-weight:600; color:var(--color-text-primary);">Early Apr</div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:13px; color:var(--color-text-secondary);">Procurement reopened MSA terms after Northwind Traders comparison.</div>
+          </div>
+          <div style="flex:1; display:flex; flex-direction:column; gap:8px; position:relative;">
+            <button style="position:absolute; top:-8px; right:-4px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); z-index:1;" aria-label="Remove">
+              ✕
+            </button>
+            <div style="height:6px; border-radius:3px; background:var(--color-spice-chili);"></div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:12px; font-weight:600; color:var(--color-text-primary);">Apr 22</div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:13px; color:var(--color-text-secondary);">Sponsor confidence is exposed without a single owner path.</div>
+          </div>
+        </div>
+
+        <div style="max-width:800px;">
+          <div style="font-family:var(--font-mono); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-text-secondary); margin-bottom:12px;">
+            Key Losses
+          </div>
+          <div style="display:flex; gap:12px; align-items:baseline; padding:8px 0;">
+            <span style="font-family:var(--font-mono); font-size:16px; font-weight:600; color:var(--color-spice-terracotta); flex-shrink:0; min-width:20px;">1</span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; color:var(--color-text-primary); flex:1;">Jen Park stopped forwarding renewal updates after procurement challenged the commercial package.</span>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+          <div style="display:flex; gap:12px; align-items:baseline; padding:8px 0;">
+            <span style="font-family:var(--font-mono); font-size:16px; font-weight:600; color:var(--color-spice-terracotta); flex-shrink:0; min-width:20px;">2</span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; color:var(--color-text-primary); flex:1;">Dan Mitchell moved the MSA Renewal from legal cleanup back into negotiation.</span>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+          <div style="display:flex; gap:12px; align-items:baseline; padding:8px 0;">
+            <span style="font-family:var(--font-mono); font-size:16px; font-weight:600; color:var(--color-spice-terracotta); flex-shrink:0; min-width:20px;">3</span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; color:var(--color-text-primary); flex:1;">Sara Wu's Q2 Launch plan no longer has an executive message tying rollout to renewal value.</span>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+        </div>
+      </section>
+      <span class="IntelligenceFeedback_wrapper">
+        <span class="IntelligenceFeedback_container">
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path><path d="M7 10v12"></path></svg>
+          </button>
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path></svg>
+          </button>
+        </span>
+      </span>
+    </div>
+
+    <div>
+      <section id="stakes" class="report-slides_slideSection" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start;">
+        <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-text-secondary); margin-bottom:24px;">
+          The Stakes
+        </div>
+
+        <h2 class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:32px; font-weight:400; line-height:1.25; color:var(--color-text-primary); max-width:800px; margin:0 0 36px;">
+          $620K ARR and a Q2 Launch reference path are exposed if the MSA Renewal slips beyond May.
+        </h2>
+
+        <div style="display:grid; grid-template-columns:repeat(auto-fill, minmax(240px, 1fr)); gap:16px; margin-bottom:36px; max-width:800px;">
+          <div style="padding:16px 20px; border:1px solid var(--color-rule-light); border-radius:6px; position:relative;">
+            <button style="position:absolute; top:8px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); z-index:1;" aria-label="Remove">✕</button>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+              <span style="width:9px; height:9px; border-radius:50%; background:var(--color-garden-sage); flex-shrink:0;"></span>
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; font-weight:600; color:var(--color-text-primary);">Jen Park</span>
+            </div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); margin-bottom:8px;">Executive sponsor</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-secondary); border:1px solid var(--color-rule-light); border-radius:3px; padding:3px 8px;">active</span>
+              <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-secondary); border:1px solid var(--color-rule-light); border-radius:3px; padding:3px 8px;">high</span>
+            </div>
+          </div>
+          <div style="padding:16px 20px; border:1px solid var(--color-rule-light); border-radius:6px; position:relative;">
+            <button style="position:absolute; top:8px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); z-index:1;" aria-label="Remove">✕</button>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+              <span style="width:9px; height:9px; border-radius:50%; background:var(--color-spice-chili); flex-shrink:0;"></span>
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; font-weight:600; color:var(--color-text-primary);">Dan Mitchell</span>
+            </div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); margin-bottom:8px;">Procurement lead</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-secondary); border:1px solid var(--color-rule-light); border-radius:3px; padding:3px 8px;">sporadic</span>
+              <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-secondary); border:1px solid var(--color-rule-light); border-radius:3px; padding:3px 8px;">high</span>
+            </div>
+          </div>
+          <div style="padding:16px 20px; border:1px solid var(--color-rule-light); border-radius:6px; position:relative;">
+            <button style="position:absolute; top:8px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); z-index:1;" aria-label="Remove">✕</button>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+              <span style="width:9px; height:9px; border-radius:50%; background:var(--color-spice-turmeric); flex-shrink:0;"></span>
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; font-weight:600; color:var(--color-text-primary);">Sara Wu</span>
+            </div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); margin-bottom:8px;">Product owner</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-secondary); border:1px solid var(--color-rule-light); border-radius:3px; padding:3px 8px;">active</span>
+              <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-secondary); border:1px solid var(--color-rule-light); border-radius:3px; padding:3px 8px;">medium</span>
+            </div>
+          </div>
+          <div style="padding:16px 20px; border:1px solid var(--color-rule-light); border-radius:6px; position:relative;">
+            <button style="position:absolute; top:8px; right:8px; opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); z-index:1;" aria-label="Remove">✕</button>
+            <div style="display:flex; align-items:center; gap:10px; margin-bottom:8px;">
+              <span style="width:9px; height:9px; border-radius:50%; background:var(--color-text-secondary); flex-shrink:0;"></span>
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; font-weight:600; color:var(--color-text-primary);">Marco Devine</span>
+            </div>
+            <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:14px; color:var(--color-text-primary); margin-bottom:8px;">VP Operations</div>
+            <div style="display:flex; gap:6px; flex-wrap:wrap;">
+              <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-secondary); border:1px solid var(--color-rule-light); border-radius:3px; padding:3px 8px;">quiet</span>
+              <span style="font-family:var(--font-mono); font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:0.06em; color:var(--color-text-secondary); border:1px solid var(--color-rule-light); border-radius:3px; padding:3px 8px;">high</span>
+            </div>
+          </div>
+        </div>
+
+        <div style="display:flex; flex-direction:column; gap:16px; max-width:800px;">
+          <div style="display:flex; gap:12px; align-items:baseline;">
+            <span style="font-family:var(--font-mono); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.08em; color:var(--color-text-secondary);">
+              Decision Maker
+            </span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; color:var(--color-text-primary);">Jen Park, VP Customer Operations</span>
+          </div>
+          <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:16px; line-height:1.5; color:var(--color-spice-chili); margin:0; border-left:3px solid var(--color-spice-chili); padding-left:16px;">
+            Worst case: Acme freezes the MSA Renewal, pulls Q2 Launch participation, and Globex loses a proof point for Helpline Rollout.
+          </p>
+        </div>
+      </section>
+      <span class="IntelligenceFeedback_wrapper">
+        <span class="IntelligenceFeedback_container">
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path><path d="M7 10v12"></path></svg>
+          </button>
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path></svg>
+          </button>
+        </span>
+      </span>
+    </div>
+
+    <div>
+      <section id="the-plan" class="report-slides_slideSection" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start;">
+        <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-text-secondary); margin-bottom:24px;">
+          The Plan
+        </div>
+
+        <h2 class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-serif); font-size:32px; font-weight:400; line-height:1.25; color:var(--color-text-primary); max-width:800px; margin:0 0 28px;">
+          Rebuild confidence around one executive path: separate the commercial cleanup from Q2 Launch delivery and give Jen Park a decision-ready MSA package.
+        </h2>
+
+        <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:14px; font-weight:600; color:var(--color-text-primary); letter-spacing:0.04em; margin-bottom:28px;">
+          48-hour recovery motion · Apr 22-24
+        </div>
+
+        <div style="margin-bottom:32px; max-width:800px;">
+          <div style="display:flex; gap:16px; align-items:baseline; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+            <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-spice-terracotta); min-width:24px; flex-shrink:0;">1</span>
+            <div style="flex:1;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary);">Send Jen Park a concise MSA Renewal decision memo with options, tradeoffs, and Stark Industries benchmark language.</span>
+              <div style="display:flex; gap:8px; margin-top:4px;">
+                <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Sam Chen</span>
+                <span style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">·</span>
+                <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Today</span>
+              </div>
+            </div>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+          <div style="display:flex; gap:16px; align-items:baseline; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+            <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-spice-terracotta); min-width:24px; flex-shrink:0;">2</span>
+            <div style="flex:1;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary);">Have Priya Raman and Sara Wu confirm Q2 Launch scope that does not depend on procurement approval.</span>
+              <div style="display:flex; gap:8px; margin-top:4px;">
+                <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Priya Raman</span>
+                <span style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">·</span>
+                <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Thu Apr 23</span>
+              </div>
+            </div>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+          <div style="display:flex; gap:16px; align-items:baseline; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+            <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-spice-terracotta); min-width:24px; flex-shrink:0;">3</span>
+            <div style="flex:1;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary);">Schedule Dan Mitchell for a procurement checkpoint with redlines limited to commercial terms.</span>
+              <div style="display:flex; gap:8px; margin-top:4px;">
+                <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Kevin Otieno</span>
+                <span style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">·</span>
+                <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7;">Fri Apr 24</span>
+              </div>
+            </div>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+        </div>
+
+        <div style="max-width:800px;">
+          <div style="font-family:var(--font-mono); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-text-secondary); margin-bottom:12px;">
+            Assumptions
+          </div>
+          <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:8px;">
+            <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:15px; line-height:1.5; color:var(--color-text-primary); margin:0; border-left:3px solid var(--color-spice-terracotta); padding-left:16px; flex:1;">Jen Park will re-engage if the next note gives her a specific executive decision, not a status recap.</p>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+          <div style="display:flex; align-items:baseline; gap:8px; margin-bottom:8px;">
+            <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:15px; line-height:1.5; color:var(--color-text-primary); margin:0; border-left:3px solid var(--color-spice-terracotta); padding-left:16px; flex:1;">Dan Mitchell's procurement risk is bounded if pricing, liability, and renewal date are handled in one thread.</p>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+        </div>
+      </section>
+      <span class="IntelligenceFeedback_wrapper">
+        <span class="IntelligenceFeedback_container">
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path><path d="M7 10v12"></path></svg>
+          </button>
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path></svg>
+          </button>
+        </span>
+      </span>
+    </div>
+
+    <div>
+      <section id="the-ask" class="report-slides_slideSection" style="min-height:100vh; display:flex; flex-direction:column; justify-content:center; padding:120px 120px 80px; scroll-snap-align:start;">
+        <div style="font-family:var(--font-mono); font-size:12px; font-weight:600; text-transform:uppercase; letter-spacing:0.12em; color:var(--color-text-secondary); margin-bottom:24px;">
+          The Ask
+        </div>
+
+        <div style="margin-bottom:32px; max-width:800px;">
+          <div style="display:flex; align-items:baseline; gap:16px; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+            <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-spice-terracotta); min-width:24px; flex-shrink:0;">1</span>
+            <span style="width:9px; height:9px; border-radius:50%; background:var(--color-spice-chili); flex-shrink:0; margin-top:4px;" title="immediate"></span>
+            <div style="flex:1;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary);">Executive approval to send Jen Park the MSA Renewal options memo today.</span>
+              <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7; margin-top:4px;">from Sam Chen</div>
+            </div>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+          <div style="display:flex; align-items:baseline; gap:16px; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+            <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-spice-terracotta); min-width:24px; flex-shrink:0;">2</span>
+            <span style="width:9px; height:9px; border-radius:50%; background:var(--color-spice-terracotta); flex-shrink:0; margin-top:4px;" title="this week"></span>
+            <div style="flex:1;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary);">Commercial desk support for the Dan Mitchell procurement checkpoint.</span>
+              <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7; margin-top:4px;">from Kevin Otieno</div>
+            </div>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+          <div style="display:flex; align-items:baseline; gap:16px; padding:12px 0; border-bottom:1px solid var(--color-rule-light);">
+            <span style="font-family:var(--font-mono); font-size:20px; font-weight:600; color:var(--color-spice-terracotta); min-width:24px; flex-shrink:0;">3</span>
+            <span style="width:9px; height:9px; border-radius:50%; background:var(--color-spice-turmeric); flex-shrink:0; margin-top:4px;" title="this month"></span>
+            <div style="flex:1;">
+              <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary);">Permission to use Stark Industries benchmark language in the Acme Corp executive readout.</span>
+              <div class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-mono); font-size:13px; color:var(--color-text-primary); opacity:0.7; margin-top:4px;">from Priya Raman</div>
+            </div>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+        </div>
+
+        <div style="margin-bottom:32px; max-width:800px;">
+          <div style="font-family:var(--font-mono); font-size:11px; font-weight:600; text-transform:uppercase; letter-spacing:0.1em; color:var(--color-text-secondary); margin-bottom:12px;">
+            Decisions Needed
+          </div>
+          <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px;">
+            <span style="width:16px; height:16px; border-radius:2px; border:2px solid var(--color-spice-terracotta); flex-shrink:0;"></span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary); flex:1;">Confirm whether Acme receives renewal concessions before or after Q2 Launch scope lock.</span>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+          <div style="display:flex; gap:12px; align-items:center; margin-bottom:10px;">
+            <span style="width:16px; height:16px; border-radius:2px; border:2px solid var(--color-spice-terracotta); flex-shrink:0;"></span>
+            <span class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:17px; color:var(--color-text-primary); flex:1;">Decide who joins the Jen Park executive follow-up if Marco Devine stays quiet.</span>
+            <button style="opacity:0; transition:opacity 0.15s; background:none; border:none; cursor:pointer; padding:4px 6px; font-size:14px; color:var(--color-text-tertiary); flex-shrink:0;" aria-label="Remove">✕</button>
+          </div>
+        </div>
+
+        <p class="EditableText_editable" title="Click to edit" data-editable-text style="font-family:var(--font-sans); font-size:15px; line-height:1.5; color:var(--color-text-primary); margin:0; max-width:800px; border-left:3px solid var(--color-spice-terracotta); padding-left:16px;">
+          Escalate by Friday if Dan Mitchell will not accept a bounded procurement agenda or if Jen Park does not confirm the decision memo owner.
+        </p>
+      </section>
+      <span class="IntelligenceFeedback_wrapper">
+        <span class="IntelligenceFeedback_container">
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was helpful" aria-pressed="false" title="Helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 5.88 14 10h5.83a2 2 0 0 1 1.92 2.56l-2.33 8A2 2 0 0 1 17.5 22H4a2 2 0 0 1-2-2v-8a2 2 0 0 1 2-2h2.76a2 2 0 0 0 1.79-1.11L12 2a3.13 3.13 0 0 1 3 3.88Z"></path><path d="M7 10v12"></path></svg>
+          </button>
+          <button type="button" class="IntelligenceFeedback_button" aria-label="This was not helpful" aria-pressed="false" title="Not helpful">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 14V2"></path><path d="M9 18.12 10 14H4.17a2 2 0 0 1-1.92-2.56l2.33-8A2 2 0 0 1 6.5 2H20a2 2 0 0 1 2 2v8a2 2 0 0 1-2 2h-2.76a2 2 0 0 0-1.79 1.11L12 22a3.13 3.13 0 0 1-3-3.88Z"></path></svg>
+          </button>
+        </span>
+      </span>
+    </div>
+
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"></path></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"></path></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"></path></svg>
+      </div>
+      <div style="font-family:var(--font-mono); font-size:10px; color:var(--color-text-tertiary); letter-spacing:0.06em; margin-top:16px;">
+        Last updated: 2026-04-22
+      </div>
+    </div>
+  </div>
+
+</main>
+</div>
+
+<script src="../../_shared/chrome.js"></script>
+<script src="../../_shared/inspector.js"></script>
+</body>
+</html>
