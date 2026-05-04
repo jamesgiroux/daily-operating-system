@@ -575,6 +575,9 @@ pub struct EnrichmentParseResult {
 /// 4. Emits `intelligence-updated` event
 pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
     log::info!("IntelProcessor: started");
+    if state.app_handle().is_none() {
+        state.set_app_handle(app.clone());
+    }
 
     let mut polls_since_prune: u64 = 0;
     // Prune every ~60 seconds (60 / POLL_INTERVAL_SECS polls)
@@ -995,268 +998,23 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 );
                 continue;
             }
-            fenced_write_enrichment_intelligence(&db, &input.entity_dir, prepared.intelligence());
-            run_enrichment_post_commit_side_effects(&state, input, &db, prepared.intelligence());
             let written_intel = prepared.into_intelligence();
-
-            // Emit tiered Glean signals after successful enrichment
-            if state.context_provider().is_remote() {
-                if let Ok(db) = crate::db::ActionDb::open() {
-                    crate::intelligence::glean_provider::emit_glean_signals(
-                        &db,
-                        &state.signals.engine,
-                        &request.entity_type,
-                        &request.entity_id,
-                        &written_intel,
-                        input.active_preset.as_ref(),
-                    );
-                }
-            }
-
-            // Supplemental leading-signals enrichment for Health & Outlook.
-            // Runs only for accounts and only when Glean is configured. Failures
-            // are isolated (the main dimension enrichment already landed) but
-            // no longer silent — we emit an audit event + Tauri event so the
-            // frontend can surface a toast and we can see why Health triage
-            // fell back to activity-sourced cards.
-            //  single coherent snapshot of context
-            // state — `is_remote` and the Glean Arc are both read under one
-            // lock acquisition. Avoids the L2 codex race where a Local
-            // switch between separate getters could let a remote call slip.
-            let ctx_snapshot = state.context_snapshot();
-            if ctx_snapshot.is_remote()
-                && request.entity_type == "account"
-                && ctx_snapshot.remote_endpoint().is_some()
-            {
-                {
-                    let entity_name = input.entity_name.clone();
-                    let entity_id = request.entity_id.clone();
-                    let entity_type = request.entity_type.clone();
-                    let engine = std::sync::Arc::clone(&state.signals.engine);
-                    let state_for_spawn = std::sync::Arc::clone(&state);
-                    let app_for_spawn = app.clone();
-                    // Pass disambiguators through so Glean's retrieval is
-                    // biased toward this account's known identifiers. Cloned from
-                    // the intelligence_context populated by build_intelligence_context.
-                    let disambiguators_for_spawn = input
-                        .intelligence_context
-                        .as_ref()
-                        .map(|c| c.disambiguators.clone());
-                    // Same is_background gate as main enrichment: suppress
-                    // user-visible toast on scheduled work, keep audit log.
-                    let is_background = is_background_priority(request.priority);
-                    tauri::async_runtime::spawn(async move {
-                        //  re-snapshot at dequeue
-                        // time so a settings switch between enqueue and
-                        // dequeue takes effect on the next read (per
-                        // ADR-0091). Atomic transition guarantees the
-                        // snapshot reads is_remote + Glean Arc coherently.
-                        let snap = state_for_spawn.context_snapshot();
-                        let provider = match snap.glean_intelligence_provider {
-                            Some(p) if snap.is_remote() => p,
-                            _ => {
-                                log::warn!(
-                                    "[DOS-15] Context-mode snapshot for leading-signals \
-                                     on {} shows is_remote={} / Glean Arc={:?}; \
-                                     settings switched between enqueue and dequeue. \
-                                     Skipping leading-signals enrichment per ADR-0091.",
-                                    entity_name,
-                                    snap.is_remote(),
-                                    snap.glean_intelligence_provider.is_some(),
-                                );
-                                return;
-                            }
-                        };
-                        let ls_start = std::time::Instant::now();
-                        match provider
-                            .enrich_leading_signals_with_disambiguators(
-                                &entity_name,
-                                disambiguators_for_spawn.as_ref(),
-                            )
-                            .await
-                        {
-                            Ok(signals) => {
-                                if let Ok(db) = crate::db::ActionDb::open() {
-                                    let ctx = state_for_spawn.live_service_context();
-                                    if let Err(e) =
-                                        crate::services::intelligence::upsert_health_outlook_signals(
-                                            &ctx,
-                                            &db,
-                                            &engine,
-                                            &entity_type,
-                                            &entity_id,
-                                            &signals,
-                                        )
-                                    {
-                                        log::warn!(
-                                            "[DOS-15] upsert_health_outlook_signals failed for {}: {}",
-                                            entity_id,
-                                            e
-                                        );
-                                        // Persist failure visible in audit + toast
-                                        let reason = format!("persistence failed: {e}");
-                                        emit_leading_signals_failed(
-                                            &state_for_spawn,
-                                            &app_for_spawn,
-                                            &entity_id,
-                                            &entity_type,
-                                            &reason,
-                                            ls_start.elapsed().as_millis() as u64,
-                                            is_background,
-                                        );
-                                    } else {
-                                        log::info!(
-                                            "[DOS-15] Leading signals persisted for {}",
-                                            entity_id
-                                        );
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                log::warn!(
-                                    "[DOS-15] Leading-signals enrichment failed for {}: {}",
-                                    entity_id,
-                                    e
-                                );
-                                emit_leading_signals_failed(
-                                    &state_for_spawn,
-                                    &app_for_spawn,
-                                    &entity_id,
-                                    &entity_type,
-                                    &e,
-                                    ls_start.elapsed().as_millis() as u64,
-                                    is_background,
-                                );
-                            }
-                        }
-
-                        // Peer-cohort renewal benchmark — separate Glean chat pass that
-                        // populates AgreementOutlook.peer_benchmark. Glean uses its own org-wide
-                        // context (tier, ARR, package, industry) to identify the cohort, so we
-                        // only need to pass the account name. Failures (timeout / unparseable /
-                        // unknown band) silently leave peer_benchmark = None so the Outlook
-                        // panel collapses to its 2-col layout — no toast, no audit event (the
-                        // cell is additive, not load-bearing for Health).
-                        match provider.enrich_peer_benchmark(&entity_name).await {
-                            Ok(peer_benchmark) => {
-                                if let Ok(db) = crate::db::ActionDb::open() {
-                                    match db.get_entity_intelligence(&entity_id) {
-                                        Ok(Some(mut current)) => {
-                                            let ctx = state_for_spawn.live_service_context();
-                                            let outlook = current
-                                                .agreement_outlook
-                                                .get_or_insert_with(Default::default);
-                                            outlook.peer_benchmark = Some(peer_benchmark);
-                                            if let Err(e) =
-                                                crate::services::intelligence::upsert_assessment_snapshot(
-                                                    &ctx, &db, &current,
-                                                )
-                                            {
-                                                log::warn!(
-                                                    "[DOS-204] Persisting peer_benchmark failed for {}: {}",
-                                                    entity_id,
-                                                    e
-                                                );
-                                            } else {
-                                                log::info!(
-                                                    "[DOS-204] Peer benchmark persisted for {}",
-                                                    entity_id
-                                                );
-                                            }
-                                        }
-                                        Ok(None) => {
-                                            log::debug!(
-                                                "[DOS-204] No assessment row for {}; skipping peer_benchmark write",
-                                                entity_id
-                                            );
-                                        }
-                                        Err(e) => {
-                                            log::warn!(
-                                                "[DOS-204] Reading assessment for {} failed: {}",
-                                                entity_id,
-                                                e
-                                            );
-                                        }
-                                    }
-                                }
-                            }
-                            Err(e) => {
-                                log::info!(
-                                    "[DOS-204] Peer benchmark unavailable for {} ({})",
-                                    entity_id,
-                                    e
-                                );
-                            }
-                        }
-                    });
-                }
-            }
-
-            if !parsed.inferred_relationships.is_empty() {
-                let db = match crate::db::ActionDb::open() {
-                    Ok(db) => db,
-                    Err(e) => {
-                        log::warn!(
-                            "IntelProcessor: failed to open DB for inferred relationship persistence on {}: {}",
-                            request.entity_id,
-                            e
-                        );
-                        continue;
-                    }
-                };
-                let ctx = state.live_service_context();
-                if let Err(e) =
-                    crate::services::intelligence::upsert_inferred_relationships_from_enrichment(
-                        &ctx,
-                        &db,
-                        state.signals.engine.as_ref(),
-                        &request.entity_type,
-                        &request.entity_id,
-                        &parsed.inferred_relationships,
-                    )
-                {
-                    log::warn!(
-                        "IntelProcessor: failed to persist inferred relationships for {}: {}",
-                        request.entity_id,
-                        e
-                    );
-                    continue;
-                }
-            }
-
-            let _ = app.emit(
-                "intelligence-updated",
-                IntelligenceUpdatedPayload {
-                    entity_id: request.entity_id.clone(),
-                    entity_type: request.entity_type.clone(),
+            if let Err(e) = run_enrichment_finalize_post_commit(
+                &state,
+                &db,
+                input,
+                &written_intel,
+                &parsed.inferred_relationships,
+                FinalizeMode::QueueWorker {
+                    is_background: is_background_priority(request.priority),
                 },
-            );
-
-            // Invalidate + requeue meeting preps for future meetings linked to this entity.
-            // intelligence.json changed → meeting briefings that consume it need regeneration.
-            invalidate_and_requeue_meeting_preps(&state, &request.entity_id);
-
-            // Self-healing: record success + post-enrichment coherence check
-            {
-                if let Ok(db) = crate::db::ActionDb::open() {
-                    crate::self_healing::feedback::record_enrichment_success(
-                        &db,
-                        &request.entity_id,
-                    );
-                    let _ = crate::self_healing::scheduler::on_enrichment_complete(
-                        &db,
-                        Some(state.embedding_model.as_ref()),
-                        &request.entity_id,
-                        &request.entity_type,
-                        &state.intel_queue,
-                        Some(state.signals.engine.as_ref()),
-                    );
-                }
-            }
-
-            // Record successful claude_code sync
-            if let Ok(db) = crate::db::ActionDb::open() {
-                let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
+            ) {
+                log::warn!(
+                    "IntelProcessor: failed to finalize enrichment for {}: {}",
+                    request.entity_id,
+                    e
+                );
+                continue;
             }
 
             log::info!(
@@ -2656,6 +2414,9 @@ fn apply_enrichment_stakeholder_side_writes(
 
         if let Some(ref pid) = insight.person_id {
             // Check if this person_id exists in account_stakeholders for this account
+            // stakeholder side-write reads propagate transient lock failures intentionally;
+            // silent default-on-error masked duplicate-stakeholder hazards in the earlier
+            // contention class. Aborting + retrying is preferable to duplicate rows.
             let row_exists: bool = db
                 .conn_ref()
                 .query_row(
@@ -2897,6 +2658,271 @@ pub fn run_enrichment_post_commit_side_effects(
     );
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum FinalizeMode {
+    /// Queue worker: run the full background-enrichment finalize chain.
+    QueueWorker {
+        /// True for scheduled/background priorities; false for queued manual work.
+        is_background: bool,
+    },
+    /// Manual user-driven refresh: run the minimal shared finalize chain.
+    ///
+    /// Skips queue-only post-commit work: Glean signal emission, leading-signal
+    /// and peer-benchmark async spawns, `intelligence-updated` event emission,
+    /// self-healing scheduler hook, and `claude_code` sync-success recording.
+    /// Manual refresh emits `background-work-status:completed` from its command
+    /// path and is a different actor than the background sync loop.
+    ManualRefresh,
+}
+
+pub(crate) fn run_enrichment_finalize_post_commit(
+    state: &Arc<AppState>,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+    inferred_relationships: &[InferredRelationship],
+    mode: FinalizeMode,
+) -> Result<(), String> {
+    fenced_write_enrichment_intelligence(db, &input.entity_dir, intel);
+    run_enrichment_post_commit_side_effects(state.as_ref(), input, db, intel);
+
+    if let FinalizeMode::QueueWorker { is_background } = mode {
+        emit_queue_worker_glean_signals(state.as_ref(), db, input, intel);
+        spawn_queue_worker_supplemental_glean_finalize(state, input, is_background);
+    }
+
+    if !inferred_relationships.is_empty() {
+        let ctx = state.live_service_context();
+        crate::services::intelligence::upsert_inferred_relationships_from_enrichment(
+            &ctx,
+            db,
+            state.signals.engine.as_ref(),
+            &input.entity_type,
+            &input.entity_id,
+            inferred_relationships,
+        )?;
+    }
+
+    if matches!(mode, FinalizeMode::QueueWorker { .. }) {
+        if let Some(app) = state.app_handle() {
+            let _ = app.emit(
+                "intelligence-updated",
+                IntelligenceUpdatedPayload {
+                    entity_id: input.entity_id.clone(),
+                    entity_type: input.entity_type.clone(),
+                },
+            );
+        }
+    }
+
+    // Invalidate + requeue meeting preps for future meetings linked to this entity.
+    // intelligence.json changed -> meeting briefings that consume it need regeneration.
+    invalidate_and_requeue_meeting_preps_with_db(state.as_ref(), db, &input.entity_id);
+
+    crate::self_healing::feedback::record_enrichment_success(db, &input.entity_id);
+
+    if matches!(mode, FinalizeMode::QueueWorker { .. }) {
+        let _ = crate::self_healing::scheduler::on_enrichment_complete(
+            db,
+            Some(state.embedding_model.as_ref()),
+            &input.entity_id,
+            &input.entity_type,
+            &state.intel_queue,
+            Some(state.signals.engine.as_ref()),
+        );
+        let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
+    }
+
+    Ok(())
+}
+
+fn emit_queue_worker_glean_signals(
+    state: &AppState,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+    intel: &IntelligenceJson,
+) {
+    if state.context_provider().is_remote() {
+        crate::intelligence::glean_provider::emit_glean_signals(
+            db,
+            &state.signals.engine,
+            &input.entity_type,
+            &input.entity_id,
+            intel,
+            input.active_preset.as_ref(),
+        );
+    }
+}
+
+fn spawn_queue_worker_supplemental_glean_finalize(
+    state: &Arc<AppState>,
+    input: &EnrichmentInput,
+    is_background: bool,
+) {
+    // Supplemental leading-signals enrichment for Health & Outlook.
+    // Runs only for accounts and only when Glean is configured. Failures
+    // are isolated (the main dimension enrichment already landed) but
+    // no longer silent: we emit an audit event + Tauri event so the
+    // frontend can surface a toast and we can see why Health triage
+    // fell back to activity-sourced cards.
+    let ctx_snapshot = state.context_snapshot();
+    if !ctx_snapshot.is_remote()
+        || input.entity_type != "account"
+        || ctx_snapshot.remote_endpoint().is_none()
+    {
+        return;
+    }
+
+    let Some(app_for_spawn) = state.app_handle() else {
+        log::warn!(
+            "[DOS-15] Skipping supplemental Glean finalize for {}: missing app handle",
+            input.entity_id
+        );
+        return;
+    };
+
+    let entity_name = input.entity_name.clone();
+    let entity_id = input.entity_id.clone();
+    let entity_type = input.entity_type.clone();
+    let engine = std::sync::Arc::clone(&state.signals.engine);
+    let state_for_spawn = std::sync::Arc::clone(state);
+    let disambiguators_for_spawn = input
+        .intelligence_context
+        .as_ref()
+        .map(|c| c.disambiguators.clone());
+
+    tauri::async_runtime::spawn(async move {
+        // Re-snapshot at dequeue time so a settings switch between enqueue and
+        // dequeue takes effect on the next read (per ADR-0091). Atomic
+        // transition guarantees the snapshot reads is_remote + Glean Arc
+        // coherently.
+        let snap = state_for_spawn.context_snapshot();
+        let provider = match snap.glean_intelligence_provider {
+            Some(p) if snap.is_remote() => p,
+            _ => {
+                log::warn!(
+                    "[DOS-15] Context-mode snapshot for leading-signals \
+                     on {} shows is_remote={} / Glean Arc={:?}; \
+                     settings switched between enqueue and dequeue. \
+                     Skipping leading-signals enrichment per ADR-0091.",
+                    entity_name,
+                    snap.is_remote(),
+                    snap.glean_intelligence_provider.is_some(),
+                );
+                return;
+            }
+        };
+        let ls_start = std::time::Instant::now();
+        match provider
+            .enrich_leading_signals_with_disambiguators(
+                &entity_name,
+                disambiguators_for_spawn.as_ref(),
+            )
+            .await
+        {
+            Ok(signals) => {
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    let ctx = state_for_spawn.live_service_context();
+                    if let Err(e) = crate::services::intelligence::upsert_health_outlook_signals(
+                        &ctx,
+                        &db,
+                        &engine,
+                        &entity_type,
+                        &entity_id,
+                        &signals,
+                    ) {
+                        log::warn!(
+                            "[DOS-15] upsert_health_outlook_signals failed for {}: {}",
+                            entity_id,
+                            e
+                        );
+                        let reason = format!("persistence failed: {e}");
+                        emit_leading_signals_failed(
+                            &state_for_spawn,
+                            &app_for_spawn,
+                            &entity_id,
+                            &entity_type,
+                            &reason,
+                            ls_start.elapsed().as_millis() as u64,
+                            is_background,
+                        );
+                    } else {
+                        log::info!("[DOS-15] Leading signals persisted for {}", entity_id);
+                    }
+                }
+            }
+            Err(e) => {
+                log::warn!(
+                    "[DOS-15] Leading-signals enrichment failed for {}: {}",
+                    entity_id,
+                    e
+                );
+                emit_leading_signals_failed(
+                    &state_for_spawn,
+                    &app_for_spawn,
+                    &entity_id,
+                    &entity_type,
+                    &e,
+                    ls_start.elapsed().as_millis() as u64,
+                    is_background,
+                );
+            }
+        }
+
+        // Peer-cohort renewal benchmark: separate Glean chat pass that
+        // populates AgreementOutlook.peer_benchmark. This cell is additive, so
+        // failures leave peer_benchmark unset without user-visible noise.
+        match provider.enrich_peer_benchmark(&entity_name).await {
+            Ok(peer_benchmark) => {
+                if let Ok(db) = crate::db::ActionDb::open() {
+                    match db.get_entity_intelligence(&entity_id) {
+                        Ok(Some(mut current)) => {
+                            let ctx = state_for_spawn.live_service_context();
+                            let outlook = current
+                                .agreement_outlook
+                                .get_or_insert_with(Default::default);
+                            outlook.peer_benchmark = Some(peer_benchmark);
+                            if let Err(e) =
+                                crate::services::intelligence::upsert_assessment_snapshot(
+                                    &ctx, &db, &current,
+                                )
+                            {
+                                log::warn!(
+                                    "[DOS-204] Persisting peer_benchmark failed for {}: {}",
+                                    entity_id,
+                                    e
+                                );
+                            } else {
+                                log::info!("[DOS-204] Peer benchmark persisted for {}", entity_id);
+                            }
+                        }
+                        Ok(None) => {
+                            log::debug!(
+                                "[DOS-204] No assessment row for {}; skipping peer_benchmark write",
+                                entity_id
+                            );
+                        }
+                        Err(e) => {
+                            log::warn!(
+                                "[DOS-204] Reading assessment for {} failed: {}",
+                                entity_id,
+                                e
+                            );
+                        }
+                    }
+                }
+            }
+            Err(e) => {
+                log::info!(
+                    "[DOS-204] Peer benchmark unavailable for {} ({})",
+                    entity_id,
+                    e
+                );
+            }
+        }
+    });
+}
+
 /// Return true when the intelligence payload lacks meaningful narrative signal.
 fn is_sparse_intelligence(intel: &IntelligenceJson) -> bool {
     let has_assessment = intel
@@ -2962,7 +2988,12 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) -> Res
                 rusqlite::params![pid],
                 |row| row.get(0),
             )
-            .unwrap_or(false);
+            .map_err(|e| {
+                format!(
+                    "internal stakeholder person read failed for {}:{}: {e}",
+                    account_id, pid
+                )
+            })?;
         if is_internal {
             return Ok(());
         }
@@ -2975,7 +3006,12 @@ fn write_stakeholder_suggestion(params: &StakeholderSuggestionParams<'_>) -> Res
                 rusqlite::params![&insight.name],
                 |row| row.get(0),
             )
-            .unwrap_or(false);
+            .map_err(|e| {
+                format!(
+                    "internal stakeholder name read failed for {}:{}: {e}",
+                    account_id, insight.name
+                )
+            })?;
         if is_internal_by_name {
             return Ok(());
         }
