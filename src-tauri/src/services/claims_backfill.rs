@@ -2340,7 +2340,7 @@ mod tests {
         let workspace = tempfile::tempdir().unwrap();
         let body = serde_json::json!({
             "version": 4,
-            "entityId": "person-acme",
+            "entityId": "person-test-1",
             "entityType": "person",
             "enrichedAt": "2026-04-01T00:00:00Z",
             "sourceFileCount": 0,
@@ -2353,7 +2353,7 @@ mod tests {
         write_intel_json(
             workspace.path(),
             "People",
-            "person-acme",
+            "person-test-1",
             &serde_json::to_string_pretty(&body).unwrap(),
         );
 
@@ -2376,7 +2376,7 @@ mod tests {
             )
             .unwrap();
         assert!(subject_ref.contains("\"kind\":\"Person\""));
-        assert!(subject_ref.contains("\"id\":\"person-jane\""));
+        assert!(subject_ref.contains("\"id\":\"person-test-1\""));
     }
 
     // ---------------------------------------------------------------------

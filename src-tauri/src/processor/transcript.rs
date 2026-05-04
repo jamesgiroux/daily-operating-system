@@ -4691,7 +4691,7 @@ SENTIMENT:
 - customer: neutral
 - engagement: high
 - forward_looking: yes
-- competitor_mentions: REDACTED, HubSpot
+- competitor_mentions: VendorA, HubSpot
 - champion_present: yes
 - champion_engaged: no
 END_SENTIMENT
@@ -4703,7 +4703,7 @@ END_ACTIONS";
         assert_eq!(result.customer.as_deref(), Some("neutral"));
         assert_eq!(result.engagement.as_deref(), Some("high"));
         assert!(result.forward_looking);
-        assert_eq!(result.competitor_mentions, vec!["REDACTED", "HubSpot"]);
+        assert_eq!(result.competitor_mentions, vec!["VendorA", "HubSpot"]);
         assert_eq!(result.champion_present, Some(true));
         assert_eq!(result.champion_engaged, Some(false));
     }
@@ -4748,11 +4748,11 @@ END_SENTIMENT";
         let input = "\
 SENTIMENT:
 - overall: mixed
-- competitor_mentions: REDACTED, HubSpot
+- competitor_mentions: VendorA, HubSpot
 END_SENTIMENT";
 
         let result = parse_sentiment_block(input).expect("should parse");
-        assert_eq!(result.competitor_mentions, vec!["REDACTED", "HubSpot"]);
+        assert_eq!(result.competitor_mentions, vec!["VendorA", "HubSpot"]);
     }
 
     #[test]
