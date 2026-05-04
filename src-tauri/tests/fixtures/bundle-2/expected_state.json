@@ -1,0 +1,40 @@
+{
+  "post_action_state": {
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-test-provider-hallucinated-expansion-cancelled",
+        "subject_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "claim_type": "entity_summary",
+        "field_path": "executiveAssessment",
+        "topic_key": "acct-test-1:expansion_plan:eu:q3-2026",
+        "text": "acme.example.com has cancelled all expansion plans for 2026.",
+        "data_source": "provider_completion",
+        "source_ref": {
+          "source_id": "src-test-user-1",
+          "provider": "provider.example.com",
+          "attribution": "provider_completion"
+        },
+        "source_asof": "2026-05-01T12:00:00Z",
+        "observed_at": "2026-05-01T12:00:00Z",
+        "trust_score": 0.32,
+        "trust_band": "needs_verification",
+        "trust_version": 1,
+        "corroboration_count": 0,
+        "dominant_penalties": [
+          "source_reliability",
+          "internal_consistency"
+        ],
+        "metadata": {
+          "low_internal_consistency": true,
+          "contradicts_claim_id": "claim-test-ground-truth-eu-expansion"
+        }
+      }
+    ],
+    "preserved_claims": [
+      "claim-test-ground-truth-eu-expansion: acme.example.com has confirmed plan to expand to EU in Q3 2026."
+    ]
+  }
+}

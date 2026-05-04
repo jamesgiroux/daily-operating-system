@@ -1,0 +1,150 @@
+{
+  "version": 1,
+  "entityId": "acct-test-1",
+  "entityType": "account",
+  "enrichedAt": "2026-05-01T12:00:00Z",
+  "sourceFileCount": 1,
+  "sourceManifest": [
+    {
+      "filename": "glean://src-test-glean-1",
+      "modifiedAt": "2026-04-24T12:00:00Z",
+      "format": "json",
+      "contentType": "account_fact"
+    }
+  ],
+  "executiveAssessment": "acme.example.com has cancelled all expansion plans for 2026.",
+  "risks": [
+    {
+      "text": "Expansion risk is low because all 2026 expansion work has been cancelled.",
+      "source": "provider.example.com completion",
+      "urgency": "watch",
+      "headline": "Expansion cancelled",
+      "evidence": "The provider response says there is no 2026 expansion motion for acme.example.com.",
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.86,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "provider.example.com completion for acct-test-1"
+      },
+      "discrepancy": true
+    },
+    {
+      "text": "EU launch risk is critical because the Q3 2026 EU expansion is still committed and under-resourced.",
+      "source": "provider.example.com completion",
+      "urgency": "critical",
+      "headline": "EU launch under-resourced",
+      "evidence": "The same provider response also assumes the EU expansion remains committed for Q3 2026.",
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.84,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "provider.example.com completion for acct-test-1"
+      },
+      "discrepancy": true
+    }
+  ],
+  "recentWins": [
+    {
+      "text": "EU expansion is fully approved for Q3 2026 and has no material blockers.",
+      "source": "provider.example.com completion",
+      "impact": "Contradicts the cancellation assessment and the low-risk expansion statement.",
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.85,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "provider.example.com completion for acct-test-1"
+      },
+      "discrepancy": true
+    },
+    {
+      "text": "Stakeholder alignment is strong because expansion work is cancelled and no launch coordination is required.",
+      "source": "provider.example.com completion",
+      "impact": "Conflicts with the claimed approved EU launch.",
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.82,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "provider.example.com completion for acct-test-1"
+      },
+      "discrepancy": true
+    }
+  ],
+  "stakeholderInsights": [
+    {
+      "name": "Jane Doe",
+      "role": "Expansion sponsor",
+      "assessment": "Provider describes Jane Doe as both sponsoring the Q3 EU plan and no longer owning any expansion motion.",
+      "engagement": "ambiguous",
+      "source": "provider.example.com completion",
+      "personId": "person-test-1",
+      "verified": false,
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.8,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "provider.example.com completion for acct-test-1"
+      },
+      "discrepancy": true
+    }
+  ],
+  "sourceAttribution": {
+    "executiveAssessment": [
+      "provider_completion:src-test-user-1"
+    ],
+    "risks": [
+      "provider_completion:src-test-user-1"
+    ],
+    "recentWins": [
+      "provider_completion:src-test-user-1"
+    ],
+    "stakeholderInsights": [
+      "provider_completion:src-test-user-1"
+    ]
+  },
+  "consistencyStatus": "flagged",
+  "consistencyFindings": [
+    {
+      "code": "LOW_INTERNAL_CONSISTENCY",
+      "severity": "high",
+      "fieldPath": "executiveAssessment",
+      "claimText": "acme.example.com has cancelled all expansion plans for 2026.",
+      "evidenceText": "Seeded source src-test-glean-1 says acme.example.com has confirmed plan to expand to EU in Q3 2026.",
+      "autoFixed": false
+    }
+  ],
+  "renderPolicy": "show-with-warnings",
+  "trustAnnotations": {
+    "executiveAssessment": {
+      "claimId": "claim-test-provider-hallucinated-expansion-cancelled",
+      "trustScore": 0.32,
+      "trustBand": "needs_verification",
+      "warningBand": "needs_verification",
+      "warnings": [
+        "low_internal_consistency",
+        "uncorroborated_provider_claim",
+        "contradicts_seeded_source"
+      ],
+      "dominantPenalties": [
+        "source_reliability",
+        "internal_consistency"
+      ],
+      "corroborationCount": 0
+    },
+    "risks": {
+      "trustScore": 0.32,
+      "trustBand": "needs_verification",
+      "warningBand": "needs_verification",
+      "warnings": [
+        "low_internal_consistency"
+      ]
+    },
+    "recentWins": {
+      "trustScore": 0.32,
+      "trustBand": "needs_verification",
+      "warningBand": "needs_verification",
+      "warnings": [
+        "low_internal_consistency"
+      ]
+    }
+  }
+}
