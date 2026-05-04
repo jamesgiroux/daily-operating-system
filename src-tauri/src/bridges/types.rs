@@ -1,15 +1,22 @@
 use std::collections::{HashMap, VecDeque};
 
 use chrono::{DateTime, Utc};
+use async_trait::async_trait;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+use crate::abilities::tracer::AbilityTracer;
 use crate::abilities::provenance::InvocationId;
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
+use crate::intelligence::provider::{
+    Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
+    ProviderKind,
+};
 use crate::services::context::{ExecutionMode, ServiceContext};
+use crate::state::ContextSnapshot;
 
 pub const BRIDGE_PROVENANCE_DETAIL_BYTE_CAP: usize = 10 * 1024;
 pub const BRIDGE_PROVENANCE_CACHE_ENTRY_CAP: usize = 128;
@@ -169,6 +176,8 @@ pub(crate) const PRE_DISPATCH_RESOLUTION_ORDER: [BridgeRejectReason; 5] = [
 pub(crate) async fn invoke_registry_json<'a>(
     registry: &AbilityRegistry,
     services: &'a ServiceContext<'a>,
+    provider: &'a dyn IntelligenceProvider,
+    tracer: &'a dyn AbilityTracer,
     invocation: InvocationContext<'a>,
     ability_name: &str,
     input_json: serde_json::Value,
@@ -193,9 +202,11 @@ pub(crate) async fn invoke_registry_json<'a>(
         services.clock.now(),
     )?;
 
-    let ability_context = AbilityContext::new(
+    let ability_context = AbilityContext::from_bridge(
         services,
-        invocation.registry_actor(),
+        provider,
+        tracer,
+        invocation.actor,
         invocation.confirmation,
     );
     let output_json = registry
@@ -209,6 +220,43 @@ pub(crate) async fn invoke_registry_json<'a>(
         invocation.surface,
         output_json,
     )
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct BridgeNoopIntelligenceProvider;
+
+#[async_trait]
+impl IntelligenceProvider for BridgeNoopIntelligenceProvider {
+    async fn complete(
+        &self,
+        _prompt: PromptInput,
+        _tier: ModelTier,
+    ) -> Result<Completion, ProviderError> {
+        Err(ProviderError::Unavailable(
+            "no intelligence provider is configured for ability bridge invocation".to_string(),
+        ))
+    }
+
+    fn provider_kind(&self) -> ProviderKind {
+        ProviderKind::Other("bridge_noop")
+    }
+
+    fn current_model(&self, _tier: ModelTier) -> ModelName {
+        ModelName::new("bridge-noop")
+    }
+}
+
+pub(crate) static BRIDGE_NOOP_INTELLIGENCE_PROVIDER: BridgeNoopIntelligenceProvider =
+    BridgeNoopIntelligenceProvider;
+
+pub(crate) fn provider_from_context_snapshot(
+    snapshot: &ContextSnapshot,
+) -> &dyn IntelligenceProvider {
+    snapshot
+        .intelligence_provider
+        .as_deref()
+        .map(|provider| provider as &dyn IntelligenceProvider)
+        .unwrap_or(&BRIDGE_NOOP_INTELLIGENCE_PROVIDER)
 }
 
 pub(crate) fn resolve_pre_dispatch<'a>(

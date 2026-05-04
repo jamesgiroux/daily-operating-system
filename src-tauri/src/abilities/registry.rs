@@ -15,7 +15,9 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::abilities::provenance::{AbilityOutput, CompositionId};
-use crate::bridges::types::ConfirmationToken;
+use crate::abilities::tracer::AbilityTracer;
+use crate::bridges::types::{BridgeActor, ConfirmationToken};
+use crate::intelligence::provider::IntelligenceProvider;
 use crate::services::context::{ExecutionMode, ServiceContext};
 
 /// ADR-0102 §76-95: ability category drives mutation policy.
@@ -107,13 +109,16 @@ pub struct AbilityError {
 
 pub type AbilityResult<T> = Result<AbilityOutput<T>, AbilityError>;
 
-/// AbilityContext wraps ServiceContext and adds actor + confirmation.
+/// AbilityContext wraps ServiceContext and adds provider/tracer seams,
+/// actor, and confirmation.
 ///
 ///  hard boundary: this is the ONLY way ability code accesses runtime;
 /// raw ActionDb / AppState / SQL handles / fs writers / live queues are NEVER
 /// surfaced here.
 pub struct AbilityContext<'a> {
     services: &'a ServiceContext<'a>,
+    pub provider: &'a dyn IntelligenceProvider,
+    pub tracer: &'a dyn AbilityTracer,
     pub actor: Actor,
     pub confirmation: Option<&'a ConfirmationToken>,
 }
@@ -121,14 +126,34 @@ pub struct AbilityContext<'a> {
 impl<'a> AbilityContext<'a> {
     pub fn new(
         services: &'a ServiceContext<'a>,
+        provider: &'a dyn IntelligenceProvider,
+        tracer: &'a dyn AbilityTracer,
         actor: Actor,
         confirmation: Option<&'a ConfirmationToken>,
     ) -> Self {
         Self {
             services,
+            provider,
+            tracer,
             actor,
             confirmation,
         }
+    }
+
+    pub fn from_bridge(
+        services: &'a ServiceContext<'a>,
+        provider: &'a dyn IntelligenceProvider,
+        tracer: &'a dyn AbilityTracer,
+        actor: BridgeActor,
+        confirmation: Option<&'a ConfirmationToken>,
+    ) -> Self {
+        Self::new(
+            services,
+            provider,
+            tracer,
+            actor.registry_actor(),
+            confirmation,
+        )
     }
 
     pub fn services(&self) -> &ServiceContext<'a> {
@@ -775,8 +800,14 @@ fn yaml_string(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::abilities::tracer::{AbilityTracer, SpanHandle};
+    use crate::bridges::BridgeActor;
+    use crate::intelligence::provider::{
+        ModelName, ModelTier, ProviderKind, ReplayProvider,
+    };
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
     use chrono::TimeZone;
+    use std::sync::Mutex;
 
     fn ok_erased<'a>(
         _ctx: &'a AbilityContext<'a>,
@@ -900,8 +931,10 @@ mod tests {
         services: &'a ServiceContext<'a>,
         actor: Actor,
         confirmation: Option<&'a ConfirmationToken>,
+        provider: &'a ReplayProvider,
+        tracer: &'a dyn AbilityTracer,
     ) -> AbilityContext<'a> {
-        AbilityContext::new(services, actor, confirmation)
+        AbilityContext::new(services, provider, tracer, actor, confirmation)
     }
 
     fn services<'a>(
@@ -919,6 +952,73 @@ mod tests {
     fn lcg(seed: &mut u64) -> u64 {
         *seed = seed.wrapping_mul(6364136223846793005).wrapping_add(1);
         *seed
+    }
+
+    #[derive(Default)]
+    struct RecordingTracer {
+        events: Mutex<Vec<String>>,
+    }
+
+    impl AbilityTracer for RecordingTracer {
+        fn start_span(&self, name: &str) -> SpanHandle {
+            self.events.lock().unwrap().push(format!("span:{name}"));
+            SpanHandle { id: 217 }
+        }
+
+        fn record_event(&self, span: &SpanHandle, name: &str, _fields: serde_json::Value) {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("event:{}:{name}", span.id));
+        }
+    }
+
+    fn fixture_provider() -> ReplayProvider {
+        ReplayProvider::new(std::collections::HashMap::new())
+            .with_provider_kind(ProviderKind::Other("registry-fixture"))
+            .with_model_for_tier(ModelTier::Synthesis, ModelName::new("registry-model"))
+    }
+
+    #[test]
+    fn ability_context_exposes_provider_and_tracer() {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(217);
+        let external = ExternalClients::default();
+        let services = services(&clock, &rng, &external);
+        let provider = fixture_provider();
+        let tracer = RecordingTracer::default();
+
+        let ctx = AbilityContext::new(&services, &provider, &tracer, Actor::User, None);
+        let span = ctx.tracer.start_span("ability_context");
+        ctx.tracer
+            .record_event(&span, "provider_visible", serde_json::json!({}));
+
+        assert_eq!(ctx.provider.provider_kind(), ProviderKind::Other("registry-fixture"));
+        assert_eq!(
+            ctx.provider.current_model(ModelTier::Synthesis).as_str(),
+            "registry-model"
+        );
+        assert_eq!(
+            tracer.events.lock().unwrap().as_slice(),
+            ["span:ability_context", "event:217:provider_visible"]
+        );
+    }
+
+    #[test]
+    fn ability_context_constructed_via_bridge_safe_path_does_not_require_action_db() {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(217);
+        let external = ExternalClients::default();
+        let services = services(&clock, &rng, &external);
+        let provider = fixture_provider();
+        let tracer = RecordingTracer::default();
+
+        let ctx =
+            AbilityContext::from_bridge(&services, &provider, &tracer, BridgeActor::Agent, None);
+
+        assert_eq!(ctx.actor, Actor::Agent);
+        assert_eq!(ctx.mode(), ExecutionMode::Live);
+        assert_eq!(ctx.provider.provider_kind(), ProviderKind::Other("registry-fixture"));
     }
 
     #[test]
@@ -1163,7 +1263,9 @@ mod tests {
         let rng = SeedableRng::new(42);
         let external = ExternalClients::default();
         let services = services(&clock, &rng, &external);
-        let ctx = context(&services, Actor::User, None);
+        let provider = fixture_provider();
+        let tracer = RecordingTracer::default();
+        let ctx = context(&services, Actor::User, None, &provider, &tracer);
 
         let err = registry
             .invoke_read(&ctx, "transform", serde_json::json!({}))
@@ -1180,7 +1282,9 @@ mod tests {
         let rng = SeedableRng::new(42);
         let external = ExternalClients::default();
         let services = services(&clock, &rng, &external);
-        let ctx = context(&services, Actor::User, None);
+        let provider = fixture_provider();
+        let tracer = RecordingTracer::default();
+        let ctx = context(&services, Actor::User, None, &provider, &tracer);
 
         let err = registry
             .invoke_publish(&ctx, "publish", serde_json::json!({}))

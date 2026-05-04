@@ -5,6 +5,7 @@ pub mod feedback;
 pub mod provenance;
 pub mod registry;
 pub mod threads;
+pub mod tracer;
 pub mod trust;
 
 pub use claims::{
@@ -21,3 +22,4 @@ pub use registry::{
     AbilityRegistry, AbilityResult, Actor,
 };
 pub use threads::ThreadMetadata;
+pub use tracer::{AbilityTracer, NoopAbilityTracer, SpanHandle, NOOP_ABILITY_TRACER};

@@ -2,9 +2,12 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use crate::abilities::provenance::InvocationId;
+use crate::abilities::{AbilityTracer, NoopAbilityTracer};
 use crate::abilities::{AbilityDescriptor, AbilityRegistry, Actor};
 use crate::bridges::tauri::TauriAbilityBridge;
-use crate::bridges::types::{confirmation_args_hash, invoke_registry_json, surface_error};
+use crate::bridges::types::{
+    confirmation_args_hash, invoke_registry_json, surface_error, BridgeNoopIntelligenceProvider,
+};
 use crate::bridges::{
     AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
     InvocationContext, McpSessionId, RenderedProvenance,
@@ -12,6 +15,7 @@ use crate::bridges::{
 use crate::services::context::{
     ExecutionMode, ExternalClients, ServiceContext, SystemClock, SystemRng,
 };
+use crate::intelligence::provider::IntelligenceProvider;
 use rmcp::model::{CallToolResult, Content};
 use rmcp::Error as McpError;
 
@@ -107,6 +111,8 @@ impl McpInvocationCache {
 
 pub struct McpAbilityBridge<'registry> {
     registry: &'registry AbilityRegistry,
+    provider: Arc<dyn IntelligenceProvider + Send + Sync>,
+    tracer: Arc<dyn AbilityTracer>,
     /// Filtered descriptor cache built once at startup from
     /// registry.iter_for(Actor::Agent). call_tool re-fetches policy by name
     /// before invocation; no cached-state escalation. The cache is just to
@@ -119,6 +125,18 @@ pub struct McpAbilityBridge<'registry> {
 
 impl<'registry> McpAbilityBridge<'registry> {
     pub fn new(registry: &'registry AbilityRegistry) -> Self {
+        Self::new_with_provider_and_tracer(
+            registry,
+            Arc::new(BridgeNoopIntelligenceProvider),
+            Arc::new(NoopAbilityTracer),
+        )
+    }
+
+    pub fn new_with_provider_and_tracer(
+        registry: &'registry AbilityRegistry,
+        provider: Arc<dyn IntelligenceProvider + Send + Sync>,
+        tracer: Arc<dyn AbilityTracer>,
+    ) -> Self {
         let actor_filtered_descriptors = registry
             .iter_for(Actor::Agent)
             .filter(|descriptor| {
@@ -131,6 +149,8 @@ impl<'registry> McpAbilityBridge<'registry> {
 
         Self {
             registry,
+            provider,
+            tracer,
             actor_filtered_descriptors,
             invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
         }
@@ -169,6 +189,8 @@ impl<'registry> McpAbilityBridge<'registry> {
         let response = invoke_registry_json(
             self.registry,
             &services,
+            self.provider.as_ref(),
+            self.tracer.as_ref(),
             invocation,
             ability_name,
             input_json,
@@ -470,6 +492,8 @@ mod tests {
     ) -> McpAbilityBridge<'registry> {
         McpAbilityBridge {
             registry,
+            provider: Arc::new(BridgeNoopIntelligenceProvider),
+            tracer: Arc::new(NoopAbilityTracer),
             actor_filtered_descriptors: cached_descriptors,
             invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
         }

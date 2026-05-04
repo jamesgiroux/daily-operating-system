@@ -4,7 +4,10 @@ use dailyos_lib::abilities::provenance::{
     FieldAttribution, FieldPath, ProvenanceBuilder, ProvenanceBuilderConfig, SubjectAttribution,
     SubjectRef, ThreadId,
 };
-use dailyos_lib::abilities::{AbilityContext, AbilityRegistry, AbilityResult, Actor};
+use dailyos_lib::abilities::{
+    AbilityContext, AbilityRegistry, AbilityResult, Actor, NOOP_ABILITY_TRACER,
+};
+use dailyos_lib::intelligence::provider::ReplayProvider;
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -88,7 +91,14 @@ async fn invoke_by_name_json_returns_full_ability_output_envelope() {
     let rng = SeedableRng::new(42);
     let external = ExternalClients::default();
     let services = ServiceContext::new_evaluate(&clock, &rng, &external);
-    let ctx = AbilityContext::new(&services, Actor::User, None);
+    let provider = ReplayProvider::new(std::collections::HashMap::new());
+    let ctx = AbilityContext::new(
+        &services,
+        &provider,
+        &NOOP_ABILITY_TRACER,
+        Actor::User,
+        None,
+    );
 
     let value = registry
         .invoke_by_name_json(

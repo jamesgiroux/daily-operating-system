@@ -1,36 +1,20 @@
 use crate::abilities::AbilityRegistry;
+use crate::abilities::AbilityTracer;
 use crate::bridges::types::{invoke_registry_json, surface_error};
 use crate::bridges::{
     AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, InvocationContext,
 };
+use crate::intelligence::provider::IntelligenceProvider;
 use crate::services::context::{ExecutionMode, ServiceContext};
 
 pub trait EvalFixtureServices: Send + Sync {
     fn service_context(&self) -> ServiceContext<'_>;
 }
 
-pub trait EvalAbilityProvider: Send + Sync {
-    fn provider_name(&self) -> &str;
-}
-
-pub trait EvalAbilityTracer: Send + Sync {
-    fn record_invocation(&self, trace: EvalInvocationTrace);
-}
-
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct EvalInvocationTrace {
-    pub ability_name: String,
-    pub actor: BridgeActor,
-    pub mode: ExecutionMode,
-    pub surface: BridgeSurface,
-    pub dry_run: bool,
-    pub provider_name: String,
-}
-
 pub struct EvalAbilityDeps<'deps> {
     pub fixture_services: &'deps dyn EvalFixtureServices,
-    pub provider: &'deps dyn EvalAbilityProvider,
-    pub tracer: &'deps dyn EvalAbilityTracer,
+    pub provider: &'deps dyn IntelligenceProvider,
+    pub tracer: &'deps dyn AbilityTracer,
 }
 
 pub struct EvalAbilityBridge<'registry, 'deps> {
@@ -58,18 +42,11 @@ impl<'registry, 'deps> EvalAbilityBridge<'registry, 'deps> {
             confirmation: None,
         };
 
-        self.deps.tracer.record_invocation(EvalInvocationTrace {
-            ability_name: ability_name.to_string(),
-            actor: invocation.actor,
-            mode: invocation.mode,
-            surface: invocation.surface,
-            dry_run,
-            provider_name: self.deps.provider.provider_name().to_string(),
-        });
-
         invoke_registry_json(
             self.registry,
             &services,
+            self.deps.provider,
+            self.deps.tracer,
             invocation,
             ability_name,
             input_json,
@@ -89,6 +66,7 @@ mod tests {
     use std::pin::Pin;
     use std::sync::Mutex;
 
+    use async_trait::async_trait;
     use chrono::TimeZone;
     use serde_json::json;
 
@@ -96,6 +74,10 @@ mod tests {
     use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
     use crate::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, Actor,
+    };
+    use crate::abilities::SpanHandle;
+    use crate::intelligence::provider::{
+        Completion, ModelName, ModelTier, PromptInput, ProviderError, ProviderKind,
     };
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
 
@@ -130,20 +112,41 @@ mod tests {
 
     struct FixtureProvider;
 
-    impl EvalAbilityProvider for FixtureProvider {
-        fn provider_name(&self) -> &str {
-            "fixture-provider"
+    #[async_trait]
+    impl IntelligenceProvider for FixtureProvider {
+        async fn complete(
+            &self,
+            _prompt: PromptInput,
+            _tier: ModelTier,
+        ) -> Result<Completion, ProviderError> {
+            Ok(Completion::default())
+        }
+
+        fn provider_kind(&self) -> ProviderKind {
+            ProviderKind::Other("fixture-provider")
+        }
+
+        fn current_model(&self, _tier: ModelTier) -> ModelName {
+            ModelName::new("fixture-model")
         }
     }
 
     #[derive(Default)]
     struct FixtureTracer {
-        traces: Mutex<Vec<EvalInvocationTrace>>,
+        events: Mutex<Vec<String>>,
     }
 
-    impl EvalAbilityTracer for FixtureTracer {
-        fn record_invocation(&self, trace: EvalInvocationTrace) {
-            self.traces.lock().unwrap().push(trace);
+    impl AbilityTracer for FixtureTracer {
+        fn start_span(&self, name: &str) -> SpanHandle {
+            self.events.lock().unwrap().push(format!("span:{name}"));
+            SpanHandle { id: 217 }
+        }
+
+        fn record_event(&self, span: &SpanHandle, name: &str, _fields: serde_json::Value) {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("event:{}:{name}", span.id));
         }
     }
 
@@ -152,6 +155,12 @@ mod tests {
         input: serde_json::Value,
     ) -> ErasedFuture<'a> {
         Box::pin(async move {
+            let span = ctx.tracer.start_span("eval_context_echo");
+            ctx.tracer.record_event(
+                &span,
+                "ability_context_seen",
+                json!({ "surface": "eval" }),
+            );
             Ok(envelope_json(
                 ctx,
                 json!({
@@ -159,6 +168,8 @@ mod tests {
                     "actor": format!("{:?}", ctx.actor),
                     "mode": ctx.mode().as_str(),
                     "service_actor": ctx.services().actor,
+                    "provider_kind": ctx.provider.provider_kind().as_str(),
+                    "provider_model": ctx.provider.current_model(ModelTier::Synthesis).as_str(),
                 }),
             ))
         })
@@ -219,7 +230,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn eval_bridge_constructs_evaluate_context_with_fixture_services_provider_tracer() {
+    async fn eval_bridge_passes_fixture_provider_and_tracer_through_to_ability_context() {
         let registry = registry();
         let fixture_services = FixtureServices::new();
         let provider = FixtureProvider;
@@ -241,15 +252,14 @@ mod tests {
         assert_eq!(response.data["mode"], "evaluate");
         assert_eq!(response.data["actor"], "System");
         assert_eq!(response.data["service_actor"], "eval_fixture");
+        assert_eq!(response.data["provider_kind"], "fixture-provider");
+        assert_eq!(response.data["provider_model"], "fixture-model");
 
-        let traces = tracer.traces.lock().unwrap();
-        assert_eq!(traces.len(), 1);
-        assert_eq!(traces[0].ability_name, "eval_context_echo");
-        assert_eq!(traces[0].actor, BridgeActor::System);
-        assert_eq!(traces[0].mode, ExecutionMode::Evaluate);
-        assert_eq!(traces[0].surface, BridgeSurface::Eval);
-        assert!(traces[0].dry_run);
-        assert_eq!(traces[0].provider_name, "fixture-provider");
+        let events = tracer.events.lock().unwrap();
+        assert_eq!(
+            events.as_slice(),
+            ["span:eval_context_echo", "event:217:ability_context_seen"]
+        );
     }
 
     #[tokio::test]

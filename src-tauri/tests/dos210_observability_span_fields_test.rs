@@ -6,7 +6,8 @@ use dailyos_lib::abilities::provenance::{
     FieldAttribution, FieldPath, ProvenanceBuilder, ProvenanceBuilderConfig, SubjectAttribution,
     SubjectRef,
 };
-use dailyos_lib::abilities::{AbilityContext, AbilityResult, Actor};
+use dailyos_lib::abilities::{AbilityContext, AbilityResult, Actor, NOOP_ABILITY_TRACER};
+use dailyos_lib::intelligence::provider::ReplayProvider;
 use dailyos_lib::observability::{EvaluateModeSubscriber, Outcome};
 use dailyos_lib::services::context::{
     Clock, ExternalClients, FixedClock, SeedableRng, ServiceContext,
@@ -101,7 +102,14 @@ fn span_carries_required_fields_and_redacts_payload() {
     let rng = SeedableRng::new(42);
     let external = ExternalClients::default();
     let services = ServiceContext::new_evaluate(&clock, &rng, &external);
-    let ctx = AbilityContext::new(&services, Actor::User, None);
+    let provider = ReplayProvider::new(std::collections::HashMap::new());
+    let ctx = AbilityContext::new(
+        &services,
+        &provider,
+        &NOOP_ABILITY_TRACER,
+        Actor::User,
+        None,
+    );
 
     let output = runtime
         .block_on(dos210_span_fixture(

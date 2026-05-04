@@ -1,5 +1,6 @@
 use crate::abilities::AbilityRegistry;
-use crate::bridges::types::{invoke_registry_json, surface_error};
+use crate::abilities::NOOP_ABILITY_TRACER;
+use crate::bridges::types::{invoke_registry_json, provider_from_context_snapshot, surface_error};
 use crate::bridges::{
     AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
     InvocationContext,
@@ -40,6 +41,8 @@ impl<'registry> WorkerAbilityBridge<'registry> {
             return Err(BridgeSurfaceError::AbilityUnavailable);
         }
 
+        let snapshot = state.context_snapshot();
+        let provider = provider_from_context_snapshot(&snapshot);
         let services = state.live_service_context().with_actor("scheduled_worker");
         let invocation = InvocationContext {
             actor: BridgeActor::System,
@@ -52,6 +55,8 @@ impl<'registry> WorkerAbilityBridge<'registry> {
         invoke_registry_json(
             self.registry,
             &services,
+            provider,
+            &NOOP_ABILITY_TRACER,
             invocation,
             ability_name,
             input_json,

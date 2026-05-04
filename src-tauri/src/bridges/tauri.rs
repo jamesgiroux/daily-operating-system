@@ -8,7 +8,8 @@ use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 
 use crate::abilities::AbilityRegistry;
-use crate::bridges::types::{invoke_registry_json, surface_error};
+use crate::abilities::NOOP_ABILITY_TRACER;
+use crate::bridges::types::{invoke_registry_json, provider_from_context_snapshot, surface_error};
 use crate::bridges::{
     AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
     InvocationContext, UserAttestationRequest,
@@ -94,6 +95,8 @@ impl<'registry> TauriAbilityBridge<'registry> {
             return Err(BridgeSurfaceError::AbilityUnavailable);
         }
 
+        let snapshot = state.context_snapshot();
+        let provider = provider_from_context_snapshot(&snapshot);
         let services = state.live_service_context().with_actor("user");
         let invocation = InvocationContext {
             actor: BridgeActor::User,
@@ -106,6 +109,8 @@ impl<'registry> TauriAbilityBridge<'registry> {
         invoke_registry_json(
             self.registry,
             &services,
+            provider,
+            &NOOP_ABILITY_TRACER,
             invocation,
             ability_name,
             input_json,
@@ -205,6 +210,7 @@ mod tests {
     use std::time::Duration;
 
     use chrono::TimeZone;
+    use async_trait::async_trait;
     use serde_json::json;
     use tokio::sync::Notify;
 
@@ -215,6 +221,10 @@ mod tests {
     };
     use crate::bridges::confirmation_args_hash;
     use crate::bridges::types::{BridgeRejectReason, PRE_DISPATCH_RESOLUTION_ORDER};
+    use crate::intelligence::provider::{
+        Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
+        ProviderKind,
+    };
 
     const USER_ACTORS: &[Actor] = &[Actor::User];
     const ADMIN_ACTORS: &[Actor] = &[Actor::Admin];
@@ -224,6 +234,8 @@ mod tests {
 
     static PRE_ADMISSION_STARTED: Notify = Notify::const_new();
     static PRE_ADMISSION_RELEASE: Notify = Notify::const_new();
+    static PROVIDER_SNAPSHOT_STARTED: Notify = Notify::const_new();
+    static PROVIDER_SNAPSHOT_RELEASE: Notify = Notify::const_new();
 
     type ErasedFuture<'a> =
         Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
@@ -256,6 +268,25 @@ mod tests {
                 json!({
                     "completed_after_lock": true,
                     "mode": ctx.mode().as_str(),
+                }),
+            ))
+        })
+    }
+
+    fn provider_snapshot_erased<'a>(
+        ctx: &'a AbilityContext<'a>,
+        _input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            let before = ctx.provider.current_model(ModelTier::Synthesis).as_str().to_string();
+            PROVIDER_SNAPSHOT_STARTED.notify_one();
+            PROVIDER_SNAPSHOT_RELEASE.notified().await;
+            let after = ctx.provider.current_model(ModelTier::Synthesis).as_str().to_string();
+            Ok(envelope_json(
+                ctx,
+                json!({
+                    "provider_before": before,
+                    "provider_after": after,
                 }),
             ))
         })
@@ -359,6 +390,29 @@ mod tests {
     #[derive(Default)]
     struct ApprovingAttestationHost {
         requests: parking_lot::Mutex<Vec<UserAttestationRequest>>,
+    }
+
+    struct FixtureProvider {
+        model: &'static str,
+    }
+
+    #[async_trait]
+    impl IntelligenceProvider for FixtureProvider {
+        async fn complete(
+            &self,
+            _prompt: PromptInput,
+            _tier: ModelTier,
+        ) -> Result<Completion, ProviderError> {
+            Ok(Completion::default())
+        }
+
+        fn provider_kind(&self) -> ProviderKind {
+            ProviderKind::Other("tauri-fixture")
+        }
+
+        fn current_model(&self, _tier: ModelTier) -> ModelName {
+            ModelName::new(self.model)
+        }
     }
 
     impl UserAttestationHost for ApprovingAttestationHost {
@@ -543,6 +597,39 @@ mod tests {
         let response = response.unwrap();
         assert_eq!(response.data["completed_after_lock"], true);
         assert!(state.lock_state.lock().is_locked);
+    }
+
+    #[tokio::test]
+    async fn bridge_provider_snapshot_is_consistent_per_invocation() {
+        let registry = registry(vec![descriptor(
+            "provider_snapshot",
+            AbilityCategory::Read,
+            USER_ACTORS,
+            LIVE_MODES,
+            provider_snapshot_erased,
+        )]);
+        let state = AppState::new();
+        let first_provider = Arc::new(FixtureProvider { model: "first-model" });
+        let second_provider = Arc::new(FixtureProvider { model: "second-model" });
+        state.swap_intelligence_provider(Some(first_provider));
+        let bridge = TauriAbilityBridge::new(&registry);
+
+        let invoke = bridge.invoke(&state, "provider_snapshot", json!({}), false, None);
+        let swap_after_snapshot = async {
+            PROVIDER_SNAPSHOT_STARTED.notified().await;
+            state.swap_intelligence_provider(Some(second_provider));
+            PROVIDER_SNAPSHOT_RELEASE.notify_one();
+        };
+
+        let (response, _) = tokio::time::timeout(Duration::from_secs(2), async {
+            tokio::join!(invoke, swap_after_snapshot)
+        })
+        .await
+        .unwrap();
+
+        let response = response.unwrap();
+        assert_eq!(response.data["provider_before"], "first-model");
+        assert_eq!(response.data["provider_after"], "first-model");
     }
 
     #[tokio::test]
