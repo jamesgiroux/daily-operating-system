@@ -2323,7 +2323,9 @@ mod mutation_smoke_tests {
         run_enrichment_finalize_post_commit, EnrichmentComposition, EnrichmentInput, FinalizeMode,
     };
     use crate::intelligence::contamination::ContaminationValidation;
-    use crate::intelligence::io::{IntelRisk, IntelligenceJson, ItemSource, StakeholderInsight};
+    use crate::intelligence::io::{
+        IntelRisk, IntelligenceJson, ItemSource, OrgHealthData, StakeholderInsight, SupportHealth,
+    };
     use crate::intelligence::prompts::InferredRelationship;
     use crate::intelligence::write_fence::post_commit_fenced_write;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
@@ -2399,6 +2401,39 @@ mod mutation_smoke_tests {
             .expect("count query")
     }
 
+    fn sync_success_count(db: &crate::db::ActionDb, source: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM sync_metadata
+                 WHERE source = ?1
+                   AND last_success_at IS NOT NULL
+                   AND consecutive_failures = 0",
+                params![source],
+                |row| row.get(0),
+            )
+            .expect("sync success count")
+    }
+
+    fn coherence_retry_count(db: &crate::db::ActionDb, entity_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT coherence_retry_count FROM entity_quality WHERE entity_id = ?1",
+                params![entity_id],
+                |row| row.get(0),
+            )
+            .expect("coherence retry count")
+    }
+
+    fn technical_footprint_count(db: &crate::db::ActionDb, account_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM account_technical_footprint WHERE account_id = ?1",
+                params![account_id],
+                |row| row.get(0),
+            )
+            .expect("technical footprint count")
+    }
+
     fn make_enrichment_input(entity_id: &str, entity_dir: &Path) -> EnrichmentInput {
         EnrichmentInput {
             workspace: entity_dir.to_path_buf(),
@@ -2414,6 +2449,245 @@ mod mutation_smoke_tests {
             intelligence_context: None,
             active_preset: None,
         }
+    }
+
+    fn remote_glean_state() -> Arc<AppState> {
+        let state = Arc::new(AppState::new());
+        state.set_context_mode_atomic(&crate::context_provider::ContextMode::Glean {
+            endpoint: "http://127.0.0.1:9/mcp".to_string(),
+        });
+        state
+    }
+
+    fn make_glean_signal_intel(entity_id: &str) -> IntelligenceJson {
+        IntelligenceJson {
+            entity_id: entity_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T01:00:00Z".to_string(),
+            executive_assessment: Some("mode contract assessment".to_string()),
+            org_health: Some(OrgHealthData {
+                health_band: Some("green".to_string()),
+                health_score: Some(82.0),
+                renewal_likelihood: Some("likely".to_string()),
+                support_tier: Some("enterprise".to_string()),
+                source: "glean_crm".to_string(),
+                gathered_at: "2026-05-03T01:00:00Z".to_string(),
+                ..Default::default()
+            }),
+            support_health: Some(SupportHealth {
+                open_tickets: Some(3),
+                critical_tickets: Some(0),
+                avg_resolution_time: Some("8h".to_string()),
+                trend: Some("stable".to_string()),
+                csat: Some(92.0),
+                source: Some("glean_zendesk".to_string()),
+            }),
+            ..Default::default()
+        }
+    }
+
+    fn assert_finalize_mode_contract(
+        entity_id: &str,
+        mode: FinalizeMode,
+        expect_queue_only_effects: bool,
+    ) {
+        let db = test_db();
+        let account = make_account(entity_id);
+        db.upsert_account(&account).unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_assessment (entity_id, entity_type)
+                 VALUES (?1, 'account')",
+                params![entity_id],
+            )
+            .expect("seed entity assessment");
+        crate::self_healing::quality::ensure_quality_row(&db, entity_id, "account");
+        db.conn_ref()
+            .execute(
+                "UPDATE entity_quality
+                 SET coherence_retry_count = 2,
+                     coherence_window_start = datetime('now')
+                 WHERE entity_id = ?1",
+                params![entity_id],
+            )
+            .expect("seed self-healing retry state");
+
+        let state = remote_glean_state();
+        state
+            .live_service_context()
+            .check_mutation_allowed()
+            .expect("live context should allow finalize mutations");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let intel = make_glean_signal_intel(entity_id);
+
+        let glean_signal_before = signal_count(&db, entity_id, "renewal_data_updated");
+        let sync_success_before = sync_success_count(&db, "claude_code");
+        let technical_footprint_before = technical_footprint_count(&db, entity_id);
+        let retry_before = coherence_retry_count(&db, entity_id);
+
+        run_enrichment_finalize_post_commit(&state, &db, &input, &intel, &[], mode)
+            .expect("finalize post commit");
+
+        let glean_signal_after = signal_count(&db, entity_id, "renewal_data_updated");
+        let sync_success_after = sync_success_count(&db, "claude_code");
+        let technical_footprint_after = technical_footprint_count(&db, entity_id);
+        let retry_after = coherence_retry_count(&db, entity_id);
+
+        if expect_queue_only_effects {
+            assert_eq!(
+                glean_signal_after,
+                glean_signal_before + 1,
+                "QueueWorker finalize should emit Glean signals"
+            );
+            assert_eq!(
+                sync_success_after,
+                sync_success_before + 1,
+                "QueueWorker finalize should record claude_code sync success"
+            );
+            assert_eq!(
+                technical_footprint_after,
+                technical_footprint_before + 1,
+                "QueueWorker finalize should run Glean technical footprint writes"
+            );
+            assert_eq!(
+                retry_after, 0,
+                "QueueWorker finalize should run self-healing completion"
+            );
+        } else {
+            assert_eq!(
+                glean_signal_after, glean_signal_before,
+                "ManualRefresh finalize should skip queue-only Glean signals"
+            );
+            assert_eq!(
+                sync_success_after, sync_success_before,
+                "ManualRefresh finalize should skip claude_code sync success"
+            );
+            assert_eq!(
+                technical_footprint_after, technical_footprint_before,
+                "ManualRefresh finalize should skip Glean technical footprint writes"
+            );
+            assert_eq!(
+                retry_after, retry_before,
+                "ManualRefresh finalize should skip self-healing completion"
+            );
+        }
+    }
+
+    fn assert_finalize_relationship_failure_preserves_ordering(
+        entity_id: &str,
+        meeting_id: &str,
+        from_person_id: &str,
+        to_person_id: &str,
+        mode: FinalizeMode,
+    ) {
+        let db = test_db();
+        let account = make_account(entity_id);
+        db.upsert_account(&account).unwrap();
+        seed_person(&db, from_person_id, "Fail Buyer");
+        seed_person(&db, to_person_id, "Fail Champion");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_assessment (entity_id, entity_type)
+                 VALUES (?1, 'account')",
+                params![entity_id],
+            )
+            .expect("seed entity assessment");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
+                 VALUES (?1, 'Finalize relationship failure', 'customer',
+                         '2999-01-01T00:00:00Z', '2026-05-03T00:00:00Z')",
+                params![meeting_id],
+            )
+            .expect("seed future meeting");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meeting_prep (meeting_id, prep_frozen_json, prep_frozen_at)
+                 VALUES (?1, '{\"status\":\"ready\"}', '2026-05-03T00:00:00Z')",
+                params![meeting_id],
+            )
+            .expect("seed frozen prep");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
+                 VALUES (?1, ?2, 'account')",
+                params![meeting_id, entity_id],
+            )
+            .expect("link meeting entity");
+        crate::self_healing::quality::ensure_quality_row(&db, entity_id, "account");
+        let quality_before = crate::self_healing::quality::get_quality(&db, entity_id)
+            .expect("quality row before failure");
+        let sync_success_before = sync_success_count(&db, "claude_code");
+
+        db.conn_ref()
+            .execute_batch(
+                "CREATE TRIGGER fail_finalize_relationship_insert
+                 BEFORE INSERT ON person_relationships
+                 WHEN NEW.context_entity_id IN ('acc-finalize-rel-fails', 'acc-finalize-rel-fails-queue')
+                 BEGIN
+                   SELECT RAISE(ABORT, 'forced relationship persist failure');
+                 END;",
+            )
+            .expect("install relationship failure trigger");
+
+        let state = Arc::new(AppState::new());
+        state.set_context_mode_atomic(&crate::context_provider::ContextMode::Local);
+        state
+            .live_service_context()
+            .check_mutation_allowed()
+            .expect("live context should allow finalize mutations");
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = make_enrichment_input(entity_id, dir.path());
+        let intel = IntelligenceJson {
+            entity_id: entity_id.to_string(),
+            entity_type: "account".to_string(),
+            enriched_at: "2026-05-03T01:00:00Z".to_string(),
+            executive_assessment: Some("relationship persistence should fail".to_string()),
+            ..Default::default()
+        };
+        let inferred = vec![InferredRelationship {
+            from_person_id: from_person_id.to_string(),
+            to_person_id: to_person_id.to_string(),
+            relationship_type: "collaborator".to_string(),
+            rationale: Some("Trigger forces failure before success stamp.".to_string()),
+        }];
+
+        let result =
+            run_enrichment_finalize_post_commit(&state, &db, &input, &intel, &inferred, mode);
+        assert!(
+            result.is_err_and(|err| err.contains("forced relationship persist failure")),
+            "relationship persistence failure should abort finalize before success"
+        );
+
+        let prep_frozen: Option<String> = db
+            .conn_ref()
+            .query_row(
+                "SELECT prep_frozen_json FROM meeting_prep
+                 WHERE meeting_id = ?1",
+                params![meeting_id],
+                |row| row.get(0),
+            )
+            .expect("read prep_frozen_json");
+        assert!(
+            prep_frozen.is_some(),
+            "prep invalidation must wait until after relationship persistence succeeds"
+        );
+        let quality_after = crate::self_healing::quality::get_quality(&db, entity_id)
+            .expect("quality row after failure");
+        assert_eq!(
+            quality_after.quality_alpha, quality_before.quality_alpha,
+            "success stamp must wait until after relationship persistence succeeds"
+        );
+        assert_eq!(
+            quality_after.last_enrichment_at, quality_before.last_enrichment_at,
+            "failed finalize must not stamp last_enrichment_at"
+        );
+        assert_eq!(
+            sync_success_count(&db, "claude_code"),
+            sync_success_before,
+            "failed finalize must not record queue-worker sync success"
+        );
     }
 
     #[test]
@@ -3177,110 +3451,47 @@ mod mutation_smoke_tests {
     }
 
     #[test]
+    fn finalize_post_commit_manual_refresh_skips_queue_only_effects() {
+        assert_finalize_mode_contract(
+            "acc-finalize-manual-mode",
+            FinalizeMode::ManualRefresh,
+            false,
+        );
+    }
+
+    #[test]
+    fn finalize_post_commit_queue_worker_runs_full_chain() {
+        // Supplemental Glean finalize needs a Tauri app handle; this pins the synchronous DB contract.
+        assert_finalize_mode_contract(
+            "acc-finalize-queue-mode",
+            FinalizeMode::QueueWorker {
+                is_background: false,
+            },
+            true,
+        );
+    }
+
+    #[test]
     fn enrichment_finalize_does_not_stamp_success_when_relationship_persist_fails() {
-        let db = test_db();
-        let account = make_account("acc-finalize-rel-fails");
-        db.upsert_account(&account).unwrap();
-        seed_person(&db, "p-finalize-fail-1", "Fail Buyer");
-        seed_person(&db, "p-finalize-fail-2", "Fail Champion");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO entity_assessment (entity_id, entity_type)
-                 VALUES (?1, 'account')",
-                params!["acc-finalize-rel-fails"],
-            )
-            .expect("seed entity assessment");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
-                 VALUES ('mtg-finalize-rel-fails', 'Finalize relationship failure', 'customer',
-                         '2999-01-01T00:00:00Z', '2026-05-03T00:00:00Z')",
-                [],
-            )
-            .expect("seed future meeting");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO meeting_prep (meeting_id, prep_frozen_json, prep_frozen_at)
-                 VALUES ('mtg-finalize-rel-fails', '{\"status\":\"ready\"}', '2026-05-03T00:00:00Z')",
-                [],
-            )
-            .expect("seed frozen prep");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type)
-                 VALUES ('mtg-finalize-rel-fails', 'acc-finalize-rel-fails', 'account')",
-                [],
-            )
-            .expect("link meeting entity");
-        crate::self_healing::quality::ensure_quality_row(&db, "acc-finalize-rel-fails", "account");
-        let quality_before =
-            crate::self_healing::quality::get_quality(&db, "acc-finalize-rel-fails")
-                .expect("quality row before failure");
-
-        db.conn_ref()
-            .execute_batch(
-                "CREATE TRIGGER fail_finalize_relationship_insert
-                 BEFORE INSERT ON person_relationships
-                 WHEN NEW.context_entity_id = 'acc-finalize-rel-fails'
-                 BEGIN
-                   SELECT RAISE(ABORT, 'forced relationship persist failure');
-                 END;",
-            )
-            .expect("install relationship failure trigger");
-
-        let state = Arc::new(AppState::new());
-        let dir = tempfile::tempdir().expect("tempdir");
-        let input = make_enrichment_input("acc-finalize-rel-fails", dir.path());
-        let intel = IntelligenceJson {
-            entity_id: "acc-finalize-rel-fails".to_string(),
-            entity_type: "account".to_string(),
-            enriched_at: "2026-05-03T01:00:00Z".to_string(),
-            executive_assessment: Some("relationship persistence should fail".to_string()),
-            ..Default::default()
-        };
-        let inferred = vec![InferredRelationship {
-            from_person_id: "p-finalize-fail-1".to_string(),
-            to_person_id: "p-finalize-fail-2".to_string(),
-            relationship_type: "collaborator".to_string(),
-            rationale: Some("Trigger forces failure before success stamp.".to_string()),
-        }];
-
-        let result = run_enrichment_finalize_post_commit(
-            &state,
-            &db,
-            &input,
-            &intel,
-            &inferred,
+        assert_finalize_relationship_failure_preserves_ordering(
+            "acc-finalize-rel-fails",
+            "mtg-finalize-rel-fails",
+            "p-finalize-fail-1",
+            "p-finalize-fail-2",
             FinalizeMode::ManualRefresh,
         );
-        assert!(
-            result.is_err_and(|err| err.contains("forced relationship persist failure")),
-            "relationship persistence failure should abort finalize before success"
-        );
+    }
 
-        let prep_frozen: Option<String> = db
-            .conn_ref()
-            .query_row(
-                "SELECT prep_frozen_json FROM meeting_prep
-                 WHERE meeting_id = 'mtg-finalize-rel-fails'",
-                [],
-                |row| row.get(0),
-            )
-            .expect("read prep_frozen_json");
-        assert!(
-            prep_frozen.is_some(),
-            "prep invalidation must wait until after relationship persistence succeeds"
-        );
-        let quality_after =
-            crate::self_healing::quality::get_quality(&db, "acc-finalize-rel-fails")
-                .expect("quality row after failure");
-        assert_eq!(
-            quality_after.quality_alpha, quality_before.quality_alpha,
-            "success stamp must wait until after relationship persistence succeeds"
-        );
-        assert_eq!(
-            quality_after.last_enrichment_at, quality_before.last_enrichment_at,
-            "failed finalize must not stamp last_enrichment_at"
+    #[test]
+    fn finalize_post_commit_negative_ordering_guard_runs_in_queue_mode() {
+        assert_finalize_relationship_failure_preserves_ordering(
+            "acc-finalize-rel-fails-queue",
+            "mtg-finalize-rel-fails-queue",
+            "p-finalize-fail-queue-1",
+            "p-finalize-fail-queue-2",
+            FinalizeMode::QueueWorker {
+                is_background: false,
+            },
         );
     }
 
