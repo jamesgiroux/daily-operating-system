@@ -26,3 +26,34 @@ fn mcp_hybrid_handler_source_routes_static_before_ability_bridge() {
     assert!(source.contains("Self::tool_box().call(context).await"));
     assert!(source.contains(".invoke_ability(session_id, &ability_name"));
 }
+
+#[test]
+fn mcp_hybrid_call_tool_routes_get_provenance_to_bridge_session_scoped_lookup() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/mcp/main.rs"
+    ))
+    .expect("read mcp main source");
+
+    assert!(source.contains("McpToolRoute::GetProvenance"));
+    assert!(source.contains("invoke_mcp_get_provenance_tool("));
+    assert!(source.contains("get_provenance_invocation_id(&request)"));
+    assert!(source.contains("self.mcp_session_id"));
+    assert!(source.contains(".get_provenance_tool_response(session_id, invocation_id)"));
+}
+
+#[test]
+fn mcp_hybrid_list_tools_includes_get_provenance_with_additional_properties_false_schema() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/mcp/main.rs"
+    ))
+    .expect("read mcp main source");
+
+    assert!(source.contains("tools.push(get_provenance_tool_descriptor())"));
+    assert!(source.contains("Tool::new(\n        \"get_provenance\""));
+    assert!(source.contains("\"additionalProperties\".to_string()"));
+    assert!(source.contains("serde_json::Value::Bool(false)"));
+    assert!(source.contains("\"required\".to_string()"));
+    assert!(source.contains("\"invocation_id\".to_string()"));
+}

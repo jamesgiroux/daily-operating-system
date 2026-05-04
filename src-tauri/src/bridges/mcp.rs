@@ -11,11 +11,96 @@ use crate::bridges::{
 use crate::services::context::{
     ExecutionMode, ExternalClients, ServiceContext, SystemClock, SystemRng,
 };
+use rmcp::model::{CallToolResult, Content};
 
+// MCP invocation provenance cache caps. The cache keeps the newest 256 entries,
+// limits total serialized detail provenance to 256 KiB, and refuses individual
+// detail entries above ADR-0108's 10 KiB MCP tool-response budget.
 const MCP_INVOCATION_CACHE_ENTRY_CAP: usize = 256;
+const MCP_INVOCATION_CACHE_TOTAL_BYTE_CAP: usize = 256 * 1024;
+const MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP: usize = 10 * 1024;
 const MCP_ACTOR_LABEL: &str = concat!("agent:dailyos-mcp:", env!("CARGO_PKG_VERSION"));
 
 type InvocationCacheKey = (McpSessionId, InvocationId);
+
+#[derive(Debug, Clone)]
+struct CachedInvocationProvenance {
+    value: RenderedProvenance,
+    serialized_len: usize,
+}
+
+#[derive(Debug, Default)]
+struct McpInvocationCache {
+    entries: HashMap<InvocationCacheKey, CachedInvocationProvenance>,
+    order: VecDeque<InvocationCacheKey>,
+    current_serialized_bytes: usize,
+}
+
+impl McpInvocationCache {
+    fn insert(&mut self, key: InvocationCacheKey, value: RenderedProvenance) {
+        let Ok(serialized_len) = value.serialized_len() else {
+            return;
+        };
+
+        self.remove(&key);
+
+        if serialized_len > MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP {
+            return;
+        }
+
+        self.current_serialized_bytes += serialized_len;
+        self.order.push_back(key);
+        self.entries.insert(
+            key,
+            CachedInvocationProvenance {
+                value,
+                serialized_len,
+            },
+        );
+        self.enforce_bounds();
+    }
+
+    fn get(&self, key: &InvocationCacheKey) -> Option<RenderedProvenance> {
+        self.entries.get(key).map(|entry| entry.value.clone())
+    }
+
+    #[cfg(test)]
+    fn len(&self) -> usize {
+        self.entries.len()
+    }
+
+    #[cfg(test)]
+    fn current_serialized_bytes(&self) -> usize {
+        self.current_serialized_bytes
+    }
+
+    fn enforce_bounds(&mut self) {
+        while self.entries.len() > MCP_INVOCATION_CACHE_ENTRY_CAP
+            || self.current_serialized_bytes > MCP_INVOCATION_CACHE_TOTAL_BYTE_CAP
+        {
+            let Some(evicted) = self.order.pop_front() else {
+                break;
+            };
+            self.remove_without_order_retain(&evicted);
+        }
+    }
+
+    fn remove(&mut self, key: &InvocationCacheKey) {
+        if self.remove_without_order_retain(key) {
+            self.order.retain(|candidate| candidate != key);
+        }
+    }
+
+    fn remove_without_order_retain(&mut self, key: &InvocationCacheKey) -> bool {
+        let Some(entry) = self.entries.remove(key) else {
+            return false;
+        };
+        self.current_serialized_bytes = self
+            .current_serialized_bytes
+            .saturating_sub(entry.serialized_len);
+        true
+    }
+}
 
 pub struct McpAbilityBridge<'registry> {
     registry: &'registry AbilityRegistry,
@@ -26,8 +111,7 @@ pub struct McpAbilityBridge<'registry> {
     actor_filtered_descriptors: Vec<&'registry AbilityDescriptor>,
     /// (McpSessionId, InvocationId) -> RenderedProvenance, set on success.
     /// Cleared on server restart. No process-global lookup.
-    invocation_cache: Arc<Mutex<HashMap<InvocationCacheKey, RenderedProvenance>>>,
-    invocation_order: Arc<Mutex<VecDeque<InvocationCacheKey>>>,
+    invocation_cache: Arc<Mutex<McpInvocationCache>>,
 }
 
 impl<'registry> McpAbilityBridge<'registry> {
@@ -45,8 +129,7 @@ impl<'registry> McpAbilityBridge<'registry> {
         Self {
             registry,
             actor_filtered_descriptors,
-            invocation_cache: Arc::new(Mutex::new(HashMap::new())),
-            invocation_order: Arc::new(Mutex::new(VecDeque::new())),
+            invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
         }
     }
 
@@ -93,7 +176,10 @@ impl<'registry> McpAbilityBridge<'registry> {
         self.insert_provenance(
             session,
             response.invocation_id,
-            response.rendered_provenance.clone(),
+            RenderedProvenance::new(
+                BridgeSurface::McpToolDetail,
+                response.rendered_provenance.value.clone(),
+            ),
         );
 
         Ok(response)
@@ -111,7 +197,23 @@ impl<'registry> McpAbilityBridge<'registry> {
             .lock()
             .expect("mcp invocation cache poisoned")
             .get(&(session, invocation_id))
-            .cloned()
+    }
+
+    pub fn get_provenance_tool_response(
+        &self,
+        session: McpSessionId,
+        invocation_id: InvocationId,
+    ) -> CallToolResult {
+        match self.get_provenance(session, invocation_id) {
+            Some(provenance) => {
+                let detail =
+                    RenderedProvenance::new(BridgeSurface::McpToolDetail, provenance.value);
+                CallToolResult::success(vec![json_content(detail)])
+            }
+            None => CallToolResult::error(vec![json_content(
+                BridgeSurfaceError::AbilityUnavailable,
+            )]),
+        }
     }
 
     fn insert_provenance(
@@ -125,22 +227,14 @@ impl<'registry> McpAbilityBridge<'registry> {
             .invocation_cache
             .lock()
             .expect("mcp invocation cache poisoned");
-        let mut order = self
-            .invocation_order
-            .lock()
-            .expect("mcp invocation cache order poisoned");
+        cache.insert(key, provenance);
+    }
+}
 
-        if cache.insert(key, provenance).is_some() {
-            order.retain(|candidate| candidate != &key);
-        }
-        order.push_back(key);
-
-        while cache.len() > MCP_INVOCATION_CACHE_ENTRY_CAP {
-            let Some(evicted) = order.pop_front() else {
-                break;
-            };
-            cache.remove(&evicted);
-        }
+fn json_content<T: serde::Serialize>(value: T) -> Content {
+    match Content::json(value) {
+        Ok(content) => content,
+        Err(_) => Content::text("\"ability_unavailable\""),
     }
 }
 
@@ -281,6 +375,21 @@ mod tests {
         )
     }
 
+    fn rendered_with_payload(index: u128, payload_len: usize) -> RenderedProvenance {
+        RenderedProvenance::new(
+            BridgeSurface::McpToolDetail,
+            json!({
+                "invocation_id": uuid::Uuid::from_u128(index).to_string(),
+                "payload": "x".repeat(payload_len)
+            }),
+        )
+    }
+
+    fn tool_result_json(result: &CallToolResult) -> serde_json::Value {
+        let text = result.content[0].as_text().unwrap().text.as_str();
+        serde_json::from_str(text).unwrap()
+    }
+
     fn stale_cache_bridge<'registry>(
         registry: &'registry AbilityRegistry,
         cached_descriptors: Vec<&'registry AbilityDescriptor>,
@@ -288,8 +397,7 @@ mod tests {
         McpAbilityBridge {
             registry,
             actor_filtered_descriptors: cached_descriptors,
-            invocation_cache: Arc::new(Mutex::new(HashMap::new())),
-            invocation_order: Arc::new(Mutex::new(VecDeque::new())),
+            invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
         }
     }
 
@@ -425,6 +533,30 @@ mod tests {
         assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
     }
 
+    #[tokio::test]
+    async fn mcp_bridge_invoke_ability_populates_invocation_provenance_cache_on_success() {
+        let registry = registry_with_abilities(vec![descriptor(
+            "agent_read",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        )]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let session = session(1);
+
+        let response = bridge
+            .invoke_ability(session, "agent_read", json!({}), false, None)
+            .await
+            .unwrap();
+
+        assert_eq!(response.rendered_provenance.surface, BridgeSurface::McpTool);
+        let cached = bridge
+            .get_provenance(session, response.invocation_id)
+            .expect("successful MCP invoke should cache provenance");
+        assert_eq!(cached.surface, BridgeSurface::McpToolDetail);
+        assert_eq!(cached.value, response.rendered_provenance.value);
+    }
+
     #[test]
     fn mcp_bridge_get_provenance_returns_none_for_unknown_session_or_invocation_id() {
         let registry = registry_with_abilities(vec![]);
@@ -448,6 +580,44 @@ mod tests {
             bridge.get_provenance(session(1), invocation(1)),
             Some(rendered(1))
         );
+    }
+
+    #[test]
+    fn mcp_bridge_get_provenance_tool_response_returns_rendered_mcp_tool_detail_for_known_pair() {
+        let registry = registry_with_abilities(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        bridge.insert_provenance(session(1), invocation(1), rendered(1));
+
+        let result = bridge.get_provenance_tool_response(session(1), invocation(1));
+        assert_eq!(result.is_error, Some(false));
+        let value = tool_result_json(&result);
+        assert_eq!(value["surface"], "mcp_tool_detail");
+        assert_eq!(value["value"]["index"], "1");
+    }
+
+    #[test]
+    fn mcp_bridge_get_provenance_tool_response_returns_typed_error_for_missing_pair() {
+        let registry = registry_with_abilities(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        let result = bridge.get_provenance_tool_response(session(1), invocation(1));
+
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(tool_result_json(&result), json!("ability_unavailable"));
+    }
+
+    #[test]
+    fn mcp_bridge_get_provenance_tool_response_rejects_cross_session_invocation_id() {
+        let registry = registry_with_abilities(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        bridge.insert_provenance(session(1), invocation(1), rendered(1));
+
+        let result = bridge.get_provenance_tool_response(session(2), invocation(1));
+
+        assert_eq!(result.is_error, Some(true));
+        assert_eq!(tool_result_json(&result), json!("ability_unavailable"));
     }
 
     #[test]
@@ -477,5 +647,43 @@ mod tests {
             ),
             Some(rendered((MCP_INVOCATION_CACHE_ENTRY_CAP + 1) as u128))
         );
+    }
+
+    #[test]
+    fn mcp_bridge_invocation_cache_evicts_at_byte_cap_when_inserting_oversized_entry() {
+        let registry = registry_with_abilities(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let session = session(1);
+
+        for index in 1..=32_u128 {
+            bridge.insert_provenance(
+                session,
+                invocation(index),
+                rendered_with_payload(index, 9 * 1024),
+            );
+        }
+
+        let cache = bridge
+            .invocation_cache
+            .lock()
+            .expect("mcp invocation cache poisoned");
+        assert!(cache.current_serialized_bytes() <= MCP_INVOCATION_CACHE_TOTAL_BYTE_CAP);
+        assert!(cache.len() < 32);
+        drop(cache);
+
+        assert_eq!(bridge.get_provenance(session, invocation(1)), None);
+        assert!(bridge.get_provenance(session, invocation(32)).is_some());
+    }
+
+    #[test]
+    fn mcp_bridge_get_provenance_tool_response_serialized_size_under_10kb_per_adr_0108() {
+        let registry = registry_with_abilities(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        bridge.insert_provenance(session(1), invocation(1), rendered(1));
+
+        let result = bridge.get_provenance_tool_response(session(1), invocation(1));
+        let bytes = serde_json::to_vec(&result).unwrap();
+        assert!(bytes.len() < MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP);
     }
 }

@@ -18,6 +18,7 @@ use rmcp::service::RequestContext;
 use rmcp::{tool, Error as McpError, RoleServer, ServerHandler, ServiceExt};
 use serde::{Deserialize, Serialize};
 
+use dailyos_lib::abilities::provenance::InvocationId;
 use dailyos_lib::abilities::{AbilityDescriptor, AbilityRegistry};
 use dailyos_lib::bridges::mcp::McpAbilityBridge;
 use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
@@ -514,12 +515,15 @@ impl DailyOsMcp {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum McpToolRoute {
     Static,
+    GetProvenance,
     Ability,
 }
 
 pub fn mcp_route_for_tool_name(name: &str) -> McpToolRoute {
     if DailyOsMcp::tool_box().map.contains_key(name) {
         McpToolRoute::Static
+    } else if name == "get_provenance" {
+        McpToolRoute::GetProvenance
     } else {
         McpToolRoute::Ability
     }
@@ -527,6 +531,7 @@ pub fn mcp_route_for_tool_name(name: &str) -> McpToolRoute {
 
 pub fn list_hybrid_tools_for_bridge(ability_bridge: &McpAbilityBridge<'_>) -> Vec<Tool> {
     let mut tools = DailyOsMcp::tool_box().list();
+    tools.push(get_provenance_tool_descriptor());
     tools.extend(
         ability_bridge
             .list_descriptors()
@@ -534,6 +539,46 @@ pub fn list_hybrid_tools_for_bridge(ability_bridge: &McpAbilityBridge<'_>) -> Ve
             .map(|descriptor| ability_descriptor_to_tool(descriptor)),
     );
     tools
+}
+
+fn get_provenance_tool_descriptor() -> Tool {
+    let mut invocation_id_schema = JsonObject::new();
+    invocation_id_schema.insert(
+        "type".to_string(),
+        serde_json::Value::String("string".to_string()),
+    );
+
+    let mut properties = JsonObject::new();
+    properties.insert(
+        "invocation_id".to_string(),
+        serde_json::Value::Object(invocation_id_schema),
+    );
+
+    let mut schema = JsonObject::new();
+    schema.insert(
+        "type".to_string(),
+        serde_json::Value::String("object".to_string()),
+    );
+    schema.insert(
+        "additionalProperties".to_string(),
+        serde_json::Value::Bool(false),
+    );
+    schema.insert(
+        "properties".to_string(),
+        serde_json::Value::Object(properties),
+    );
+    schema.insert(
+        "required".to_string(),
+        serde_json::Value::Array(vec![serde_json::Value::String(
+            "invocation_id".to_string(),
+        )]),
+    );
+
+    Tool::new(
+        "get_provenance",
+        "Fetch detailed rendered provenance for a prior MCP ability invocation in this session.",
+        schema,
+    )
 }
 
 fn ability_descriptor_to_tool(descriptor: &AbilityDescriptor) -> Tool {
@@ -566,6 +611,42 @@ pub async fn invoke_mcp_ability_tool(
     let content = Content::json(response)?;
 
     Ok(CallToolResult::success(vec![content]))
+}
+
+pub fn invoke_mcp_get_provenance_tool(
+    ability_bridge: &McpAbilityBridge<'_>,
+    session_id: McpSessionId,
+    request: CallToolRequestParam,
+) -> Result<CallToolResult, McpError> {
+    let invocation_id = get_provenance_invocation_id(&request)?;
+    Ok(ability_bridge.get_provenance_tool_response(session_id, invocation_id))
+}
+
+fn get_provenance_invocation_id(request: &CallToolRequestParam) -> Result<InvocationId, McpError> {
+    let Some(arguments) = request.arguments.as_ref() else {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    };
+
+    if arguments.len() != 1 {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    }
+
+    let Some(invocation_id) = arguments
+        .get("invocation_id")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    };
+
+    InvocationId::parse(invocation_id).map_err(|_| {
+        mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable)
+    })
 }
 
 pub fn mcp_error_from_bridge_surface_error(error: BridgeSurfaceError) -> McpError {
@@ -614,6 +695,13 @@ impl ServerHandler for DailyOsMcp {
             McpToolRoute::Static => {
                 let context = ToolCallContext::new(self, request, context);
                 Self::tool_box().call(context).await
+            }
+            McpToolRoute::GetProvenance => {
+                invoke_mcp_get_provenance_tool(
+                    &self.ability_bridge,
+                    self.mcp_session_id,
+                    request,
+                )
             }
             McpToolRoute::Ability => {
                 invoke_mcp_ability_tool(&self.ability_bridge, self.mcp_session_id, request).await
@@ -889,6 +977,11 @@ mod tests {
         }
     }
 
+    fn tool_result_json(result: &CallToolResult) -> serde_json::Value {
+        let text = result.content[0].as_text().unwrap().text.as_str();
+        serde_json::from_str(text).unwrap()
+    }
+
     #[test]
     fn mcp_serverhandler_tool_box_macro_removed_and_manual_routes_static_or_ability() {
         let source = std::fs::read_to_string(concat!(
@@ -934,6 +1027,7 @@ mod tests {
             .collect::<Vec<_>>();
 
         assert!(names.contains(&"get_briefing"));
+        assert!(names.contains(&"get_provenance"));
         assert!(names.contains(&"agent_fixture_ability"));
         assert!(!names.contains(&"user_fixture_ability"));
 
@@ -945,6 +1039,18 @@ mod tests {
             ability_tool
                 .input_schema
                 .get("additionalProperties")
+            .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+
+        let get_provenance_tool = tools
+            .iter()
+            .find(|tool| tool.name == "get_provenance")
+            .unwrap();
+        assert_eq!(
+            get_provenance_tool
+                .input_schema
+                .get("additionalProperties")
                 .and_then(serde_json::Value::as_bool),
             Some(false)
         );
@@ -954,6 +1060,10 @@ mod tests {
     fn mcp_call_tool_routes_to_inherent_for_static_name() {
         assert_eq!(mcp_route_for_tool_name("get_briefing"), McpToolRoute::Static);
         assert_eq!(mcp_route_for_tool_name("query_entity"), McpToolRoute::Static);
+        assert_eq!(
+            mcp_route_for_tool_name("get_provenance"),
+            McpToolRoute::GetProvenance
+        );
     }
 
     #[tokio::test]
@@ -978,6 +1088,49 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(text).unwrap();
         assert_eq!(value["ability_name"], "agent_fixture_ability");
         assert_eq!(value["data"]["input"]["subject"], "dailyos");
+    }
+
+    #[tokio::test]
+    async fn mcp_call_tool_routes_get_provenance_to_bridge_session_scoped_lookup() {
+        let registry = registry_with(vec![descriptor(
+            "agent_fixture_ability",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        )]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let session_id = session(1);
+
+        let ability_result = invoke_mcp_ability_tool(
+            &bridge,
+            session_id,
+            request("agent_fixture_ability", json!({ "subject": "dailyos" })),
+        )
+        .await
+        .unwrap();
+        let ability_value = tool_result_json(&ability_result);
+        let invocation_id = ability_value["invocation_id"].as_str().unwrap();
+
+        let provenance_result = invoke_mcp_get_provenance_tool(
+            &bridge,
+            session_id,
+            request("get_provenance", json!({ "invocation_id": invocation_id })),
+        )
+        .unwrap();
+        let provenance_value = tool_result_json(&provenance_result);
+
+        assert_eq!(provenance_result.is_error, Some(false));
+        assert_eq!(provenance_value["surface"], "mcp_tool_detail");
+        assert_eq!(provenance_value["value"]["invocation_id"], invocation_id);
+
+        let cross_session = invoke_mcp_get_provenance_tool(
+            &bridge,
+            session(2),
+            request("get_provenance", json!({ "invocation_id": invocation_id })),
+        )
+        .unwrap();
+        assert_eq!(cross_session.is_error, Some(true));
+        assert_eq!(tool_result_json(&cross_session), json!("ability_unavailable"));
     }
 
     #[tokio::test]
