@@ -590,6 +590,8 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            // Abilities
+            commands::invoke_ability,
             // Core
             commands::get_config,
             commands::reload_configuration,

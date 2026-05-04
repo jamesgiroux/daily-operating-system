@@ -1,11 +1,15 @@
 use std::collections::{HashMap, VecDeque};
 
+use serde::de::Error as _;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::abilities::provenance::InvocationId;
-use crate::abilities::{AbilityError, Actor, ConfirmationToken};
-use crate::services::context::ExecutionMode;
+use crate::abilities::{
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    ConfirmationToken,
+};
+use crate::services::context::{ExecutionMode, ServiceContext};
 
 pub const BRIDGE_PROVENANCE_DETAIL_BYTE_CAP: usize = 10 * 1024;
 pub const BRIDGE_PROVENANCE_CACHE_ENTRY_CAP: usize = 128;
@@ -89,6 +93,43 @@ pub enum BridgeSurfaceError {
     AbilityUnavailable,
 }
 
+impl Serialize for ConfirmationToken {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        #[derive(Serialize)]
+        struct Wire<'a> {
+            source: &'a str,
+        }
+
+        Wire {
+            source: &self.source,
+        }
+        .serialize(serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for ConfirmationToken {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        #[derive(Deserialize)]
+        struct Wire {
+            source: String,
+        }
+
+        let wire = Wire::deserialize(deserializer)?;
+        if wire.source.trim().is_empty() {
+            return Err(D::Error::custom("confirmation token source is required"));
+        }
+        Ok(Self {
+            source: wire.source,
+        })
+    }
+}
+
 #[derive(Debug, Error)]
 pub enum AbilityInvokeError {
     #[error(transparent)]
@@ -106,6 +147,168 @@ pub enum AbilityInvokeError {
 impl From<AbilityError> for AbilityInvokeError {
     fn from(error: AbilityError) -> Self {
         Self::Ability(error)
+    }
+}
+
+#[cfg(test)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BridgeRejectReason {
+    UnknownAbility,
+    ActorPolicy,
+    ModePolicy,
+    MaintenanceGate,
+    ExperimentalGate,
+}
+
+#[cfg(test)]
+pub(crate) const PRE_DISPATCH_RESOLUTION_ORDER: [BridgeRejectReason; 5] = [
+    BridgeRejectReason::UnknownAbility,
+    BridgeRejectReason::ActorPolicy,
+    BridgeRejectReason::ModePolicy,
+    BridgeRejectReason::MaintenanceGate,
+    BridgeRejectReason::ExperimentalGate,
+];
+
+pub(crate) async fn invoke_registry_json<'a>(
+    registry: &AbilityRegistry,
+    services: &'a ServiceContext<'a>,
+    invocation: InvocationContext<'a>,
+    ability_name: &str,
+    input_json: serde_json::Value,
+) -> Result<AbilityResponseJson, AbilityInvokeError> {
+    let descriptor = resolve_pre_dispatch(
+        registry,
+        ability_name,
+        invocation.registry_actor(),
+        invocation.mode,
+        invocation.surface,
+    )?;
+    let ability_version = descriptor.version.to_string();
+    let schema_version = descriptor.schema_version;
+    let canonical_ability_name = descriptor.name.to_string();
+
+    let ability_context = AbilityContext::new(
+        services,
+        invocation.registry_actor(),
+        invocation.confirmation,
+    );
+    let output_json = registry
+        .invoke_by_name_json(&ability_context, ability_name, input_json)
+        .await?;
+
+    ability_response_from_output_json(
+        canonical_ability_name,
+        ability_version,
+        schema_version,
+        invocation.surface,
+        output_json,
+    )
+}
+
+pub(crate) fn resolve_pre_dispatch<'a>(
+    registry: &'a AbilityRegistry,
+    ability_name: &str,
+    actor: Actor,
+    mode: ExecutionMode,
+    surface: BridgeSurface,
+) -> Result<&'a AbilityDescriptor, BridgeSurfaceError> {
+    let descriptor = lookup_descriptor_by_name(registry, ability_name)
+        .ok_or(BridgeSurfaceError::AbilityUnavailable)?;
+
+    if !descriptor.policy.allowed_actors.contains(&actor) {
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    if !descriptor.policy.allowed_modes.contains(&mode) {
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    if maintenance_blocked_for_surface(descriptor, surface) {
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    if descriptor.experimental && actor != Actor::System {
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    Ok(descriptor)
+}
+
+fn lookup_descriptor_by_name<'a>(
+    registry: &'a AbilityRegistry,
+    ability_name: &str,
+) -> Option<&'a AbilityDescriptor> {
+    [Actor::User, Actor::Agent, Actor::Admin, Actor::System]
+        .into_iter()
+        .find_map(|actor| {
+            registry
+                .iter_for(actor)
+                .find(|descriptor| descriptor.name == ability_name)
+        })
+}
+
+fn maintenance_blocked_for_surface(descriptor: &AbilityDescriptor, surface: BridgeSurface) -> bool {
+    descriptor.category == AbilityCategory::Maintenance
+        && matches!(
+            surface,
+            BridgeSurface::TauriApp | BridgeSurface::McpTool | BridgeSurface::McpToolDetail
+        )
+}
+
+fn ability_response_from_output_json(
+    ability_name: String,
+    ability_version: String,
+    schema_version: u32,
+    surface: BridgeSurface,
+    output_json: serde_json::Value,
+) -> Result<AbilityResponseJson, AbilityInvokeError> {
+    let output = output_json
+        .as_object()
+        .ok_or(AbilityInvokeError::InvalidEnvelope)?;
+    let data = output
+        .get("data")
+        .cloned()
+        .ok_or(AbilityInvokeError::InvalidEnvelope)?;
+    let provenance = output
+        .get("provenance")
+        .cloned()
+        .ok_or(AbilityInvokeError::InvalidEnvelope)?;
+    let diagnostics = output
+        .get("diagnostics")
+        .cloned()
+        .unwrap_or_else(|| serde_json::json!({ "warnings": [] }));
+    let invocation_id = parse_invocation_id(&provenance)?;
+
+    Ok(AbilityResponseJson {
+        invocation_id,
+        ability_name,
+        ability_version,
+        schema_version,
+        data,
+        rendered_provenance: render_provenance(surface, provenance),
+        diagnostics,
+    })
+}
+
+fn parse_invocation_id(provenance: &serde_json::Value) -> Result<InvocationId, AbilityInvokeError> {
+    let invocation_id = provenance
+        .get("invocation_id")
+        .and_then(serde_json::Value::as_str)
+        .ok_or(AbilityInvokeError::InvalidEnvelope)?;
+    InvocationId::parse(invocation_id).map_err(|_| AbilityInvokeError::InvalidEnvelope)
+}
+
+fn render_provenance(surface: BridgeSurface, provenance: serde_json::Value) -> RenderedProvenance {
+    RenderedProvenance::new(surface, provenance)
+}
+
+pub(crate) fn surface_error(error: AbilityInvokeError) -> BridgeSurfaceError {
+    match error {
+        AbilityInvokeError::Surface(error) => error,
+        AbilityInvokeError::Ability(_)
+        | AbilityInvokeError::InvalidEnvelope
+        | AbilityInvokeError::ProvenanceTooLarge
+        | AbilityInvokeError::ProvenanceSerialize(_) => BridgeSurfaceError::AbilityUnavailable,
     }
 }
 

@@ -28,6 +28,7 @@ pub(crate) static DEV_GOOGLE_OVERRIDE: AtomicU8 = AtomicU8::new(0);
 pub use crate::services::actions::ActionsResult;
 pub use crate::services::dashboard::{DashboardResult, WeekResult};
 
+mod abilities;
 mod accounts_content_chat;
 mod actions_calendar;
 mod app_support;
@@ -39,6 +40,7 @@ mod projects_data;
 mod success_plans;
 mod workspace;
 
+pub use abilities::*;
 pub use accounts_content_chat::*;
 pub use actions_calendar::*;
 pub use app_support::*;
