@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Splash · Progress — DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../_shared/fonts.css">
+<link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../_shared/styles/StartupBriefingScreen.module.css">
+
+<style>
+  /* No chrome — progress mode replaces the splash overlay with a working
+     readout. Same full-bleed page treatment as splash. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: var(--font-sans);
+    background: var(--color-paper-cream);
+    color: var(--color-text-primary);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    min-height: 100vh;
+    padding: 0 var(--space-3xl);
+  }
+</style>
+</head>
+<body>
+
+<!-- StartupBriefingScreen — mode="progress" -->
+<section class="StartupBriefingScreen_screen StartupBriefingScreen_progress" aria-label="Preparing your daily briefing">
+  <div class="StartupBriefingScreen_elapsed">12s</div>
+  <div class="StartupBriefingScreen_progressSpacer"></div>
+  <div class="StartupBriefingScreen_progressContent">
+    <div class="StartupBriefingScreen_sectionRule"></div>
+    <div class="StartupBriefingScreen_progressTitle">Preparing your daily briefing</div>
+    <div class="StartupBriefingScreen_phaseList">
+
+      <!-- Phase 1: complete -->
+      <div class="StartupBriefingScreen_phaseRow" data-state="complete">
+        <div class="StartupBriefingScreen_phaseDot">
+          <svg width="10" height="10" viewBox="0 0 12 12" fill="none" aria-hidden="true">
+            <path d="M2 6l3 3 5-5" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+          </svg>
+        </div>
+        <div class="StartupBriefingScreen_phaseText">
+          <div class="StartupBriefingScreen_phaseLabel">Gathering your day</div>
+        </div>
+      </div>
+
+      <!-- Phase 2: current -->
+      <div class="StartupBriefingScreen_phaseRow" data-state="current">
+        <div class="StartupBriefingScreen_phaseDot">
+          <div class="StartupBriefingScreen_phasePulse"></div>
+        </div>
+        <div class="StartupBriefingScreen_phaseText">
+          <div class="StartupBriefingScreen_phaseLabel">Building context</div>
+          <div class="StartupBriefingScreen_phaseDetail">Assembling meeting briefings, priorities, and action items</div>
+        </div>
+      </div>
+
+      <!-- Phase 3: pending -->
+      <div class="StartupBriefingScreen_phaseRow" data-state="pending">
+        <div class="StartupBriefingScreen_phaseDot"></div>
+        <div class="StartupBriefingScreen_phaseText">
+          <div class="StartupBriefingScreen_phaseLabel">Composing the briefing</div>
+        </div>
+      </div>
+
+    </div>
+
+    <div class="StartupBriefingScreen_quoteBox">
+      <p class="StartupBriefingScreen_quote">Separating signal from noise.</p>
+    </div>
+
+    <div class="StartupBriefingScreen_navigateHint">This runs in the background - feel free to navigate away</div>
+  </div>
+</section>
+
+</body>
+</html>

@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Splash · Initial — DailyOS Reference</title>
+
+<link rel="stylesheet" href="../../_shared/fonts.css">
+<link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../../_shared/styles/StartupBriefingScreen.module.css">
+
+<style>
+  /* No chrome — splash is full-bleed pre-app overlay. */
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: var(--font-sans);
+    background: var(--color-paper-cream);
+    color: var(--color-text-primary);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    min-height: 100vh;
+  }
+</style>
+</head>
+<body>
+
+<!-- StartupBriefingScreen — mode="splash" -->
+<div class="StartupBriefingScreen_screen StartupBriefingScreen_overlay" aria-label="Preparing your daily briefing">
+  <div class="StartupBriefingScreen_splashStack">
+    <div class="StartupBriefingScreen_rule StartupBriefingScreen_ruleTop"></div>
+    <svg class="StartupBriefingScreen_brandMark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" aria-hidden="true">
+      <path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor" />
+    </svg>
+    <div class="StartupBriefingScreen_brandName">DailyOS</div>
+    <div class="StartupBriefingScreen_splashTitle">Preparing your daily briefing</div>
+    <div class="StartupBriefingScreen_rule StartupBriefingScreen_ruleBottom"></div>
+  </div>
+</div>
+
+</body>
+</html>
