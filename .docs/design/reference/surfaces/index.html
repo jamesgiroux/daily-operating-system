@@ -223,9 +223,11 @@
     <div class="surf-stats">
       <span>13 referenced</span>
       <span>7 reports referenced</span>
+      <span>8 onboarding steps referenced</span>
+      <span>2 splash modes referenced</span>
       <span>3 with canonical specs</span>
       <span>3 routed-page gaps</span>
-      <span>5 non-route gaps</span>
+      <span>3 non-route gaps</span>
     </div>
   </section>
 
@@ -503,6 +505,59 @@
     </div>
   </section>
 
+  <!-- Onboarding -->
+  <section class="surf-section">
+    <h2 class="surf-section-title">Onboarding (8) — first-run wizard</h2>
+    <div class="surf-grid">
+      <a class="surf-card" href="onboarding/index.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-turmeric"></span>
+          <iframe src="onboarding/index.html" loading="lazy" title="Onboarding overview"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Browse all 8 →</p>
+          <p class="surf-card-route">setup wizard · turmeric</p>
+          <p class="surf-card-jtbd">Welcome → Google → Claude → Glean → About You → First Account → Role → Prime.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+    </div>
+  </section>
+
+  <!-- Splash -->
+  <section class="surf-section">
+    <h2 class="surf-section-title">Splash (2) — startup states</h2>
+    <p style="font-family:var(--font-serif); font-style:italic; color:var(--color-text-tertiary); margin: 0 0 var(--space-md); max-width:640px;">
+      Two modes today: an initial splash (serif "DailyOS" + sans subtitle) and a working progress readout (mono uppercase title, no brand). The title weight switches between them — a known inconsistency surfaced by mirroring both.
+    </p>
+    <div class="surf-grid">
+      <a class="surf-card" href="splash/splash.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-turmeric"></span>
+          <iframe src="splash/splash.html" loading="lazy" title="Splash"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Splash</p>
+          <p class="surf-card-route">mode="splash" · turmeric</p>
+          <p class="surf-card-jtbd">Branded overlay shown the moment the app opens.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+      <a class="surf-card" href="splash/progress.html">
+        <div class="surf-thumb">
+          <span class="surf-tint surf-tint-turmeric"></span>
+          <iframe src="splash/progress.html" loading="lazy" title="Splash progress"></iframe>
+        </div>
+        <div class="surf-card-body">
+          <p class="surf-card-name">Splash · Progress</p>
+          <p class="surf-card-route">mode="progress" · turmeric</p>
+          <p class="surf-card-jtbd">Working progress with phase list, elapsed timer, and rotating quote.</p>
+          <p class="surf-card-state">referenced</p>
+        </div>
+      </a>
+    </div>
+  </section>
+
   <!-- Routed page gaps -->
   <section class="surf-section">
     <h2 class="surf-section-title">Routed pages — referenced gap (3)</h2>
@@ -540,7 +595,7 @@
 
   <!-- Non-route gaps -->
   <section class="surf-section">
-    <h2 class="surf-section-title">Full-screen non-route — gap (5)</h2>
+    <h2 class="surf-section-title">Full-screen non-route — gap (3)</h2>
     <table class="surf-gap-table">
       <thead>
         <tr>
@@ -551,18 +606,6 @@
         </tr>
       </thead>
       <tbody>
-        <tr>
-          <td class="surf-gap-name">Onboarding Flow</td>
-          <td><code>src/components/onboarding/OnboardingFlow.tsx</code></td>
-          <td class="surf-gap-jtbd">First-run setup — Google, Claude Code, Glean, context, role, initial briefing.</td>
-          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-371">DOS-371</a></td>
-        </tr>
-        <tr>
-          <td class="surf-gap-name">Loading / Splash</td>
-          <td><code>src/components/startup/StartupBriefingScreen.tsx</code></td>
-          <td class="surf-gap-jtbd">Branded splash/progress while DailyOS prepares context.</td>
-          <td class="surf-gap-issue"><a href="https://linear.app/a8c/issue/DOS-372">DOS-372</a></td>
-        </tr>
         <tr>
           <td class="surf-gap-name">Lock Overlay</td>
           <td><code>src/components/LockOverlay.tsx</code></td>
