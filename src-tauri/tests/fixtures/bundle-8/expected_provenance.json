@@ -1,0 +1,261 @@
+{
+  "data": {
+    "entity_id": "acct-test-1",
+    "entity_type": "account",
+    "render_policy": "show-public-only",
+    "claim_id": "claim-test-public-stated-goal",
+    "trust_score": 0.9,
+    "trust_band": "likely_current"
+  },
+  "provenance": {
+    "provenance_schema_version": 1,
+    "ability_name": "enrich_account_intelligence",
+    "ability_version": {
+      "major": 1,
+      "minor": 0
+    },
+    "ability_schema_version": 1,
+    "invocation_id": "88888888-8888-4888-8888-888888888888",
+    "produced_at": "2026-05-01T12:00:00Z",
+    "inputs_snapshot": {
+      "newest_signal_at": "2026-05-01T12:00:00Z",
+      "entity_watermarks": {
+        "acct-test-1": {
+          "entity_version": 1,
+          "last_updated": "2026-05-01T12:00:00Z"
+        },
+        "person-test-jane-doe": {
+          "entity_version": 1,
+          "last_updated": "2026-05-01T12:00:00Z"
+        }
+      },
+      "source_freshness": {
+        "src-test-source-public": "2026-04-28T12:00:00Z",
+        "src-test-source-private": "2026-04-30T12:00:00Z",
+        "provider-completion": "2026-05-01T12:00:00Z"
+      },
+      "source_lifecycle": {
+        "src-test-source-public": "active",
+        "src-test-source-private": "active"
+      },
+      "source_sensitivity": {
+        "src-test-source-public": "public",
+        "src-test-source-private": "confidential"
+      },
+      "provider_config_hash": "bundle-8-v1-synthetic-fingerprint",
+      "glean_connected": false
+    },
+    "actor": {
+      "kind": "user"
+    },
+    "mode": "evaluate",
+    "trust": {
+      "effective": "untrusted",
+      "contributions": [
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 0
+            }
+          },
+          "reason": "directly_from_public_claim"
+        },
+        {
+          "source": {
+            "direct_source": {
+              "source_index": 1
+            }
+          },
+          "reason": "filtered_from_public_surface_by_sensitivity"
+        }
+      ],
+      "contains_stored_synthesis": false
+    },
+    "sources": [
+      {
+        "data_source": {
+          "other": "public_statement"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "src-test-source-public",
+              "provider": "fixture_provider"
+            }
+          }
+        ],
+        "observed_at": "2026-04-28T12:00:00Z",
+        "source_asof": "2026-04-28T12:00:00Z",
+        "evidence_weight": 0.9,
+        "scoring_class": "public_reference",
+        "synthesis_marker": null,
+        "lifecycle_state": "active",
+        "sensitivity": "public"
+      },
+      {
+        "data_source": {
+          "other": "internal_note"
+        },
+        "identifiers": [
+          {
+            "provider_completion": {
+              "completion_id": "src-test-source-private",
+              "provider": "fixture_provider"
+            }
+          }
+        ],
+        "observed_at": "2026-04-30T12:00:00Z",
+        "source_asof": "2026-04-30T12:00:00Z",
+        "evidence_weight": 0.95,
+        "scoring_class": "confidential_private_class",
+        "synthesis_marker": null,
+        "lifecycle_state": "active",
+        "sensitivity": "confidential"
+      }
+    ],
+    "thread_ids": [],
+    "prompt_fingerprint": {
+      "provider": "fixture_provider",
+      "model": "replay",
+      "prompt_template_id": "account-intelligence-prep",
+      "prompt_template_version": "bundle-8-v1",
+      "canonical_prompt_hash": "bundle-8-v1-synthetic-fingerprint",
+      "temperature": 0,
+      "top_p": null,
+      "seed": 42,
+      "tokens_input": null,
+      "tokens_output": null,
+      "provider_completion_id": "src-test-source-public"
+    },
+    "children": [],
+    "field_attributions": {
+      "/executiveAssessment": {
+        "subject": {
+          "subject": {
+            "account": "acct-test-1"
+          },
+          "binding": "direct_input",
+          "supporting_source_refs": [
+            {
+              "source": {
+                "source_index": 0
+              }
+            }
+          ],
+          "competing_subjects": [],
+          "fit": {
+            "status": "confident",
+            "confidence": 1,
+            "method": "direct_input_plus_public_claim"
+          }
+        },
+        "derivation": "sensitivity_filtered_synthesis",
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            },
+            "sensitivity": "public"
+          }
+        ],
+        "confidence": {
+          "value": 0.9,
+          "kind": "computed"
+        },
+        "explanation": "Provider aggregation included public and confidential sources; the public render uses only the public source contribution."
+      },
+      "/suppressedFields/0": {
+        "subject": {
+          "subject": {
+            "account": "acct-test-1"
+          },
+          "binding": "source_matched",
+          "supporting_source_refs": [
+            {
+              "source": {
+                "source_index": 1
+              }
+            }
+          ],
+          "competing_subjects": [],
+          "fit": {
+            "status": "confident",
+            "confidence": 1,
+            "method": "source_ref_match"
+          }
+        },
+        "derivation": "suppression_policy",
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            },
+            "sensitivity": "confidential"
+          }
+        ],
+        "confidence": {
+          "value": 0,
+          "kind": "computed"
+        },
+        "explanation": "Confidential private-class content is filtered from the public-summary-render surface."
+      }
+    },
+    "subject": {
+      "subject": {
+        "account": "acct-test-1"
+      },
+      "binding": "direct_input",
+      "supporting_source_refs": [],
+      "competing_subjects": [],
+      "fit": {
+        "status": "confident",
+        "confidence": 1,
+        "method": "direct_input"
+      }
+    },
+    "warnings": [
+      {
+        "private_content_filtered_from_public_render": {
+          "field": "/executiveAssessment",
+          "filtered_claim_id": "claim-test-private-stakeholder-concern",
+          "source_id": "src-test-source-private",
+          "target_surface": "public-summary-render",
+          "claim_sensitivity": "confidential",
+          "required_max_sensitivity": "public"
+        }
+      }
+    ],
+    "claim_attribution": {
+      "claim-test-public-stated-goal": {
+        "attributed_source": "public_statement",
+        "source_index": 0,
+        "corroborators": [],
+        "contradicts": [],
+        "warnings": []
+      },
+      "claim-test-private-stakeholder-concern": {
+        "attributed_source": "internal_note",
+        "source_index": 1,
+        "corroborators": [],
+        "contradicts": [],
+        "warnings": [
+          "private_content_filtered_from_public_render"
+        ],
+        "sensitivity_boundary": {
+          "claim_sensitivity": "confidential",
+          "surface": "public-summary-render",
+          "rendered": false
+        }
+      }
+    }
+  },
+  "ability_version": {
+    "major": 1,
+    "minor": 0
+  },
+  "diagnostics": {
+    "warnings": [
+      "private_content_filtered_from_public_render"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "version": 1,
+  "fixtures": [
+    {
+      "request_key_hex": "8888888888888888888888888888888888888888888888888888888888888888",
+      "method": "POST",
+      "url": "https://acme.example.com/complete",
+      "auth_scope_id": "acct-test-1",
+      "response": {
+        "status": 200,
+        "headers": [
+          [
+            "Content-Type",
+            "application/json"
+          ]
+        ],
+        "body_base64": "eyJ2ZXJzaW9uIjoxLCJlbnRpdHlJZCI6ImFjY3QtdGVzdC0xIiwiZW50aXR5VHlwZSI6ImFjY291bnQiLCJlbnJpY2hlZEF0IjoiMjAyNi0wNS0wMVQxMjowMDowMFoiLCJzb3VyY2VGaWxlQ291bnQiOjIsInNvdXJjZU1hbmlmZXN0IjpbeyJmaWxlbmFtZSI6InNvdXJjZTovL3NyYy10ZXN0LXNvdXJjZS1wdWJsaWMiLCJtb2RpZmllZEF0IjoiMjAyNi0wNC0yOFQxMjowMDowMFoiLCJmb3JtYXQiOiJqc29uIiwiY29udGVudFR5cGUiOiJhY2NvdW50X2ZhY3QifSx7ImZpbGVuYW1lIjoic291cmNlOi8vc3JjLXRlc3Qtc291cmNlLXByaXZhdGUiLCJtb2RpZmllZEF0IjoiMjAyNi0wNC0zMFQxMjowMDowMFoiLCJmb3JtYXQiOiJqc29uIiwiY29udGVudFR5cGUiOiJzdGFrZWhvbGRlcl9ub3RlIn1dLCJleGVjdXRpdmVBc3Nlc3NtZW50IjoiYWNjdC10ZXN0LTEgaGFzIHN0YXRlZCB0aGVpciBnb2FsIGlzIHRvIHB1Ymxpc2ggYSByZXVzYWJsZSBvbmJvYXJkaW5nIGd1aWRlIGZvciBhY21lLmV4YW1wbGUuY29tLiBJbnRlcm5hbCBzdGFrZWhvbGRlciBqYW5lLmRvZUBleGFtcGxlLmNvbSBpcyBjb25jZXJuZWQgYWJvdXQgdW5tYW5hZ2VkIGJldGEgZXNjYWxhdGlvbnMuIiwicmlza3MiOltdLCJyZWNlbnRXaW5zIjpbXSwic3Rha2Vob2xkZXJJbnNpZ2h0cyI6W10sInNvdXJjZUF0dHJpYnV0aW9uIjp7ImV4ZWN1dGl2ZUFzc2Vzc21lbnQiOlsicHJvdmlkZXJfY29tcGxldGlvbjpzcmMtdGVzdC1zb3VyY2UtcHVibGljIiwicHJvdmlkZXJfY29tcGxldGlvbjpzcmMtdGVzdC1zb3VyY2UtcHJpdmF0ZSJdLCJyaXNrcyI6W10sInJlY2VudFdpbnMiOltdLCJzdGFrZWhvbGRlckluc2lnaHRzIjpbXX19Cg=="
+      }
+    }
+  ]
+}

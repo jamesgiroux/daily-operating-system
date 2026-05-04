@@ -1,0 +1,138 @@
+{
+  "post_action_state": {
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-test-public-stated-goal",
+        "subject_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "claim_type": "entity_summary",
+        "field_path": "executiveAssessment",
+        "topic_key": "acct-test-1:public_goal:onboarding-guide",
+        "text": "acct-test-1 has stated their goal is to publish a reusable onboarding guide for acme.example.com.",
+        "data_source": "public_statement",
+        "source_ref": {
+          "source_id": "src-test-source-public",
+          "source_system": "public_statement",
+          "lifecycle_state": "active",
+          "sensitivity": "public",
+          "surface_class": "public"
+        },
+        "source_asof": "2026-04-28T12:00:00Z",
+        "observed_at": "2026-04-28T12:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "verification_state": "active",
+        "sensitivity": "public",
+        "trust_score": 0.9,
+        "trust_band": "likely_current",
+        "trust_version": 1,
+        "corroboration_count": 1,
+        "dominant_penalties": [],
+        "metadata": {
+          "fixture_bundle": 8,
+          "surface_class": "public",
+          "public_render_allowed": true
+        }
+      },
+      {
+        "claim_id": "claim-test-private-stakeholder-concern",
+        "subject_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "claim_type": "stakeholder_insight",
+        "field_path": "internalStakeholderConcern",
+        "topic_key": "acct-test-1:internal_stakeholder_concern:beta-escalations",
+        "text": "Internal stakeholder jane.doe@example.com is concerned about unmanaged beta escalations.",
+        "data_source": "internal_note",
+        "source_ref": {
+          "source_id": "src-test-source-private",
+          "source_system": "internal_note",
+          "lifecycle_state": "active",
+          "sensitivity": "confidential",
+          "surface_class": "private"
+        },
+        "source_asof": "2026-04-30T12:00:00Z",
+        "observed_at": "2026-04-30T12:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "verification_state": "active",
+        "sensitivity": "confidential",
+        "trust_score": 0.92,
+        "trust_band": "likely_current",
+        "trust_version": 1,
+        "corroboration_count": 1,
+        "dominant_penalties": [],
+        "metadata": {
+          "fixture_bundle": 8,
+          "surface_class": "private",
+          "actual_schema_sensitivity": "confidential",
+          "public_render_allowed": false
+        }
+      }
+    ],
+    "public_rendered_output": {
+      "surface": "public-summary-render",
+      "render_policy": "show-public-only",
+      "executiveAssessment": "acct-test-1 has stated their goal is to publish a reusable onboarding guide for acme.example.com.",
+      "sourceAttribution": {
+        "executiveAssessment": [
+          "public_statement:src-test-source-public"
+        ]
+      },
+      "excluded_claim_ids": [
+        "claim-test-private-stakeholder-concern"
+      ],
+      "warnings": [
+        "private_content_filtered_from_public_render"
+      ]
+    },
+    "sources": [
+      {
+        "source_id": "src-test-source-public",
+        "storage": "account_source_refs.source_record_ref",
+        "source_system": "public_statement",
+        "source_kind": "account_fact",
+        "lifecycle_state": "active",
+        "sensitivity": "public",
+        "surface_class": "public",
+        "observed_at": "2026-04-28T12:00:00Z"
+      },
+      {
+        "source_id": "src-test-source-private",
+        "storage": "account_source_refs.source_record_ref",
+        "source_system": "internal_note",
+        "source_kind": "stakeholder_note",
+        "lifecycle_state": "active",
+        "sensitivity": "confidential",
+        "surface_class": "private",
+        "observed_at": "2026-04-30T12:00:00Z"
+      }
+    ],
+    "confidence_evidence": [
+      {
+        "signal_type": "ConfidenceEvidence",
+        "claim_id": "claim-test-private-stakeholder-concern",
+        "factor": {
+          "name": "sensitivity_aware_filtering",
+          "raw_value": {
+            "claim_sensitivity": "confidential",
+            "target_surface": "public-summary-render",
+            "required_max_sensitivity": "public"
+          },
+          "value": 0,
+          "aggregation": "filtered_before_public_render"
+        },
+        "warnings": [
+          "private_content_filtered_from_public_render"
+        ]
+      }
+    ],
+    "design_notes": [
+      "The actual intelligence_claims schema uses sensitivity values public, internal, confidential, user_only; this fixture uses confidential as the private-class persisted value.",
+      "Substrate may need a new sensitivity_aware_filtering factor in compile_trust if the public-vs-private render path does not already filter claims before aggregation."
+    ]
+  }
+}

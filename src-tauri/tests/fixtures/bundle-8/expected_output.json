@@ -1,0 +1,69 @@
+{
+  "version": 1,
+  "entityId": "acct-test-1",
+  "entityType": "account",
+  "enrichedAt": "2026-05-01T12:00:00Z",
+  "sourceFileCount": 2,
+  "sourceManifest": [
+    {
+      "filename": "source://src-test-source-public",
+      "modifiedAt": "2026-04-28T12:00:00Z",
+      "format": "json",
+      "contentType": "account_fact"
+    },
+    {
+      "filename": "source://src-test-source-private",
+      "modifiedAt": "2026-04-30T12:00:00Z",
+      "format": "json",
+      "contentType": "stakeholder_note"
+    }
+  ],
+  "executiveAssessment": "acct-test-1 has stated their goal is to publish a reusable onboarding guide for acme.example.com.",
+  "risks": [],
+  "recentWins": [],
+  "stakeholderInsights": [],
+  "sourceAttribution": {
+    "executiveAssessment": [
+      "public_statement:src-test-source-public"
+    ],
+    "risks": [],
+    "recentWins": [],
+    "stakeholderInsights": []
+  },
+  "consistencyStatus": "flagged",
+  "consistencyFindings": [
+    {
+      "code": "PRIVATE_CONTENT_FILTERED_FROM_PUBLIC_RENDER",
+      "severity": "high",
+      "fieldPath": "executiveAssessment",
+      "claimText": "Provider aggregation mixed public and confidential source classes for a public-class output surface.",
+      "evidenceText": "The public render retained src-test-source-public and removed the confidential contribution from src-test-source-private.",
+      "autoFixed": true
+    }
+  ],
+  "renderPolicy": "show-public-only",
+  "suppressedFields": [
+    {
+      "fieldPath": "executiveAssessment",
+      "claimId": "claim-test-private-stakeholder-concern",
+      "sourceId": "src-test-source-private",
+      "trustBand": "needs_verification",
+      "warnings": [
+        "private_content_filtered_from_public_render"
+      ]
+    }
+  ],
+  "trustAnnotations": {
+    "executiveAssessment": {
+      "claimId": "claim-test-public-stated-goal",
+      "trustScore": 0.9,
+      "trustBand": "likely_current",
+      "warningBand": null,
+      "warnings": [
+        "private_content_filtered_from_public_render"
+      ],
+      "dominantPenalties": [],
+      "corroborationCount": 1
+    }
+  }
+}
