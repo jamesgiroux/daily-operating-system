@@ -14,6 +14,7 @@ pub mod emails;
 pub mod entities;
 pub mod entity_context;
 pub mod entity_linking;
+pub mod external_replay;
 pub mod feedback;
 pub mod health_debouncer;
 pub mod hygiene;

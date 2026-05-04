@@ -47,6 +47,7 @@ sha2 = "0.10"
 unicode-normalization = "0.1"
 hex = "0.4"
 walkdir = "2"
+http = "1"
 
 # Sprint 8: Native Google API (ADR-0049)
 reqwest = { version = "0.12", features = ["json", "rustls-tls", "stream", "blocking"], default-features = false }

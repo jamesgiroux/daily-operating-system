@@ -1119,6 +1119,7 @@ dependencies = [
  "filetime",
  "hex",
  "html2text",
+ "http",
  "inventory",
  "libc",
  "log",
