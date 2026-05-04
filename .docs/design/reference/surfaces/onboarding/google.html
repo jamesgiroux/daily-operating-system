@@ -10,34 +10,12 @@
 <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
 <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
 <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../../_shared/styles/ChapterHeading.module.css">
 <link rel="stylesheet" href="../../_shared/styles/onboarding.module.css">
+<link rel="stylesheet" href="../../_shared/styles/ui-button.css">
+<link rel="stylesheet" href="../../_shared/styles/tailwind-shims.css">
 <link rel="stylesheet" href="../../_shared/chrome.css">
 <link rel="stylesheet" href="../../_shared/inspector.css">
-
-<style>
-  /* Onboarding wizard stand-in for the Tailwind primary Button.
-     Mirrors src/components/ui/button.tsx size=lg variant=default:
-     h-10 (40px) · px-6 (24px) · rounded-md · bg-primary · text-primary-foreground.
-     Tokens from design-tokens.css; values match Tailwind theme.css mapping. */
-  .ob-button-primary {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: var(--space-sm);
-    height: 40px;
-    padding: 0 24px;
-    border-radius: 6px;
-    border: 0;
-    background: var(--color-text-primary);
-    color: var(--color-paper-cream);
-    font-family: var(--font-sans);
-    font-size: 14px;
-    font-weight: 500;
-    cursor: pointer;
-  }
-  .ob-button-primary:hover { opacity: 0.9; }
-  .ob-button-primary svg { width: 16px; height: 16px; }
-</style>
 </head>
 <body
   data-folio-label="Setup"
@@ -52,63 +30,57 @@
   <div class="onboarding_contentColumn">
     <div class="onboarding_flexCol onboarding_gap24">
 
-      <!-- ChapterHeading -->
-      <div style="margin-bottom: var(--space-xl);">
-        <hr style="border: none; border-top: 1px solid var(--color-rule-heavy); margin: 0 0 var(--space-md);" />
-        <div style="display: flex; align-items: center; gap: var(--space-sm);">
-          <h2 style="margin: 0; font-family: var(--font-serif); font-size: 28px; font-weight: 400; line-height: 1.2; letter-spacing: -0.01em; color: var(--color-text-primary);">Every meeting, prepared. Every email, triaged.</h2>
+      <!-- ChapterHeading: title only (no epigraph, no feedback, primary variant) -->
+      <div class="ChapterHeading_heading">
+        <hr class="ChapterHeading_rule">
+        <div class="ChapterHeading_titleRow">
+          <h2 class="ChapterHeading_title">Every meeting, prepared. Every email, triaged.</h2>
         </div>
       </div>
 
       <!-- Calendar explanation -->
       <div class="onboarding_ruleSection">
         <div class="onboarding_sectionLabel">
-          <svg class="onboarding_iconInline" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
+          <svg class="onboarding_iconInline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 2v4"/><path d="M16 2v4"/><rect width="18" height="18" x="3" y="4" rx="2"/><path d="M3 10h18"/></svg>
           Calendar Intelligence
         </div>
         <p class="onboarding_bodyText">
-          DailyOS reads your calendar and keeps meeting context current. For each meeting, it builds a prep: relationship
-          history, open action items, talking points, risks. The lifecycle:
-          <span class="onboarding_monoAccent">
-            Prep &rarr; Meeting &rarr; Capture &rarr; Next Prep
-          </span>
-          . Each meeting feeds the next.
+          DailyOS reads your calendar and keeps meeting context current. For each meeting, it builds a prep: relationship history, open action items, talking points, risks. The lifecycle:
+          <span class="onboarding_monoAccent">Prep → Meeting → Capture → Next Prep</span>.
+          Each meeting feeds the next.
         </p>
       </div>
 
       <!-- Email explanation -->
       <div class="onboarding_ruleSection">
         <div class="onboarding_sectionLabel">
-          <svg class="onboarding_iconInline" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+          <svg class="onboarding_iconInline" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
           Email Triage
         </div>
         <p class="onboarding_bodyText">
-          DailyOS triages your email by priority. Important emails surface first. Each gets an AI
-          summary and a recommended action. You scan and decide &mdash; no inbox-zero required.
+          DailyOS triages your email by priority. Important emails surface first. Each gets an AI summary and a recommended action. You scan and decide — no inbox-zero required.
         </p>
       </div>
 
-      <!-- Auth status / button -->
-      <div style="display: grid;">
-        <button type="button" data-slot="button" data-variant="default" data-size="lg" class="ob-button-primary">
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
-          Connect Google Calendar &amp; Gmail
-        </button>
-      </div>
+      <!-- Auth: NOT-CONNECTED rest state — primary connect button -->
+      <button type="button" class="ui-button ui-button-default ui-button-lg ui-button-full" data-slot="button" data-variant="default" data-size="lg">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect width="20" height="16" x="2" y="4" rx="2"/><path d="m22 7-8.97 5.7a1.94 1.94 0 0 1-2.06 0L2 7"/></svg>
+        Connect Google Calendar &amp; Gmail
+      </button>
 
       <!-- Privacy note -->
       <div class="onboarding_flexRowStart">
-        <svg class="onboarding_mt2 onboarding_flexShrink0 onboarding_tertiaryText" xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
+        <svg class="onboarding_mt2 onboarding_flexShrink0 onboarding_tertiaryText" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/></svg>
         <span class="onboarding_privacyNote">
           Everything processes locally. Your data never leaves your machine.
         </span>
       </div>
 
-      <!-- Continue / skip -->
-      <div style="display: flex; justify-content: flex-end;">
-        <button type="button" data-slot="button" data-variant="default" data-size="default" class="ob-button-primary">
-          Skip &mdash; connect later in Settings
-          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+      <!-- Continue / skip — TSX uses Tailwind "flex justify-end" wrapper -->
+      <div class="flex justify-end">
+        <button type="button" class="ui-button ui-button-default ui-button-default-size" data-slot="button" data-variant="default" data-size="default">
+          Skip — connect later in Settings
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" class="ml-2 size-4"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></svg>
         </button>
       </div>
 
