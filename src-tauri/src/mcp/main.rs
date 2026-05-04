@@ -11,11 +11,16 @@ use std::sync::Arc;
 
 use parking_lot::Mutex;
 
+use rmcp::handler::server::tool::ToolCallContext;
 use rmcp::model::*;
 use rmcp::schemars::JsonSchema;
-use rmcp::{tool, ServerHandler, ServiceExt};
+use rmcp::service::RequestContext;
+use rmcp::{tool, Error as McpError, RoleServer, ServerHandler, ServiceExt};
 use serde::{Deserialize, Serialize};
 
+use dailyos_lib::abilities::{AbilityDescriptor, AbilityRegistry};
+use dailyos_lib::bridges::mcp::McpAbilityBridge;
+use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::embeddings::EmbeddingModel;
 use dailyos_lib::state::load_config;
@@ -34,6 +39,10 @@ struct DailyOsMcp {
     config: Config,
     /// Embedding model for semantic search (nomic-embed-text-v1.5).
     embedding_model: Arc<EmbeddingModel>,
+    /// Registry-backed ability bridge for Phase 2 hybrid MCP tools.
+    ability_bridge: Arc<McpAbilityBridge<'static>>,
+    /// Process-scoped MCP session id. Stdio transport lifetime is process lifetime.
+    mcp_session_id: McpSessionId,
 }
 
 // =============================================================================
@@ -163,11 +172,19 @@ struct MeetingSearchItem {
 
 #[tool(tool_box)]
 impl DailyOsMcp {
-    fn new(db: ActionDb, config: Config, embedding_model: Arc<EmbeddingModel>) -> Self {
+    fn new(
+        db: ActionDb,
+        config: Config,
+        embedding_model: Arc<EmbeddingModel>,
+        ability_bridge: Arc<McpAbilityBridge<'static>>,
+        mcp_session_id: McpSessionId,
+    ) -> Self {
         Self {
             db: Arc::new(Mutex::new(db)),
             config,
             embedding_model,
+            ability_bridge,
+            mcp_session_id,
         }
     }
 
@@ -491,10 +508,72 @@ impl DailyOsMcp {
 }
 
 // =============================================================================
-// ServerHandler — wires tool_box into the MCP protocol
+// ServerHandler — manually routes static tools plus registry-backed abilities
 // =============================================================================
 
-#[tool(tool_box)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum McpToolRoute {
+    Static,
+    Ability,
+}
+
+pub fn mcp_route_for_tool_name(name: &str) -> McpToolRoute {
+    if DailyOsMcp::tool_box().map.contains_key(name) {
+        McpToolRoute::Static
+    } else {
+        McpToolRoute::Ability
+    }
+}
+
+pub fn list_hybrid_tools_for_bridge(ability_bridge: &McpAbilityBridge<'_>) -> Vec<Tool> {
+    let mut tools = DailyOsMcp::tool_box().list();
+    tools.extend(
+        ability_bridge
+            .list_descriptors()
+            .iter()
+            .map(|descriptor| ability_descriptor_to_tool(descriptor)),
+    );
+    tools
+}
+
+fn ability_descriptor_to_tool(descriptor: &AbilityDescriptor) -> Tool {
+    let input_schema = match (descriptor.input_schema)() {
+        serde_json::Value::Object(object) => object,
+        _ => JsonObject::new(),
+    };
+
+    Tool::new(
+        descriptor.name,
+        format!(
+            "DailyOS {:?} ability `{}`.",
+            descriptor.category, descriptor.name
+        ),
+        input_schema,
+    )
+}
+
+pub async fn invoke_mcp_ability_tool(
+    ability_bridge: &McpAbilityBridge<'_>,
+    session_id: McpSessionId,
+    request: CallToolRequestParam,
+) -> Result<CallToolResult, McpError> {
+    let ability_name = request.name.to_string();
+    let input_json = serde_json::Value::Object(request.arguments.unwrap_or_default());
+    let response = ability_bridge
+        .invoke_ability(session_id, &ability_name, input_json, false, None)
+        .await
+        .map_err(mcp_error_from_bridge_surface_error)?;
+    let content = Content::json(response)?;
+
+    Ok(CallToolResult::success(vec![content]))
+}
+
+pub fn mcp_error_from_bridge_surface_error(error: BridgeSurfaceError) -> McpError {
+    let data = serde_json::to_value(error)
+        .unwrap_or_else(|_| serde_json::Value::String("ability_unavailable".to_string()));
+    McpError::invalid_params(error.to_string(), Some(data))
+}
+
 impl ServerHandler for DailyOsMcp {
     fn get_info(&self) -> ServerInfo {
         ServerInfo {
@@ -512,6 +591,33 @@ impl ServerHandler for DailyOsMcp {
                  and search_content for semantic search over workspace files."
                     .to_string(),
             ),
+        }
+    }
+
+    async fn list_tools(
+        &self,
+        _request: PaginatedRequestParam,
+        _context: RequestContext<RoleServer>,
+    ) -> Result<ListToolsResult, McpError> {
+        Ok(ListToolsResult {
+            next_cursor: None,
+            tools: list_hybrid_tools_for_bridge(&self.ability_bridge),
+        })
+    }
+
+    async fn call_tool(
+        &self,
+        request: CallToolRequestParam,
+        context: RequestContext<RoleServer>,
+    ) -> Result<CallToolResult, McpError> {
+        match mcp_route_for_tool_name(&request.name) {
+            McpToolRoute::Static => {
+                let context = ToolCallContext::new(self, request, context);
+                Self::tool_box().call(context).await
+            }
+            McpToolRoute::Ability => {
+                invoke_mcp_ability_tool(&self.ability_bridge, self.mcp_session_id, request).await
+            }
         }
     }
 }
@@ -660,10 +766,236 @@ async fn main() -> anyhow::Result<()> {
         }
     });
 
-    let server = DailyOsMcp::new(db, config, embedding_model);
+    let ability_registry = match AbilityRegistry::global_checked() {
+        Ok(registry) => registry,
+        Err(violations) => {
+            eprintln!(
+                "Ability registry unavailable for MCP dynamic tools; serving static tools only: {violations:?}"
+            );
+            Box::leak(Box::new(
+                AbilityRegistry::from_descriptors_checked(Vec::new())
+                    .expect("empty ability registry should be valid"),
+            ))
+        }
+    };
+    let ability_bridge = Arc::new(McpAbilityBridge::new(ability_registry));
+    let mcp_session_id = McpSessionId::new_process_scoped();
+    let server = DailyOsMcp::new(db, config, embedding_model, ability_bridge, mcp_session_id);
 
     let service = server.serve(rmcp::transport::io::stdio()).await?;
     service.waiting().await?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use serde_json::json;
+
+    use super::*;
+    use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use dailyos_lib::abilities::{
+        AbilityCategory, AbilityContext, AbilityError, AbilityRegistry, Actor,
+    };
+    use dailyos_lib::services::context::ExecutionMode;
+
+    const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
+    const USER_ACTORS: &[Actor] = &[Actor::User];
+    const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
+
+    type ErasedFuture<'a> =
+        Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
+
+    fn success_erased<'a>(
+        ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            Ok(json!({
+                "data": {
+                    "input": input,
+                    "actor": format!("{:?}", ctx.actor),
+                    "mode": ctx.mode().as_str()
+                },
+                "ability_version": { "major": 1, "minor": 0 },
+                "diagnostics": { "warnings": [] },
+                "provenance": {
+                    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "ability_name": "fixture",
+                    "ability_version": { "major": 1, "minor": 0 },
+                    "ability_schema_version": 1,
+                    "actor": format!("{:?}", ctx.actor),
+                    "mode": ctx.mode().as_str(),
+                    "warnings": []
+                }
+            }))
+        })
+    }
+
+    fn descriptor(
+        name: &'static str,
+        category: AbilityCategory,
+        actors: &'static [Actor],
+        modes: &'static [ExecutionMode],
+    ) -> AbilityDescriptor {
+        AbilityDescriptor {
+            name,
+            version: "1.0.0",
+            schema_version: 1,
+            category,
+            policy: AbilityPolicy {
+                allowed_actors: actors,
+                allowed_modes: modes,
+                requires_confirmation: false,
+                may_publish: false,
+            },
+            composes: &[],
+            mutates: &[],
+            experimental: false,
+            registered_at: None,
+            signal_policy: SignalPolicy::default(),
+            invoke_erased: success_erased,
+            input_schema: closed_object_schema,
+            output_schema: closed_object_schema,
+        }
+    }
+
+    fn closed_object_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "additionalProperties": false
+        })
+    }
+
+    fn registry_with(descriptors: Vec<AbilityDescriptor>) -> AbilityRegistry {
+        AbilityRegistry::from_descriptors_checked(descriptors).unwrap()
+    }
+
+    fn session(index: u128) -> McpSessionId {
+        McpSessionId::from_uuid(uuid::Uuid::from_u128(index))
+    }
+
+    fn request(name: &'static str, arguments: serde_json::Value) -> CallToolRequestParam {
+        let arguments = match arguments {
+            serde_json::Value::Object(object) => Some(object),
+            _ => None,
+        };
+        CallToolRequestParam {
+            name: name.into(),
+            arguments,
+        }
+    }
+
+    #[test]
+    fn mcp_serverhandler_tool_box_macro_removed_and_manual_routes_static_or_ability() {
+        let source = std::fs::read_to_string(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/src/mcp/main.rs"
+        ))
+        .unwrap();
+        let inherent_tool_box = concat!("#[tool", "(tool_box)]\nimpl DailyOsMcp");
+        let serverhandler_tool_box = concat!(
+            "#[tool",
+            "(tool_box)]\nimpl ServerHandler for DailyOsMcp"
+        );
+
+        assert!(source.contains(inherent_tool_box));
+        assert!(!source.contains(serverhandler_tool_box));
+        assert!(source.contains("impl ServerHandler for DailyOsMcp"));
+        assert!(source.contains("McpToolRoute::Static"));
+        assert!(source.contains("invoke_mcp_ability_tool"));
+    }
+
+    #[test]
+    fn mcp_list_tools_includes_inherent_static_tools_and_ability_descriptors_filtered_by_agent_actor(
+    ) {
+        let registry = registry_with(vec![
+            descriptor(
+                "agent_fixture_ability",
+                AbilityCategory::Read,
+                AGENT_ACTORS,
+                LIVE_MODES,
+            ),
+            descriptor(
+                "user_fixture_ability",
+                AbilityCategory::Read,
+                USER_ACTORS,
+                LIVE_MODES,
+            ),
+        ]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let tools = list_hybrid_tools_for_bridge(&bridge);
+        let names = tools
+            .iter()
+            .map(|tool| tool.name.as_ref())
+            .collect::<Vec<_>>();
+
+        assert!(names.contains(&"get_briefing"));
+        assert!(names.contains(&"agent_fixture_ability"));
+        assert!(!names.contains(&"user_fixture_ability"));
+
+        let ability_tool = tools
+            .iter()
+            .find(|tool| tool.name == "agent_fixture_ability")
+            .unwrap();
+        assert_eq!(
+            ability_tool
+                .input_schema
+                .get("additionalProperties")
+                .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn mcp_call_tool_routes_to_inherent_for_static_name() {
+        assert_eq!(mcp_route_for_tool_name("get_briefing"), McpToolRoute::Static);
+        assert_eq!(mcp_route_for_tool_name("query_entity"), McpToolRoute::Static);
+    }
+
+    #[tokio::test]
+    async fn mcp_call_tool_routes_to_invoke_ability_for_registered_ability_name() {
+        let registry = registry_with(vec![descriptor(
+            "agent_fixture_ability",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        )]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let result = invoke_mcp_ability_tool(
+            &bridge,
+            session(1),
+            request("agent_fixture_ability", json!({ "subject": "dailyos" })),
+        )
+        .await
+        .unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        let text = result.content[0].as_text().unwrap().text.as_str();
+        let value: serde_json::Value = serde_json::from_str(text).unwrap();
+        assert_eq!(value["ability_name"], "agent_fixture_ability");
+        assert_eq!(value["data"]["input"]["subject"], "dailyos");
+    }
+
+    #[tokio::test]
+    async fn mcp_call_tool_unknown_name_returns_byte_equal_unavailable() {
+        let registry = registry_with(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let unknown = invoke_mcp_ability_tool(&bridge, session(1), request("unknown", json!({})))
+            .await
+            .unwrap_err();
+        let expected = mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable);
+
+        assert_eq!(
+            serde_json::to_vec(&unknown).unwrap(),
+            serde_json::to_vec(&expected).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_vec(&unknown.data).unwrap(),
+            br#""ability_unavailable""#
+        );
+    }
 }
