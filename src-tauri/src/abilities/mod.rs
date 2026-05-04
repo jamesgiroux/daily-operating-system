@@ -18,6 +18,6 @@ pub use feedback::{
 pub use provenance::*;
 pub use registry::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind,
-    AbilityRegistry, AbilityResult, Actor, ConfirmationToken,
+    AbilityRegistry, AbilityResult, Actor,
 };
 pub use threads::ThreadMetadata;

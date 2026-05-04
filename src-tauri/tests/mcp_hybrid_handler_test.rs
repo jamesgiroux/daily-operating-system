@@ -43,6 +43,20 @@ fn mcp_hybrid_call_tool_routes_get_provenance_to_bridge_session_scoped_lookup() 
 }
 
 #[test]
+fn mcp_hybrid_call_tool_routes_request_confirmation_to_bridge() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/mcp/main.rs"
+    ))
+    .expect("read mcp main source");
+
+    assert!(source.contains("McpToolRoute::RequestConfirmation"));
+    assert!(source.contains("invoke_mcp_request_confirmation_tool("));
+    assert!(source.contains("request_confirmation_args(&request)"));
+    assert!(source.contains(".request_confirmation_tool(session_id, &ability, &input_json, tauri_bridge)"));
+}
+
+#[test]
 fn mcp_hybrid_list_tools_includes_get_provenance_with_additional_properties_false_schema() {
     let source = std::fs::read_to_string(concat!(
         env!("CARGO_MANIFEST_DIR"),
@@ -56,4 +70,20 @@ fn mcp_hybrid_list_tools_includes_get_provenance_with_additional_properties_fals
     assert!(source.contains("serde_json::Value::Bool(false)"));
     assert!(source.contains("\"required\".to_string()"));
     assert!(source.contains("\"invocation_id\".to_string()"));
+}
+
+#[test]
+fn mcp_hybrid_list_tools_includes_request_confirmation_with_closed_schema() {
+    let source = std::fs::read_to_string(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/src/mcp/main.rs"
+    ))
+    .expect("read mcp main source");
+
+    assert!(source.contains("tools.push(request_confirmation_tool_descriptor())"));
+    assert!(source.contains("Tool::new(\n        \"request_confirmation\""));
+    assert!(source.contains("\"additionalProperties\".to_string()"));
+    assert!(source.contains("serde_json::Value::Bool(false)"));
+    assert!(source.contains("\"ability\".to_string()"));
+    assert!(source.contains("\"input_json\".to_string()"));
 }

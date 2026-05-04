@@ -2,9 +2,9 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use crate::abilities::{AbilityRegistry, ConfirmationToken};
+use crate::abilities::AbilityRegistry;
 use crate::bridges::tauri::TauriAbilityBridge;
-use crate::bridges::{AbilityResponseJson, BridgeSurfaceError};
+use crate::bridges::{AbilityResponseJson, BridgeSurfaceError, ConfirmationToken};
 use crate::state::AppState;
 
 #[tauri::command]

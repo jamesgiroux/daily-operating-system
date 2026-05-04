@@ -1,18 +1,85 @@
-use crate::abilities::{AbilityRegistry, ConfirmationToken};
+use std::collections::HashMap;
+use std::future::Future;
+use std::pin::Pin;
+use std::sync::Arc;
+use std::time::Duration;
+
+use chrono::{DateTime, Utc};
+use parking_lot::Mutex;
+
+use crate::abilities::AbilityRegistry;
 use crate::bridges::types::{invoke_registry_json, surface_error};
 use crate::bridges::{
-    AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, InvocationContext,
+    AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
+    InvocationContext, UserAttestationRequest,
 };
+use crate::services::context::Clock;
 use crate::services::context::ExecutionMode;
 use crate::state::AppState;
 
+const CONFIRMATION_RATE_LIMIT_MAX_REQUESTS: u32 = 3;
+const CONFIRMATION_RATE_LIMIT_WINDOW_SECONDS: i64 = 5 * 60;
+
+#[derive(Debug, Clone)]
+struct RateLimitWindow {
+    started_at: DateTime<Utc>,
+    count: u32,
+}
+
+pub trait UserAttestationHost: Send + Sync {
+    fn request_user_attestation<'a>(
+        &'a self,
+        request: UserAttestationRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BridgeSurfaceError>> + Send + 'a>>;
+}
+
+#[derive(Default)]
+struct PendingUserAttestationHost;
+
+impl UserAttestationHost for PendingUserAttestationHost {
+    fn request_user_attestation<'a>(
+        &'a self,
+        _request: UserAttestationRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BridgeSurfaceError>> + Send + 'a>> {
+        Box::pin(std::future::pending())
+    }
+}
+
+impl UserAttestationHost for AppState {
+    fn request_user_attestation<'a>(
+        &'a self,
+        request: UserAttestationRequest,
+    ) -> Pin<Box<dyn Future<Output = Result<(), BridgeSurfaceError>> + Send + 'a>> {
+        Box::pin(async move {
+            self.request_confirmation_attestation(request).await;
+            Ok(())
+        })
+    }
+}
+
 pub struct TauriAbilityBridge<'registry> {
     registry: &'registry AbilityRegistry,
+    rate_limits: Arc<Mutex<HashMap<(BridgeActor, String), RateLimitWindow>>>,
+    attestation_host: Arc<dyn UserAttestationHost>,
 }
 
 impl<'registry> TauriAbilityBridge<'registry> {
     pub fn new(registry: &'registry AbilityRegistry) -> Self {
-        Self { registry }
+        Self::new_with_attestation_host(
+            registry,
+            Arc::new(PendingUserAttestationHost),
+        )
+    }
+
+    pub fn new_with_attestation_host(
+        registry: &'registry AbilityRegistry,
+        attestation_host: Arc<dyn UserAttestationHost>,
+    ) -> Self {
+        Self {
+            registry,
+            rate_limits: Arc::new(Mutex::new(HashMap::new())),
+            attestation_host,
+        }
     }
 
     pub async fn invoke(
@@ -46,14 +113,98 @@ impl<'registry> TauriAbilityBridge<'registry> {
         .await
         .map_err(surface_error)
     }
+
+    pub async fn issue_confirmation_token(
+        &self,
+        actor: BridgeActor,
+        ability: String,
+        args_hash: [u8; 32],
+        user_attestation: UserAttestationRequest,
+    ) -> Result<ConfirmationToken, BridgeSurfaceError> {
+        if actor != user_attestation.actor
+            || ability != user_attestation.ability
+            || args_hash != user_attestation.args_hash
+        {
+            return Err(BridgeSurfaceError::AbilityUnavailable);
+        }
+
+        self.consume_rate_limit(actor, &ability, user_attestation.requested_at)?;
+
+        tokio::time::timeout(
+            Duration::from_secs(user_attestation.ttl_seconds as u64),
+            self.attestation_host
+                .request_user_attestation(user_attestation.clone()),
+        )
+        .await
+        .map_err(|_| BridgeSurfaceError::AbilityUnavailable)??;
+
+        Ok(ConfirmationToken {
+            actor,
+            ability,
+            args_hash,
+            issued_at: user_attestation.requested_at,
+            ttl_seconds: user_attestation.ttl_seconds,
+            token: uuid::Uuid::new_v4().to_string(),
+        })
+    }
+
+    pub fn user_attestation_request(
+        &self,
+        actor: BridgeActor,
+        ability: String,
+        args_hash: [u8; 32],
+        ttl_seconds: u32,
+    ) -> UserAttestationRequest {
+        UserAttestationRequest {
+            actor,
+            ability,
+            args_hash,
+            requested_at: self.now(),
+            ttl_seconds,
+        }
+    }
+
+    fn now(&self) -> DateTime<Utc> {
+        crate::services::context::SystemClock.now()
+    }
+
+    fn consume_rate_limit(
+        &self,
+        actor: BridgeActor,
+        ability: &str,
+        now: DateTime<Utc>,
+    ) -> Result<(), BridgeSurfaceError> {
+        let mut rate_limits = self.rate_limits.lock();
+        let key = (actor, ability.to_string());
+        let window = rate_limits.entry(key).or_insert_with(|| RateLimitWindow {
+            started_at: now,
+            count: 0,
+        });
+
+        if now.signed_duration_since(window.started_at).num_seconds()
+            >= CONFIRMATION_RATE_LIMIT_WINDOW_SECONDS
+        {
+            window.started_at = now;
+            window.count = 0;
+        }
+
+        if window.count >= CONFIRMATION_RATE_LIMIT_MAX_REQUESTS {
+            return Err(BridgeSurfaceError::AbilityUnavailable);
+        }
+
+        window.count += 1;
+        Ok(())
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
+    use std::sync::Arc;
     use std::time::Duration;
 
+    use chrono::TimeZone;
     use serde_json::json;
     use tokio::sync::Notify;
 
@@ -62,6 +213,7 @@ mod tests {
     use crate::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, Actor,
     };
+    use crate::bridges::confirmation_args_hash;
     use crate::bridges::types::{BridgeRejectReason, PRE_DISPATCH_RESOLUTION_ORDER};
 
     const USER_ACTORS: &[Actor] = &[Actor::User];
@@ -169,6 +321,56 @@ mod tests {
         })
     }
 
+    fn issued_at() -> DateTime<Utc> {
+        Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap()
+    }
+
+    fn confirmation_token(
+        actor: BridgeActor,
+        ability: &str,
+        input: &serde_json::Value,
+        issued_at: DateTime<Utc>,
+        ttl_seconds: u32,
+    ) -> ConfirmationToken {
+        ConfirmationToken {
+            actor,
+            ability: ability.to_string(),
+            args_hash: confirmation_args_hash(input),
+            issued_at,
+            ttl_seconds,
+            token: "fixture-token".to_string(),
+        }
+    }
+
+    fn user_attestation_request(
+        actor: BridgeActor,
+        ability: &str,
+        input: &serde_json::Value,
+    ) -> UserAttestationRequest {
+        UserAttestationRequest {
+            actor,
+            ability: ability.to_string(),
+            args_hash: confirmation_args_hash(input),
+            requested_at: issued_at(),
+            ttl_seconds: 300,
+        }
+    }
+
+    #[derive(Default)]
+    struct ApprovingAttestationHost {
+        requests: parking_lot::Mutex<Vec<UserAttestationRequest>>,
+    }
+
+    impl UserAttestationHost for ApprovingAttestationHost {
+        fn request_user_attestation<'a>(
+            &'a self,
+            request: UserAttestationRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<(), BridgeSurfaceError>> + Send + 'a>> {
+            self.requests.lock().push(request);
+            Box::pin(async { Ok(()) })
+        }
+    }
+
     async fn error_bytes_for(registry: AbilityRegistry, ability_name: &'static str) -> Vec<u8> {
         let state = AppState::new();
         let bridge = TauriAbilityBridge::new(&registry);
@@ -177,6 +379,126 @@ mod tests {
             .await
             .unwrap_err();
         serde_json::to_vec(&err).unwrap()
+    }
+
+    #[test]
+    fn confirmation_token_scoped_to_actor_ability_args_hash_ttl() {
+        let input = json!({ "subject": "dailyos" });
+        let token = confirmation_token(
+            BridgeActor::Agent,
+            "agent_write",
+            &input,
+            issued_at(),
+            300,
+        );
+
+        assert_eq!(token.actor, BridgeActor::Agent);
+        assert_eq!(token.ability, "agent_write");
+        assert_eq!(token.args_hash, confirmation_args_hash(&input));
+        assert_eq!(token.issued_at, issued_at());
+        assert_eq!(token.ttl_seconds, 300);
+        assert_eq!(token.token, "fixture-token");
+    }
+
+    #[test]
+    fn confirmation_token_matches_returns_true_for_matching_triple_and_unexpired() {
+        let input = json!({ "subject": "dailyos" });
+        let token = confirmation_token(
+            BridgeActor::Agent,
+            "agent_write",
+            &input,
+            issued_at(),
+            300,
+        );
+        let args_hash = confirmation_args_hash(&input);
+
+        assert!(token.matches(&BridgeActor::Agent, "agent_write", &args_hash));
+        assert!(!token.is_expired(issued_at() + chrono::Duration::seconds(299)));
+    }
+
+    #[test]
+    fn confirmation_token_matches_returns_false_for_wrong_args_hash() {
+        let token = confirmation_token(
+            BridgeActor::Agent,
+            "agent_write",
+            &json!({ "subject": "dailyos" }),
+            issued_at(),
+            300,
+        );
+        let wrong_args_hash = confirmation_args_hash(&json!({ "subject": "other" }));
+
+        assert!(!token.matches(&BridgeActor::Agent, "agent_write", &wrong_args_hash));
+    }
+
+    #[test]
+    fn confirmation_token_is_expired_after_ttl() {
+        let token = confirmation_token(
+            BridgeActor::Agent,
+            "agent_write",
+            &json!({}),
+            issued_at(),
+            300,
+        );
+
+        assert!(token.is_expired(issued_at() + chrono::Duration::seconds(300)));
+    }
+
+    #[tokio::test]
+    async fn tauri_bridge_issue_confirmation_token_blocks_on_user_attestation() {
+        let registry = registry(vec![]);
+        let state = Arc::new(AppState::new());
+        let host: Arc<dyn UserAttestationHost> = state.clone();
+        let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host);
+        let request =
+            user_attestation_request(BridgeActor::Agent, "agent_write", &json!({ "x": 1 }));
+
+        let issue = bridge.issue_confirmation_token(
+            BridgeActor::Agent,
+            "agent_write".to_string(),
+            request.args_hash,
+            request.clone(),
+        );
+        tokio::pin!(issue);
+
+        let result = tokio::time::timeout(Duration::from_millis(25), &mut issue).await;
+
+        assert!(result.is_err());
+        assert_eq!(state.pending_confirmation_attestation_requests(), vec![request]);
+    }
+
+    #[tokio::test]
+    async fn tauri_bridge_issue_confirmation_token_rate_limited_per_actor_ability() {
+        let registry = registry(vec![]);
+        let host = Arc::new(ApprovingAttestationHost::default());
+        let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host.clone());
+        let request =
+            user_attestation_request(BridgeActor::Agent, "agent_write", &json!({ "x": 1 }));
+
+        for _ in 0..3 {
+            let token = bridge
+                .issue_confirmation_token(
+                    BridgeActor::Agent,
+                    "agent_write".to_string(),
+                    request.args_hash,
+                    request.clone(),
+                )
+                .await
+                .unwrap();
+            assert!(token.matches(&BridgeActor::Agent, "agent_write", &request.args_hash));
+        }
+
+        let err = bridge
+            .issue_confirmation_token(
+                BridgeActor::Agent,
+                "agent_write".to_string(),
+                request.args_hash,
+                request,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+        assert_eq!(host.requests.lock().len(), 3);
     }
 
     #[tokio::test]

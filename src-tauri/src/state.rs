@@ -8,6 +8,7 @@ use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 
+use crate::bridges::UserAttestationRequest;
 use crate::types::{
     CalendarEvent, Config, ExecutionRecord, ExecutionTrigger, GoogleAuthStatus, TranscriptRecord,
     WorkflowId, WorkflowStatus,
@@ -165,6 +166,21 @@ impl Default for AppLockState {
             last_failed_unlock: None,
             failed_unlock_count: 0,
         }
+    }
+}
+
+#[derive(Default)]
+pub struct ConfirmationAttestationState {
+    requests: Mutex<Vec<UserAttestationRequest>>,
+}
+
+impl ConfirmationAttestationState {
+    pub fn record(&self, request: UserAttestationRequest) {
+        self.requests.lock().push(request);
+    }
+
+    pub fn pending_requests(&self) -> Vec<UserAttestationRequest> {
+        self.requests.lock().clone()
     }
 }
 
@@ -346,6 +362,8 @@ pub struct AppState {
     pub integrations: IntegrationState,
     /// App lock state consolidated into a single mutex.
     pub lock_state: Mutex<AppLockState>,
+    /// Placeholder queue for host-driven confirmation prompts.
+    pub confirmation_attestations: ConfirmationAttestationState,
     /// True if the encryption key was not found in the Keychain on startup.
     /// When set, the frontend shows a recovery screen instead of normal UI.
     pub encryption_key_missing: AtomicBool,
@@ -799,6 +817,7 @@ impl AppState {
                 embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
             },
             lock_state: Mutex::new(AppLockState::default()),
+            confirmation_attestations: ConfirmationAttestationState::default(),
             encryption_key_missing: AtomicBool::new(encryption_key_missing),
             database_recovery_status: Mutex::new(database_recovery_status),
             audit_log,
@@ -820,6 +839,15 @@ impl AppState {
     /// Returns the cached `MergedSignalConfig` — cheap clone, no recomputation.
     pub fn get_merged_signal_config(&self) -> MergedSignalConfig {
         self.merged_signal_config.read().clone()
+    }
+
+    pub async fn request_confirmation_attestation(&self, request: UserAttestationRequest) {
+        self.confirmation_attestations.record(request);
+        std::future::pending::<()>().await;
+    }
+
+    pub fn pending_confirmation_attestation_requests(&self) -> Vec<UserAttestationRequest> {
+        self.confirmation_attestations.pending_requests()
     }
 
     /// Update the active preset and recompute the cached merged signal config.

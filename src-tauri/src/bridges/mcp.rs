@@ -2,16 +2,18 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use crate::abilities::provenance::InvocationId;
-use crate::abilities::{AbilityDescriptor, AbilityRegistry, Actor, ConfirmationToken};
-use crate::bridges::types::{invoke_registry_json, surface_error};
+use crate::abilities::{AbilityDescriptor, AbilityRegistry, Actor};
+use crate::bridges::tauri::TauriAbilityBridge;
+use crate::bridges::types::{confirmation_args_hash, invoke_registry_json, surface_error};
 use crate::bridges::{
-    AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, InvocationContext,
-    McpSessionId, RenderedProvenance,
+    AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
+    InvocationContext, McpSessionId, RenderedProvenance,
 };
 use crate::services::context::{
     ExecutionMode, ExternalClients, ServiceContext, SystemClock, SystemRng,
 };
 use rmcp::model::{CallToolResult, Content};
+use rmcp::Error as McpError;
 
 // MCP invocation provenance cache caps. The cache keeps the newest 256 entries,
 // limits total serialized detail provenance to 256 KiB, and refuses individual
@@ -20,6 +22,7 @@ const MCP_INVOCATION_CACHE_ENTRY_CAP: usize = 256;
 const MCP_INVOCATION_CACHE_TOTAL_BYTE_CAP: usize = 256 * 1024;
 const MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP: usize = 10 * 1024;
 const MCP_ACTOR_LABEL: &str = concat!("agent:dailyos-mcp:", env!("CARGO_PKG_VERSION"));
+const MCP_CONFIRMATION_TOKEN_TTL_SECONDS: u32 = 5 * 60;
 
 type InvocationCacheKey = (McpSessionId, InvocationId);
 
@@ -216,6 +219,33 @@ impl<'registry> McpAbilityBridge<'registry> {
         }
     }
 
+    pub async fn request_confirmation_tool(
+        &self,
+        _session: McpSessionId,
+        ability: &str,
+        input_json: &serde_json::Value,
+        tauri_bridge: &TauriAbilityBridge<'_>,
+    ) -> Result<CallToolResult, McpError> {
+        let args_hash = confirmation_args_hash(input_json);
+        let user_attestation = tauri_bridge.user_attestation_request(
+            BridgeActor::Agent,
+            ability.to_string(),
+            args_hash,
+            MCP_CONFIRMATION_TOKEN_TTL_SECONDS,
+        );
+        let token = tauri_bridge
+            .issue_confirmation_token(
+                BridgeActor::Agent,
+                ability.to_string(),
+                args_hash,
+                user_attestation,
+            )
+            .await
+            .map_err(mcp_error_from_bridge_surface_error)?;
+
+        Ok(CallToolResult::success(vec![json_content(token)]))
+    }
+
     fn insert_provenance(
         &self,
         session: McpSessionId,
@@ -238,16 +268,26 @@ fn json_content<T: serde::Serialize>(value: T) -> Content {
     }
 }
 
+fn mcp_error_from_bridge_surface_error(error: BridgeSurfaceError) -> McpError {
+    let data = serde_json::to_value(error)
+        .unwrap_or_else(|_| serde_json::Value::String("ability_unavailable".to_string()));
+    McpError::invalid_params(error.to_string(), Some(data))
+}
+
 #[cfg(test)]
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
+    use std::sync::Arc;
 
+    use chrono::Utc;
     use serde_json::json;
 
     use super::*;
     use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
     use crate::abilities::{AbilityCategory, AbilityContext, AbilityError};
+    use crate::bridges::tauri::UserAttestationHost;
+    use crate::bridges::UserAttestationRequest;
 
     const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
     const USER_ACTORS: &[Actor] = &[Actor::User];
@@ -328,6 +368,11 @@ mod tests {
         }
     }
 
+    fn confirmation_descriptor(mut descriptor: AbilityDescriptor) -> AbilityDescriptor {
+        descriptor.policy.requires_confirmation = true;
+        descriptor
+    }
+
     #[cfg(feature = "experimental")]
     fn experimental_descriptor(
         mut descriptor: AbilityDescriptor,
@@ -385,6 +430,35 @@ mod tests {
         )
     }
 
+    fn token_for(
+        actor: BridgeActor,
+        ability: &str,
+        input: &serde_json::Value,
+        issued_at: chrono::DateTime<Utc>,
+        ttl_seconds: u32,
+    ) -> ConfirmationToken {
+        ConfirmationToken {
+            actor,
+            ability: ability.to_string(),
+            args_hash: confirmation_args_hash(input),
+            issued_at,
+            ttl_seconds,
+            token: "fixture-token".to_string(),
+        }
+    }
+
+    #[derive(Default)]
+    struct ApprovingAttestationHost;
+
+    impl UserAttestationHost for ApprovingAttestationHost {
+        fn request_user_attestation<'a>(
+            &'a self,
+            _request: UserAttestationRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<(), BridgeSurfaceError>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
+    }
+
     fn tool_result_json(result: &CallToolResult) -> serde_json::Value {
         let text = result.content[0].as_text().unwrap().text.as_str();
         serde_json::from_str(text).unwrap()
@@ -405,6 +479,19 @@ mod tests {
         let bridge = McpAbilityBridge::new(&registry);
         let err = bridge
             .invoke_ability(session(1), ability_name, json!({}), false, None)
+            .await
+            .unwrap_err();
+        serde_json::to_vec(&err).unwrap()
+    }
+
+    async fn invoke_error_bytes(
+        bridge: &McpAbilityBridge<'_>,
+        ability_name: &str,
+        input_json: serde_json::Value,
+        confirmation: Option<ConfirmationToken>,
+    ) -> Vec<u8> {
+        let err = bridge
+            .invoke_ability(session(1), ability_name, input_json, false, confirmation)
             .await
             .unwrap_err();
         serde_json::to_vec(&err).unwrap()
@@ -531,6 +618,126 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    #[tokio::test]
+    async fn mcp_request_confirmation_tool_returns_token_via_tauri_bridge() {
+        let registry = registry_with_abilities(vec![]);
+        let mcp_bridge = McpAbilityBridge::new(&registry);
+        let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
+            &registry,
+            Arc::new(ApprovingAttestationHost),
+        );
+        let input = json!({ "subject": "dailyos" });
+
+        let result = mcp_bridge
+            .request_confirmation_tool(session(1), "agent_write", &input, &tauri_bridge)
+            .await
+            .unwrap();
+
+        assert_eq!(result.is_error, Some(false));
+        let token: ConfirmationToken = serde_json::from_value(tool_result_json(&result)).unwrap();
+        assert_eq!(token.actor, BridgeActor::Agent);
+        assert_eq!(token.ability, "agent_write");
+        assert_eq!(token.args_hash, confirmation_args_hash(&input));
+        assert!(!token.token.is_empty());
+    }
+
+    #[tokio::test]
+    async fn mcp_request_confirmation_tool_args_hash_mismatch_yields_byte_equal_unavailable_on_later_call_tool(
+    ) {
+        let registry = registry_with_abilities(vec![confirmation_descriptor(descriptor(
+            "agent_confirmed",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        ))]);
+        let mcp_bridge = McpAbilityBridge::new(&registry);
+        let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
+            &registry,
+            Arc::new(ApprovingAttestationHost),
+        );
+        let issued_for = json!({ "subject": "x" });
+        let later_call = json!({ "subject": "y" });
+
+        let request_result = mcp_bridge
+            .request_confirmation_tool(session(1), "agent_confirmed", &issued_for, &tauri_bridge)
+            .await
+            .unwrap();
+        let token: ConfirmationToken =
+            serde_json::from_value(tool_result_json(&request_result)).unwrap();
+
+        let unknown = invoke_error_bytes(&mcp_bridge, "unknown", json!({}), None).await;
+        let mismatch = invoke_error_bytes(
+            &mcp_bridge,
+            "agent_confirmed",
+            later_call,
+            Some(token),
+        )
+        .await;
+        let missing =
+            invoke_error_bytes(&mcp_bridge, "agent_confirmed", issued_for.clone(), None).await;
+        let expired_token = token_for(
+            BridgeActor::Agent,
+            "agent_confirmed",
+            &issued_for,
+            Utc::now() - chrono::Duration::seconds(301),
+            300,
+        );
+        let expired = invoke_error_bytes(
+            &mcp_bridge,
+            "agent_confirmed",
+            issued_for,
+            Some(expired_token),
+        )
+        .await;
+
+        assert_eq!(mismatch, unknown);
+        assert_eq!(missing, unknown);
+        assert_eq!(expired, unknown);
+        assert_eq!(unknown, br#""ability_unavailable""#);
+    }
+
+    #[tokio::test]
+    async fn bridge_invoke_with_missing_confirmation_token_returns_byte_equal_unavailable() {
+        let registry = registry_with_abilities(vec![confirmation_descriptor(descriptor(
+            "agent_confirmed",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        ))]);
+        let bridge = McpAbilityBridge::new(&registry);
+
+        let unknown = invoke_error_bytes(&bridge, "unknown", json!({}), None).await;
+        let missing =
+            invoke_error_bytes(&bridge, "agent_confirmed", json!({}), None).await;
+
+        assert_eq!(missing, unknown);
+    }
+
+    #[tokio::test]
+    async fn bridge_invoke_with_expired_confirmation_token_returns_byte_equal_unavailable() {
+        let registry = registry_with_abilities(vec![confirmation_descriptor(descriptor(
+            "agent_confirmed",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        ))]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let input = json!({});
+        let expired_token = token_for(
+            BridgeActor::Agent,
+            "agent_confirmed",
+            &input,
+            Utc::now() - chrono::Duration::seconds(301),
+            300,
+        );
+
+        let unknown = invoke_error_bytes(&bridge, "unknown", json!({}), None).await;
+        let expired =
+            invoke_error_bytes(&bridge, "agent_confirmed", input, Some(expired_token)).await;
+
+        assert_eq!(expired, unknown);
     }
 
     #[tokio::test]

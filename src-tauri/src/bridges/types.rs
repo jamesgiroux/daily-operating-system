@@ -1,13 +1,13 @@
 use std::collections::{HashMap, VecDeque};
 
-use serde::de::Error as _;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 use crate::abilities::provenance::InvocationId;
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
-    ConfirmationToken,
 };
 use crate::services::context::{ExecutionMode, ServiceContext};
 
@@ -42,6 +42,40 @@ pub enum BridgeSurface {
     McpToolDetail,
     Worker,
     Eval,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ConfirmationToken {
+    pub actor: BridgeActor,
+    pub ability: String,
+    pub args_hash: [u8; 32],
+    pub issued_at: DateTime<Utc>,
+    pub ttl_seconds: u32,
+    pub token: String,
+}
+
+impl ConfirmationToken {
+    pub fn is_expired(&self, now: DateTime<Utc>) -> bool {
+        now.signed_duration_since(self.issued_at).num_seconds() >= self.ttl_seconds as i64
+    }
+
+    pub fn matches(
+        &self,
+        actor: &BridgeActor,
+        ability: &str,
+        args_hash: &[u8; 32],
+    ) -> bool {
+        &self.actor == actor && self.ability == ability && &self.args_hash == args_hash
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UserAttestationRequest {
+    pub actor: BridgeActor,
+    pub ability: String,
+    pub args_hash: [u8; 32],
+    pub requested_at: DateTime<Utc>,
+    pub ttl_seconds: u32,
 }
 
 #[derive(Debug, Clone)]
@@ -91,43 +125,6 @@ pub struct AbilityResponseJson {
 pub enum BridgeSurfaceError {
     #[error("ability unavailable")]
     AbilityUnavailable,
-}
-
-impl Serialize for ConfirmationToken {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: serde::Serializer,
-    {
-        #[derive(Serialize)]
-        struct Wire<'a> {
-            source: &'a str,
-        }
-
-        Wire {
-            source: &self.source,
-        }
-        .serialize(serializer)
-    }
-}
-
-impl<'de> Deserialize<'de> for ConfirmationToken {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: serde::Deserializer<'de>,
-    {
-        #[derive(Deserialize)]
-        struct Wire {
-            source: String,
-        }
-
-        let wire = Wire::deserialize(deserializer)?;
-        if wire.source.trim().is_empty() {
-            return Err(D::Error::custom("confirmation token source is required"));
-        }
-        Ok(Self {
-            source: wire.source,
-        })
-    }
 }
 
 #[derive(Debug, Error)]
@@ -186,6 +183,15 @@ pub(crate) async fn invoke_registry_json<'a>(
     let ability_version = descriptor.version.to_string();
     let schema_version = descriptor.schema_version;
     let canonical_ability_name = descriptor.name.to_string();
+    let args_hash = confirmation_args_hash(&input_json);
+
+    verify_confirmation_token(
+        descriptor,
+        &invocation,
+        &canonical_ability_name,
+        &args_hash,
+        services.clock.now(),
+    )?;
 
     let ability_context = AbilityContext::new(
         services,
@@ -232,6 +238,79 @@ pub(crate) fn resolve_pre_dispatch<'a>(
     }
 
     Ok(descriptor)
+}
+
+pub fn confirmation_args_hash(value: &serde_json::Value) -> [u8; 32] {
+    let mut bytes = Vec::new();
+    write_canonical_json(value, &mut bytes);
+    Sha256::digest(bytes).into()
+}
+
+fn write_canonical_json(value: &serde_json::Value, out: &mut Vec<u8>) {
+    match value {
+        serde_json::Value::Null
+        | serde_json::Value::Bool(_)
+        | serde_json::Value::Number(_)
+        | serde_json::Value::String(_) => {
+            out.extend(
+                serde_json::to_vec(value)
+                    .expect("serializing a serde_json scalar should not fail"),
+            );
+        }
+        serde_json::Value::Array(values) => {
+            out.push(b'[');
+            for (index, item) in values.iter().enumerate() {
+                if index > 0 {
+                    out.push(b',');
+                }
+                write_canonical_json(item, out);
+            }
+            out.push(b']');
+        }
+        serde_json::Value::Object(object) => {
+            out.push(b'{');
+            let mut entries = object.iter().collect::<Vec<_>>();
+            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            for (index, (key, item)) in entries.into_iter().enumerate() {
+                if index > 0 {
+                    out.push(b',');
+                }
+                out.extend(
+                    serde_json::to_vec(key)
+                        .expect("serializing a serde_json object key should not fail"),
+                );
+                out.push(b':');
+                write_canonical_json(item, out);
+            }
+            out.push(b'}');
+        }
+    }
+}
+
+fn verify_confirmation_token(
+    descriptor: &AbilityDescriptor,
+    invocation: &InvocationContext<'_>,
+    ability_name: &str,
+    args_hash: &[u8; 32],
+    now: DateTime<Utc>,
+) -> Result<(), BridgeSurfaceError> {
+    if !requires_confirmation(descriptor) {
+        return Ok(());
+    }
+
+    let Some(token) = invocation.confirmation else {
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    };
+
+    if token.is_expired(now) || !token.matches(&invocation.actor, ability_name, args_hash) {
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    Ok(())
+}
+
+fn requires_confirmation(descriptor: &AbilityDescriptor) -> bool {
+    descriptor.policy.requires_confirmation || descriptor.category == AbilityCategory::Publish
 }
 
 fn lookup_descriptor_by_name<'a>(

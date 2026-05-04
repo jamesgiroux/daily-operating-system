@@ -1,7 +1,8 @@
-use crate::abilities::{AbilityRegistry, ConfirmationToken};
+use crate::abilities::AbilityRegistry;
 use crate::bridges::types::{invoke_registry_json, surface_error};
 use crate::bridges::{
-    AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, InvocationContext,
+    AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
+    InvocationContext,
 };
 use crate::services::context::ExecutionMode;
 use crate::state::AppState;

@@ -21,6 +21,7 @@ use serde::{Deserialize, Serialize};
 use dailyos_lib::abilities::provenance::InvocationId;
 use dailyos_lib::abilities::{AbilityDescriptor, AbilityRegistry};
 use dailyos_lib::bridges::mcp::McpAbilityBridge;
+use dailyos_lib::bridges::tauri::TauriAbilityBridge;
 use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::embeddings::EmbeddingModel;
@@ -42,6 +43,8 @@ struct DailyOsMcp {
     embedding_model: Arc<EmbeddingModel>,
     /// Registry-backed ability bridge for Phase 2 hybrid MCP tools.
     ability_bridge: Arc<McpAbilityBridge<'static>>,
+    /// Tauri-host confirmation bridge for scoped confirmation-token issuance.
+    tauri_bridge: Arc<TauriAbilityBridge<'static>>,
     /// Process-scoped MCP session id. Stdio transport lifetime is process lifetime.
     mcp_session_id: McpSessionId,
 }
@@ -178,6 +181,7 @@ impl DailyOsMcp {
         config: Config,
         embedding_model: Arc<EmbeddingModel>,
         ability_bridge: Arc<McpAbilityBridge<'static>>,
+        tauri_bridge: Arc<TauriAbilityBridge<'static>>,
         mcp_session_id: McpSessionId,
     ) -> Self {
         Self {
@@ -185,6 +189,7 @@ impl DailyOsMcp {
             config,
             embedding_model,
             ability_bridge,
+            tauri_bridge,
             mcp_session_id,
         }
     }
@@ -516,6 +521,7 @@ impl DailyOsMcp {
 pub enum McpToolRoute {
     Static,
     GetProvenance,
+    RequestConfirmation,
     Ability,
 }
 
@@ -524,6 +530,8 @@ pub fn mcp_route_for_tool_name(name: &str) -> McpToolRoute {
         McpToolRoute::Static
     } else if name == "get_provenance" {
         McpToolRoute::GetProvenance
+    } else if name == "request_confirmation" {
+        McpToolRoute::RequestConfirmation
     } else {
         McpToolRoute::Ability
     }
@@ -532,6 +540,7 @@ pub fn mcp_route_for_tool_name(name: &str) -> McpToolRoute {
 pub fn list_hybrid_tools_for_bridge(ability_bridge: &McpAbilityBridge<'_>) -> Vec<Tool> {
     let mut tools = DailyOsMcp::tool_box().list();
     tools.push(get_provenance_tool_descriptor());
+    tools.push(request_confirmation_tool_descriptor());
     tools.extend(
         ability_bridge
             .list_descriptors()
@@ -581,6 +590,57 @@ fn get_provenance_tool_descriptor() -> Tool {
     )
 }
 
+fn request_confirmation_tool_descriptor() -> Tool {
+    let mut ability_schema = JsonObject::new();
+    ability_schema.insert(
+        "type".to_string(),
+        serde_json::Value::String("string".to_string()),
+    );
+
+    let mut input_json_schema = JsonObject::new();
+    input_json_schema.insert(
+        "type".to_string(),
+        serde_json::Value::String("object".to_string()),
+    );
+
+    let mut properties = JsonObject::new();
+    properties.insert(
+        "ability".to_string(),
+        serde_json::Value::Object(ability_schema),
+    );
+    properties.insert(
+        "input_json".to_string(),
+        serde_json::Value::Object(input_json_schema),
+    );
+
+    let mut schema = JsonObject::new();
+    schema.insert(
+        "type".to_string(),
+        serde_json::Value::String("object".to_string()),
+    );
+    schema.insert(
+        "additionalProperties".to_string(),
+        serde_json::Value::Bool(false),
+    );
+    schema.insert(
+        "properties".to_string(),
+        serde_json::Value::Object(properties),
+    );
+    schema.insert(
+        "required".to_string(),
+        serde_json::Value::Array(vec![
+            serde_json::Value::String("ability".to_string()),
+            serde_json::Value::String("input_json".to_string()),
+        ]),
+    );
+
+    Tool::new(
+        "request_confirmation",
+        "Request a scoped confirmation token from the Tauri host for a later ability invocation.",
+        schema,
+    )
+}
+
 fn ability_descriptor_to_tool(descriptor: &AbilityDescriptor) -> Tool {
     let input_schema = match (descriptor.input_schema)() {
         serde_json::Value::Object(object) => object,
@@ -620,6 +680,52 @@ pub fn invoke_mcp_get_provenance_tool(
 ) -> Result<CallToolResult, McpError> {
     let invocation_id = get_provenance_invocation_id(&request)?;
     Ok(ability_bridge.get_provenance_tool_response(session_id, invocation_id))
+}
+
+pub async fn invoke_mcp_request_confirmation_tool(
+    ability_bridge: &McpAbilityBridge<'_>,
+    session_id: McpSessionId,
+    request: CallToolRequestParam,
+    tauri_bridge: &TauriAbilityBridge<'_>,
+) -> Result<CallToolResult, McpError> {
+    let (ability, input_json) = request_confirmation_args(&request)?;
+    ability_bridge
+        .request_confirmation_tool(session_id, &ability, &input_json, tauri_bridge)
+        .await
+}
+
+fn request_confirmation_args(
+    request: &CallToolRequestParam,
+) -> Result<(String, serde_json::Value), McpError> {
+    let Some(arguments) = request.arguments.as_ref() else {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    };
+
+    if arguments.len() != 2 {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    }
+
+    let Some(ability) = arguments.get("ability").and_then(serde_json::Value::as_str) else {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    };
+    let Some(input_json) = arguments.get("input_json") else {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    };
+    if !input_json.is_object() {
+        return Err(mcp_error_from_bridge_surface_error(
+            BridgeSurfaceError::AbilityUnavailable,
+        ));
+    }
+
+    Ok((ability.to_string(), input_json.clone()))
 }
 
 fn get_provenance_invocation_id(request: &CallToolRequestParam) -> Result<InvocationId, McpError> {
@@ -702,6 +808,15 @@ impl ServerHandler for DailyOsMcp {
                     self.mcp_session_id,
                     request,
                 )
+            }
+            McpToolRoute::RequestConfirmation => {
+                invoke_mcp_request_confirmation_tool(
+                    &self.ability_bridge,
+                    self.mcp_session_id,
+                    request,
+                    &self.tauri_bridge,
+                )
+                .await
             }
             McpToolRoute::Ability => {
                 invoke_mcp_ability_tool(&self.ability_bridge, self.mcp_session_id, request).await
@@ -867,8 +982,16 @@ async fn main() -> anyhow::Result<()> {
         }
     };
     let ability_bridge = Arc::new(McpAbilityBridge::new(ability_registry));
+    let tauri_bridge = Arc::new(TauriAbilityBridge::new(ability_registry));
     let mcp_session_id = McpSessionId::new_process_scoped();
-    let server = DailyOsMcp::new(db, config, embedding_model, ability_bridge, mcp_session_id);
+    let server = DailyOsMcp::new(
+        db,
+        config,
+        embedding_model,
+        ability_bridge,
+        tauri_bridge,
+        mcp_session_id,
+    );
 
     let service = server.serve(rmcp::transport::io::stdio()).await?;
     service.waiting().await?;
@@ -1000,6 +1123,7 @@ mod tests {
         assert!(source.contains("impl ServerHandler for DailyOsMcp"));
         assert!(source.contains("McpToolRoute::Static"));
         assert!(source.contains("invoke_mcp_ability_tool"));
+        assert!(source.contains("invoke_mcp_request_confirmation_tool"));
     }
 
     #[test]
@@ -1028,6 +1152,7 @@ mod tests {
 
         assert!(names.contains(&"get_briefing"));
         assert!(names.contains(&"get_provenance"));
+        assert!(names.contains(&"request_confirmation"));
         assert!(names.contains(&"agent_fixture_ability"));
         assert!(!names.contains(&"user_fixture_ability"));
 
@@ -1054,6 +1179,18 @@ mod tests {
                 .and_then(serde_json::Value::as_bool),
             Some(false)
         );
+
+        let request_confirmation_tool = tools
+            .iter()
+            .find(|tool| tool.name == "request_confirmation")
+            .unwrap();
+        assert_eq!(
+            request_confirmation_tool
+                .input_schema
+                .get("additionalProperties")
+                .and_then(serde_json::Value::as_bool),
+            Some(false)
+        );
     }
 
     #[test]
@@ -1063,6 +1200,10 @@ mod tests {
         assert_eq!(
             mcp_route_for_tool_name("get_provenance"),
             McpToolRoute::GetProvenance
+        );
+        assert_eq!(
+            mcp_route_for_tool_name("request_confirmation"),
+            McpToolRoute::RequestConfirmation
         );
     }
 

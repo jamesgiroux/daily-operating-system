@@ -15,6 +15,7 @@ use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use crate::abilities::provenance::{AbilityOutput, CompositionId};
+use crate::bridges::types::ConfirmationToken;
 use crate::services::context::{ExecutionMode, ServiceContext};
 
 /// ADR-0102 §76-95: ability category drives mutation policy.
@@ -85,12 +86,6 @@ pub struct AbilityDescriptor {
 }
 
 inventory::collect!(AbilityDescriptor);
-
-/// Confirmation token — Publish abilities require this for mutation auth.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ConfirmationToken {
-    pub source: String,
-}
 
 /// Ability error kinds — ADR-0102 Amendment A §466-483.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
