@@ -1386,10 +1386,19 @@ pub async fn update_stakeholders(
             let existing_intel = db
                 .get_entity_intelligence(&entity_id)
                 .map_err(|e| format!("DB read failed for entity {entity_id}: {e}"))?;
+            // Compose IntelligenceJson in memory only. Disk write is deferred
+            // to post_commit_fenced_write below so disk and DB stay consistent
+            // under transaction rollback. Pre-cycle-10 the disk-fallback branch
+            // wrote the file BEFORE the transaction, which could leave disk ahead
+            // of DB if the new error-propagating subscriber rolled back.
             let intel = if let Some(existing) = existing_intel {
                 crate::intelligence::apply_stakeholders_update_in_memory(existing, stakeholders)?
             } else {
-                crate::intelligence::apply_stakeholders_update(&dir, stakeholders)?
+                let disk_intel = crate::intelligence::io::read_intelligence_json(&dir)?;
+                crate::intelligence::apply_stakeholders_update_in_memory(
+                    disk_intel,
+                    stakeholders,
+                )?
             };
 
             // DB-first ordering. The legacy file cache is written AFTER
