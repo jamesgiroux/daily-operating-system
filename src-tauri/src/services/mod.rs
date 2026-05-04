@@ -30,6 +30,7 @@ pub mod signals;
 pub mod source_asof_backfill;
 pub mod success_plans;
 pub mod threads;
+pub mod trust_extraction;
 pub mod user_entity;
 
 /// Command-facing service boundary for mutation workflows.
