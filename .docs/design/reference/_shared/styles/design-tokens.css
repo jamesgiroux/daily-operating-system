@@ -123,6 +123,28 @@
   --color-self-10: var(--color-garden-eucalyptus-10);
 
   /* ─────────────────────────────────────────────────────────────────────────
+     TRUST BAND ALIASES — v1.4.0 user-facing trust render bands
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-trust-likely-current: var(--color-garden-sage);
+  --color-trust-use-with-caution: var(--color-spice-saffron);
+  --color-trust-needs-verification: var(--color-spice-terracotta);
+
+  --color-trust-likely-current-8: var(--color-garden-sage-8);
+  --color-trust-likely-current-10: var(--color-garden-sage-10);
+  --color-trust-likely-current-12: var(--color-garden-sage-12);
+  --color-trust-likely-current-15: var(--color-garden-sage-15);
+
+  --color-trust-use-with-caution-8: var(--color-spice-saffron-8);
+  --color-trust-use-with-caution-10: var(--color-spice-saffron-10);
+  --color-trust-use-with-caution-12: var(--color-spice-saffron-12);
+  --color-trust-use-with-caution-15: var(--color-spice-saffron-15);
+
+  --color-trust-needs-verification-8: var(--color-spice-terracotta-8);
+  --color-trust-needs-verification-10: var(--color-spice-terracotta-10);
+  --color-trust-needs-verification-12: var(--color-spice-terracotta-12);
+  --color-trust-needs-verification-15: var(--color-spice-terracotta-15);
+
+  /* ─────────────────────────────────────────────────────────────────────────
      OPACITY VARIANTS — Tinted backgrounds, borders, hover states
      ───────────────────────────────────────────────────────────────────────── */
   --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);
@@ -162,6 +184,7 @@
   --color-spice-terracotta-15: rgba(196, 101, 74, 0.15);
   --color-spice-terracotta-20: rgba(196, 101, 74, 0.20);
   --color-spice-saffron-10: rgba(222, 184, 65, 0.10);
+  --color-spice-saffron-15: rgba(222, 184, 65, 0.15);
   --color-desk-charcoal-15: rgba(30, 37, 48, 0.015);
   --color-desk-charcoal-4: rgba(30, 37, 48, 0.04);
   --color-desk-charcoal-5: rgba(30, 37, 48, 0.05);

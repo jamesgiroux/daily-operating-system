@@ -1,0 +1,22 @@
+.TrustBand_band {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.TrustBand_band[data-density="default"],
+.TrustBand_band[data-density="expanded"] {
+  gap: var(--space-sm);
+}
+
+.TrustBand_band[data-align="row"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.TrustBand_band[data-density="expanded"] {
+  align-items: flex-start;
+}

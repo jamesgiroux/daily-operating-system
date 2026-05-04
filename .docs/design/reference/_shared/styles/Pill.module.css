@@ -1,0 +1,104 @@
+.Pill_pill {
+  --pill-background: var(--color-desk-charcoal-4);
+  --pill-color: var(--color-text-secondary);
+  --pill-dot-color: var(--color-text-tertiary);
+  --pill-border: transparent;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  width: fit-content;
+  border: 1px solid var(--pill-border);
+  border-radius: 999px;
+  background: var(--pill-background);
+  color: var(--pill-color);
+  font-family: var(--font-sans);
+  font-weight: 500;
+  line-height: 1;
+  letter-spacing: 0;
+  text-decoration: none;
+  white-space: nowrap;
+  vertical-align: middle;
+}
+
+.Pill_standard {
+  padding: 5px 14px;
+  font-size: 12px;
+}
+
+.Pill_compact {
+  padding: 2px 8px;
+  font-size: 11px;
+}
+
+.Pill_interactive {
+  cursor: pointer;
+  transition:
+    background 0.15s ease,
+    border-color 0.15s ease,
+    opacity 0.15s ease;
+}
+
+.Pill_interactive:hover {
+  border-color: currentColor;
+}
+
+.Pill_asButton {
+  appearance: none;
+}
+
+.Pill_asButton:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.Pill_dot {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--pill-dot-color);
+  flex-shrink: 0;
+}
+
+.Pill_sage {
+  --pill-background: var(--color-garden-sage-15);
+  --pill-color: var(--color-garden-rosemary);
+  --pill-dot-color: var(--color-garden-sage);
+}
+
+.Pill_turmeric {
+  --pill-background: var(--color-spice-turmeric-15);
+  --pill-color: var(--color-spice-turmeric);
+  --pill-dot-color: var(--color-spice-turmeric);
+}
+
+.Pill_terracotta {
+  --pill-background: var(--color-spice-terracotta-15);
+  --pill-color: var(--color-spice-chili);
+  --pill-dot-color: var(--color-spice-terracotta);
+}
+
+.Pill_larkspur {
+  --pill-background: var(--color-garden-larkspur-15);
+  --pill-color: var(--color-garden-larkspur);
+  --pill-dot-color: var(--color-garden-larkspur);
+}
+
+.Pill_olive {
+  --pill-background: var(--color-garden-olive-10);
+  --pill-color: var(--color-garden-olive);
+  --pill-dot-color: var(--color-garden-olive);
+}
+
+.Pill_eucalyptus {
+  --pill-background: var(--color-garden-eucalyptus-10);
+  --pill-color: var(--color-garden-eucalyptus);
+  --pill-dot-color: var(--color-garden-eucalyptus);
+}
+
+.Pill_neutral {
+  --pill-background: var(--color-desk-charcoal-4);
+  --pill-color: var(--color-text-secondary);
+  --pill-dot-color: var(--color-text-tertiary);
+}

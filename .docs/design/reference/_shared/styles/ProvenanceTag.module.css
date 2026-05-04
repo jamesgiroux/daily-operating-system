@@ -1,0 +1,15 @@
+.ProvenanceTag_tag {
+  display: inline-block;
+  margin-top: 2px;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 400;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.ProvenanceTag_discrepancy {
+  color: var(--color-spice-terracotta);
+  font-weight: 600;
+}

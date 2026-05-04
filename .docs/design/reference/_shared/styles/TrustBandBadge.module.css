@@ -1,0 +1,30 @@
+.TrustBandBadge_badge {
+  font-family: var(--font-mono);
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.TrustBandBadge_compact {
+  font-size: 10px;
+}
+
+.TrustBandBadge_likelyCurrent {
+  --pill-background: var(--color-trust-likely-current-15);
+  --pill-color: var(--color-trust-likely-current);
+  --pill-dot-color: var(--color-trust-likely-current);
+  --pill-border: var(--color-trust-likely-current-12);
+}
+
+.TrustBandBadge_useWithCaution {
+  --pill-background: var(--color-trust-use-with-caution-15);
+  --pill-color: var(--color-trust-use-with-caution);
+  --pill-dot-color: var(--color-trust-use-with-caution);
+  --pill-border: var(--color-trust-use-with-caution-12);
+}
+
+.TrustBandBadge_needsVerification {
+  --pill-background: var(--color-trust-needs-verification-15);
+  --pill-color: var(--color-trust-needs-verification);
+  --pill-dot-color: var(--color-trust-needs-verification);
+  --pill-border: var(--color-trust-needs-verification-12);
+}

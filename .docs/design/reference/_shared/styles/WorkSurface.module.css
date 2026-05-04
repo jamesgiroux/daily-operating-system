@@ -7,7 +7,7 @@
  *   SharedRefRow, RecentlyLandedRow, ReportCard, NudgeRow, VisibilityPill.
  *
  * Token + typography fidelity verified against
- *   .docs/_archive/mockups/account-work-globex.html
+ *   .docs/mockups/account-work-globex.html
  * ========================================================================= */
 
 /* Pull in design tokens explicitly. The global load from index.css can
@@ -250,57 +250,8 @@
   align-items: center;
 }
 
-/* ── Audience pill ── */
-.WorkSurface_audiencePill {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  padding: 5px 14px;
-  border-radius: 100px;
-}
-.WorkSurface_audienceCustomer {
-  background: var(--color-garden-sage-15);
-  color: var(--color-garden-rosemary);
-}
-.WorkSurface_audienceInternal {
-  background: var(--color-desk-charcoal-8);
-  color: var(--color-text-secondary);
-}
-
-/* ── Visibility pill (Private / Shared) ── */
-.WorkSurface_visibilityPill {
-  font-family: var(--font-sans);
-  font-size: 12px;
-  font-weight: 500;
-  line-height: 1;
-  padding: 5px 14px;
-  border-radius: 100px;
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  text-decoration: none;
-}
-.WorkSurface_visibilityPill::before {
-  content: "";
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-}
-.WorkSurface_visibilityPrivate {
-  background: var(--color-desk-charcoal-8);
-  color: var(--color-text-secondary);
-}
-.WorkSurface_visibilityPrivate::before {
-  background: var(--color-text-tertiary);
-}
-.WorkSurface_visibilityShared {
-  background: var(--color-garden-sage-15);
-  color: var(--color-garden-rosemary);
+.WorkSurface_visibilityLink {
   border-bottom: 1px dotted var(--color-garden-rosemary);
-}
-.WorkSurface_visibilityShared::before {
-  background: var(--color-garden-sage);
 }
 
 /* ── Soft nudge (non-guilt flag inside a commitment) ── */
