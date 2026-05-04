@@ -4,7 +4,13 @@ import { save } from "@tauri-apps/plugin-dialog";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { toast } from "sonner";
 import { Download, Trash2, AlertTriangle, Loader2 } from "lucide-react";
-import { styles } from "@/components/settings/styles";
+import {
+  SettingsButton,
+  SettingsInput,
+  SettingsRule,
+  SettingsSectionLabel,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 import type { DataSummary, ExportReport, ClearReport } from "@/types";
 
 // ---------------------------------------------------------------------------
@@ -109,18 +115,18 @@ export default function DataPrivacySection() {
   return (
     <div>
       {/* ── Section: What DailyOS stores ───────────────────────────── */}
-      <p style={styles.subsectionLabel}>Your data</p>
+      <SettingsSectionLabel>Your data</SettingsSectionLabel>
 
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <p className={formRowStyles.descriptionLead}>
         Everything is stored locally on your Mac. Nothing leaves your device
         unless you explicitly connect an external service.
       </p>
       <div style={{ marginBottom: 24 }}>
-        <p style={{ ...styles.description, marginBottom: 8 }}>
+        <p className={formRowStyles.descriptionSmallBottom8}>
           Stored locally: calendar events, email metadata and summaries, contacts,
           meeting transcripts, and AI-generated intelligence.
         </p>
-        <p style={{ ...styles.description, marginBottom: 0 }}>
+        <p className={formRowStyles.descriptionFlush}>
           Not stored permanently: full email bodies, Glean result payloads after disconnect,
           or connector credentials outside the macOS Keychain.
         </p>
@@ -145,29 +151,18 @@ export default function DataPrivacySection() {
         </div>
       )}
 
-      <hr style={styles.thinRule} />
+      <SettingsRule />
 
       {/* ── Section: Export ─────────────────────────────────────────── */}
       <div style={{ padding: "16px 0" }}>
-        <p
-          style={{
-            ...styles.description,
-            marginBottom: 12,
-          }}
-        >
+        <p className={formRowStyles.descriptionTight}>
           Download a ZIP containing all your data as human-readable JSON files.
         </p>
-        <button
+        <SettingsButton
+          tone="primary"
           onClick={handleExport}
           disabled={exporting}
-          style={{
-            ...styles.btn,
-            ...styles.btnPrimary,
-            display: "inline-flex",
-            alignItems: "center",
-            gap: 6,
-            opacity: exporting ? 0.6 : 1,
-          }}
+          muted={exporting}
         >
           {exporting ? (
             <Loader2 size={12} className="animate-spin" />
@@ -175,38 +170,27 @@ export default function DataPrivacySection() {
             <Download size={12} />
           )}
           {exporting ? "Exporting..." : "Export all data"}
-        </button>
+        </SettingsButton>
       </div>
 
-      <hr style={styles.thinRule} />
+      <SettingsRule />
 
       {/* ── Section: Clear Insights ────────────────────────────────── */}
       <div style={{ padding: "16px 0" }}>
-        <p
-          style={{
-            ...styles.description,
-            marginBottom: 12,
-          }}
-        >
+        <p className={formRowStyles.descriptionTight}>
           Remove all AI-generated analysis while keeping your accounts,
           contacts, and meetings intact. Insights will be regenerated
           automatically over time.
         </p>
 
         {!showClearConfirm ? (
-          <button
+          <SettingsButton
+            tone="danger"
             onClick={() => setShowClearConfirm(true)}
-            style={{
-              ...styles.btn,
-              ...styles.btnDanger,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-            }}
           >
             <Trash2 size={12} />
             Clear insights
-          </button>
+          </SettingsButton>
         ) : (
           <div
             style={{
@@ -224,17 +208,11 @@ export default function DataPrivacySection() {
             >
               Are you sure?
             </span>
-            <button
+            <SettingsButton
+              tone="danger"
               onClick={handleClearIntelligence}
               disabled={clearing}
-              style={{
-                ...styles.btn,
-                ...styles.btnDanger,
-                display: "inline-flex",
-                alignItems: "center",
-                gap: 6,
-                opacity: clearing ? 0.6 : 1,
-              }}
+              muted={clearing}
             >
               {clearing ? (
                 <Loader2 size={12} className="animate-spin" />
@@ -242,18 +220,18 @@ export default function DataPrivacySection() {
                 <Trash2 size={12} />
               )}
               {clearing ? "Clearing..." : "Yes, clear insights"}
-            </button>
-            <button
+            </SettingsButton>
+            <SettingsButton
+              tone="ghost"
               onClick={() => setShowClearConfirm(false)}
-              style={{ ...styles.btn, ...styles.btnGhost }}
             >
               Cancel
-            </button>
+            </SettingsButton>
           </div>
         )}
       </div>
 
-      <hr style={styles.thinRule} />
+      <SettingsRule />
 
       {/* ── Section: Delete Everything ─────────────────────────────── */}
       <div
@@ -289,42 +267,25 @@ export default function DataPrivacySection() {
             Danger zone
           </span>
         </div>
-        <p
-          style={{
-            ...styles.description,
-            marginBottom: 12,
-          }}
-        >
+        <p className={formRowStyles.descriptionTight}>
           Permanently delete all data including your database, workspace files,
           and configuration. This cannot be undone. DailyOS will restart with a
           clean slate.
         </p>
 
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <input
+          <SettingsInput
+            width={200}
+            className={formRowStyles.inputDanger}
             type="text"
             placeholder='Type "DELETE" to confirm'
             value={confirmText}
             onChange={(e) => setConfirmText(e.target.value)}
-            style={{
-              ...styles.input,
-              width: 200,
-              borderBottom: "1px solid var(--color-spice-terracotta)",
-            }}
           />
-          <button
+          <SettingsButton
+            tone="danger"
             onClick={handleDeleteAll}
             disabled={confirmText !== "DELETE" || deleting}
-            style={{
-              ...styles.btn,
-              ...styles.btnDanger,
-              display: "inline-flex",
-              alignItems: "center",
-              gap: 6,
-              opacity: confirmText !== "DELETE" || deleting ? 0.4 : 1,
-              cursor:
-                confirmText !== "DELETE" || deleting ? "not-allowed" : "pointer",
-            }}
           >
             {deleting ? (
               <Loader2 size={12} className="animate-spin" />
@@ -332,7 +293,7 @@ export default function DataPrivacySection() {
               <Trash2 size={12} />
             )}
             {deleting ? "Deleting..." : "Delete everything"}
-          </button>
+          </SettingsButton>
         </div>
       </div>
     </div>

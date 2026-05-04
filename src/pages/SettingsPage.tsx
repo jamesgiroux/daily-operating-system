@@ -6,9 +6,9 @@ import { useAppState } from "@/hooks/useAppState";
 import { useClaudeStatus } from "@/hooks/useClaudeStatus";
 
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
-import { EditorialPageHeader } from "@/components/editorial/EditorialPageHeader";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
+import { SurfaceMasthead } from "@/components/layout/SurfaceMasthead";
 import StatusDot from "@/components/shared/StatusDot";
 import YouCard from "@/components/settings/YouCard";
 import ConnectorsGrid from "@/components/settings/ConnectorsGrid";
@@ -261,7 +261,7 @@ export default function SettingsPage() {
       )}
 
       {/* ═══ HERO ═══ */}
-      <EditorialPageHeader title="Settings" scale="page" width="standard" />
+      <SurfaceMasthead title="Settings" density="default" width="standard" />
 
       {/* ═══ YOU ═══ */}
       <section id="settings-you" className={s.section}>

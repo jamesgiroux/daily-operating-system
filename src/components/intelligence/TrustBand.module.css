@@ -1,0 +1,22 @@
+.band {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-xs);
+  min-width: 0;
+}
+
+.band[data-density="default"],
+.band[data-density="expanded"] {
+  gap: var(--space-sm);
+}
+
+.band[data-align="row"] {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.band[data-density="expanded"] {
+  align-items: flex-start;
+}

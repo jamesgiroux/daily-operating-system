@@ -1,0 +1,69 @@
+.threadMark {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  min-height: 22px;
+  padding: 3px 6px;
+  border: none;
+  border-radius: 2px;
+  background: transparent;
+  color: var(--color-text-quaternary, var(--color-text-tertiary));
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
+  text-transform: lowercase;
+  white-space: nowrap;
+  cursor: pointer;
+  opacity: 0;
+  transform: translateX(-4px);
+  transition:
+    opacity 180ms ease,
+    transform 180ms ease,
+    color var(--transition-normal),
+    background var(--transition-normal);
+  user-select: none;
+}
+
+.threadMark::before {
+  content: "\21AA";
+  position: relative;
+  top: -1px;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  line-height: 1;
+}
+
+.threadMark:hover,
+.threadMark:focus-visible {
+  color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-7);
+  opacity: 1;
+  transform: translateX(0);
+}
+
+.threadMark:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 2px;
+}
+
+.persistent {
+  opacity: 0.45;
+  transform: translateX(0);
+}
+
+:global([data-addressable]:hover) .threadMark,
+:global([data-addressable]:focus-within) .threadMark,
+:global([data-thread-group]:hover) .threadMark,
+:global([data-thread-group]:focus-within) .threadMark {
+  opacity: 1;
+  transform: translateX(0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .threadMark {
+    transition: none;
+  }
+}

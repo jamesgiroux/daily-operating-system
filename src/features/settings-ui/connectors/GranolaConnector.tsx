@@ -1,7 +1,11 @@
 import { useState, useEffect, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { styles } from "../styles";
+import {
+  SettingsButton,
+  SettingsSectionLabel,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 import surface from "./ConnectorSurface.module.css";
 
 interface GranolaStatusData {
@@ -55,13 +59,13 @@ export default function GranolaConnection() {
   return (
     <div>
       <div className={surface.intro}>
-        <p style={styles.subsectionLabel}>Granola Transcripts</p>
-        <p style={styles.description} className={surface.introDescription}>
+        <SettingsSectionLabel>Granola Transcripts</SettingsSectionLabel>
+        <p className={`${formRowStyles.description} ${surface.introDescription}`}>
           Sync meeting notes from Granola&apos;s local cache (no API key required)
         </p>
       </div>
 
-      <div style={styles.settingRow}>
+      <div className={formRowStyles.settingRow}>
         <div className={surface.settingCopy}>
           <span className={surface.settingTitle}>
             {status?.enabled ? "Enabled" : "Disabled"}
@@ -72,14 +76,14 @@ export default function GranolaConnection() {
               : "Granola transcript sync is turned off"}
           </p>
         </div>
-        <button
-          style={{ ...styles.btn, ...styles.btnGhost }}
+        <SettingsButton
+          tone="ghost"
           className={!status ? surface.disabledButton : undefined}
           onClick={toggleEnabled}
           disabled={!status}
         >
           {status?.enabled ? "Disable" : "Enable"}
-        </button>
+        </SettingsButton>
       </div>
 
       {status?.enabled && (
@@ -96,7 +100,7 @@ export default function GranolaConnection() {
             </div>
           )}
 
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div className={surface.statusSummary}>
               <div
                 className={surface.statusDot}
@@ -126,7 +130,7 @@ export default function GranolaConnection() {
             </div>
           )}
 
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div className={surface.settingCopy}>
               <span className={surface.settingTitle}>Poll interval</span>
               <p className={surface.settingDescription}>
@@ -155,15 +159,15 @@ export default function GranolaConnection() {
             </select>
           </div>
 
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div className={surface.settingCopy}>
               <span className={surface.settingTitle}>Historical backfill</span>
               <p className={surface.settingDescription}>
                 Match Granola cache documents to past meetings (last {BACKFILL_DAYS} days)
               </p>
             </div>
-            <button
-              style={{ ...styles.btn, ...styles.btnGhost }}
+            <SettingsButton
+              tone="ghost"
               className={backfilling ? surface.disabledButton : undefined}
               onClick={async () => {
                 setBackfilling(true);
@@ -183,7 +187,7 @@ export default function GranolaConnection() {
               disabled={backfilling}
             >
               {backfilling ? "Running..." : "Start Backfill"}
-            </button>
+            </SettingsButton>
           </div>
         </>
       )}

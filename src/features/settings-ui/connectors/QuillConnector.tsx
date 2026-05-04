@@ -1,7 +1,11 @@
 import { useState, useEffect, type CSSProperties } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { styles } from "../styles";
+import {
+  SettingsButton,
+  SettingsSectionLabel,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 import surface from "./ConnectorSurface.module.css";
 
 interface QuillStatusData {
@@ -71,13 +75,13 @@ export default function QuillConnection() {
   return (
     <div>
       <div className={surface.intro}>
-        <p style={styles.subsectionLabel}>Quill Transcripts</p>
-        <p style={styles.description} className={surface.introDescription}>
+        <SettingsSectionLabel>Quill Transcripts</SettingsSectionLabel>
+        <p className={`${formRowStyles.description} ${surface.introDescription}`}>
           Automatically sync meeting transcripts from Quill
         </p>
       </div>
 
-      <div style={styles.settingRow}>
+      <div className={formRowStyles.settingRow}>
         <div className={surface.settingCopy}>
           <span className={surface.settingTitle}>
             {status?.enabled ? "Enabled" : "Disabled"}
@@ -88,14 +92,14 @@ export default function QuillConnection() {
               : "Quill transcript sync is turned off"}
           </p>
         </div>
-        <button
-          style={{ ...styles.btn, ...styles.btnGhost }}
+        <SettingsButton
+          tone="ghost"
           className={!status ? surface.disabledButton : undefined}
           onClick={toggleEnabled}
           disabled={!status}
         >
           {status?.enabled ? "Disable" : "Enable"}
-        </button>
+        </SettingsButton>
       </div>
 
       {status?.enabled && (
@@ -120,7 +124,7 @@ export default function QuillConnection() {
             </div>
           )}
 
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div className={surface.statusSummary}>
               <div
                 className={surface.statusDot}
@@ -128,19 +132,19 @@ export default function QuillConnection() {
               />
               <span className={surface.statusText}>{statusLabel}</span>
             </div>
-            <button
-              style={{ ...styles.btn, ...styles.btnGhost }}
+            <SettingsButton
+              tone="ghost"
               className={testing ? surface.disabledButton : undefined}
               onClick={testConnection}
               disabled={testing}
             >
               {testing ? "Testing..." : "Test Connection"}
-            </button>
+            </SettingsButton>
           </div>
 
-          <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+          <div className={`${formRowStyles.settingRow} ${formRowStyles.noBorder}`}>
             <div className={surface.settingCopy}>
-              <span style={styles.monoLabel}>Bridge path</span>
+              <span className={formRowStyles.monoLabel}>Bridge path</span>
               <p className={surface.bridgePathValue}>{status.bridgePath}</p>
             </div>
           </div>
@@ -181,7 +185,7 @@ export default function QuillConnection() {
             </div>
           )}
 
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div className={surface.settingCopy}>
               <span className={surface.settingTitle}>Poll interval</span>
               <p className={surface.settingDescription}>
@@ -210,15 +214,15 @@ export default function QuillConnection() {
             </select>
           </div>
 
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div className={surface.settingCopy}>
               <span className={surface.settingTitle}>Historical backfill</span>
               <p className={surface.settingDescription}>
                 Create sync rows for past meetings (last {BACKFILL_DAYS} days)
               </p>
             </div>
-            <button
-              style={{ ...styles.btn, ...styles.btnGhost }}
+            <SettingsButton
+              tone="ghost"
               className={backfilling ? surface.disabledButton : undefined}
               onClick={async () => {
                 setBackfilling(true);
@@ -238,7 +242,7 @@ export default function QuillConnection() {
               disabled={backfilling}
             >
               {backfilling ? "Running..." : "Start Backfill"}
-            </button>
+            </SettingsButton>
           </div>
         </>
       )}

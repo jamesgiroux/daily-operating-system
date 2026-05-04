@@ -6,7 +6,11 @@ import { toast } from "sonner";
 import { AlertTriangle, DatabaseBackup, Download, RefreshCw, ShieldCheck } from "lucide-react";
 import type { BackupInfo, DatabaseInfo } from "@/types";
 import { useDatabaseRecoveryStatus } from "@/hooks/useDatabaseRecoveryStatus";
-import { styles } from "@/components/settings/styles";
+import {
+  SettingsButton,
+  SettingsSectionLabel,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 
 function formatBytes(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`;
@@ -100,7 +104,7 @@ export default function DatabaseRecoveryCard() {
 
   return (
     <div style={{ marginBottom: 24 }}>
-      <p style={styles.subsectionLabel}>Database Recovery</p>
+      <SettingsSectionLabel>Database Recovery</SettingsSectionLabel>
 
       {dbInfo && (
         <div
@@ -113,11 +117,11 @@ export default function DatabaseRecoveryCard() {
           }}
         >
           <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
-            <div style={{ ...styles.description, fontSize: 12 }}>
+            <div className={formRowStyles.descriptionSmall}>
               <strong>Path:</strong>{" "}
               <span style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>{dbInfo.path}</span>
             </div>
-            <div style={{ ...styles.description, fontSize: 12 }}>
+            <div className={formRowStyles.descriptionSmall}>
               <strong>Size:</strong> {formatBytes(dbInfo.sizeBytes)} &bull;{" "}
               <strong>Schema:</strong> v{dbInfo.schemaVersion}
               {dbInfo.lastBackup && (
@@ -146,10 +150,10 @@ export default function DatabaseRecoveryCard() {
           ) : (
             <ShieldCheck size={14} style={{ color: "var(--color-garden-sage)" }} />
           )}
-          <span style={styles.monoLabel}>{status.required ? "Recovery required" : "Database healthy"}</span>
+          <span className={formRowStyles.monoLabel}>{status.required ? "Recovery required" : "Database healthy"}</span>
         </div>
         {status.required && (
-          <p style={{ ...styles.description, marginBottom: 0 }}>
+          <p className={formRowStyles.descriptionFlush}>
             {status.reason}
             {status.detail ? `: ${status.detail}` : ""}
           </p>
@@ -157,52 +161,46 @@ export default function DatabaseRecoveryCard() {
       </div>
 
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 12 }}>
-        <button
-          style={{ ...styles.btn, ...styles.btnPrimary }}
+        <SettingsButton
+          tone="primary"
           onClick={handleCreateBackup}
           disabled={creatingBackup || status.required}
           title={status.required ? "Recovery mode active. Use restore instead." : "Create backup"}
         >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <DatabaseBackup size={12} />
-            {creatingBackup ? "Creating..." : "Create Backup"}
-          </span>
-        </button>
+          <DatabaseBackup size={12} />
+          {creatingBackup ? "Creating..." : "Create Backup"}
+        </SettingsButton>
 
-        <button
-          style={{ ...styles.btn, ...styles.btnGhost }}
+        <SettingsButton
+          tone="ghost"
           onClick={handleExport}
           disabled={status.required}
           title="Export a copy of the database"
         >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <Download size={12} />
-            Export
-          </span>
-        </button>
+          <Download size={12} />
+          Export
+        </SettingsButton>
 
-        <button
-          style={{ ...styles.btn, ...styles.btnGhost }}
+        <SettingsButton
+          tone="ghost"
           onClick={() => void loadBackups()}
           disabled={loadingBackups || Boolean(restoringPath)}
         >
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-            <RefreshCw size={12} className={loadingBackups ? "animate-spin" : ""} />
-            Refresh List
-          </span>
-        </button>
+          <RefreshCw size={12} className={loadingBackups ? "animate-spin" : ""} />
+          Refresh List
+        </SettingsButton>
       </div>
 
       <div style={{ border: "1px solid var(--color-rule-light)", borderRadius: 6, overflow: "hidden" }}>
         {loadingBackups && (
           <div style={{ padding: "10px 12px" }}>
-            <span style={styles.description}>Loading backups...</span>
+            <span className={formRowStyles.description}>Loading backups...</span>
           </div>
         )}
 
         {!loadingBackups && backups.length === 0 && (
           <div style={{ padding: "10px 12px" }}>
-            <span style={styles.description}>No backups found.</span>
+            <span className={formRowStyles.description}>No backups found.</span>
           </div>
         )}
 
@@ -232,18 +230,18 @@ export default function DatabaseRecoveryCard() {
                 >
                   {backup.filename}
                 </div>
-                <div style={{ ...styles.description, fontSize: 12 }}>
+                <div className={formRowStyles.descriptionSmall}>
                   {backup.kind} • {new Date(backup.createdAt).toLocaleString()} • {formatBytes(backup.sizeBytes)}
                   {backup.schemaVersion != null && ` • v${backup.schemaVersion}`}
                 </div>
               </div>
-              <button
-                style={{ ...styles.btn, ...styles.btnGhost }}
+              <SettingsButton
+                tone="ghost"
                 onClick={() => void handleRestore(backup.path)}
                 disabled={Boolean(restoringPath) || creatingBackup}
               >
                 {restoring ? "Restoring..." : "Restore"}
-              </button>
+              </SettingsButton>
             </div>
           );
         })}

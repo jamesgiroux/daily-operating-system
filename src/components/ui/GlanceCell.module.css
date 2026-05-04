@@ -1,0 +1,59 @@
+.cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  min-width: 128px;
+  gap: var(--space-xs);
+}
+
+.label {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 1.2;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.valueRow {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+  gap: var(--space-sm);
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  flex-shrink: 0;
+  border-radius: 999px;
+  background: var(--color-text-tertiary);
+}
+
+.healthy {
+  background: var(--color-garden-sage);
+}
+
+.warn {
+  background: var(--color-spice-terracotta);
+}
+
+.error {
+  background: var(--color-spice-chili);
+}
+
+.neutral {
+  background: var(--color-text-tertiary);
+}
+
+.value {
+  min-width: 0;
+  overflow-wrap: anywhere;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 1.25;
+  letter-spacing: 0;
+  color: var(--color-text-primary);
+}

@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { styles } from "./styles";
+import { FormRow, SettingsSectionLabel } from "@/components/settings/FormRow";
+import { Switch } from "@/components/ui/Switch";
 import s from "./NotificationSection.module.css";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -30,30 +31,6 @@ function formatHour(hour: number): string {
 }
 
 const HOUR_OPTIONS = Array.from({ length: 24 }, (_, i) => i);
-
-// ═══════════════════════════════════════════════════════════════════════════
-// Toggle
-// ═══════════════════════════════════════════════════════════════════════════
-
-function Toggle({
-  checked,
-  onChange,
-}: {
-  checked: boolean;
-  onChange: (next: boolean) => void;
-}) {
-  return (
-    <button
-      type="button"
-      className={s.switch}
-      data-checked={checked}
-      onClick={() => onChange(!checked)}
-      aria-pressed={checked}
-    >
-      <span className={s.switchThumb} />
-    </button>
-  );
-}
 
 // ═══════════════════════════════════════════════════════════════════════════
 // NotificationSection
@@ -98,64 +75,59 @@ export default function NotificationSection() {
 
   return (
     <div className={s.container}>
-      <p style={styles.subsectionLabel}>Notifications</p>
+      <SettingsSectionLabel>Notifications</SettingsSectionLabel>
       <p className={s.description}>
         Control which native alerts DailyOS sends to your notification center.
       </p>
 
       {/* Daily briefing alerts */}
-      <div className={s.toggleRow}>
-        <div className={s.toggleInfo}>
-          <span className={s.toggleLabel}>Daily briefing alerts</span>
-          <span className={s.toggleDescription}>
-            Notifies when your daily briefing is ready
-          </span>
-        </div>
-        <Toggle
+      <FormRow
+        label="Daily briefing alerts"
+        help="Notifies when your daily briefing is ready"
+      >
+        <Switch
+          aria-label="Daily briefing alerts"
           checked={config.workflowCompletion}
-          onChange={(v) => save({ ...config, workflowCompletion: v })}
+          onCheckedChange={(v) => save({ ...config, workflowCompletion: v })}
         />
-      </div>
+      </FormRow>
 
       {/* Meeting notes alerts */}
-      <div className={s.toggleRow}>
-        <div className={s.toggleInfo}>
-          <span className={s.toggleLabel}>Meeting notes alerts</span>
-          <span className={s.toggleDescription}>
-            Notifies when meeting transcripts are processed (rate-limited to once per 5 minutes)
-          </span>
-        </div>
-        <Toggle
+      <FormRow
+        label="Meeting notes alerts"
+        help="Notifies when meeting transcripts are processed (rate-limited to once per 5 minutes)"
+      >
+        <Switch
+          aria-label="Meeting notes alerts"
           checked={config.transcriptReady}
-          onChange={(v) => save({ ...config, transcriptReady: v })}
+          onCheckedChange={(v) => save({ ...config, transcriptReady: v })}
         />
-      </div>
+      </FormRow>
 
       {/* Connection alerts */}
-      <div className={s.toggleRow}>
-        <div className={s.toggleInfo}>
-          <span className={s.toggleLabel}>Connection alerts</span>
-          <span className={s.toggleDescription}>
-            Notifies when Google account needs reconnection
-          </span>
-        </div>
-        <Toggle
+      <FormRow
+        label="Connection alerts"
+        help="Notifies when Google account needs reconnection"
+      >
+        <Switch
+          aria-label="Connection alerts"
           checked={config.authExpiry}
-          onChange={(v) => save({ ...config, authExpiry: v })}
+          onCheckedChange={(v) => save({ ...config, authExpiry: v })}
         />
-      </div>
+      </FormRow>
 
       {/* Quiet hours */}
       <div className={s.quietHoursSection}>
-        <div className={s.quietHoursToggle}>
-          <div className={s.toggleInfo}>
-            <span className={s.toggleLabel}>Quiet hours</span>
-            <span className={s.toggleDescription}>
-              Suppress all notifications during these hours
-            </span>
-          </div>
-          <Toggle checked={quietEnabled} onChange={handleQuietToggle} />
-        </div>
+        <FormRow
+          label="Quiet hours"
+          help="Suppress all notifications during these hours"
+        >
+          <Switch
+            aria-label="Quiet hours"
+            checked={quietEnabled}
+            onCheckedChange={handleQuietToggle}
+          />
+        </FormRow>
 
         {quietEnabled && (
           <div className={s.quietHoursRow}>

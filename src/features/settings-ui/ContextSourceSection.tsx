@@ -3,7 +3,12 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { toast } from "sonner";
 import { Globe, HardDrive, RefreshCw, Check, AlertCircle, Loader2 } from "lucide-react";
-import { styles } from "@/components/settings/styles";
+import {
+  SettingsButton,
+  SettingsInput,
+  SettingsSectionLabel,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 import { useGleanAuth } from "@/hooks/useGleanAuth";
 import type { GleanTokenHealth } from "@/types";
 
@@ -161,8 +166,8 @@ export default function ContextSourceSection() {
 
   return (
     <div style={{ marginBottom: 32 }}>
-      <h3 style={styles.subsectionLabel}>Context Source</h3>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel as="h3">Context Source</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Where DailyOS gathers context for briefings and analysis. Local mode
         uses your workspace files and connectors. Glean mode uses your
         organization's knowledge graph.
@@ -170,44 +175,32 @@ export default function ContextSourceSection() {
 
       {/* Mode selector */}
       <div style={{ display: "flex", gap: 12, marginBottom: 20 }}>
-        <button
+        <SettingsButton
+          tone={isGlean ? "ghost" : "primary"}
+          className={formRowStyles.buttonRoomy}
           onClick={() => {
             if (isGlean) {
               handleSwitchToLocal();
             }
           }}
-          style={{
-            ...styles.btn,
-            ...(isGlean ? styles.btnGhost : styles.btnPrimary),
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 16px",
-          }}
         >
           <HardDrive size={14} />
           Local
           {!isGlean && <Check size={12} />}
-        </button>
-        <button
+        </SettingsButton>
+        <SettingsButton
+          tone={isGlean ? "primary" : "ghost"}
+          className={formRowStyles.buttonRoomy}
           onClick={() => {
             if (!isGlean) {
               setDirty(true);
             }
           }}
-          style={{
-            ...styles.btn,
-            ...(isGlean ? styles.btnPrimary : styles.btnGhost),
-            display: "flex",
-            alignItems: "center",
-            gap: 6,
-            padding: "8px 16px",
-          }}
         >
           <Globe size={14} />
           Glean
           {isGlean && <Check size={12} />}
-        </button>
+        </SettingsButton>
       </div>
 
       {/* Glean configuration panel */}
@@ -305,7 +298,7 @@ export default function ContextSourceSection() {
               style={{
                 fontFamily: "var(--font-sans)",
                 fontSize: 12,
-                color: "var(--color-earth-terracotta)",
+                color: "var(--color-spice-terracotta)",
                 margin: "0 0 12px",
               }}
             >
@@ -335,18 +328,18 @@ export default function ContextSourceSection() {
                   ? "Your Glean token has expired. Reconnect now to resume enrichment."
                   : `Your Glean token expires in about ${tokenHealth.expiresInHours} hour${tokenHealth.expiresInHours === 1 ? "" : "s"}.`}
               </p>
-              <button
+              <SettingsButton
+                tone="primary"
                 onClick={handleConnectGlean}
-                style={{ ...styles.btn, ...styles.btnPrimary }}
               >
                 Reconnect
-              </button>
+              </SettingsButton>
             </div>
           )}
 
           {/* Endpoint */}
-          <label style={styles.fieldLabel}>MCP Endpoint</label>
-          <input
+          <label className={formRowStyles.fieldLabel}>MCP Endpoint</label>
+          <SettingsInput
             type="text"
             value={endpoint}
             onChange={(e) => {
@@ -354,7 +347,6 @@ export default function ContextSourceSection() {
               setDirty(true);
             }}
             placeholder="https://your-org.glean.com/mcp/default"
-            style={{ ...styles.input, marginBottom: 0 }}
             disabled={glean.loading}
           />
           <p style={{
@@ -368,23 +360,14 @@ export default function ContextSourceSection() {
 
           {/* Connect / Disconnect button */}
           {!isConnected ? (
-            <button
+            <SettingsButton
+              tone="primary"
+              className={formRowStyles.buttonBottom16}
               onClick={handleConnectGlean}
               disabled={
                 glean.loading || !endpoint.trim()
               }
-              style={{
-                ...styles.btn,
-                ...styles.btnPrimary,
-                display: "flex",
-                alignItems: "center",
-                gap: 6,
-                marginBottom: 16,
-                opacity:
-                  glean.loading || !endpoint.trim()
-                    ? 0.5
-                    : 1,
-              }}
+              muted={glean.loading || !endpoint.trim()}
             >
               {glean.loading ? (
                 <Loader2 size={12} className="animate-spin" />
@@ -392,7 +375,7 @@ export default function ContextSourceSection() {
                 <Globe size={12} />
               )}
               {glean.loading ? "Connecting..." : "Connect to Glean"}
-            </button>
+            </SettingsButton>
           ) : (
             <>
               {/* Mode info */}
@@ -410,17 +393,11 @@ export default function ContextSourceSection() {
               {/* Actions */}
               <div style={{ display: "flex", gap: 12 }}>
                 {dirty && (
-                  <button
+                  <SettingsButton
+                    tone="primary"
                     onClick={handleSaveGlean}
                     disabled={saving}
-                    style={{
-                      ...styles.btn,
-                      ...styles.btnPrimary,
-                      display: "flex",
-                      alignItems: "center",
-                      gap: 6,
-                      opacity: saving ? 0.5 : 1,
-                    }}
+                    muted={saving}
                   >
                     {saving ? (
                       <RefreshCw size={12} className="animate-spin" />
@@ -428,17 +405,14 @@ export default function ContextSourceSection() {
                       <Check size={12} />
                     )}
                     {saving ? "Saving..." : "Save & Restart Required"}
-                  </button>
+                  </SettingsButton>
                 )}
-                <button
+                <SettingsButton
+                  tone="danger"
                   onClick={handleDisconnectGlean}
-                  style={{
-                    ...styles.btn,
-                    ...styles.btnDanger,
-                  }}
                 >
                   Disconnect
-                </button>
+                </SettingsButton>
               </div>
             </>
           )}

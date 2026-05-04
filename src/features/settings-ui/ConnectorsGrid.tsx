@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen } from "@tauri-apps/api/event";
 import { connectors } from "./connectors/registry";
 import ConnectorDetail from "./ConnectorDetail";
-import { styles } from "./styles";
+import { SettingsStatusDot } from "@/components/settings/FormRow";
 
 interface ConnectionStatus {
   id: string;
@@ -147,7 +147,7 @@ export default function ConnectorsGrid() {
                 textAlign: "left",
               }}
             >
-              <div style={styles.statusDot(dotColor)} />
+              <SettingsStatusDot color={dotColor} />
               <span
                 style={{
                   fontFamily: "var(--font-sans)",

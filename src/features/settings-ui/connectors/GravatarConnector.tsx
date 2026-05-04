@@ -2,7 +2,13 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { GravatarStatus } from "@/types";
-import { styles } from "../styles";
+import {
+  SettingsButton,
+  SettingsInput,
+  SettingsSectionLabel,
+  SettingsStatusDot,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 
 export default function GravatarConnection() {
   const [status, setStatus] = useState<GravatarStatus | null>(null);
@@ -70,57 +76,58 @@ export default function GravatarConnection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Gravatar Avatars</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel>Gravatar Avatars</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Fetch profile photos for your contacts from Gravatar
       </p>
 
-      <div style={styles.settingRow}>
+      <div className={formRowStyles.settingRow}>
         <div>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
             {status?.enabled ? "Enabled" : "Disabled"}
           </span>
-          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+          <p className={formRowStyles.descriptionSmallTop2}>
             {status?.enabled
               ? "Avatars will be fetched for contacts with email addresses"
               : "Gravatar avatar fetching is turned off"}
           </p>
         </div>
-        <button
-          style={{ ...styles.btn, ...styles.btnGhost, opacity: !status ? 0.5 : 1 }}
+        <SettingsButton
+          tone="ghost"
           onClick={toggleEnabled}
           disabled={!status}
         >
           {status?.enabled ? "Disable" : "Enable"}
-        </button>
+        </SettingsButton>
       </div>
 
       {status?.enabled && (
         <>
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={styles.statusDot(statusColor)} />
+              <SettingsStatusDot color={statusColor} />
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
                 {statusLabel}
               </span>
             </div>
-            <button
-              style={{ ...styles.btn, ...styles.btnGhost, opacity: fetching ? 0.5 : 1 }}
+            <SettingsButton
+              tone="ghost"
               onClick={handleFetchNow}
               disabled={fetching}
             >
               {fetching ? "Fetching..." : "Fetch Now"}
-            </button>
+            </SettingsButton>
           </div>
 
-          <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+          <div className={`${formRowStyles.settingRow} ${formRowStyles.noBorder}`}>
             <div style={{ flex: 1 }}>
-              <span style={styles.monoLabel}>API Key</span>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              <span className={formRowStyles.monoLabel}>API Key</span>
+              <p className={formRowStyles.descriptionSmallTop2}>
                 Optional — improves rate limits for large contact lists
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                <input
+                <SettingsInput
+                  width={260}
                   type="password"
                   value={apiKey}
                   onChange={(e) => {
@@ -134,18 +141,11 @@ export default function GravatarConnection() {
                     if (apiKey === "\u2022\u2022\u2022\u2022\u2022\u2022\u2022\u2022") { setApiKey(""); setApiKeyDirty(true); }
                   }}
                   placeholder="Gravatar API key"
-                  style={{
-                    ...styles.input,
-                    width: 260,
-                  }}
                 />
                 {apiKeyDirty && apiKey.trim() && (
-                  <button
-                    style={{ ...styles.btn, ...styles.btnPrimary }}
-                    onClick={saveApiKey}
-                  >
+                  <SettingsButton tone="primary" onClick={saveApiKey}>
                     Save
-                  </button>
+                  </SettingsButton>
                 )}
               </div>
             </div>

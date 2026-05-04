@@ -17,7 +17,7 @@ import { EditorialLoading } from "@/components/editorial/EditorialLoading";
 import { EditorialError } from "@/components/editorial/EditorialError";
 import { EditorialEmpty } from "@/components/editorial/EditorialEmpty";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { ChapterFreshness } from "@/components/editorial/ChapterFreshness";
+import { FreshnessIndicator } from "@/components/ui/FreshnessIndicator";
 import { QuoteWall } from "@/components/editorial/QuoteWall";
 import { AboutThisDossier } from "@/components/context/AboutThisDossier";
 import { FinisMarker } from "@/components/editorial/FinisMarker";
@@ -220,7 +220,7 @@ export default function AccountDetailPage() {
             verdict chapters). Inline 28px serif h2 "Health Score vs. Signals"
             is descriptive, not jargon. AccountHealthSection removed — its
             dimension block is a legacy duplicate of SupportingTension's
-            own dimension grid. ChapterFreshness strip removed (not in
+            own dimension grid. FreshnessIndicator strip removed (not in
             mockup). */}
         {intelligence?.health && (
           <MarginSection id="relationship-health" label="The Read">
@@ -342,7 +342,7 @@ export default function AccountDetailPage() {
             accountName={detail.name ?? undefined}
             chapterTitle="The Room"
             chapterFreshness={
-              <ChapterFreshness
+              <FreshnessIndicator
                 enrichedAt={intelligence?.enrichedAt}
                 fragments={roomFragments}
               />
@@ -384,7 +384,7 @@ export default function AccountDetailPage() {
           <MarginSection id="what-matters" label={<>What<br/>matters</>}>
             <ChapterHeading
               title="What matters to them"
-              freshness={<ChapterFreshness enrichedAt={intelligence.enrichedAt} fragments={whatMattersFragments} />}
+              freshness={<FreshnessIndicator enrichedAt={intelligence.enrichedAt} fragments={whatMattersFragments} />}
             />
             <StrategicLandscape
               intelligence={intelligence}
@@ -399,7 +399,7 @@ export default function AccountDetailPage() {
           <MarginSection id="value-commitments" label={<>What we've<br/>built</>}>
             <ChapterHeading
               title="What we've built together"
-              freshness={<ChapterFreshness enrichedAt={intelligence.enrichedAt} fragments={builtFragments} />}
+              freshness={<FreshnessIndicator enrichedAt={intelligence.enrichedAt} fragments={builtFragments} />}
             />
             <ValueCommitments
               intelligence={intelligence}
@@ -414,7 +414,7 @@ export default function AccountDetailPage() {
           <ChapterHeading
             title="Their voice"
             freshness={
-              <ChapterFreshness
+              <FreshnessIndicator
                 enrichedAt={intelligence?.enrichedAt}
                 fragments={
                   glean?.quoteWall?.length
@@ -432,7 +432,7 @@ export default function AccountDetailPage() {
           <ChapterHeading
             title="Commercial shape"
             freshness={
-              <ChapterFreshness
+              <FreshnessIndicator
                 enrichedAt={intelligence?.enrichedAt}
                 fragments={[
                   { text: "Several fields unverified — see gaps below", stale: true },
@@ -454,7 +454,7 @@ export default function AccountDetailPage() {
           <ChapterHeading
             title="Technical shape"
             freshness={
-              <ChapterFreshness
+              <FreshnessIndicator
                 at={detail.technicalFootprint?.sourcedAt ?? intelligence?.enrichedAt}
                 fragments={technicalFragments}
               />
@@ -479,7 +479,7 @@ export default function AccountDetailPage() {
           <ChapterHeading
             title="Relationship fabric"
             freshness={
-              <ChapterFreshness
+              <FreshnessIndicator
                 enrichedAt={intelligence?.enrichedAt}
                 fragments={[
                   { text: "Most fields not captured — known gap", stale: true },
@@ -742,7 +742,7 @@ export default function AccountDetailPage() {
               epigraph="What we've said we'll do"
               noRule
               freshness={
-                <ChapterFreshness
+                <FreshnessIndicator
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={[...commitmentFragments, "Natural sort by recency"]}
                 />
@@ -765,7 +765,7 @@ export default function AccountDetailPage() {
               title="Suggestions"
               epigraph="AI proposals · accept or validate"
               freshness={
-                <ChapterFreshness
+                <FreshnessIndicator
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={[
                     visibleSuggestions.length > suggestionsVisibleCount
@@ -833,7 +833,7 @@ export default function AccountDetailPage() {
               title="Programs & motions"
               epigraph="Standing motions · not a todo list"
               freshness={
-                <ChapterFreshness
+                <FreshnessIndicator
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={[`${activePrograms.length} motion${activePrograms.length === 1 ? "" : "s"} active`]}
                 />
@@ -864,7 +864,7 @@ export default function AccountDetailPage() {
             <ChapterHeading
               title="Shared with the team"
               freshness={
-                <ChapterFreshness
+                <FreshnessIndicator
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={["Tracker writeback · live status"]}
                 />
@@ -884,7 +884,7 @@ export default function AccountDetailPage() {
               title="Recently landed"
               epigraph="30-day completion tail"
               freshness={
-                <ChapterFreshness
+                <FreshnessIndicator
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={[
                     `${recentlyLanded.length} item${recentlyLanded.length === 1 ? "" : "s"} delivered`,
@@ -913,7 +913,7 @@ export default function AccountDetailPage() {
               title="Outputs"
               epigraph="Generated reports · open to regenerate"
               freshness={
-                <ChapterFreshness
+                <FreshnessIndicator
                   enrichedAt={intelligence?.enrichedAt}
                   fragments={[`${reports.length} report${reports.length === 1 ? "" : "s"} available for this account`]}
                 />

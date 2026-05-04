@@ -10,7 +10,7 @@
  */
 import type { EntityIntelligence } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { ChapterFreshness } from "@/components/editorial/ChapterFreshness";
+import { FreshnessIndicator } from "@/components/ui/FreshnessIndicator";
 import styles from "./health.module.css";
 
 interface OnTrackChapterProps {
@@ -24,7 +24,7 @@ export function OnTrackChapter({ intelligence, accountSizeLabel }: OnTrackChapte
       <ChapterHeading
         title="On track"
         freshness={
-          <ChapterFreshness
+          <FreshnessIndicator
             enrichedAt={intelligence?.enrichedAt}
             fragments={["Nothing active needs your attention"]}
           />
