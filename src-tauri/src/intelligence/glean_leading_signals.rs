@@ -537,7 +537,7 @@ fn build_disambiguation_preamble(
                 ));
             }
         }
-        match d.REDACTED_account_id.as_deref() {
+        match d.account_id.as_deref() {
             Some(id) => out.push_str(&format!("- REDACTED account ID: {}\n", id)),
             None => out.push_str("- REDACTED account ID: not provided\n"),
         }

@@ -3,6 +3,10 @@ set -euo pipefail
 
 # INTERIM — (separate crate split) is the structural fix; this script
 # is best-effort enforcement until then.
+#
+# Pure claim value types are still allowed from crate::db::claims while
+# abilities wait for the structural crate split. Behavior-bearing db/state
+# imports remain blocked.
 
 if [[ -d "src-tauri" ]]; then
   roots=("src-tauri/src/abilities" "src-tauri/abilities-macro/src")
@@ -12,12 +16,45 @@ fi
 
 matches=""
 
+filter_allowed_db_claims_value_imports() {
+  local line
+  local content
+  local single_claim_import='^[[:space:]]*use[[:space:]]+crate::db::claims::[A-Za-z_][A-Za-z0-9_]*[[:space:]]*;[[:space:]]*$'
+  local grouped_claim_import='^[[:space:]]*use[[:space:]]+crate::db::claims::[{]'
+  local claim_type_alias='^[[:space:]]*(pub[[:space:]]+)?type[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*crate::db::claims::[A-Za-z_][A-Za-z0-9_]*[[:space:]]*;[[:space:]]*$'
+
+  while IFS= read -r line; do
+    [[ -z "$line" ]] && continue
+
+    content="${line#*:}"
+    content="${content#*:}"
+
+    if [[ "$content" =~ $single_claim_import ]]; then
+      continue
+    fi
+
+    if [[ "$content" =~ $grouped_claim_import ]]; then
+      continue
+    fi
+
+    if [[ "$content" =~ $claim_type_alias ]]; then
+      continue
+    fi
+
+    printf '%s\n' "$line"
+  done
+}
+
 run_grep_check() {
   local description="$1"
   local pattern="$2"
+  local filter="${3:-}"
   local found
 
   found="$(grep -rEn --include='*.rs' "$pattern" "${roots[@]}" 2>/dev/null || true)"
+  if [[ "$filter" == "allow_db_claims_values" && -n "$found" ]]; then
+    found="$(printf '%s\n' "$found" | filter_allowed_db_claims_value_imports || true)"
+  fi
   if [[ -n "$found" ]]; then
     matches+=$'\n'
     matches+="# ${description}"$'\n'
@@ -28,7 +65,8 @@ run_grep_check() {
 # Direct raw module access such as `crate::db::ActionDb`.
 run_grep_check \
   "direct crate db/state/service module path" \
-  'crate::(db|state|db_service|queries|pty)::'
+  'crate::(db|state|db_service|queries|pty)::' \
+  "allow_db_claims_values"
 
 # Grouped imports such as `use crate::{db::ActionDb, state::AppState};`.
 run_grep_check \

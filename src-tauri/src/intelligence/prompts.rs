@@ -104,9 +104,9 @@ pub struct EntityDisambiguators {
     pub known_contacts: Vec<String>,
     /// Parent company name + its known domains, when `accounts.parent_id` is set.
     pub parent_context: Option<ParentContext>,
-    /// REDACTED account ID from `accounts.metadata.REDACTED_id`
+    /// Account ID from `accounts.metadata.REDACTED_id`
     /// (or `salesforceAccountId` / `sfdc_id`), when present.
-    pub REDACTED_account_id: Option<String>,
+    pub account_id: Option<String>,
 }
 
 /// Parent-account context for disambiguation.
@@ -229,7 +229,7 @@ pub fn load_disambiguators(
             }
         }
 
-        // REDACTED account ID from metadata JSON (accepts several key spellings).
+        // Account ID from metadata JSON (accepts several key spellings).
         if let Some(ref meta) = acct.metadata {
             if let Ok(json) = serde_json::from_str::<serde_json::Value>(meta) {
                 for key in &[
@@ -241,7 +241,7 @@ pub fn load_disambiguators(
                     if let Some(v) = json.get(*key).and_then(|v| v.as_str()) {
                         let s = v.trim();
                         if !s.is_empty() {
-                            out.REDACTED_account_id = Some(s.to_string());
+                            out.account_id = Some(s.to_string());
                             break;
                         }
                     }

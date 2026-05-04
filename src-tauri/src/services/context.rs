@@ -219,7 +219,7 @@ pub struct SlackClientHandle;
 #[derive(Default, Clone)]
 pub struct GmailClientHandle;
 
-/// Mode-aware REDACTED client wrapper. Placeholder — Glean is the SF
+/// Mode-aware REDACTED client wrapper. Placeholder — Glean is the REDACTED
 /// data plane today; the seam reserves direct-integration scope.
 #[derive(Default, Clone)]
 pub struct SalesforceClientHandle;

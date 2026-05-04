@@ -473,7 +473,7 @@ fn push_disambiguation_block(
     // Spec: if no SFDC ID is stored, write "not provided". Only emit the line
     // for account entities — it's meaningless for person/project.
     if entity_type == "account" {
-        match d.REDACTED_account_id.as_deref() {
+        match d.account_id.as_deref() {
             Some(id) => prompt.push_str(&format!("- REDACTED account ID: {}\n", id)),
             None => prompt.push_str("- REDACTED account ID: not provided\n"),
         }
@@ -1550,7 +1550,7 @@ mod tests {
     #[test]
     fn glean_prompt_includes_sfdc_id_when_metadata_has_one() {
         let d = EntityDisambiguators {
-            REDACTED_account_id: Some("001Abc000012345".to_string()),
+            account_id: Some("001Abc000012345".to_string()),
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
@@ -1621,7 +1621,7 @@ mod tests {
     fn pty_prompt_includes_disambiguation_and_grounding() {
         let d = EntityDisambiguators {
             known_domains: vec!["acme.com".to_string()],
-            REDACTED_account_id: Some("001xyz".to_string()),
+            account_id: Some("001xyz".to_string()),
             ..Default::default()
         };
         let ctx = ctx_with_disambiguators(d);
