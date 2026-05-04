@@ -352,6 +352,18 @@ mod tests {
         })
     }
 
+    fn open_object_schema() -> serde_json::Value {
+        json!({ "type": "object" })
+    }
+
+    fn with_input_schema(
+        mut descriptor: AbilityDescriptor,
+        input_schema: fn() -> serde_json::Value,
+    ) -> AbilityDescriptor {
+        descriptor.input_schema = input_schema;
+        descriptor
+    }
+
     fn issued_at() -> DateTime<Utc> {
         Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap()
     }
@@ -751,5 +763,30 @@ mod tests {
         assert_eq!(maintenance, unknown);
         assert_eq!(experimental, unknown);
         assert_eq!(mode_hidden, unknown);
+    }
+
+    #[tokio::test]
+    async fn invoke_ability_rejects_descriptor_with_open_schema_at_runtime_via_byte_equal_unavailable(
+    ) {
+        let unknown = error_bytes_for(registry(vec![]), "unknown").await;
+        let open_schema = error_bytes_for(
+            AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
+                with_input_schema(
+                    descriptor(
+                        "open_runtime_schema",
+                        AbilityCategory::Read,
+                        USER_ACTORS,
+                        LIVE_MODES,
+                        success_erased,
+                    ),
+                    open_object_schema,
+                ),
+            ]),
+            "open_runtime_schema",
+        )
+        .await;
+
+        assert_eq!(open_schema, unknown);
+        assert_eq!(open_schema, br#""ability_unavailable""#);
     }
 }

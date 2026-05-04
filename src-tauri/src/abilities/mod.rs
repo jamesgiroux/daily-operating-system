@@ -18,6 +18,7 @@ pub use feedback::{
 };
 pub use provenance::*;
 pub use registry::{
+    close_schema_objects, validate_schema_closure, validate_schema_closure_for_ability,
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind,
     AbilityRegistry, AbilityResult, Actor,
 };

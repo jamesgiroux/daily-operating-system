@@ -257,8 +257,10 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
 
         #experimental_cfg
         fn #input_schema_ident() -> ::serde_json::Value {
-            ::serde_json::to_value(::schemars::schema_for!(#input_ty))
-                .expect("schemars input schema should serialize")
+            let mut __schema = ::serde_json::to_value(::schemars::schema_for!(#input_ty))
+                .expect("schemars input schema should serialize");
+            crate::abilities::registry::close_schema_objects(&mut __schema);
+            __schema
         }
 
         #experimental_cfg

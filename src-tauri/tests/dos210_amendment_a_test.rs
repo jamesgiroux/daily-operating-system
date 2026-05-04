@@ -25,7 +25,10 @@ fn passthrough_erased<'a>(
 }
 
 fn empty_schema() -> serde_json::Value {
-    serde_json::json!({ "type": "object" })
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": false
+    })
 }
 
 fn static_slice<T>(values: Vec<T>) -> &'static [T] {

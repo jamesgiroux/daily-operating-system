@@ -15,7 +15,10 @@ fn passthrough_erased<'a>(
 }
 
 fn empty_schema() -> serde_json::Value {
-    serde_json::json!({ "type": "object" })
+    serde_json::json!({
+        "type": "object",
+        "additionalProperties": false
+    })
 }
 
 fn clean_read_descriptor() -> AbilityDescriptor {

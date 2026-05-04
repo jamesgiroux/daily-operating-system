@@ -20,6 +20,8 @@ use crate::bridges::types::{BridgeActor, ConfirmationToken};
 use crate::intelligence::provider::IntelligenceProvider;
 use crate::services::context::{ExecutionMode, ServiceContext};
 
+const UNKNOWN_SCHEMA_ABILITY: &str = "<unknown>";
+
 /// ADR-0102 §76-95: ability category drives mutation policy.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize, JsonSchema)]
 pub enum AbilityCategory {
@@ -169,6 +171,7 @@ impl<'a> AbilityContext<'a> {
 #[derive(Debug, Clone, PartialEq)]
 pub enum RegistryViolation {
     DuplicateAbilityName(String),
+    SchemaClosure(SchemaClosureError),
     UnknownComposes {
         ability: String,
         target: String,
@@ -222,6 +225,8 @@ impl AbilityRegistry {
         let mut violations = Vec::new();
         let mut by_name = HashMap::new();
 
+        validate_descriptor_schema_closures(&descriptors, &mut violations);
+
         for descriptor in descriptors {
             if by_name.contains_key(descriptor.name) {
                 violations.push(RegistryViolation::DuplicateAbilityName(
@@ -250,6 +255,19 @@ impl AbilityRegistry {
             Ok(Self { by_name })
         } else {
             Err(violations)
+        }
+    }
+
+    #[cfg(any(test, feature = "mcp"))]
+    #[doc(hidden)]
+    pub fn from_descriptors_unchecked_for_runtime_validation_tests(
+        descriptors: Vec<AbilityDescriptor>,
+    ) -> Self {
+        Self {
+            by_name: descriptors
+                .into_iter()
+                .map(|descriptor| (descriptor.name, descriptor))
+                .collect(),
         }
     }
 
@@ -364,6 +382,267 @@ impl AbilityRegistry {
             kind: AbilityErrorKind::Validation,
             message: format!("unknown ability `{name}`"),
         })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SchemaClosureError {
+    pub ability_name: String,
+    pub pointer: String,
+}
+
+impl SchemaClosureError {
+    fn new(ability_name: impl Into<String>, pointer: impl Into<String>) -> Self {
+        Self {
+            ability_name: ability_name.into(),
+            pointer: pointer.into(),
+        }
+    }
+}
+
+impl std::fmt::Display for SchemaClosureError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let pointer = if self.pointer.is_empty() {
+            "<root>"
+        } else {
+            self.pointer.as_str()
+        };
+        write!(
+            formatter,
+            "ability `{}` input schema object at `{}` must set additionalProperties: false",
+            self.ability_name, pointer
+        )
+    }
+}
+
+impl std::error::Error for SchemaClosureError {}
+
+pub fn validate_schema_closure(
+    schema: &serde_json::Value,
+) -> Result<(), SchemaClosureError> {
+    validate_schema_closure_for_ability(UNKNOWN_SCHEMA_ABILITY, schema)
+}
+
+pub fn validate_schema_closure_for_ability(
+    ability_name: &str,
+    schema: &serde_json::Value,
+) -> Result<(), SchemaClosureError> {
+    validate_schema_closure_at(schema, "", ability_name)
+}
+
+pub fn close_schema_objects(schema: &mut serde_json::Value) {
+    close_schema_objects_at(schema);
+}
+
+fn validate_descriptor_schema_closures(
+    descriptors: &[AbilityDescriptor],
+    violations: &mut Vec<RegistryViolation>,
+) {
+    for descriptor in descriptors {
+        if let Err(error) =
+            validate_schema_closure_for_ability(descriptor.name, &(descriptor.input_schema)())
+        {
+            violations.push(RegistryViolation::SchemaClosure(error));
+        }
+    }
+}
+
+fn validate_schema_closure_at(
+    schema: &serde_json::Value,
+    pointer: &str,
+    ability_name: &str,
+) -> Result<(), SchemaClosureError> {
+    let Some(object) = schema.as_object() else {
+        return Ok(());
+    };
+
+    if is_object_schema(object)
+        && object.get("additionalProperties") != Some(&serde_json::Value::Bool(false))
+    {
+        return Err(SchemaClosureError::new(ability_name, pointer));
+    }
+
+    walk_schema_children(object, pointer, |child, child_pointer| {
+        validate_schema_closure_at(child, &child_pointer, ability_name)
+    })
+}
+
+fn close_schema_objects_at(schema: &mut serde_json::Value) {
+    let Some(object) = schema.as_object_mut() else {
+        return;
+    };
+
+    if is_object_schema(object) {
+        object.insert(
+            "additionalProperties".to_string(),
+            serde_json::Value::Bool(false),
+        );
+    }
+
+    walk_schema_children_mut(object);
+}
+
+fn is_object_schema(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    has_object_type(object)
+        || (object.get("type").is_none() && object.contains_key("properties"))
+}
+
+fn has_object_type(object: &serde_json::Map<String, serde_json::Value>) -> bool {
+    match object.get("type") {
+        Some(serde_json::Value::String(schema_type)) => schema_type == "object",
+        Some(serde_json::Value::Array(schema_types)) => {
+            schema_types
+                .iter()
+                .any(|schema_type| schema_type.as_str() == Some("object"))
+        }
+        _ => false,
+    }
+}
+
+fn walk_schema_children<F>(
+    object: &serde_json::Map<String, serde_json::Value>,
+    pointer: &str,
+    mut walk: F,
+) -> Result<(), SchemaClosureError>
+where
+    F: FnMut(&serde_json::Value, String) -> Result<(), SchemaClosureError>,
+{
+    for keyword in [
+        "properties",
+        "patternProperties",
+        "definitions",
+        "$defs",
+        "dependentSchemas",
+    ] {
+        if let Some(serde_json::Value::Object(children)) = object.get(keyword) {
+            for (name, child) in children {
+                walk(child, pointer_child(pointer, keyword, name))?;
+            }
+        }
+    }
+
+    for keyword in [
+        "items",
+        "additionalItems",
+        "contains",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else",
+    ] {
+        if let Some(child) = object.get(keyword) {
+            walk_schema_or_schema_array(child, &pointer_segment(pointer, keyword), &mut walk)?;
+        }
+    }
+
+    for keyword in ["oneOf", "anyOf", "allOf", "prefixItems"] {
+        if let Some(child) = object.get(keyword) {
+            walk_schema_array(child, &pointer_segment(pointer, keyword), &mut walk)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn walk_schema_or_schema_array<F>(
+    value: &serde_json::Value,
+    pointer: &str,
+    walk: &mut F,
+) -> Result<(), SchemaClosureError>
+where
+    F: FnMut(&serde_json::Value, String) -> Result<(), SchemaClosureError>,
+{
+    match value {
+        serde_json::Value::Array(items) => {
+            for (index, item) in items.iter().enumerate() {
+                walk(item, pointer_segment(pointer, &index.to_string()))?;
+            }
+            Ok(())
+        }
+        _ => walk(value, pointer.to_string()),
+    }
+}
+
+fn walk_schema_array<F>(
+    value: &serde_json::Value,
+    pointer: &str,
+    walk: &mut F,
+) -> Result<(), SchemaClosureError>
+where
+    F: FnMut(&serde_json::Value, String) -> Result<(), SchemaClosureError>,
+{
+    let serde_json::Value::Array(items) = value else {
+        return Ok(());
+    };
+
+    for (index, item) in items.iter().enumerate() {
+        walk(item, pointer_segment(pointer, &index.to_string()))?;
+    }
+
+    Ok(())
+}
+
+fn walk_schema_children_mut(object: &mut serde_json::Map<String, serde_json::Value>) {
+    for keyword in [
+        "properties",
+        "patternProperties",
+        "definitions",
+        "$defs",
+        "dependentSchemas",
+    ] {
+        if let Some(serde_json::Value::Object(children)) = object.get_mut(keyword) {
+            for child in children.values_mut() {
+                close_schema_objects_at(child);
+            }
+        }
+    }
+
+    for keyword in [
+        "items",
+        "additionalItems",
+        "contains",
+        "propertyNames",
+        "not",
+        "if",
+        "then",
+        "else",
+    ] {
+        if let Some(child) = object.get_mut(keyword) {
+            close_schema_or_schema_array(child);
+        }
+    }
+
+    for keyword in ["oneOf", "anyOf", "allOf", "prefixItems"] {
+        if let Some(serde_json::Value::Array(children)) = object.get_mut(keyword) {
+            for child in children {
+                close_schema_objects_at(child);
+            }
+        }
+    }
+}
+
+fn close_schema_or_schema_array(value: &mut serde_json::Value) {
+    match value {
+        serde_json::Value::Array(items) => {
+            for item in items {
+                close_schema_objects_at(item);
+            }
+        }
+        _ => close_schema_objects_at(value),
+    }
+}
+
+fn pointer_child(pointer: &str, keyword: &str, child: &str) -> String {
+    pointer_segment(&pointer_segment(pointer, keyword), child)
+}
+
+fn pointer_segment(pointer: &str, segment: &str) -> String {
+    let escaped = segment.replace('~', "~0").replace('/', "~1");
+    if pointer.is_empty() {
+        format!("/{escaped}")
+    } else {
+        format!("{pointer}/{escaped}")
     }
 }
 
@@ -819,7 +1098,22 @@ mod tests {
     }
 
     fn empty_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "additionalProperties": false
+        })
+    }
+
+    fn open_object_schema() -> serde_json::Value {
         serde_json::json!({ "type": "object" })
+    }
+
+    fn with_input_schema(
+        mut descriptor: AbilityDescriptor,
+        input_schema: fn() -> serde_json::Value,
+    ) -> AbilityDescriptor {
+        descriptor.input_schema = input_schema;
+        descriptor
     }
 
     inventory::submit! {
@@ -977,6 +1271,130 @@ mod tests {
         ReplayProvider::new(std::collections::HashMap::new())
             .with_provider_kind(ProviderKind::Other("registry-fixture"))
             .with_model_for_tier(ModelTier::Synthesis, ModelName::new("registry-model"))
+    }
+
+    #[test]
+    fn validate_schema_closure_passes_for_closed_object_schema() {
+        let schema = serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "child": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": {
+                        "value": { "type": "string" }
+                    }
+                },
+                "items": {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "additionalProperties": false
+                    }
+                }
+            },
+            "$defs": {
+                "choice": {
+                    "oneOf": [
+                        {
+                            "type": "object",
+                            "additionalProperties": false
+                        }
+                    ]
+                }
+            }
+        });
+
+        validate_schema_closure(&schema).unwrap();
+    }
+
+    #[test]
+    fn validate_schema_closure_fails_for_top_level_object_missing_additional_properties() {
+        let error = validate_schema_closure(&serde_json::json!({
+            "type": "object"
+        }))
+        .unwrap_err();
+
+        assert_eq!(error.pointer, "");
+    }
+
+    #[test]
+    fn validate_schema_closure_fails_for_nested_object_in_properties() {
+        let error = validate_schema_closure(&serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "child": { "type": "object" }
+            }
+        }))
+        .unwrap_err();
+
+        assert_eq!(error.pointer, "/properties/child");
+    }
+
+    #[test]
+    fn validate_schema_closure_fails_for_nested_object_in_array_items() {
+        let error = validate_schema_closure(&serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "items": {
+                    "type": "array",
+                    "items": { "type": "object" }
+                }
+            }
+        }))
+        .unwrap_err();
+
+        assert_eq!(error.pointer, "/properties/items/items");
+    }
+
+    #[test]
+    fn validate_schema_closure_fails_for_object_in_one_of() {
+        let error = validate_schema_closure(&serde_json::json!({
+            "type": "object",
+            "additionalProperties": false,
+            "oneOf": [
+                { "type": "object" }
+            ]
+        }))
+        .unwrap_err();
+
+        assert_eq!(error.pointer, "/oneOf/0");
+    }
+
+    #[test]
+    fn validate_schema_closure_includes_violating_path_in_error() {
+        let error = validate_schema_closure_for_ability(
+            "path_fixture",
+            &serde_json::json!({
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {
+                    "child": { "type": "object" }
+                }
+            }),
+        )
+        .unwrap_err();
+
+        assert_eq!(error.ability_name, "path_fixture");
+        assert_eq!(error.pointer, "/properties/child");
+        assert!(error.to_string().contains("path_fixture"));
+        assert!(error.to_string().contains("/properties/child"));
+    }
+
+    #[test]
+    #[should_panic(expected = "schema closure")]
+    fn registry_build_panics_on_descriptor_with_open_input_schema() {
+        let result = AbilityRegistry::from_descriptors_checked(vec![with_input_schema(
+            descriptor("open_schema", AbilityCategory::Read),
+            open_object_schema,
+        )]);
+
+        if let Err(violations) = result {
+            panic!("schema closure violation rejected registry build: {violations:?}");
+        }
     }
 
     #[test]

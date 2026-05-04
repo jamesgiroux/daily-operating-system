@@ -87,3 +87,114 @@ fn mcp_hybrid_list_tools_includes_request_confirmation_with_closed_schema() {
     assert!(source.contains("\"ability\".to_string()"));
     assert!(source.contains("\"input_json\".to_string()"));
 }
+
+#[cfg(feature = "mcp")]
+mod mcp_open_schema_runtime {
+    use std::future::Future;
+    use std::pin::Pin;
+
+    use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use dailyos_lib::abilities::{
+        AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    };
+    use dailyos_lib::bridges::mcp::McpAbilityBridge;
+    use dailyos_lib::bridges::McpSessionId;
+    use dailyos_lib::services::context::ExecutionMode;
+    use serde_json::json;
+
+    const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
+    const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
+
+    type ErasedFuture<'a> =
+        Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
+
+    fn success_erased<'a>(
+        ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> ErasedFuture<'a> {
+        Box::pin(async move {
+            Ok(json!({
+                "data": {
+                    "input": input,
+                    "actor": format!("{:?}", ctx.actor),
+                    "mode": ctx.mode().as_str()
+                },
+                "ability_version": { "major": 1, "minor": 0 },
+                "diagnostics": { "warnings": [] },
+                "provenance": {
+                    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+                    "ability_name": "fixture",
+                    "ability_version": { "major": 1, "minor": 0 },
+                    "ability_schema_version": 1,
+                    "actor": format!("{:?}", ctx.actor),
+                    "mode": ctx.mode().as_str(),
+                    "warnings": []
+                }
+            }))
+        })
+    }
+
+    fn open_object_schema() -> serde_json::Value {
+        json!({ "type": "object" })
+    }
+
+    fn closed_object_schema() -> serde_json::Value {
+        json!({
+            "type": "object",
+            "additionalProperties": false
+        })
+    }
+
+    fn descriptor(name: &'static str) -> AbilityDescriptor {
+        AbilityDescriptor {
+            name,
+            version: "1.0.0",
+            schema_version: 1,
+            category: AbilityCategory::Read,
+            policy: AbilityPolicy {
+                allowed_actors: AGENT_ACTORS,
+                allowed_modes: LIVE_MODES,
+                requires_confirmation: false,
+                may_publish: false,
+            },
+            composes: &[],
+            mutates: &[],
+            experimental: false,
+            registered_at: None,
+            signal_policy: SignalPolicy::default(),
+            invoke_erased: success_erased,
+            input_schema: open_object_schema,
+            output_schema: closed_object_schema,
+        }
+    }
+
+    fn session(index: u128) -> McpSessionId {
+        McpSessionId::from_uuid(uuid::Uuid::from_u128(index))
+    }
+
+    async fn error_bytes_for(registry: AbilityRegistry, ability_name: &'static str) -> Vec<u8> {
+        let bridge = McpAbilityBridge::new(&registry);
+        let err = bridge
+            .invoke_ability(session(1), ability_name, json!({}), false, None)
+            .await
+            .unwrap_err();
+        serde_json::to_vec(&err).unwrap()
+    }
+
+    #[tokio::test]
+    async fn mcp_call_tool_open_schema_descriptor_yields_byte_equal_unavailable() {
+        let unknown =
+            error_bytes_for(AbilityRegistry::from_descriptors_checked(vec![]).unwrap(), "unknown")
+                .await;
+        let open_schema = error_bytes_for(
+            AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
+                descriptor("open_runtime_schema"),
+            ]),
+            "open_runtime_schema",
+        )
+        .await;
+
+        assert_eq!(open_schema, unknown);
+        assert_eq!(open_schema, br#""ability_unavailable""#);
+    }
+}

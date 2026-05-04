@@ -9,7 +9,8 @@ use thiserror::Error;
 use crate::abilities::tracer::AbilityTracer;
 use crate::abilities::provenance::InvocationId;
 use crate::abilities::{
-    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
+    AbilityError, AbilityRegistry, Actor,
 };
 use crate::intelligence::provider::{
     Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
@@ -284,6 +285,9 @@ pub(crate) fn resolve_pre_dispatch<'a>(
     if descriptor.experimental && actor != Actor::System {
         return Err(BridgeSurfaceError::AbilityUnavailable);
     }
+
+    validate_schema_closure_for_ability(descriptor.name, &(descriptor.input_schema)())
+        .map_err(|_| BridgeSurfaceError::AbilityUnavailable)?;
 
     Ok(descriptor)
 }
