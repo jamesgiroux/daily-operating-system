@@ -1,0 +1,220 @@
+{
+  "post_action_state": {
+    "intelligence_claims": [
+      {
+        "claim_id": "claim-test-provider-primary-contact-unknown",
+        "subject_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "claim_type": "entity_summary",
+        "field_path": "executiveAssessment",
+        "topic_key": "acct-test-1:primary_contact",
+        "text": "Five independent scraped records report that acme.example.com has no known primary contact.",
+        "data_source": "provider_completion",
+        "source_ref": {
+          "provider": "vendor.example.com",
+          "attribution": "provider_completion",
+          "source_ids": [
+            "src-test-weak-1",
+            "src-test-weak-2",
+            "src-test-weak-3",
+            "src-test-weak-4",
+            "src-test-weak-5"
+          ],
+          "lifecycle_state": "active"
+        },
+        "source_asof": "2026-05-01T12:00:00Z",
+        "observed_at": "2026-05-01T12:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "verification_state": "contested",
+        "verification_reason": "weighted_source_reliability_and_authoritative_contradiction",
+        "trust_score": 0.42,
+        "trust_band": "needs_verification",
+        "trust_version": 1,
+        "corroboration_count": 5,
+        "dominant_penalties": [
+          "source_reliability",
+          "contradiction_penalty"
+        ],
+        "metadata": {
+          "corroboration_spam_detected": true,
+          "raw_corroborator_count": 5,
+          "weighted_support_total": 1,
+          "weighted_contradiction_total": 1,
+          "naive_count_rejected": true,
+          "contradicts_claim_id": "claim-test-strong-primary-contact-jane"
+        }
+      },
+      {
+        "claim_id": "claim-test-strong-primary-contact-jane",
+        "subject_ref": {
+          "kind": "account",
+          "id": "acct-test-1"
+        },
+        "claim_type": "entity_summary",
+        "field_path": "primaryContact",
+        "topic_key": "acct-test-1:primary_contact",
+        "text": "acme.example.com primary contact is jane.doe@example.com.",
+        "data_source": "user_authored",
+        "source_ref": {
+          "source_id": "src-test-strong",
+          "source_system": "user_authored",
+          "lifecycle_state": "active",
+          "evidence_weight": 1
+        },
+        "source_asof": "2026-04-29T12:00:00Z",
+        "observed_at": "2026-04-29T12:00:00Z",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "verification_state": "active",
+        "trust_score": 0.88,
+        "trust_band": "likely_current",
+        "trust_version": 1,
+        "corroboration_count": 1,
+        "dominant_penalties": [],
+        "metadata": {
+          "authoritative": true,
+          "evidence_weight": 1,
+          "contradicted_by_weak_cluster": true
+        }
+      }
+    ],
+    "prior_weak_claims": [
+      "claim-test-weak-primary-contact-unknown-1",
+      "claim-test-weak-primary-contact-unknown-2",
+      "claim-test-weak-primary-contact-unknown-3",
+      "claim-test-weak-primary-contact-unknown-4",
+      "claim-test-weak-primary-contact-unknown-5"
+    ],
+    "claim_contradictions": [
+      {
+        "primary_claim_id": "claim-test-provider-primary-contact-unknown",
+        "contradicting_claim_id": "claim-test-strong-primary-contact-jane",
+        "branch_kind": "contradiction",
+        "winner_claim_id": "claim-test-strong-primary-contact-jane"
+      }
+    ],
+    "confidence_evidence": [
+      {
+        "signal_type": "ConfidenceEvidence",
+        "claim_id": "claim-test-provider-primary-contact-unknown",
+        "factor": {
+          "name": "source_reliability",
+          "raw_value": {
+            "supporting_source_count": 5,
+            "supporting_weight_total": 1,
+            "contradicting_source_count": 1,
+            "contradicting_weight_total": 1
+          },
+          "value": 0.42,
+          "aggregation": "weighted_by_evidence_weight",
+          "naive_count_rejected": true
+        },
+        "source_weights": [
+          {
+            "source_id": "src-test-weak-1",
+            "stance": "supports_false_claim",
+            "evidence_weight": 0.2
+          },
+          {
+            "source_id": "src-test-weak-2",
+            "stance": "supports_false_claim",
+            "evidence_weight": 0.2
+          },
+          {
+            "source_id": "src-test-weak-3",
+            "stance": "supports_false_claim",
+            "evidence_weight": 0.2
+          },
+          {
+            "source_id": "src-test-weak-4",
+            "stance": "supports_false_claim",
+            "evidence_weight": 0.2
+          },
+          {
+            "source_id": "src-test-weak-5",
+            "stance": "supports_false_claim",
+            "evidence_weight": 0.2
+          },
+          {
+            "source_id": "src-test-strong",
+            "stance": "contradicts_false_claim",
+            "evidence_weight": 1
+          }
+        ]
+      },
+      {
+        "signal_type": "ConfidenceEvidence",
+        "claim_id": "claim-test-provider-primary-contact-unknown",
+        "factor": {
+          "name": "contradiction_penalty",
+          "raw_value": 1,
+          "value": 0.42
+        },
+        "contradiction": {
+          "authoritative_claim_id": "claim-test-strong-primary-contact-jane",
+          "authoritative_source_id": "src-test-strong",
+          "contradiction_weight_total": 1
+        }
+      }
+    ],
+    "sources": [
+      {
+        "source_id": "src-test-strong",
+        "storage": "account_source_refs.source_record_ref",
+        "source_system": "user_authored",
+        "source_kind": "fact",
+        "lifecycle_state": "active",
+        "evidence_weight": 1,
+        "observed_at": "2026-04-29T12:00:00Z"
+      },
+      {
+        "source_id": "src-test-weak-1",
+        "storage": "account_source_refs.source_record_ref",
+        "source_system": "third_party_scrape",
+        "source_kind": "scraped_profile",
+        "lifecycle_state": "active",
+        "evidence_weight": 0.2,
+        "observed_at": "2026-04-30T08:00:00Z"
+      },
+      {
+        "source_id": "src-test-weak-2",
+        "storage": "account_source_refs.source_record_ref",
+        "source_system": "third_party_scrape",
+        "source_kind": "scraped_profile",
+        "lifecycle_state": "active",
+        "evidence_weight": 0.2,
+        "observed_at": "2026-04-30T08:15:00Z"
+      },
+      {
+        "source_id": "src-test-weak-3",
+        "storage": "account_source_refs.source_record_ref",
+        "source_system": "third_party_scrape",
+        "source_kind": "scraped_profile",
+        "lifecycle_state": "active",
+        "evidence_weight": 0.2,
+        "observed_at": "2026-04-30T08:30:00Z"
+      },
+      {
+        "source_id": "src-test-weak-4",
+        "storage": "account_source_refs.source_record_ref",
+        "source_system": "third_party_scrape",
+        "source_kind": "scraped_profile",
+        "lifecycle_state": "active",
+        "evidence_weight": 0.2,
+        "observed_at": "2026-04-30T08:45:00Z"
+      },
+      {
+        "source_id": "src-test-weak-5",
+        "storage": "account_source_refs.source_record_ref",
+        "source_system": "third_party_scrape",
+        "source_kind": "scraped_profile",
+        "lifecycle_state": "active",
+        "evidence_weight": 0.2,
+        "observed_at": "2026-04-30T09:00:00Z"
+      }
+    ]
+  }
+}

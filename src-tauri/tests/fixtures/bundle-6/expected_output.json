@@ -1,0 +1,207 @@
+{
+  "version": 1,
+  "entityId": "acct-test-1",
+  "entityType": "account",
+  "enrichedAt": "2026-05-01T12:00:00Z",
+  "sourceFileCount": 6,
+  "sourceManifest": [
+    {
+      "filename": "source://src-test-strong",
+      "modifiedAt": "2026-04-29T12:00:00Z",
+      "format": "json",
+      "contentType": "account_fact"
+    },
+    {
+      "filename": "source://src-test-weak-1",
+      "modifiedAt": "2026-04-30T08:00:00Z",
+      "format": "json",
+      "contentType": "third_party_scrape"
+    },
+    {
+      "filename": "source://src-test-weak-2",
+      "modifiedAt": "2026-04-30T08:15:00Z",
+      "format": "json",
+      "contentType": "third_party_scrape"
+    },
+    {
+      "filename": "source://src-test-weak-3",
+      "modifiedAt": "2026-04-30T08:30:00Z",
+      "format": "json",
+      "contentType": "third_party_scrape"
+    },
+    {
+      "filename": "source://src-test-weak-4",
+      "modifiedAt": "2026-04-30T08:45:00Z",
+      "format": "json",
+      "contentType": "third_party_scrape"
+    },
+    {
+      "filename": "source://src-test-weak-5",
+      "modifiedAt": "2026-04-30T09:00:00Z",
+      "format": "json",
+      "contentType": "third_party_scrape"
+    }
+  ],
+  "executiveAssessment": "Five independent scraped records report that acme.example.com has no known primary contact.",
+  "risks": [
+    {
+      "text": "Primary-contact ownership may be stale because the scraped records disagree with the user-authored account fact.",
+      "source": "vendor.example.com completion",
+      "urgency": "watch",
+      "headline": "Primary contact needs verification",
+      "evidence": "The provider response aggregated src-test-weak-1 through src-test-weak-5 and omitted the authoritative contact assertion.",
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.82,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "vendor.example.com completion for acct-test-1"
+      },
+      "discrepancy": true
+    }
+  ],
+  "recentWins": [],
+  "stakeholderInsights": [
+    {
+      "name": "Jane Doe",
+      "role": "Primary contact",
+      "assessment": "Scraped records do not confirm Jane Doe as the primary contact for acme.example.com.",
+      "engagement": "unknown",
+      "source": "vendor.example.com completion",
+      "personId": "person-test-jane-doe",
+      "verified": false,
+      "itemSource": {
+        "source": "provider_completion",
+        "confidence": 0.8,
+        "sourcedAt": "2026-05-01T12:00:00Z",
+        "reference": "vendor.example.com completion for acct-test-1"
+      },
+      "discrepancy": true
+    }
+  ],
+  "authoritativeClaims": [
+    {
+      "fieldPath": "primaryContact",
+      "claimId": "claim-test-strong-primary-contact-jane",
+      "text": "acme.example.com primary contact is jane.doe@example.com.",
+      "sourceId": "src-test-strong",
+      "sourceReliability": 1,
+      "trustScore": 0.88,
+      "trustBand": "likely_current",
+      "marking": "authoritative"
+    }
+  ],
+  "verifyFirstClaims": [
+    {
+      "fieldPath": "executiveAssessment",
+      "claimId": "claim-test-provider-primary-contact-unknown",
+      "text": "Five independent scraped records report that acme.example.com has no known primary contact.",
+      "sourceIds": [
+        "src-test-weak-1",
+        "src-test-weak-2",
+        "src-test-weak-3",
+        "src-test-weak-4",
+        "src-test-weak-5"
+      ],
+      "corroborationCount": 5,
+      "supportWeightTotal": 1,
+      "contradictedBy": "claim-test-strong-primary-contact-jane",
+      "trustScore": 0.42,
+      "trustBand": "needs_verification",
+      "warningBand": "verify_first",
+      "warnings": [
+        "corroboration_spam_detected",
+        "contradicts_authoritative_source"
+      ]
+    }
+  ],
+  "sourceAttribution": {
+    "executiveAssessment": [
+      "provider_completion:src-test-weak-1",
+      "provider_completion:src-test-weak-2",
+      "provider_completion:src-test-weak-3",
+      "provider_completion:src-test-weak-4",
+      "provider_completion:src-test-weak-5"
+    ],
+    "risks": [
+      "provider_completion:src-test-weak-1",
+      "provider_completion:src-test-weak-2",
+      "provider_completion:src-test-weak-3",
+      "provider_completion:src-test-weak-4",
+      "provider_completion:src-test-weak-5"
+    ],
+    "recentWins": [],
+    "stakeholderInsights": [
+      "provider_completion:src-test-weak-1",
+      "provider_completion:src-test-weak-2",
+      "provider_completion:src-test-weak-3",
+      "provider_completion:src-test-weak-4",
+      "provider_completion:src-test-weak-5"
+    ],
+    "authoritativeClaims": [
+      "user_authored:src-test-strong"
+    ],
+    "verifyFirstClaims": [
+      "provider_completion:src-test-weak-1",
+      "provider_completion:src-test-weak-2",
+      "provider_completion:src-test-weak-3",
+      "provider_completion:src-test-weak-4",
+      "provider_completion:src-test-weak-5"
+    ]
+  },
+  "consistencyStatus": "flagged",
+  "consistencyFindings": [
+    {
+      "code": "CORROBORATION_SPAM_DETECTED",
+      "severity": "high",
+      "fieldPath": "executiveAssessment",
+      "claimText": "Five independent scraped records report that acme.example.com has no known primary contact.",
+      "evidenceText": "Five weak sources total 1.0 weighted support and are contradicted by one user-authored source with evidence_weight 1.0.",
+      "autoFixed": false
+    },
+    {
+      "code": "AUTHORITATIVE_CONTRADICTION",
+      "severity": "high",
+      "fieldPath": "primaryContact",
+      "claimText": "acme.example.com primary contact is jane.doe@example.com.",
+      "evidenceText": "src-test-strong is user-authored and directly contradicts the weak unknown-contact cluster.",
+      "autoFixed": false
+    }
+  ],
+  "renderPolicy": "show-with-warnings",
+  "trustAnnotations": {
+    "executiveAssessment": {
+      "claimId": "claim-test-provider-primary-contact-unknown",
+      "trustScore": 0.42,
+      "trustBand": "needs_verification",
+      "warningBand": "verify_first",
+      "warnings": [
+        "corroboration_spam_detected",
+        "contradicts_authoritative_source"
+      ],
+      "dominantPenalties": [
+        "source_reliability",
+        "contradiction_penalty"
+      ],
+      "corroborationCount": 5,
+      "supportWeightTotal": 1,
+      "contradictionWeightTotal": 1
+    },
+    "primaryContact": {
+      "claimId": "claim-test-strong-primary-contact-jane",
+      "trustScore": 0.88,
+      "trustBand": "likely_current",
+      "warningBand": null,
+      "warnings": [],
+      "marking": "authoritative"
+    },
+    "stakeholderInsights": {
+      "trustScore": 0.42,
+      "trustBand": "needs_verification",
+      "warningBand": "verify_first",
+      "warnings": [
+        "corroboration_spam_detected",
+        "contradicts_authoritative_source"
+      ]
+    }
+  }
+}
