@@ -1,0 +1,213 @@
+.dock {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid var(--color-rule-medium, var(--color-rule-heavy));
+  border-radius: var(--radius-md);
+  background: var(--frosted-glass-nav);
+  backdrop-filter: var(--backdrop-blur);
+  transition:
+    border-color var(--transition-normal),
+    box-shadow var(--transition-normal);
+}
+
+.dock:focus-within {
+  border-color: var(--color-text-secondary);
+  box-shadow: var(--shadow-md);
+}
+
+.inline {
+  width: 100%;
+}
+
+.fixedBottom {
+  position: fixed;
+  right: var(--space-lg);
+  bottom: var(--space-lg);
+  left: var(--space-lg);
+  z-index: var(--z-app-shell);
+  max-width: 900px;
+  margin: 0 auto;
+  box-shadow: var(--shadow-modal);
+}
+
+.inputRow {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 18px 20px 14px;
+  background: var(--color-paper-warm-white);
+}
+
+.glyph {
+  width: 20px;
+  height: 20px;
+  color: var(--color-text-tertiary);
+  flex-shrink: 0;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 19px;
+  font-style: normal;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.3;
+}
+
+.input::placeholder {
+  color: var(--color-text-tertiary);
+  font-style: italic;
+  opacity: 1;
+  transition: opacity 400ms ease;
+}
+
+.kbd {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border-radius: var(--radius-sm);
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.suggestions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--space-sm);
+  padding: 0 20px 12px 54px;
+  background: var(--color-paper-warm-white);
+}
+
+.chip {
+  border: 1px solid transparent;
+  border-radius: 999px;
+  padding: 5px 12px;
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-secondary);
+  font-family: var(--font-sans);
+  font-size: 12.5px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.2;
+  white-space: nowrap;
+  cursor: pointer;
+  transition:
+    background var(--transition-normal),
+    color var(--transition-normal),
+    border-color var(--transition-normal);
+}
+
+.chip:hover,
+.chip:focus-visible {
+  border-color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric-7);
+  color: var(--color-text-primary);
+}
+
+.chip:focus-visible {
+  outline: 2px solid var(--color-spice-turmeric);
+  outline-offset: 2px;
+}
+
+.scope {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 10px 20px;
+  border-top: 1px solid var(--color-rule-light);
+  background: var(--color-desk-charcoal-15);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  letter-spacing: 0;
+  line-height: 1.4;
+  text-transform: uppercase;
+}
+
+.scopeLeft {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px 12px;
+  min-width: 0;
+}
+
+.scopeSources {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
+
+.scopeDot {
+  display: inline-block;
+  width: 4px;
+  height: 4px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--color-garden-sage);
+  flex-shrink: 0;
+}
+
+.scopeDivider {
+  opacity: 0.5;
+}
+
+.scopeWrite {
+  color: var(--color-spice-turmeric);
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+@media (max-width: 640px) {
+  .inputRow {
+    gap: 10px;
+    padding: 16px;
+  }
+
+  .kbd {
+    display: none;
+  }
+
+  .suggestions {
+    padding: 0 16px 12px;
+  }
+
+  .chip {
+    white-space: normal;
+    text-align: left;
+  }
+
+  .scope {
+    align-items: flex-start;
+    flex-direction: column;
+    padding: 10px 16px;
+  }
+
+  .fixedBottom {
+    right: var(--space-sm);
+    bottom: var(--space-sm);
+    left: var(--space-sm);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .dock,
+  .input::placeholder,
+  .chip {
+    transition: none;
+  }
+}

@@ -4,7 +4,13 @@ import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import { useGoogleAuth } from "@/hooks/useGoogleAuth";
 import type { DriveStatusData, DriveWatchedSource } from "@/types";
-import { styles } from "../styles";
+import {
+  SettingsButton,
+  SettingsRule,
+  SettingsSectionLabel,
+  SettingsStatusDot,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 
 export default function GoogleConnection() {
   const {
@@ -80,8 +86,8 @@ export default function GoogleConnection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Google</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel>Google</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         {status.status === "authenticated"
           ? "Calendar, email, and Drive documents for your briefings"
           : "Connect Google for calendar, email, and document access"}
@@ -107,28 +113,19 @@ export default function GoogleConnection() {
           >
             {error}
           </span>
-          <button
-            style={{
-              ...styles.btn,
-              fontSize: 10,
-              padding: "2px 8px",
-              color: "var(--color-spice-terracotta)",
-              border: "none",
-            }}
-            onClick={clearError}
-          >
+          <SettingsButton tone="borderless" compact onClick={clearError}>
             Dismiss
-          </button>
+          </SettingsButton>
         </div>
       )}
 
       {status.status === "authenticated" ? (
         <>
           {/* Authentication status */}
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div>
               <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                <div style={styles.statusDot("var(--color-garden-sage)")} />
+                <SettingsStatusDot color="var(--color-garden-sage)" />
                 <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
                   {email}
                 </span>
@@ -146,25 +143,25 @@ export default function GoogleConnection() {
                 </p>
               )}
             </div>
-            <button
-              style={{ ...styles.btn, ...styles.btnGhost, opacity: loading || phase === "authorizing" ? 0.5 : 1 }}
+            <SettingsButton
+              tone="ghost"
               onClick={disconnect}
               disabled={loading || phase === "authorizing"}
             >
               {loading ? (
-                <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                <>
                   <Loader2 size={12} className="animate-spin" /> ...
-                </span>
+                </>
               ) : (
                 "Disconnect"
               )}
-            </button>
+            </SettingsButton>
           </div>
 
           {/* Drive section */}
           {driveStatus && (
             <>
-              <hr style={styles.thinRule} />
+              <SettingsRule />
               <div style={{ marginTop: 12 }}>
                 <p
                   style={{
@@ -181,9 +178,9 @@ export default function GoogleConnection() {
                 </p>
 
                 {/* Drive status + sync button */}
-                <div style={styles.settingRow}>
+                <div className={formRowStyles.settingRow}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <div style={styles.statusDot(driveStatus.watchedCount > 0 ? "var(--color-garden-olive)" : "var(--color-text-tertiary)")} />
+                    <SettingsStatusDot color={driveStatus.watchedCount > 0 ? "var(--color-garden-olive)" : "var(--color-text-tertiary)"} />
                     <span
                       style={{
                         fontFamily: "var(--font-sans)",
@@ -194,17 +191,13 @@ export default function GoogleConnection() {
                       {driveStatus.watchedCount} watched document{driveStatus.watchedCount === 1 ? "" : "s"}
                     </span>
                   </div>
-                  <button
-                    style={{
-                      ...styles.btn,
-                      ...styles.btnGhost,
-                      opacity: driveSyncing ? 0.5 : 1,
-                    }}
+                  <SettingsButton
+                    tone="ghost"
                     onClick={handleDriveSyncNow}
                     disabled={driveSyncing}
                   >
                     {driveSyncing ? "Syncing..." : "Sync Now"}
-                  </button>
+                  </SettingsButton>
                 </div>
 
                 {driveStatus.lastSyncAt && (
@@ -268,18 +261,14 @@ export default function GoogleConnection() {
                             {source.name}
                           </span>
                         </div>
-                        <button
-                          style={{
-                            ...styles.btn,
-                            ...styles.btnGhost,
-                            fontSize: 10,
-                            padding: "2px 8px",
-                            flexShrink: 0,
-                          }}
+                        <SettingsButton
+                          tone="ghost"
+                          compact
+                          className={formRowStyles.buttonFlexShrink}
                           onClick={() => handleRemoveDriveSource(source.id)}
                         >
                           Remove
-                        </button>
+                        </SettingsButton>
                       </div>
                     ))}
                   </div>
@@ -289,45 +278,45 @@ export default function GoogleConnection() {
           )}
         </>
       ) : status.status === "tokenexpired" ? (
-        <div style={styles.settingRow}>
+        <div className={formRowStyles.settingRow}>
           <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-            <div style={styles.statusDot("var(--color-spice-terracotta)")} />
-            <span style={styles.description}>Session expired</span>
+            <SettingsStatusDot color="var(--color-spice-terracotta)" />
+            <span className={formRowStyles.description}>Session expired</span>
           </div>
-          <button
-            style={{ ...styles.btn, ...styles.btnDanger, opacity: loading ? 0.5 : 1 }}
+          <SettingsButton
+            tone="danger"
             onClick={connect}
             disabled={loading}
           >
             {loading ? (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <>
                 <Loader2 size={12} className="animate-spin" /> ...
-              </span>
+              </>
             ) : phase === "authorizing" ? (
               "Waiting..."
             ) : (
               "Reconnect"
             )}
-          </button>
+          </SettingsButton>
         </div>
       ) : (
-        <div style={styles.settingRow}>
-          <span style={styles.description}>Not connected</span>
-          <button
-            style={{ ...styles.btn, ...styles.btnPrimary, opacity: loading ? 0.5 : 1 }}
+        <div className={formRowStyles.settingRow}>
+          <span className={formRowStyles.description}>Not connected</span>
+          <SettingsButton
+            tone="primary"
             onClick={connect}
             disabled={loading}
           >
             {loading ? (
-              <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+              <>
                 <Loader2 size={12} className="animate-spin" /> ...
-              </span>
+              </>
             ) : phase === "authorizing" ? (
               "Waiting for authorization..."
             ) : (
               "Connect"
             )}
-          </button>
+          </SettingsButton>
         </div>
       )}
     </div>

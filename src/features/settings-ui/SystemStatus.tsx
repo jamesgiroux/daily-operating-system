@@ -7,7 +7,13 @@ import { relaunch } from "@tauri-apps/plugin-process";
 import { useNavigate } from "@tanstack/react-router";
 import { toast } from "sonner";
 import { Loader2 } from "lucide-react";
-import { styles } from "@/components/settings/styles";
+import {
+  SettingsButton,
+  SettingsRule,
+  SettingsSectionLabel,
+  formRowStyles,
+} from "@/components/settings/FormRow";
+import { Segmented } from "@/components/ui/Segmented";
 import { useConnectivity } from "@/hooks/useConnectivity";
 import type {
   PostMeetingCaptureConfig,
@@ -116,32 +122,30 @@ function UpdateSection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Updates</p>
-      <p style={{ ...styles.description, marginBottom: 12 }}>
+      <SettingsSectionLabel>Updates</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionTight}>
         {appVersion ? `DailyOS v${appVersion}` : "DailyOS"}
       </p>
 
       {state.phase === "idle" || state.phase === "error" ? (
-        <div style={styles.settingRow}>
-          <span style={styles.description}>
+        <div className={formRowStyles.settingRow}>
+          <span className={formRowStyles.description}>
             {state.phase === "error" ? "Update check failed" : "Check for new versions"}
           </span>
-          <button style={{ ...styles.btn, ...styles.btnGhost }} onClick={handleCheck}>
+          <SettingsButton tone="ghost" onClick={handleCheck}>
             Check for Updates
-          </button>
+          </SettingsButton>
         </div>
       ) : state.phase === "checking" ? (
-        <div style={styles.settingRow}>
-          <span style={styles.description}>Checking for updates...</span>
-          <button style={{ ...styles.btn, ...styles.btnGhost, opacity: 0.5 }} disabled>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <Loader2 size={12} className="animate-spin" /> Checking
-            </span>
-          </button>
+        <div className={formRowStyles.settingRow}>
+          <span className={formRowStyles.description}>Checking for updates...</span>
+          <SettingsButton tone="ghost" disabled>
+            <Loader2 size={12} className="animate-spin" /> Checking
+          </SettingsButton>
         </div>
       ) : state.phase === "available" ? (
         <div>
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div>
               <span
                 style={{
@@ -154,24 +158,22 @@ function UpdateSection() {
                 v{state.update.version} available
               </span>
               {state.update.body && (
-                <p style={{ ...styles.description, fontSize: 12, marginTop: 4 }}>
+                <p className={formRowStyles.descriptionSmallTop4}>
                   {state.update.body}
                 </p>
               )}
             </div>
-            <button style={{ ...styles.btn, ...styles.btnPrimary }} onClick={handleInstall}>
+            <SettingsButton tone="primary" onClick={handleInstall}>
               Install &amp; Restart
-            </button>
+            </SettingsButton>
           </div>
         </div>
       ) : state.phase === "installing" ? (
-        <div style={styles.settingRow}>
-          <span style={styles.description}>Installing update...</span>
-          <button style={{ ...styles.btn, ...styles.btnGhost, opacity: 0.5 }} disabled>
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
-              <Loader2 size={12} className="animate-spin" /> Installing
-            </span>
-          </button>
+        <div className={formRowStyles.settingRow}>
+          <span className={formRowStyles.description}>Installing update...</span>
+          <SettingsButton tone="ghost" disabled>
+            <Loader2 size={12} className="animate-spin" /> Installing
+          </SettingsButton>
         </div>
       ) : null}
     </div>
@@ -219,12 +221,12 @@ function HealthOneLiner() {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 4, marginTop: 16 }}>
       {lastBriefing && (
-        <p style={{ ...styles.monoLabel, margin: 0 }}>
+        <p className={formRowStyles.monoLabelFlush}>
           Last briefing: {lastBriefing}
         </p>
       )}
       {healthSummary && (
-        <p style={{ ...styles.monoLabel, margin: 0 }}>
+        <p className={formRowStyles.monoLabelFlush}>
           Analysis health: {healthSummary}
         </p>
       )}
@@ -422,8 +424,8 @@ export function AiBackgroundWorkSection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>AI &amp; Background Work</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel>AI &amp; Background Work</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Tune the background refresh budget, cadence, and model routing in one place.
       </p>
       <div style={{ display: "flex", flexDirection: "column" }}>
@@ -432,7 +434,7 @@ export function AiBackgroundWorkSection() {
           const current =
             aiModels?.[tier] ?? (tier === "background" || tier === "mechanical" ? "haiku" : "sonnet");
           return (
-            <div key={tier} style={styles.settingRow}>
+            <div key={tier} className={formRowStyles.settingRow}>
               <div>
                 <span
                   style={{
@@ -444,158 +446,109 @@ export function AiBackgroundWorkSection() {
                 >
                   {info.label}
                 </span>
-                <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                <p className={formRowStyles.descriptionSmallTop2}>
                   {info.description}
                 </p>
               </div>
-              <div style={{ display: "flex", gap: 4 }}>
-                {modelOptions.map((model) => (
-                  <button
-                    key={model}
-                    style={{
-                      ...styles.btn,
-                      ...(current === model ? styles.btnPrimary : styles.btnGhost),
-                      padding: "3px 10px",
-                      opacity: !aiModels ? 0.5 : 1,
-                    }}
-                    onClick={() => handleModelChange(tier, model)}
-                    disabled={!aiModels}
-                  >
-                    {model}
-                  </button>
-                ))}
-              </div>
+              <Segmented
+                aria-label={`${info.label} model`}
+                value={current}
+                options={modelOptions.map((model) => ({ value: model, label: model }))}
+                onChange={(model) => handleModelChange(tier, model)}
+                disabled={!aiModels}
+              />
             </div>
           );
         })}
 
-        <div style={styles.settingRow}>
+        <div className={formRowStyles.settingRow}>
           <div>
-            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Calendar Poll Interval</span>
-            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            <span className={formRowStyles.fieldLabel}>Calendar Poll Interval</span>
+            <p className={formRowStyles.descriptionSmallTop2}>
               How often DailyOS checks Google Calendar when polling is enabled
             </p>
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {calendarPollOptions.map((value) => (
-              <button
-                key={value}
-                style={{
-                  ...styles.btn,
-                  ...(calendarPollInterval === value ? styles.btnPrimary : styles.btnGhost),
-                  padding: "3px 10px",
-                }}
-                onClick={() => handlePollSettingChange("calendarPollIntervalMinutes", value)}
-              >
-                {value}m
-              </button>
-            ))}
-          </div>
+          <Segmented
+            aria-label="Calendar poll interval"
+            value={calendarPollInterval}
+            options={calendarPollOptions.map((value) => ({ value, label: `${value}m` }))}
+            onChange={(value) => handlePollSettingChange("calendarPollIntervalMinutes", value)}
+          />
         </div>
 
-        <div style={styles.settingRow}>
+        <div className={formRowStyles.settingRow}>
           <div>
-            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Email Poll Interval</span>
-            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            <span className={formRowStyles.fieldLabel}>Email Poll Interval</span>
+            <p className={formRowStyles.descriptionSmallTop2}>
               How often DailyOS checks Gmail for background refreshes
             </p>
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {emailPollOptions.map((value) => (
-              <button
-                key={value}
-                style={{
-                  ...styles.btn,
-                  ...(emailPollInterval === value ? styles.btnPrimary : styles.btnGhost),
-                  padding: "3px 10px",
-                }}
-                onClick={() => handlePollSettingChange("emailPollIntervalMinutes", value)}
-              >
-                {value}m
-              </button>
-            ))}
-          </div>
+          <Segmented
+            aria-label="Email poll interval"
+            value={emailPollInterval}
+            options={emailPollOptions.map((value) => ({ value, label: `${value}m` }))}
+            onChange={(value) => handlePollSettingChange("emailPollIntervalMinutes", value)}
+          />
         </div>
 
-        <div style={styles.settingRow}>
+        <div className={formRowStyles.settingRow}>
           <div>
-            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Pre-Meeting Refresh Window</span>
-            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            <span className={formRowStyles.fieldLabel}>Pre-Meeting Refresh Window</span>
+            <p className={formRowStyles.descriptionSmallTop2}>
               How far ahead DailyOS may refresh account intelligence for upcoming meetings
             </p>
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {preMeetingOptions.map((value) => (
-              <button
-                key={value}
-                style={{
-                  ...styles.btn,
-                  ...(preMeetingHours === value ? styles.btnPrimary : styles.btnGhost),
-                  padding: "3px 10px",
-                }}
-                onClick={() => handlePreMeetingChange(value)}
-              >
-                {value}h
-              </button>
-            ))}
-          </div>
+          <Segmented
+            aria-label="Pre-meeting refresh window"
+            value={preMeetingHours}
+            options={preMeetingOptions.map((value) => ({ value, label: `${value}h` }))}
+            onChange={handlePreMeetingChange}
+          />
         </div>
 
-        <div style={styles.settingRow}>
+        <div className={formRowStyles.settingRow}>
           <div>
-            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Daily AI Budget</span>
-            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            <span className={formRowStyles.fieldLabel}>Daily AI Budget</span>
+            <p className={formRowStyles.descriptionSmallTop2}>
               Estimated tokens per day, shared across background enrichment, meeting prep, briefings, and manual refreshes.
               Resets at local midnight. When exhausted, no new AI calls start until the next reset.
             </p>
             {dailyBudgetTiers.find((t) => t.value === dailyAiTokenBudget) && (
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 4, fontStyle: "italic" }}>
+              <p className={formRowStyles.descriptionSmallItalic}>
                 {dailyBudgetTiers.find((t) => t.value === dailyAiTokenBudget)!.description}
               </p>
             )}
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {dailyBudgetTiers.map((tier) => (
-              <button
-                key={tier.value}
-                style={{
-                  ...styles.btn,
-                  ...(dailyAiTokenBudget === tier.value ? styles.btnPrimary : styles.btnGhost),
-                  padding: "3px 10px",
-                }}
-                onClick={() => handleDailyBudgetChange(tier.value)}
-              >
-                {tier.label}
-              </button>
-            ))}
-          </div>
+          <Segmented
+            aria-label="Daily AI budget"
+            value={dailyAiTokenBudget}
+            options={dailyBudgetTiers.map((tier) => ({ value: tier.value, label: tier.label }))}
+            onChange={handleDailyBudgetChange}
+          />
         </div>
 
-        <div style={styles.settingRow}>
+        <div className={formRowStyles.settingRow}>
           <div>
-            <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>Background AI Guard</span>
-            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            <span className={formRowStyles.fieldLabel}>Background AI Guard</span>
+            <p className={formRowStyles.descriptionSmallTop2}>
               {backgroundPause?.paused
                 ? backgroundPause.reason ?? "Background AI is temporarily paused"
                 : `${backgroundPause?.rolling4hTokens?.toLocaleString?.() ?? "0"} estimated tokens used in the last 4 hours`}
             </p>
-            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            <p className={formRowStyles.descriptionSmallTop2}>
               {backgroundPause
                 ? `Recent timeout rate: ${(backgroundPause.timeoutRateLast20 * 100).toFixed(0)}%`
                 : "Loading background AI status..."}
             </p>
             {!googleConnected && (
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              <p className={formRowStyles.descriptionSmallTop2}>
                 Google is currently disconnected, so poll cadence settings are dormant.
               </p>
             )}
           </div>
-          <button
-            style={{ ...styles.btn, ...styles.btnGhost }}
-            onClick={handleResetRecommended}
-          >
+          <SettingsButton tone="ghost" onClick={handleResetRecommended}>
             Reset to Recommended
-          </button>
+          </SettingsButton>
         </div>
       </div>
     </div>
@@ -690,7 +643,7 @@ function HygieneSection() {
   if (loading) {
     return (
       <div>
-        <p style={styles.subsectionLabel}>Data Quality</p>
+        <SettingsSectionLabel>Data Quality</SettingsSectionLabel>
         <div
           style={{
             height: 24,
@@ -716,8 +669,8 @@ function HygieneSection() {
   if (!status) {
     return (
       <div>
-        <p style={styles.subsectionLabel}>Data Quality</p>
-        <p style={styles.description}>
+        <SettingsSectionLabel>Data Quality</SettingsSectionLabel>
+        <p className={formRowStyles.description}>
           No scan completed yet -- runs automatically after startup.
         </p>
       </div>
@@ -737,7 +690,7 @@ function HygieneSection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Data Quality</p>
+      <SettingsSectionLabel>Data Quality</SettingsSectionLabel>
 
       {/* Narrative prose (when available) */}
       {narrative && (
@@ -938,9 +891,9 @@ function HygieneSection() {
 
       {/* Configuration */}
       <div style={{ marginBottom: 32 }}>
-        <p style={styles.subsectionLabel}>Configuration</p>
+        <SettingsSectionLabel>Configuration</SettingsSectionLabel>
         <div style={{ display: "flex", flexDirection: "column" }}>
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div>
               <span
                 style={{
@@ -951,56 +904,38 @@ function HygieneSection() {
               >
                 Scan Interval
               </span>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              <p className={formRowStyles.descriptionSmallTop2}>
                 How often hygiene runs
               </p>
             </div>
-            <div style={{ display: "flex", gap: 4 }}>
-              {scanIntervalOptions.map((v) => (
-                <button
-                  key={v}
-                  style={{
-                    ...styles.btn,
-                    ...(hygieneConfig.hygieneScanIntervalHours === v
-                      ? styles.btnPrimary
-                      : styles.btnGhost),
-                    padding: "3px 10px",
-                  }}
-                  onClick={() => handleHygieneConfigChange("scanIntervalHours", v)}
-                >
-                  {v}hr
-                </button>
-              ))}
-            </div>
+            <Segmented
+              aria-label="Hygiene scan interval"
+              value={hygieneConfig.hygieneScanIntervalHours}
+              options={scanIntervalOptions.map((value) => ({ value, label: `${value}hr` }))}
+              onChange={(value) => handleHygieneConfigChange("scanIntervalHours", value)}
+            />
           </div>
         </div>
       </div>
 
       {/* Action buttons */}
       <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-        <button
-          style={{
-            ...styles.btn,
-            ...styles.btnPrimary,
-            opacity: runningNow || status.isRunning ? 0.5 : 1,
-          }}
+        <SettingsButton
+          tone="primary"
           onClick={runScanNow}
           disabled={runningNow || status.isRunning}
         >
           {runningNow || status.isRunning ? (
-            <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+            <>
               <Loader2 size={12} className="animate-spin" /> Scanning...
-            </span>
+            </>
           ) : (
             "Run Hygiene Scan Now"
           )}
-        </button>
-        <button
-          style={{ ...styles.btn, color: "var(--color-text-tertiary)", border: "none" }}
-          onClick={loadStatus}
-        >
+        </SettingsButton>
+        <SettingsButton tone="borderless" onClick={loadStatus}>
           Refresh
-        </button>
+        </SettingsButton>
       </div>
     </div>
   );
@@ -1044,11 +979,11 @@ function CaptureSection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Post-Meeting Capture</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel>Post-Meeting Capture</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Prompt for quick outcomes after customer meetings
       </p>
-      <div style={styles.settingRow}>
+      <div className={formRowStyles.settingRow}>
         <div>
           <span
             style={{
@@ -1059,27 +994,23 @@ function CaptureSection() {
           >
             {captureConfig?.enabled ? "Enabled" : "Disabled"}
           </span>
-          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+          <p className={formRowStyles.descriptionSmallTop2}>
             {captureConfig?.enabled
               ? "Prompts appear after customer meetings end"
               : "Post-meeting prompts are turned off"}
           </p>
         </div>
-        <button
-          style={{
-            ...styles.btn,
-            ...styles.btnGhost,
-            opacity: !captureConfig ? 0.5 : 1,
-          }}
+        <SettingsButton
+          tone="ghost"
           onClick={toggleCapture}
           disabled={!captureConfig}
         >
           {captureConfig?.enabled ? "Disable" : "Enable"}
-        </button>
+        </SettingsButton>
       </div>
 
       {captureConfig?.enabled && (
-        <div style={{ ...styles.settingRow, marginTop: 8 }}>
+        <div className={`${formRowStyles.settingRow} ${formRowStyles.withTopGap}`}>
           <div>
             <span
               style={{
@@ -1091,27 +1022,16 @@ function CaptureSection() {
             >
               Prompt delay
             </span>
-            <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+            <p className={formRowStyles.descriptionSmallTop2}>
               Wait before showing the prompt
             </p>
           </div>
-          <div style={{ display: "flex", gap: 4 }}>
-            {[2, 5, 10].map((mins) => (
-              <button
-                key={mins}
-                style={{
-                  ...styles.btn,
-                  ...(captureConfig.delayMinutes === mins
-                    ? styles.btnPrimary
-                    : styles.btnGhost),
-                  padding: "3px 10px",
-                }}
-                onClick={() => updateDelay(mins)}
-              >
-                {mins}m
-              </button>
-            ))}
-          </div>
+          <Segmented
+            aria-label="Post-meeting prompt delay"
+            value={captureConfig.delayMinutes}
+            options={[2, 5, 10].map((value) => ({ value, label: `${value}m` }))}
+            onChange={updateDelay}
+          />
         </div>
       )}
     </div>
@@ -1139,8 +1059,8 @@ function DataManagementSection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Data Management</p>
-      <div style={styles.settingRow}>
+      <SettingsSectionLabel>Data Management</SettingsSectionLabel>
+      <div className={formRowStyles.settingRow}>
         <div>
           <span
             style={{
@@ -1152,21 +1072,17 @@ function DataManagementSection() {
           >
             Email Learning
           </span>
-          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+          <p className={formRowStyles.descriptionSmallTop2}>
             Clear dismissal history so all sender domains start fresh
           </p>
         </div>
-        <button
-          style={{
-            ...styles.btn,
-            ...styles.btnGhost,
-            opacity: resetting ? 0.5 : 1,
-          }}
+        <SettingsButton
+          tone="ghost"
           onClick={handleResetEmailPreferences}
           disabled={resetting}
         >
           {resetting ? "Resetting..." : "Reset"}
-        </button>
+        </SettingsButton>
       </div>
     </div>
   );
@@ -1198,7 +1114,7 @@ function SyncStatusSection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Sync Status</p>
+      <SettingsSectionLabel>Sync Status</SettingsSectionLabel>
       <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
         {freshness.map((f) => (
           <div
@@ -1298,34 +1214,25 @@ function SecuritySection() {
 
   return (
     <div>
-      <h3 style={styles.subsectionLabel}>Security</h3>
-      <div style={styles.settingRow}>
+      <SettingsSectionLabel as="h3">Security</SettingsSectionLabel>
+      <div className={formRowStyles.settingRow}>
         <div>
-          <span style={{ ...styles.fieldLabel, marginBottom: 0 }}>
+          <span className={formRowStyles.fieldLabel}>
             Lock after idle
           </span>
-          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+          <p className={formRowStyles.descriptionSmallTop2}>
             Require Touch ID or password after a period of inactivity
           </p>
         </div>
-        <div style={{ display: "flex", gap: 6 }}>
-          {lockTimeoutOptions.map((opt) => (
-            <button
-              key={opt.value}
-              onClick={() => handleChange(opt.value)}
-              style={{
-                ...styles.btn,
-                ...(lockTimeout === opt.value
-                  ? styles.btnPrimary
-                  : styles.btnGhost),
-                fontSize: 10,
-                padding: "3px 10px",
-              }}
-            >
-              {opt.label}
-            </button>
-          ))}
-        </div>
+        <Segmented
+          aria-label="Lock timeout"
+          value={lockTimeout}
+          options={lockTimeoutOptions.map((option) => ({
+            value: option.value,
+            label: option.label,
+          }))}
+          onChange={handleChange}
+        />
       </div>
     </div>
   );
@@ -1344,19 +1251,19 @@ export default function SystemStatus() {
       <UpdateSection />
       <HealthOneLiner />
 
-      <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
+      <SettingsRule className={formRowStyles.thinRuleSpacious} />
 
       <SyncStatusSection />
 
-      <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
+      <SettingsRule className={formRowStyles.thinRuleSpacious} />
 
       <SecuritySection />
 
-      <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
+      <SettingsRule className={formRowStyles.thinRuleSpacious} />
 
       <AiBackgroundWorkSection />
 
-      <hr style={{ ...styles.thinRule, margin: "24px 0" }} />
+      <SettingsRule className={formRowStyles.thinRuleSpacious} />
 
       {/* Advanced disclosure */}
       <button

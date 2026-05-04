@@ -2,7 +2,13 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { ClayStatusData } from "@/types";
-import { styles } from "../styles";
+import {
+  SettingsButton,
+  SettingsInput,
+  SettingsSectionLabel,
+  SettingsStatusDot,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 
 interface SmitheryStatus {
   connected: boolean;
@@ -205,29 +211,29 @@ export default function ClayConnection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Clay Contact Updates</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel>Clay Contact Updates</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Update contacts with social profiles, bios, and company data via Clay + Smithery
       </p>
 
-      <div style={styles.settingRow}>
+      <div className={formRowStyles.settingRow}>
         <div>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
             {status?.enabled ? "Enabled" : "Disabled"}
           </span>
-          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+          <p className={formRowStyles.descriptionSmallTop2}>
             {status?.enabled
               ? "Contacts will be updated with Clay data"
               : "Clay updates are turned off"}
           </p>
         </div>
-        <button
-          style={{ ...styles.btn, ...styles.btnGhost, opacity: !status ? 0.5 : 1 }}
+        <SettingsButton
+          tone="ghost"
           onClick={toggleEnabled}
           disabled={!status}
         >
           {status?.enabled ? "Disable" : "Enable"}
-        </button>
+        </SettingsButton>
       </div>
 
       {status?.enabled && (
@@ -277,59 +283,56 @@ export default function ClayConnection() {
           )}
 
           {/* Smithery connection */}
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div>
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
                 {smithery?.connected ? "Connected via Smithery" : "Smithery Connect"}
               </span>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              <p className={formRowStyles.descriptionSmallTop2}>
                 {smithery?.connected
                   ? `${smithery.namespace} / ${smithery.connectionId}`
                   : "Connect Clay through Smithery for managed OAuth"}
               </p>
             </div>
             {smithery?.connected ? (
-              <button
-                style={{ ...styles.btn, ...styles.btnGhost }}
-                onClick={handleDisconnect}
-              >
+              <SettingsButton tone="ghost" onClick={handleDisconnect}>
                 Disconnect
-              </button>
+              </SettingsButton>
             ) : (
-              <button
-                style={{ ...styles.btn, ...styles.btnPrimary, opacity: detecting ? 0.5 : 1 }}
+              <SettingsButton
+                tone="primary"
                 onClick={handleDetect}
                 disabled={detecting}
               >
                 {detecting ? "Detecting..." : "Detect Smithery"}
-              </button>
+              </SettingsButton>
             )}
           </div>
 
           {/* Connection ID input — shown after detect finds API key + namespace but no connection ID */}
           {needsConnectionId && (
-            <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+            <div className={`${formRowStyles.settingRow} ${formRowStyles.noBorder}`}>
               <div style={{ flex: 1 }}>
-                <span style={styles.monoLabel}>Connection ID</span>
-                <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                <span className={formRowStyles.monoLabel}>Connection ID</span>
+                <p className={formRowStyles.descriptionSmallTop2}>
                   Run <code style={{ fontFamily: "var(--font-mono)", fontSize: 11 }}>npx @smithery/cli mcp add clay-inc/clay-mcp</code> then enter the connection ID
                 </p>
                 <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                  <input
+                  <SettingsInput
+                    width={200}
                     type="text"
                     value={manualConnId}
                     onChange={(e) => setManualConnId(e.target.value)}
                     placeholder="e.g. clay-mcp-vGfX"
-                    style={{ ...styles.input, width: 200 }}
                   />
                   {manualConnId.trim() && (
-                    <button
-                      style={{ ...styles.btn, ...styles.btnPrimary, opacity: saving ? 0.5 : 1 }}
+                    <SettingsButton
+                      tone="primary"
                       onClick={handleSaveConnectionId}
                       disabled={saving}
                     >
                       {saving ? "Saving..." : "Save"}
-                    </button>
+                    </SettingsButton>
                   )}
                 </div>
               </div>
@@ -338,36 +341,36 @@ export default function ClayConnection() {
 
           {/* Manual setup fallback — shown when nothing is detected */}
           {!smithery?.connected && !smithery?.hasApiKey && (
-            <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+            <div className={`${formRowStyles.settingRow} ${formRowStyles.noBorder}`}>
               <div style={{ flex: 1 }}>
-                <span style={styles.monoLabel}>Manual Setup</span>
-                <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                <span className={formRowStyles.monoLabel}>Manual Setup</span>
+                <p className={formRowStyles.descriptionSmallTop2}>
                   Paste your Smithery API key and Clay connection ID
                 </p>
                 <div style={{ display: "flex", flexDirection: "column", gap: 8, marginTop: 8 }}>
-                  <input
+                  <SettingsInput
+                    width={300}
                     type="password"
                     value={manualKey}
                     onChange={(e) => setManualKey(e.target.value)}
                     placeholder="Smithery API key"
-                    style={{ ...styles.input, width: 300 }}
                   />
                   <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                    <input
+                    <SettingsInput
+                      width={240}
                       type="text"
                       value={manualConnId}
                       onChange={(e) => setManualConnId(e.target.value)}
                       placeholder="Connection ID (e.g. clay-mcp-vGfX)"
-                      style={{ ...styles.input, width: 240 }}
                     />
                     {manualKey.trim() && manualConnId.trim() && (
-                      <button
-                        style={{ ...styles.btn, ...styles.btnPrimary, opacity: saving ? 0.5 : 1 }}
+                      <SettingsButton
+                        tone="primary"
                         onClick={handleSaveManual}
                         disabled={saving}
                       >
                         {saving ? "Saving..." : "Save"}
-                      </button>
+                      </SettingsButton>
                     )}
                   </div>
                 </div>
@@ -378,46 +381,43 @@ export default function ClayConnection() {
           {/* Status + actions */}
           {smithery?.connected && (
             <>
-              <div style={styles.settingRow}>
+              <div className={formRowStyles.settingRow}>
                 <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <div style={styles.statusDot(statusColor)} />
+                  <SettingsStatusDot color={statusColor} />
                   <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
                     {statusLabel}
                   </span>
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    style={{ ...styles.btn, ...styles.btnGhost, opacity: testing ? 0.5 : 1 }}
+                  <SettingsButton
+                    tone="ghost"
                     onClick={testConnection}
                     disabled={testing}
                   >
                     {testing ? "Testing..." : "Test Connection"}
-                  </button>
-                  <button
-                    style={{ ...styles.btn, ...styles.btnGhost, opacity: enriching ? 0.5 : 1 }}
+                  </SettingsButton>
+                  <SettingsButton
+                    tone="ghost"
                     onClick={handleBulkEnrich}
                     disabled={enriching}
                   >
                     {enriching ? "Updating..." : "Update All"}
-                  </button>
+                  </SettingsButton>
                 </div>
               </div>
 
-              <div style={styles.settingRow}>
+              <div className={formRowStyles.settingRow}>
                 <div>
                   <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
                     Auto-update new contacts
                   </span>
-                  <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+                  <p className={formRowStyles.descriptionSmallTop2}>
                     Automatically update when new people are created
                   </p>
                 </div>
-                <button
-                  style={{ ...styles.btn, ...styles.btnGhost }}
-                  onClick={toggleAutoEnrich}
-                >
+                <SettingsButton tone="ghost" onClick={toggleAutoEnrich}>
                   {status.autoEnrichOnCreate ? "Disable" : "Enable"}
-                </button>
+                </SettingsButton>
               </div>
 
               {status.lastEnrichmentAt && (

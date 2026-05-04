@@ -1,0 +1,52 @@
+.root {
+  display: inline-flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0 var(--space-xs);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.inline {
+  width: fit-content;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--color-desk-charcoal-4);
+  white-space: nowrap;
+}
+
+.strip {
+  display: flex;
+  margin: 6px 0 32px;
+  text-transform: uppercase;
+}
+
+.part {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+}
+
+.separator {
+  color: var(--color-text-tertiary);
+}
+
+.text {
+  color: inherit;
+}
+
+.timeText {
+  color: inherit;
+}
+
+.root[data-staleness="aging"] .timeText {
+  color: var(--color-text-quaternary);
+}
+
+.root[data-staleness="stale"] .timeText,
+.part[data-stale="true"] .text {
+  color: var(--color-spice-saffron);
+}

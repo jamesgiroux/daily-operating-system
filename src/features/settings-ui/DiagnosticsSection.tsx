@@ -9,7 +9,12 @@ import {
   HardDrive,
 } from "lucide-react";
 import type { EntityMode } from "@/types";
-import { styles } from "@/components/settings/styles";
+import {
+  SettingsRule,
+  SettingsSectionLabel,
+  SettingsStatusDot,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 import ds from "./DiagnosticsSection.module.css";
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -80,8 +85,8 @@ function DeveloperToggle({
 }) {
   return (
     <div>
-      <p style={styles.subsectionLabel}>Developer Tools</p>
-      <div style={styles.settingRow}>
+      <SettingsSectionLabel>Developer Tools</SettingsSectionLabel>
+      <div className={formRowStyles.settingRow}>
         <div>
           <span className={ds.devToolLabel}>
             Developer Tools
@@ -129,19 +134,17 @@ function ScheduleRow({
   onRun: () => void;
 }) {
   return (
-    <div style={styles.settingRow}>
+    <div className={formRowStyles.settingRow}>
       <div>
         <div className={ds.scheduleHeader}>
           <span className={ds.scheduleLabel}>
             {label}
           </span>
           <div className={ds.scheduleStatusGroup}>
-            <div
-              style={styles.statusDot(
-                schedule.enabled ? "var(--color-garden-sage)" : "var(--color-text-tertiary)"
-              )}
+            <SettingsStatusDot
+              color={schedule.enabled ? "var(--color-garden-sage)" : "var(--color-text-tertiary)"}
             />
-            <span style={styles.monoLabel}>
+            <span className={formRowStyles.monoLabel}>
               {schedule.enabled ? "Enabled" : "Disabled"}
             </span>
           </div>
@@ -181,7 +184,7 @@ function SchedulesSection({
 }) {
   return (
     <div>
-      <p style={styles.subsectionLabel}>Schedules</p>
+      <SettingsSectionLabel>Schedules</SettingsSectionLabel>
       <p className={ds.manualRunDescription}>
         Automated workflow execution times
       </p>
@@ -218,7 +221,7 @@ function ManualRunSection({
 }) {
   return (
     <div>
-      <p style={styles.subsectionLabel}>Manual Run</p>
+      <SettingsSectionLabel>Manual Run</SettingsSectionLabel>
       <p className={ds.manualRunDescription}>
         Trigger workflows manually without waiting for schedule
       </p>
@@ -298,7 +301,7 @@ function MeetingBackfillCard() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Historical Meeting Backfill</p>
+      <SettingsSectionLabel>Historical Meeting Backfill</SettingsSectionLabel>
       <p className={ds.backfillDescription}>
         Import historical meeting files from your workspace into the database.
         Scans account and project directories for meeting files (transcripts, notes, summaries)
@@ -314,10 +317,8 @@ function MeetingBackfillCard() {
       {result && (
         <div className={ds.backfillResultRow}>
           <div className={ds.backfillResultHeader}>
-            <div
-              style={styles.statusDot(
-                result.errors.length === 0 ? "var(--color-garden-sage)" : "var(--color-spice-turmeric)"
-              )}
+            <SettingsStatusDot
+              color={result.errors.length === 0 ? "var(--color-garden-sage)" : "var(--color-spice-turmeric)"}
             />
             <span className={ds.backfillResultLabel}>
               Created {result.created} meetings, skipped {result.skipped}
@@ -455,21 +456,21 @@ function FeedbackLearningCard() {
 
   return (
     <div className={ds.feedbackCard}>
-      <p style={styles.subsectionLabel}>Feedback &amp; Learning</p>
+      <SettingsSectionLabel>Feedback &amp; Learning</SettingsSectionLabel>
       <div className={ds.feedbackStatGrid}>
         <div className={ds.feedbackStatItem}>
-          <div style={styles.monoLabel}>Feedback Events</div>
+          <div className={formRowStyles.monoLabel}>Feedback Events</div>
           <div className={ds.feedbackStatNumber}>{diag.eventCount}</div>
           <p className={ds.feedbackStatDescription}>corrections recorded</p>
         </div>
         <div className={ds.feedbackStatItem}>
-          <div style={styles.monoLabel}>Suppressions</div>
+          <div className={formRowStyles.monoLabel}>Suppressions</div>
           <div className={ds.feedbackStatNumber}>{diag.suppressionCount}</div>
           <p className={ds.feedbackStatDescription}>active item suppressions</p>
         </div>
         {lastDate && (
           <div className={ds.feedbackStatItem}>
-            <div style={styles.monoLabel}>Last Feedback</div>
+            <div className={formRowStyles.monoLabel}>Last Feedback</div>
             <p className={ds.feedbackStatDescription} style={{ marginTop: 8 }}>
               {lastDate}
             </p>
@@ -578,10 +579,10 @@ function AiUsageCard() {
 
   return (
     <div className={ds.aiCard}>
-      <p style={styles.subsectionLabel}>AI Usage</p>
+      <SettingsSectionLabel>AI Usage</SettingsSectionLabel>
       <div className={ds.aiStatGrid}>
         <div className={ds.aiStatCard}>
-          <div style={styles.monoLabel}>Used Today</div>
+          <div className={formRowStyles.monoLabel}>Used Today</div>
           <div className={ds.aiStatNumber}>
             {usage.tokensUsedToday.toLocaleString()}
           </div>
@@ -590,7 +591,7 @@ function AiUsageCard() {
           </p>
         </div>
         <div className={ds.aiStatCard}>
-          <div style={styles.monoLabel}>Remaining</div>
+          <div className={formRowStyles.monoLabel}>Remaining</div>
           <div className={ds.aiStatNumber} style={usage.budgetExhausted ? { color: "var(--color-spice-terracotta)" } : undefined}>
             {usage.budgetExhausted ? "Exhausted" : usage.tokensRemaining.toLocaleString()}
           </div>
@@ -599,7 +600,7 @@ function AiUsageCard() {
           </p>
         </div>
         <div className={ds.aiStatCard}>
-          <div style={styles.monoLabel}>Status</div>
+          <div className={formRowStyles.monoLabel}>Status</div>
           <div className={ds.aiStatNumber} style={{ fontSize: 14, paddingTop: 4 }}>
             {usage.budgetExhausted ? "Blocked" : "Active"}
           </div>
@@ -840,19 +841,19 @@ export default function DiagnosticsSection() {
   return (
     <div>
       <DeveloperToggle config={config} setConfig={setConfig} />
-      <hr style={styles.thinRule} />
+      <SettingsRule />
       <SchedulesSection config={config} running={running} onRun={handleRunWorkflow} />
-      <hr style={styles.thinRule} />
+      <SettingsRule />
       <ManualRunSection running={running} onRun={handleRunWorkflow} />
-      <hr style={styles.thinRule} />
+      <SettingsRule />
       <MeetingBackfillCard />
-      <hr style={styles.thinRule} />
+      <SettingsRule />
       <AiUsageCard />
-      <hr style={styles.thinRule} />
+      <SettingsRule />
       <FeedbackLearningCard />
-      <hr style={styles.thinRule} />
+      <SettingsRule />
       <DatabaseStorageCard />
-      <hr style={styles.thinRule} />
+      <SettingsRule />
       <ArchivedAccountsSection />
     </div>
   );

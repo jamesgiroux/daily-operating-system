@@ -346,20 +346,3 @@
   /* Remove max-width constraint for print */
   body * { max-width: 100% !important; }
 }
-
-/* ── Intelligence Provenance Tags ── */
-
-.provenance-tag {
-  display: inline-block;
-  font-family: var(--font-mono, 'JetBrains Mono', monospace);
-  font-size: 10px;
-  font-weight: 400;
-  color: var(--color-text-tertiary, #6b7280);
-  letter-spacing: 0.02em;
-  margin-top: 2px;
-}
-
-.provenance-discrepancy {
-  color: var(--color-spice-terracotta, #c4654a);
-  font-weight: 600;
-}

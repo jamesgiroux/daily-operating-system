@@ -2,7 +2,13 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
 import type { DriveStatusData, DriveWatchedSource } from "@/types";
-import { styles } from "../styles";
+import {
+  SettingsButton,
+  SettingsRule,
+  SettingsSectionLabel,
+  SettingsStatusDot,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 
 export default function GoogleDriveConnector() {
   const [status, setStatus] = useState<DriveStatusData | null>(null);
@@ -96,12 +102,12 @@ export default function GoogleDriveConnector() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Google Drive</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel>Google Drive</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Import documents and spreadsheets from Google Drive as entity context
       </p>
 
-      <div style={styles.settingRow}>
+      <div className={formRowStyles.settingRow}>
         <div>
           <span
             style={{
@@ -112,31 +118,27 @@ export default function GoogleDriveConnector() {
           >
             {status?.enabled ? "Enabled" : "Disabled"}
           </span>
-          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+          <p className={formRowStyles.descriptionSmallTop2}>
             {status?.enabled
               ? "Drive documents will sync on schedule"
               : "Google Drive sync is turned off"}
           </p>
         </div>
-        <button
-          style={{
-            ...styles.btn,
-            ...styles.btnGhost,
-            opacity: !status ? 0.5 : 1,
-          }}
+        <SettingsButton
+          tone="ghost"
           onClick={toggleEnabled}
           disabled={!status}
         >
           {status?.enabled ? "Disable" : "Enable"}
-        </button>
+        </SettingsButton>
       </div>
 
       {status?.enabled && (
         <>
           {/* Status + sync */}
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={styles.statusDot(statusColor)} />
+              <SettingsStatusDot color={statusColor} />
               <span
                 style={{
                   fontFamily: "var(--font-sans)",
@@ -147,17 +149,13 @@ export default function GoogleDriveConnector() {
                 {statusLabel}
               </span>
             </div>
-            <button
-              style={{
-                ...styles.btn,
-                ...styles.btnGhost,
-                opacity: syncing ? 0.5 : 1,
-              }}
+            <SettingsButton
+              tone="ghost"
               onClick={handleSyncNow}
               disabled={syncing}
             >
               {syncing ? "Syncing..." : "Sync Now"}
-            </button>
+            </SettingsButton>
           </div>
 
           {status.lastSyncAt && (
@@ -176,8 +174,8 @@ export default function GoogleDriveConnector() {
           {/* Watched sources list */}
           {sources.length > 0 && (
             <div style={{ marginTop: 16 }}>
-              <hr style={styles.thinRule} />
-              <p style={{ ...styles.monoLabel, marginBottom: 8 }}>
+              <SettingsRule />
+              <p className={formRowStyles.monoLabelBottom8}>
                 Watched Sources
               </p>
               {sources.map((source) => (
@@ -241,18 +239,14 @@ export default function GoogleDriveConnector() {
                       </span>
                     )}
                   </div>
-                  <button
-                    style={{
-                      ...styles.btn,
-                      ...styles.btnGhost,
-                      fontSize: 10,
-                      padding: "2px 8px",
-                      flexShrink: 0,
-                    }}
+                  <SettingsButton
+                    tone="ghost"
+                    compact
+                    className={formRowStyles.buttonFlexShrink}
                     onClick={() => handleRemoveSource(source.id)}
                   >
                     Remove
-                  </button>
+                  </SettingsButton>
                 </div>
               ))}
             </div>
@@ -260,13 +254,7 @@ export default function GoogleDriveConnector() {
 
           {sources.length === 0 && (
             <div style={{ marginTop: 16 }}>
-              <p
-                style={{
-                  ...styles.description,
-                  fontSize: 12,
-                  fontStyle: "italic",
-                }}
-              >
+              <p className={formRowStyles.descriptionSmallItalic}>
                 No watched sources. Use the Inbox page to import Google Drive files.
               </p>
             </div>

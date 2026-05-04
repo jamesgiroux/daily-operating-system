@@ -12,9 +12,8 @@
 import { useState, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { toast } from "sonner";
-import { Building2, FolderKanban, User } from "lucide-react";
+import { EntityChip } from "./EntityChip";
 import { EntityPicker } from "./entity-picker";
-import { Pill, type PillTone } from "./Pill";
 
 interface EmailEntityChipProps {
   entityType?: string;
@@ -25,12 +24,6 @@ interface EmailEntityChipProps {
   emailId?: string;
   /** Called after entity is changed so parent can refetch */
   onEntityChanged?: () => void;
-}
-
-function toneForEntityType(entityType?: string): PillTone {
-  if (entityType === "project") return "olive";
-  if (entityType === "person") return "larkspur";
-  return "turmeric";
 }
 
 export function EmailEntityChip({
@@ -65,7 +58,7 @@ export function EmailEntityChip({
   if (editable && editing) {
     return (
       <span
-        style={{ display: "inline-flex", alignItems: "center" }}
+        className="inline-flex items-center"
         onClick={(e) => e.stopPropagation()}
       >
         <EntityPicker
@@ -83,7 +76,7 @@ export function EmailEntityChip({
     if (editable && emailId) {
       return (
         <span
-          style={{ display: "inline-flex", alignItems: "center" }}
+          className="inline-flex items-center"
           onClick={(e) => e.stopPropagation()}
         >
           <EntityPicker
@@ -98,26 +91,18 @@ export function EmailEntityChip({
     return null;
   }
 
-  const Icon = entityType === "project"
-    ? FolderKanban
-    : entityType === "person"
-      ? User
-      : Building2;
-
   return (
-    <Pill
-      tone={toneForEntityType(entityType)}
-      size="compact"
-      interactive={editable}
-      onClick={editable ? (e) => {
+    <EntityChip
+      entityType={entityType}
+      entityName={entityName}
+      compact
+      editable={editable}
+      onEdit={editable ? (e) => {
         e.stopPropagation();
         e.preventDefault();
         setEditing(true);
       } : undefined}
       title={editable ? "Click to change" : undefined}
-    >
-      <Icon size={10} strokeWidth={2} aria-hidden="true" />
-      {entityName}
-    </Pill>
+    />
   );
 }

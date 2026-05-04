@@ -26,11 +26,9 @@ import { useState, useCallback, useEffect, useMemo } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Link } from "@tanstack/react-router";
 import { toast } from "sonner";
-import { Building2, FolderKanban, User } from "lucide-react";
+import { EntityChip } from "./EntityChip";
 import { EntityPicker } from "./entity-picker";
 import { EntityLinkPicker, TitleOnlyBanner } from "@/components/entity/EntityLinkPicker";
-import { RemovableChip } from "@/components/ui/RemovableChip";
-import type { PillTone } from "@/components/ui/Pill";
 import { getPrimaryEntity, isTitleOnlyPrimary } from "@/lib/entity-helpers";
 import type { LinkedEntity, LinkOutcome } from "@/types";
 
@@ -44,12 +42,6 @@ interface MeetingEntityChipsProps {
   onEntitiesChanged?: () => void;
   /** Compact mode for briefing expansion panels (smaller chips) */
   compact?: boolean;
-}
-
-function toneForEntityType(entityType: LinkedEntity["entityType"]): PillTone {
-  if (entityType === "project") return "olive";
-  if (entityType === "person") return "larkspur";
-  return "turmeric";
 }
 
 export function MeetingEntityChips({
@@ -183,28 +175,14 @@ export function MeetingEntityChips({
 
   return (
     <div
-      style={{
-        display: "flex",
-        flexDirection: "column",
-        gap: compact ? 6 : 8,
-      }}
+      className={compact ? "flex flex-col gap-1.5" : "flex flex-col gap-2"}
       onClick={(e) => e.stopPropagation()}
     >
       {/* Chips row */}
       <div
-        style={{
-          display: "flex",
-          flexWrap: "wrap",
-          alignItems: "center",
-          gap: compact ? 6 : 8,
-        }}
+        className={compact ? "flex flex-wrap items-center gap-1.5" : "flex flex-wrap items-center gap-2"}
       >
         {localEntities.map((entity) => {
-          const Icon = entity.entityType === "project"
-            ? FolderKanban
-            : entity.entityType === "person"
-              ? User
-              : Building2;
           const linkTo = entity.entityType === "project"
             ? "/projects/$projectId"
             : entity.entityType === "person"
@@ -222,23 +200,22 @@ export function MeetingEntityChips({
           const isAutoSuggested =
             entity.role === "auto_suggested" || (entity.role === undefined && entity.suggested === true);
           return (
-            <RemovableChip
+            <EntityChip
               key={entity.id}
               title={isAutoSuggested ? "Auto-suggested — not confirmed" : undefined}
-              tone={toneForEntityType(entity.entityType)}
-              size={compact ? "compact" : "standard"}
-              data-suggested={isAutoSuggested ? "true" : undefined}
-              label={(
-                <>
-                  <Icon size={compact ? 10 : 12} strokeWidth={2} aria-hidden="true" />
-                  <Link
-                    to={linkTo}
-                    params={linkParams as any}
-                  >
-                    {entity.name}
-                  </Link>
-                </>
+              entityType={entity.entityType}
+              entityName={(
+                <Link
+                  to={linkTo}
+                  params={linkParams as any}
+                >
+                  {entity.name}
+                </Link>
               )}
+              removable
+              editable
+              compact={compact}
+              data-suggested={isAutoSuggested ? "true" : undefined}
               aria-label={`Remove ${entity.name}`}
               onRemove={() => handleRemove(entity.id, entity.name, entity.entityType)}
             />

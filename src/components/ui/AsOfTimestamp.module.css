@@ -1,0 +1,16 @@
+.timestamp {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.timestamp[data-state="unavailable"] {
+  color: var(--color-text-quaternary);
+}

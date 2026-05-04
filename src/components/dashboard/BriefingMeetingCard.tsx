@@ -20,6 +20,7 @@ import clsx from "clsx";
 import { stripMarkdown, stripHtml, formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { MeetingCard } from "@/components/shared/MeetingCard";
+import { Pill } from "@/components/ui/Pill";
 import type { Meeting, CalendarEvent, Action, Stakeholder, CalendarAttendee } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
@@ -509,7 +510,11 @@ export function BriefingMeetingCard({
           isExpanded && s.scheduleRowExpanded,
         )}
         titleExtra={<>
-          {isUpNext && state !== "in-progress" && <span className={s.upNextPill}>UP NEXT</span>}
+          {isUpNext && state !== "in-progress" && (
+            <Pill tone="sage" size="compact">
+              UP NEXT
+            </Pill>
+          )}
           {canExpand && (
             <span className={s.expandHint}>
               {isExpanded ? "collapse" : "expand"}

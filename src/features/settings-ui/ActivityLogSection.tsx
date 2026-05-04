@@ -2,7 +2,11 @@ import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { save } from "@tauri-apps/plugin-dialog";
 import { toast } from "sonner";
-import { styles } from "@/components/settings/styles";
+import {
+  SettingsButton,
+  SettingsSectionLabel,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 import s from "./ActivityLogSection.module.css";
 
 // ---------------------------------------------------------------------------
@@ -211,8 +215,8 @@ export default function ActivityLogSection() {
 
   return (
     <div className={s.container}>
-      <h3 style={styles.subsectionLabel}>Activity Log</h3>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel as="h3">Activity Log</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         A tamper-evident record of what the app did and when.
       </p>
 
@@ -297,18 +301,12 @@ export default function ActivityLogSection() {
 
       {/* Actions */}
       <div className={s.actions}>
-        <button
-          style={{ ...styles.btn, ...styles.btnGhost }}
-          onClick={handleExport}
-        >
+        <SettingsButton tone="ghost" onClick={handleExport}>
           Export Log
-        </button>
-        <button
-          style={{ ...styles.btn, ...styles.btnPrimary }}
-          onClick={handleVerify}
-        >
+        </SettingsButton>
+        <SettingsButton tone="primary" onClick={handleVerify}>
           Verify Integrity
-        </button>
+        </SettingsButton>
       </div>
 
       {integrityResult && (

@@ -17,7 +17,14 @@ import {
 } from "@/components/ui/popover";
 import { EntityPicker } from "@/components/ui/entity-picker";
 import type { LinearStatusData } from "@/types";
-import { styles } from "../styles";
+import {
+  SettingsButton,
+  SettingsInput,
+  SettingsRule,
+  SettingsSectionLabel,
+  SettingsStatusDot,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 
 interface LinearIssue {
   id: string;
@@ -267,43 +274,43 @@ export default function LinearConnection() {
   const priorityColor = (label: string | null) => {
     switch (label) {
       case "Urgent": return "var(--color-spice-terracotta)";
-      case "High": return "var(--color-warm-turmeric)";
+      case "High": return "var(--color-spice-turmeric)";
       default: return "var(--color-text-tertiary)";
     }
   };
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Linear Issue Tracking</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel>Linear Issue Tracking</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Sync issues, push action items to Linear, and link projects to accounts. Uses the Linear API directly (not MCP).
       </p>
 
-      <div style={styles.settingRow}>
+      <div className={formRowStyles.settingRow}>
         <div>
           <span style={{ fontFamily: "var(--font-sans)", fontSize: 14, color: "var(--color-text-primary)" }}>
             {status?.enabled ? "Enabled" : "Disabled"}
           </span>
-          <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+          <p className={formRowStyles.descriptionSmallTop2}>
             {status?.enabled
               ? "Issues and projects will sync from Linear"
               : "Linear sync is turned off"}
           </p>
         </div>
-        <button
-          style={{ ...styles.btn, ...styles.btnGhost, opacity: !status ? 0.5 : 1 }}
+        <SettingsButton
+          tone="ghost"
           onClick={toggleEnabled}
           disabled={!status}
         >
           {status?.enabled ? "Disable" : "Enable"}
-        </button>
+        </SettingsButton>
       </div>
 
       {status?.enabled && (
         <>
-          <div style={styles.settingRow}>
+          <div className={formRowStyles.settingRow}>
             <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-              <div style={styles.statusDot(statusColor)} />
+              <SettingsStatusDot color={statusColor} />
               <span style={{ fontFamily: "var(--font-sans)", fontSize: 13, color: "var(--color-text-secondary)" }}>
                 {statusLabel}
               </span>
@@ -314,27 +321,27 @@ export default function LinearConnection() {
               )}
             </div>
             <div style={{ display: "flex", gap: 8 }}>
-              <button
-                style={{ ...styles.btn, ...styles.btnGhost, opacity: testing ? 0.5 : 1 }}
+              <SettingsButton
+                tone="ghost"
                 onClick={testConnection}
                 disabled={testing || !status.apiKeySet}
               >
                 {testing ? "Testing..." : "Test Connection"}
-              </button>
-              <button
-                style={{ ...styles.btn, ...styles.btnGhost, opacity: syncing ? 0.5 : 1 }}
+              </SettingsButton>
+              <SettingsButton
+                tone="ghost"
                 onClick={handleSync}
                 disabled={syncing}
               >
                 {syncing ? "Syncing..." : "Sync Now"}
-              </button>
+              </SettingsButton>
             </div>
           </div>
 
-          <div style={{ ...styles.settingRow, borderBottom: "none" }}>
+          <div className={`${formRowStyles.settingRow} ${formRowStyles.noBorder}`}>
             <div style={{ flex: 1 }}>
-              <span style={styles.monoLabel}>Personal API Key</span>
-              <p style={{ ...styles.description, fontSize: 12, marginTop: 2 }}>
+              <span className={formRowStyles.monoLabel}>Personal API Key</span>
+              <p className={formRowStyles.descriptionSmallTop2}>
                 A personal API key from your Linear account. This is not the same as Linear MCP.
               </p>
               <p style={{
@@ -346,7 +353,8 @@ export default function LinearConnection() {
                 In Linear: Settings → Security &amp; access → Personal API Keys
               </p>
               <div style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 8 }}>
-                <input
+                <SettingsInput
+                  width={260}
                   type="password"
                   value={apiKey}
                   onChange={(e) => {
@@ -354,18 +362,11 @@ export default function LinearConnection() {
                     setApiKeyDirty(true);
                   }}
                   placeholder="Enter Linear API key"
-                  style={{
-                    ...styles.input,
-                    width: 260,
-                  }}
                 />
                 {apiKeyDirty && apiKey.trim() && (
-                  <button
-                    style={{ ...styles.btn, ...styles.btnPrimary }}
-                    onClick={saveApiKey}
-                  >
+                  <SettingsButton tone="primary" onClick={saveApiKey}>
                     Save
-                  </button>
+                  </SettingsButton>
                 )}
               </div>
             </div>
@@ -380,8 +381,8 @@ export default function LinearConnection() {
           {/* Recent Issues */}
           {recentIssues.length > 0 && (
             <div style={{ marginTop: 16 }}>
-              <hr style={styles.thinRule} />
-              <p style={{ ...styles.monoLabel, marginBottom: 8 }}>Active Issues</p>
+              <SettingsRule />
+              <p className={formRowStyles.monoLabelBottom8}>Active Issues</p>
               {recentIssues.map((issue) => (
                 <div
                   key={issue.id}
@@ -439,26 +440,23 @@ export default function LinearConnection() {
           {/* Entity Links */}
           {status.issueCount > 0 && (
             <div style={{ marginTop: 16 }}>
-              <hr style={styles.thinRule} />
+              <SettingsRule />
               <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 8 }}>
-                <p style={{ ...styles.monoLabel, margin: 0 }}>Account & Project Links</p>
+                <p className={formRowStyles.monoLabelFlush}>Account & Project Links</p>
                 <div style={{ display: "flex", gap: 8 }}>
-                  <button
-                    style={{ ...styles.btn, ...styles.btnGhost, opacity: autoLinking ? 0.5 : 1 }}
+                  <SettingsButton
+                    tone="ghost"
                     onClick={handleAutoLink}
                     disabled={autoLinking}
                   >
                     {autoLinking ? "Detecting..." : "Auto-detect"}
-                  </button>
-                  <button
-                    style={{ ...styles.btn, ...styles.btnPrimary }}
-                    onClick={openLinkForm}
-                  >
+                  </SettingsButton>
+                  <SettingsButton tone="primary" onClick={openLinkForm}>
                     Link Project
-                  </button>
+                  </SettingsButton>
                 </div>
               </div>
-              <p style={{ ...styles.description, fontSize: 12, marginBottom: 8 }}>
+              <p className={formRowStyles.descriptionSmallBottom8}>
                 Link Linear projects to DailyOS accounts and projects for updates and meeting context
               </p>
 
@@ -466,15 +464,15 @@ export default function LinearConnection() {
               {suggestions.length > 0 && (
                 <div style={{
                   marginBottom: 12,
-                  border: "1px solid var(--color-warm-turmeric)",
+                  border: "1px solid var(--color-spice-turmeric)",
                   borderRadius: 4,
                   padding: 12,
-                  backgroundColor: "var(--color-bg-secondary, #f5f5f0)",
+                  backgroundColor: "var(--color-spice-turmeric-8)",
                 }}>
                   <p style={{
                     fontFamily: "var(--font-mono)",
                     fontSize: 11,
-                    color: "var(--color-warm-turmeric)",
+                    color: "var(--color-spice-turmeric)",
                     textTransform: "uppercase",
                     letterSpacing: "0.04em",
                     marginBottom: 8,
@@ -539,18 +537,22 @@ export default function LinearConnection() {
                       }}>
                         {Math.round(s.score * 100)}%
                       </span>
-                      <button
-                        style={{ ...styles.btn, ...styles.btnPrimary, fontSize: 10, padding: "2px 10px", flexShrink: 0 }}
+                      <SettingsButton
+                        tone="primary"
+                        compact
+                        className={formRowStyles.buttonFlexShrink}
                         onClick={() => handleAcceptSuggestion(s)}
                       >
                         Link
-                      </button>
-                      <button
-                        style={{ ...styles.btn, ...styles.btnGhost, fontSize: 10, padding: "2px 8px", flexShrink: 0 }}
+                      </SettingsButton>
+                      <SettingsButton
+                        tone="ghost"
+                        compact
+                        className={formRowStyles.buttonFlexShrink}
                         onClick={() => handleDismissSuggestion(s.linearProjectId)}
                       >
                         Dismiss
-                      </button>
+                      </SettingsButton>
                     </div>
                   ))}
                 </div>
@@ -563,7 +565,7 @@ export default function LinearConnection() {
                   marginBottom: 12,
                   border: "1px solid var(--color-rule-light)",
                   borderRadius: 4,
-                  backgroundColor: "var(--color-bg-secondary, #f5f5f0)",
+                  backgroundColor: "var(--color-spice-turmeric-8)",
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
                     {/* Linear project picker (searchable) */}
@@ -626,29 +628,25 @@ export default function LinearConnection() {
                     />
                   </div>
                   <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
-                    <button
-                      style={{ ...styles.btn, ...styles.btnGhost }}
+                    <SettingsButton
+                      tone="ghost"
                       onClick={() => setShowLinkForm(false)}
                     >
                       Cancel
-                    </button>
-                    <button
-                      style={{
-                        ...styles.btn,
-                        ...styles.btnPrimary,
-                        opacity: !selectedProjectId || !selectedEntityId ? 0.5 : 1,
-                      }}
+                    </SettingsButton>
+                    <SettingsButton
+                      tone="primary"
                       onClick={handleCreateLink}
                       disabled={!selectedProjectId || !selectedEntityId}
                     >
                       Link
-                    </button>
+                    </SettingsButton>
                   </div>
                 </div>
               )}
 
               {entityLinks.length === 0 && !showLinkForm ? (
-                <p style={{ ...styles.description, fontSize: 12, fontStyle: "italic" }}>
+                <p className={formRowStyles.descriptionSmallItalic}>
                   No entity links configured. Use auto-detect or link manually.
                 </p>
               ) : (
@@ -706,25 +704,21 @@ export default function LinearConnection() {
                         <span style={{
                           fontFamily: "var(--font-mono)",
                           fontSize: 9,
-                          color: "var(--color-warm-turmeric)",
+                          color: "var(--color-spice-turmeric)",
                           flexShrink: 0,
                         }}>
                           auto
                         </span>
                       )}
                     </div>
-                    <button
-                      style={{
-                        ...styles.btn,
-                        ...styles.btnGhost,
-                        fontSize: 10,
-                        padding: "2px 8px",
-                        flexShrink: 0,
-                      }}
+                    <SettingsButton
+                      tone="ghost"
+                      compact
+                      className={formRowStyles.buttonFlexShrink}
                       onClick={() => handleDeleteLink(link.id)}
                     >
                       Remove
-                    </button>
+                    </SettingsButton>
                   </div>
                 ))
               )}

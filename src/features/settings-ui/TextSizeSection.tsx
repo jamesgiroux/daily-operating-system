@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { styles } from "./styles";
+import { SettingsSectionLabel } from "@/components/settings/FormRow";
 import s from "./TextSizeSection.module.css";
 
 const SCALE_PRESETS = [90, 100, 110, 120] as const;
@@ -41,7 +41,7 @@ export default function TextSizeSection() {
 
   return (
     <div className={s.container}>
-      <p style={styles.subsectionLabel}>Text Size</p>
+      <SettingsSectionLabel>Text Size</SettingsSectionLabel>
       <p className={s.description}>
         Adjust the interface text size for readability.
       </p>

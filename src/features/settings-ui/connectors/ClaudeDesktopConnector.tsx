@@ -2,7 +2,13 @@ import { useState, useEffect } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { Loader2 } from "lucide-react";
 import { toast } from "sonner";
-import { styles } from "../styles";
+import {
+  SettingsButton,
+  SettingsRule,
+  SettingsSectionLabel,
+  SettingsStatusDot,
+  formRowStyles,
+} from "@/components/settings/FormRow";
 
 // ═══════════════════════════════════════════════════════════════════════════
 // CoworkPluginsSubsection
@@ -54,15 +60,9 @@ function CoworkPluginsSubsection() {
 
   return (
     <>
-      <hr
-        style={{
-          border: "none",
-          borderTop: "1px solid var(--color-rule)",
-          margin: "20px 0",
-        }}
-      />
-      <p style={styles.subsectionLabel}>Cowork Plugins</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsRule />
+      <SettingsSectionLabel>Cowork Plugins</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Install plugins in Claude Desktop's Cowork sidebar for live workspace access.
       </p>
 
@@ -91,40 +91,32 @@ function CoworkPluginsSubsection() {
                   {plugin.name}
                 </span>
                 <p
-                  style={{
-                    ...styles.description,
-                    fontSize: 11,
-                    margin: "2px 0 0",
-                  }}
+                  className={formRowStyles.descriptionTinyTop2}
                 >
                   {plugin.description}
                 </p>
               </div>
-              <button
-                style={{
-                  ...styles.btn,
-                  ...styles.btnGhost,
-                  flexShrink: 0,
-                  opacity: exporting === plugin.name ? 0.5 : 1,
-                }}
+              <SettingsButton
+                tone="ghost"
+                className={formRowStyles.buttonFlexShrink}
                 onClick={() => handleExport(plugin.name)}
                 disabled={exporting === plugin.name}
               >
                 {exporting === plugin.name ? (
-                  <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+                  <>
                     <Loader2 size={12} className="animate-spin" /> Saving...
-                  </span>
+                  </>
                 ) : exported[plugin.name] ? (
                   "Saved to Desktop"
                 ) : (
                   "Save to Desktop"
                 )}
-              </button>
+              </SettingsButton>
             </div>
           ))}
       </div>
 
-      <p style={{ ...styles.description, fontSize: 11, marginTop: 12, fontStyle: "italic" }}>
+      <p className={formRowStyles.descriptionTinyItalic}>
         Drag the zip from your Desktop into Claude Desktop's Cowork sidebar to install.
       </p>
     </>
@@ -193,8 +185,8 @@ export default function ClaudeDesktopConnection() {
 
   return (
     <div>
-      <p style={styles.subsectionLabel}>Claude Desktop</p>
-      <p style={{ ...styles.description, marginBottom: 16 }}>
+      <SettingsSectionLabel>Claude Desktop</SettingsSectionLabel>
+      <p className={formRowStyles.descriptionLead}>
         Connect Claude Desktop to query your workspace via MCP
       </p>
 
@@ -208,10 +200,8 @@ export default function ClaudeDesktopConnection() {
             marginBottom: 12,
           }}
         >
-          <div
-            style={styles.statusDot(
-              result.success ? "var(--color-garden-sage)" : "var(--color-spice-terracotta)"
-            )}
+          <SettingsStatusDot
+            color={result.success ? "var(--color-garden-sage)" : "var(--color-spice-terracotta)"}
           />
           <span style={{ fontFamily: "var(--font-mono)", fontSize: 11, color: "var(--color-text-secondary)" }}>
             {result.message}
@@ -219,27 +209,23 @@ export default function ClaudeDesktopConnection() {
         </div>
       )}
 
-      <button
-        style={{
-          ...styles.btn,
-          ...styles.btnGhost,
-          opacity: configuring ? 0.5 : 1,
-        }}
+      <SettingsButton
+        tone="ghost"
         onClick={handleConfigure}
         disabled={configuring}
       >
         {configuring ? (
-          <span style={{ display: "inline-flex", alignItems: "center", gap: 6 }}>
+          <>
             <Loader2 size={12} className="animate-spin" /> Configuring...
-          </span>
+          </>
         ) : result?.success ? (
           "Reconfigure"
         ) : (
           "Connect to Claude Desktop"
         )}
-      </button>
+      </SettingsButton>
 
-      <p style={{ ...styles.description, fontSize: 12, marginTop: 12 }}>
+      <p className={formRowStyles.descriptionSmallTop4}>
         Adds DailyOS as an MCP server in Claude Desktop. After connecting,
         Claude can query your briefing, accounts, projects, and meeting
         history.

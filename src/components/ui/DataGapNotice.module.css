@@ -1,0 +1,26 @@
+.notice {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--color-desk-charcoal-4);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1.2;
+  letter-spacing: 0;
+}
+
+.notice[data-severity="warning"] {
+  background: var(--color-trust-use-with-caution-8);
+  color: var(--color-spice-saffron);
+}
+
+.icon {
+  width: 12px;
+  height: 12px;
+  flex-shrink: 0;
+  stroke-width: 2;
+}
