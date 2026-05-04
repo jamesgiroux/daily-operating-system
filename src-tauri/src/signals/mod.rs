@@ -13,6 +13,7 @@ pub mod bus;
 pub mod cadence;
 pub mod callouts;
 pub mod decay;
+pub mod derived_state_subscribers;
 pub mod email_bridge;
 pub mod email_context;
 pub mod email_scoring;

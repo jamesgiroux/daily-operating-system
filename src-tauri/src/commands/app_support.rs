@@ -1758,7 +1758,7 @@ mod tests {
     #[test]
     fn audit_finds_cross_contamination_in_executive_assessment() {
         let db = test_db();
-        insert_customer_account(&db, "target", "Jane", &["example.com"], None, None, None);
+        insert_customer_account(&db, "target", "Acme", &["example.com"], None, None, None);
         insert_customer_account(
             &db,
             "acme",

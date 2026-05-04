@@ -2521,7 +2521,7 @@ mod tests {
 
         let db = setup_entity_db(
             dir.path(),
-            "person-jane",
+            "person-acme",
             "Jane Smith",
             crate::entity::EntityType::Person,
             "evt-1on1",
