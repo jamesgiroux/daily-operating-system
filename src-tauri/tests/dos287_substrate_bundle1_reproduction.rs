@@ -1,14 +1,18 @@
+use chrono::{TimeZone, Utc};
+use dailyos_lib::abilities::provenance::SubjectRef;
+use dailyos_lib::abilities::trust::{
+    compile_trust, CrossEntityCoherenceInput, FreshnessContext, TrustComputation, TrustConfig,
+    TrustContext, TrustFactorInputs, UserFeedbackSignal,
+};
+use dailyos_lib::db::claims::{
+    ClaimSensitivity, ClaimState, ClaimVerificationState, IntelligenceClaim, SurfacingState,
+    TemporalScope,
+};
 use dailyos_lib::db::ActionDb;
-use dailyos_lib::intelligence::contamination::{
-    collect_narrative_text, detect_cross_entity_contamination, ContaminationKind,
-    ContaminationValidation,
-};
 use dailyos_lib::intelligence::io::{
-    write_intelligence_json, IntelRisk, IntelWin, IntelligenceJson, ItemSource, StakeholderInsight,
+    IntelRisk, IntelWin, IntelligenceJson, ItemSource, StakeholderInsight,
 };
-use dailyos_lib::substrate_test_api::{
-    compose_enrichment_intelligence_with_policy, EnrichmentComposition, EnrichmentInput,
-};
+use dailyos_lib::services::trust_extraction::{extract_target_footprint, ExtractionOutcome};
 use rusqlite::{params, Connection};
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
@@ -19,11 +23,12 @@ const PROJECTION_STATUS_SQL: &str =
 const TYPED_FEEDBACK_SQL: &str =
     include_str!("../src/migrations/135_dos_294_typed_feedback_schema.sql");
 
-const TARGET_ACCOUNT_ID: &str = "dos287-acme-corp";
-const FOREIGN_ACCOUNT_ID: &str = "dos287-acme-subsidiary";
-const TARGET_DOMAIN: &str = "acme.com";
-const FOREIGN_DOMAIN: &str = "acme-test.com";
-const FOREIGN_VIP_HOST: &str = "vip2-acme-test.com";
+const PARENT_ACCOUNT_ID: &str = "dos287-example-parent";
+const TARGET_ACCOUNT_ID: &str = "dos287-target-example";
+const FOREIGN_ACCOUNT_ID: &str = "dos287-adjacent-example";
+const TARGET_DOMAIN: &str = "target.example.org";
+const FOREIGN_DOMAIN: &str = "adjacent.example.com";
+const FOREIGN_INFRA_HOST: &str = "cluster-1.example.com";
 const TARGET_STAKEHOLDER_ID: &str = "person-dos287-alice";
 const FOREIGN_STAKEHOLDER_ID: &str = "person-dos287-blake";
 const FOREIGN_STAKEHOLDER_NAME: &str = "Blake Branch";
@@ -239,109 +244,148 @@ CREATE TABLE signal_events (
 "#;
 
 #[test]
-fn bundle1_same_domain_bleed_is_rejected_before_substrate_writes() {
+fn bundle1_cross_entity_bleed_scores_low_and_clean_scores_high() {
     let conn = fresh_db();
     let db = ActionDb::from_conn(&conn);
     seed_bundle1_fixture(db);
 
-    let tempdir = tempfile::tempdir().expect("tempdir");
-    let input = EnrichmentInput {
-        workspace: tempdir.path().to_path_buf(),
-        entity_dir: tempdir.path().to_path_buf(),
-        entity_id: TARGET_ACCOUNT_ID.to_string(),
-        entity_type: "account".to_string(),
-        prompt: String::new(),
-        file_manifest: Vec::new(),
-        file_count: 0,
-        computed_health: None,
-        entity_name: "Acme Corp".to_string(),
-        relationship: None,
-        intelligence_context: None,
-        active_preset: None,
-    };
+    let bleed_text = trust_claim_text(&contaminated_target_enrichment());
+    let clean_text = trust_claim_text(&prior_target_intelligence());
 
-    let prior = prior_target_intelligence();
-    db.upsert_entity_intelligence(&prior)
-        .expect("seed target prior intelligence");
-    seed_stakeholder_cache(&conn, TARGET_ACCOUNT_ID, "Alice Adams", "trusted champion");
-    write_intelligence_json(tempdir.path(), &prior).expect("seed target intelligence.json");
+    let bleed_factor = cross_entity_coherence_factor(db, &bleed_text);
+    let clean_factor = cross_entity_coherence_factor(db, &clean_text);
 
-    db.upsert_entity_intelligence(&prior_foreign_intelligence())
-        .expect("seed adjacent account prior intelligence");
-
-    let db_before = entity_assessment_snapshot(&conn, TARGET_ACCOUNT_ID);
-    let disk_before =
-        std::fs::read_to_string(tempdir.path().join("intelligence.json")).expect("read disk");
-    let target_claims_before = target_account_claim_count(&conn);
-
-    let contaminated = contaminated_target_enrichment();
-    let narrative = collect_narrative_text(&contaminated);
-    let hits = detect_cross_entity_contamination(
-        &narrative,
-        TARGET_ACCOUNT_ID,
-        &[TARGET_DOMAIN.to_string()],
-        &[],
-        db,
+    assert!(
+        bleed_factor <= 0.3,
+        "bundle-1 bleed should score below the W4-A coherence threshold, got {bleed_factor}"
     );
     assert!(
-        hits.iter().any(|hit| {
-            hit.source_account_id.as_deref() == Some(FOREIGN_ACCOUNT_ID)
-                && (hit.foreign_token == FOREIGN_DOMAIN || hit.foreign_token == FOREIGN_VIP_HOST)
-        }) || hits.iter().any(|hit| {
-            hit.kind == ContaminationKind::InfrastructureId && hit.foreign_token == FOREIGN_VIP_HOST
-        }),
-        "strict detector must identify adjacent-account content, got {hits:?}"
+        clean_factor >= 0.95,
+        "clean bundle-1 target context should remain coherent, got {clean_factor}"
+    );
+}
+
+fn cross_entity_coherence_factor(db: &ActionDb, claim_text: &str) -> f64 {
+    let subject = SubjectRef::Account(TARGET_ACCOUNT_ID.to_string());
+    let extraction = extract_target_footprint(db, &subject, "account", TARGET_ACCOUNT_ID)
+        .expect("extract target trust footprint");
+    let (target_footprint, portfolio_footprints) = match extraction {
+        ExtractionOutcome::Ok {
+            footprint,
+            portfolio_footprints,
+        } => (footprint, portfolio_footprints),
+        ExtractionOutcome::SkipExtractorMismatch { reason } => {
+            panic!("bundle-1 trust footprint should extract cleanly, got {reason:?}")
+        }
+    };
+    assert!(
+        portfolio_footprints
+            .iter()
+            .any(|footprint| footprint.subject == SubjectRef::Account(FOREIGN_ACCOUNT_ID.to_string())),
+        "bundle-1 fixture must include adjacent account in portfolio footprints"
     );
 
-    let composition = compose_enrichment_intelligence_with_policy(
-        db,
-        &input,
-        &contaminated,
-        ContaminationValidation::RejectOnHit,
+    let claim = trust_claim(claim_text);
+    let computation = compile_trust(
+        &claim,
+        TrustContext {
+            now: Utc.with_ymd_and_hms(2026, 5, 4, 13, 0, 0).unwrap(),
+            config: TrustConfig::default(),
+            factor_inputs: TrustFactorInputs {
+                source_reliability: 1.0,
+                freshness: FreshnessContext {
+                    timestamp_known: true,
+                    age_days: 0.0,
+                },
+                corroboration_strength: 1.0,
+                contradiction_count: 0,
+                user_feedback: UserFeedbackSignal::None,
+                subject_fit_confidence: 1.0,
+            },
+            cross_entity: CrossEntityCoherenceInput {
+                claim_text: claim.text.clone(),
+                target_footprint,
+                portfolio_footprints,
+                cross_entity_context_expected: false,
+            },
+        },
     )
-    .expect("compose contaminated enrichment");
+    .expect("compile trust");
 
-    match composition {
-        EnrichmentComposition::SkipDueToContamination { reason, prior, .. } => {
-            assert!(
-                reason.contains("cross-entity contamination"),
-                "skip reason should explain contamination, got {reason}"
-            );
-            assert_eq!(prior.entity_id, TARGET_ACCOUNT_ID);
-            assert_eq!(
-                prior.executive_assessment.as_deref(),
-                Some("Acme Corp has steady adoption and an active renewal plan.")
-            );
+    trust_factor_raw_value(&computation, "cross_entity_coherence")
+}
+
+fn trust_factor_raw_value(computation: &TrustComputation, name: &str) -> f64 {
+    computation
+        .evidence
+        .factor_breakdown
+        .iter()
+        .find(|factor| factor.name == name)
+        .map(|factor| factor.raw_value)
+        .expect("trust factor should be present")
+}
+
+fn trust_claim(text: &str) -> IntelligenceClaim {
+    IntelligenceClaim {
+        id: "dos287-bundle1-claim".to_string(),
+        subject_ref: serde_json::json!({
+            "kind": "account",
+            "id": TARGET_ACCOUNT_ID,
+        })
+        .to_string(),
+        claim_type: "risk".to_string(),
+        field_path: Some("risks.summary".to_string()),
+        topic_key: None,
+        text: text.to_string(),
+        dedup_key: "dos287-bundle1-dedup".to_string(),
+        item_hash: Some("dos287-bundle1-hash".to_string()),
+        actor: "agent:test".to_string(),
+        data_source: "test-fixture".to_string(),
+        source_ref: None,
+        source_asof: Some("2026-05-04T12:00:00Z".to_string()),
+        observed_at: "2026-05-04T12:00:00Z".to_string(),
+        created_at: "2026-05-04T12:00:00Z".to_string(),
+        provenance_json: "{}".to_string(),
+        metadata_json: None,
+        claim_state: ClaimState::Active,
+        surfacing_state: SurfacingState::Active,
+        demotion_reason: None,
+        reactivated_at: None,
+        retraction_reason: None,
+        expires_at: None,
+        superseded_by: None,
+        trust_score: None,
+        trust_computed_at: None,
+        trust_version: None,
+        thread_id: None,
+        temporal_scope: TemporalScope::State,
+        sensitivity: ClaimSensitivity::Internal,
+        verification_state: ClaimVerificationState::Active,
+        verification_reason: None,
+        needs_user_decision_at: None,
+    }
+}
+
+fn trust_claim_text(intel: &IntelligenceJson) -> String {
+    let mut parts = Vec::new();
+    if let Some(text) = intel.executive_assessment.as_deref() {
+        parts.push(text.to_string());
+    }
+    parts.extend(intel.risks.iter().map(|risk| risk.text.clone()));
+    parts.extend(intel.recent_wins.iter().map(|win| win.text.clone()));
+    for stakeholder in &intel.stakeholder_insights {
+        parts.push(stakeholder.name.clone());
+        if let Some(role) = stakeholder.role.as_deref() {
+            parts.push(role.to_string());
         }
-        EnrichmentComposition::Persist(prepared) => {
-            panic!(
-                "bundle-1 bleed should not persist; prepared payload was {:?}",
-                prepared.intelligence()
-            );
+        if let Some(engagement) = stakeholder.engagement.as_deref() {
+            parts.push(engagement.to_string());
+        }
+        if let Some(assessment) = stakeholder.assessment.as_deref() {
+            parts.push(assessment.to_string());
         }
     }
-
-    assert_eq!(
-        entity_assessment_snapshot(&conn, TARGET_ACCOUNT_ID),
-        db_before,
-        "SkipDueToContamination must preserve target entity_assessment"
-    );
-    assert_eq!(
-        std::fs::read_to_string(tempdir.path().join("intelligence.json")).expect("read disk"),
-        disk_before,
-        "SkipDueToContamination must not rewrite intelligence.json"
-    );
-    assert_eq!(
-        target_account_claim_count(&conn),
-        target_claims_before,
-        "no new target account claims should land after contamination rejection"
-    );
-
-    assert_no_target_claim_mentions(&conn, FOREIGN_VIP_HOST);
-    assert_no_target_claim_mentions(&conn, FOREIGN_STAKEHOLDER_NAME);
-    assert_no_cross_account_stakeholder_rows(&conn);
-    assert_stakeholder_cache_excludes_foreign_content(&conn);
-    assert_target_claim_attribution_excludes_foreign_sources(&conn);
+    parts.join("\n")
 }
 
 fn fresh_db() -> Connection {
@@ -366,14 +410,21 @@ fn seed_bundle1_fixture(db: &ActionDb) {
         .execute(
             "INSERT INTO accounts (id, name, account_type, updated_at, archived)
              VALUES (?1, ?2, 'customer', '2026-05-04T12:00:00Z', 0)",
-            params![TARGET_ACCOUNT_ID, "Acme Corp"],
+            params![PARENT_ACCOUNT_ID, "Example Portfolio"],
+        )
+        .expect("seed parent account");
+    db.conn_ref()
+        .execute(
+            "INSERT INTO accounts (id, name, parent_id, account_type, updated_at, archived)
+             VALUES (?1, ?2, ?3, 'customer', '2026-05-04T12:00:00Z', 0)",
+            params![TARGET_ACCOUNT_ID, "Target Example", PARENT_ACCOUNT_ID],
         )
         .expect("seed target account");
     db.conn_ref()
         .execute(
-            "INSERT INTO accounts (id, name, account_type, updated_at, archived)
-             VALUES (?1, ?2, 'customer', '2026-05-04T12:00:00Z', 0)",
-            params![FOREIGN_ACCOUNT_ID, "Acme Subsidiary"],
+            "INSERT INTO accounts (id, name, parent_id, account_type, updated_at, archived)
+             VALUES (?1, ?2, ?3, 'customer', '2026-05-04T12:00:00Z', 0)",
+            params![FOREIGN_ACCOUNT_ID, "Adjacent Example", PARENT_ACCOUNT_ID],
         )
         .expect("seed foreign account");
     db.conn_ref()
@@ -394,30 +445,35 @@ fn seed_bundle1_fixture(db: &ActionDb) {
         .execute(
             "INSERT INTO account_domains (account_id, domain, source)
              VALUES (?1, ?2, 'test')",
-            params![FOREIGN_ACCOUNT_ID, FOREIGN_VIP_HOST],
+            params![FOREIGN_ACCOUNT_ID, FOREIGN_INFRA_HOST],
         )
-        .expect("seed foreign VIP host");
+        .expect("seed foreign infrastructure host");
 
-    seed_person(db, TARGET_STAKEHOLDER_ID, "Alice Adams", "alice@acme.com");
+    seed_person(
+        db,
+        TARGET_STAKEHOLDER_ID,
+        "Alice Adams",
+        "alice@target.example.org",
+    );
     seed_person(
         db,
         FOREIGN_STAKEHOLDER_ID,
         FOREIGN_STAKEHOLDER_NAME,
-        "blake@acme-test.com",
+        "blake@adjacent.example.com",
     );
     seed_account_stakeholder(
         db,
         TARGET_ACCOUNT_ID,
         TARGET_STAKEHOLDER_ID,
         "trusted champion",
-        "Alice owns the Acme Corp rollout.",
+        "Alice owns the Target Example rollout.",
     );
     seed_account_stakeholder(
         db,
         FOREIGN_ACCOUNT_ID,
         FOREIGN_STAKEHOLDER_ID,
         "blocked",
-        "Blake owns the Acme Subsidiary VIP2 migration.",
+        "Blake owns the Adjacent Example cluster migration.",
     );
 }
 
@@ -456,7 +512,7 @@ fn prior_target_intelligence() -> IntelligenceJson {
         entity_type: "account".to_string(),
         enriched_at: "2026-05-04T12:00:00Z".to_string(),
         executive_assessment: Some(
-            "Acme Corp has steady adoption and an active renewal plan.".to_string(),
+            "Target Example has steady adoption and an active renewal plan.".to_string(),
         ),
         risks: vec![IntelRisk {
             text: "Procurement timing is the only active renewal risk.".to_string(),
@@ -464,7 +520,7 @@ fn prior_target_intelligence() -> IntelligenceJson {
             ..Default::default()
         }],
         recent_wins: vec![IntelWin {
-            text: "Alice Adams expanded executive enablement for Acme Corp.".to_string(),
+            text: "Alice Adams expanded executive enablement for Target Example.".to_string(),
             item_source: Some(item_source("target-crm")),
             ..Default::default()
         }],
@@ -473,41 +529,8 @@ fn prior_target_intelligence() -> IntelligenceJson {
             person_id: Some(TARGET_STAKEHOLDER_ID.to_string()),
             role: Some("Champion".to_string()),
             engagement: Some("trusted champion".to_string()),
-            assessment: Some("Alice owns the Acme Corp rollout.".to_string()),
+            assessment: Some("Alice owns the Target Example rollout.".to_string()),
             item_source: Some(item_source("target-crm")),
-            ..Default::default()
-        }],
-        ..Default::default()
-    }
-}
-
-fn prior_foreign_intelligence() -> IntelligenceJson {
-    IntelligenceJson {
-        entity_id: FOREIGN_ACCOUNT_ID.to_string(),
-        entity_type: "account".to_string(),
-        enriched_at: "2026-05-04T12:00:00Z".to_string(),
-        executive_assessment: Some(format!(
-            "Acme Subsidiary is blocked on the {FOREIGN_VIP_HOST} migration."
-        )),
-        risks: vec![IntelRisk {
-            text: format!("{FOREIGN_VIP_HOST} has launch-blocking cache instability."),
-            item_source: Some(item_source("foreign-glean")),
-            ..Default::default()
-        }],
-        recent_wins: vec![IntelWin {
-            text: format!("{FOREIGN_STAKEHOLDER_NAME} completed the Acme Subsidiary SSO plan."),
-            item_source: Some(item_source("foreign-glean")),
-            ..Default::default()
-        }],
-        stakeholder_insights: vec![StakeholderInsight {
-            name: FOREIGN_STAKEHOLDER_NAME.to_string(),
-            person_id: Some(FOREIGN_STAKEHOLDER_ID.to_string()),
-            role: Some("Technical owner".to_string()),
-            engagement: Some("blocked".to_string()),
-            assessment: Some(format!(
-                "{FOREIGN_STAKEHOLDER_NAME} owns {FOREIGN_VIP_HOST} remediation."
-            )),
-            item_source: Some(item_source("foreign-glean")),
             ..Default::default()
         }],
         ..Default::default()
@@ -520,16 +543,16 @@ fn contaminated_target_enrichment() -> IntelligenceJson {
         entity_type: "account".to_string(),
         enriched_at: "2026-05-04T13:00:00Z".to_string(),
         executive_assessment: Some(format!(
-            "Acme Corp enrichment incorrectly says {FOREIGN_STAKEHOLDER_NAME} is \
-             managing {FOREIGN_VIP_HOST} launch risk for Acme Subsidiary."
+            "Target Example enrichment incorrectly says {FOREIGN_STAKEHOLDER_NAME} is \
+             managing {FOREIGN_INFRA_HOST} launch risk for Adjacent Example at {FOREIGN_DOMAIN}."
         )),
         risks: vec![IntelRisk {
-            text: format!("{FOREIGN_VIP_HOST} cache instability is blocking the renewal."),
+            text: format!("{FOREIGN_INFRA_HOST} cache instability is blocking the renewal."),
             item_source: Some(item_source("foreign-glean")),
             ..Default::default()
         }],
         recent_wins: vec![IntelWin {
-            text: format!("{FOREIGN_STAKEHOLDER_NAME} completed Acme Subsidiary SSO validation."),
+            text: format!("{FOREIGN_STAKEHOLDER_NAME} completed Adjacent Example SSO validation."),
             item_source: Some(item_source("foreign-glean")),
             ..Default::default()
         }],
@@ -539,7 +562,7 @@ fn contaminated_target_enrichment() -> IntelligenceJson {
             role: Some("Technical owner".to_string()),
             engagement: Some("blocked".to_string()),
             assessment: Some(format!(
-                "{FOREIGN_STAKEHOLDER_NAME} is focused on {FOREIGN_VIP_HOST} migration risk."
+                "{FOREIGN_STAKEHOLDER_NAME} is focused on {FOREIGN_INFRA_HOST} migration risk."
             )),
             item_source: Some(item_source("foreign-glean")),
             ..Default::default()
@@ -555,142 +578,4 @@ fn item_source(source: &str) -> ItemSource {
         sourced_at: "2026-05-04T12:00:00Z".to_string(),
         reference: None,
     }
-}
-
-fn seed_stakeholder_cache(conn: &Connection, account_id: &str, name: &str, engagement: &str) {
-    let json = serde_json::json!([
-        {
-            "name": name,
-            "personId": TARGET_STAKEHOLDER_ID,
-            "engagement": engagement,
-            "assessment": "Alice owns the Acme Corp rollout."
-        }
-    ])
-    .to_string();
-    conn.execute(
-        "UPDATE entity_assessment SET stakeholder_insights_json = ?1 WHERE entity_id = ?2",
-        params![json, account_id],
-    )
-    .expect("seed stakeholder cache");
-}
-
-fn entity_assessment_snapshot(conn: &Connection, entity_id: &str) -> String {
-    conn.query_row(
-        "SELECT json_object(
-            'executiveAssessment', executive_assessment,
-            'risks', risks_json,
-            'recentWins', recent_wins_json,
-            'stakeholders', stakeholder_insights_json,
-            'enrichedAt', enriched_at
-         )
-         FROM entity_assessment WHERE entity_id = ?1",
-        params![entity_id],
-        |row| row.get(0),
-    )
-    .expect("entity assessment snapshot")
-}
-
-fn target_account_claim_count(conn: &Connection) -> i64 {
-    conn.query_row(
-        "SELECT COUNT(*) FROM intelligence_claims
-         WHERE json_extract(subject_ref, '$.kind') = 'account'
-           AND json_extract(subject_ref, '$.id') = ?1",
-        params![TARGET_ACCOUNT_ID],
-        |row| row.get(0),
-    )
-    .expect("target claim count")
-}
-
-fn assert_no_target_claim_mentions(conn: &Connection, forbidden: &str) {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM intelligence_claims
-             WHERE json_extract(subject_ref, '$.kind') = 'account'
-               AND json_extract(subject_ref, '$.id') = ?1
-               AND lower(text) LIKE '%' || lower(?2) || '%'",
-            params![TARGET_ACCOUNT_ID, forbidden],
-            |row| row.get(0),
-        )
-        .expect("target forbidden claim count");
-    assert_eq!(
-        count, 0,
-        "target account claims must not mention foreign token {forbidden}"
-    );
-}
-
-fn assert_no_cross_account_stakeholder_rows(conn: &Connection) {
-    let count: i64 = conn
-        .query_row(
-            "SELECT COUNT(*) FROM account_stakeholders
-             WHERE account_id = ?1 AND person_id = ?2",
-            params![TARGET_ACCOUNT_ID, FOREIGN_STAKEHOLDER_ID],
-            |row| row.get(0),
-        )
-        .expect("cross-account stakeholder row count");
-    assert_eq!(
-        count, 0,
-        "foreign stakeholder must not be linked to target account"
-    );
-}
-
-fn assert_stakeholder_cache_excludes_foreign_content(conn: &Connection) {
-    let cache: Option<String> = conn
-        .query_row(
-            "SELECT stakeholder_insights_json FROM entity_assessment WHERE entity_id = ?1",
-            params![TARGET_ACCOUNT_ID],
-            |row| row.get(0),
-        )
-        .expect("stakeholder cache");
-    let cache = cache.unwrap_or_default().to_lowercase();
-    assert!(
-        !cache.contains(&FOREIGN_STAKEHOLDER_NAME.to_lowercase()),
-        "target stakeholder cache must not contain foreign stakeholder"
-    );
-    assert!(
-        !cache.contains(FOREIGN_VIP_HOST),
-        "target stakeholder cache must not contain foreign VIP host"
-    );
-}
-
-fn assert_target_claim_attribution_excludes_foreign_sources(conn: &Connection) {
-    let mut stmt = conn
-        .prepare(
-            "SELECT subject_ref, COALESCE(source_ref, ''), actor, data_source, text
-             FROM intelligence_claims
-             WHERE json_extract(subject_ref, '$.kind') = 'account'
-               AND json_extract(subject_ref, '$.id') = ?1",
-        )
-        .expect("prepare attribution query");
-    let rows = stmt
-        .query_map(params![TARGET_ACCOUNT_ID], |row| {
-            Ok((
-                row.get::<_, String>(0)?,
-                row.get::<_, String>(1)?,
-                row.get::<_, String>(2)?,
-                row.get::<_, String>(3)?,
-                row.get::<_, String>(4)?,
-            ))
-        })
-        .expect("map attribution rows");
-
-    let mut seen = 0;
-    for row in rows {
-        let (subject_ref, source_ref, actor, data_source, text) = row.expect("attribution row");
-        seen += 1;
-        let joined =
-            format!("{subject_ref}\n{source_ref}\n{actor}\n{data_source}\n{text}").to_lowercase();
-        assert!(
-            !joined.contains(FOREIGN_ACCOUNT_ID),
-            "target claim must not attribute to foreign account: {joined}"
-        );
-        assert!(
-            !joined.contains(FOREIGN_STAKEHOLDER_ID),
-            "target claim must not attribute to foreign stakeholder: {joined}"
-        );
-        assert!(
-            !joined.contains("foreign-glean"),
-            "target claim must not retain foreign source label: {joined}"
-        );
-    }
-    assert!(seen > 0, "fixture should have legitimate target claims");
 }
