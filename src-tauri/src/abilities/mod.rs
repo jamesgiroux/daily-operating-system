@@ -5,6 +5,7 @@ pub mod feedback;
 pub mod provenance;
 pub mod registry;
 pub mod threads;
+pub mod trust;
 
 pub use claims::{
     metadata_for_claim_type, metadata_for_name, subject_kind_is_canonical_for,
