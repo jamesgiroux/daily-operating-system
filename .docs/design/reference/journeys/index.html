@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Journeys · DailyOS Design System</title>
+
+<link rel="stylesheet" href="../_shared/fonts.css">
+<link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+
+<style>
+  /* Journey-index-only styling. Editorial cover treatment matching index.html. */
+
+  .jr-cover {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-2xl);
+    border-bottom: 1px solid var(--color-rule-heavy);
+  }
+  .jr-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-md);
+  }
+  .jr-eyebrow a { color: inherit; border-bottom: 1px solid currentColor; text-decoration: none; }
+  .jr-title {
+    font-family: var(--font-serif);
+    font-size: 64px;
+    font-weight: 400;
+    letter-spacing: -0.02em;
+    line-height: 1.04;
+    margin: 0;
+  }
+  .jr-lede {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-weight: 300;
+    font-size: 19px;
+    color: var(--color-text-secondary);
+    max-width: 640px;
+    margin: var(--space-md) 0 0;
+  }
+  .jr-stats {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-lg);
+    display: flex;
+    gap: var(--space-lg);
+    flex-wrap: wrap;
+  }
+
+  .jr-section {
+    padding: var(--space-3xl) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+  .jr-section-title {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-lg);
+    padding-bottom: var(--space-sm);
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+
+  .jr-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
+    gap: var(--space-lg);
+  }
+  .jr-card {
+    display: block;
+    text-decoration: none;
+    color: inherit;
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    border-radius: var(--radius-editorial-md);
+    overflow: hidden;
+    transition: border-color var(--transition-normal), transform var(--transition-normal);
+  }
+  .jr-card:hover {
+    border-color: var(--color-rule-heavy);
+    transform: translateY(-2px);
+  }
+  .jr-card-thumb {
+    position: relative;
+    width: 100%;
+    aspect-ratio: 21 / 9;
+    background: var(--color-paper-cream);
+    overflow: hidden;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+  .jr-card-thumb iframe {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 1280px;
+    height: 800px;
+    transform: scale(0.25);
+    transform-origin: 0 0;
+    pointer-events: none;
+    border: 0;
+  }
+  .jr-card-body { padding: var(--space-md) var(--space-lg) var(--space-lg); }
+  .jr-card-name {
+    font-family: var(--font-serif);
+    font-size: 22px;
+    font-weight: 400;
+    color: var(--color-text-primary);
+    margin: 0;
+    line-height: 1.25;
+  }
+  .jr-card-jtbd {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 15px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    margin-top: var(--space-sm);
+  }
+  .jr-card-flow {
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin-top: var(--space-md);
+  }
+  .jr-card-flow span + span::before {
+    content: " → ";
+    margin: 0 4px;
+    color: var(--color-rule-heavy);
+  }
+
+  .jr-coming-soon {
+    padding: var(--space-2xl);
+    text-align: center;
+    background: var(--color-paper-warm-white);
+    border: 1px dashed var(--color-rule-heavy);
+    border-radius: var(--radius-editorial-md);
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 15px;
+    color: var(--color-text-tertiary);
+  }
+  .jr-coming-soon a { color: inherit; border-bottom: 1px solid currentColor; }
+
+  @media (max-width: 720px) {
+    .jr-title { font-size: 44px; }
+    .jr-grid { grid-template-columns: 1fr; }
+  }
+</style>
+</head>
+<body
+  data-folio-label="Journeys"
+  data-folio-crumbs="Reference > Journeys"
+  data-tint="eucalyptus"
+  data-active-page="today">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <!-- Cover -->
+  <section class="jr-cover">
+    <p class="jr-eyebrow"><a href="../index.html">← Design System</a></p>
+    <h1 class="jr-title">Journeys</h1>
+    <p class="jr-lede">
+      Surfaces in sequence, organized by job-to-be-done. Each journey is a thin click-path: which surface you start on, which ones you touch, which one you end on. Click a step to open the full surface.
+    </p>
+    <div class="jr-stats">
+      <span>6 mapped</span>
+      <span>2 blocked on surface gaps (DOS-369, DOS-370)</span>
+    </div>
+  </section>
+
+  <!-- Mapped -->
+  <section class="jr-section">
+    <h2 class="jr-section-title">Mapped (6)</h2>
+    <div class="jr-grid">
+
+      <a class="jr-card" href="see-my-day.html">
+        <div class="jr-card-thumb">
+          <iframe src="../surfaces/briefing.html" loading="lazy" title="Briefing"></iframe>
+        </div>
+        <div class="jr-card-body">
+          <p class="jr-card-name">See my day</p>
+          <p class="jr-card-jtbd">Open the day. Scan what's coming and what's open.</p>
+          <p class="jr-card-flow">
+            <span>Briefing</span><span>Week</span>
+          </p>
+        </div>
+      </a>
+
+      <a class="jr-card" href="morning-briefing-to-meeting.html">
+        <div class="jr-card-thumb">
+          <iframe src="../surfaces/briefing.html" loading="lazy" title="Briefing"></iframe>
+        </div>
+        <div class="jr-card-body">
+          <p class="jr-card-name">Do meeting prep</p>
+          <p class="jr-card-jtbd">Find the next meeting, read its briefing, capture what comes out.</p>
+          <p class="jr-card-flow">
+            <span>Briefing</span><span>Meeting</span><span>Actions</span>
+          </p>
+        </div>
+      </a>
+
+      <a class="jr-card" href="see-account-details.html">
+        <div class="jr-card-thumb">
+          <iframe src="../surfaces/accounts.html" loading="lazy" title="Accounts"></iframe>
+        </div>
+        <div class="jr-card-body">
+          <p class="jr-card-name">See account details</p>
+          <p class="jr-card-jtbd">Find an account, drill into its dossier.</p>
+          <p class="jr-card-flow">
+            <span>Accounts</span><span>Account</span>
+          </p>
+        </div>
+      </a>
+
+      <a class="jr-card" href="review-a-stakeholder.html">
+        <div class="jr-card-thumb">
+          <iframe src="../surfaces/people.html" loading="lazy" title="People"></iframe>
+        </div>
+        <div class="jr-card-body">
+          <p class="jr-card-name">Review a stakeholder</p>
+          <p class="jr-card-jtbd">Find a person, see their relationship arc + record.</p>
+          <p class="jr-card-flow">
+            <span>People</span><span>Person</span>
+          </p>
+        </div>
+      </a>
+
+      <a class="jr-card" href="prepare-for-a-1-1.html">
+        <div class="jr-card-thumb">
+          <iframe src="../surfaces/person.html" loading="lazy" title="Person"></iframe>
+        </div>
+        <div class="jr-card-body">
+          <p class="jr-card-name">Prepare for a 1:1</p>
+          <p class="jr-card-jtbd">Open the person, jump to their next 1:1 briefing.</p>
+          <p class="jr-card-flow">
+            <span>Person</span><span>Meeting</span>
+          </p>
+        </div>
+      </a>
+
+      <a class="jr-card" href="manage-actions-from-meetings.html">
+        <div class="jr-card-thumb">
+          <iframe src="../surfaces/meeting.html" loading="lazy" title="Meeting"></iframe>
+        </div>
+        <div class="jr-card-body">
+          <p class="jr-card-name">Manage actions from meetings</p>
+          <p class="jr-card-jtbd">Open a meeting outcome, confirm or edit the captured actions.</p>
+          <p class="jr-card-flow">
+            <span>Meeting</span><span>Actions</span>
+          </p>
+        </div>
+      </a>
+
+    </div>
+  </section>
+
+  <!-- Blocked on surface gaps -->
+  <section class="jr-section">
+    <h2 class="jr-section-title">Blocked on surface gaps (2)</h2>
+    <div class="jr-coming-soon">
+      <strong>Add a new account</strong> needs the add-account flow (<a href="https://linear.app/a8c/issue/DOS-369">DOS-369</a>).<br>
+      <strong>QBR prep</strong> needs the reports surfaces (<a href="https://linear.app/a8c/issue/DOS-370">DOS-370</a>).<br>
+      Both will appear here once their underlying surfaces are referenced.
+    </div>
+  </section>
+
+  <!-- Finis -->
+  <section>
+    <div style="text-align:center; padding:72px 0 24px;">
+      <div style="display:flex; justify-content:center; gap:0.4em; color:var(--color-spice-turmeric);">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      </div>
+    </div>
+    <p style="font-family:var(--font-serif); font-style:italic; color:var(--color-text-tertiary); text-align:center; padding-bottom:48px;">
+      Surfaces in sequence. The product as it's actually used.
+    </p>
+  </section>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>
