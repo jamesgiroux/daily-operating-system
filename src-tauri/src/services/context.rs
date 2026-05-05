@@ -190,10 +190,13 @@ impl SeededRng for SeedableRng {
     }
 }
 
-/// External-services wrapper struct. Each field is a thin handle that
-/// delegates to live clients in `Live` and replay/fixture in
-/// `Simulate`/`Evaluate`. Default construction stays live; callers opt
-/// into replay with `ExternalClients::from_replay`.
+/// External-services wrapper struct. Each field is a thin handle with the
+/// service API shape used by mode-aware services. Replay mode is fully
+/// wired through fixtures. Live mode intentionally fails closed with
+/// `ExternalClientError::LiveNotYetWired` until each service has a typed
+/// live adapter exposing the same method surface as its replay handle.
+/// Default construction stays live; callers opt into replay with
+/// `ExternalClients::from_replay`.
 #[derive(Default, Clone)]
 pub struct ExternalClients {
     pub glean: GleanClientHandle,
@@ -237,12 +240,19 @@ pub enum ExternalClientError {
         source: serde_json::Error,
     },
 
-    #[error("{client} live client is not configured")]
-    LiveClientUnavailable { client: &'static str },
+    /// The wrapper's live API contract exists, but the matching typed
+    /// adapter has not landed yet. Replay mode remains the executable path.
+    #[error("{client} live client is not yet wired")]
+    LiveNotYetWired { client: &'static str },
 }
 
-/// Mode-aware Glean client wrapper. Holds `Some(arc)` when configured;
-/// `None` in Local Live mode. Replay mode holds a fixture-backed client.
+/// Mode-aware Glean client wrapper.
+///
+/// Replay mode is fully wired. Live mode currently reserves the
+/// account-facts API shape; its inner slot is opaque because no typed live
+/// Glean client in this crate exposes `fetch_account_facts` yet. Live
+/// calls return `ExternalClientError::LiveNotYetWired` until that adapter
+/// lands.
 #[derive(Clone, Default)]
 pub struct GleanClientHandle {
     mode: GleanClientMode,
@@ -269,7 +279,7 @@ impl GleanClientHandle {
         account_id: &str,
     ) -> Result<GleanAccountFacts, ExternalClientError> {
         match &self.mode {
-            GleanClientMode::Live(_) => Err(ExternalClientError::LiveClientUnavailable {
+            GleanClientMode::Live(_) => Err(ExternalClientError::LiveNotYetWired {
                 client: "glean",
             }),
             GleanClientMode::Replay(client) => client.fetch_account_facts(account_id),
@@ -300,6 +310,9 @@ impl From<ReplayGleanClient> for GleanClientHandle {
 
 #[derive(Clone)]
 pub enum GleanClientMode {
+    /// Placeholder for a future typed live Glean adapter. `Some` means a
+    /// caller supplied a live object, but this wrapper cannot safely call it
+    /// until the object exposes `fetch_account_facts`.
     Live(Option<Arc<dyn std::any::Any + Send + Sync>>),
     Replay(ReplayGleanClient),
 }
@@ -345,9 +358,11 @@ pub struct GleanAccountFacts {
     pub facts: Vec<String>,
 }
 
-/// Mode-aware Slack client wrapper. Placeholder — Slack integration
-/// lands in; the seam reserves the API surface so abilities
-/// can call it without re-plumbing later.
+/// Mode-aware Slack client wrapper.
+///
+/// Replay mode is fully wired. Live mode is a contract placeholder: no
+/// typed Slack adapter currently exposes this generic JSON request surface,
+/// so live calls fail closed with `ExternalClientError::LiveNotYetWired`.
 #[derive(Clone, Default)]
 pub struct SlackClientHandle {
     mode: SlackClientMode,
@@ -372,7 +387,7 @@ impl SlackClientHandle {
         T: DeserializeOwned,
     {
         match &self.mode {
-            SlackClientMode::Live => Err(ExternalClientError::LiveClientUnavailable {
+            SlackClientMode::Live => Err(ExternalClientError::LiveNotYetWired {
                 client: "slack",
             }),
             SlackClientMode::Replay(client) => client.replay_json(method, url, body),
@@ -390,6 +405,7 @@ impl From<ReplaySlackClient> for SlackClientHandle {
 
 #[derive(Clone, Default)]
 pub enum SlackClientMode {
+    /// Placeholder for a future typed live Slack adapter.
     #[default]
     Live,
     Replay(ReplaySlackClient),
@@ -428,8 +444,12 @@ impl ReplaySlackClient {
     }
 }
 
-/// Mode-aware Gmail client wrapper. Live mode wraps `crate::google_api`;
-/// replay mode resolves calls from external replay fixtures.
+/// Mode-aware Gmail client wrapper.
+///
+/// Replay mode is fully wired. Gmail HTTP helpers exist under
+/// `crate::google_api`, but there is no typed live adapter matching this
+/// generic JSON request surface yet, so live calls fail closed with
+/// `ExternalClientError::LiveNotYetWired`.
 #[derive(Clone, Default)]
 pub struct GmailClientHandle {
     mode: GmailClientMode,
@@ -454,7 +474,7 @@ impl GmailClientHandle {
         T: DeserializeOwned,
     {
         match &self.mode {
-            GmailClientMode::Live => Err(ExternalClientError::LiveClientUnavailable {
+            GmailClientMode::Live => Err(ExternalClientError::LiveNotYetWired {
                 client: "gmail",
             }),
             GmailClientMode::Replay(client) => client.replay_json(method, url, body),
@@ -472,6 +492,7 @@ impl From<ReplayGmailClient> for GmailClientHandle {
 
 #[derive(Clone, Default)]
 pub enum GmailClientMode {
+    /// Placeholder for a future typed live Gmail adapter.
     #[default]
     Live,
     Replay(ReplayGmailClient),
@@ -510,8 +531,11 @@ impl ReplayGmailClient {
     }
 }
 
-/// Mode-aware redacted client wrapper. Placeholder — Glean is the redacted
-/// data plane today; the seam reserves direct-integration scope.
+/// Mode-aware Salesforce client wrapper.
+///
+/// Replay mode is fully wired. Direct live Salesforce integration has not
+/// landed yet, so live calls fail closed with
+/// `ExternalClientError::LiveNotYetWired`.
 #[derive(Clone, Default)]
 pub struct SalesforceClientHandle {
     mode: SalesforceClientMode,
@@ -531,7 +555,7 @@ impl SalesforceClientHandle {
         account_id: &str,
     ) -> Result<SalesforceAccountRecord, ExternalClientError> {
         match &self.mode {
-            SalesforceClientMode::Live => Err(ExternalClientError::LiveClientUnavailable {
+            SalesforceClientMode::Live => Err(ExternalClientError::LiveNotYetWired {
                 client: "redacted",
             }),
             SalesforceClientMode::Replay(client) => client.fetch_account(account_id),
@@ -559,6 +583,7 @@ impl From<ReplaySalesforceClient> for SalesforceClientHandle {
 
 #[derive(Clone, Default)]
 pub enum SalesforceClientMode {
+    /// Placeholder for a future typed live Salesforce adapter.
     #[default]
     Live,
     Replay(ReplaySalesforceClient),
@@ -964,19 +989,13 @@ mod tests {
         fn lookup(
             &self,
             key: &RequestKey,
-            _method: &str,
-            _url: &str,
+            method: &str,
+            url: &str,
         ) -> Result<ReplayResponse, ExternalReplayFixtureMissing> {
             self.responses
                 .get(key)
                 .cloned()
-                .ok_or_else(|| {
-                    ExternalReplayFixtureMissing::new(
-                        key,
-                        "GET",
-                        "https://fixture.example.com/missing",
-                    )
-                })
+                .ok_or_else(|| ExternalReplayFixtureMissing::new(key, method, url))
         }
     }
 
@@ -1007,6 +1026,15 @@ mod tests {
                 assert_eq!(missing.url_redacted, expected_url);
             }
             other => panic!("expected ReplayFixtureMissing, got {other:?}"),
+        }
+    }
+
+    fn assert_live_not_yet_wired(err: ExternalClientError, expected_client: &str) {
+        match err {
+            ExternalClientError::LiveNotYetWired { client } => {
+                assert_eq!(client, expected_client);
+            }
+            other => panic!("expected LiveNotYetWired, got {other:?}"),
         }
     }
 
@@ -1187,6 +1215,60 @@ mod tests {
         assert!(!clients.slack.is_live());
         assert!(!clients.gmail.is_live());
         assert!(!clients.redacted.is_live());
+    }
+
+    #[test]
+    fn live_glean_configured_placeholder_reports_not_yet_wired() {
+        struct PlaceholderGleanLiveClient;
+
+        let inner: Arc<dyn std::any::Any + Send + Sync> = Arc::new(PlaceholderGleanLiveClient);
+        let client = GleanClientHandle {
+            mode: GleanClientMode::Live(Some(inner)),
+        };
+
+        let err = client.fetch_account_facts("acme.example.com").unwrap_err();
+
+        assert!(client.is_configured());
+        assert_live_not_yet_wired(err, "glean");
+    }
+
+    #[test]
+    fn live_slack_placeholder_reports_not_yet_wired() {
+        let client = SlackClientHandle::default();
+
+        let err = client
+            .replay_json::<serde_json::Value>(
+                "GET",
+                "https://slack.example.com/api/conversations.history",
+                b"",
+            )
+            .unwrap_err();
+
+        assert_live_not_yet_wired(err, "slack");
+    }
+
+    #[test]
+    fn live_gmail_placeholder_reports_not_yet_wired() {
+        let client = GmailClientHandle::default();
+
+        let err = client
+            .replay_json::<serde_json::Value>(
+                "GET",
+                "https://gmail.example.com/api/messages",
+                b"",
+            )
+            .unwrap_err();
+
+        assert_live_not_yet_wired(err, "gmail");
+    }
+
+    #[test]
+    fn live_salesforce_placeholder_reports_not_yet_wired() {
+        let client = SalesforceClientHandle::default();
+
+        let err = client.fetch_account("acme.example.com").unwrap_err();
+
+        assert_live_not_yet_wired(err, "redacted");
     }
 
     #[test]
