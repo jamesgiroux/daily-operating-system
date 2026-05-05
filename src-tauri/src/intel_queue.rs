@@ -2803,13 +2803,16 @@ fn build_trust_context_for_claim(
         source_reliability_for_claim(db, input, claim);
     let (freshness, freshness_read_ok) = freshness_context_for_claim(ctx.clock.now(), claim);
     let (source_lifecycle, lifecycle_read_ok) = source_lifecycle_for_claim(claim);
+    let (internal_consistency, internal_consistency_read_ok) =
+        internal_consistency_for_claim(claim);
     let read_state_indeterminate = !corroborator_read_ok
         || !contradiction_read_ok
         || !corroboration_strength_read_ok
         || !feedback_read_ok
         || !source_reliability_read_ok
         || !freshness_read_ok
-        || !lifecycle_read_ok;
+        || !lifecycle_read_ok
+        || !internal_consistency_read_ok;
     crate::abilities::trust::TrustContext {
         now: ctx.clock.now(),
         config: crate::abilities::trust::TrustConfig::default(),
@@ -2821,7 +2824,7 @@ fn build_trust_context_for_claim(
             contradiction_count,
             user_feedback: feedback_signal,
             subject_fit_confidence: subject_fit_confidence_for_feedback(feedback_signal),
-            internal_consistency: internal_consistency_for_claim(claim),
+            internal_consistency,
             source_lifecycle,
             read_state_indeterminate,
         },
@@ -2918,7 +2921,18 @@ fn source_reliability_for_claim(
     match db.get_signal_weight(&claim.data_source, &input.entity_type, "enrichment_quality") {
         Ok(Some((alpha, beta, _))) => {
             let denom = alpha + beta;
-            if !alpha.is_finite() || !beta.is_finite() || !denom.is_finite() || denom <= 0.0 {
+            // Bayesian alpha/beta must each be non-negative and finite, and
+            // their sum must be strictly positive. Negative components or a
+            // non-positive denom would otherwise produce a value > 1.0 or
+            // NaN that compile_trust silently clamps, inflating reliability
+            // on a corrupt row instead of failing closed.
+            if !alpha.is_finite()
+                || !beta.is_finite()
+                || alpha < 0.0
+                || beta < 0.0
+                || !denom.is_finite()
+                || denom <= 0.0
+            {
                 log::warn!(
                     "TrustRecompute: malformed signal_weights row for source={} entity_type={} on {}: alpha={alpha} beta={beta}",
                     claim.data_source,
@@ -2928,9 +2942,9 @@ fn source_reliability_for_claim(
                 return (1.0, false);
             }
             let value = alpha / denom;
-            if !value.is_finite() {
+            if !value.is_finite() || !(0.0..=1.0).contains(&value) {
                 log::warn!(
-                    "TrustRecompute: non-finite source_reliability computed for {} (alpha={alpha} beta={beta})",
+                    "TrustRecompute: out-of-range source_reliability computed for {} (alpha={alpha} beta={beta} value={value})",
                     claim.id
                 );
                 return (1.0, false);
@@ -2951,22 +2965,22 @@ fn source_reliability_for_claim(
 }
 
 /// Returns (lifecycle, read_ok). When metadata_json is present but
-/// unparseable, read_ok is false so the recompute pipeline triggers
-/// IndeterminateReadState — a malformed metadata blob otherwise lets the
-/// SourceWithdrawn gate be silently bypassed.
+/// unparseable OR contains a lifecycle key with a non-string / unknown /
+/// whitespace-only value, read_ok is false so the recompute pipeline
+/// triggers IndeterminateReadState — corrupted metadata otherwise lets the
+/// SourceWithdrawn gate be silently bypassed by falling through to Active.
 fn source_lifecycle_for_claim(
     claim: &crate::db::claims::IntelligenceClaim,
 ) -> (crate::abilities::trust::SourceLifecycleState, bool) {
     let mut read_ok = true;
-    let metadata_state = match claim.metadata_json.as_deref() {
+    let lifecycle_field = match claim.metadata_json.as_deref() {
         None => None,
         Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
             Ok(value) => value
                 .get("source_lifecycle_state")
                 .or_else(|| value.get("source_lifecycle"))
                 .or_else(|| value.get("lifecycle_state"))
-                .and_then(|state| state.as_str())
-                .map(|state| state.to_ascii_lowercase().replace('-', "_")),
+                .cloned(),
             Err(e) => {
                 log::warn!(
                     "TrustRecompute: malformed metadata_json on lifecycle read for {}: {e}",
@@ -2978,18 +2992,57 @@ fn source_lifecycle_for_claim(
         },
     };
 
-    let lifecycle = match metadata_state.as_deref() {
+    let normalized_state = match &lifecycle_field {
+        None => None,
+        Some(serde_json::Value::Null) => None,
+        Some(serde_json::Value::String(s)) => {
+            let normalized = s.trim().to_ascii_lowercase().replace('-', "_");
+            if normalized.is_empty() {
+                log::warn!(
+                    "TrustRecompute: empty/whitespace lifecycle field for {}",
+                    claim.id
+                );
+                read_ok = false;
+                None
+            } else {
+                Some(normalized)
+            }
+        }
+        Some(other) => {
+            log::warn!(
+                "TrustRecompute: non-string lifecycle field for {}: {other}",
+                claim.id
+            );
+            read_ok = false;
+            None
+        }
+    };
+
+    let lifecycle = match normalized_state.as_deref() {
         Some("withdrawn") => crate::abilities::trust::SourceLifecycleState::Withdrawn,
         Some("dismissed") | Some("user_dismissed") => {
             crate::abilities::trust::SourceLifecycleState::Dismissed
         }
-        _ if matches!(
+        Some("active") => crate::abilities::trust::SourceLifecycleState::Active,
+        Some(unknown) => {
+            log::warn!(
+                "TrustRecompute: unknown lifecycle value '{unknown}' for {}; routing through indeterminate gate",
+                claim.id
+            );
+            read_ok = false;
+            // Conservative fallback: treat unknown lifecycle as Active so the
+            // SourceWithdrawn gate doesn't false-trigger, but read_ok=false
+            // routes the claim through IndeterminateReadState anyway.
+            crate::abilities::trust::SourceLifecycleState::Active
+        }
+        None if matches!(
             &claim.claim_state,
             crate::db::claims::ClaimState::Withdrawn
-        ) => {
+        ) =>
+        {
             crate::abilities::trust::SourceLifecycleState::Withdrawn
         }
-        _ => crate::abilities::trust::SourceLifecycleState::Active,
+        None => crate::abilities::trust::SourceLifecycleState::Active,
     };
     (lifecycle, read_ok)
 }
@@ -3199,10 +3252,14 @@ fn source_reliability_corroborators_for_claim(
 /// claim when they detect tension between its sub-statements (e.g. transcript
 /// extraction noticing self-contradicting language). Anything in [0.0, 1.0] is
 /// honored; anything missing or malformed defaults to 1.0 (no signal).
-fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) -> f64 {
+/// Returns (internal_consistency, read_ok). A missing hint is the legitimate
+/// no-signal case and stays read_ok=true. Present-but-invalid hints —
+/// non-numeric, out of range, oversized metadata, malformed JSON — set
+/// read_ok=false so the IndeterminateReadState gate fires.
+fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) -> (f64, bool) {
     let raw = match claim.metadata_json.as_deref() {
         Some(s) => s,
-        None => return 1.0,
+        None => return (1.0, true),
     };
     // Cap metadata_json size before parsing to avoid pathological inputs
     // (deeply nested JSON, gigabyte strings) consuming the trust recompute
@@ -3214,7 +3271,7 @@ fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) 
             raw.len(),
             claim.id
         );
-        return 1.0;
+        return (1.0, false);
     }
     let value: serde_json::Value = match serde_json::from_str(raw) {
         Ok(v) => v,
@@ -3223,27 +3280,27 @@ fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) 
                 "TrustRecompute: malformed metadata_json for {}: {e}; defaulting internal_consistency to 1.0",
                 claim.id
             );
-            return 1.0;
+            return (1.0, false);
         }
     };
     let hint = value.get("internal_consistency");
     match hint.and_then(|v| v.as_f64()) {
-        Some(v) if v.is_finite() && (0.0..=1.0).contains(&v) => v,
+        Some(v) if v.is_finite() && (0.0..=1.0).contains(&v) => (v, true),
         Some(v) => {
             log::warn!(
                 "TrustRecompute: internal_consistency hint {v} out of range for {}; defaulting to 1.0",
                 claim.id
             );
-            1.0
+            (1.0, false)
         }
         None if hint.is_some() => {
             log::warn!(
                 "TrustRecompute: internal_consistency hint not a number for {}; defaulting to 1.0",
                 claim.id
             );
-            1.0
+            (1.0, false)
         }
-        None => 1.0,
+        None => (1.0, true),
     }
 }
 
@@ -5518,19 +5575,23 @@ mod tests {
             verification_reason: None,
             needs_user_decision_at: None,
         };
-        assert_eq!(internal_consistency_for_claim(&claim), 1.0);
+        let (value, ok) = internal_consistency_for_claim(&claim);
+        assert_eq!(value, 1.0);
+        assert!(ok, "absent metadata is not an error");
 
         claim.metadata_json = Some(r#"{"internal_consistency":0.3}"#.into());
-        assert!((internal_consistency_for_claim(&claim) - 0.3).abs() < 1e-9);
+        let (value, ok) = internal_consistency_for_claim(&claim);
+        assert!((value - 0.3).abs() < 1e-9);
+        assert!(ok);
 
         claim.metadata_json = Some(r#"{"internal_consistency":1.5}"#.into());
-        assert_eq!(
-            internal_consistency_for_claim(&claim),
-            1.0,
-            "out-of-range hints fall back to 1.0"
-        );
+        let (value, ok) = internal_consistency_for_claim(&claim);
+        assert_eq!(value, 1.0, "out-of-range hints fall back to 1.0");
+        assert!(!ok, "out-of-range hint must surface as read_ok=false");
 
         claim.metadata_json = Some("not-json".into());
-        assert_eq!(internal_consistency_for_claim(&claim), 1.0);
+        let (value, ok) = internal_consistency_for_claim(&claim);
+        assert_eq!(value, 1.0);
+        assert!(!ok, "malformed metadata_json must surface as read_ok=false");
     }
 }

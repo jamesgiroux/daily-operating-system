@@ -101,11 +101,18 @@ pub struct GenerateCalloutsOutcome {
     /// eligible signals" — callers should warn or retry instead of treating
     /// an empty briefing as the user's actual reality.
     pub signal_query_failed: bool,
+    /// Count of signals whose payload (`signal.value`) JSON failed to decode
+    /// during callout text construction. The callout still landed with the
+    /// fallback default text, but the user got generic copy instead of the
+    /// payload-derived detail. Surfaces as a soft degradation signal.
+    pub signal_decode_failures: u32,
 }
 
 impl GenerateCalloutsOutcome {
     pub fn is_degraded(&self) -> bool {
-        self.signal_query_failed || self.dropped_due_to_persist_failure > 0
+        self.signal_query_failed
+            || self.dropped_due_to_persist_failure > 0
+            || self.signal_decode_failures > 0
     }
 }
 
@@ -186,12 +193,16 @@ pub fn generate_callouts(
     // in the returned outcome so callers can distinguish "no qualifying
     // signal" from "partial DB outage during write".
     let mut dropped_due_to_persist_failure = 0_u32;
+    let mut signal_decode_failures = 0_u32;
     let mut callouts: Vec<BriefingCallout> = scored_signals
         .into_iter()
         .filter(|(s, _)| s.confidence >= 0.55)
         .filter_map(|(signal, relevance)| {
             let severity = classify_severity(signal.confidence);
-            let (headline, detail) = build_callout_text(&signal);
+            let (headline, detail, decode_ok) = build_callout_text(&signal);
+            if !decode_ok {
+                signal_decode_failures += 1;
+            }
             let entity_name = Some(helpers::resolve_entity_name(
                 db,
                 &signal.entity_type,
@@ -251,6 +262,7 @@ pub fn generate_callouts(
         GenerateCalloutsOutcome {
             dropped_due_to_persist_failure,
             signal_query_failed: false,
+            signal_decode_failures,
         },
     )
 }
@@ -274,13 +286,29 @@ fn classify_severity(confidence: f64) -> String {
     }
 }
 
-fn build_callout_text(signal: &SignalEvent) -> (String, String) {
-    let parsed: Value = signal
-        .value
-        .as_deref()
-        .and_then(|v| serde_json::from_str(v).ok())
-        .unwrap_or(Value::Null);
+fn build_callout_text(signal: &SignalEvent) -> (String, String, bool) {
+    let mut decode_ok = true;
+    let parsed: Value = match signal.value.as_deref() {
+        None => Value::Null,
+        Some(v) => match serde_json::from_str(v) {
+            Ok(value) => value,
+            Err(e) => {
+                log::warn!(
+                    "build_callout_text: malformed signal.value JSON for signal_id={} signal_type={}: {e}",
+                    signal.id,
+                    signal.signal_type
+                );
+                decode_ok = false;
+                Value::Null
+            }
+        },
+    };
 
+    let (headline, detail) = build_callout_text_inner(&parsed, signal);
+    (headline, detail, decode_ok)
+}
+
+fn build_callout_text_inner(parsed: &Value, signal: &SignalEvent) -> (String, String) {
     match signal.signal_type.as_str() {
         "stakeholder_change" => {
             let detail = parsed
