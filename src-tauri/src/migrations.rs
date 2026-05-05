@@ -897,9 +897,38 @@ fn create_backup_via_api(
     }
     let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)
         .map_err(|e| format!("Failed to initialize pre-migration backup: {e}"))?;
-    backup
-        .step(-1)
-        .map_err(|e| format!("Pre-migration backup failed: {e}"))?;
+    // Single step(-1) copies every page in one shot. On encrypted DBs in the
+    // hundreds of megabytes that path returned Err with the canonical
+    // "not an error" string — the underlying extended code had been cleared
+    // but the rusqlite wrapper still mapped to Err, blocking migrations until
+    // the user manually intervened. Chunked stepping avoids the edge case and
+    // gives us progress logging while a multi-hundred-MB copy runs.
+    const PAGES_PER_STEP: i32 = 1024;
+    let mut step_count = 0_u64;
+    loop {
+        match backup.step(PAGES_PER_STEP) {
+            Ok(rusqlite::backup::StepResult::More) => {
+                step_count += 1;
+                if step_count % 64 == 0 {
+                    log::info!(
+                        "Pre-migration backup in progress: ~{} pages copied",
+                        step_count * PAGES_PER_STEP as u64
+                    );
+                }
+            }
+            Ok(rusqlite::backup::StepResult::Done) => break,
+            Ok(rusqlite::backup::StepResult::Busy)
+            | Ok(rusqlite::backup::StepResult::Locked) => {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+            Ok(other) => {
+                return Err(format!(
+                    "Pre-migration backup unexpected step result: {other:?}"
+                ));
+            }
+            Err(e) => return Err(format!("Pre-migration backup failed: {e}")),
+        }
+    }
     Ok(())
 }
 
@@ -1058,6 +1087,14 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
     let db_path = PathBuf::from(db_path);
     let backup_path = migration_backup_path(&db_path);
     let _ = std::fs::remove_file(&backup_path);
+
+    let source_size_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
+    log::info!(
+        "Pre-migration backup starting: source={} ({} bytes), dest={}",
+        db_path.to_string_lossy(),
+        source_size_bytes,
+        backup_path.to_string_lossy()
+    );
 
     let encrypted = db_path.exists() && !crate::db::encryption::is_database_plaintext(&db_path);
     let encryption_key = if encrypted {
