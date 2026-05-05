@@ -153,6 +153,11 @@ pub struct McpAbilityBridge<'registry> {
     /// the next matching call_tool invocation. Token bytes never need to be
     /// supplied through MCP ability tool args.
     confirmation_tokens: Arc<Mutex<McpConfirmationTokenCache>>,
+    /// MCP confirmation depends on a Tauri-side prompt UI that resolves the
+    /// pending attestation. That UI is scheduled for the W5/W6 prompt-surface
+    /// work. Until those Tauri commands ship, request_confirmation_tool would
+    /// deadlock until TTL expires, so it's gated off by default.
+    mcp_confirmation_enabled: bool,
 }
 
 impl<'registry> McpAbilityBridge<'registry> {
@@ -187,7 +192,17 @@ impl<'registry> McpAbilityBridge<'registry> {
             actor_filtered_descriptors,
             invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
             confirmation_tokens: Arc::new(Mutex::new(McpConfirmationTokenCache::default())),
+            mcp_confirmation_enabled: false,
         }
+    }
+
+    /// Re-enable MCP request_confirmation once the W5/W6 prompt UI commands
+    /// are wired and a real attestation resolver is reachable from the
+    /// renderer. Tests that exercise the confirmation flow flip this on
+    /// directly to drive the Tauri-side approving host.
+    pub fn with_confirmation_enabled(mut self) -> Self {
+        self.mcp_confirmation_enabled = true;
+        self
     }
 
     /// Returns the cached actor-filtered descriptor list. The bridge does NOT
@@ -283,6 +298,24 @@ impl<'registry> McpAbilityBridge<'registry> {
         input_json: &serde_json::Value,
         tauri_bridge: &TauriAbilityBridge<'_>,
     ) -> Result<CallToolResult, McpError> {
+        if !self.mcp_confirmation_enabled {
+            // The attestation flow stores a pending oneshot and waits for a
+            // resolver. The Tauri-side approve/reject UI commands that drive
+            // resolve_attestation are scoped for the W5/W6 prompt-surface work
+            // and aren't built yet. Without a resolver every MCP confirmation
+            // would deadlock until the 5-minute TTL expires and then surface
+            // ability_unavailable, so we short-circuit explicitly. Re-enable by
+            // calling McpToolBridge::with_confirmation_enabled once the prompt
+            // commands ship.
+            log::info!(
+                target: "dailyos_lib::bridges::mcp::confirmation",
+                "request_confirmation refused: MCP confirmation flow not wired (W5/W6 prompt commands missing)"
+            );
+            return Err(mcp_error_from_bridge_surface_error(
+                BridgeSurfaceError::AbilityUnavailable,
+            ));
+        }
+
         let args_hash = confirmation_args_hash(input_json);
         let user_attestation = tauri_bridge.user_attestation_request(
             BridgeActor::Agent,
@@ -600,6 +633,7 @@ mod tests {
             actor_filtered_descriptors: cached_descriptors,
             invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
             confirmation_tokens: Arc::new(Mutex::new(McpConfirmationTokenCache::default())),
+            mcp_confirmation_enabled: false,
         }
     }
 
@@ -871,7 +905,7 @@ mod tests {
             AGENT_ACTORS,
             LIVE_MODES,
         )]);
-        let mcp_bridge = McpAbilityBridge::new(&registry);
+        let mcp_bridge = McpAbilityBridge::new(&registry).with_confirmation_enabled();
         let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
             &registry,
             Arc::new(ApprovingAttestationHost),
@@ -900,7 +934,7 @@ mod tests {
             AGENT_ACTORS,
             LIVE_MODES,
         ))]);
-        let mcp_bridge = McpAbilityBridge::new(&registry);
+        let mcp_bridge = McpAbilityBridge::new(&registry).with_confirmation_enabled();
         let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
             &registry,
             Arc::new(ApprovingAttestationHost),
@@ -1220,5 +1254,38 @@ mod tests {
         let result = bridge.get_provenance_tool_response(session(1), invocation(1));
         let bytes = serde_json::to_vec(&result).unwrap();
         assert!(bytes.len() < MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP);
+    }
+
+    #[tokio::test]
+    async fn mcp_request_confirmation_disabled_by_default_until_prompt_ui_ships() {
+        let registry = registry_with_abilities(vec![descriptor(
+            "agent_write",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        )]);
+        // Default constructor leaves confirmation disabled; without the W5/W6
+        // prompt-resolver UI we'd otherwise wait until the 5-min TTL expires.
+        let mcp_bridge = McpAbilityBridge::new(&registry);
+        let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
+            &registry,
+            Arc::new(ApprovingAttestationHost),
+        );
+
+        let err = mcp_bridge
+            .request_confirmation_tool(session(1), "agent_write", &json!({}), &tauri_bridge)
+            .await
+            .unwrap_err();
+
+        let payload = serde_json::to_value(&err).unwrap();
+        let message = payload
+            .get("message")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default()
+            .to_lowercase();
+        assert!(
+            message.contains("ability unavailable") || message.contains("ability_unavailable"),
+            "MCP confirmation refusal should map to ability_unavailable, got {message}"
+        );
     }
 }
