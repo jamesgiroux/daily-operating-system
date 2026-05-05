@@ -57,6 +57,8 @@ pub enum RunError {
     InvocationFailed(String),
     #[error("JSON serialization failed: {0}")]
     Json(#[from] serde_json::Error),
+    #[error("provider replay fixture invalid: {0}")]
+    ProviderReplayInvalid(String),
     #[error("required dep not yet wired: {0}")]
     NotYetWired(String),
     #[error("harness report write failed: {0}")]
@@ -275,7 +277,7 @@ fn replay_provider_from_fixture(value: &Value) -> Result<ReplayProvider, RunErro
         .get("fixtures")
         .and_then(Value::as_array)
         .ok_or_else(|| {
-            RunError::NotYetWired(
+            RunError::ProviderReplayInvalid(
                 "provider_replay.json must contain a fixtures array".to_string(),
             )
         })?;
@@ -287,7 +289,7 @@ fn replay_provider_from_fixture(value: &Value) -> Result<ReplayProvider, RunErro
             .and_then(Value::as_str)
             .or_else(|| fixture.get("request_key_hex").and_then(Value::as_str))
             .ok_or_else(|| {
-                RunError::NotYetWired(
+                RunError::ProviderReplayInvalid(
                     "provider_replay fixture is not keyed by prompt_replay_hash or request_key_hex"
                         .to_string(),
                 )
@@ -314,12 +316,12 @@ fn completion_text(fixture: &Value) -> Result<String, RunError> {
             .and_then(Value::as_str)
             .map(str::to_string)
             .ok_or_else(|| {
-                RunError::NotYetWired(
+                RunError::ProviderReplayInvalid(
                     "provider_replay completion object must contain text".to_string(),
                 )
             }),
         _ if fixture.get("response").is_some() => response_body_text(fixture),
-        _ => Err(RunError::NotYetWired(
+        _ => Err(RunError::ProviderReplayInvalid(
             "provider_replay fixture must contain completion text".to_string(),
         )),
     }
@@ -331,15 +333,18 @@ fn response_body_text(fixture: &Value) -> Result<String, RunError> {
         .and_then(|response| response.get("body_base64"))
         .and_then(Value::as_str)
         .ok_or_else(|| {
-            RunError::NotYetWired(
+            RunError::ProviderReplayInvalid(
                 "provider_replay response fixture must contain body_base64".to_string(),
             )
         })?;
     let body = base64::engine::general_purpose::STANDARD
         .decode(body_base64)
-        .map_err(|error| RunError::NotYetWired(format!("provider_replay body_base64: {error}")))?;
-    String::from_utf8(body)
-        .map_err(|error| RunError::NotYetWired(format!("provider_replay body UTF-8: {error}")))
+        .map_err(|error| {
+            RunError::ProviderReplayInvalid(format!("provider_replay body_base64: {error}"))
+        })?;
+    String::from_utf8(body).map_err(|error| {
+        RunError::ProviderReplayInvalid(format!("provider_replay body UTF-8: {error}"))
+    })
 }
 
 struct InvocationEnvelope {

@@ -49,6 +49,8 @@ pub struct FixtureMetadata {
     pub prompt_fingerprint_baseline: String,
     #[serde(default)]
     pub prompt_template_version: Option<String>,
+    #[serde(default)]
+    pub completion_text_hash: Option<String>,
     pub trust_factors_dominant: Vec<String>,
     pub pass_fail_definition: String,
     pub fixture_design_notes: Option<serde_json::Value>,

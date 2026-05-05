@@ -66,11 +66,12 @@ impl CategoryScorer for TransformScorer {
         diffs.extend(diff_expected_provenance(expected, &actual.actual_provenance));
         diffs.extend(diff_expected_state(expected.state.as_ref(), actual.actual_state.as_ref()));
 
-        let continuous_score = if diffs.is_empty() { 1.0 } else { 0.0 };
+        let match_counts = transform_match_counts(expected, actual);
+        let continuous_score = match_counts.score();
 
         ScoreResult {
             category: AbilityCategory::Transform,
-            passed: diffs.is_empty() && continuous_score >= self.threshold,
+            passed: continuous_score >= self.threshold,
             diffs,
             continuous_score: Some(continuous_score),
         }
@@ -182,6 +183,163 @@ fn diff_expected_state(expected: Option<&Value>, actual: Option<&Value>) -> Vec<
             actual: Value::Null,
         }],
         (None, _) => Vec::new(),
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct MatchCounts {
+    matched: usize,
+    total: usize,
+}
+
+impl MatchCounts {
+    fn exact(total: usize) -> Self {
+        Self {
+            matched: total,
+            total,
+        }
+    }
+
+    fn mismatch(total: usize) -> Self {
+        Self { matched: 0, total }
+    }
+
+    fn add(&mut self, other: Self) {
+        self.matched += other.matched;
+        self.total += other.total;
+    }
+
+    fn score(&self) -> f64 {
+        if self.total == 0 {
+            return 1.0;
+        }
+
+        let unmatched = self.total.saturating_sub(self.matched) as f64;
+        (1.0 - (unmatched / self.total as f64)).clamp(0.0, 1.0)
+    }
+}
+
+fn transform_match_counts(expected: &ExpectedArtifacts, actual: &RunResult) -> MatchCounts {
+    let mut counts = match_counts(&expected.output, &actual.actual_output, "");
+    counts.add(match_expected_provenance(expected, &actual.actual_provenance));
+    counts.add(match_expected_state(
+        expected.state.as_ref(),
+        actual.actual_state.as_ref(),
+    ));
+    counts
+}
+
+fn match_expected_provenance(expected: &ExpectedArtifacts, actual: &Value) -> MatchCounts {
+    if expected.expected_render_policy == "show" {
+        let expected = strip_rendered_internal_provenance_fields(&expected.provenance);
+        let actual = strip_rendered_internal_provenance_fields(actual);
+        match_counts(&expected, &actual, "")
+    } else {
+        match_counts(&expected.provenance, actual, "")
+    }
+}
+
+fn match_expected_state(expected: Option<&Value>, actual: Option<&Value>) -> MatchCounts {
+    match (expected, actual) {
+        (Some(expected), Some(actual)) => match_counts(expected, actual, ""),
+        (Some(expected), None) => MatchCounts::mismatch(leaf_count(expected, "").max(1)),
+        (None, _) => MatchCounts::exact(0),
+    }
+}
+
+fn match_counts(expected: &Value, actual: &Value, path: &str) -> MatchCounts {
+    if values_equal(expected, actual, path) {
+        return MatchCounts::exact(leaf_count(expected, path));
+    }
+
+    match (expected, actual) {
+        (Value::Object(expected_object), Value::Object(actual_object)) => {
+            object_match_counts(expected_object, actual_object, path)
+        }
+        (Value::Array(expected_array), Value::Array(actual_array)) => {
+            array_match_counts(expected_array, actual_array, path)
+        }
+        _ => MatchCounts::mismatch(1),
+    }
+}
+
+fn object_match_counts(
+    expected: &Map<String, Value>,
+    actual: &Map<String, Value>,
+    path: &str,
+) -> MatchCounts {
+    let mut keys = expected.keys().chain(actual.keys()).collect::<Vec<_>>();
+    keys.sort();
+    keys.dedup();
+
+    let mut counts = MatchCounts::exact(0);
+    for key in keys {
+        let child_path = pointer_path(path, key);
+        let child_counts = match (expected.get(key), actual.get(key)) {
+            (Some(expected), Some(actual)) => match_counts(expected, actual, &child_path),
+            (Some(expected), None) => {
+                MatchCounts::mismatch(leaf_count(expected, &child_path).max(1))
+            }
+            (None, Some(actual)) => {
+                MatchCounts::mismatch(leaf_count(actual, &child_path).max(1))
+            }
+            (None, None) => MatchCounts::exact(0),
+        };
+        counts.add(child_counts);
+    }
+
+    counts
+}
+
+fn array_match_counts(expected: &[Value], actual: &[Value], path: &str) -> MatchCounts {
+    if is_non_significant_array(path) {
+        let expected = normalize_array_for_comparison(expected, path);
+        let actual = normalize_array_for_comparison(actual, path);
+        let total = leaf_count(&expected, path)
+            .max(leaf_count(&actual, path))
+            .max(1);
+        return if values_equal(&expected, &actual, path) {
+            MatchCounts::exact(total)
+        } else {
+            MatchCounts::mismatch(total)
+        };
+    }
+
+    let mut counts = MatchCounts::exact(0);
+    let common_len = expected.len().min(actual.len());
+    for index in 0..common_len {
+        counts.add(match_counts(
+            &expected[index],
+            &actual[index],
+            &format!("{path}/{index}"),
+        ));
+    }
+
+    for value in &expected[common_len..] {
+        counts.add(MatchCounts::mismatch(leaf_count(value, path).max(1)));
+    }
+    for value in &actual[common_len..] {
+        counts.add(MatchCounts::mismatch(leaf_count(value, path).max(1)));
+    }
+
+    counts
+}
+
+fn leaf_count(value: &Value, path: &str) -> usize {
+    match value {
+        Value::Object(object) => object
+            .iter()
+            .map(|(key, value)| leaf_count(value, &pointer_path(path, key)))
+            .sum(),
+        Value::Array(values) if is_non_significant_array(path) => {
+            usize::from(!values.is_empty())
+        }
+        Value::Array(values) => values
+            .iter()
+            .enumerate()
+            .map(|(index, value)| leaf_count(value, &format!("{path}/{index}")))
+            .sum(),
+        _ => 1,
     }
 }
 

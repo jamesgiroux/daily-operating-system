@@ -274,6 +274,28 @@ fn harness_replay_provider_missing_hash_is_hard_failure() {
 }
 
 #[test]
+fn runner_reports_malformed_provider_replay_as_provider_replay_invalid() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    write_json(&temp_dir.path().join("provider_replay.json"), json!({"version": 1}));
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+    let error = match prepare_fixture_for_run(&fixture) {
+        Ok(_) => panic!("malformed provider replay should fail"),
+        Err(error) => error,
+    };
+
+    match error {
+        RunError::ProviderReplayInvalid(message) => {
+            assert!(
+                message.contains("fixtures array"),
+                "unexpected ProviderReplayInvalid message: {message}"
+            );
+        }
+        other => panic!("expected ProviderReplayInvalid, got {other:?}"),
+    }
+}
+
+#[test]
 fn harness_external_replay_missing_flow_is_hard_failure() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     write_minimal_fixture(temp_dir.path(), true);
@@ -597,6 +619,44 @@ fn transform_scorer_returns_continuous_score_one_on_match() {
 }
 
 #[test]
+fn transform_scorer_partial_match_below_threshold_fails() {
+    let expected = expected_artifacts(
+        json!({
+            "field_a": "match-a",
+            "field_b": "match-b",
+            "field_c": "expected-c",
+            "field_d": "expected-d",
+            "field_e": "expected-e"
+        }),
+        json!({}),
+        None,
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({
+            "field_a": "match-a",
+            "field_b": "match-b",
+            "field_c": "actual-c",
+            "field_d": "actual-d",
+            "field_e": "actual-e"
+        }),
+        json!({}),
+        None,
+    );
+
+    let score = TransformScorer { threshold: 0.8 }.score(&expected, &actual);
+
+    assert!(!score.passed);
+    assert_eq!(score.category, harness::AbilityCategory::Transform);
+    assert_eq!(score.diffs.len(), 3);
+    let continuous_score = score.continuous_score.expect("continuous score");
+    assert!(
+        (continuous_score - 0.4).abs() < f64::EPSILON,
+        "expected score 0.4, got {continuous_score}"
+    );
+}
+
+#[test]
 fn maintenance_scorer_compares_planned_mutations_field() {
     let expected = expected_artifacts(
         json!({
@@ -852,6 +912,16 @@ fn classifier_provider_drift_when_completion_text_diff_and_fingerprint_matches()
 }
 
 #[test]
+fn classifier_skips_provider_drift_when_baseline_completion_text_hash_absent() {
+    let mut baseline = classification_fingerprint();
+    baseline.completion_text_hash = None;
+    let mut current = baseline.clone();
+    current.completion_text_hash = Some("completion-current".to_string());
+
+    assert_eq!(RegressionClassifier.classify(&baseline, &current, &[]), None);
+}
+
+#[test]
 fn classifier_logic_change_when_no_fingerprint_diff_but_score_diffs_present() {
     let baseline = classification_fingerprint();
     let current = baseline.clone();
@@ -979,6 +1049,26 @@ fn baseline_fingerprint_reads_prompt_fingerprint_baseline_from_metadata() {
     assert_eq!(
         fingerprint.canonical_prompt_hash,
         Some("fingerprint".to_string())
+    );
+}
+
+#[test]
+fn baseline_fingerprint_reads_completion_text_hash_from_metadata() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    let metadata_path = temp_dir.path().join("metadata.json");
+    let mut metadata_json: serde_json::Value =
+        serde_json::from_str(&fs::read_to_string(&metadata_path).expect("read metadata"))
+            .expect("parse metadata");
+    metadata_json["completion_text_hash"] = json!("completion-baseline");
+    write_json(&metadata_path, metadata_json);
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+
+    let fingerprint = baseline_fingerprint_for_fixture(&fixture);
+
+    assert_eq!(
+        fingerprint.completion_text_hash,
+        Some("completion-baseline".to_string())
     );
 }
 

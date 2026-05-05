@@ -55,6 +55,7 @@ fn minimal_fixture() -> harness::EvalFixture {
             retention_policy: "test-only".to_string(),
             prompt_fingerprint_baseline: "fingerprint".to_string(),
             prompt_template_version: None,
+            completion_text_hash: None,
             trust_factors_dominant: vec!["source_reliability".to_string()],
             pass_fail_definition: "runner enforces hermetic DB path".to_string(),
             fixture_design_notes: None,

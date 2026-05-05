@@ -7,7 +7,7 @@ use serde_json::Value;
 const METADATA_JSON: &str = include_str!("fixtures/bundle-6/metadata.json");
 
 #[test]
-fn corroboration_spam_does_not_let_five_weak_sources_beat_strong_contradiction() {
+fn compile_trust_returns_needs_verification_given_pre_weighted_source_reliability_with_one_contradiction() {
     assert_bundle_metadata();
 
     let weak_corroborators = [(0.20, 0.20); 5];
@@ -19,7 +19,7 @@ fn corroboration_spam_does_not_let_five_weak_sources_beat_strong_contradiction()
     assert!(strong_contradiction.0 > weighted_support_score);
     assert!(
         weighted_support_score < 0.5,
-        "weighted score for false claim should remain below 0.5, got {weighted_support_score}"
+        "pre-weighted source_reliability should remain below 0.5, got {weighted_support_score}"
     );
 
     let config = TrustConfig {
@@ -65,7 +65,7 @@ fn corroboration_spam_does_not_let_five_weak_sources_beat_strong_contradiction()
     assert_close(source_factor.raw_value, weighted_support_score);
     assert!(
         computation.score.value() < 0.5,
-        "false claim should stay below 0.5 despite five corroborators, got {}",
+        "pre-weighted source_reliability plus one contradiction should stay below 0.5, got {}",
         computation.score.value()
     );
     assert_eq!(computation.band, TrustBand::NeedsVerification);

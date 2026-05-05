@@ -59,8 +59,10 @@ impl RegressionClassifier {
             return Some(classification(RegressionClass::CanonicalizationBug));
         }
 
-        if current.completion_text_hash != baseline.completion_text_hash {
-            return Some(classification(RegressionClass::ProviderDrift));
+        if let Some(baseline_completion_text_hash) = &baseline.completion_text_hash {
+            if current.completion_text_hash.as_ref() != Some(baseline_completion_text_hash) {
+                return Some(classification(RegressionClass::ProviderDrift));
+            }
         }
 
         if !score_diffs.is_empty() {
@@ -92,7 +94,7 @@ pub fn baseline_fingerprint_for_fixture(fixture: &EvalFixture) -> Classification
             .clone()
             .or_else(|| prompt_template_version_from_value(&fixture.expected.provenance)),
         canonical_prompt_hash: Some(fixture.metadata.prompt_fingerprint_baseline.clone()),
-        completion_text_hash: None,
+        completion_text_hash: fixture.metadata.completion_text_hash.clone(),
     }
 }
 
