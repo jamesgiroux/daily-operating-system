@@ -138,6 +138,35 @@ pub fn cross_entity_coherence(
     }
 }
 
+/// Returns the sensitivity-aware-filtering factor as a SOFT trust signal.
+///
+/// 1.0 when the claim's sensitivity is permitted on the target surface,
+/// 0.0 when not. 1.0 when target_surface is None (no surface specified —
+/// internal/eval contexts that don't render).
+///
+/// # Soft signal contract
+///
+/// On a violation (e.g. a Confidential claim on a Public surface), this
+/// returns 0.0 raw, which the geometric-mean aggregator clamps to the
+/// configured floor (default 0.05) before contributing to the final trust
+/// score. Combined with the other 6 factors the resulting score lands in
+/// the NeedsVerification band or below — the score signals "do not surface
+/// this content under the current policy" without producing a hard reject
+/// at the trust-math layer.
+///
+/// The rendering layer is the policy enforcer: any surface that consumes
+/// trust-scored claims MUST suppress claims at NeedsVerification or below
+/// before rendering. This is the consumer-policy contract. Rationale: keeps
+/// the trust math composable (sensitivity is one factor among 7), preserves
+/// auditability (the factor breakdown shows why the score dropped), and
+/// lets a single rendering policy knob cover multiple suppression scenarios
+/// (NeedsVerification from low corroboration, sensitivity violation,
+/// contradiction, etc.).
+///
+/// If a future surface needs hard-reject semantics (e.g. a compliance
+/// export flow that must NEVER include Confidential content), that surface
+/// should run sensitivity_aware_filtering at its own boundary BEFORE
+/// invoking the trust compiler — the compiler is not the gate.
 pub fn sensitivity_aware_filtering(
     claim_sensitivity: &ClaimSensitivity,
     target_surface: Option<SurfaceClass>,
