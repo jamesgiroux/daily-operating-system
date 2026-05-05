@@ -71,6 +71,10 @@ a { color: inherit; }
   color: var(--color-spice-turmeric);
 }
 
+.reference-expansion-open {
+  max-height: 760px;
+}
+
 /* ── Reference controls (not in app) ─────────────────────────────────────── */
 .reference-controls {
   position: fixed;
