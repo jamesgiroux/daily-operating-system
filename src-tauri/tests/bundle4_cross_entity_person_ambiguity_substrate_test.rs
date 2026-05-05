@@ -1,134 +1,90 @@
-use chrono::{TimeZone, Utc};
-use dailyos_lib::abilities::provenance::SubjectRef;
-use dailyos_lib::abilities::trust::{factors::*, *};
-use dailyos_lib::db::claims::*;
-use serde_json::Value;
+#[path = "harness/mod.rs"]
+mod harness;
 
-const METADATA_JSON: &str = include_str!("fixtures/bundle-4/metadata.json");
+use harness::{
+    bundle_helpers::{
+        actual_post_action_state, assert_eval_bridge_stub_invoked, assert_fixture_metadata,
+        assert_string_array_contains_all, assert_trust_score_below, assert_warning_present,
+        bundle_fixture_path, claim_by_id, claims, confidence_evidence_for,
+        expected_post_action_state, run_with_synthetic_enrich_stub,
+    },
+    load_fixture,
+};
 
 #[test]
-fn cross_entity_person_ambiguity_scores_bleeding_account_b_context_low() {
-    assert_bundle_metadata();
-
-    let config = TrustConfig {
-        weights: TrustFactorWeights {
-            cross_entity_coherence: 1.0,
-            ..zero_weights()
-        },
-        ..TrustConfig::default()
-    };
-    let cross_entity = bleeding_person_context_input();
-    let result = cross_entity_coherence(&cross_entity, &config);
-
-    assert_eq!(result.hits.len(), 2);
-    assert!(
-        result.value < 0.3,
-        "cross entity coherence should score below 0.3, got {}",
-        result.value
+fn cross_entity_person_ambiguity_fixture_rejects_account_b_project_bleed() {
+    let fixture = load_fixture(&bundle_fixture_path(4)).expect("bundle-4 fixture loads");
+    assert_fixture_metadata(
+        &fixture,
+        4,
+        &["cross_entity_coherence", "subject_fit_confidence"],
+        "cross_entity_coherence factor scores below 0.3",
     );
 
-    let computation = compile_trust(
-        &test_claim(),
-        TrustContext {
-            now: Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
-            config,
-            factor_inputs: clean_factor_inputs(),
-            cross_entity,
-            target_surface: None,
-        },
-    )
-    .expect("compile trust");
+    let result =
+        run_with_synthetic_enrich_stub(&fixture).expect("fixture invokes through eval bridge");
+    assert_eval_bridge_stub_invoked(&result);
 
-    assert!(
-        computation.score.value() < 0.3,
-        "cross entity factor should dominate final score, got {}",
-        computation.score.value()
+    let expected_state = expected_post_action_state(&fixture);
+    let not_created = expected_state["not_created_claim_subjects"]
+        .as_array()
+        .expect("not_created_claim_subjects array");
+    let rejected_project_ids = not_created
+        .iter()
+        .map(|entry| {
+            assert_eq!(entry["target_account_id"], "acct-test-1");
+            assert_eq!(entry["created"], false);
+            assert_eq!(entry["reason"], "cross_entity_subject_ambiguity");
+            entry["subject_ref"]["id"].as_str().expect("project id")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(rejected_project_ids, ["proj-test-b-1", "proj-test-b-2"]);
+
+    let rejected = &expected_state["rejected_claims"][0];
+    assert_eq!(rejected["claim_id"], "claim-test-provider-person-context-bleed");
+    assert_eq!(rejected["created"], false);
+    assert_eq!(rejected["requested_entity_ref"]["id"], "acct-test-1");
+    assert_eq!(rejected["origin_entity_ref"]["id"], "acct-test-2");
+    assert_trust_score_below(rejected, 0.3);
+    assert_string_array_contains_all(
+        &rejected["dominant_penalties"],
+        &["cross_entity_coherence", "subject_fit_confidence"],
     );
-    assert_eq!(computation.band, TrustBand::NeedsVerification);
-}
 
-fn assert_bundle_metadata() {
-    let metadata: Value = serde_json::from_str(METADATA_JSON).expect("parse metadata");
-    let factors = metadata["trust_factors_dominant"].as_array().expect("dominant factors")
-        .iter().map(|value| value.as_str().expect("factor string")).collect::<Vec<_>>();
-    assert_eq!(factors.as_slice(), ["cross_entity_coherence", "subject_fit_confidence"]);
-    assert!(metadata["pass_fail_definition"].as_str().expect("pass/fail definition")
-        .contains("cross_entity_coherence factor scores below 0.3"));
-}
+    let evidence = confidence_evidence_for(
+        expected_state,
+        "claim-test-provider-person-context-bleed",
+        "cross_entity_coherence",
+    );
+    assert!(
+        evidence["factor"]["raw_value"].as_f64().expect("raw value") < 0.3,
+        "cross_entity_coherence raw value should be below 0.3"
+    );
+    assert_string_array_contains_all(&evidence["hits"], &["proj-test-b-1", "proj-test-b-2"]);
+    assert_warning_present(&fixture, "cross_entity_subject_ambiguity");
 
-fn bleeding_person_context_input() -> CrossEntityCoherenceInput {
-    CrossEntityCoherenceInput {
-        claim_text: "jane.doe@example.com is driving subsidiary.com work on the Subsidiary Launch Plan."
-            .to_string(),
-        target_footprint: TargetFootprint {
-            subject: SubjectRef::Account("acct-test-1".to_string()),
-            names: vec!["Acme Example".to_string()],
-            domains: vec!["acme.example.com".to_string()],
-            related_subjects: vec![SubjectRef::Person("person-jane-doe".to_string())],
-            allowed_aliases: Vec::new(),
-        },
-        portfolio_footprints: vec![EntityFootprint {
-            subject: SubjectRef::Account("acct-test-2".to_string()),
-            names: vec!["Subsidiary Launch Plan".to_string()],
-            domains: vec!["subsidiary.com".to_string()],
-            infrastructure_ids: Vec::new(),
-        }],
-        cross_entity_context_expected: false,
-    }
-}
+    let actual_state = actual_post_action_state(&result);
+    let leaked_project_claims = claims(actual_state)
+        .iter()
+        .filter(|claim| {
+            let subject_id = claim["subject_ref"]["id"].as_str();
+            let topic_key = claim["topic_key"].as_str();
+            matches!(subject_id, Some("proj-test-b-1" | "proj-test-b-2"))
+                && topic_key.is_some_and(|topic| topic.starts_with("acct-test-1:"))
+        })
+        .collect::<Vec<_>>();
+    assert!(
+        leaked_project_claims.is_empty(),
+        "Account A should have zero claims pointing at Account B project subjects: {leaked_project_claims:?}"
+    );
 
-fn clean_factor_inputs() -> TrustFactorInputs {
-    TrustFactorInputs {
-        source_reliability: 1.0,
-        source_reliability_corroborators: Vec::new(),
-        freshness: FreshnessContext {
-            timestamp_known: true,
-            age_days: 0.0,
-        },
-        corroboration_strength: 1.0,
-        contradiction_count: 0,
-        user_feedback: UserFeedbackSignal::None,
-        subject_fit_confidence: 1.0,
-        internal_consistency: 1.0,
-        source_lifecycle: SourceLifecycleState::Active,
-    }
-}
-
-fn test_claim() -> IntelligenceClaim {
-    IntelligenceClaim {
-        id: "claim-bundle-4-account-b-bleed".to_string(),
-        subject_ref: r#"{"kind":"person","id":"person-jane-doe"}"#.to_string(),
-        claim_type: "stakeholder_insight".to_string(),
-        field_path: Some("stakeholderInsights".to_string()),
-        topic_key: Some("person-jane-doe:acct-test-2-project-bleed".to_string()),
-        text: "Account B project context was attached to the shared Person.".to_string(),
-        dedup_key: "person-jane-doe|stakeholder_insight|acct-test-2-project-bleed".to_string(),
-        item_hash: Some("sha256:bundle4-account-b-bleed".to_string()),
-        actor: "agent:fixture".to_string(),
-        data_source: "provider_replay".to_string(),
-        source_ref: None,
-        source_asof: Some("2026-05-04T12:00:00Z".to_string()),
-        observed_at: "2026-05-04T12:00:00Z".to_string(),
-        created_at: "2026-05-04T12:00:00Z".to_string(),
-        provenance_json: "{}".to_string(),
-        metadata_json: None,
-        claim_state: ClaimState::Active,
-        surfacing_state: SurfacingState::Active,
-        demotion_reason: None, reactivated_at: None, retraction_reason: None,
-        expires_at: None, superseded_by: None, trust_score: None,
-        trust_computed_at: None, trust_version: None, thread_id: None,
-        temporal_scope: TemporalScope::State,
-        sensitivity: ClaimSensitivity::Internal,
-        verification_state: ClaimVerificationState::Active,
-        verification_reason: None, needs_user_decision_at: None,
-    }
-}
-
-fn zero_weights() -> TrustFactorWeights {
-    TrustFactorWeights {
-        source_reliability: 0.0, source_lifecycle_weight: 0.0, freshness_weight: 0.0,
-        corroboration_weight: 0.0, contradiction_penalty: 0.0, user_feedback_weight: 0.0,
-        subject_fit_confidence: 0.0, internal_consistency: 0.0,
-        cross_entity_coherence: 0.0, sensitivity_aware_filtering: 0.0,
+    for (claim_id, expected_score) in [
+        ("claim-test-b-proj-1", 0.92),
+        ("claim-test-b-proj-2", 0.91),
+    ] {
+        let account_b_claim = claim_by_id(actual_state, claim_id);
+        assert_eq!(account_b_claim["subject_ref"]["kind"], "project");
+        assert_eq!(account_b_claim["metadata"]["account_id"], "acct-test-2");
+        assert_eq!(account_b_claim["trust_score"], expected_score);
     }
 }

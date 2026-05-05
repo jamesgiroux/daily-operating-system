@@ -2,7 +2,7 @@ use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::provenance::SubjectRef;
 use dailyos_lib::abilities::trust::{
     compile_trust, CrossEntityCoherenceInput, FreshnessContext, TrustComputation, TrustConfig,
-    TrustContext, TrustFactorInputs, UserFeedbackSignal,
+    SourceLifecycleState, TrustContext, TrustFactorInputs, UserFeedbackSignal,
 };
 use dailyos_lib::db::claims::{
     ClaimSensitivity, ClaimState, ClaimVerificationState, IntelligenceClaim, SurfacingState,

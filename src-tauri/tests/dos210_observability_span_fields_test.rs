@@ -9,12 +9,13 @@ use dailyos_lib::abilities::provenance::{
 use dailyos_lib::abilities::{AbilityContext, AbilityResult, Actor, NOOP_ABILITY_TRACER};
 use dailyos_lib::intelligence::provider::ReplayProvider;
 use dailyos_lib::observability::{EvaluateModeSubscriber, Outcome};
-use dailyos_lib::services::context::{Clock, FixedClock, SeedableRng, ServiceContext};
+use dailyos_lib::services::context::{FixedClock, SeedableRng, ServiceContext};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 use tracing_test::traced_test;
 
 mod abilities {
+    #[allow(unused_imports)]
     pub use dailyos_lib::abilities::*;
 
     pub mod provenance {
