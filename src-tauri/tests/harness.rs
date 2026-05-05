@@ -5,9 +5,18 @@ use std::{
     collections::BTreeSet,
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
-use harness::{discover_fixtures, load_fixture, FixtureLoadError, FixtureRef};
+use base64::Engine;
+use dailyos_lib::abilities::registry::AbilityRegistry;
+use dailyos_lib::services::context::{
+    ExecutionMode, GleanAccountFacts, GleanClientHandle, SeedableRng, SeededRng,
+};
+use harness::{
+    discover_fixtures, load_fixture, prepare_fixture_for_run, run_fixture, FixtureLoadError,
+    FixtureRef, RunError, RunnerDeps,
+};
 use serde_json::json;
 
 #[test]
@@ -77,6 +86,136 @@ fn loader_handles_optional_expected_state_json_when_absent() {
     assert!(fixture.expected.state.is_none());
 }
 
+#[test]
+fn runner_applies_state_sql_to_in_memory_db() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    fs::write(
+        temp_dir.path().join("state.sql"),
+        "CREATE TABLE runner_smoke (value TEXT NOT NULL);\n\
+         INSERT INTO runner_smoke (value) VALUES ('applied');\n",
+    )
+    .expect("write state.sql");
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+
+    let prepared = prepare_fixture_for_run(&fixture).expect("fixture prepares");
+    let count: i64 = prepared
+        .conn
+        .query_row(
+            "SELECT COUNT(*) FROM runner_smoke WHERE value = 'applied'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("query runner_smoke");
+
+    assert_eq!(count, 1);
+}
+
+#[test]
+fn runner_returns_state_sql_failed_on_malformed_sql() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    fs::write(temp_dir.path().join("state.sql"), "CREATE TABLE broken (;")
+        .expect("write malformed state.sql");
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+
+    let Err(error) = prepare_fixture_for_run(&fixture) else {
+        panic!("malformed state.sql should fail");
+    };
+
+    match error {
+        RunError::StateSqlFailed(message) => {
+            assert!(
+                message.contains("near") || message.contains("syntax"),
+                "unexpected SQLite error: {message}"
+            );
+        }
+        other => panic!("expected StateSqlFailed, got {other:?}"),
+    }
+}
+
+#[test]
+fn runner_constructs_evaluate_context_with_fixture_clock_and_seed() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    fs::write(temp_dir.path().join("seed.txt"), "217\n").expect("write seed");
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+    let prepared = prepare_fixture_for_run(&fixture).expect("fixture prepares");
+
+    let ctx = prepared.service_context();
+    let expected_rng = SeedableRng::new(fixture.seed);
+
+    assert_eq!(ctx.mode, ExecutionMode::Evaluate);
+    assert_eq!(ctx.clock.now(), fixture.clock);
+    assert_eq!(ctx.rng.random_u64(), expected_rng.random_u64());
+}
+
+#[test]
+fn runner_loads_external_replay_fixture_into_external_clients() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    let account_id = "acct-runner-example";
+    let key = GleanClientHandle::request_key_for_fetch_account_facts(
+        account_id,
+        "harness-default-tenant",
+    );
+    let body = br#"{"account_id":"acct-runner-example","facts":["runner replay fact"]}"#;
+    let body_base64 = base64::engine::general_purpose::STANDARD.encode(body);
+    write_json(
+        &temp_dir.path().join("external_replay.json"),
+        json!({
+            "version": 1,
+            "fixtures": [{
+                "request_key_hex": key.to_hex(),
+                "response": {
+                    "status": 200,
+                    "headers": [["Content-Type", "application/json"]],
+                    "body_base64": body_base64
+                }
+            }]
+        }),
+    );
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+
+    let prepared = prepare_fixture_for_run(&fixture).expect("fixture prepares");
+    let response = prepared
+        .external_clients
+        .glean
+        .fetch_account_facts(account_id)
+        .expect("external replay hit");
+
+    assert_eq!(
+        response,
+        GleanAccountFacts {
+            account_id: account_id.to_string(),
+            facts: vec!["runner replay fact".to_string()],
+        }
+    );
+}
+
+#[test]
+fn runner_returns_not_yet_wired_for_ability_invocation_pending_chunk_3() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+    let registry =
+        AbilityRegistry::from_descriptors_checked(Vec::new()).expect("empty registry is valid");
+    let deps = RunnerDeps {
+        registry: Arc::new(registry),
+    };
+
+    let Err(error) = run_fixture(&deps, &fixture) else {
+        panic!("chunk 2 should defer ability invocation");
+    };
+
+    match error {
+        RunError::NotYetWired(message) => {
+            assert!(message.contains("ability invocation pending W4-C bridge integration"));
+        }
+        other => panic!("expected NotYetWired, got {other:?}"),
+    }
+}
+
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
@@ -104,8 +243,14 @@ fn write_minimal_fixture(fixture_dir: &Path, include_expected_state: bool) {
         }),
     );
     write_json(&fixture_dir.join("inputs.json"), json!({"input": true}));
-    write_json(&fixture_dir.join("provider_replay.json"), json!({"fixtures": []}));
-    write_json(&fixture_dir.join("external_replay.json"), json!({"fixtures": []}));
+    write_json(
+        &fixture_dir.join("provider_replay.json"),
+        json!({"version": 1, "fixtures": []}),
+    );
+    write_json(
+        &fixture_dir.join("external_replay.json"),
+        json!({"version": 1, "fixtures": []}),
+    );
     write_json(&fixture_dir.join("expected_output.json"), json!({"ok": true}));
     write_json(
         &fixture_dir.join("expected_provenance.json"),
