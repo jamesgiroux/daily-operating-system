@@ -218,6 +218,7 @@ impl<'registry> McpAbilityBridge<'registry> {
             surface: BridgeSurface::McpTool,
             dry_run,
             confirmation: confirmation.as_ref(),
+            confirmation_store: None,
         };
 
         let response = invoke_registry_json(

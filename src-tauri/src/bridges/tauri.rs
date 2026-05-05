@@ -12,7 +12,8 @@ use crate::abilities::NOOP_ABILITY_TRACER;
 use crate::bridges::types::{invoke_registry_json, provider_from_context_snapshot, surface_error};
 use crate::bridges::{
     AbilityResponseJson, AttestationRequestId, BridgeActor, BridgeSurface, BridgeSurfaceError,
-    ConfirmationToken, InvocationContext, UserAttestationRequest,
+    ConfirmationRecord, ConfirmationToken, ConfirmationTokenStore, InvocationContext,
+    UserAttestationRequest,
 };
 use crate::services::context::Clock;
 use crate::services::context::ExecutionMode;
@@ -55,10 +56,31 @@ impl UserAttestationHost for AppState {
     }
 }
 
+/// Server-side issued-token store for the Tauri confirmation flow. Lookup
+/// removes the entry so a single token cannot be replayed across two
+/// invocations.
+#[derive(Debug, Default)]
+pub struct TauriConfirmationStore {
+    inner: Mutex<HashMap<String, ConfirmationRecord>>,
+}
+
+impl TauriConfirmationStore {
+    pub(crate) fn issue(&self, opaque_token: String, record: ConfirmationRecord) {
+        self.inner.lock().insert(opaque_token, record);
+    }
+}
+
+impl ConfirmationTokenStore for TauriConfirmationStore {
+    fn consume(&self, opaque_token: &str) -> Option<ConfirmationRecord> {
+        self.inner.lock().remove(opaque_token)
+    }
+}
+
 pub struct TauriAbilityBridge<'registry> {
     registry: &'registry AbilityRegistry,
     rate_limits: Arc<Mutex<HashMap<(BridgeActor, String), RateLimitWindow>>>,
     attestation_host: Arc<dyn UserAttestationHost>,
+    confirmation_store: Arc<TauriConfirmationStore>,
 }
 
 impl<'registry> TauriAbilityBridge<'registry> {
@@ -77,6 +99,7 @@ impl<'registry> TauriAbilityBridge<'registry> {
             registry,
             rate_limits: Arc::new(Mutex::new(HashMap::new())),
             attestation_host,
+            confirmation_store: Arc::new(TauriConfirmationStore::default()),
         }
     }
 
@@ -95,12 +118,14 @@ impl<'registry> TauriAbilityBridge<'registry> {
         let snapshot = state.context_snapshot();
         let provider = provider_from_context_snapshot(&snapshot);
         let services = state.live_service_context().with_actor("user");
+        let store_ref: &dyn ConfirmationTokenStore = self.confirmation_store.as_ref();
         let invocation = InvocationContext {
             actor: BridgeActor::User,
             mode: ExecutionMode::Live,
             surface: BridgeSurface::TauriApp,
             dry_run,
             confirmation,
+            confirmation_store: Some(store_ref),
         };
 
         invoke_registry_json(
@@ -144,13 +169,24 @@ impl<'registry> TauriAbilityBridge<'registry> {
         .await
         .map_err(|_| BridgeSurfaceError::AbilityUnavailable)??;
 
+        let opaque_token = uuid::Uuid::new_v4().to_string();
+        self.confirmation_store.issue(
+            opaque_token.clone(),
+            ConfirmationRecord {
+                actor,
+                ability: ability.clone(),
+                args_hash,
+                issued_at: user_attestation.requested_at,
+                ttl_seconds: user_attestation.ttl_seconds,
+            },
+        );
         Ok(ConfirmationToken {
             actor,
             ability,
             args_hash,
             issued_at: user_attestation.requested_at,
             ttl_seconds: user_attestation.ttl_seconds,
-            token: uuid::Uuid::new_v4().to_string(),
+            token: opaque_token,
         })
     }
 
@@ -1155,5 +1191,96 @@ mod tests {
 
         assert_eq!(open_schema, unknown);
         assert_eq!(open_schema, br#""ability_unavailable""#);
+    }
+
+    #[tokio::test]
+    async fn forged_confirmation_token_not_issued_by_bridge_is_rejected() {
+        let mut publish = descriptor(
+            "publish_ability",
+            AbilityCategory::Publish,
+            USER_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        );
+        publish.policy.may_publish = true;
+        let registry = registry(vec![publish]);
+        let state = AppState::new();
+        let bridge = TauriAbilityBridge::new(&registry);
+
+        let input = json!({});
+        let forged = ConfirmationToken {
+            actor: BridgeActor::User,
+            ability: "publish_ability".to_string(),
+            args_hash: confirmation_args_hash(&input),
+            issued_at: issued_at(),
+            ttl_seconds: 300,
+            token: "renderer-forged-uuid".to_string(),
+        };
+
+        let err = bridge
+            .invoke(&state, "publish_ability", input, false, Some(&forged))
+            .await
+            .unwrap_err();
+
+        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+        assert_eq!(serde_json::to_vec(&err).unwrap(), br#""ability_unavailable""#);
+    }
+
+    #[tokio::test]
+    async fn server_issued_confirmation_token_passes_lookup_then_consumes_on_first_use() {
+        let mut publish = descriptor(
+            "publish_ability",
+            AbilityCategory::Publish,
+            USER_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        );
+        publish.policy.may_publish = true;
+        let registry = registry(vec![publish]);
+        let state = AppState::new();
+        let host = Arc::new(ApprovingAttestationHost::default());
+        let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host);
+
+        let input = json!({});
+        // Bridge verifier uses the system clock; use a real-time requested_at
+        // so the issued token doesn't fall outside its TTL during the test.
+        let request = UserAttestationRequest {
+            request_id: AttestationRequestId::new(),
+            actor: BridgeActor::User,
+            ability: "publish_ability".to_string(),
+            args_hash: confirmation_args_hash(&input),
+            requested_at: Utc::now(),
+            ttl_seconds: 300,
+        };
+        let token = bridge
+            .issue_confirmation_token(
+                BridgeActor::User,
+                "publish_ability".to_string(),
+                request.args_hash,
+                request,
+            )
+            .await
+            .expect("issue token");
+
+        let first = bridge
+            .invoke(
+                &state,
+                "publish_ability",
+                input.clone(),
+                false,
+                Some(&token),
+            )
+            .await;
+        assert!(first.is_ok(), "first use of issued token must succeed");
+
+        let second = bridge
+            .invoke(&state, "publish_ability", input, false, Some(&token))
+            .await
+            .unwrap_err();
+        assert_eq!(
+            second,
+            BridgeSurfaceError::AbilityUnavailable,
+            "second use of the same token must fail (consume-once)"
+        );
     }
 }

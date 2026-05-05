@@ -117,12 +117,38 @@ pub struct InvocationContext<'a> {
     pub surface: BridgeSurface,
     pub dry_run: bool,
     pub confirmation: Option<&'a ConfirmationToken>,
+    /// Server-side store of issued confirmation tokens. When present, the
+    /// confirmation verifier consumes the token from the store and rejects any
+    /// claimed token whose opaque id was never issued (or was already used) —
+    /// closes the renderer-can-forge-token gap on Tauri. Other surfaces that
+    /// don't issue Tauri-style tokens supply None and rely on their own
+    /// attestation flow.
+    pub confirmation_store: Option<&'a dyn ConfirmationTokenStore>,
 }
 
 impl<'a> InvocationContext<'a> {
     pub fn registry_actor(&self) -> Actor {
         self.actor.registry_actor()
     }
+}
+
+/// Server-side state for an issued Tauri confirmation token. The verifier
+/// matches the renderer-supplied ConfirmationToken against this record to
+/// confirm the token came from a real attestation event.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConfirmationRecord {
+    pub actor: BridgeActor,
+    pub ability: String,
+    pub args_hash: [u8; 32],
+    pub issued_at: DateTime<Utc>,
+    pub ttl_seconds: u32,
+}
+
+/// Backing store for issued confirmation tokens. `consume` must atomically
+/// remove the entry so reuse of a single token across two invocations is not
+/// possible.
+pub trait ConfirmationTokenStore: Send + Sync + std::fmt::Debug {
+    fn consume(&self, opaque_token: &str) -> Option<ConfirmationRecord>;
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -414,6 +440,38 @@ fn verify_confirmation_token(
             "args_mismatch",
         );
         return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    // The opaque token id MUST come from a server-side issuance event. Without
+    // this lookup the renderer can mint forged tokens by recomputing the
+    // deterministic args_hash and supplying any actor/ability/issued_at/ttl.
+    if let Some(store) = invocation.confirmation_store {
+        let record = match store.consume(&token.token) {
+            Some(record) => record,
+            None => {
+                record_confirmation_token_rejection(
+                    tracer,
+                    invocation.actor,
+                    ability_name,
+                    "unknown_or_consumed_token",
+                );
+                return Err(BridgeSurfaceError::AbilityUnavailable);
+            }
+        };
+        if record.actor != invocation.actor
+            || record.ability != ability_name
+            || record.args_hash != *args_hash
+            || record.issued_at != token.issued_at
+            || record.ttl_seconds != token.ttl_seconds
+        {
+            record_confirmation_token_rejection(
+                tracer,
+                invocation.actor,
+                ability_name,
+                "stored_record_mismatch",
+            );
+            return Err(BridgeSurfaceError::AbilityUnavailable);
+        }
     }
 
     Ok(())
@@ -1012,6 +1070,7 @@ mod tests {
             surface: BridgeSurface::TauriApp,
             dry_run: false,
             confirmation,
+            confirmation_store: None,
         }
     }
 

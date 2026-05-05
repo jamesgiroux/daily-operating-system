@@ -50,6 +50,7 @@ impl<'registry> WorkerAbilityBridge<'registry> {
             surface: BridgeSurface::Worker,
             dry_run,
             confirmation,
+            confirmation_store: None,
         };
 
         invoke_registry_json(

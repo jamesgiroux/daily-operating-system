@@ -40,6 +40,7 @@ impl<'registry, 'deps> EvalAbilityBridge<'registry, 'deps> {
             surface: BridgeSurface::Eval,
             dry_run,
             confirmation: None,
+            confirmation_store: None,
         };
 
         invoke_registry_json(

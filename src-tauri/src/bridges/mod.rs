@@ -8,7 +8,7 @@ pub mod worker;
 
 pub use types::{
     confirmation_args_hash, AbilityInvokeError, AbilityResponseJson, AttestationDecision,
-    AttestationRequestId, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
-    InvocationContext, InvocationProvenanceCache, McpSessionId, RenderedProvenance,
-    UserAttestationRequest,
+    AttestationRequestId, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationRecord,
+    ConfirmationToken, ConfirmationTokenStore, InvocationContext, InvocationProvenanceCache,
+    McpSessionId, RenderedProvenance, UserAttestationRequest,
 };
