@@ -1,7 +1,7 @@
 # EntityPortraitCard
 
 **Tier:** pattern
-**Status:** implemented/unintegrated
+**Status:** proposed
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `EntityPortraitCard`
@@ -15,7 +15,7 @@ A magazine-style entity portrait — a single card that renders an entity's curr
 
 ## When to use it
 
-- No shipped routed use today. Keep it visible as implemented/unintegrated D-spine work only.
+- No shipped routed use today. Keep it visible as proposed D-spine work only.
 - Roadmap target: DailyBriefing's "Moving" section, if that section lands.
 - Potential extension: weekly recap surfaces (entities that moved this week), search results that highlight entity context
 

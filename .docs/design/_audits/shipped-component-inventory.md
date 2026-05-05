@@ -7,12 +7,11 @@
 
 The shipped app is the source of truth.
 
-- **canonical/shipped** means a shared source component is consumed by shipped routed UI.
-- **shipped-local/extraction-needed** means the UI is real and shipped, but still lives inline, in a surface-local component, or under a local class family.
-- **implemented/unintegrated** means source exists, but no routed surface consumes it.
-- **roadmap/planned** means the spec is a target and no shipped source exists under that name.
+- **proposed** means WIP, prototype, roadmap, or source-only work that is not yet integrated into routed app UI.
+- **integrated** means real app code exists and is used in the product, including shared components, page-local classes, or extracted modules.
+- **production** means integrated and included in a tagged release.
 
-This audit corrects the previous failure mode: promoting Spine-D/prototype components into canonical status before the shipped app had adopted them.
+This audit corrects the previous failure mode: promoting Spine-D/prototype components into integrated status before the shipped app had adopted them.
 
 ## DailyBriefing
 
@@ -27,10 +26,10 @@ Shipped patterns now represented:
 - `FolioRefreshButton`
 - `FinisMarker`
 
-Demoted from canonical:
+Marked proposed:
 
-- `DayChart`, `EntityPortraitCard`, `ThreadMark`, and `AskAnythingDock` are implemented/unintegrated.
-- `MeetingSpineItem` and `Lead` remain roadmap/planned.
+- `DayChart`, `EntityPortraitCard`, `ThreadMark`, and `AskAnythingDock` have source or prototype references but are not consumed by routed UI.
+- `MeetingSpineItem` and `Lead` remain proposal-only.
 
 ## MeetingDetail
 
@@ -45,7 +44,7 @@ Shipped patterns now represented:
 - `FinisMarker`
 - `EditableText`
 
-The previous Wave 4 entries (`AgendaThreadList`, `PredictionsVsRealityGrid`, `SignalGrid`, `EscalationQuote`, `FindingsTriad`, `ChampionHealthBlock`, `CommitmentRow`, `RoleTransitionRow`) are real UI in the shipped app, but they ship as local `PostMeetingIntelligence` class families rather than exported components. They are now `shipped-local/extraction-needed`, not roadmap.
+The previous Wave 4 entries (`AgendaThreadList`, `PredictionsVsRealityGrid`, `SignalGrid`, `EscalationQuote`, `FindingsTriad`, `ChampionHealthBlock`, `CommitmentRow`, `RoleTransitionRow`) are real UI in the shipped app, but they ship as local `PostMeetingIntelligence` class families rather than exported components. They are now `integrated`, not proposed.
 
 ## Entity Lists
 
@@ -70,7 +69,7 @@ Shipped patterns now represented:
 - `HealthBadge`
 - `EditableText`
 
-`TrustBand`, `ClaimRow`, and `ReceiptCallout` remain implemented but unintegrated; AccountDetail does not currently import or render those names.
+`TrustBand`, `ClaimRow`, and `ReceiptCallout` remain proposed; AccountDetail does not currently import or render those names.
 
 ## Settings
 
@@ -88,7 +87,7 @@ Shipped patterns now represented:
 - `Switch`
 - `Segmented`
 
-The Settings spec no longer claims the older 7-chapter redesign as shipped. Production chapters are `settings-you`, `settings-connectors`, `settings-data`, and `settings-system`; diagnostics is development-only.
+The Settings spec no longer claims the older 7-chapter redesign as integrated. Current chapters are `settings-you`, `settings-connectors`, `settings-data`, and `settings-system`; diagnostics is development-only.
 
 ## Onboarding
 
@@ -99,4 +98,3 @@ Shipped sequence now represented:
 `Welcome -> GoogleConnect -> ClaudeCode -> GleanConnect -> YouCardStep -> FirstAccountStep -> EntityMode -> PrimeBriefing`
 
 `AboutYou`, `Workspace`, `InternalTeamSetup`, `InboxTraining`, `MeetingDeepDive`, `PopulateWorkspace`, `DashboardTour`, and `Ready` remain source-present or older chapter variants, but they are not the shipped `OnboardingFlow` sequence.
-

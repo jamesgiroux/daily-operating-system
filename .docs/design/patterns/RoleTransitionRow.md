@@ -1,7 +1,7 @@
 # RoleTransitionRow
 
 **Tier:** pattern
-**Status:** shipped-local/extraction-needed
+**Status:** integrated
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `RoleTransitionRow`

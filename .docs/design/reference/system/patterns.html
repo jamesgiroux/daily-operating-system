@@ -225,13 +225,12 @@
     background: var(--color-paper-warm-white);
   }
 
-  .ds-card[data-status="planned"] {
+  .ds-card[data-status="proposed"] {
     border-style: dashed;
   }
 
-  .ds-card[data-status="unintegrated"],
-  .ds-card[data-status="local"] {
-    border-style: dashed;
+  .ds-card[data-status="production"] {
+    border-color: var(--color-garden-sage);
   }
 
   .ds-card-header {
@@ -261,29 +260,31 @@
     text-transform: uppercase;
   }
 
-  .ds-card[data-status="planned"] .ds-tier {
-    background: var(--color-spice-turmeric);
+  .ds-card[data-status="integrated"] .ds-tier {
+    background: var(--color-garden-olive);
+    color: var(--color-paper-warm-white);
   }
 
-  .ds-card[data-status="planned"] .ds-tier::after {
-    content: " / roadmap";
+  .ds-card[data-status="integrated"] .ds-tier::after {
+    content: " / integrated";
   }
 
-  .ds-card[data-status="unintegrated"] .ds-tier {
-    background: var(--color-text-tertiary);
-  }
-
-  .ds-card[data-status="unintegrated"] .ds-tier::after {
-    content: " / unintegrated";
-  }
-
-  .ds-card[data-status="local"] .ds-tier {
+  .ds-card[data-status="proposed"] .ds-tier {
     background: var(--color-spice-saffron);
     color: var(--color-text-primary);
   }
 
-  .ds-card[data-status="local"] .ds-tier::after {
-    content: " / shipped local";
+  .ds-card[data-status="proposed"] .ds-tier::after {
+    content: " / proposed";
+  }
+
+  .ds-card[data-status="production"] .ds-tier {
+    background: var(--color-garden-sage);
+    color: var(--color-paper-warm-white);
+  }
+
+  .ds-card[data-status="production"] .ds-tier::after {
+    content: " / production";
   }
 
   .ds-card-title {
@@ -674,11 +675,12 @@
   <header class="ds-cover">
     <p class="ds-eyebrow">DailyOS &middot; Design System &middot; Reference</p>
     <h1 class="ds-title">Patterns</h1>
-    <p class="ds-lede">Composed, opinionated UI contracts, now classified from shipped source first. Prototype and roadmap entries are labeled instead of promoted by assumption.</p>
+    <p class="ds-lede">Composed, opinionated UI contracts, classified as proposed, integrated, or production.</p>
     <div class="ds-meta">
       <span>49 patterns</span>
-      <span>canonical shipped + shipped-local shown separately</span>
-      <span>prototype and roadmap entries labeled</span>
+      <span>38 integrated</span>
+      <span>11 proposed</span>
+      <span>0 production until a release tag includes them</span>
       <span>render mode shown per card</span>
     </div>
     <nav class="ds-reference-nav" aria-label="Reference sections">
@@ -701,11 +703,11 @@
   <section id="editorial" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Editorial Briefing</h2>
-      <span class="ds-section-count">5 shipped/local · 6 prototype/roadmap</span>
+      <span class="ds-section-count">5 integrated · 6 proposed</span>
     </div>
-    <p class="ds-section-lede">DailyBriefing patterns split by reality: shipped schedule and attention rows first; Spine-D prototypes stay visible but unintegrated.</p>
+    <p class="ds-section-lede">DailyBriefing patterns split by reality: integrated schedule and attention rows first; Spine-D work stays visible as proposed.</p>
     <div class="ds-grid">
-      <article id="Lead" class="ds-card" data-status="planned">
+      <article id="Lead" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">Lead</h3></div>
           <a class="ds-spec-link" href="../../patterns/Lead.md">Spec</a>
@@ -720,7 +722,7 @@
         </div>
       </article>
 
-      <article id="MarginGrid" class="ds-card">
+      <article id="MarginGrid" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MarginGrid</h3></div>
           <a class="ds-spec-link" href="../../patterns/MarginGrid.md">Spec</a>
@@ -737,7 +739,7 @@
         </div>
       </article>
 
-      <article id="ChapterHeading" class="ds-card">
+      <article id="ChapterHeading" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ChapterHeading</h3></div>
           <a class="ds-spec-link" href="../../patterns/ChapterHeading.md">Spec</a>
@@ -753,7 +755,7 @@
         </div>
       </article>
 
-      <article id="MeetingCard" class="ds-card">
+      <article id="MeetingCard" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MeetingCard</h3></div>
           <a class="ds-spec-link" href="../../patterns/MeetingCard.md">Spec</a>
@@ -795,7 +797,7 @@
         </div>
       </article>
 
-      <article id="BriefingMeetingCard" class="ds-card">
+      <article id="BriefingMeetingCard" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">BriefingMeetingCard</h3></div>
           <a class="ds-spec-link" href="../../patterns/BriefingMeetingCard.md">Spec</a>
@@ -852,7 +854,7 @@
         </div>
       </article>
 
-      <article id="DailyBriefingAttentionSection" class="ds-card" data-status="local">
+      <article id="DailyBriefingAttentionSection" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DailyBriefingAttentionSection</h3></div>
           <a class="ds-spec-link" href="../../patterns/DailyBriefingAttentionSection.md">Spec</a>
@@ -902,7 +904,7 @@
         </div>
       </article>
 
-      <article id="DayChart" class="ds-card" data-status="unintegrated">
+      <article id="DayChart" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DayChart</h3></div>
           <a class="ds-spec-link" href="../../patterns/DayChart.md">Spec</a>
@@ -944,7 +946,7 @@
         </div>
       </article>
 
-      <article id="MeetingSpineItem" class="ds-card" data-status="planned">
+      <article id="MeetingSpineItem" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MeetingSpineItem</h3></div>
           <a class="ds-spec-link" href="../../patterns/MeetingSpineItem.md">Spec</a>
@@ -968,7 +970,7 @@
         </div>
       </article>
 
-      <article id="EntityPortraitCard" class="ds-card" data-status="unintegrated">
+      <article id="EntityPortraitCard" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EntityPortraitCard</h3></div>
           <a class="ds-spec-link" href="../../patterns/EntityPortraitCard.md">Spec</a>
@@ -1009,7 +1011,7 @@
         </div>
       </article>
 
-      <article id="ThreadMark" class="ds-card" data-status="unintegrated">
+      <article id="ThreadMark" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ThreadMark</h3></div>
           <a class="ds-spec-link" href="../../patterns/ThreadMark.md">Spec</a>
@@ -1021,7 +1023,7 @@
         </div>
       </article>
 
-      <article id="AskAnythingDock" class="ds-card" data-status="unintegrated">
+      <article id="AskAnythingDock" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AskAnythingDock</h3></div>
           <a class="ds-spec-link" href="../../patterns/AskAnythingDock.md">Spec</a>
@@ -1056,11 +1058,11 @@
   <section id="chrome" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Surface Chrome</h2>
-      <span class="ds-section-count">3 shipped · 1 unintegrated</span>
+      <span class="ds-section-count">4 integrated</span>
     </div>
     <p class="ds-section-lede">The substrate patterns that make a DailyOS page feel like a magazine surface: folio, floating navigation, and ambient tint.</p>
     <div class="ds-grid">
-      <article id="FolioBar" class="ds-card">
+      <article id="FolioBar" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FolioBar</h3></div>
           <a class="ds-spec-link" href="../../patterns/FolioBar.md">Spec</a>
@@ -1083,7 +1085,7 @@
         </div>
       </article>
 
-      <article id="FloatingNavIsland" class="ds-card">
+      <article id="FloatingNavIsland" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FloatingNavIsland</h3></div>
           <a class="ds-spec-link" href="../../patterns/FloatingNavIsland.md">Spec</a>
@@ -1107,7 +1109,7 @@
         </div>
       </article>
 
-      <article id="AtmosphereLayer" class="ds-card">
+      <article id="AtmosphereLayer" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AtmosphereLayer</h3></div>
           <a class="ds-spec-link" href="../../patterns/AtmosphereLayer.md">Spec</a>
@@ -1121,7 +1123,7 @@
         </div>
       </article>
 
-      <article id="FinisMarker" class="ds-card">
+      <article id="FinisMarker" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FinisMarker</h3></div>
           <a class="ds-spec-link" href="../../patterns/FinisMarker.md">Spec</a>
@@ -1145,11 +1147,11 @@
   <section id="trust" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Trust UI</h2>
-      <span class="ds-section-count">3 unintegrated · 4 shipped local</span>
+      <span class="ds-section-count">4 integrated · 3 proposed</span>
     </div>
     <p class="ds-section-lede">The claim, provenance, freshness, correction, and receipt layer. These patterns answer whether intelligence can be trusted and why.</p>
     <div class="ds-grid">
-      <article id="TrustBand" class="ds-card" data-status="unintegrated">
+      <article id="TrustBand" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">TrustBand</h3></div>
           <a class="ds-spec-link" href="../../patterns/TrustBand.md">Spec</a>
@@ -1171,7 +1173,7 @@
         </div>
       </article>
 
-      <article id="ClaimRow" class="ds-card" data-status="unintegrated">
+      <article id="ClaimRow" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ClaimRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/ClaimRow.md">Spec</a>
@@ -1204,7 +1206,7 @@
         </div>
       </article>
 
-      <article id="ReceiptCallout" class="ds-card" data-status="unintegrated">
+      <article id="ReceiptCallout" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ReceiptCallout</h3></div>
           <a class="ds-spec-link" href="../../patterns/ReceiptCallout.md">Spec</a>
@@ -1264,7 +1266,7 @@
         </div>
       </article>
 
-      <article id="AboutThisIntelligencePanel" class="ds-card" data-status="local">
+      <article id="AboutThisIntelligencePanel" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AboutThisIntelligencePanel</h3></div>
           <a class="ds-spec-link" href="../../patterns/AboutThisIntelligencePanel.md">Spec</a>
@@ -1283,7 +1285,7 @@
         </div>
       </article>
 
-      <article id="DossierSourceCoveragePanel" class="ds-card" data-status="local">
+      <article id="DossierSourceCoveragePanel" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DossierSourceCoveragePanel</h3></div>
           <a class="ds-spec-link" href="../../patterns/DossierSourceCoveragePanel.md">Spec</a>
@@ -1305,7 +1307,7 @@
         </div>
       </article>
 
-      <article id="ConsistencyFindingBanner" class="ds-card" data-status="local">
+      <article id="ConsistencyFindingBanner" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ConsistencyFindingBanner</h3></div>
           <a class="ds-spec-link" href="../../patterns/ConsistencyFindingBanner.md">Spec</a>
@@ -1320,7 +1322,7 @@
         </div>
       </article>
 
-      <article id="StaleReportBanner" class="ds-card" data-status="local">
+      <article id="StaleReportBanner" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">StaleReportBanner</h3></div>
           <a class="ds-spec-link" href="../../patterns/StaleReportBanner.md">Spec</a>
@@ -1340,11 +1342,11 @@
   <section id="forms" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Forms &amp; Mastheads</h2>
-      <span class="ds-section-count">4 patterns</span>
+      <span class="ds-section-count">3 integrated · 1 proposed</span>
     </div>
     <p class="ds-section-lede">Settings and non-briefing surface openers: structured mastheads, at-a-glance stats, entity vitals, and predictable settings rows.</p>
     <div class="ds-grid">
-      <article id="SurfaceMasthead" class="ds-card">
+      <article id="SurfaceMasthead" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SurfaceMasthead</h3></div>
           <a class="ds-spec-link" href="../../patterns/SurfaceMasthead.md">Spec</a>
@@ -1363,7 +1365,7 @@
         </div>
       </article>
 
-      <article id="VitalsStrip" class="ds-card">
+      <article id="VitalsStrip" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">VitalsStrip</h3></div>
           <a class="ds-spec-link" href="../../patterns/VitalsStrip.md">Spec</a>
@@ -1445,7 +1447,7 @@
         </div>
       </article>
 
-      <article id="GlanceRow" class="ds-card" data-status="unintegrated">
+      <article id="GlanceRow" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">GlanceRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/GlanceRow.md">Spec</a>
@@ -1467,7 +1469,7 @@
         </div>
       </article>
 
-      <article id="FormRow" class="ds-card">
+      <article id="FormRow" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FormRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/FormRow.md">Spec</a>
@@ -1495,12 +1497,12 @@
   <section id="app-patterns" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">App Patterns</h2>
-      <span class="ds-section-count">8 shipped · 1 shipped local</span>
+      <span class="ds-section-count">9 integrated</span>
     </div>
     <p class="ds-section-lede">Patterns lifted from the current app surfaces the user actually works in: entity lists, AccountDetail, Settings, and Onboarding.</p>
     <div class="ds-grid">
 
-      <article id="EntityListShell" class="ds-card">
+      <article id="EntityListShell" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EntityListShell</h3></div>
           <a class="ds-spec-link" href="../../patterns/EntityListShell.md">Spec</a>
@@ -1525,7 +1527,7 @@
         </div>
       </article>
 
-      <article id="EntityRow" class="ds-card">
+      <article id="EntityRow" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EntityRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/EntityRow.md">Spec</a>
@@ -1550,7 +1552,7 @@
         </div>
       </article>
 
-      <article id="AccountViewSwitcher" class="ds-card">
+      <article id="AccountViewSwitcher" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AccountViewSwitcher</h3></div>
           <a class="ds-spec-link" href="../../patterns/AccountViewSwitcher.md">Spec</a>
@@ -1566,7 +1568,7 @@
         </div>
       </article>
 
-      <article id="WorkSurface" class="ds-card">
+      <article id="WorkSurface" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">WorkSurface</h3></div>
           <a class="ds-spec-link" href="../../patterns/WorkSurface.md">Spec</a>
@@ -1592,23 +1594,23 @@
         </div>
       </article>
 
-      <article id="SettingsSections" class="ds-card" data-status="local">
+      <article id="SettingsSections" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SettingsSections</h3></div>
           <a class="ds-spec-link" href="../../patterns/SettingsSections.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> shipped Settings chapters: You, Connectors, Data, System, and dev-only Diagnostics.</p>
+        <p class="ds-composition"><strong>Composes:</strong> integrated Settings chapters: You, Connectors, Data, System, and dev-only Diagnostics.</p>
         <div class="ds-variants"><span>You</span><span>Connectors</span><span>Data</span><span>System</span><span>Diagnostics dev-only</span></div>
         <div class="ds-demo" data-ds-name="SettingsSections" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSections.md">
           <div class="settings-section-demo">
-            <h4 class="settings-section-title">Shipped Settings chapters</h4>
+            <h4 class="settings-section-title">Integrated Settings chapters</h4>
             <p class="settings-section-copy">YouCard · ContextSourceSection + ConnectorsGrid · DatabaseRecoveryCard + ActivityLogSection + DataPrivacySection · Claude Code + SystemStatus + Notifications + Text Size · Diagnostics in development only</p>
             <div class="StatusDot_wrapper"><span class="StatusDot_dot StatusDot_md StatusDot_connected"></span><span class="StatusDot_label">Google connected</span></div>
           </div>
         </div>
       </article>
 
-      <article id="YouCard" class="ds-card">
+      <article id="YouCard" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">YouCard</h3></div>
           <a class="ds-spec-link" href="../../patterns/YouCard.md">Spec</a>
@@ -1627,7 +1629,7 @@
         </div>
       </article>
 
-      <article id="ActivityLogSection" class="ds-card">
+      <article id="ActivityLogSection" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ActivityLogSection</h3></div>
           <a class="ds-spec-link" href="../../patterns/ActivityLogSection.md">Spec</a>
@@ -1643,7 +1645,7 @@
         </div>
       </article>
 
-      <article id="DiagnosticsSection" class="ds-card">
+      <article id="DiagnosticsSection" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DiagnosticsSection</h3></div>
           <a class="ds-spec-link" href="../../patterns/DiagnosticsSection.md">Spec</a>
@@ -1684,12 +1686,12 @@
         </div>
       </article>
 
-      <article id="OnboardingFlow" class="ds-card">
+      <article id="OnboardingFlow" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">OnboardingFlow</h3></div>
           <a class="ds-spec-link" href="../../patterns/OnboardingFlow.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> AtmosphereLayer, FolioBar, FloatingNavIsland, and the shipped eight-chapter setup sequence.</p>
+        <p class="ds-composition"><strong>Composes:</strong> AtmosphereLayer, FolioBar, FloatingNavIsland, and the integrated eight-chapter setup sequence.</p>
         <div class="ds-variants"><span>Welcome</span><span>Google</span><span>Claude</span><span>Glean</span><span>About You</span><span>Account</span><span>Your Role</span><span>Prime</span></div>
         <div class="ds-demo" data-ds-name="OnboardingFlow" data-ds-tier="pattern" data-ds-spec="patterns/OnboardingFlow.md">
           <div class="onboarding-demo-card">
@@ -1705,11 +1707,11 @@
   <section id="meeting" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Meeting Intelligence</h2>
-      <span class="ds-section-count">5 shipped · 8 shipped local · 1 roadmap</span>
+      <span class="ds-section-count">13 integrated · 1 proposed</span>
     </div>
     <p class="ds-section-lede">Post-meeting and meeting-detail patterns: plans versus outcomes, behavior signals, findings, champion health, commitments, suggestions, and role changes.</p>
     <div class="ds-grid">
-      <article id="FolioActions" class="ds-card" data-status="planned">
+      <article id="FolioActions" class="ds-card" data-status="proposed">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FolioActions</h3></div>
           <a class="ds-spec-link" href="../../patterns/FolioActions.md">Spec</a>
@@ -1726,7 +1728,7 @@
         </div>
       </article>
 
-      <article id="PostMeetingIntelligence" class="ds-card">
+      <article id="PostMeetingIntelligence" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">PostMeetingIntelligence</h3></div>
           <a class="ds-spec-link" href="../../patterns/PostMeetingIntelligence.md">Spec</a>
@@ -1741,7 +1743,7 @@
         </div>
       </article>
 
-      <article id="TalkBalanceBar" class="ds-card">
+      <article id="TalkBalanceBar" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">TalkBalanceBar</h3></div>
           <a class="ds-spec-link" href="../../patterns/TalkBalanceBar.md">Spec</a>
@@ -1756,7 +1758,7 @@
         </div>
       </article>
 
-      <article id="ActionRow" class="ds-card">
+      <article id="ActionRow" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ActionRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/ActionRow.md">Spec</a>
@@ -1782,7 +1784,7 @@
         </div>
       </article>
 
-      <article id="IntelligenceFeedback" class="ds-card">
+      <article id="IntelligenceFeedback" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">IntelligenceFeedback</h3></div>
           <a class="ds-spec-link" href="../../patterns/IntelligenceFeedback.md">Spec</a>
@@ -1795,7 +1797,7 @@
         </div>
       </article>
 
-      <article id="AgendaThreadList" class="ds-card" data-status="local">
+      <article id="AgendaThreadList" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AgendaThreadList</h3></div>
           <a class="ds-spec-link" href="../../patterns/AgendaThreadList.md">Spec</a>
@@ -1811,7 +1813,7 @@
         </div>
       </article>
 
-      <article id="PredictionsVsRealityGrid" class="ds-card" data-status="local">
+      <article id="PredictionsVsRealityGrid" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">PredictionsVsRealityGrid</h3></div>
           <a class="ds-spec-link" href="../../patterns/PredictionsVsRealityGrid.md">Spec</a>
@@ -1831,7 +1833,7 @@
         </div>
       </article>
 
-      <article id="SignalGrid" class="ds-card" data-status="local">
+      <article id="SignalGrid" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SignalGrid</h3></div>
           <a class="ds-spec-link" href="../../patterns/SignalGrid.md">Spec</a>
@@ -1848,7 +1850,7 @@
         </div>
       </article>
 
-      <article id="EscalationQuote" class="ds-card" data-status="local">
+      <article id="EscalationQuote" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EscalationQuote</h3></div>
           <a class="ds-spec-link" href="../../patterns/EscalationQuote.md">Spec</a>
@@ -1863,7 +1865,7 @@
         </div>
       </article>
 
-      <article id="FindingsTriad" class="ds-card" data-status="local">
+      <article id="FindingsTriad" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FindingsTriad</h3></div>
           <a class="ds-spec-link" href="../../patterns/FindingsTriad.md">Spec</a>
@@ -1886,7 +1888,7 @@
         </div>
       </article>
 
-      <article id="ChampionHealthBlock" class="ds-card" data-status="local">
+      <article id="ChampionHealthBlock" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ChampionHealthBlock</h3></div>
           <a class="ds-spec-link" href="../../patterns/ChampionHealthBlock.md">Spec</a>
@@ -1900,7 +1902,7 @@
         </div>
       </article>
 
-      <article id="CommitmentRow" class="ds-card" data-status="local">
+      <article id="CommitmentRow" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">CommitmentRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/CommitmentRow.md">Spec</a>
@@ -1915,7 +1917,7 @@
         </div>
       </article>
 
-      <article id="SuggestedActionRow" class="ds-card">
+      <article id="SuggestedActionRow" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SuggestedActionRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/SuggestedActionRow.md">Spec</a>
@@ -1943,7 +1945,7 @@
         </div>
       </article>
 
-      <article id="RoleTransitionRow" class="ds-card" data-status="local">
+      <article id="RoleTransitionRow" class="ds-card" data-status="integrated">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">RoleTransitionRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/RoleTransitionRow.md">Spec</a>

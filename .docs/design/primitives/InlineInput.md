@@ -1,7 +1,7 @@
 # InlineInput
 
 **Tier:** primitive
-**Status:** planned
+**Status:** proposed
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `InlineInput`

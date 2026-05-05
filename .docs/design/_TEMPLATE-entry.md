@@ -3,7 +3,7 @@
 > Copy this template into the correct tier directory and rename the file. Delete this blockquote when done.
 
 **Tier:** primitive | pattern | surface
-**Status:** canonical | proposed | superseded
+**Status:** proposed | integrated | production
 **Owner:** [name]
 **Last updated:** YYYY-MM-DD
 **`data-ds-name`:** `[Name]` <!-- value to use on rendered elements; see SYSTEM-MAP.md → Inspectability -->

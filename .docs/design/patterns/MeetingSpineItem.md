@@ -1,7 +1,7 @@
 # MeetingSpineItem
 
 **Tier:** pattern
-**Status:** roadmap/planned
+**Status:** proposed
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `MeetingSpineItem`

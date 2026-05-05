@@ -15,7 +15,7 @@
 - `src/hooks/useDashboardData.ts`
 - `src/styles/editorial-briefing.module.css`
 - `src/components/onboarding/chapters/DashboardTour.tsx`
-- Spine-D references remain roadmap material until adopted by routed UI.
+- Spine-D references remain proposed until adopted by routed UI.
 
 **Design system version introduced:** 0.1.0
 
@@ -31,7 +31,7 @@ In the shipped source, reading order is:
 2. **Surface-local hero** — lead-like editorial copy implemented with `editorial-briefing` classes, not the standalone `Lead` pattern.
 3. **Today / schedule** — `MarginGrid` section containing `BriefingMeetingCard` rows. `BriefingMeetingCard` composes `MeetingCard`, `KeyPeopleFlow`, `PrepGrid`, and `MeetingActionChecklist`.
 4. **Health / account context where available** — `HealthBadge` and entity chips in shipped briefing rows.
-5. **Attention section** — shipped local rows for prioritized actions, priority email, and lifecycle updates.
+5. **Attention section** — integrated local rows for prioritized actions, priority email, and lifecycle updates.
 6. **Finis** — `FinisMarker`.
 
 `AtmosphereLayer` (turmeric tint) renders behind everything.
@@ -56,10 +56,10 @@ Local pill renders these via `FloatingNavIsland`'s chapters contract; click smoo
 - `MarginGrid` (every section)
 - `MeetingCard`
 - `BriefingMeetingCard`
-- `DailyBriefingAttentionSection` (shipped-local)
+- `DailyBriefingAttentionSection` (integrated local)
 - `FinisMarker`
 
-Roadmap/prototype only:
+Proposed only:
 
 - `Lead`
 - `DayChart`
@@ -108,5 +108,5 @@ Per Audit 04: `DailyBriefing` accepts `freshness` prop but it's currently aliase
 ## History
 
 - 2026-05-02 — Surface spec authored as part of Wave 1 (v1.4.3 substrate prep).
-- 2026-05-05 — Corrected spec to shipped source. Spine-D components remain prototype/roadmap until routed UI consumes them.
+- 2026-05-05 — Corrected spec to shipped source. Spine-D components remain proposed until routed UI consumes them.
 - DOS-360 — `Dashboard` → `DailyBriefing` rename, deferred post-v1.4.3.

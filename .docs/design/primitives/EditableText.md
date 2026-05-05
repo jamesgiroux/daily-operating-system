@@ -1,7 +1,7 @@
 # EditableText
 
 **Tier:** primitive
-**Status:** canonical
+**Status:** integrated
 **Owner:** James
 **Last updated:** 2026-05-05
 **`data-ds-name`:** `EditableText`

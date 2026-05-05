@@ -13,7 +13,7 @@
 - Router coverage is explicit in `surface-manifest.json`: the previous `ActionDetailPage`, `EmailsPage`, `HistoryPage`, and generic `ReportPage` gaps now have standalone references and specs. Dedicated report routes also have canonical specs.
 - Splash/progress references now participate in the same manifest fidelity audit as routed pages, backed by `surfaces/StartupBriefingScreen.md`.
 - Runtime promoted primitives/patterns now include `data-ds-tier` alongside existing `data-ds-name` and `data-ds-spec` attributes.
-- Primitive and pattern specs now distinguish `canonical` shipped entries from `roadmap/planned` entries.
+- Primitive and pattern specs now use the shared `proposed` / `integrated` / `production` status taxonomy.
 
 ## Summary
 

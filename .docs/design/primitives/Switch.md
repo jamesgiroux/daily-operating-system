@@ -1,7 +1,7 @@
 # Switch
 
 **Tier:** primitive
-**Status:** canonical
+**Status:** integrated
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `Switch`

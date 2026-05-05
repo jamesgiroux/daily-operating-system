@@ -69,7 +69,7 @@ Shipped as local `PostMeetingIntelligence` class families, not exported componen
 - `CommitmentRow`
 - `RoleTransitionRow`
 
-Roadmap/planned:
+Proposed:
 
 - `FolioActions` as an extracted toolbar pattern.
 - `SurfaceMasthead` replacement for the current inline hero.

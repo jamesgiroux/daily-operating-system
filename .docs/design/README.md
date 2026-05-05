@@ -37,7 +37,7 @@ DailyOS is a **magazine, not a dashboard**. Every surface is a document the user
 | Use a hardcoded hex color? | Never. Use design tokens from `design-tokens.css` or Tailwind semantic classes — see [`tokens/color.md`](./tokens/color.md). |
 | Add a new font? | No. Newsreader, DM Sans, JetBrains Mono, Montserrat (mark only). See [`tokens/typography.md`](./tokens/typography.md). |
 | Use inline `style={{}}` props? | Avoid. Use CSS modules or Tailwind classes. The reference-fidelity audit at [`_audits/audit-reference.py`](./_audits/audit-reference.py) flags inline-style invention against canonical TSX. |
-| Build a new component for this? | Check [`primitives/`](./primitives/) and [`patterns/`](./patterns/) first. There are 72 documented primitive/pattern specs, and status labels distinguish canonical shipped, shipped-local, implemented/unintegrated, and roadmap entries. |
+| Build a new component for this? | Check [`primitives/`](./primitives/) and [`patterns/`](./patterns/) first. There are 72 documented primitive/pattern specs, and status labels use `proposed`, `integrated`, or `production`. |
 | Use "intelligence" or "enrichment" in user-facing text? | Never. System terms stay in code. See vocabulary guidance in `src/CLAUDE.md`. |
 | Skip the FinisMarker? | No. Every editorial page ends with one. See [`patterns/FinisMarker.md`](./patterns/FinisMarker.md). |
 

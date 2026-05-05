@@ -1,7 +1,7 @@
 # ProvenanceTag
 
 **Tier:** primitive
-**Status:** canonical
+**Status:** integrated
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `ProvenanceTag`

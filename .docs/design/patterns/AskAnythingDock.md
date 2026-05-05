@@ -1,7 +1,7 @@
 # AskAnythingDock
 
 **Tier:** pattern
-**Status:** implemented/unintegrated
+**Status:** proposed
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `AskAnythingDock`
@@ -15,7 +15,7 @@ Multi-line "front door" to the conversational layer of DailyOS — an editorial 
 
 ## When to use it
 
-- No shipped routed use today. Keep it visible as implemented/unintegrated D-spine work only.
+- No shipped routed use today. Keep it visible as proposed D-spine work only.
 - Roadmap target: DailyBriefing bottom-of-briefing "what now?" affordance, if approved.
 - Any future surface where the user benefits from being able to ask the assistant something with context
 - Cross-version foundational pattern for v1.4.6 (Proactive Intelligence)

@@ -196,13 +196,13 @@
     border-radius: 8px;
   }
 
-  .catalog-card[data-status="unintegrated"] {
+  .catalog-card[data-status="proposed"] {
     border-style: dashed;
   }
 
-  .catalog-card[data-status="local"] {
-    border-style: dashed;
-    border-color: var(--color-spice-saffron-30);
+  .catalog-card[data-status="production"] {
+    border-color: var(--color-garden-sage-30);
+    box-shadow: 0 0 0 1px var(--color-garden-sage-15);
   }
 
   .card-head {
@@ -286,22 +286,22 @@
     white-space: nowrap;
   }
 
-  .status-canonical {
+  .status-integrated {
     color: var(--color-garden-rosemary);
     background: var(--color-garden-sage-10);
     border: 1px solid var(--color-garden-sage-15);
   }
 
-  .status-needed {
+  .status-proposed {
     color: var(--color-spice-turmeric);
     background: var(--color-spice-turmeric-10);
     border: 1px solid var(--color-spice-turmeric-15);
   }
 
-  .status-unintegrated {
-    color: var(--color-text-tertiary);
-    background: var(--color-desk-charcoal-4);
-    border: 1px dashed var(--color-rule-heavy);
+  .status-production {
+    color: var(--color-garden-rosemary);
+    background: var(--color-garden-sage-10);
+    border: 1px solid var(--color-garden-sage-30);
   }
 
   .sample-area {
@@ -482,13 +482,14 @@
     <p class="ref-eyebrow">DailyOS / Design System / Reference</p>
     <h1 class="ref-title">Primitives</h1>
     <p class="ref-lede">
-      The smallest reusable units in the system, classified from shipped source first. Canonical CSS demos, shipped inline-style contracts, implemented-but-unintegrated trust primitives, and roadmap gaps are labeled separately.
+      The smallest reusable units in the system, classified by whether they are proposed, integrated in app code, or included in a tagged production release.
     </p>
     <div class="ref-summary" aria-label="Primitive inventory summary">
       <span>23 primitives</span>
       <span>4 families</span>
-      <span>12 canonical shipped demos</span>
-      <span>7 implemented/unintegrated demos</span>
+      <span>15 integrated</span>
+      <span>8 proposed</span>
+      <span>0 production until a release tag includes them</span>
     </div>
     <nav class="ref-nav" aria-label="Reference tiers">
       <a href="../index.html">Reference home</a>
@@ -515,7 +516,7 @@
     </p>
     <div class="catalog-grid">
 
-      <article class="catalog-card" id="pill">
+      <article class="catalog-card" id="pill" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">Pill</h3>
           <span class="tier-label">primitive</span>
@@ -524,7 +525,7 @@
             <a class="card-link" href="../../primitives/Pill.md">primitives/Pill.md</a>
             <span class="variant-line">Variants demoed: sage, turmeric, terracotta, larkspur, olive, eucalyptus, neutral, compact, dot</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area">
           <span class="Pill_pill Pill_sage Pill_standard" data-tone="sage" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">
@@ -540,7 +541,7 @@
         <p class="card-note">Rendered with <code>Pill.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="entity-chip">
+      <article class="catalog-card" id="entity-chip" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">EntityChip</h3>
           <span class="tier-label">primitive</span>
@@ -549,7 +550,7 @@
             <a class="card-link" href="../../primitives/EntityChip.md">primitives/EntityChip.md</a>
             <span class="variant-line">Variants demoed: account, project, person, compact, removable</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area">
           <span class="Pill_pill Pill_neutral Pill_standard EntityChip_chip EntityChip_chip-account" data-tone="neutral" data-entity-type="account" data-ds-tier="primitive" data-ds-name="EntityChip" data-ds-spec="primitives/EntityChip.md">
@@ -575,7 +576,7 @@
         <p class="card-note">Rendered with <code>EntityChip.module.css</code>, <code>Pill.module.css</code>, and <code>RemovableChip.module.css</code> for the removable composition.</p>
       </article>
 
-      <article class="catalog-card" id="type-badge" data-status="local">
+      <article class="catalog-card" id="type-badge" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">TypeBadge</h3>
           <span class="tier-label">primitive</span>
@@ -584,7 +585,7 @@
             <a class="card-link" href="../../primitives/TypeBadge.md">primitives/TypeBadge.md</a>
             <span class="variant-line">Variants demoed: customer, internal, partner, editable</span>
           </div>
-          <span class="status-badge status-needed">Shipped local</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area">
           <span class="EntityHeroBase_heroBadge AccountHero_badge AccountHero_customerBadge" data-ds-tier="primitive" data-ds-name="TypeBadge" data-ds-spec="primitives/TypeBadge.md">Customer</span>
@@ -600,7 +601,7 @@
         <p class="card-note">Rendered with the current source-local <code>AccountHero.module.css</code> classes documented in the TypeBadge spec.</p>
       </article>
 
-      <article class="catalog-card" id="removable-chip">
+      <article class="catalog-card" id="removable-chip" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">RemovableChip</h3>
           <span class="tier-label">primitive</span>
@@ -609,7 +610,7 @@
             <a class="card-link" href="../../primitives/RemovableChip.md">primitives/RemovableChip.md</a>
             <span class="variant-line">Variants demoed: default, compact, suggested, removing, disabled</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area">
           <span class="Pill_pill Pill_neutral Pill_standard RemovableChip_chip" data-tone="neutral" data-ds-tier="primitive" data-ds-name="RemovableChip" data-ds-spec="primitives/RemovableChip.md">
@@ -636,7 +637,7 @@
         <p class="card-note">Rendered with <code>RemovableChip.module.css</code> and the Pill classes it composes in source.</p>
       </article>
 
-      <article class="catalog-card" id="meeting-status-pill">
+      <article class="catalog-card" id="meeting-status-pill" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">MeetingStatusPill</h3>
           <span class="tier-label">primitive</span>
@@ -645,7 +646,7 @@
             <a class="card-link" href="../../primitives/MeetingStatusPill.md">primitives/MeetingStatusPill.md</a>
             <span class="variant-line">Variants demoed: upcoming, in-progress, past, cancelled</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area">
           <span class="Pill_pill Pill_sage Pill_standard MeetingStatusPill_status MeetingStatusPill_upcoming" data-tone="sage" data-state="upcoming" data-ds-tier="primitive" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md">
@@ -664,7 +665,7 @@
         <p class="card-note">Rendered with <code>MeetingStatusPill.module.css</code> and <code>Pill.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="health-badge">
+      <article class="catalog-card" id="health-badge" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">HealthBadge</h3>
           <span class="tier-label">primitive</span>
@@ -673,7 +674,7 @@
             <a class="card-link" href="../../primitives/HealthBadge.md">primitives/HealthBadge.md</a>
             <span class="variant-line">Variants demoed: compact, standard, hero, insufficient data</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="HealthBadge_badge" data-ds-tier="primitive" data-ds-name="HealthBadge" data-ds-spec="primitives/HealthBadge.md">
@@ -698,7 +699,7 @@
         <p class="card-note">Rendered with <code>HealthBadge.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="status-dot">
+      <article class="catalog-card" id="status-dot" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">StatusDot</h3>
           <span class="tier-label">primitive</span>
@@ -707,7 +708,7 @@
             <a class="card-link" href="../../primitives/StatusDot.md">primitives/StatusDot.md</a>
             <span class="variant-line">Variants demoed: connected, disconnected, loading, error, labeled</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="StatusDot_wrapper" data-ds-tier="primitive" data-ds-name="StatusDot" data-ds-spec="primitives/StatusDot.md">
@@ -726,7 +727,7 @@
         <p class="card-note">Rendered with <code>StatusDot.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="avatar">
+      <article class="catalog-card" id="avatar" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">Avatar</h3>
           <span class="tier-label">primitive</span>
@@ -735,7 +736,7 @@
             <a class="card-link" href="../../primitives/Avatar.md">primitives/Avatar.md</a>
             <span class="variant-line">Variants demoed: initials fallback, large hero fallback</span>
           </div>
-          <span class="status-badge status-needed">Inline style source</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area">
           <span class="avatar-sample" data-ds-tier="primitive" data-ds-name="Avatar" data-ds-spec="primitives/Avatar.md" aria-label="Avery Chen">A</span>
@@ -758,7 +759,7 @@
     </p>
     <div class="catalog-grid">
 
-      <article class="catalog-card" id="trust-band-badge" data-status="unintegrated">
+      <article class="catalog-card" id="trust-band-badge" data-status="proposed">
         <div class="card-head">
           <h3 class="card-title">TrustBandBadge</h3>
           <span class="tier-label">primitive</span>
@@ -767,7 +768,7 @@
             <a class="card-link" href="../../primitives/TrustBandBadge.md">primitives/TrustBandBadge.md</a>
             <span class="variant-line">Variants demoed: likely_current, use_with_caution, needs_verification, compact</span>
           </div>
-          <span class="status-badge status-unintegrated">Implemented / unintegrated</span>
+          <span class="status-badge status-proposed">Proposed</span>
         </div>
         <div class="sample-area">
           <span class="Pill_pill Pill_sage Pill_standard TrustBandBadge_badge TrustBandBadge_likelyCurrent" data-tone="sage" data-band="likely_current" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">
@@ -786,7 +787,7 @@
         <p class="card-note">Rendered with <code>TrustBandBadge.module.css</code> and <code>Pill.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="intelligence-quality-badge">
+      <article class="catalog-card" id="intelligence-quality-badge" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">IntelligenceQualityBadge</h3>
           <span class="tier-label">primitive</span>
@@ -795,7 +796,7 @@
             <a class="card-link" href="../../primitives/IntelligenceQualityBadge.md">primitives/IntelligenceQualityBadge.md</a>
             <span class="variant-line">Variants demoed: sparse, developing, ready, fresh, new signal</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="IntelligenceQualityBadge_root" data-ds-tier="primitive" data-ds-name="IntelligenceQualityBadge" data-ds-spec="primitives/IntelligenceQualityBadge.md">
@@ -827,7 +828,7 @@
         <p class="card-note">Rendered with <code>IntelligenceQualityBadge.module.css</code>. The color styles mirror the source TSX runtime token styles.</p>
       </article>
 
-      <article class="catalog-card" id="confidence-score-chip" data-status="unintegrated">
+      <article class="catalog-card" id="confidence-score-chip" data-status="proposed">
         <div class="card-head">
           <h3 class="card-title">ConfidenceScoreChip</h3>
           <span class="tier-label">primitive</span>
@@ -836,7 +837,7 @@
             <a class="card-link" href="../../primitives/ConfidenceScoreChip.md">primitives/ConfidenceScoreChip.md</a>
             <span class="variant-line">Variants demoed: likely_current, use_with_caution, needs_verification, unavailable</span>
           </div>
-          <span class="status-badge status-unintegrated">Implemented / unintegrated</span>
+          <span class="status-badge status-proposed">Proposed</span>
         </div>
         <div class="sample-area">
           <span class="ConfidenceScoreChip_chip" data-band="likely_current" data-state="available" data-ds-tier="primitive" data-ds-name="ConfidenceScoreChip" data-ds-spec="primitives/ConfidenceScoreChip.md">93%</span>
@@ -847,7 +848,7 @@
         <p class="card-note">Rendered with <code>ConfidenceScoreChip.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="verification-status-flag" data-status="unintegrated">
+      <article class="catalog-card" id="verification-status-flag" data-status="proposed">
         <div class="card-head">
           <h3 class="card-title">VerificationStatusFlag</h3>
           <span class="tier-label">primitive</span>
@@ -856,7 +857,7 @@
             <a class="card-link" href="../../primitives/VerificationStatusFlag.md">primitives/VerificationStatusFlag.md</a>
             <span class="variant-line">Variants demoed: ok, corrected, flagged</span>
           </div>
-          <span class="status-badge status-unintegrated">Implemented / unintegrated</span>
+          <span class="status-badge status-proposed">Proposed</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="VerificationStatusFlag_flag" data-status="ok" data-ds-tier="primitive" data-ds-name="VerificationStatusFlag" data-ds-spec="primitives/VerificationStatusFlag.md">
@@ -875,7 +876,7 @@
         <p class="card-note">Rendered with <code>VerificationStatusFlag.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="provenance-tag">
+      <article class="catalog-card" id="provenance-tag" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">ProvenanceTag</h3>
           <span class="tier-label">primitive</span>
@@ -884,7 +885,7 @@
             <a class="card-link" href="../../primitives/ProvenanceTag.md">primitives/ProvenanceTag.md</a>
             <span class="variant-line">Variants demoed: default, discrepancy, synthesized suppressed note</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from Glean</span>
@@ -896,7 +897,7 @@
         <p class="card-note">Rendered with <code>ProvenanceTag.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="freshness-indicator">
+      <article class="catalog-card" id="freshness-indicator" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">FreshnessIndicator</h3>
           <span class="tier-label">primitive</span>
@@ -905,7 +906,7 @@
             <a class="card-link" href="../../primitives/FreshnessIndicator.md">primitives/FreshnessIndicator.md</a>
             <span class="variant-line">Variants demoed: relative, absolute, both, fresh, aging, stale, strip</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="FreshnessIndicator_root FreshnessIndicator_inline" data-staleness="fresh" data-ds-tier="primitive" data-ds-name="FreshnessIndicator" data-ds-spec="primitives/FreshnessIndicator.md">
@@ -925,7 +926,7 @@
         <p class="card-note">Rendered with <code>FreshnessIndicator.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="as-of-timestamp" data-status="unintegrated">
+      <article class="catalog-card" id="as-of-timestamp" data-status="proposed">
         <div class="card-head">
           <h3 class="card-title">AsOfTimestamp</h3>
           <span class="tier-label">primitive</span>
@@ -934,7 +935,7 @@
             <a class="card-link" href="../../primitives/AsOfTimestamp.md">primitives/AsOfTimestamp.md</a>
             <span class="variant-line">Variants demoed: relative, absolute, both, unavailable</span>
           </div>
-          <span class="status-badge status-unintegrated">Implemented / unintegrated</span>
+          <span class="status-badge status-proposed">Proposed</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="AsOfTimestamp_timestamp" data-state="available" data-ds-tier="primitive" data-ds-name="AsOfTimestamp" data-ds-spec="primitives/AsOfTimestamp.md">As of 3h ago</span>
@@ -945,7 +946,7 @@
         <p class="card-note">Rendered with <code>AsOfTimestamp.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="source-coverage-line" data-status="unintegrated">
+      <article class="catalog-card" id="source-coverage-line" data-status="proposed">
         <div class="card-head">
           <h3 class="card-title">SourceCoverageLine</h3>
           <span class="tier-label">primitive</span>
@@ -954,7 +955,7 @@
             <a class="card-link" href="../../primitives/SourceCoverageLine.md">primitives/SourceCoverageLine.md</a>
             <span class="variant-line">Variants demoed: default, withStaleCount, empty</span>
           </div>
-          <span class="status-badge status-unintegrated">Implemented / unintegrated</span>
+          <span class="status-badge status-proposed">Proposed</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="SourceCoverageLine_line" data-variant="default" data-ds-tier="primitive" data-ds-name="SourceCoverageLine" data-ds-spec="primitives/SourceCoverageLine.md">
@@ -968,7 +969,7 @@
         <p class="card-note">Rendered with <code>SourceCoverageLine.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="data-gap-notice" data-status="unintegrated">
+      <article class="catalog-card" id="data-gap-notice" data-status="proposed">
         <div class="card-head">
           <h3 class="card-title">DataGapNotice</h3>
           <span class="tier-label">primitive</span>
@@ -977,7 +978,7 @@
             <a class="card-link" href="../../primitives/DataGapNotice.md">primitives/DataGapNotice.md</a>
             <span class="variant-line">Variants demoed: info, warning</span>
           </div>
-          <span class="status-badge status-unintegrated">Implemented / unintegrated</span>
+          <span class="status-badge status-proposed">Proposed</span>
         </div>
         <div class="sample-area sample-stack">
           <span class="DataGapNotice_notice" data-severity="info" data-ds-tier="primitive" data-ds-name="DataGapNotice" data-ds-spec="primitives/DataGapNotice.md">
@@ -1005,7 +1006,7 @@
     </p>
     <div class="catalog-grid">
 
-      <article class="catalog-card" id="switch">
+      <article class="catalog-card" id="switch" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">Switch</h3>
           <span class="tier-label">primitive</span>
@@ -1014,7 +1015,7 @@
             <a class="card-link" href="../../primitives/Switch.md">primitives/Switch.md</a>
             <span class="variant-line">Variants demoed: off, on, disabled, size=sm</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area">
           <button type="button" role="switch" aria-checked="false" class="Switch_switch" data-checked="false" data-size="sm" data-ds-tier="primitive" data-ds-name="Switch" data-ds-spec="primitives/Switch.md">
@@ -1030,7 +1031,7 @@
         <p class="card-note">Rendered with <code>Switch.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="segmented">
+      <article class="catalog-card" id="segmented" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">Segmented</h3>
           <span class="tier-label">primitive</span>
@@ -1039,7 +1040,7 @@
             <a class="card-link" href="../../primitives/Segmented.md">primitives/Segmented.md</a>
             <span class="variant-line">Variants demoed: turmeric, eucalyptus, larkspur, selected, disabled</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area sample-stack">
           <div role="group" aria-label="Settings density" class="Segmented_group Segmented_turmeric" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
@@ -1059,7 +1060,7 @@
         <p class="card-note">Rendered with <code>Segmented.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="editable-text">
+      <article class="catalog-card" id="editable-text" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">EditableText</h3>
           <span class="tier-label">primitive</span>
@@ -1068,7 +1069,7 @@
             <a class="card-link" href="../../primitives/EditableText.md">primitives/EditableText.md</a>
             <span class="variant-line">Variants demoed: serif headline, body copy, empty placeholder</span>
           </div>
-          <span class="status-badge status-canonical">Canonical classes</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area sample-stack">
           <h3 class="EditableText_editable" data-editable-text data-ds-tier="primitive" data-ds-name="EditableText" data-ds-spec="primitives/EditableText.md">Acme renewal risk is rising</h3>
@@ -1078,7 +1079,7 @@
         <p class="card-note">Rendered with <code>EditableText.module.css</code>.</p>
       </article>
 
-      <article class="catalog-card" id="folio-refresh-button">
+      <article class="catalog-card" id="folio-refresh-button" data-status="integrated">
         <div class="card-head">
           <h3 class="card-title">FolioRefreshButton</h3>
           <span class="tier-label">primitive</span>
@@ -1087,7 +1088,7 @@
             <a class="card-link" href="../../primitives/FolioRefreshButton.md">primitives/FolioRefreshButton.md</a>
             <span class="variant-line">Variants demoed: idle, loading, disabled progress</span>
           </div>
-          <span class="status-badge status-needed">Inline style source</span>
+          <span class="status-badge status-integrated">Integrated</span>
         </div>
         <div class="sample-area">
           <button type="button" class="folio-refresh-sample" data-ds-tier="primitive" data-ds-name="FolioRefreshButton" data-ds-spec="primitives/FolioRefreshButton.md">Refresh</button>
@@ -1100,7 +1101,7 @@
       <article
         class="catalog-card"
         id="inline-input"
-        data-status="planned"
+        data-status="proposed"
         data-ds-tier="primitive"
         data-ds-name="InlineInput"
         data-ds-spec="primitives/InlineInput.md"
@@ -1113,7 +1114,7 @@
             <a class="card-link" href="../../primitives/InlineInput.md">primitives/InlineInput.md</a>
             <span class="variant-line">Variants demoed: font=sans, font=mono, disabled</span>
           </div>
-          <a class="status-badge status-needed" href="#promotion-audit">Promotion needed</a>
+          <span class="status-badge status-proposed">Proposed</span>
         </div>
         <div class="sample-area sample-stack">
           <input value="Daily digest" aria-label="Profile name example" readonly style="font-family:var(--font-sans);font-size:14px;min-width:176px;padding:2px 0;border:0;border-bottom:1px solid var(--color-rule-light);outline:0;">
@@ -1137,7 +1138,7 @@
     </p>
     <div class="catalog-grid">
 
-      <article class="catalog-card" id="glance-cell" data-status="unintegrated">
+      <article class="catalog-card" id="glance-cell" data-status="proposed">
         <div class="card-head">
           <h3 class="card-title">GlanceCell</h3>
           <span class="tier-label">primitive</span>
@@ -1146,7 +1147,7 @@
             <a class="card-link" href="../../primitives/GlanceCell.md">primitives/GlanceCell.md</a>
             <span class="variant-line">Variants demoed: none, healthy, warn, neutral</span>
           </div>
-          <span class="status-badge status-unintegrated">Implemented / unintegrated</span>
+          <span class="status-badge status-proposed">Proposed</span>
         </div>
         <div class="sample-area sample-grid">
           <div class="GlanceCell_cell" data-status="none" data-ds-tier="primitive" data-ds-name="GlanceCell" data-ds-spec="primitives/GlanceCell.md">
@@ -1186,13 +1187,13 @@
   <section class="audit-note" id="promotion-audit">
     <p class="audit-title">Promotion Audit</p>
     <p class="audit-copy">
-      The catalogue includes every primitive spec and separates shipped primitives from source-only trust prototypes and roadmap inputs.
+      The catalogue includes every primitive spec and uses the same proposed / integrated / production taxonomy as patterns.
     </p>
     <ul class="audit-list">
       <li>23 primitive specs represented</li>
-      <li><code>InlineInput</code> remains roadmap/planned</li>
-      <li>Trust support primitives are implemented but unintegrated until routed surfaces consume them</li>
-      <li><code>Avatar</code> and <code>FolioRefreshButton</code> are shipped and documented while CSS extraction is pending</li>
+      <li><code>InlineInput</code> remains proposed</li>
+      <li>Trust support primitives remain proposed until routed surfaces consume them</li>
+      <li><code>Avatar</code> and <code>FolioRefreshButton</code> are integrated and documented while CSS extraction is pending</li>
     </ul>
   </section>
 

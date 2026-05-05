@@ -215,10 +215,18 @@ def normalize_status(status: str | None) -> str:
     if status is None:
         return "unknown"
     normalized = re.sub(r"[`*]", "", status).strip().lower()
-    if "planned" in normalized or "roadmap" in normalized or "promotion" in normalized:
-        return "planned"
-    if "canonical" in normalized:
-        return "canonical"
+    if "production" in normalized:
+        return "production"
+    if (
+        "proposed" in normalized
+        or "planned" in normalized
+        or "roadmap" in normalized
+        or "promotion" in normalized
+        or "unintegrated" in normalized
+    ):
+        return "proposed"
+    if "integrated" in normalized or "canonical" in normalized or "shipped" in normalized:
+        return "integrated"
     return normalized or "unknown"
 
 
@@ -336,9 +344,9 @@ def extract_article_chunk_for_spec(html: str, spec: str) -> str:
     return html[start:end]
 
 
-def has_planned_reference_marker(html: str, spec: str) -> bool:
+def has_proposed_reference_marker(html: str, spec: str) -> bool:
     article = extract_article_chunk_for_spec(html, spec)
-    return 'data-status="planned"' in article or "data-status='planned'" in article
+    return 'data-status="proposed"' in article or "data-status='proposed'" in article
 
 
 def audit_system_reference_coverage() -> dict[str, Any]:
@@ -360,8 +368,8 @@ def audit_system_reference_coverage() -> dict[str, Any]:
 
         specs: list[dict[str, Any]] = []
         missing_specs: list[dict[str, str]] = []
-        planned_without_status: list[dict[str, str]] = []
-        canonical_marked_planned: list[dict[str, str]] = []
+        proposed_without_status: list[dict[str, str]] = []
+        integrated_marked_proposed: list[dict[str, str]] = []
 
         for spec_path in sorted((DESIGN_ROOT / directory).glob("*.md")):
             if spec_path.name == "README.md":
@@ -384,11 +392,11 @@ def audit_system_reference_coverage() -> dict[str, Any]:
                 missing_specs.append(spec_record)
                 continue
 
-            planned_marker = has_planned_reference_marker(html, spec)
-            if status == "planned" and not planned_marker:
-                planned_without_status.append(spec_record)
-            if status == "canonical" and planned_marker:
-                canonical_marked_planned.append(spec_record)
+            proposed_marker = has_proposed_reference_marker(html, spec)
+            if status == "proposed" and not proposed_marker:
+                proposed_without_status.append(spec_record)
+            if status == "integrated" and proposed_marker:
+                integrated_marked_proposed.append(spec_record)
 
         expected_specs = {item["spec"] for item in specs}
         extra_reference_specs = sorted(represented_specs - expected_specs)
@@ -396,12 +404,13 @@ def audit_system_reference_coverage() -> dict[str, Any]:
             "page": rel(page),
             "specs": specs,
             "spec_count": len(specs),
-            "canonical_count": sum(1 for item in specs if item["status"] == "canonical"),
-            "planned_count": sum(1 for item in specs if item["status"] == "planned"),
+            "integrated_count": sum(1 for item in specs if item["status"] == "integrated"),
+            "proposed_count": sum(1 for item in specs if item["status"] == "proposed"),
+            "production_count": sum(1 for item in specs if item["status"] == "production"),
             "represented_count": sum(1 for item in specs if item["represented"]),
             "missing_specs": missing_specs,
-            "planned_without_status": planned_without_status,
-            "canonical_marked_planned": canonical_marked_planned,
+            "proposed_without_status": proposed_without_status,
+            "integrated_marked_proposed": integrated_marked_proposed,
             "extra_reference_specs": extra_reference_specs,
         }
 
@@ -801,16 +810,16 @@ def system_coverage_totals(system_coverage: dict[str, Any]) -> dict[str, int]:
         "spec_count": 0,
         "represented_count": 0,
         "missing_specs": 0,
-        "planned_without_status": 0,
-        "canonical_marked_planned": 0,
+        "proposed_without_status": 0,
+        "integrated_marked_proposed": 0,
         "extra_reference_specs": 0,
     }
     for coverage in system_coverage.values():
         totals["spec_count"] += coverage["spec_count"]
         totals["represented_count"] += coverage["represented_count"]
         totals["missing_specs"] += len(coverage["missing_specs"])
-        totals["planned_without_status"] += len(coverage["planned_without_status"])
-        totals["canonical_marked_planned"] += len(coverage["canonical_marked_planned"])
+        totals["proposed_without_status"] += len(coverage["proposed_without_status"])
+        totals["integrated_marked_proposed"] += len(coverage["integrated_marked_proposed"])
         totals["extra_reference_specs"] += len(coverage["extra_reference_specs"])
     return totals
 
@@ -832,8 +841,8 @@ def global_severity(global_findings: dict[str, Any]) -> str:
     if (
         metadata["missing_required"]
         or metadata["spec_metadata_mismatches"]
-        or system_totals["planned_without_status"]
-        or system_totals["canonical_marked_planned"]
+        or system_totals["proposed_without_status"]
+        or system_totals["integrated_marked_proposed"]
         or system_totals["extra_reference_specs"]
         or router["unresolved_components"]
         or has_token_export_drift(global_findings["token_exports"])
@@ -860,7 +869,7 @@ def render_global_md(global_findings: dict[str, Any]) -> str:
     out.append(f"- **Broken local CSS imports**: {len(assets['broken_css_imports'])}\n")
     out.append(f"- **Primitive/pattern specs represented in reference UI**: {system_totals['represented_count']} / {system_totals['spec_count']}\n")
     out.append(f"- **Primitive/pattern specs missing from reference UI**: {system_totals['missing_specs']}\n")
-    out.append(f"- **Planned specs missing roadmap marker**: {system_totals['planned_without_status']}\n")
+    out.append(f"- **Proposed specs missing proposed marker**: {system_totals['proposed_without_status']}\n")
     out.append(f"- **Router routes missing manifest coverage**: {len(router['missing_manifest_coverage'])}\n")
     out.append(f"- **Router routes acknowledged by manifest status**: {len(router['acknowledged'])}\n")
     out.append(f"- **Token export files checked**: {len(tokens['exports'])}\n\n")
@@ -914,20 +923,23 @@ def render_global_md(global_findings: dict[str, Any]) -> str:
     for tier, coverage in system.items():
         if not (
             coverage["missing_specs"]
-            or coverage["planned_without_status"]
-            or coverage["canonical_marked_planned"]
+            or coverage["proposed_without_status"]
+            or coverage["integrated_marked_proposed"]
             or coverage["extra_reference_specs"]
         ):
             continue
         out.append(f"### {tier.title()} reference coverage\n\n")
         out.append(f"- `{coverage['page']}` represents {coverage['represented_count']} / {coverage['spec_count']} specs")
-        out.append(f" ({coverage['canonical_count']} canonical, {coverage['planned_count']} planned)\n")
+        out.append(
+            f" ({coverage['integrated_count']} integrated, {coverage['proposed_count']} proposed, "
+            f"{coverage['production_count']} production)\n"
+        )
         for item in coverage["missing_specs"]:
             out.append(f"- missing `{item['spec']}` (`{item['name']}`, status `{item['status']}`)\n")
-        for item in coverage["planned_without_status"]:
-            out.append(f"- planned spec missing roadmap marker: `{item['spec']}` (`{item['name']}`)\n")
-        for item in coverage["canonical_marked_planned"]:
-            out.append(f"- canonical spec marked as planned in reference UI: `{item['spec']}` (`{item['name']}`)\n")
+        for item in coverage["proposed_without_status"]:
+            out.append(f"- proposed spec missing proposed marker: `{item['spec']}` (`{item['name']}`)\n")
+        for item in coverage["integrated_marked_proposed"]:
+            out.append(f"- integrated spec marked as proposed in reference UI: `{item['spec']}` (`{item['name']}`)\n")
         for spec in coverage["extra_reference_specs"]:
             out.append(f"- reference links to non-spec or out-of-band item: `{spec}`\n")
         out.append("\n")
@@ -1139,10 +1151,10 @@ def main() -> int:
                     print(f"  Broken local CSS imports: {len(assets['broken_css_imports'])}", file=sys.stderr)
                 if system_totals["missing_specs"]:
                     print(f"  Primitive/pattern specs missing from reference UI: {system_totals['missing_specs']}", file=sys.stderr)
-                if system_totals["planned_without_status"]:
-                    print(f"  Planned specs missing roadmap marker: {system_totals['planned_without_status']}", file=sys.stderr)
-                if system_totals["canonical_marked_planned"]:
-                    print(f"  Canonical specs marked as planned in reference UI: {system_totals['canonical_marked_planned']}", file=sys.stderr)
+                if system_totals["proposed_without_status"]:
+                    print(f"  Proposed specs missing proposed marker: {system_totals['proposed_without_status']}", file=sys.stderr)
+                if system_totals["integrated_marked_proposed"]:
+                    print(f"  Integrated specs marked as proposed in reference UI: {system_totals['integrated_marked_proposed']}", file=sys.stderr)
                 if system_totals["extra_reference_specs"]:
                     print(f"  Reference UI links to out-of-band primitive/pattern specs: {system_totals['extra_reference_specs']}", file=sys.stderr)
                 if router["missing_manifest_coverage"]:
