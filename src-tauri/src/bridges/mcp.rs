@@ -29,6 +29,7 @@ const MCP_ACTOR_LABEL: &str = concat!("agent:dailyos-mcp:", env!("CARGO_PKG_VERS
 const MCP_CONFIRMATION_TOKEN_TTL_SECONDS: u32 = 5 * 60;
 
 type InvocationCacheKey = (McpSessionId, InvocationId);
+type ConfirmationTokenCacheKey = (McpSessionId, String, [u8; 32]);
 
 #[derive(Debug, Clone)]
 struct CachedInvocationProvenance {
@@ -109,6 +110,33 @@ impl McpInvocationCache {
     }
 }
 
+#[derive(Debug, Default)]
+struct McpConfirmationTokenCache {
+    entries: HashMap<ConfirmationTokenCacheKey, ConfirmationToken>,
+}
+
+impl McpConfirmationTokenCache {
+    fn insert(
+        &mut self,
+        session: McpSessionId,
+        ability: String,
+        args_hash: [u8; 32],
+        token: ConfirmationToken,
+    ) {
+        self.entries.insert((session, ability, args_hash), token);
+    }
+
+    fn take(
+        &mut self,
+        session: McpSessionId,
+        ability: &str,
+        args_hash: [u8; 32],
+    ) -> Option<ConfirmationToken> {
+        self.entries
+            .remove(&(session, ability.to_string(), args_hash))
+    }
+}
+
 pub struct McpAbilityBridge<'registry> {
     registry: &'registry AbilityRegistry,
     provider: Arc<dyn IntelligenceProvider + Send + Sync>,
@@ -121,6 +149,10 @@ pub struct McpAbilityBridge<'registry> {
     /// (McpSessionId, InvocationId) -> RenderedProvenance, set on success.
     /// Cleared on server restart. No process-global lookup.
     invocation_cache: Arc<Mutex<McpInvocationCache>>,
+    /// (McpSessionId, ability, args_hash) -> ConfirmationToken, consumed by
+    /// the next matching call_tool invocation. Token bytes never need to be
+    /// supplied through MCP ability tool args.
+    confirmation_tokens: Arc<Mutex<McpConfirmationTokenCache>>,
 }
 
 impl<'registry> McpAbilityBridge<'registry> {
@@ -154,6 +186,7 @@ impl<'registry> McpAbilityBridge<'registry> {
             tracer,
             actor_filtered_descriptors,
             invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
+            confirmation_tokens: Arc::new(Mutex::new(McpConfirmationTokenCache::default())),
         }
     }
 
@@ -244,7 +277,7 @@ impl<'registry> McpAbilityBridge<'registry> {
 
     pub async fn request_confirmation_tool(
         &self,
-        _session: McpSessionId,
+        session: McpSessionId,
         ability: &str,
         input_json: &serde_json::Value,
         tauri_bridge: &TauriAbilityBridge<'_>,
@@ -266,7 +299,21 @@ impl<'registry> McpAbilityBridge<'registry> {
             .await
             .map_err(mcp_error_from_bridge_surface_error)?;
 
+        self.insert_confirmation_token(session, ability.to_string(), args_hash, token.clone());
+
         Ok(CallToolResult::success(vec![json_content(token)]))
+    }
+
+    pub fn take_confirmation_token(
+        &self,
+        session: McpSessionId,
+        ability: &str,
+        input_json: &serde_json::Value,
+    ) -> Option<ConfirmationToken> {
+        self.confirmation_tokens
+            .lock()
+            .expect("mcp confirmation token cache poisoned")
+            .take(session, ability, confirmation_args_hash(input_json))
     }
 
     fn insert_provenance(
@@ -281,6 +328,19 @@ impl<'registry> McpAbilityBridge<'registry> {
             .lock()
             .expect("mcp invocation cache poisoned");
         cache.insert(key, provenance);
+    }
+
+    fn insert_confirmation_token(
+        &self,
+        session: McpSessionId,
+        ability: String,
+        args_hash: [u8; 32],
+        token: ConfirmationToken,
+    ) {
+        self.confirmation_tokens
+            .lock()
+            .expect("mcp confirmation token cache poisoned")
+            .insert(session, ability, args_hash, token);
     }
 }
 
@@ -538,6 +598,7 @@ mod tests {
             tracer: Arc::new(NoopAbilityTracer),
             actor_filtered_descriptors: cached_descriptors,
             invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
+            confirmation_tokens: Arc::new(Mutex::new(McpConfirmationTokenCache::default())),
         }
     }
 
@@ -803,7 +864,12 @@ mod tests {
 
     #[tokio::test]
     async fn mcp_request_confirmation_tool_returns_token_via_tauri_bridge() {
-        let registry = registry_with_abilities(vec![]);
+        let registry = registry_with_abilities(vec![descriptor(
+            "agent_write",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        )]);
         let mcp_bridge = McpAbilityBridge::new(&registry);
         let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
             &registry,

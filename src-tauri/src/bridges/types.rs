@@ -77,13 +77,37 @@ impl ConfirmationToken {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(transparent)]
+pub struct AttestationRequestId(uuid::Uuid);
+
+impl AttestationRequestId {
+    pub fn new() -> Self {
+        Self(uuid::Uuid::new_v4())
+    }
+}
+
+impl Default for AttestationRequestId {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct UserAttestationRequest {
+    pub request_id: AttestationRequestId,
     pub actor: BridgeActor,
     pub ability: String,
     pub args_hash: [u8; 32],
     pub requested_at: DateTime<Utc>,
     pub ttl_seconds: u32,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AttestationDecision {
+    Approve,
+    Reject,
 }
 
 #[derive(Debug, Clone)]

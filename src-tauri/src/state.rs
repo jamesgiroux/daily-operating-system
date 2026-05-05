@@ -8,7 +8,9 @@ use std::time::Instant;
 
 use chrono::{DateTime, Utc};
 
-use crate::bridges::UserAttestationRequest;
+use crate::bridges::{
+    AttestationDecision, AttestationRequestId, BridgeSurfaceError, UserAttestationRequest,
+};
 use crate::types::{
     CalendarEvent, Config, ExecutionRecord, ExecutionTrigger, GoogleAuthStatus, TranscriptRecord,
     WorkflowId, WorkflowStatus,
@@ -171,16 +173,46 @@ impl Default for AppLockState {
 
 #[derive(Default)]
 pub struct ConfirmationAttestationState {
-    requests: Mutex<Vec<UserAttestationRequest>>,
+    requests: Mutex<HashMap<AttestationRequestId, PendingAttestation>>,
+}
+
+struct PendingAttestation {
+    request: UserAttestationRequest,
+    decision: tokio::sync::oneshot::Sender<AttestationDecision>,
 }
 
 impl ConfirmationAttestationState {
-    pub fn record(&self, request: UserAttestationRequest) {
-        self.requests.lock().push(request);
+    pub fn record(
+        &self,
+        request: UserAttestationRequest,
+    ) -> tokio::sync::oneshot::Receiver<AttestationDecision> {
+        let (decision, receiver) = tokio::sync::oneshot::channel();
+        self.requests.lock().insert(
+            request.request_id,
+            PendingAttestation {
+                request,
+                decision,
+            },
+        );
+        receiver
     }
 
     pub fn pending_requests(&self) -> Vec<UserAttestationRequest> {
-        self.requests.lock().clone()
+        let mut requests = self
+            .requests
+            .lock()
+            .values()
+            .map(|pending| pending.request.clone())
+            .collect::<Vec<_>>();
+        requests.sort_by_key(|request| request.request_id);
+        requests
+    }
+
+    pub fn resolve(&self, request_id: AttestationRequestId, decision: AttestationDecision) {
+        let Some(pending) = self.requests.lock().remove(&request_id) else {
+            return;
+        };
+        let _ = pending.decision.send(decision);
     }
 }
 
@@ -841,13 +873,33 @@ impl AppState {
         self.merged_signal_config.read().clone()
     }
 
-    pub async fn request_confirmation_attestation(&self, request: UserAttestationRequest) {
-        self.confirmation_attestations.record(request);
-        std::future::pending::<()>().await;
+    pub async fn request_confirmation_attestation(
+        &self,
+        request: UserAttestationRequest,
+    ) -> Result<(), BridgeSurfaceError> {
+        let decision = self.confirmation_attestations.record(request);
+        // TODO(W5/W6): render this pending attestation in the Tauri UI and
+        // call resolve_attestation from the prompt action handlers.
+        match decision.await {
+            Ok(AttestationDecision::Approve) => Ok(()),
+            Ok(AttestationDecision::Reject) | Err(_) => Err(BridgeSurfaceError::AbilityUnavailable),
+        }
+    }
+
+    pub fn pending_attestations(&self) -> Vec<UserAttestationRequest> {
+        self.confirmation_attestations.pending_requests()
+    }
+
+    pub fn resolve_attestation(
+        &self,
+        request_id: AttestationRequestId,
+        decision: AttestationDecision,
+    ) {
+        self.confirmation_attestations.resolve(request_id, decision);
     }
 
     pub fn pending_confirmation_attestation_requests(&self) -> Vec<UserAttestationRequest> {
-        self.confirmation_attestations.pending_requests()
+        self.pending_attestations()
     }
 
     /// Update the active preset and recompute the cached merged signal config.

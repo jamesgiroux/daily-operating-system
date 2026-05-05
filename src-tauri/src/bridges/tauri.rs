@@ -11,8 +11,8 @@ use crate::abilities::AbilityRegistry;
 use crate::abilities::NOOP_ABILITY_TRACER;
 use crate::bridges::types::{invoke_registry_json, provider_from_context_snapshot, surface_error};
 use crate::bridges::{
-    AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
-    InvocationContext, UserAttestationRequest,
+    AbilityResponseJson, AttestationRequestId, BridgeActor, BridgeSurface, BridgeSurfaceError,
+    ConfirmationToken, InvocationContext, UserAttestationRequest,
 };
 use crate::services::context::Clock;
 use crate::services::context::ExecutionMode;
@@ -51,10 +51,7 @@ impl UserAttestationHost for AppState {
         &'a self,
         request: UserAttestationRequest,
     ) -> Pin<Box<dyn Future<Output = Result<(), BridgeSurfaceError>> + Send + 'a>> {
-        Box::pin(async move {
-            self.request_confirmation_attestation(request).await;
-            Ok(())
-        })
+        Box::pin(async move { self.request_confirmation_attestation(request).await })
     }
 }
 
@@ -133,6 +130,10 @@ impl<'registry> TauriAbilityBridge<'registry> {
             return Err(BridgeSurfaceError::AbilityUnavailable);
         }
 
+        if !self.ability_available_for_confirmation(actor, &ability) {
+            return Err(BridgeSurfaceError::AbilityUnavailable);
+        }
+
         self.consume_rate_limit(actor, &ability, user_attestation.requested_at)?;
 
         tokio::time::timeout(
@@ -161,12 +162,25 @@ impl<'registry> TauriAbilityBridge<'registry> {
         ttl_seconds: u32,
     ) -> UserAttestationRequest {
         UserAttestationRequest {
+            request_id: AttestationRequestId::new(),
             actor,
             ability,
             args_hash,
             requested_at: self.now(),
             ttl_seconds,
         }
+    }
+
+    fn ability_available_for_confirmation(&self, actor: BridgeActor, ability: &str) -> bool {
+        self.registry
+            .iter_for(actor.registry_actor())
+            .any(|descriptor| {
+                descriptor.name == ability
+                    && descriptor
+                        .policy
+                        .allowed_modes
+                        .contains(&ExecutionMode::Live)
+            })
     }
 
     fn now(&self) -> DateTime<Utc> {
@@ -209,8 +223,8 @@ mod tests {
     use std::sync::Arc;
     use std::time::Duration;
 
-    use chrono::TimeZone;
     use async_trait::async_trait;
+    use chrono::TimeZone;
     use serde_json::json;
     use tokio::sync::Notify;
 
@@ -219,7 +233,7 @@ mod tests {
     use crate::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor,
     };
-    use crate::bridges::confirmation_args_hash;
+    use crate::bridges::{confirmation_args_hash, AttestationDecision};
     use crate::bridges::types::{BridgeRejectReason, PRE_DISPATCH_RESOLUTION_ORDER};
     use crate::intelligence::provider::{
         Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
@@ -227,6 +241,7 @@ mod tests {
     };
 
     const USER_ACTORS: &[Actor] = &[Actor::User];
+    const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
     const ADMIN_ACTORS: &[Actor] = &[Actor::Admin];
     const USER_SYSTEM_ACTORS: &[Actor] = &[Actor::User, Actor::System];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
@@ -438,6 +453,7 @@ mod tests {
         input: &serde_json::Value,
     ) -> UserAttestationRequest {
         UserAttestationRequest {
+            request_id: AttestationRequestId::new(),
             actor,
             ability: ability.to_string(),
             args_hash: confirmation_args_hash(input),
@@ -558,7 +574,13 @@ mod tests {
 
     #[tokio::test]
     async fn tauri_bridge_issue_confirmation_token_blocks_on_user_attestation() {
-        let registry = registry(vec![]);
+        let registry = registry(vec![descriptor(
+            "agent_write",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
         let state = Arc::new(AppState::new());
         let host: Arc<dyn UserAttestationHost> = state.clone();
         let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host);
@@ -580,8 +602,90 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn tauri_bridge_app_state_resolve_attestation_approve_unblocks_token_issuance() {
+        let registry = registry(vec![descriptor(
+            "agent_write",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
+        let state = Arc::new(AppState::new());
+        let host: Arc<dyn UserAttestationHost> = state.clone();
+        let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host);
+        let request =
+            user_attestation_request(BridgeActor::Agent, "agent_write", &json!({ "x": 1 }));
+
+        let issue = bridge.issue_confirmation_token(
+            BridgeActor::Agent,
+            "agent_write".to_string(),
+            request.args_hash,
+            request.clone(),
+        );
+        tokio::pin!(issue);
+
+        let result = tokio::time::timeout(Duration::from_millis(25), &mut issue).await;
+        assert!(result.is_err());
+        let pending = state.pending_attestations();
+        assert_eq!(pending, vec![request.clone()]);
+
+        state.resolve_attestation(pending[0].request_id, AttestationDecision::Approve);
+        let token = tokio::time::timeout(Duration::from_secs(1), &mut issue)
+            .await
+            .unwrap()
+            .unwrap();
+
+        assert!(token.matches(&BridgeActor::Agent, "agent_write", &request.args_hash));
+        assert!(state.pending_attestations().is_empty());
+    }
+
+    #[tokio::test]
+    async fn tauri_bridge_app_state_resolve_attestation_reject_yields_byte_equal_unavailable() {
+        let registry = registry(vec![descriptor(
+            "agent_write",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
+        let state = Arc::new(AppState::new());
+        let host: Arc<dyn UserAttestationHost> = state.clone();
+        let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host);
+        let request =
+            user_attestation_request(BridgeActor::Agent, "agent_write", &json!({ "x": 1 }));
+
+        let issue = bridge.issue_confirmation_token(
+            BridgeActor::Agent,
+            "agent_write".to_string(),
+            request.args_hash,
+            request.clone(),
+        );
+        tokio::pin!(issue);
+
+        let result = tokio::time::timeout(Duration::from_millis(25), &mut issue).await;
+        assert!(result.is_err());
+        let pending = state.pending_attestations();
+        assert_eq!(pending, vec![request]);
+
+        state.resolve_attestation(pending[0].request_id, AttestationDecision::Reject);
+        let err = tokio::time::timeout(Duration::from_secs(1), &mut issue)
+            .await
+            .unwrap()
+            .unwrap_err();
+
+        assert_eq!(serde_json::to_vec(&err).unwrap(), br#""ability_unavailable""#);
+        assert!(state.pending_attestations().is_empty());
+    }
+
+    #[tokio::test]
     async fn tauri_bridge_issue_confirmation_token_rate_limited_per_actor_ability() {
-        let registry = registry(vec![]);
+        let registry = registry(vec![descriptor(
+            "agent_write",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
         let host = Arc::new(ApprovingAttestationHost::default());
         let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host.clone());
         let request =
@@ -612,6 +716,63 @@ mod tests {
 
         assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
         assert_eq!(host.requests.lock().len(), 3);
+    }
+
+    #[tokio::test]
+    async fn tauri_bridge_request_confirmation_unknown_ability_returns_byte_equal_unavailable_without_quota_consumed(
+    ) {
+        let registry = registry(vec![descriptor(
+            "agent_write",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
+        let host = Arc::new(ApprovingAttestationHost::default());
+        let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host);
+        let request =
+            user_attestation_request(BridgeActor::Agent, "rotated_fake", &json!({ "x": 1 }));
+
+        let err = bridge
+            .issue_confirmation_token(
+                BridgeActor::Agent,
+                "rotated_fake".to_string(),
+                request.args_hash,
+                request,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(serde_json::to_vec(&err).unwrap(), br#""ability_unavailable""#);
+        assert!(bridge.rate_limits.lock().is_empty());
+    }
+
+    #[tokio::test]
+    async fn tauri_bridge_request_confirmation_unknown_ability_does_not_show_attestation_prompt() {
+        let registry = registry(vec![descriptor(
+            "agent_write",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+            success_erased,
+        )]);
+        let host = Arc::new(ApprovingAttestationHost::default());
+        let bridge = TauriAbilityBridge::new_with_attestation_host(&registry, host.clone());
+        let request =
+            user_attestation_request(BridgeActor::Agent, "rotated_fake", &json!({ "x": 1 }));
+
+        let err = bridge
+            .issue_confirmation_token(
+                BridgeActor::Agent,
+                "rotated_fake".to_string(),
+                request.args_hash,
+                request,
+            )
+            .await
+            .unwrap_err();
+
+        assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
+        assert!(host.requests.lock().is_empty());
     }
 
     #[tokio::test]

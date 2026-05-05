@@ -7,7 +7,8 @@ pub mod types;
 pub mod worker;
 
 pub use types::{
-    AbilityInvokeError, AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError,
-    confirmation_args_hash, ConfirmationToken, InvocationContext, InvocationProvenanceCache,
-    McpSessionId, RenderedProvenance, UserAttestationRequest,
+    confirmation_args_hash, AbilityInvokeError, AbilityResponseJson, AttestationDecision,
+    AttestationRequestId, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
+    InvocationContext, InvocationProvenanceCache, McpSessionId, RenderedProvenance,
+    UserAttestationRequest,
 };

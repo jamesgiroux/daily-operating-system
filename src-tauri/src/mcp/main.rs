@@ -664,8 +664,10 @@ pub async fn invoke_mcp_ability_tool(
 ) -> Result<CallToolResult, McpError> {
     let ability_name = request.name.to_string();
     let input_json = serde_json::Value::Object(request.arguments.unwrap_or_default());
+    let confirmation =
+        ability_bridge.take_confirmation_token(session_id, &ability_name, &input_json);
     let response = ability_bridge
-        .invoke_ability(session_id, &ability_name, input_json, false, None)
+        .invoke_ability(session_id, &ability_name, input_json, false, confirmation)
         .await
         .map_err(mcp_error_from_bridge_surface_error)?;
     let content = Content::json(response)?;
@@ -1003,6 +1005,7 @@ async fn main() -> anyhow::Result<()> {
 mod tests {
     use std::future::Future;
     use std::pin::Pin;
+    use std::sync::Arc;
 
     use serde_json::json;
 
@@ -1011,6 +1014,8 @@ mod tests {
     use dailyos_lib::abilities::{
         AbilityCategory, AbilityContext, AbilityError, AbilityRegistry, Actor,
     };
+    use dailyos_lib::bridges::tauri::UserAttestationHost;
+    use dailyos_lib::bridges::UserAttestationRequest;
     use dailyos_lib::services::context::ExecutionMode;
 
     const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
@@ -1074,6 +1079,11 @@ mod tests {
         }
     }
 
+    fn confirmation_descriptor(mut descriptor: AbilityDescriptor) -> AbilityDescriptor {
+        descriptor.policy.requires_confirmation = true;
+        descriptor
+    }
+
     fn closed_object_schema() -> serde_json::Value {
         json!({
             "type": "object",
@@ -1106,6 +1116,18 @@ mod tests {
     fn tool_result_json(result: &CallToolResult) -> serde_json::Value {
         let text = result.content[0].as_text().unwrap().text.as_str();
         serde_json::from_str(text).unwrap()
+    }
+
+    #[derive(Default)]
+    struct ApprovingAttestationHost;
+
+    impl UserAttestationHost for ApprovingAttestationHost {
+        fn request_user_attestation<'a>(
+            &'a self,
+            _request: UserAttestationRequest,
+        ) -> Pin<Box<dyn Future<Output = Result<(), BridgeSurfaceError>> + Send + 'a>> {
+            Box::pin(async { Ok(()) })
+        }
     }
 
     #[test]
@@ -1256,6 +1278,134 @@ mod tests {
         let value: serde_json::Value = serde_json::from_str(text).unwrap();
         assert_eq!(value["ability_name"], "agent_fixture_ability");
         assert_eq!(value["data"]["input"]["subject"], "dailyos");
+    }
+
+    #[tokio::test]
+    async fn mcp_call_tool_consumes_confirmation_token_via_session_cache() {
+        let registry = registry_with(vec![confirmation_descriptor(descriptor(
+            "agent_confirmed",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        ))]);
+        let ability_bridge = McpAbilityBridge::new(&registry);
+        let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
+            &registry,
+            Arc::new(ApprovingAttestationHost),
+        );
+        let session_id = session(1);
+        let input = json!({ "subject": "dailyos" });
+
+        let confirmation_result = invoke_mcp_request_confirmation_tool(
+            &ability_bridge,
+            session_id,
+            request(
+                "request_confirmation",
+                json!({ "ability": "agent_confirmed", "input_json": input.clone() }),
+            ),
+            &tauri_bridge,
+        )
+        .await
+        .unwrap();
+        assert_eq!(confirmation_result.is_error, Some(false));
+
+        let ability_result = invoke_mcp_ability_tool(
+            &ability_bridge,
+            session_id,
+            request("agent_confirmed", input.clone()),
+        )
+        .await
+        .unwrap();
+        assert_eq!(ability_result.is_error, Some(false));
+
+        let second_call =
+            invoke_mcp_ability_tool(&ability_bridge, session_id, request("agent_confirmed", input))
+                .await
+                .unwrap_err();
+        let expected = mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable);
+        assert_eq!(
+            serde_json::to_vec(&second_call).unwrap(),
+            serde_json::to_vec(&expected).unwrap()
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_call_tool_with_no_token_for_privileged_ability_returns_byte_equal_unavailable() {
+        let registry = registry_with(vec![confirmation_descriptor(descriptor(
+            "agent_confirmed",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        ))]);
+        let ability_bridge = McpAbilityBridge::new(&registry);
+
+        let err = invoke_mcp_ability_tool(
+            &ability_bridge,
+            session(1),
+            request("agent_confirmed", json!({ "subject": "dailyos" })),
+        )
+        .await
+        .unwrap_err();
+        let expected = mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable);
+
+        assert_eq!(
+            serde_json::to_vec(&err).unwrap(),
+            serde_json::to_vec(&expected).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_vec(&err.data).unwrap(),
+            br#""ability_unavailable""#
+        );
+    }
+
+    #[tokio::test]
+    async fn mcp_call_tool_with_mismatched_args_after_token_issuance_returns_byte_equal_unavailable(
+    ) {
+        let registry = registry_with(vec![confirmation_descriptor(descriptor(
+            "agent_confirmed",
+            AbilityCategory::Read,
+            AGENT_ACTORS,
+            LIVE_MODES,
+        ))]);
+        let ability_bridge = McpAbilityBridge::new(&registry);
+        let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
+            &registry,
+            Arc::new(ApprovingAttestationHost),
+        );
+        let session_id = session(1);
+
+        invoke_mcp_request_confirmation_tool(
+            &ability_bridge,
+            session_id,
+            request(
+                "request_confirmation",
+                json!({
+                    "ability": "agent_confirmed",
+                    "input_json": { "subject": "issued" }
+                }),
+            ),
+            &tauri_bridge,
+        )
+        .await
+        .unwrap();
+
+        let err = invoke_mcp_ability_tool(
+            &ability_bridge,
+            session_id,
+            request("agent_confirmed", json!({ "subject": "different" })),
+        )
+        .await
+        .unwrap_err();
+        let expected = mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable);
+
+        assert_eq!(
+            serde_json::to_vec(&err).unwrap(),
+            serde_json::to_vec(&expected).unwrap()
+        );
+        assert_eq!(
+            serde_json::to_vec(&err.data).unwrap(),
+            br#""ability_unavailable""#
+        );
     }
 
     #[tokio::test]
