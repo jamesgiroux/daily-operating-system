@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::abilities::tracer::AbilityTracer;
+use crate::abilities::tracer::{AbilityTracer, SpanHandle};
 use crate::abilities::provenance::InvocationId;
 use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
@@ -230,6 +230,7 @@ pub(crate) async fn invoke_registry_json<'a>(
         &invocation,
         &canonical_ability_name,
         &args_hash,
+        tracer,
         services.clock.now(),
     )?;
 
@@ -378,6 +379,7 @@ fn verify_confirmation_token(
     invocation: &InvocationContext<'_>,
     ability_name: &str,
     args_hash: &[u8; 32],
+    tracer: &dyn AbilityTracer,
     now: DateTime<Utc>,
 ) -> Result<(), BridgeSurfaceError> {
     if !requires_confirmation(descriptor) {
@@ -385,14 +387,70 @@ fn verify_confirmation_token(
     }
 
     let Some(token) = invocation.confirmation else {
+        record_confirmation_token_rejection(tracer, invocation.actor, ability_name, "missing");
         return Err(BridgeSurfaceError::AbilityUnavailable);
     };
 
-    if token.is_expired(now) || !token.matches(&invocation.actor, ability_name, args_hash) {
+    if token.is_expired(now) {
+        record_confirmation_token_rejection(tracer, invocation.actor, ability_name, "expired");
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    if token.ability.as_str() != ability_name {
+        record_confirmation_token_rejection(
+            tracer,
+            invocation.actor,
+            ability_name,
+            "unknown_ability",
+        );
+        return Err(BridgeSurfaceError::AbilityUnavailable);
+    }
+
+    if token.actor != invocation.actor || token.args_hash != *args_hash {
+        record_confirmation_token_rejection(
+            tracer,
+            invocation.actor,
+            ability_name,
+            "args_mismatch",
+        );
         return Err(BridgeSurfaceError::AbilityUnavailable);
     }
 
     Ok(())
+}
+
+fn record_confirmation_token_rejection(
+    tracer: &dyn AbilityTracer,
+    actor: BridgeActor,
+    ability_name: &str,
+    reason: &'static str,
+) {
+    let actor = bridge_actor_label(actor);
+    log::debug!(
+        target: "dailyos_lib::bridges::confirmation",
+        "confirmation token rejected actor={} ability_name={} reason={}",
+        actor,
+        ability_name,
+        reason
+    );
+    tracer.record_event(
+        &SpanHandle::noop(),
+        "confirmation_token_rejected",
+        serde_json::json!({
+            "actor": actor,
+            "ability_name": ability_name,
+            "reason": reason,
+        }),
+    );
+}
+
+fn bridge_actor_label(actor: BridgeActor) -> &'static str {
+    match actor {
+        BridgeActor::User => "user",
+        BridgeActor::Agent => "agent",
+        BridgeActor::Admin => "admin",
+        BridgeActor::System => "system",
+    }
 }
 
 fn requires_confirmation(descriptor: &AbilityDescriptor) -> bool {
@@ -861,6 +919,173 @@ impl InvocationProvenanceCache {
                 .current_serialized_bytes
                 .saturating_sub(entry.serialized_len);
             self.order.retain(|candidate| candidate != key);
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use std::pin::Pin;
+    use std::sync::Mutex;
+
+    fn ok_erased<'a>(
+        _ctx: &'a AbilityContext<'a>,
+        input: serde_json::Value,
+    ) -> Pin<
+        Box<dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>,
+    > {
+        Box::pin(async move { Ok(input) })
+    }
+
+    fn closed_object_schema() -> serde_json::Value {
+        serde_json::json!({
+            "type": "object",
+            "additionalProperties": false
+        })
+    }
+
+    fn confirmation_descriptor() -> AbilityDescriptor {
+        AbilityDescriptor {
+            name: "confirmation_fixture",
+            version: "0.1.0",
+            schema_version: 1,
+            category: AbilityCategory::Transform,
+            policy: AbilityPolicy {
+                allowed_actors: &[Actor::User],
+                allowed_modes: &[ExecutionMode::Live],
+                requires_confirmation: true,
+                may_publish: false,
+            },
+            composes: &[],
+            mutates: &[],
+            experimental: false,
+            registered_at: None,
+            signal_policy: SignalPolicy::default(),
+            invoke_erased: ok_erased,
+            input_schema: closed_object_schema,
+            output_schema: closed_object_schema,
+        }
+    }
+
+    #[derive(Default)]
+    struct RecordingTracer {
+        events: Mutex<Vec<(String, serde_json::Value)>>,
+    }
+
+    impl RecordingTracer {
+        fn rejection_reasons(&self) -> Vec<String> {
+            self.events
+                .lock()
+                .unwrap()
+                .iter()
+                .filter(|(name, _)| name == "confirmation_token_rejected")
+                .map(|(_, fields)| {
+                    fields
+                        .get("reason")
+                        .and_then(serde_json::Value::as_str)
+                        .expect("reason field")
+                        .to_string()
+                })
+                .collect()
+        }
+    }
+
+    impl AbilityTracer for RecordingTracer {
+        fn start_span(&self, _name: &str) -> SpanHandle {
+            SpanHandle { id: 1 }
+        }
+
+        fn record_event(&self, _span: &SpanHandle, name: &str, fields: serde_json::Value) {
+            self.events
+                .lock()
+                .unwrap()
+                .push((name.to_string(), fields));
+        }
+    }
+
+    fn invocation<'a>(confirmation: Option<&'a ConfirmationToken>) -> InvocationContext<'a> {
+        InvocationContext {
+            actor: BridgeActor::User,
+            mode: ExecutionMode::Live,
+            surface: BridgeSurface::TauriApp,
+            dry_run: false,
+            confirmation,
+        }
+    }
+
+    fn confirmation_token(
+        issued_at: DateTime<Utc>,
+        ability: &str,
+        args_hash: [u8; 32],
+    ) -> ConfirmationToken {
+        ConfirmationToken {
+            actor: BridgeActor::User,
+            ability: ability.to_string(),
+            args_hash,
+            issued_at,
+            ttl_seconds: 60,
+            token: "opaque-test-token".to_string(),
+        }
+    }
+
+    #[test]
+    fn confirmation_token_rejection_logs_branch_internally_without_byte_equal_loss() {
+        let descriptor = confirmation_descriptor();
+        let now = DateTime::parse_from_rfc3339("2026-05-05T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        let args_hash = confirmation_args_hash(&serde_json::json!({"ok": true}));
+        let different_args_hash = confirmation_args_hash(&serde_json::json!({"ok": false}));
+        let expired_token = confirmation_token(
+            now - chrono::Duration::seconds(60),
+            "confirmation_fixture",
+            args_hash,
+        );
+        let wrong_ability_token = confirmation_token(now, "other_ability", args_hash);
+        let wrong_args_token = confirmation_token(now, "confirmation_fixture", different_args_hash);
+        let tracer = RecordingTracer::default();
+        let expected_error_bytes =
+            serde_json::to_vec(&BridgeSurfaceError::AbilityUnavailable).unwrap();
+
+        for (context, expected_reason) in [
+            (invocation(None), "missing"),
+            (invocation(Some(&expired_token)), "expired"),
+            (invocation(Some(&wrong_ability_token)), "unknown_ability"),
+            (invocation(Some(&wrong_args_token)), "args_mismatch"),
+        ] {
+            let error = verify_confirmation_token(
+                &descriptor,
+                &context,
+                "confirmation_fixture",
+                &args_hash,
+                &tracer,
+                now,
+            )
+            .expect_err("rejection should preserve external surface error");
+
+            assert_eq!(serde_json::to_vec(&error).unwrap(), expected_error_bytes);
+            assert_eq!(error, BridgeSurfaceError::AbilityUnavailable);
+            assert!(tracer
+                .rejection_reasons()
+                .iter()
+                .any(|reason| reason == expected_reason));
+        }
+
+        let events = tracer.events.lock().unwrap();
+        assert_eq!(events.len(), 4);
+        for (_, fields) in events.iter() {
+            assert_eq!(fields.get("actor").and_then(serde_json::Value::as_str), Some("user"));
+            assert_eq!(
+                fields
+                    .get("ability_name")
+                    .and_then(serde_json::Value::as_str),
+                Some("confirmation_fixture")
+            );
+            let rendered = fields.to_string();
+            assert!(!rendered.contains("args_hash"));
+            assert!(!rendered.contains("opaque-test-token"));
         }
     }
 }

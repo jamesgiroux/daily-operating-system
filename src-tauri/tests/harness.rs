@@ -700,6 +700,40 @@ fn diff_rendered_provenance_strips_internal_ids_before_comparison() {
 }
 
 #[test]
+fn diff_rendered_documented_as_incomplete_with_todo_marker() {
+    let scoring_source = fs::read_to_string(
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/harness/scoring.rs"),
+    )
+    .expect("read scoring source");
+
+    assert!(scoring_source.contains("Known incomplete"));
+    assert!(scoring_source.contains(
+        "TODO: replace with ADR-0108 actor renderer when W5/W6 lands"
+    ));
+}
+
+#[test]
+#[ignore = "documents desired ADR-0108 allowlist behavior once W5/W6 actor rendering lands"]
+fn diff_rendered_provenance_adr_0108_renderer_allows_only_public_fields() {
+    let diffs = diff_rendered_provenance(
+        &json!({
+            "summary": "visible",
+            "sources": [{"title": "source-a"}]
+        }),
+        &json!({
+            "summary": "visible",
+            "sources": [{"title": "source-a"}],
+            "debug_context": {
+                "raw_prompt": "fixture prompt",
+                "workspace_path": "/tmp/dailyos-fixture"
+            }
+        }),
+    );
+
+    assert!(diffs.is_empty(), "{diffs:?}");
+}
+
+#[test]
 fn canonical_json_eq_handles_object_key_order() {
     assert!(canonical_json_eq(
         &json!({"b": 2, "a": {"d": 4, "c": 3}}),

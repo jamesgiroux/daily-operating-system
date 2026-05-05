@@ -119,6 +119,10 @@ pub fn diff_internal_provenance(expected: &Value, actual: &Value) -> Vec<Diff> {
 }
 
 /// Diff rendered surface output only (MCP/Tauri bridge surface).
+///
+/// Known incomplete: this currently strips key patterns instead of applying
+/// ADR-0108 actor-specific rendering.
+// TODO: replace with ADR-0108 actor renderer when W5/W6 lands
 pub fn diff_rendered_provenance(expected: &Value, actual: &Value) -> Vec<Diff> {
     let expected = strip_rendered_internal_provenance_fields(expected);
     let actual = strip_rendered_internal_provenance_fields(actual);

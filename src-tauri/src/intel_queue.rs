@@ -2724,6 +2724,13 @@ fn run_finalize_trust_recompute(
                             claim.id,
                             e
                         );
+                        record_trust_recompute_pipeline_failure(
+                            &ctx,
+                            db,
+                            input,
+                            "trust_compile_failed",
+                            Some(&format!("claim_id={} error={e}", claim.id)),
+                        );
                         continue;
                     }
                 };
@@ -2739,6 +2746,13 @@ fn run_finalize_trust_recompute(
                         "TrustRecompute: update_claim_trust failed for claim {}; preserving prior signals: {}",
                         claim.id,
                         e
+                    );
+                    record_trust_recompute_pipeline_failure(
+                        &ctx,
+                        db,
+                        input,
+                        "trust_update_failed",
+                        Some(&format!("claim_id={} error={e}", claim.id)),
                     );
                     continue;
                 }
@@ -3150,7 +3164,7 @@ fn record_trust_recompute_pipeline_failure(
         0,
     ) {
         log::warn!(
-            "TrustRecompute: failed to record non-content extractor error for {}:{}: {}",
+            "TrustRecompute: failed to record pipeline failure for {}:{}: {}",
             input.entity_type,
             input.entity_id,
             e
@@ -4529,6 +4543,58 @@ mod tests {
         assert_eq!(read_trust_columns(&db, &claim_id), before);
         assert_eq!(signal_count(&db, "ClaimTrustChanged"), 0);
         assert_eq!(signal_count(&db, "ConfidenceEvidence"), 0);
+        assert_eq!(pipeline_failure_count(&db, "trust_compile_failed"), 1);
+    }
+
+    #[test]
+    fn record_trust_recompute_pipeline_failure_emits_for_compile_failure_and_update_failure() {
+        let db = trust_test_db();
+
+        let compile_account_id = "acct-pipeline-compile-error";
+        let compile_data_source = "bad_pipeline_source_weight";
+        seed_trust_account(&db, compile_account_id);
+        let compile_claim_id = seed_trust_claim(
+            &db,
+            compile_account_id,
+            "The account has malformed source reliability input.",
+            compile_data_source,
+        );
+        seed_trust_corroboration(&db, &compile_claim_id, "glean");
+        seed_malformed_source_weight(&db, compile_data_source);
+
+        run_trust_finalize(&db, compile_account_id, FinalizeMode::TrustRecompute);
+
+        assert_eq!(pipeline_failure_count(&db, "trust_compile_failed"), 1);
+        assert_eq!(pipeline_failure_count(&db, "trust_update_failed"), 0);
+
+        let update_account_id = "acct-pipeline-update-error";
+        seed_trust_account(&db, update_account_id);
+        let update_claim_id = seed_trust_claim(
+            &db,
+            update_account_id,
+            "The account trust update should report persistence failure.",
+            "unit_test_source",
+        );
+        seed_trust_corroboration(&db, &update_claim_id, "glean");
+        let trigger_sql = format!(
+            "CREATE TRIGGER trust_update_failure_fixture
+             BEFORE UPDATE OF trust_score, trust_computed_at, trust_version
+             ON intelligence_claims
+             WHEN OLD.id = '{}'
+             BEGIN
+               SELECT RAISE(ABORT, 'trust update fixture failure');
+             END",
+            update_claim_id.replace('\'', "''")
+        );
+        db.conn_ref()
+            .execute(&trigger_sql, [])
+            .expect("install update failure trigger");
+
+        run_trust_finalize(&db, update_account_id, FinalizeMode::TrustRecompute);
+
+        assert_eq!(pipeline_failure_count(&db, "trust_compile_failed"), 1);
+        assert_eq!(pipeline_failure_count(&db, "trust_update_failed"), 1);
+        assert_eq!(signal_count(&db, "ClaimTrustChanged"), 0);
     }
 
     #[test]
