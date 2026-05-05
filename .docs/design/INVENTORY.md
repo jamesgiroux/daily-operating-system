@@ -1,6 +1,6 @@
 # DailyOS surface inventory
 
-**Last updated:** 2026-05-03 · synthesized from `src/` analysis (DOS-363).
+**Last updated:** 2026-05-05 · reconciled against `src/router.tsx`, reference HTML, and `surface-manifest.json`.
 
 A surface-by-surface inventory of every DailyOS UI rendered at app-shell scale: routed pages, full-screen non-route components, and significant dialogs. The companion files for navigating these — index page (DOS-364) and JTBD journey maps (DOS-365) — read from this list.
 
@@ -20,53 +20,57 @@ Significant dialogs aren't auto-tracked (no clean grep) — add them manually wh
 |---|---|
 | `referenced` | Has `.docs/design/reference/surfaces/<name>.html` |
 | `spec` | Has `.docs/design/surfaces/<Name>.md` canonical spec |
+| `covered-by` | No standalone reference/spec, but an equivalent canonical route or reference is explicitly named |
+| `legacy` | Deprecated or non-routed implementation retained for migration context |
 | `documented` | Prose mention in `NAVIGATION-ARCHITECTURE.md` / `INTERACTION-PATTERNS.md` only — softer than `referenced` |
-| `gap` | None of the above |
+| `gap` | Missing expected standalone reference and/or spec coverage; combine with `referenced` when a reference exists but the canonical spec is still missing |
 
 A surface can hold multiple states (e.g. `spec+referenced`).
 
 ## Summary
 
-- **25 routed pages** in `src/pages/*.tsx`
+- **26 router routes** in `src/router.tsx`
+- **1 legacy non-route page implementation** retained for migration context (`AccountDetailEditorial`)
 - **5 full-screen non-route surfaces** in `src/components/`
 - **19 significant dialogs / sheets / banners** across `src/`
 
-| Bucket | Total | `spec` | `referenced` | `gap` |
-|---|---:|---:|---:|---:|
-| Routed pages | 25 | 4 | 15 | 10 |
-| Non-route full-screen | 5 | 0 | 0 | 5 (3 `documented`-only) |
-| Dialogs / sheets | 19 | 2 | 2 | 15 (10 `documented`-only) |
+| Bucket | Total | `spec` | `referenced` | `covered-by` | `legacy` | `gap` |
+|---|---:|---:|---:|---:|---:|---:|
+| Router routes | 26 | 19 | 26 | 1 | 0 | 0 |
+| Legacy page implementations | 1 | 0 | 0 | 1 | 1 | 0 |
+| Non-route full-screen | 5 | 1 | 10 chapter/state refs | 0 | 0 | 1 (3 `documented`-only) |
+| Dialogs / sheets | 19 | 2 | 2 | 0 | 0 | 15 (10 `documented`-only) |
 
 ## Routed pages — `src/pages/*.tsx`
 
 | Surface | File | Route | JTBD | State | Reference | Spec | Linear gap | Notes |
 |---|---|---|---|---|---|---|---|---|
-| AccountDetailEditorial | `src/pages/AccountDetailEditorial.tsx` | — | Review a legacy flat account dossier with outlook, products, state of play, stakeholders, timeline, and work. | `referenced` | `account.html` | — | — | **Consolidation candidate.** Deprecated, no longer a route target; duplicate of AccountDetailPage. CSS module still imported by child components. |
-| AccountDetailPage | `src/pages/AccountDetailPage.tsx` | `/accounts/$accountId` | Review an account's health, context, and work in a three-view editorial dossier. | `referenced` | `account.html` | — | — | Current route target. Consolidation candidate with deprecated AccountDetailEditorial. |
-| AccountHealthPage | `src/pages/AccountHealthPage.tsx` | `/accounts/$accountId/reports/account_health` | Generate and edit a slide-based account health review. | `gap` | — | — | [DOS-370](https://linear.app/a8c/issue/DOS-370) | Report surface — DOS-370 covers all 7 report types. |
+| AccountDetailEditorial | `src/pages/AccountDetailEditorial.tsx` | — | Review a legacy flat account dossier with outlook, products, state of play, stakeholders, timeline, and work. | `legacy+covered-by` | `account.html` via AccountDetailPage | — | — | **Consolidation candidate.** Deprecated, no longer a route target; `account.html` now points canonical coverage at AccountDetailPage. CSS module still imported by child components. |
+| AccountDetailPage | `src/pages/AccountDetailPage.tsx` | `/accounts/$accountId` | Review an account's health, context, and work in a three-view editorial dossier. | `referenced+spec` | `account.html` | `surfaces/AccountDetailPage.md` | — | Current route target. Consolidation candidate with deprecated AccountDetailEditorial. |
+| AccountHealthPage | `src/pages/AccountHealthPage.tsx` | `/accounts/$accountId/reports/account_health` | Generate and edit a slide-based account health review. | `referenced+spec` | `reports/account-health.html` | `surfaces/AccountHealthPage.md` | — | Dedicated report spec added during the parity pass. |
 | AccountsPage | `src/pages/AccountsPage.tsx` | `/accounts` | Browse, search, filter, create, and discover accounts. | `referenced` | `accounts.html` | — | — | Add-new flow tracked separately by DOS-369. |
-| ActionDetailPage | `src/pages/ActionDetailPage.tsx` | `/actions/$actionId` | Inspect and update a single action — priority, due date, links, status, Linear push. | `gap` | — | — | [DOS-368](https://linear.app/a8c/issue/DOS-368) | `actions.html` covers list view only. |
-| ActionsPage | `src/pages/ActionsPage.tsx` | `/actions` | Review suggested, active, and completed actions by priority and meeting context. | `referenced` | `actions.html` | — | — | — |
-| BookOfBusinessPage | `src/pages/BookOfBusinessPage.tsx` | `/me/reports/book_of_business` | Generate a leadership-ready portfolio review across the user's customer book. | `gap` | — | — | [DOS-370](https://linear.app/a8c/issue/DOS-370) | Report surface. |
+| ActionDetailPage | `src/pages/ActionDetailPage.tsx` | `/actions/$actionId` | Inspect and update a single action — priority, due date, links, status, Linear push. | `referenced+spec` | `action-detail.html` | `surfaces/ActionDetailPage.md` | — | Added as standalone routed reference. |
+| ActionsPage | `src/pages/ActionsPage.tsx` | `/actions` | Review suggested, active, and completed actions by priority and meeting context. | `referenced+spec` | `actions.html` | `surfaces/ActionsPage.md` | — | — |
+| BookOfBusinessPage | `src/pages/BookOfBusinessPage.tsx` | `/me/reports/book_of_business` | Generate a leadership-ready portfolio review across the user's customer book. | `referenced+spec` | `reports/book-of-business.html` | `surfaces/BookOfBusinessPage.md` | — | Dedicated report spec added during the parity pass. |
 | DailyBriefing (DashboardPage) | inline in `src/router.tsx` | `/` | View today's briefing, meeting prep, and what changed since the last scan. | `referenced+spec` | `briefing.html` | `surfaces/DailyBriefing.md` | — | Inline route component. Renamed from Dashboard per [DOS-360](https://linear.app/a8c/issue/DOS-360). |
-| EbrQbrPage | `src/pages/EbrQbrPage.tsx` | `/accounts/$accountId/reports/ebr_qbr` | Generate and edit a customer-facing executive/quarterly business review deck. | `gap` | — | — | [DOS-370](https://linear.app/a8c/issue/DOS-370) | Report surface. |
-| EmailsPage | `src/pages/EmailsPage.tsx` | `/emails` | Triage email intelligence, extract commitments and signals, act on reply debt. | `gap` | — | — | [DOS-367](https://linear.app/a8c/issue/DOS-367) | `inbox.html` covers the inbox; correspondent surface missing. |
-| HistoryPage | `src/pages/HistoryPage.tsx` | `/history` | Review past inbox processing activity and where files were classified or routed. | `gap` | — | — | **No DS-SURF issue filed** | CSS exists but no reference render or spec. Worth filing a follow-up. |
+| EbrQbrPage | `src/pages/EbrQbrPage.tsx` | `/accounts/$accountId/reports/ebr_qbr` | Generate and edit a customer-facing executive/quarterly business review deck. | `referenced+spec` | `reports/ebr-qbr.html` | `surfaces/EbrQbrPage.md` | — | Dedicated report spec added during the parity pass. |
+| EmailsPage | `src/pages/EmailsPage.tsx` | `/emails` | Triage email intelligence, extract commitments and signals, act on reply debt. | `referenced+spec` | `emails.html` | `surfaces/EmailsPage.md` | — | The Correspondent now has a standalone routed reference. |
+| HistoryPage | `src/pages/HistoryPage.tsx` | `/history` | Review past inbox processing activity and where files were classified or routed. | `referenced+spec` | `history.html` | `surfaces/HistoryPage.md` | — | Processing-history companion to InboxPage and EmailsPage. |
 | InboxPage | `src/pages/InboxPage.tsx` | `/inbox` | Drop or import files, classify them, and route them to the right account/project. | `referenced` | `inbox.html` | — | — | Processing history is HistoryPage. |
-| MePage | `src/pages/MePage.tsx` | `/me` | Maintain the user's profile, priorities, context, attachments, personal report entry points. | `referenced` | `me.html` | — | — | Personal reports route to WeeklyImpact, MonthlyWrapped, BookOfBusiness. |
+| MePage | `src/pages/MePage.tsx` | `/me` | Maintain the user's profile, priorities, context, attachments, personal report entry points. | `referenced+spec` | `me.html` | `surfaces/MePage.md` | — | Personal reports route to WeeklyImpact, MonthlyWrapped, BookOfBusiness. |
 | MeetingDetailPage | `src/pages/MeetingDetailPage.tsx` | `/meeting/$meetingId` | Prepare for or review a meeting — context, risks, room, plan, outcomes, transcript actions. | `referenced+spec` | `meeting.html` | `surfaces/MeetingDetail.md` | — | Current implementation is pre/post-briefing oriented; spec describes the Wave 4 post-meeting recap target. |
-| MeetingHistoryDetailPage | `src/pages/MeetingHistoryDetailPage.tsx` | `/meeting/history/$meetingId` | Preserve legacy meeting-history links by redirecting to the canonical route. | `referenced+spec` | `meeting.html` | `surfaces/MeetingDetail.md` | **Consolidation candidate.** Wrapper/redirect only. |
-| MonthlyWrappedPage | `src/pages/monthly-wrapped/MonthlyWrappedPage.tsx` | `/me/reports/monthly_wrapped` | Generate a monthly retrospective of work, wins, watch items. | `gap` | — | — | [DOS-370](https://linear.app/a8c/issue/DOS-370) | Lives in subdirectory — easy to miss in inventories. |
+| MeetingHistoryDetailPage | `src/pages/MeetingHistoryDetailPage.tsx` | `/meeting/history/$meetingId` | Preserve legacy meeting-history links by redirecting to the canonical route. | `covered-by` | `meeting.html` via MeetingDetailPage | `surfaces/MeetingDetail.md` | — | **Consolidation candidate.** Wrapper/redirect only. |
+| MonthlyWrappedPage | `src/pages/monthly-wrapped/MonthlyWrappedPage.tsx` | `/me/reports/monthly_wrapped` | Generate a monthly retrospective of work, wins, watch items. | `referenced+spec` | `reports/monthly-wrapped.html` | `surfaces/MonthlyWrappedPage.md` | — | Dedicated report spec added during the parity pass. Lives in subdirectory. |
 | PeoplePage | `src/pages/PeoplePage.tsx` | `/people` | Browse, search, create, archive, and clean up people across internal/external/unknown. | `referenced` | `people.html` | — | — | Add-new flow tracked by DOS-369. |
 | PersonDetailEditorial | `src/pages/PersonDetailEditorial.tsx` | `/people/$personId` | Understand and maintain a person's relationship context, network, record, and work. | `referenced` | `person.html` | — | — | — |
 | ProjectDetailEditorial | `src/pages/ProjectDetailEditorial.tsx` | `/projects/$projectId` | Understand and maintain a project's mission, trajectory, team, timeline, and work. | `referenced` | `project.html` | — | — | — |
-| ProjectsPage | `src/pages/ProjectsPage.tsx` | `/projects` | Browse, search, create, and archive the project hierarchy. | `referenced` | `projects.html` | — | — | Add-new flow tracked by DOS-369. |
-| ReportPage | `src/pages/ReportPage.tsx` | `/accounts/.../reports/$reportType`, `/me/reports/$reportType` | Render a generic saved report for account- or user-scoped report routes. | `gap` | — | — | [DOS-370](https://linear.app/a8c/issue/DOS-370) | **Consolidation candidate.** Generic report shell vs the dedicated report pages — likely a refactor target. |
-| RiskBriefingPage | `src/pages/RiskBriefingPage.tsx` | `/accounts/$accountId/reports/risk_briefing` | Generate and edit an executive risk briefing and recovery plan. | `gap` | — | — | [DOS-370](https://linear.app/a8c/issue/DOS-370) | Report surface. |
-| SettingsPage | `src/pages/SettingsPage.tsx` | `/settings` | Configure identity, connectors, data, system, notifications, diagnostics. | `referenced+spec` | `settings.html` | `surfaces/Settings.md` | — | Spec source file note points at `src/features/settings-ui/` while router uses `SettingsPage.tsx` — drift to reconcile. |
-| SwotPage | `src/pages/SwotPage.tsx` | `/accounts/$accountId/reports/swot` | Generate and edit a SWOT analysis slide deck. | `gap` | — | — | [DOS-370](https://linear.app/a8c/issue/DOS-370) | Report surface. |
-| WeekPage | `src/pages/WeekPage.tsx` | `/week` | Understand the upcoming week's meeting load and briefing readiness. | `referenced` | `week.html` | — | — | — |
-| WeeklyImpactPage | `src/pages/WeeklyImpactPage.tsx` | `/me/reports/weekly_impact` | Generate and edit a weekly impact report — work moved, wins, watch items, next week. | `gap` | — | — | [DOS-370](https://linear.app/a8c/issue/DOS-370) | Report surface. |
+| ProjectsPage | `src/pages/ProjectsPage.tsx` | `/projects` | Browse, search, create, and archive the project hierarchy. | `referenced+spec` | `projects.html` | `surfaces/ProjectsPage.md` | — | Add-new flow tracked by DOS-369. |
+| ReportPage | `src/pages/ReportPage.tsx` | `/accounts/.../reports/$reportType`, `/me/reports/$reportType` | Render a generic saved report for account- or user-scoped report routes. | `referenced+spec` | `reports/generic-report.html` | `surfaces/ReportPage.md` | — | **Consolidation candidate.** Generic shell now has standalone coverage; dedicated report references cover named report examples. |
+| RiskBriefingPage | `src/pages/RiskBriefingPage.tsx` | `/accounts/$accountId/reports/risk_briefing` | Generate and edit an executive risk briefing and recovery plan. | `referenced+spec` | `reports/risk-briefing.html` | `surfaces/RiskBriefingPage.md` | — | Dedicated report spec added during the parity pass. |
+| SettingsPage | `src/pages/SettingsPage.tsx` | `/settings` | Configure identity, connectors, data, system, notifications, diagnostics. | `referenced+spec` | `settings.html` | `surfaces/Settings.md` | — | Spec source files reconciled to `src/pages/SettingsPage.tsx` and `SettingsPage.module.css`. |
+| SwotPage | `src/pages/SwotPage.tsx` | `/accounts/$accountId/reports/swot` | Generate and edit a SWOT analysis slide deck. | `referenced+spec` | `reports/swot.html` | `surfaces/SwotPage.md` | — | Dedicated report spec added during the parity pass. |
+| WeekPage | `src/pages/WeekPage.tsx` | `/week` | Understand the upcoming week's meeting load and briefing readiness. | `referenced+spec` | `week.html` | `surfaces/WeekPage.md` | — | — |
+| WeeklyImpactPage | `src/pages/WeeklyImpactPage.tsx` | `/me/reports/weekly_impact` | Generate and edit a weekly impact report — work moved, wins, watch items, next week. | `referenced+spec` | `reports/weekly-impact.html` | `surfaces/WeeklyImpactPage.md` | — | Dedicated report spec added during the parity pass. |
 
 ## Full-screen non-route surfaces
 
@@ -77,8 +81,8 @@ These render at app-shell scale, not inside a page container.
 | DatabaseRecovery | `src/components/DatabaseRecovery.tsx` | Recover from unsafe database startup — restore backup, export copy, start fresh, or update app. | `documented` | — | Full-window startup gate; documented in `NAVIGATION-ARCHITECTURE.md` but no reference render. |
 | EncryptionRecovery | `src/components/EncryptionRecovery.tsx` | Explain that encrypted DB can't be opened without macOS Keychain key; offer recovery or fresh-start. | `documented` | — | Full-window startup gate; same status as DatabaseRecovery. |
 | LockOverlay | `src/components/LockOverlay.tsx` | Block app access while locked; unlock with Touch ID. | `documented` | — | Full-window startup gate. |
-| OnboardingFlow | `src/components/onboarding/OnboardingFlow.tsx` | Guide first-run setup — Google, Claude Code, Glean, user context, first account, role, initial briefing. | `gap` | [DOS-371](https://linear.app/a8c/issue/DOS-371) | Chapter-only `FloatingNavIsland` mode; CSS exists in reference assets. |
-| StartupBriefingScreen | `src/components/startup/StartupBriefingScreen.tsx` | Hold the cold-start moment with branded splash/progress while DailyOS prepares context. | `gap` | [DOS-372](https://linear.app/a8c/issue/DOS-372) | Used as cold-start overlay, shell-only startup, welcome fade, dashboard progress state. |
+| OnboardingFlow | `src/components/onboarding/OnboardingFlow.tsx` | Guide first-run setup — Google, Claude Code, Glean, user context, first account, role, initial briefing. | `referenced+gap` | [DOS-371](https://linear.app/a8c/issue/DOS-371) | Chapter references exist under `reference/surfaces/onboarding/`; no canonical flow spec yet. |
+| StartupBriefingScreen | `src/components/startup/StartupBriefingScreen.tsx` | Hold the cold-start moment with branded splash/progress while DailyOS prepares context. | `referenced+spec` | — | Splash/progress references exist under `reference/surfaces/splash/` and are covered by the manifest fidelity audit; canonical spec is `surfaces/StartupBriefingScreen.md`. |
 
 ## Significant dialogs / sheets / banners
 
@@ -112,16 +116,15 @@ These are duplicates or near-duplicates noticed during the inventory pass. Liste
 |---|---|---|---|
 | AccountDetailEditorial vs AccountDetailPage | Two implementations of the account dossier; Editorial is deprecated but its CSS module is still imported by child components. | True duplicate | Delete Editorial after weaning child components off its module. |
 | MeetingDetailPage vs MeetingHistoryDetailPage | History page is a redirect/wrapper to the canonical route. | True duplicate | Could collapse if history-link preservation can move to a router-level redirect. |
-| ReportPage vs dedicated report pages (RiskBriefing, Swot, AccountHealth, EbrQbr, WeeklyImpact, MonthlyWrapped, BookOfBusiness) | ReportPage is a generic shell; the dedicated pages predate it. | Lookalike | Investigate during DOS-370 — possibly migrate dedicated reports to a single ReportPage with config. |
+| ReportPage vs dedicated report pages (RiskBriefing, Swot, AccountHealth, EbrQbr, WeeklyImpact, MonthlyWrapped, BookOfBusiness) | ReportPage is a generic shell; the dedicated pages predate it. | Lookalike | Generic shell is now referenced; still investigate whether dedicated reports should migrate to one configured renderer. |
 | Account/Project/Person CreateInlineFlow components | All three use `inline-create-form.tsx` + `bulk-create-form.tsx` but each page wires it slightly differently. | Config-only difference | Could collapse the wiring into a shared hook. Track in DOS-369. |
 | AccountDialogs (ChildCreate / Archive) vs ProjectDetailEditorial sub-project dialog vs PersonMergePickerDialog | Each entity has a slightly different "create-child" pattern. | Lookalike | Audit during DOS-369 / DOS-373 (hero patterns are nearby). |
-| StartupBriefingScreen used in 4 contexts | Cold-start, shell-only startup, welcome fade, dashboard progress state. Same component, four states. | Config-only difference | Document as canonical multi-state pattern in DOS-372. |
+| StartupBriefingScreen used in 4 contexts | Cold-start, shell-only startup, welcome fade, dashboard progress state. Same component, four states. | Config-only difference | Canonical multi-state behavior now lives in `surfaces/StartupBriefingScreen.md`. |
 
 ## Outliers / edge cases
 
-- **HistoryPage** has no DS-SURF Linear issue. It's a `gap` for both reference and spec. Worth filing a follow-up issue or folding into DOS-367 (inbox/email surfaces) since it's tightly related to InboxPage processing. Recommendation: file `DS-SURF-07 — History surface reference` if treated separately, or add to DOS-367's scope.
 - **PersonMergePickerDialog** has no DS-SURF Linear issue. Could fold into DOS-369 (entity creation flows) since merge is in the same family of entity-management modals.
-- **SettingsPage spec drift** — `surfaces/Settings.md` references `src/features/settings-ui/` but the router uses `src/pages/SettingsPage.tsx`. Reconcile when the spec is next touched.
+- **Generic ReportPage shell** — eight report references now cover named reports plus the wildcard shell. Remaining work is the product/implementation consolidation decision between generic and dedicated report rendering.
 
 ## Linear coverage map
 
@@ -129,12 +132,8 @@ Every gap above maps to a filed Linear issue (or is flagged as needing one):
 
 | Linear issue | Covers |
 |---|---|
-| [DOS-367](https://linear.app/a8c/issue/DOS-367) — DS-SURF-01 | EmailsPage |
-| [DOS-368](https://linear.app/a8c/issue/DOS-368) — DS-SURF-02 | ActionDetailPage |
 | [DOS-369](https://linear.app/a8c/issue/DOS-369) — DS-SURF-03 | AccountCreateInlineFlow, AccountCreateChildDialog, ProjectCreateInlineFlow, ProjectCreateSubProjectDialog, PersonCreateInlineForm |
-| [DOS-370](https://linear.app/a8c/issue/DOS-370) — DS-SURF-04 | AccountHealthPage, BookOfBusinessPage, EbrQbrPage, MonthlyWrappedPage, ReportPage, RiskBriefingPage, SwotPage, WeeklyImpactPage |
 | [DOS-371](https://linear.app/a8c/issue/DOS-371) — DS-SURF-05 | OnboardingFlow, ProfileSelector |
-| [DOS-372](https://linear.app/a8c/issue/DOS-372) — DS-SURF-06 | StartupBriefingScreen |
-| **Unfiled** | HistoryPage, PersonMergePickerDialog |
+| **Unfiled** | PersonMergePickerDialog |
 
 When DS-NAV-01 ([DOS-364](https://linear.app/a8c/issue/DOS-364)) builds the reference index, it should consume this file as the source of truth for surface enumeration, JTBD copy, and gap status.

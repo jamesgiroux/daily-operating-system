@@ -104,6 +104,7 @@ export function DayChart({
       style={chartStyle}
       aria-label={ariaLabel}
       data-ds-name="DayChart"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/DayChart.md"
       {...rest}
     >

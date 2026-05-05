@@ -1,3 +1,7 @@
+> **Superseded 2026-05-05.** This document has been replaced by [`patterns/`](../patterns/).
+>
+> Kept here for historical context. Do not update.
+
 # Data Presentation Guidelines
 
 **Last audited:** 2026-03-15

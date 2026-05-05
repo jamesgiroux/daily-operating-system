@@ -43,6 +43,7 @@ export function VerificationStatusFlag({
       className={clsx(styles.flag, className)}
       data-status={status}
       data-ds-name="VerificationStatusFlag"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/VerificationStatusFlag.md"
     >
       <VerificationIcon status={status} />

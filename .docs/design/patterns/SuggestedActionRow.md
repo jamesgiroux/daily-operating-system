@@ -1,7 +1,7 @@
 # SuggestedActionRow
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `SuggestedActionRow`
@@ -87,7 +87,7 @@ Uses:
 ## Source
 
 - **Spec:** new for Wave 4 (also referenced from Audit 02)
-- **Code:** to be implemented in `src/components/work/SuggestedActionRow.tsx` (extracted from current `WorkSurface.tsx` per Audit 02 promotion-debt note)
+- **Code:** shipped in `src/components/shared/SuggestedActionRow.tsx`; consumed from work and meeting-oriented surfaces as a shared action row.
 - **Existing similar:** `src/components/shared/SuggestedActionRow.tsx` exists as a stub per Audit 01; reconcile during implementation
 
 ## Surfaces that consume it

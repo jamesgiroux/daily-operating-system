@@ -1,7 +1,7 @@
 # TrustBandBadge
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `TrustBandBadge`
@@ -36,9 +36,9 @@ Optional `compact` variant for inline-with-text rendering (smaller, dot-only or 
 
 ## Tokens consumed
 
-- `--color-trust-likely-current` (proposed; likely sage-15 / rosemary text)
-- `--color-trust-use-with-caution` (proposed; likely saffron-15 / turmeric-darkened text)
-- `--color-trust-needs-verification` (proposed; likely terracotta-15 / chili text)
+- `--color-trust-likely-current`, `--color-trust-likely-current-15`, `--color-trust-likely-current-12`
+- `--color-trust-use-with-caution`, `--color-trust-use-with-caution-15`, `--color-trust-use-with-caution-12`
+- `--color-trust-needs-verification`, `--color-trust-needs-verification-15`, `--color-trust-needs-verification-12`
 - `--font-mono` (label, uppercase, letter-spacing)
 - `--space-xs`, `--space-sm`
 
@@ -56,7 +56,7 @@ Composes `Pill` underneath with mapped tone (`sage` / `turmeric` / `terracotta`)
 
 - **Spec:** new for Wave 1
 - **Substrate contract:** v1.4.0 render trust band per `.docs/plans/v1.4.0-waves.md:631` (DOS-320)
-- **Code:** to be implemented in `src/components/ui/TrustBandBadge.tsx` (Wave 1 follow-on)
+- **Code:** shipped in `src/components/ui/TrustBandBadge.tsx`
 
 ## Surfaces that consume it
 

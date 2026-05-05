@@ -330,7 +330,12 @@ export default function WeeklyImpactPage() {
 
   // Render the 5-slide report with scroll-snap
   return (
-    <div className={slides.slideContainer}>
+    <div
+      className={slides.slideContainer}
+      data-ds-tier="surface"
+      data-ds-name="WeeklyImpactPage"
+      data-ds-spec="surfaces/WeeklyImpactPage.md"
+    >
       {/* Slide 1: Cover */}
       <section id="cover" className={slides.slideSection}>
         <CoverSlide content={content!} onUpdate={updateContent} />

@@ -79,7 +79,13 @@ export function IntelligenceQualityBadge({
       : `${label} — Not yet updated`;
 
     return (
-      <span className={css.root} title={tooltip}>
+      <span
+        className={css.root}
+        title={tooltip}
+        data-ds-name="IntelligenceQualityBadge"
+        data-ds-tier="primitive"
+        data-ds-spec="primitives/IntelligenceQualityBadge.md"
+      >
         <span className={css.structuredDotShell}>
           <span
             className={`${css.dot} ${quality.level === "sparse" ? css.mutedDot : ""}`}
@@ -107,7 +113,13 @@ export function IntelligenceQualityBadge({
   const freshness = computeFreshness(enrichedAt);
 
   return (
-    <span className={css.root} title={enrichedAt ? `${LABELS[freshness]} — Last updated: ${new Date(enrichedAt).toLocaleString()}` : "Not yet updated"}>
+    <span
+      className={css.root}
+      title={enrichedAt ? `${LABELS[freshness]} — Last updated: ${new Date(enrichedAt).toLocaleString()}` : "Not yet updated"}
+      data-ds-name="IntelligenceQualityBadge"
+      data-ds-tier="primitive"
+      data-ds-spec="primitives/IntelligenceQualityBadge.md"
+    >
       <span
         className={`${css.dot} ${freshness === "none" ? css.mutedDot : ""}`}
         // Runtime freshness determines the dot color.

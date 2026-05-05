@@ -140,7 +140,13 @@ function AccountTypeBadge({
   const current = ACCOUNT_TYPES.find((t) => t.value === value) ?? ACCOUNT_TYPES[0];
 
   return (
-    <div ref={ref} className={styles.typeBadgeWrapper}>
+    <div
+      ref={ref}
+      className={styles.typeBadgeWrapper}
+      data-ds-name="TypeBadge"
+      data-ds-tier="primitive"
+      data-ds-spec="primitives/TypeBadge.md"
+    >
       <button
         className={`${styles.badge} ${styles[current.badgeClass]} ${styles.typeBadgeButton}`}
         onClick={() => setOpen(!open)}

@@ -100,7 +100,12 @@ export const FolioBar: React.FC<FolioBarProps> = ({
     ? `${styles.folioMark} ${styles.folioMarkPulsing}`
     : styles.folioMark;
   return (
-    <header className={styles.folio}>
+    <header
+      className={styles.folio}
+      data-ds-name="FolioBar"
+      data-ds-tier="pattern"
+      data-ds-spec="patterns/FolioBar.md"
+    >
       {/* LEFT: Brand mark + publication label or persistent breadcrumbs */}
       <div className={styles.folioLeft}>
         {backgroundWork?.phase === 'started' ? (

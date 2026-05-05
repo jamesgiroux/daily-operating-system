@@ -1,3 +1,7 @@
+> **Superseded 2026-05-05.** This document has been replaced by [`primitives/`](../primitives/) (19 specs) and [`patterns/`](../patterns/) (32 specs).
+>
+> Kept here for historical context. Do not update.
+
 # Component Inventory
 
 **Last audited:** 2026-03-15

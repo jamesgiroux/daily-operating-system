@@ -39,6 +39,7 @@ export function RemovableChip({
         className,
       )}
       data-ds-name="RemovableChip"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/RemovableChip.md"
       {...rest}
     >

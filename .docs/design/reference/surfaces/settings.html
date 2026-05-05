@@ -48,9 +48,9 @@
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
-<div class="SettingsPage_container" data-ds-name="SettingsPage" data-ds-tier="surface" data-ds-spec="surfaces/SettingsPage.md">
+<div class="SettingsPage_container" data-ds-name="Settings" data-ds-tier="surface" data-ds-spec="surfaces/Settings.md">
   <!-- Rest state: wizard completed, Claude Code ready, sections visible, advanced settings expanded. -->
-  <section class="SurfaceMasthead_masthead SurfaceMasthead_default SurfaceMasthead_widthStandard" data-ds-name="SurfaceMasthead" data-ds-spec="patterns/SurfaceMasthead.md">
+  <section class="SurfaceMasthead_masthead SurfaceMasthead_default SurfaceMasthead_widthStandard" data-ds-tier="pattern" data-ds-name="SurfaceMasthead" data-ds-spec="patterns/SurfaceMasthead.md">
     <div class="SurfaceMasthead_topRow">
       <div class="SurfaceMasthead_titleBlock">
         <h1 class="SurfaceMasthead_title">Settings</h1>
@@ -384,7 +384,7 @@
           <span class="FormRow_label">Lock after idle</span>
           <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">Require Touch ID or password after a period of inactivity</p>
         </div>
-        <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Lock timeout" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+        <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Lock timeout" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
           <button type="button" class="Segmented_option" aria-pressed="false">5 minutes</button>
           <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">15 minutes</button>
           <button type="button" class="Segmented_option" aria-pressed="false">30 minutes</button>
@@ -404,7 +404,7 @@
             <span class="FormRow_label">Deep Analysis</span>
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">Reports, briefings, narratives, and higher-reasoning work</p>
           </div>
-          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Deep Analysis model" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Deep Analysis model" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
             <button type="button" class="Segmented_option" aria-pressed="false">haiku</button>
             <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">sonnet</button>
             <button type="button" class="Segmented_option" aria-pressed="false">opus</button>
@@ -415,7 +415,7 @@
             <span class="FormRow_label">Detailed Extraction</span>
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">Structured reading, summarizing, and action extraction</p>
           </div>
-          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Detailed Extraction model" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Detailed Extraction model" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
             <button type="button" class="Segmented_option" aria-pressed="false">haiku</button>
             <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">sonnet</button>
             <button type="button" class="Segmented_option" aria-pressed="false">opus</button>
@@ -426,7 +426,7 @@
             <span class="FormRow_label">Background Maintenance</span>
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">Automatic refreshes and poller-driven upkeep</p>
           </div>
-          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Background Maintenance model" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Background Maintenance model" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
             <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">haiku</button>
             <button type="button" class="Segmented_option" aria-pressed="false">sonnet</button>
             <button type="button" class="Segmented_option" aria-pressed="false">opus</button>
@@ -437,7 +437,7 @@
             <span class="FormRow_label">Fast Mechanical</span>
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">Low-complexity sorting, filing, and lightweight processing</p>
           </div>
-          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Fast Mechanical model" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Fast Mechanical model" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
             <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">haiku</button>
             <button type="button" class="Segmented_option" aria-pressed="false">sonnet</button>
             <button type="button" class="Segmented_option" aria-pressed="false">opus</button>
@@ -448,7 +448,7 @@
             <span class="FormRow_fieldLabel FormRow_label">Calendar Poll Interval</span>
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">How often DailyOS checks Google Calendar when polling is enabled</p>
           </div>
-          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Calendar poll interval" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Calendar poll interval" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
             <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">5m</button>
             <button type="button" class="Segmented_option" aria-pressed="false">10m</button>
             <button type="button" class="Segmented_option" aria-pressed="false">15m</button>
@@ -461,7 +461,7 @@
             <span class="FormRow_fieldLabel FormRow_label">Email Poll Interval</span>
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">How often DailyOS checks Gmail for background refreshes</p>
           </div>
-          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Email poll interval" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Email poll interval" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
             <button type="button" class="Segmented_option" aria-pressed="false">5m</button>
             <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">15m</button>
             <button type="button" class="Segmented_option" aria-pressed="false">30m</button>
@@ -473,7 +473,7 @@
             <span class="FormRow_fieldLabel FormRow_label">Pre-Meeting Refresh Window</span>
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">How far ahead DailyOS may refresh account intelligence for upcoming meetings</p>
           </div>
-          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Pre-meeting refresh window" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Pre-meeting refresh window" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
             <button type="button" class="Segmented_option" aria-pressed="false">2h</button>
             <button type="button" class="Segmented_option" aria-pressed="false">4h</button>
             <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">12h</button>
@@ -486,7 +486,7 @@
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallTop2">Estimated tokens per day, shared across background enrichment, meeting prep, briefings, and manual refreshes. Resets at local midnight. When exhausted, no new AI calls start until the next reset.</p>
             <p class="FormRow_description FormRow_descriptionSmall FormRow_descriptionSmallItalic">Light use — a few briefings or enrichments per day</p>
           </div>
-          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Daily AI budget" data-disabled="false" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
+          <div class="Segmented_group Segmented_turmeric" role="group" aria-label="Daily AI budget" data-disabled="false" data-ds-tier="primitive" data-ds-name="Segmented" data-ds-spec="primitives/Segmented.md">
             <button type="button" class="Segmented_option Segmented_selected" aria-pressed="true">50k</button>
             <button type="button" class="Segmented_option" aria-pressed="false">100k</button>
             <button type="button" class="Segmented_option" aria-pressed="false">250k</button>
@@ -542,41 +542,41 @@
     <div class="NotificationSection_container">
       <p class="FormRow_subsectionLabel">Notifications</p>
       <p class="NotificationSection_description">Control which native alerts DailyOS sends to your notification center.</p>
-      <div class="FormRow_row" data-ds-name="FormRow" data-ds-spec="patterns/FormRow.md">
+      <div class="FormRow_row" data-ds-tier="pattern" data-ds-name="FormRow" data-ds-spec="patterns/FormRow.md">
         <div class="FormRow_copy">
           <span class="FormRow_label">Daily briefing alerts</span>
           <p class="FormRow_help">Notifies when your daily briefing is ready</p>
         </div>
         <div class="FormRow_control">
-          <button type="button" role="switch" aria-checked="true" aria-label="Daily briefing alerts" class="Switch_switch" data-checked="true" data-size="sm" data-ds-name="Switch" data-ds-spec="primitives/Switch.md"><span class="Switch_thumb" aria-hidden="true"></span></button>
+          <button type="button" role="switch" aria-checked="true" aria-label="Daily briefing alerts" class="Switch_switch" data-checked="true" data-size="sm" data-ds-tier="primitive" data-ds-name="Switch" data-ds-spec="primitives/Switch.md"><span class="Switch_thumb" aria-hidden="true"></span></button>
         </div>
       </div>
-      <div class="FormRow_row" data-ds-name="FormRow" data-ds-spec="patterns/FormRow.md">
+      <div class="FormRow_row" data-ds-tier="pattern" data-ds-name="FormRow" data-ds-spec="patterns/FormRow.md">
         <div class="FormRow_copy">
           <span class="FormRow_label">Meeting notes alerts</span>
           <p class="FormRow_help">Notifies when meeting transcripts are processed (rate-limited to once per 5 minutes)</p>
         </div>
         <div class="FormRow_control">
-          <button type="button" role="switch" aria-checked="true" aria-label="Meeting notes alerts" class="Switch_switch" data-checked="true" data-size="sm" data-ds-name="Switch" data-ds-spec="primitives/Switch.md"><span class="Switch_thumb" aria-hidden="true"></span></button>
+          <button type="button" role="switch" aria-checked="true" aria-label="Meeting notes alerts" class="Switch_switch" data-checked="true" data-size="sm" data-ds-tier="primitive" data-ds-name="Switch" data-ds-spec="primitives/Switch.md"><span class="Switch_thumb" aria-hidden="true"></span></button>
         </div>
       </div>
-      <div class="FormRow_row" data-ds-name="FormRow" data-ds-spec="patterns/FormRow.md">
+      <div class="FormRow_row" data-ds-tier="pattern" data-ds-name="FormRow" data-ds-spec="patterns/FormRow.md">
         <div class="FormRow_copy">
           <span class="FormRow_label">Connection alerts</span>
           <p class="FormRow_help">Notifies when Google account needs reconnection</p>
         </div>
         <div class="FormRow_control">
-          <button type="button" role="switch" aria-checked="true" aria-label="Connection alerts" class="Switch_switch" data-checked="true" data-size="sm" data-ds-name="Switch" data-ds-spec="primitives/Switch.md"><span class="Switch_thumb" aria-hidden="true"></span></button>
+          <button type="button" role="switch" aria-checked="true" aria-label="Connection alerts" class="Switch_switch" data-checked="true" data-size="sm" data-ds-tier="primitive" data-ds-name="Switch" data-ds-spec="primitives/Switch.md"><span class="Switch_thumb" aria-hidden="true"></span></button>
         </div>
       </div>
       <div class="NotificationSection_quietHoursSection">
-        <div class="FormRow_row" data-ds-name="FormRow" data-ds-spec="patterns/FormRow.md">
+        <div class="FormRow_row" data-ds-tier="pattern" data-ds-name="FormRow" data-ds-spec="patterns/FormRow.md">
           <div class="FormRow_copy">
             <span class="FormRow_label">Quiet hours</span>
             <p class="FormRow_help">Suppress all notifications during these hours</p>
           </div>
           <div class="FormRow_control">
-            <button type="button" role="switch" aria-checked="false" aria-label="Quiet hours" class="Switch_switch" data-checked="false" data-size="sm" data-ds-name="Switch" data-ds-spec="primitives/Switch.md"><span class="Switch_thumb" aria-hidden="true"></span></button>
+            <button type="button" role="switch" aria-checked="false" aria-label="Quiet hours" class="Switch_switch" data-checked="false" data-size="sm" data-ds-tier="primitive" data-ds-name="Switch" data-ds-spec="primitives/Switch.md"><span class="Switch_thumb" aria-hidden="true"></span></button>
           </div>
         </div>
       </div>

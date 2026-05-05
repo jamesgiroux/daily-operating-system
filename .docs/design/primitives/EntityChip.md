@@ -3,7 +3,7 @@
 **Tier:** primitive
 **Status:** canonical
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-05
 **`data-ds-name`:** `EntityChip`
 **`data-ds-spec`:** `primitives/EntityChip.md`
 **Variants:** `entityType="account" | "project" | "person"`
@@ -27,9 +27,9 @@ Render an inline reference to an entity (account / project / person), color-code
 
 ## States / variants
 
-- `entityType="account"` — turmeric (uses `--color-entity-account`)
-- `entityType="project"` — olive (uses `--color-entity-project`)
-- `entityType="person"` — larkspur (uses `--color-entity-person`)
+- `entityType="account"` — account token (`--color-account`)
+- `entityType="project"` — project token (`--color-project`)
+- `entityType="person"` — person token (`--color-person`)
 - Optional: `compact` for tight inline use; `removable` for X affordance; `editable` for click-to-edit via EntityPicker
 
 ## Composition
@@ -38,8 +38,8 @@ Composes `Pill` (visual base) + leading icon (lucide: Building2 / FolderKanban /
 
 ## Tokens consumed
 
-- `--color-entity-account`, `--color-entity-project`, `--color-entity-person` (text color per type)
-- `--color-spice-turmeric-8`, `--color-garden-olive-8`, `--color-garden-larkspur-8` (background tints per type)
+- `--color-account`, `--color-project`, `--color-person` (text color per type)
+- `--color-account-8`, `--color-project-8`, `--color-person-8` (background tints per type)
 - `--font-mono` (label)
 - `--space-xs`, `--space-sm`
 
@@ -53,8 +53,8 @@ Composes `Pill` (visual base) + leading icon (lucide: Building2 / FolderKanban /
 
 ## Source
 
-- **Code:** `src/components/ui/meeting-entity-chips.tsx`, `src/components/ui/email-entity-chip.tsx` — current consumers using the `entityColor` / `entityBg` mapping; reconciled to entity tokens via DOS-357.
-- **Future consolidation:** extract to a dedicated `src/components/ui/EntityChip.tsx` primitive consumed by both (Wave 1 follow-on).
+- **Code:** shipped in `src/components/ui/EntityChip.tsx`.
+- **Consumers:** `src/components/ui/meeting-entity-chips.tsx` and `src/components/ui/email-entity-chip.tsx` compose the shared primitive.
 
 ## Surfaces that consume it
 
@@ -62,8 +62,9 @@ DailyBriefing (D-spine `.entity-chip`), AccountDetail (related entities), Meetin
 
 ## Naming notes
 
-D-spine mockup uses class `.entity-chip`. Production has `meeting-entity-chips.tsx` and `email-entity-chip.tsx` — DOS-357 already consolidated their explicit type-to-color mapping to use entity tokens. Wave 1 extracts the shared primitive.
+D-spine mockup uses class `.entity-chip`. Production has `EntityChip.tsx`, with meeting and email wrappers composing it for workflow-specific behavior.
 
 ## History
 
-- 2026-05-02 — Promoted to canonical. DOS-357 reconciled the entity-type color mapping (also fixed `--color-sky-larkspur` typo → `--color-entity-person`).
+- 2026-05-02 — Promoted to canonical. DOS-357 reconciled the entity-type color mapping.
+- 2026-05-05 — Source updated to shipped React primitive and current `--color-account/project/person` tokens.

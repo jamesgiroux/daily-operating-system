@@ -48,6 +48,7 @@ export function ConfidenceScoreChip({
       data-band={band}
       data-state={normalizedScore === null ? "unavailable" : "available"}
       data-ds-name="ConfidenceScoreChip"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/ConfidenceScoreChip.md"
     >
       {label}

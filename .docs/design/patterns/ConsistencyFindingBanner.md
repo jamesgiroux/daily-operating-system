@@ -1,7 +1,7 @@
 # ConsistencyFindingBanner
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `ConsistencyFindingBanner`
@@ -82,7 +82,7 @@ Composes:
 - **Related pattern:** `ClaimRow`
 - **Related pattern:** `ReceiptCallout`
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
-- **Note:** Wave 2 follow-on for v1.4.4
+- **Roadmap target:** inline finding pattern for Wave 2 follow-on (not shipped yet)
 
 ## Surfaces that consume it
 

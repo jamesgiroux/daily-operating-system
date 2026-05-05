@@ -1,4 +1,4 @@
-@import '../../styles/design-tokens.css';
+@import './design-tokens.css';
 
 .AccountMergeDialog_title {
   font-family: var(--font-serif);

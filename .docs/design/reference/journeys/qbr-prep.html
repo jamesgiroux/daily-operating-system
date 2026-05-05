@@ -1,0 +1,219 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Prepare a QBR · Journey</title>
+
+<link rel="stylesheet" href="../_shared/fonts.css">
+<link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+<link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+<link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+<link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+<link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+<link rel="stylesheet" href="../_shared/chrome.css">
+<link rel="stylesheet" href="../_shared/inspector.css">
+
+<style>
+  /* Lean journey template — surfaces in sequence, light annotations only. */
+  .jp-cover {
+    padding-top: var(--space-5xl);
+    padding-bottom: var(--space-3xl);
+    border-bottom: 1px solid var(--color-rule-heavy);
+  }
+  .jp-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: 0 0 var(--space-md);
+  }
+  .jp-eyebrow a { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; }
+  .jp-eyebrow a:hover { border-bottom-color: currentColor; }
+  .jp-title {
+    font-family: var(--font-serif);
+    font-size: 64px;
+    font-weight: 400;
+    letter-spacing: 0;
+    line-height: 1.04;
+    margin: 0;
+  }
+  .jp-frame {
+    font-family: var(--font-serif);
+    font-style: italic;
+    font-size: 20px;
+    line-height: 1.5;
+    color: var(--color-text-secondary);
+    max-width: 680px;
+    margin: var(--space-lg) 0 0;
+  }
+  .jp-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-lg);
+    margin-top: var(--space-2xl);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+  }
+  .jp-steps {
+    padding: var(--space-3xl) 0;
+  }
+  .jp-step {
+    display: grid;
+    grid-template-columns: 360px minmax(0, 1fr);
+    gap: var(--space-xl);
+    align-items: center;
+    padding: var(--space-xl) 0;
+    border-bottom: 1px solid var(--color-rule-light);
+  }
+  .jp-step:last-of-type { border-bottom: none; }
+  .jp-step-thumb {
+    position: relative;
+    aspect-ratio: 16 / 10;
+    background: var(--color-paper-warm-white);
+    border: 1px solid var(--color-rule-light);
+    overflow: hidden;
+    transition: border-color var(--transition-normal);
+  }
+  .jp-step-thumb:hover { border-color: var(--color-rule-heavy); }
+  .jp-step-thumb iframe {
+    width: 300%;
+    height: 300%;
+    border: 0;
+    transform: scale(0.3333);
+    transform-origin: top left;
+    pointer-events: none;
+  }
+  .jp-step-thumb a {
+    position: absolute;
+    inset: 0;
+  }
+  .jp-step-meta {
+    display: grid;
+    grid-template-columns: 52px minmax(0, 1fr);
+    gap: var(--space-md);
+    align-items: start;
+  }
+  .jp-step-num {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.1em;
+    color: var(--color-spice-turmeric);
+  }
+  .jp-step-info { min-width: 0; }
+  .jp-step-name {
+    font-family: var(--font-serif);
+    font-size: 32px;
+    font-weight: 400;
+    line-height: 1.15;
+    margin: 0;
+  }
+  .jp-step-name a { color: inherit; text-decoration: none; border-bottom: 1px solid transparent; transition: border-color var(--transition-normal); }
+  .jp-step-name a:hover { border-bottom-color: var(--color-rule-heavy); }
+  .jp-step-route {
+    font-family: var(--font-mono);
+    font-size: 11px;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--color-text-tertiary);
+    margin: var(--space-sm) 0 0;
+  }
+  .jp-step-note {
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-style: italic;
+    line-height: 1.55;
+    color: var(--color-text-secondary);
+    max-width: 620px;
+    margin: var(--space-md) 0 0;
+  }
+  @media (max-width: 860px) {
+    .jp-title { font-size: 40px; }
+    .jp-step { grid-template-columns: 1fr; gap: var(--space-md); }
+    .jp-step-thumb { max-width: 360px; }
+  }
+</style>
+</head>
+<body
+  data-folio-label="Journey"
+  data-folio-crumbs="Reference > Journeys > Prepare a QBR"
+  data-tint="eucalyptus"
+  data-active-page="today">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+  <section class="jp-cover">
+    <p class="jp-eyebrow"><a href="index.html">← Journeys</a></p>
+    <h1 class="jp-title">Prepare a QBR</h1>
+    <p class="jp-frame">
+      Find the account, review current context, and open the executive/business review deck.
+    </p>
+    <div class="jp-meta">
+      <span>3 surfaces</span>
+      <span>~5 minutes</span>
+      <span>JTBD: prepare customer review</span>
+    </div>
+  </section>
+
+  <div class="jp-steps">
+
+    <section class="jp-step">
+      <div class="jp-step-thumb">
+        <iframe src="../surfaces/accounts.html" loading="lazy" title="Accounts preview"></iframe>
+        <a href="../surfaces/accounts.html" aria-label="Open Accounts"></a>
+      </div>
+      <div class="jp-step-meta">
+        <span class="jp-step-num">01</span>
+        <div class="jp-step-info">
+          <h2 class="jp-step-name"><a href="../surfaces/accounts.html">Accounts</a></h2>
+          <p class="jp-step-route">surfaces/accounts.html · /accounts</p>
+          <p class="jp-step-note">Find the customer whose review is coming up and confirm the account context is current.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="jp-step">
+      <div class="jp-step-thumb">
+        <iframe src="../surfaces/account.html" loading="lazy" title="Account Detail preview"></iframe>
+        <a href="../surfaces/account.html" aria-label="Open Account Detail"></a>
+      </div>
+      <div class="jp-step-meta">
+        <span class="jp-step-num">02</span>
+        <div class="jp-step-info">
+          <h2 class="jp-step-name"><a href="../surfaces/account.html">Account Detail</a></h2>
+          <p class="jp-step-route">surfaces/account.html · /accounts/$id</p>
+          <p class="jp-step-note">Review Health &amp; Outlook, Context, and The Work before generating the customer-facing narrative.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="jp-step">
+      <div class="jp-step-thumb">
+        <iframe src="../surfaces/reports/ebr-qbr.html" loading="lazy" title="EBR / QBR preview"></iframe>
+        <a href="../surfaces/reports/ebr-qbr.html" aria-label="Open EBR / QBR"></a>
+      </div>
+      <div class="jp-step-meta">
+        <span class="jp-step-num">03</span>
+        <div class="jp-step-info">
+          <h2 class="jp-step-name"><a href="../surfaces/reports/ebr-qbr.html">EBR / QBR</a></h2>
+          <p class="jp-step-route">surfaces/reports/ebr-qbr.html · /accounts/$id/reports/ebr_qbr</p>
+          <p class="jp-step-note">Open the structured review deck and validate the claims, risks, movement, and asks before sharing.</p>
+        </div>
+      </div>
+    </section>
+
+  </div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

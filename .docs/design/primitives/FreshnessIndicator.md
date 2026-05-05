@@ -1,7 +1,7 @@
 # FreshnessIndicator
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `FreshnessIndicator`
@@ -65,7 +65,7 @@ CSS class form:
 
 - **Spec:** new for Wave 1
 - **Substrate contract:** v1.4.0 `source_asof` per `.docs/plans/v1.4.0-waves.md` W3-G
-- **Code:** to be implemented in `src/components/ui/FreshnessIndicator.tsx`
+- **Code:** shipped in `src/components/ui/FreshnessIndicator.tsx`
 - **Closest existing component:** `src/components/editorial/ChapterFreshness.tsx` — chapter-level freshness strip; consider whether this composes FreshnessIndicator or stays a separate pattern
 
 ## Surfaces that consume it

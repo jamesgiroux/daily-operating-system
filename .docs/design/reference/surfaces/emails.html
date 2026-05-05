@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>The Correspondent · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EmailsPage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
+
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+</head>
+<body
+  data-folio-label="The Correspondent"
+  data-folio-crumbs="Reference > Surfaces > The Correspondent"
+  data-tint="turmeric"
+  data-active-page="emails"
+  data-nav-base="."
+  data-folio-actions="refresh"
+  data-folio-refresh-title="Check for new emails">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div
+  class="EmailsPage_pageContainer"
+  data-ds-name="EmailsPage"
+  data-ds-tier="surface"
+  data-ds-spec="surfaces/EmailsPage.md"
+>
+  <section class="editorial-briefing_hero">
+    <h1 class="editorial-briefing_heroHeadline">Email triage from this morning's scan.</h1>
+
+    <div class="EmailsPage_heroStatLine">
+      <span class="EmailsPage_heroStatPriority">2 PRIORITY</span>
+      <span>3 MONITORING</span>
+      <span>4 COMMITMENTS</span>
+      <span>1 RISK FLAG</span>
+    </div>
+
+    <div class="EmailsPage_syncStatus">
+      <span>Updated 12 min ago</span>
+      <span>28/31 ready</span>
+      <span class="EmailsPage_syncStatusNotice">
+        3 emails couldn't be enriched
+        <button class="EmailsPage_syncRetryButton" type="button">Retry now</button>
+        <button class="EmailsPage_syncRetryButton" type="button">Skip</button>
+        <button class="EmailsPage_syncRetryButton" type="button">View details</button>
+        <button class="EmailsPage_syncDismissButton" type="button" aria-label="Dismiss">&times;</button>
+      </span>
+      <span class="EmailsPage_syncStatusAlert">using cached data</span>
+    </div>
+
+    <ul class="EmailsPage_failureDetailsList">
+      <li class="EmailsPage_failureDetailsRow">
+        <span class="EmailsPage_failureDetailsSubject">MSA redlines and approval path</span>
+        <span class="EmailsPage_failureDetailsSender">Jen Park</span>
+        <span class="EmailsPage_failureDetailsTimestamp">last tried 8 min ago</span>
+      </li>
+      <li class="EmailsPage_failureDetailsRow">
+        <span class="EmailsPage_failureDetailsSubject">(no subject)</span>
+        <span class="EmailsPage_failureDetailsSender">unknown sender</span>
+      </li>
+    </ul>
+  </section>
+
+  <div class="editorial-briefing_sectionRule"></div>
+
+  <section class="EmailsPage_sectionSpacing">
+    <div class="editorial-briefing_marginGrid">
+      <div class="editorial-briefing_marginLabel EmailsPage_marginLabelYourMove">PRIORITY</div>
+      <div class="editorial-briefing_marginContent">
+        <article class="editorial-briefing_emailIntelItem EmailsPage_emailIntelItemHoverable">
+          <span class="editorial-briefing_emailIntelUrgencyBadge">urgent</span>
+          <p class="editorial-briefing_emailIntelSummary editorial-briefing_emailIntelSummaryHighUrgency">Jen needs the MSA redline owner summary before finance will approve the renewal package.</p>
+          <div class="editorial-briefing_emailIntelMeta">
+            <span class="editorial-briefing_entityChip">Acme Corp</span>
+            <span class="editorial-briefing_emailIntelSentiment">
+              <span class="editorial-briefing_emailIntelSentimentDot" style="background:var(--color-spice-terracotta);"></span>
+              negative
+            </span>
+            <span>Jen Park</span>
+            <span>MSA redlines and approval path</span>
+          </div>
+          <button class="EmailsPage_meetingLinkBadge" type="button" title="View briefing for Acme renewal checkpoint">
+            <span>Before: Acme renewal checkpoint</span>
+            <span class="EmailsPage_meetingLinkTime">Today at 10:00 AM</span>
+          </button>
+          <div class="editorial-briefing_emailScoreReason">executive sponsor, open renewal risk</div>
+
+          <div class="EmailsPage_inlineCommitments">
+            <span class="EmailsPage_inlineCommitmentsLabel">COMMITMENTS</span>
+            <div class="EmailsPage_inlineCommitmentRow">
+              <span class="EmailsPage_inlineCommitmentText">Send the legal owner summary by Friday.</span>
+              <button class="EmailsPage_trackButton" type="button" title="Track as action">Track</button>
+            </div>
+            <div class="EmailsPage_inlineCommitmentRow">
+              <span class="EmailsPage_inlineCommitmentText EmailsPage_inlineCommitmentTextPromoted">Confirm finance reviewer before the package goes out.</span>
+              <div class="EmailsPage_trackedCommitment EmailsPage_trackedCommitmentCompact">
+                <span class="EmailsPage_trackedCommitmentBadge">Tracked</span>
+                <button class="EmailsPage_trackedCommitmentLink" type="button" title="Open tracked action">↗</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="EmailsPage_triageBar">
+            <button class="EmailsPage_triageButton" type="button" title="Archive">A</button>
+            <button class="EmailsPage_triageButton" type="button" title="Open in Gmail">↗</button>
+            <button class="EmailsPage_triageButton EmailsPage_triageButtonActive" type="button" title="Unpin">P</button>
+          </div>
+        </article>
+
+        <article class="editorial-briefing_emailIntelItem EmailsPage_emailIntelItemHoverable">
+          <p class="editorial-briefing_emailIntelBuilding">Building context...</p>
+          <div class="editorial-briefing_emailIntelMeta">
+            <span>Marco Silva</span>
+            <span>Procurement notes</span>
+          </div>
+        </article>
+      </div>
+    </div>
+    <div class="editorial-briefing_sectionRule EmailsPage_sectionRuleTop"></div>
+  </section>
+
+  <section class="EmailsPage_sectionSpacing">
+    <div class="editorial-briefing_marginGrid EmailsPage_commitmentGridSpacing">
+      <div class="editorial-briefing_marginLabel">COMMITMENTS</div>
+      <div class="editorial-briefing_marginContent">
+        <div class="group EmailsPage_extractedItem EmailsPage_extractedItemSpacing">
+          <p class="EmailsPage_extractedItemText">Send Jen the legal redline owner summary.</p>
+          <span class="EmailsPage_extractedItemMeta">Acme Corp · Jen Park · MSA redlines</span>
+          <button class="EmailsPage_trackButton" type="button">Track</button>
+          <button class="EmailsPage_dismissButton" type="button" title="Dismiss">&times;</button>
+        </div>
+        <div class="group EmailsPage_extractedItem">
+          <p class="EmailsPage_extractedItemText EmailsPage_extractedItemTextTracked">Confirm procurement review date.</p>
+          <span class="EmailsPage_extractedItemMeta">Acme Corp · Marco Silva</span>
+          <div class="EmailsPage_trackedCommitment">
+            <span class="EmailsPage_trackedCommitmentBadge">Tracked</span>
+            <span class="EmailsPage_trackedCommitmentTitle">Confirm procurement date</span>
+            <button class="EmailsPage_trackedCommitmentLink" type="button" title="Open tracked action">↗</button>
+          </div>
+        </div>
+
+        <div class="EmailsPage_commitmentForm EmailsPage_commitmentFormCompact">
+          <input class="EmailsPage_commitmentFormInput" value="Send pricing memo" aria-label="Action title">
+          <div class="EmailsPage_commitmentFormRow">
+            <input class="EmailsPage_commitmentFormInput" value="Acme Corp" aria-label="Link entity">
+            <input class="EmailsPage_commitmentFormInput" value="Apr 17" aria-label="Due date">
+          </div>
+          <input class="EmailsPage_commitmentFormInput" value="Jen Park" aria-label="Owner">
+          <div class="EmailsPage_commitmentFormActions">
+            <button class="EmailsPage_commitmentFormSubmit" type="button">Save</button>
+            <button class="EmailsPage_commitmentFormCancel" type="button">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="editorial-briefing_marginGrid">
+      <div class="editorial-briefing_marginLabel">OPEN QUESTIONS</div>
+      <div class="editorial-briefing_marginContent">
+        <div class="group EmailsPage_extractedItem">
+          <p class="EmailsPage_extractedItemText">Who owns final procurement language?</p>
+          <span class="EmailsPage_extractedItemMeta">Acme Corp · Jen Park · Renewal package</span>
+          <button class="EmailsPage_dismissButton" type="button" title="Dismiss">&times;</button>
+        </div>
+      </div>
+    </div>
+    <div class="editorial-briefing_sectionRule EmailsPage_sectionRuleTop"></div>
+  </section>
+
+  <section class="EmailsPage_sectionSpacing">
+    <div class="editorial-briefing_marginGrid">
+      <div class="editorial-briefing_marginLabel EmailsPage_marginLabelQuiet">GONE QUIET</div>
+      <div class="editorial-briefing_marginContent">
+        <div class="EmailsPage_quietItem">
+          <div class="EmailsPage_quietRow">
+            <div>
+              <button class="EmailsPage_quietAccountLink" type="button">Northwind Traders</button>
+              <div class="EmailsPage_quietCadenceText">usually weekly. Last email 12 days ago (Apr 23) from Sara Wu.</div>
+            </div>
+            <button class="EmailsPage_quietDismissButton" type="button" title="Acknowledge">Noted</button>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="editorial-briefing_sectionRule EmailsPage_sectionRuleTop"></div>
+  </section>
+
+  <section class="EmailsPage_sectionSpacing">
+    <div class="editorial-briefing_marginGrid">
+      <div class="editorial-briefing_marginLabel">UPDATES</div>
+      <div class="editorial-briefing_marginContent">
+        <div>
+          <div class="EmailsPage_updateEntityName">
+            Acme Corp
+            <span class="EmailsPage_updateEntityCount">4 emails</span>
+          </div>
+          <div class="EmailsPage_updateSignalsContainer">
+            <div class="EmailsPage_updateSignalRow">
+              <span class="EmailsPage_updateSignalType">risk</span>
+              <span class="EmailsPage_updateSignalText">Procurement wants language changes before approving the renewal package.</span>
+              <button class="EmailsPage_dismissSignalButton" type="button" title="Dismiss">&times;</button>
+            </div>
+            <div class="EmailsPage_updateSignalRow">
+              <span class="EmailsPage_updateSignalType">owner</span>
+              <span class="EmailsPage_updateSignalText">Jen is still sponsor, Marco is driving procurement.</span>
+              <button class="EmailsPage_dismissSignalButton" type="button" title="Dismiss">&times;</button>
+            </div>
+          </div>
+        </div>
+        <div class="editorial-briefing_sectionRule EmailsPage_updateSectionRule"></div>
+        <div class="EmailsPage_overflowText">Globex Inc, Stark Industries -- routine correspondence.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="EmailsPage_sectionSpacing">
+    <div class="editorial-briefing_marginGrid">
+      <div class="editorial-briefing_marginLabel">
+        INBOX
+        <span class="editorial-briefing_marginLabelCount">6</span>
+      </div>
+      <div class="editorial-briefing_marginContent">
+        <div class="editorial-briefing_emailScoreBandLabel">PRIORITY</div>
+        <article class="editorial-briefing_emailIntelItem">
+          <p class="editorial-briefing_emailIntelSummary">Acme needs a written owner map before legal will unblock the MSA.</p>
+          <div class="editorial-briefing_emailIntelMeta"><span>Acme Corp</span><span>Jen Park</span></div>
+        </article>
+        <div class="editorial-briefing_emailScoreBandLabel">MONITORING</div>
+        <article class="editorial-briefing_emailIntelItem">
+          <p class="editorial-briefing_emailIntelSummary">Northwind shared rollout notes, no action required yet.</p>
+          <div class="editorial-briefing_emailIntelMeta"><span>Northwind</span><span>Sara Wu</span></div>
+        </article>
+        <div class="editorial-briefing_emailScoreBandLabel">OTHER</div>
+        <article class="editorial-briefing_emailIntelItem">
+          <p class="editorial-briefing_emailIntelSummary">Newsletter and FYI traffic remain below the action threshold.</p>
+          <div class="editorial-briefing_emailIntelMeta"><span>Ops</span><span>Weekly digest</span></div>
+        </article>
+      </div>
+    </div>
+  </section>
+
+  <div class="finis-marker">
+    <div class="finis-marker-marks">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+    </div>
+  </div>
+
+  <template data-state="loading-error-empty">
+    Refreshing...
+    Refreshing emails...
+    Check for new emails
+    Failed to refresh emails
+    No emails yet
+    Gmail is connected. Emails will appear after the next sync.
+    Sync now
+    Connect Gmail
+    Hide details
+    Couldn't load failure details
+    Retry failed — emails remain in the failed queue
+    1 email skipped
+    Building context...
+    Saving...
+    Failed to track commitment
+    Track
+    Tracked
+  </template>
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

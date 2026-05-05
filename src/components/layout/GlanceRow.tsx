@@ -28,6 +28,7 @@ export function GlanceRow({
     <div
       className={clsx(styles.row, styles[variant], className)}
       data-ds-name="GlanceRow"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/GlanceRow.md"
       {...rest}
     >

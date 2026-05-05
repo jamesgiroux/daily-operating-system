@@ -3,7 +3,7 @@
 **Tier:** primitive
 **Status:** canonical
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-05
 **`data-ds-name`:** `Pill`
 **`data-ds-spec`:** `primitives/Pill.md`
 **Variants:** `tone="sage" | "turmeric" | "terracotta" | "larkspur" | "neutral"`
@@ -64,7 +64,7 @@ CSS class form (matches `_shared/.pill`):
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.pill`)
-- **Code:** to be implemented as React primitive in `src/components/ui/Pill.tsx` (Wave 1 follow-on); current ad-hoc usages live across surfaces (see Audit 03 for the 7+ pill drift cases)
+- **Code:** shipped in `src/components/ui/Pill.tsx`; consolidates the shared pill affordance used directly and by composing primitives.
 
 ## Surfaces that consume it
 
@@ -77,3 +77,4 @@ Wave 1 consumers (direct or via composing primitives): DailyBriefing, AccountDet
 ## History
 
 - 2026-05-02 — Promoted to canonical from `_shared/.pill`. Audit 03 surfaced 7+ existing pill variants across surfaces — consolidation to this primitive begins with v1.4.3.
+- 2026-05-05 — Source updated to shipped React primitive.

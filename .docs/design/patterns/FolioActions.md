@@ -1,7 +1,7 @@
 # FolioActions
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `FolioActions`
@@ -59,7 +59,7 @@ Composes `Button` primitive instances in a horizontal sub-row: icon-only buttons
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/FolioActions.tsx`
+- **Roadmap target:** `src/components/meeting/FolioActions.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 29-34
 
 ## Surfaces that consume it

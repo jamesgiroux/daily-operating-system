@@ -99,6 +99,7 @@ export function ProvenanceTag({
     <span
       className={clsx(styles.tag, className)}
       data-ds-name="ProvenanceTag"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/ProvenanceTag.md"
       {...rest}
     >

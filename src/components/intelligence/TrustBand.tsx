@@ -79,6 +79,7 @@ export function TrustBand({
       data-density={density}
       data-align={align}
       data-ds-name="TrustBand"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/TrustBand.md"
     >
       <TrustBandBadge band={resolvedBand} compact={compact} />

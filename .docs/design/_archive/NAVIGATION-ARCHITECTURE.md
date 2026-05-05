@@ -1,3 +1,7 @@
+> **Superseded 2026-05-05.** This document has been replaced by [`reference/_shared/chrome.js`](../reference/_shared/chrome.js) and [`tokens/`](../tokens/).
+>
+> Kept here for historical context. Do not update.
+
 # Navigation Architecture
 
 **Last audited:** 2026-03-15

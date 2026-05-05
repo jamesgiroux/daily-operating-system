@@ -55,6 +55,7 @@ export function MeetingStatusPill({
       className={clsx(styles.status, meta.className, className)}
       data-state={state}
       data-ds-name="MeetingStatusPill"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/MeetingStatusPill.md"
       {...rest}
     >

@@ -1,7 +1,7 @@
 # CommitmentRow
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `CommitmentRow`
@@ -63,7 +63,7 @@ Render a confirmed commitment captured from the meeting, making ownership explic
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/CommitmentRow.tsx`
+- **Roadmap target:** `src/components/meeting/CommitmentRow.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:261-277`
 - **Contrast reference:** `SuggestedActionRow` mockup begins at `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:279-325`
 - **Reference render:** Meeting "Commitments & Actions" chapter.

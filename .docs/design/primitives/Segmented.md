@@ -1,7 +1,7 @@
 # Segmented
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `Segmented`
@@ -65,7 +65,7 @@ Segmented lets users choose one value from a small fixed set without opening a m
 ## Source
 
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 39-51 (`Segmented`)
-- **Code:** to be implemented in `src/components/ui/Segmented.tsx`
+- **Code:** shipped in `src/components/ui/Segmented.tsx`
 
 ## Surfaces that consume it
 

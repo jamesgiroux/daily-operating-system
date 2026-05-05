@@ -274,7 +274,12 @@ export default function MonthlyWrappedPage() {
   // Render all 10 slides
   return (
     <div className={styles.viewportBreakout}>
-      <div className={styles.slideContainer}>
+      <div
+        className={styles.slideContainer}
+        data-ds-tier="surface"
+        data-ds-name="MonthlyWrappedPage"
+        data-ds-spec="surfaces/MonthlyWrappedPage.md"
+      >
         <SplashSlide content={content!} />
         <VolumeSlide content={content!} />
         <TopAccountsSlide content={content!} />

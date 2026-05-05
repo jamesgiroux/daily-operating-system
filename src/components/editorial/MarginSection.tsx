@@ -15,7 +15,13 @@ interface MarginSectionProps {
  */
 export function MarginSection({ id, label, children, reveal = true }: MarginSectionProps) {
   return (
-    <div id={id} className={`${reveal ? "editorial-reveal " : ""}${shared.marginLabelSection}`}>
+    <div
+      id={id}
+      className={`${reveal ? "editorial-reveal " : ""}${shared.marginLabelSection}`}
+      data-ds-name="MarginGrid"
+      data-ds-tier="pattern"
+      data-ds-spec="patterns/MarginGrid.md"
+    >
       <div className={shared.marginLabel}>{label}</div>
       <div className={shared.marginContent}>{children}</div>
     </div>

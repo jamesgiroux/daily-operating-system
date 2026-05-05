@@ -4,6 +4,8 @@
 **Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-02
+**`data-ds-name`:** `TypographyTokens`
+**`data-ds-spec`:** `tokens/typography.md`
 **Design system version introduced:** 0.1.0
 
 ## Job

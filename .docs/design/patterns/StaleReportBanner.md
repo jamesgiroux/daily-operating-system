@@ -1,7 +1,7 @@
 # StaleReportBanner
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `StaleReportBanner`
@@ -72,9 +72,9 @@ Composes:
 
 ## Source
 
-- **Code:** `src/components/reports/ReportShell.tsx`
+- **Related code:** `src/components/reports/ReportShell.tsx`
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
-- **Note:** Wave 2 follow-on for v1.4.4
+- **Roadmap target:** canonical `StaleReportBanner` pattern (not shipped under this name yet)
 
 ## Surfaces that consume it
 

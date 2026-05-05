@@ -3,7 +3,7 @@
 **Tier:** pattern
 **Status:** canonical
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-05
 **`data-ds-name`:** `FolioBar`
 **`data-ds-spec`:** `patterns/FolioBar.md`
 **Variants:** action sets driven by `data-folio-actions` (refresh, search, reports, tools, status-dot); `mark="pulsing"` for live status
@@ -67,7 +67,7 @@ Mockup form (auto-injected via chrome.js):
 >
 ```
 
-Production form (when implemented as React pattern in `src/components/layout/`):
+Production form:
 
 ```tsx
 <FolioBar
@@ -86,7 +86,7 @@ Tinting per surface tint (`data-tint="larkspur" | "terracotta" | ...`) — the b
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/chrome.css` (`.folio`) + `chrome.js` `buildFolio()`
-- **Code:** to be implemented as React pattern in `src/components/layout/FolioBar.tsx` (currently rendered by per-page React + a magazine layout shell — see `src/components/layout/MagazinePageLayout.tsx`)
+- **Code:** shipped in `src/components/layout/FolioBar.tsx`
 
 ## Surfaces that consume it
 
@@ -99,3 +99,4 @@ Every editorial surface: DailyBriefing, AccountDetail, ProjectDetail, PersonDeta
 ## History
 
 - 2026-05-02 — Promoted to canonical from `_shared/.folio` + production magazine layout shell.
+- 2026-05-05 — Source updated to shipped React pattern.

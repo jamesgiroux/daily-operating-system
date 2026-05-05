@@ -7,9 +7,9 @@
 **`data-ds-name`:** `DailyBriefing`
 **`data-ds-spec`:** `surfaces/DailyBriefing.md`
 **Canonical name:** `DailyBriefing`
-**Current src name:** `Dashboard.tsx` ← rename candidate (DOS-360, deferred to post-v1.4.3 per D7)
+**Current src name:** `DashboardPage` inline in `src/router.tsx` ← rename candidate (DOS-360, deferred to post-v1.4.3 per D7)
 **Source files:**
-- `src/pages/Dashboard.tsx` (main route component, to be renamed)
+- `src/router.tsx` (`DashboardPage` inline route component, to be renamed/extracted)
 - `src/components/dashboard/DailyBriefing.tsx`
 - `src/components/dashboard/DailyBriefing.test.tsx`
 - `src/hooks/useDashboardData.ts`
@@ -102,9 +102,9 @@ Local pill renders these via `FloatingNavIsland`'s chapters contract; click smoo
 
 ## Naming notes
 
-Canonical name `DailyBriefing` per `NAMING.md`. Current src name `Dashboard.tsx` is the legacy mismatch. The rename is tracked under DOS-360 (DS-XCUT-04), deferred to post-v1.4.3 to avoid bundling rename churn with the redesign.
+Canonical name `DailyBriefing` per `NAMING.md`. Current route wrapper name `DashboardPage` is the legacy mismatch. The rename is tracked under DOS-360 (DS-XCUT-04), deferred to post-v1.4.3 to avoid bundling rename churn with the redesign.
 
-The src component `src/components/dashboard/DailyBriefing.tsx` is already named correctly; only the route / page wrapper at `src/pages/Dashboard.tsx` needs the rename.
+The src component `src/components/dashboard/DailyBriefing.tsx` is already named correctly; only the inline route / page wrapper in `src/router.tsx` needs the rename or extraction.
 
 ## Naming bug to fix during v1.4.3
 

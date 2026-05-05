@@ -1,7 +1,7 @@
 # ClaimRow
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `ClaimRow`
@@ -92,7 +92,7 @@ When `expandable`, clicking the row (or an explicit drill-in chevron) opens `Rec
 ## Source
 
 - **Spec:** new for Wave 2
-- **Code:** to be implemented in `src/components/intelligence/ClaimRow.tsx`
+- **Code:** shipped in `src/components/intelligence/ClaimRow.tsx`
 - **Existing similar:** `src/components/health/TriageCard.tsx` is row-shaped intelligence with trust-adjacent affordances (Audit 02 surfaced); future ClaimRow may absorb some of its API; for now, document distinct.
 
 ## Surfaces that consume it

@@ -8,7 +8,9 @@
 **`data-ds-spec`:** `surfaces/MeetingDetail.md`
 **Canonical name:** `MeetingDetail`
 **Source files:**
-- Existing: `src/pages/MeetingDetail*` (verify path during implementation)
+- Existing: `src/pages/MeetingDetailPage.tsx` (canonical route)
+- Legacy route wrapper: `src/pages/MeetingHistoryDetailPage.tsx` (covered by `MeetingDetailPage`)
+- CSS module: `src/pages/meeting-intel.module.css`
 - Mockup: `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html`
 
 **Design system version introduced:** 0.4.0

@@ -10,52 +10,53 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 
 | Name | Status | Job (one line) | Consumers |
 |---|---|---|---|
-| [`FolioBar`](./FolioBar.md) | canonical | Top frosted bar with crumbs + actions | every editorial surface |
-| [`FloatingNavIsland`](./FloatingNavIsland.md) | canonical | Dual-pill app + chapter nav (the canonical local-nav pattern) | every stable surface |
-| [`AtmosphereLayer`](./AtmosphereLayer.md) | canonical | Page-tinted radial gradient background | every editorial surface |
-| [`MarginGrid`](./MarginGrid.md) | canonical | Two-column section layout (margin label + content) | DailyBriefing, AccountDetail |
-| [`ChapterHeading`](./ChapterHeading.md) | canonical | Section opener (heavy rule + serif title + epigraph) | AccountDetail, ProjectDetail, etc. |
-| [`Lead`](./Lead.md) | proposed | Single-sentence editorial headline | DailyBriefing |
-| [`DayChart`](./DayChart.md) | proposed | Visual day shape (hour ticks + bars + NOW line) | DailyBriefing |
-| [`MeetingSpineItem`](./MeetingSpineItem.md) | proposed | Magazine-style meeting list entry | DailyBriefing |
-| [`EntityPortraitCard`](./EntityPortraitCard.md) | proposed | Color-banded entity portrait with thread | DailyBriefing |
-| [`ThreadMark`](./ThreadMark.md) | proposed | Universal "talk about this" hover affordance | DailyBriefing (cross-version) |
-| [`AskAnythingDock`](./AskAnythingDock.md) | proposed | Multi-line conversational dock | DailyBriefing (cross-version) |
+| [`FolioBar`](./FolioBar.md) | canonical/shipped | Top frosted bar with crumbs + actions | every editorial surface |
+| [`FloatingNavIsland`](./FloatingNavIsland.md) | canonical/shipped | Dual-pill app + chapter nav (the canonical local-nav pattern) | every stable surface |
+| [`AtmosphereLayer`](./AtmosphereLayer.md) | canonical/shipped | Page-tinted radial gradient background | every editorial surface |
+| [`MarginGrid`](./MarginGrid.md) | canonical/shipped | Two-column section layout (margin label + content) | DailyBriefing, AccountDetail |
+| [`ChapterHeading`](./ChapterHeading.md) | canonical/shipped | Section opener (heavy rule + serif title + epigraph) | AccountDetail, ProjectDetail, etc. |
+| [`Lead`](./Lead.md) | roadmap/planned | Single-sentence editorial headline | DailyBriefing |
+| [`DayChart`](./DayChart.md) | canonical/shipped | Visual day shape (hour ticks + bars + NOW line) | DailyBriefing |
+| [`MeetingSpineItem`](./MeetingSpineItem.md) | roadmap/planned | Magazine-style meeting list entry | DailyBriefing |
+| [`EntityPortraitCard`](./EntityPortraitCard.md) | canonical/shipped | Color-banded entity portrait with thread | DailyBriefing |
+| [`ThreadMark`](./ThreadMark.md) | canonical/shipped | Universal "talk about this" hover affordance | DailyBriefing (cross-version) |
+| [`AskAnythingDock`](./AskAnythingDock.md) | canonical/shipped | Multi-line conversational dock | DailyBriefing (cross-version) |
 
 ### Wave 2 (v1.4.4 trust UI, 0.2.0)
 
 | Name | Status | Job (one line) | Consumers |
 |---|---|---|---|
-| [`TrustBand`](./TrustBand.md) | proposed | Canonical trust signal cluster (TrustBandBadge + ProvenanceTag + FreshnessIndicator) | every claim-rendering surface |
-| [`ClaimRow`](./ClaimRow.md) | proposed | Single-claim render API (the unit consumed everywhere) | every claim-rendering surface |
-| [`ReceiptCallout`](./ReceiptCallout.md) | proposed | v1.4.4 inspection layer; expandable receipt with resolver bands + corrections | every claim-rendering surface |
-| [`AboutThisIntelligencePanel`](./AboutThisIntelligencePanel.md) | proposed | Chapter-level coverage / freshness / source explanation | DailyBriefing chapters, entity surfaces |
-| [`DossierSourceCoveragePanel`](./DossierSourceCoveragePanel.md) | proposed | Dossier-level source coverage explanation | AccountDetail, ProjectDetail, PersonDetail |
-| [`StaleReportBanner`](./StaleReportBanner.md) | proposed | Banner above generated reports when underlying intel has gone stale | report surfaces |
-| [`ConsistencyFindingBanner`](./ConsistencyFindingBanner.md) | proposed | Inline banner when v1.4.0 trust compiler flags consistency findings | claim-rendering surfaces |
+| [`TrustBand`](./TrustBand.md) | canonical/shipped | Canonical trust signal cluster (TrustBandBadge + ProvenanceTag + FreshnessIndicator) | every claim-rendering surface |
+| [`ClaimRow`](./ClaimRow.md) | canonical/shipped | Single-claim render API (the unit consumed everywhere) | every claim-rendering surface |
+| [`ReceiptCallout`](./ReceiptCallout.md) | canonical/shipped | v1.4.4 inspection layer; expandable receipt with resolver bands + corrections | every claim-rendering surface |
+| [`AboutThisIntelligencePanel`](./AboutThisIntelligencePanel.md) | roadmap/planned | Chapter-level coverage / freshness / source explanation | DailyBriefing chapters, entity surfaces |
+| [`DossierSourceCoveragePanel`](./DossierSourceCoveragePanel.md) | roadmap/planned | Dossier-level source coverage explanation | AccountDetail, ProjectDetail, PersonDetail |
+| [`StaleReportBanner`](./StaleReportBanner.md) | roadmap/planned | Banner above generated reports when underlying intel has gone stale | report surfaces |
+| [`ConsistencyFindingBanner`](./ConsistencyFindingBanner.md) | roadmap/planned | Inline banner when v1.4.0 trust compiler flags consistency findings | claim-rendering surfaces |
 
 ### Wave 3 (Settings substrate, 0.3.0)
 
 | Name | Status | Job (one line) | Consumers |
 |---|---|---|---|
-| [`SurfaceMasthead`](./SurfaceMasthead.md) | proposed | Generic surface-top block (eyebrow + title + lede + accessory + glance slot) | Settings, MeetingDetail (subsumes MeetingHero) |
-| [`FormRow`](./FormRow.md) | proposed | Universal label/help \| ctrl \| aux row | Settings (canonical), future settings-like surfaces |
-| [`GlanceRow`](./GlanceRow.md) | proposed | Horizontal row of GlanceCell instances inside SurfaceMasthead's glance slot | Settings masthead |
+| [`SurfaceMasthead`](./SurfaceMasthead.md) | canonical/shipped | Generic surface-top block (eyebrow + title + lede + accessory + glance slot) | Settings, MeetingDetail (subsumes MeetingHero) |
+| [`FormRow`](./FormRow.md) | canonical/shipped | Universal label/help \| ctrl \| aux row | Settings (canonical), future settings-like surfaces |
+| [`GlanceRow`](./GlanceRow.md) | canonical/shipped | Horizontal row of GlanceCell instances inside SurfaceMasthead's glance slot | Settings masthead |
+| [`VitalsStrip`](./VitalsStrip.md) | canonical/shipped | Inline entity vital metrics with dot separators, highlights, and optional source attribution | AccountDetail, account/person/project editorial |
 
 ### Wave 4 (Meeting Detail substrate, 0.4.0)
 
 | Name | Status | Job (one line) | Consumers |
 |---|---|---|---|
-| [`SuggestedActionRow`](./SuggestedActionRow.md) | proposed | AI-suggested action item with Accept/Dismiss; meeting + work contexts | MeetingDetail, AccountDetail Work surface |
-| [`FolioActions`](./FolioActions.md) | proposed | Sub-row of action buttons below FolioBar (actions, not nav per D2) | MeetingDetail (canonical), Reports |
-| [`AgendaThreadList`](./AgendaThreadList.md) | proposed | Predicted agenda items checked off post-meeting (✓ / ○ / +) | MeetingDetail |
-| [`PredictionsVsRealityGrid`](./PredictionsVsRealityGrid.md) | proposed | Two-column risks/wins comparison vs briefing predictions | MeetingDetail |
-| [`SignalGrid`](./SignalGrid.md) | proposed | 2x2 stats grid (Question density, Decision maker, Forward-looking, Monologue risk) | MeetingDetail |
-| [`EscalationQuote`](./EscalationQuote.md) | proposed | Highlighted attributed quote where the room turned | MeetingDetail |
-| [`FindingsTriad`](./FindingsTriad.md) | proposed | Three-column Wins / Risks / Decisions cards with evidence quotes | MeetingDetail |
-| [`ChampionHealthBlock`](./ChampionHealthBlock.md) | proposed | Champion relationship state + evidence + risk paragraph | MeetingDetail |
-| [`CommitmentRow`](./CommitmentRow.md) | proposed | Captured commitment with YOURS / THEIRS tag | MeetingDetail |
-| [`RoleTransitionRow`](./RoleTransitionRow.md) | proposed | Person role transition (before-status → after-status pill chain) | MeetingDetail |
+| [`SuggestedActionRow`](./SuggestedActionRow.md) | canonical/shipped | AI-suggested action item with Accept/Dismiss; meeting + work contexts | MeetingDetail, AccountDetail Work surface |
+| [`FolioActions`](./FolioActions.md) | roadmap/planned | Sub-row of action buttons below FolioBar (actions, not nav per D2) | MeetingDetail (canonical), Reports |
+| [`AgendaThreadList`](./AgendaThreadList.md) | roadmap/planned | Predicted agenda items checked off post-meeting (✓ / ○ / +) | MeetingDetail |
+| [`PredictionsVsRealityGrid`](./PredictionsVsRealityGrid.md) | roadmap/planned | Two-column risks/wins comparison vs briefing predictions | MeetingDetail |
+| [`SignalGrid`](./SignalGrid.md) | roadmap/planned | 2x2 stats grid (Question density, Decision maker, Forward-looking, Monologue risk) | MeetingDetail |
+| [`EscalationQuote`](./EscalationQuote.md) | roadmap/planned | Highlighted attributed quote where the room turned | MeetingDetail |
+| [`FindingsTriad`](./FindingsTriad.md) | roadmap/planned | Three-column Wins / Risks / Decisions cards with evidence quotes | MeetingDetail |
+| [`ChampionHealthBlock`](./ChampionHealthBlock.md) | roadmap/planned | Champion relationship state + evidence + risk paragraph | MeetingDetail |
+| [`CommitmentRow`](./CommitmentRow.md) | roadmap/planned | Captured commitment with YOURS / THEIRS tag | MeetingDetail |
+| [`RoleTransitionRow`](./RoleTransitionRow.md) | roadmap/planned | Person role transition (before-status → after-status pill chain) | MeetingDetail |
 
 ## Conventions
 

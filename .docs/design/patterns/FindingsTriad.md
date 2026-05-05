@@ -1,7 +1,7 @@
 # FindingsTriad
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `FindingsTriad`
@@ -73,7 +73,7 @@ Group the meeting's most important wins, risks, and decisions into three scannab
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/FindingsTriad.tsx`
+- **Roadmap target:** `src/components/meeting/FindingsTriad.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:195-241`
 - **Reference render:** Meeting "Findings" chapter.
 

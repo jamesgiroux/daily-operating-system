@@ -375,7 +375,12 @@ export default function SwotPage() {
 
   // Render the 5-slide analysis with scroll-snap
   return (
-    <div className={slides.slideContainer}>
+    <div
+      className={slides.slideContainer}
+      data-ds-tier="surface"
+      data-ds-name="SwotPage"
+      data-ds-spec="surfaces/SwotPage.md"
+    >
       {/* Slide 1: Cover */}
       <section id="cover" className={slides.slideSection}>
         <SwotCover

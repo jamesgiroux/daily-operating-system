@@ -23,7 +23,12 @@ interface ChapterHeadingProps {
 
 export function ChapterHeading({ title, epigraph, feedbackSlot, freshness, variant = "primary", noRule = false }: ChapterHeadingProps) {
   return (
-    <div className={styles.heading}>
+    <div
+      className={styles.heading}
+      data-ds-name="ChapterHeading"
+      data-ds-tier="pattern"
+      data-ds-spec="patterns/ChapterHeading.md"
+    >
       {!noRule && <hr className={styles.rule} />}
       <div className={styles.titleRow}>
         {variant === "reference" ? (

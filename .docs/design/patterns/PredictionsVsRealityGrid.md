@@ -1,7 +1,7 @@
 # PredictionsVsRealityGrid
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `PredictionsVsRealityGrid`
@@ -71,7 +71,7 @@ Compare the meeting's actual outcome against the pre-meeting briefing so the use
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/PredictionsVsRealityGrid.tsx`
+- **Roadmap target:** `src/components/meeting/PredictionsVsRealityGrid.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:116-162`
 - **Reference render:** Meeting "Predictions vs. Reality" chapter.
 

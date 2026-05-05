@@ -137,6 +137,7 @@ export function FreshnessIndicator({
         className={clsx(styles.root, styles.strip, className)}
         data-staleness={staleness}
         data-ds-name="FreshnessIndicator"
+        data-ds-tier="primitive"
         data-ds-spec="primitives/FreshnessIndicator.md"
       >
         {parts.map((part, index) => (
@@ -163,6 +164,7 @@ export function FreshnessIndicator({
       className={clsx(styles.root, styles.inline, className)}
       data-staleness={staleness}
       data-ds-name="FreshnessIndicator"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/FreshnessIndicator.md"
     >
       <span className={styles.timeText}>{label}</span>

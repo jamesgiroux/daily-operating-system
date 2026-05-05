@@ -1,7 +1,7 @@
 # SurfaceMasthead
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `SurfaceMasthead`
@@ -81,7 +81,7 @@ Two-column layout when accessory is present (title block | accessory). Single co
 
 - **Spec:** new for Wave 3
 - **Mockup substrate:** Settings `.s-masthead` (`mockups/surfaces/settings/app.jsx` lines 51-75); MeetingDetail `.cur-hero-title` + surrounding (`mockups/meeting/current/after.html` lines 39-64)
-- **Code:** to be implemented in `src/components/layout/SurfaceMasthead.tsx`
+- **Code:** shipped in `src/components/layout/SurfaceMasthead.tsx`
 
 ## Surfaces that consume it
 

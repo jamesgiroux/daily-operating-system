@@ -24,6 +24,7 @@ export function GlanceCell({
       className={clsx(styles.cell, className)}
       data-status={status}
       data-ds-name="GlanceCell"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/GlanceCell.md"
       {...rest}
     >

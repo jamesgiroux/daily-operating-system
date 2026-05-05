@@ -1,7 +1,7 @@
 # FormRow
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `FormRow`
@@ -83,7 +83,7 @@ type FormRowProps = {
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 5-16 (`Row` label/help, child control, aux slots).
 - **Form primitive references:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 18-55 (`InlineInput`, `Switch`, `Segmented`, `Btn`) and lines 73-80 (`Chip`).
 - **Consumer reference:** `.docs/design/surfaces/Settings.md` lines 58-65 names `FormRow` as the universal Settings pattern.
-- **Code:** to be implemented in `src/components/settings/FormRow.tsx`.
+- **Code:** shipped in `src/components/settings/FormRow.tsx`.
 
 ## Surfaces that consume it
 

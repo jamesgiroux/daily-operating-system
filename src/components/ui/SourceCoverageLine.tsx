@@ -29,6 +29,7 @@ export function SourceCoverageLine({
         className={clsx(styles.line, className)}
         data-variant={variant}
         data-ds-name="SourceCoverageLine"
+        data-ds-tier="primitive"
         data-ds-spec="primitives/SourceCoverageLine.md"
       >
         {emptyLabel}
@@ -41,6 +42,7 @@ export function SourceCoverageLine({
       className={clsx(styles.line, className)}
       data-variant={variant}
       data-ds-name="SourceCoverageLine"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/SourceCoverageLine.md"
     >
       <span>{sourceLabel}</span>

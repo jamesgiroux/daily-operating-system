@@ -50,6 +50,7 @@ export function TrustBandBadge({
       className={clsx(styles.badge, compact && styles.compact, meta.className, className)}
       data-band={band}
       data-ds-name="TrustBandBadge"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/TrustBandBadge.md"
       {...rest}
     >

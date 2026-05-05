@@ -1,7 +1,7 @@
 # AsOfTimestamp
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `AsOfTimestamp`
@@ -58,7 +58,7 @@ type AsOfTimestampProps = {
 - **Spec:** new for Wave 2
 - **Substrate contract:** v1.4.0 `source_asof` timestamp rendered in neutral receipt and inspection contexts
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
-- **Code:** to be implemented in `src/components/ui/AsOfTimestamp.tsx`
+- **Code:** shipped in `src/components/ui/AsOfTimestamp.tsx`
 
 ## Surfaces that consume it
 

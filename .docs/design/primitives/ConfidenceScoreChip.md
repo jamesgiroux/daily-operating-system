@@ -1,7 +1,7 @@
 # ConfidenceScoreChip
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `ConfidenceScoreChip`
@@ -62,7 +62,7 @@ Band mapping is derived by the primitive: `>= 0.85` maps to `likely_current`, `0
 - **Spec:** new for Wave 2
 - **Substrate contract:** v1.4.0 trust thresholds from resolver and render contracts: `likely_current >= 0.85`, `use_with_caution 0.60-0.85`, `needs_verification < 0.60`
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
-- **Code:** to be implemented in `src/components/ui/ConfidenceScoreChip.tsx`
+- **Code:** shipped in `src/components/ui/ConfidenceScoreChip.tsx`
 
 ## Surfaces that consume it
 

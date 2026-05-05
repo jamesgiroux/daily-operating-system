@@ -1,7 +1,7 @@
 # SignalGrid
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `SignalGrid`
@@ -66,7 +66,7 @@ Summarize the conversation's behavioral signals in a compact 2x2 grid so the use
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/SignalGrid.tsx`
+- **Roadmap target:** `src/components/meeting/SignalGrid.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:176-181`
 - **Reference render:** Meeting "Conversation" chapter.
 

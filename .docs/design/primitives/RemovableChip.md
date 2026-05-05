@@ -1,7 +1,7 @@
 # RemovableChip
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `RemovableChip`
@@ -57,7 +57,7 @@ RemovableChip displays a selected or applied item with a built-in removal afford
 ## Source
 
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 73-80 (`Chip`)
-- **Code:** to be implemented in `src/components/ui/RemovableChip.tsx`
+- **Code:** shipped in `src/components/ui/RemovableChip.tsx`
 
 ## Surfaces that consume it
 

@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Generic Report · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../../_shared/fonts.css">
+  <link rel="stylesheet" href="../../_shared/styles/design-tokens.css">
+
+  <link rel="stylesheet" href="../../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../../_shared/styles/report-page.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/report-shell.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/report-slides.module.css">
+  <link rel="stylesheet" href="../../_shared/styles/report-surfaces.css">
+  <link rel="stylesheet" href="../../_shared/styles/ui-button.css">
+
+  <link rel="stylesheet" href="../../_shared/chrome.css">
+  <link rel="stylesheet" href="../../_shared/inspector.css">
+</head>
+<body
+  data-folio-label="Generic Report"
+  data-folio-crumbs="Accounts > Account > Generic Report"
+  data-tint="olive"
+  data-active-page="accounts"
+  data-nav-base=".."
+  data-folio-actions="regenerate">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div
+  class="report-shell"
+  data-ds-name="ReportPage"
+  data-ds-tier="surface"
+  data-ds-spec="surfaces/ReportPage.md"
+>
+  <div class="report-shell_staleBanner">
+    <span>Context has updated — this report may be outdated.</span>
+    <button class="ui-button ui-button-sm ui-button-ghost report-shell_staleBannerButton" type="button">
+      <span class="report-shell_refreshIcon">↻</span>
+      Regenerate
+    </button>
+  </div>
+
+  <pre class="report-page_preBlock">{
+  "title": "Generic Report",
+  "entity": "Acme Corp",
+  "summary": "Unknown report types render as formatted JSON instead of inventing a bespoke deck.",
+  "sections": [
+    "current context",
+    "known risks",
+    "recommended next step"
+  ]
+}</pre>
+
+  <div class="report-shell_footer">
+    <span>Generated May 5, 2026</span>
+    <div class="report-shell_footerActions">
+      <button class="ui-button ui-button-sm ui-button-ghost" type="button">
+        <span class="report-shell_refreshIcon">↻</span>
+        Regenerate
+      </button>
+      <button class="ui-button ui-button-sm ui-button-ghost" type="button">Export PDF</button>
+    </div>
+  </div>
+
+  <template data-state="loading-error">
+    <div class="report-page_loadingState">Loading…</div>
+    <div class="report-page_errorState">Error: Could not load report</div>
+    <div class="report-shell_errorBanner">Error: Report generation failed. Try again after the next context refresh.</div>
+    <div class="report-shell_emptyState">
+      <p class="report-shell_emptyTitle">No Generic Report yet.</p>
+      <button class="ui-button ui-button-default ui-button-default-size" type="button">Generate Generic Report</button>
+    </div>
+    <div class="report-page_parseError">Error parsing report content.</div>
+    Generating Generic Report
+    Gathering context
+    Reading account data, updates, and meeting history
+    Analyzing context
+    Synthesizing insights across connected data
+    Writing report
+    Producing structured output
+    Good data is the foundation of good decisions.
+  </template>
+</div>
+
+</main>
+</div>
+
+<script src="../../_shared/chrome.js"></script>
+<script src="../../_shared/inspector.js"></script>
+</body>
+</html>

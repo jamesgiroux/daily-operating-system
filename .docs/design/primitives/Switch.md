@@ -1,7 +1,7 @@
 # Switch
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `Switch`
@@ -57,7 +57,7 @@ Switch gives users a compact on/off control for a single binary setting. It is o
 ## Source
 
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/parts.jsx` lines 31-37 (`Switch`)
-- **Code:** to be implemented in `src/components/ui/Switch.tsx`
+- **Code:** shipped in `src/components/ui/Switch.tsx`
 
 ## Surfaces that consume it
 
