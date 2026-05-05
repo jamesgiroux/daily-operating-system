@@ -293,6 +293,7 @@ fn cross_entity_coherence_factor(db: &ActionDb, claim_text: &str) -> f64 {
             config: TrustConfig::default(),
             factor_inputs: TrustFactorInputs {
                 source_reliability: 1.0,
+                source_reliability_corroborators: Vec::new(),
                 freshness: FreshnessContext {
                     timestamp_known: true,
                     age_days: 0.0,
@@ -301,6 +302,8 @@ fn cross_entity_coherence_factor(db: &ActionDb, claim_text: &str) -> f64 {
                 contradiction_count: 0,
                 user_feedback: UserFeedbackSignal::None,
                 subject_fit_confidence: 1.0,
+                internal_consistency: 1.0,
+                source_lifecycle: SourceLifecycleState::Active,
             },
             cross_entity: CrossEntityCoherenceInput {
                 claim_text: claim.text.clone(),

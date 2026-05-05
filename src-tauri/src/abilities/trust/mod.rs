@@ -10,15 +10,16 @@ pub mod types;
 
 use factors::{
     contradiction_penalty, corroboration_weight, cross_entity_coherence, freshness_weight,
-    sensitivity_aware_filtering, source_reliability, subject_fit_confidence, user_feedback_weight,
+    internal_consistency, sensitivity_aware_filtering, source_lifecycle_weight,
+    source_reliability, subject_fit_confidence, user_feedback_weight,
 };
 
 pub use config::{TrustConfig, TrustConfigError, TrustFactorWeights};
 pub use types::{
-    ConfidenceCaveat, ConfidenceEvidence, CrossEntityCoherenceInput, CrossEntityHit,
-    CrossEntityHitKind, EntityFootprint, FactorEvidence, FreshnessContext, SurfaceClass,
-    TargetFootprint, TrustBand, TrustComputation, TrustContext, TrustFactorInputs, TrustScore,
-    UserFeedbackSignal,
+    ConfidenceCaveat, ConfidenceEvidence, CorroboratorWeight, CrossEntityCoherenceInput,
+    CrossEntityHit, CrossEntityHitKind, EntityFootprint, FactorEvidence, FreshnessContext,
+    SourceLifecycleState, SourceReliabilityInput, SurfaceClass, TargetFootprint, TrustBand,
+    TrustComputation, TrustContext, TrustFactorInputs, TrustScore, UserFeedbackSignal,
 };
 
 pub type ClaimRow = crate::db::claims::IntelligenceClaim;
@@ -45,6 +46,11 @@ pub fn compile_trust(
             name: "source_reliability",
             raw_value: source_reliability(&ctx.factor_inputs),
             weight: ctx.config.weights.source_reliability,
+        },
+        NamedFactor {
+            name: "source_lifecycle_weight",
+            raw_value: source_lifecycle_weight(&ctx.factor_inputs),
+            weight: ctx.config.weights.source_lifecycle_weight,
         },
         NamedFactor {
             name: "freshness_weight",
@@ -74,6 +80,11 @@ pub fn compile_trust(
             name: "subject_fit_confidence",
             raw_value: subject_fit_confidence(&ctx.factor_inputs),
             weight: ctx.config.weights.subject_fit_confidence,
+        },
+        NamedFactor {
+            name: "internal_consistency",
+            raw_value: internal_consistency(&ctx.factor_inputs),
+            weight: ctx.config.weights.internal_consistency,
         },
         NamedFactor {
             name: "cross_entity_coherence",
@@ -366,6 +377,7 @@ mod tests {
             config: TrustConfig::default(),
             factor_inputs: TrustFactorInputs {
                 source_reliability: 1.0,
+                source_reliability_corroborators: Vec::new(),
                 freshness: FreshnessContext {
                     timestamp_known: true,
                     age_days: 0.0,
@@ -374,6 +386,8 @@ mod tests {
                 contradiction_count: 0,
                 user_feedback: UserFeedbackSignal::None,
                 subject_fit_confidence: 1.0,
+                internal_consistency: 1.0,
+                source_lifecycle: SourceLifecycleState::Active,
             },
             cross_entity: CrossEntityCoherenceInput {
                 claim_text: "The target account has elevated renewal risk.".to_string(),
@@ -426,11 +440,13 @@ mod tests {
     fn zero_weights() -> TrustFactorWeights {
         TrustFactorWeights {
             source_reliability: 0.0,
+            source_lifecycle_weight: 0.0,
             freshness_weight: 0.0,
             corroboration_weight: 0.0,
             contradiction_penalty: 0.0,
             user_feedback_weight: 0.0,
             subject_fit_confidence: 0.0,
+            internal_consistency: 0.0,
             cross_entity_coherence: 0.0,
             sensitivity_aware_filtering: 0.0,
         }
@@ -450,13 +466,13 @@ mod tests {
 
     #[test]
     fn trust_geometric_mean_all_floor_05_returns_floor() {
-        let score = aggregate_geometric_mean(&factors(&[0.0; 7]), 0.05).unwrap();
+        let score = aggregate_geometric_mean(&factors(&[0.0; 10]), 0.05).unwrap();
         assert_close(score, 0.05);
     }
 
     #[test]
     fn trust_geometric_mean_all_one_returns_one() {
-        let score = aggregate_geometric_mean(&factors(&[1.0; 7]), 0.05).unwrap();
+        let score = aggregate_geometric_mean(&factors(&[1.0; 10]), 0.05).unwrap();
         assert_close(score, 1.0);
     }
 
@@ -512,7 +528,7 @@ mod tests {
     }
 
     #[test]
-    fn trust_factor_count_is_five_canonical_plus_local_helpers() {
+    fn trust_factor_count_is_ten_canonical_factors() {
         let computation = compile_trust(&test_claim(), test_context()).unwrap();
         let names: Vec<&str> = computation
             .evidence
@@ -525,17 +541,129 @@ mod tests {
             names,
             vec![
                 "source_reliability",
+                "source_lifecycle_weight",
                 "freshness_weight",
                 "corroboration_weight",
                 "contradiction_penalty",
                 "user_feedback_weight",
                 "subject_fit_confidence",
+                "internal_consistency",
                 "cross_entity_coherence",
                 "sensitivity_aware_filtering",
             ]
         );
-        assert_eq!(names[..5].len(), 5, "ADR-0114 canonical factor count");
-        assert_eq!(names[5..].len(), 3, "Trust Compiler local helper count");
+        assert_eq!(names.len(), 10, "trust factor count");
+    }
+
+    #[test]
+    fn internal_consistency_factor_returns_input_value() {
+        let mut ctx = test_context();
+        ctx.factor_inputs.internal_consistency = 0.37;
+
+        assert_close(
+            internal_consistency(&ctx.factor_inputs),
+            ctx.factor_inputs.internal_consistency,
+        );
+    }
+
+    #[test]
+    fn compile_trust_low_internal_consistency_drops_score_into_needs_verification() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.config.weights = TrustFactorWeights {
+            internal_consistency: 1.0,
+            ..zero_weights()
+        };
+        ctx.factor_inputs.internal_consistency = 0.20;
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        let consistency = factor_evidence(&computation, "internal_consistency");
+
+        assert_close(consistency.raw_value, 0.20);
+        assert_close(computation.score.value(), 0.20);
+        assert_eq!(computation.band, TrustBand::NeedsVerification);
+    }
+
+    #[test]
+    fn source_lifecycle_weight_withdrawn_and_dismissed_return_zero() {
+        let mut ctx = test_context();
+
+        ctx.factor_inputs.source_lifecycle = SourceLifecycleState::Withdrawn;
+        assert_close(source_lifecycle_weight(&ctx.factor_inputs), 0.0);
+
+        ctx.factor_inputs.source_lifecycle = SourceLifecycleState::Dismissed;
+        assert_close(source_lifecycle_weight(&ctx.factor_inputs), 0.0);
+    }
+
+    #[test]
+    fn compile_trust_withdrawn_source_lifecycle_clamps_to_floor() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.config.weights = TrustFactorWeights {
+            source_lifecycle_weight: 1.0,
+            ..zero_weights()
+        };
+        ctx.factor_inputs.source_lifecycle = SourceLifecycleState::Withdrawn;
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        let lifecycle = factor_evidence(&computation, "source_lifecycle_weight");
+
+        assert_close(lifecycle.raw_value, 0.0);
+        assert_close(lifecycle.value, TrustConfig::default().clamp_floor);
+        assert_close(
+            computation.score.value(),
+            TrustConfig::default().clamp_floor,
+        );
+        assert_eq!(computation.band, TrustBand::NeedsVerification);
+    }
+
+    #[test]
+    fn source_reliability_aggregated_dominates_5_weak_with_1_strong_contradiction() {
+        let input = SourceReliabilityInput {
+            corroborators: vec![
+                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+                CorroboratorWeight { evidence_weight: 1.0, confirms: false },
+            ],
+        };
+
+        assert_close(factors::source_reliability_aggregated(&input), 0.5);
+    }
+
+    #[test]
+    fn source_reliability_aggregated_clamps_to_zero_when_no_corroborators() {
+        let input = SourceReliabilityInput {
+            corroborators: Vec::new(),
+        };
+
+        assert_close(factors::source_reliability_aggregated(&input), 0.0);
+    }
+
+    #[test]
+    fn source_reliability_aggregated_clamps_to_one_with_all_strong_confirms() {
+        let input = SourceReliabilityInput {
+            corroborators: vec![
+                CorroboratorWeight { evidence_weight: 1.0, confirms: true },
+                CorroboratorWeight { evidence_weight: 1.0, confirms: true },
+            ],
+        };
+
+        assert_close(factors::source_reliability_aggregated(&input), 1.0);
+    }
+
+    #[test]
+    fn source_reliability_uses_corroborators_when_present() {
+        let mut ctx = test_context();
+        ctx.factor_inputs.source_reliability = 1.0;
+        ctx.factor_inputs.source_reliability_corroborators = vec![
+            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+            CorroboratorWeight { evidence_weight: 1.0, confirms: false },
+        ];
+
+        assert_close(source_reliability(&ctx.factor_inputs), 1.0 / 6.0);
     }
 
     #[test]
@@ -666,11 +794,13 @@ mod tests {
         let mut ctx = test_context();
         ctx.config.weights = TrustFactorWeights {
             source_reliability: 0.0,
+            source_lifecycle_weight: 0.0,
             freshness_weight: 0.0,
             corroboration_weight: 0.0,
             contradiction_penalty: 0.0,
             user_feedback_weight: 0.0,
             subject_fit_confidence: 0.0,
+            internal_consistency: 0.0,
             cross_entity_coherence: 0.0,
             sensitivity_aware_filtering: 0.0,
         };

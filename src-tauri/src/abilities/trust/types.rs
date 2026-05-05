@@ -85,11 +85,35 @@ pub enum SurfaceClass {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TrustFactorInputs {
     pub source_reliability: f64,
+    pub source_reliability_corroborators: Vec<CorroboratorWeight>,
     pub freshness: FreshnessContext,
     pub corroboration_strength: f64,
     pub contradiction_count: u32,
     pub user_feedback: UserFeedbackSignal,
     pub subject_fit_confidence: f64,
+    /// How well the claim's internal sub-statements agree with each other.
+    /// Range: 0.0 to 1.0.
+    pub internal_consistency: f64,
+    pub source_lifecycle: SourceLifecycleState,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct SourceReliabilityInput {
+    pub corroborators: Vec<CorroboratorWeight>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
+pub struct CorroboratorWeight {
+    pub evidence_weight: f64,
+    pub confirms: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceLifecycleState {
+    Active,
+    Withdrawn,
+    Dismissed,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

@@ -55,6 +55,7 @@ fn assert_bundle_metadata() {
 fn clean_factor_inputs() -> TrustFactorInputs {
     TrustFactorInputs {
         source_reliability: 1.0,
+        source_reliability_corroborators: Vec::new(),
         freshness: FreshnessContext {
             timestamp_known: true,
             age_days: 0.0,
@@ -63,6 +64,8 @@ fn clean_factor_inputs() -> TrustFactorInputs {
         contradiction_count: 0,
         user_feedback: UserFeedbackSignal::None,
         subject_fit_confidence: 1.0,
+        internal_consistency: 1.0,
+        source_lifecycle: SourceLifecycleState::Active,
     }
 }
 
@@ -119,8 +122,9 @@ fn test_claim() -> IntelligenceClaim {
 
 fn zero_weights() -> TrustFactorWeights {
     TrustFactorWeights {
-        source_reliability: 0.0, freshness_weight: 0.0, corroboration_weight: 0.0,
-        contradiction_penalty: 0.0, user_feedback_weight: 0.0, subject_fit_confidence: 0.0,
+        source_reliability: 0.0, source_lifecycle_weight: 0.0, freshness_weight: 0.0,
+        corroboration_weight: 0.0, contradiction_penalty: 0.0, user_feedback_weight: 0.0,
+        subject_fit_confidence: 0.0, internal_consistency: 0.0,
         cross_entity_coherence: 0.0, sensitivity_aware_filtering: 0.0,
     }
 }

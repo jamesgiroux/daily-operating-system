@@ -7,20 +7,23 @@ use serde_json::Value;
 const METADATA_JSON: &str = include_str!("fixtures/bundle-6/metadata.json");
 
 #[test]
-fn compile_trust_returns_needs_verification_given_pre_weighted_source_reliability_with_one_contradiction() {
+fn compile_trust_uses_aggregated_source_reliability_with_one_strong_contradiction() {
     assert_bundle_metadata();
 
-    let weak_corroborators = [(0.20, 0.20); 5];
-    let strong_contradiction = (1.0, 1.0);
-    let weighted_support_score = weighted_source_reliability(&weak_corroborators);
+    let corroborators = SourceReliabilityInput {
+        corroborators: vec![
+            CorroboratorWeight { evidence_weight: 0.20, confirms: true },
+            CorroboratorWeight { evidence_weight: 0.20, confirms: true },
+            CorroboratorWeight { evidence_weight: 0.20, confirms: true },
+            CorroboratorWeight { evidence_weight: 0.20, confirms: true },
+            CorroboratorWeight { evidence_weight: 0.20, confirms: true },
+            CorroboratorWeight { evidence_weight: 1.00, confirms: false },
+        ],
+    };
+    let weighted_support_score = source_reliability_aggregated(&corroborators);
 
-    assert_eq!(weak_corroborators.len(), 5);
-    assert_close(strong_contradiction.1, 1.0);
-    assert!(strong_contradiction.0 > weighted_support_score);
-    assert!(
-        weighted_support_score < 0.5,
-        "pre-weighted source_reliability should remain below 0.5, got {weighted_support_score}"
-    );
+    assert_eq!(corroborators.corroborators.iter().filter(|source| source.confirms).count(), 5);
+    assert_close(weighted_support_score, 0.5);
 
     let config = TrustConfig {
         weights: TrustFactorWeights {
@@ -31,7 +34,8 @@ fn compile_trust_returns_needs_verification_given_pre_weighted_source_reliabilit
         ..TrustConfig::default()
     };
     let factor_inputs = TrustFactorInputs {
-        source_reliability: weighted_support_score,
+        source_reliability: 1.0,
+        source_reliability_corroborators: corroborators.corroborators,
         freshness: FreshnessContext {
             timestamp_known: true,
             age_days: 0.0,
@@ -40,6 +44,8 @@ fn compile_trust_returns_needs_verification_given_pre_weighted_source_reliabilit
         contradiction_count: 1,
         user_feedback: UserFeedbackSignal::None,
         subject_fit_confidence: 1.0,
+        internal_consistency: 1.0,
+        source_lifecycle: SourceLifecycleState::Active,
     };
 
     assert_close(source_reliability(&factor_inputs), weighted_support_score);
@@ -64,11 +70,11 @@ fn compile_trust_returns_needs_verification_given_pre_weighted_source_reliabilit
         .find(|factor| factor.name == "source_reliability").expect("source_reliability factor");
     assert_close(source_factor.raw_value, weighted_support_score);
     assert!(
-        computation.score.value() < 0.5,
-        "pre-weighted source_reliability plus one contradiction should stay below 0.5, got {}",
+        computation.score.value() < TrustConfig::default().likely_current_min,
+        "aggregated source_reliability plus one contradiction should stay below LikelyCurrent, got {}",
         computation.score.value()
     );
-    assert_eq!(computation.band, TrustBand::NeedsVerification);
+    assert_eq!(computation.band, TrustBand::UseWithCaution);
 }
 
 fn assert_bundle_metadata() {
@@ -78,12 +84,6 @@ fn assert_bundle_metadata() {
     assert_eq!(factors.as_slice(), ["source_reliability", "contradiction_penalty"]);
     assert!(metadata["pass_fail_definition"].as_str().expect("pass/fail definition")
         .contains("scores below 0.5 trust"));
-}
-
-fn weighted_source_reliability(sources: &[(f64, f64)]) -> f64 {
-    let weighted_sum = sources.iter().map(|(reliability, weight)| reliability * weight).sum::<f64>();
-    let total_weight = sources.iter().map(|(_, weight)| weight).sum::<f64>();
-    weighted_sum / total_weight
 }
 
 fn clean_cross_entity_input() -> CrossEntityCoherenceInput {
@@ -133,8 +133,9 @@ fn test_claim() -> IntelligenceClaim {
 
 fn zero_weights() -> TrustFactorWeights {
     TrustFactorWeights {
-        source_reliability: 0.0, freshness_weight: 0.0, corroboration_weight: 0.0,
-        contradiction_penalty: 0.0, user_feedback_weight: 0.0, subject_fit_confidence: 0.0,
+        source_reliability: 0.0, source_lifecycle_weight: 0.0, freshness_weight: 0.0,
+        corroboration_weight: 0.0, contradiction_penalty: 0.0, user_feedback_weight: 0.0,
+        subject_fit_confidence: 0.0, internal_consistency: 0.0,
         cross_entity_coherence: 0.0, sensitivity_aware_filtering: 0.0,
     }
 }

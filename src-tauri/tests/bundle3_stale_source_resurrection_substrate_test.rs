@@ -12,7 +12,7 @@ fn stale_source_resurrection_keeps_wrong_subject_claim_below_boundary() {
 
     let config = TrustConfig {
         weights: TrustFactorWeights {
-            freshness_weight: 1.0,
+            source_lifecycle_weight: 1.0,
             user_feedback_weight: 1.0,
             ..zero_weights()
         },
@@ -20,6 +20,7 @@ fn stale_source_resurrection_keeps_wrong_subject_claim_below_boundary() {
     };
     let factor_inputs = TrustFactorInputs {
         source_reliability: 1.0,
+        source_reliability_corroborators: Vec::new(),
         freshness: FreshnessContext {
             timestamp_known: true,
             age_days: 180.0,
@@ -28,11 +29,15 @@ fn stale_source_resurrection_keeps_wrong_subject_claim_below_boundary() {
         contradiction_count: 0,
         user_feedback: UserFeedbackSignal::WrongSubject,
         subject_fit_confidence: 1.0,
+        internal_consistency: 1.0,
+        source_lifecycle: SourceLifecycleState::Withdrawn,
     };
 
     let stale_freshness = freshness_weight(&factor_inputs.freshness, &TemporalScope::State, &config);
+    let source_lifecycle = source_lifecycle_weight(&factor_inputs);
     let feedback_penalty = user_feedback_weight(&factor_inputs, &config);
     assert!(stale_freshness < 0.3, "stale freshness was {stale_freshness}");
+    assert_close(source_lifecycle, 0.0);
     assert_close(feedback_penalty, config.feedback_penalty);
 
     let computation = compile_trust(
@@ -47,7 +52,7 @@ fn stale_source_resurrection_keeps_wrong_subject_claim_below_boundary() {
     )
     .expect("compile trust");
 
-    assert!(factor_raw(&computation, "freshness_weight") < 0.3);
+    assert_close(factor_raw(&computation, "source_lifecycle_weight"), 0.0);
     assert_close(factor_raw(&computation, "user_feedback_weight"), feedback_penalty);
     assert!(
         computation.score.value() < 0.4,
@@ -61,7 +66,10 @@ fn assert_bundle_metadata() {
     let metadata: Value = serde_json::from_str(METADATA_JSON).expect("parse metadata");
     let factors = metadata["trust_factors_dominant"].as_array().expect("dominant factors")
         .iter().map(|value| value.as_str().expect("factor string")).collect::<Vec<_>>();
-    assert_eq!(factors.as_slice(), ["user_feedback_weight", "freshness_weight"]);
+    assert_eq!(
+        factors.as_slice(),
+        ["user_feedback_weight", "source_lifecycle_weight"]
+    );
     assert!(metadata["pass_fail_definition"].as_str().expect("pass/fail definition")
         .contains("trust_score < 0.4"));
 }
@@ -118,8 +126,9 @@ fn test_claim() -> IntelligenceClaim {
 
 fn zero_weights() -> TrustFactorWeights {
     TrustFactorWeights {
-        source_reliability: 0.0, freshness_weight: 0.0, corroboration_weight: 0.0,
-        contradiction_penalty: 0.0, user_feedback_weight: 0.0, subject_fit_confidence: 0.0,
+        source_reliability: 0.0, source_lifecycle_weight: 0.0, freshness_weight: 0.0,
+        corroboration_weight: 0.0, contradiction_penalty: 0.0, user_feedback_weight: 0.0,
+        subject_fit_confidence: 0.0, internal_consistency: 0.0,
         cross_entity_coherence: 0.0, sensitivity_aware_filtering: 0.0,
     }
 }

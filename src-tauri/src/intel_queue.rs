@@ -2798,11 +2798,14 @@ fn build_trust_context_for_claim(
         config: crate::abilities::trust::TrustConfig::default(),
         factor_inputs: crate::abilities::trust::TrustFactorInputs {
             source_reliability: source_reliability_for_claim(db, input, claim),
+            source_reliability_corroborators: Vec::new(),
             freshness: freshness_context_for_claim(ctx.clock.now(), claim),
             corroboration_strength: corroboration_strength_for_claim(db, &claim.id),
             contradiction_count: contradiction_count_for_claim(db, &claim.id),
             user_feedback: feedback_signal,
             subject_fit_confidence: subject_fit_confidence_for_feedback(feedback_signal),
+            internal_consistency: 1.0,
+            source_lifecycle: source_lifecycle_for_claim(claim),
         },
         cross_entity: crate::abilities::trust::CrossEntityCoherenceInput {
             claim_text: claim.text.clone(),
@@ -2889,6 +2892,37 @@ fn source_reliability_for_claim(
     match db.get_signal_weight(&claim.data_source, &input.entity_type, "enrichment_quality") {
         Ok(Some((alpha, beta, _))) => alpha / (alpha + beta),
         _ => 1.0,
+    }
+}
+
+fn source_lifecycle_for_claim(
+    claim: &crate::db::claims::IntelligenceClaim,
+) -> crate::abilities::trust::SourceLifecycleState {
+    let metadata_state = claim
+        .metadata_json
+        .as_deref()
+        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
+        .and_then(|value| {
+            value
+                .get("source_lifecycle_state")
+                .or_else(|| value.get("source_lifecycle"))
+                .or_else(|| value.get("lifecycle_state"))
+                .and_then(|state| state.as_str())
+                .map(|state| state.to_ascii_lowercase().replace('-', "_"))
+        });
+
+    match metadata_state.as_deref() {
+        Some("withdrawn") => crate::abilities::trust::SourceLifecycleState::Withdrawn,
+        Some("dismissed") | Some("user_dismissed") => {
+            crate::abilities::trust::SourceLifecycleState::Dismissed
+        }
+        _ if matches!(
+            &claim.claim_state,
+            crate::db::claims::ClaimState::Withdrawn
+        ) => {
+            crate::abilities::trust::SourceLifecycleState::Withdrawn
+        }
+        _ => crate::abilities::trust::SourceLifecycleState::Active,
     }
 }
 
@@ -4387,7 +4421,7 @@ mod tests {
         assert!(score.is_some_and(|value| value > 0.75));
         assert!(computed_at.is_some());
         assert_eq!(version, Some(1));
-        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 8);
+        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 10);
     }
 
     #[test]

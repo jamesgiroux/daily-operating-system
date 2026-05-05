@@ -7,7 +7,7 @@ use serde_json::Value;
 const METADATA_JSON: &str = include_str!("fixtures/bundle-7/metadata.json");
 
 #[test]
-fn temporal_scope_violation_penalizes_post_closure_evidence_freshness() {
+fn temporal_scope_closed_keeps_freshness_fixed_at_window_end() {
     assert_bundle_metadata();
 
     let config = TrustConfig {
@@ -22,19 +22,17 @@ fn temporal_scope_violation_penalizes_post_closure_evidence_freshness() {
         age_days: 0.0,
     };
     let post_closure = FreshnessContext {
-        timestamp_known: false,
+        timestamp_known: true,
         age_days: 150.0,
     };
 
-    let pre_closure_weight = freshness_weight(&pre_closure, &TemporalScope::State, &config);
-    let post_closure_weight = freshness_weight(&post_closure, &TemporalScope::State, &config);
+    let state_post_closure_weight = freshness_weight(&post_closure, &TemporalScope::State, &config);
+    let pre_closure_weight = freshness_weight(&pre_closure, &TemporalScope::Closed, &config);
+    let post_closure_weight = freshness_weight(&post_closure, &TemporalScope::Closed, &config);
 
     assert_close(pre_closure_weight, 1.0);
-    assert!(
-        post_closure_weight < 0.3,
-        "post-closure freshness should be below 0.3, got {post_closure_weight}"
-    );
-    assert!(post_closure_weight < pre_closure_weight);
+    assert_close(post_closure_weight, 1.0);
+    assert!(state_post_closure_weight < post_closure_weight);
 
     let computation = compile_trust(
         &test_claim(),
@@ -43,11 +41,14 @@ fn temporal_scope_violation_penalizes_post_closure_evidence_freshness() {
             config,
             factor_inputs: TrustFactorInputs {
                 source_reliability: 1.0,
+                source_reliability_corroborators: Vec::new(),
                 freshness: post_closure,
                 corroboration_strength: 1.0,
                 contradiction_count: 0,
                 user_feedback: UserFeedbackSignal::None,
                 subject_fit_confidence: 1.0,
+                internal_consistency: 1.0,
+                source_lifecycle: SourceLifecycleState::Active,
             },
             cross_entity: clean_cross_entity_input(),
             target_surface: None,
@@ -55,12 +56,8 @@ fn temporal_scope_violation_penalizes_post_closure_evidence_freshness() {
     )
     .expect("compile trust");
 
-    assert!(
-        computation.score.value() < 0.3,
-        "freshness-only trust score should reflect temporal scope penalty, got {}",
-        computation.score.value()
-    );
-    assert_eq!(computation.band, TrustBand::NeedsVerification);
+    assert_close(computation.score.value(), 1.0);
+    assert_eq!(computation.band, TrustBand::LikelyCurrent);
 }
 
 fn assert_bundle_metadata() {
@@ -115,7 +112,7 @@ fn test_claim() -> IntelligenceClaim {
         demotion_reason: None, reactivated_at: None, retraction_reason: None,
         expires_at: None, superseded_by: None, trust_score: None,
         trust_computed_at: None, trust_version: None, thread_id: None,
-        temporal_scope: TemporalScope::State,
+        temporal_scope: TemporalScope::Closed,
         sensitivity: ClaimSensitivity::Internal,
         verification_state: ClaimVerificationState::Active,
         verification_reason: None, needs_user_decision_at: None,
@@ -124,8 +121,9 @@ fn test_claim() -> IntelligenceClaim {
 
 fn zero_weights() -> TrustFactorWeights {
     TrustFactorWeights {
-        source_reliability: 0.0, freshness_weight: 0.0, corroboration_weight: 0.0,
-        contradiction_penalty: 0.0, user_feedback_weight: 0.0, subject_fit_confidence: 0.0,
+        source_reliability: 0.0, source_lifecycle_weight: 0.0, freshness_weight: 0.0,
+        corroboration_weight: 0.0, contradiction_penalty: 0.0, user_feedback_weight: 0.0,
+        subject_fit_confidence: 0.0, internal_consistency: 0.0,
         cross_entity_coherence: 0.0, sensitivity_aware_filtering: 0.0,
     }
 }

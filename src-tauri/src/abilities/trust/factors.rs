@@ -4,8 +4,9 @@ use crate::db::claims::{ClaimSensitivity, TemporalScope};
 
 use super::config::TrustConfig;
 use super::types::{
-    CrossEntityCoherenceInput, CrossEntityHit, CrossEntityHitKind, FreshnessContext,
-    SurfaceClass, TrustFactorInputs, UserFeedbackSignal,
+    CorroboratorWeight, CrossEntityCoherenceInput, CrossEntityHit, CrossEntityHitKind,
+    FreshnessContext, SourceLifecycleState, SourceReliabilityInput, SurfaceClass,
+    TrustFactorInputs, UserFeedbackSignal,
 };
 
 const LN_2: f64 = std::f64::consts::LN_2;
@@ -64,7 +65,41 @@ pub struct CrossEntityCoherenceResult {
 }
 
 pub fn source_reliability(input: &TrustFactorInputs) -> f64 {
-    input.source_reliability
+    if input.source_reliability_corroborators.is_empty() {
+        input.source_reliability
+    } else {
+        source_reliability_from_corroborators(&input.source_reliability_corroborators)
+    }
+}
+
+pub fn source_reliability_aggregated(input: &SourceReliabilityInput) -> f64 {
+    source_reliability_from_corroborators(&input.corroborators)
+}
+
+fn source_reliability_from_corroborators(corroborators: &[CorroboratorWeight]) -> f64 {
+    if corroborators.is_empty() {
+        return 0.0;
+    }
+
+    let confirm_sum: f64 = corroborators
+        .iter()
+        .filter(|corroborator| corroborator.confirms)
+        .map(|corroborator| corroborator.evidence_weight)
+        .sum();
+    let contradict_sum: f64 = corroborators
+        .iter()
+        .filter(|corroborator| !corroborator.confirms)
+        .map(|corroborator| corroborator.evidence_weight)
+        .sum();
+    let net = (confirm_sum - contradict_sum) / (confirm_sum + contradict_sum).max(1.0);
+    ((net + 1.0) / 2.0).clamp(0.0, 1.0)
+}
+
+pub fn source_lifecycle_weight(input: &TrustFactorInputs) -> f64 {
+    match input.source_lifecycle {
+        SourceLifecycleState::Active => 1.0,
+        SourceLifecycleState::Withdrawn | SourceLifecycleState::Dismissed => 0.0,
+    }
 }
 
 pub fn freshness_weight(
@@ -73,7 +108,11 @@ pub fn freshness_weight(
     config: &TrustConfig,
 ) -> f64 {
     let base = match temporal_scope {
-        TemporalScope::PointInTime => 1.0,
+        // PointInTime is intrinsically fixed at the observation instant. Closed
+        // is a historical claim whose observation window has ended; freshness is
+        // fixed at that window end so later observed data should not decay or
+        // refresh the claim through this factor.
+        TemporalScope::PointInTime | TemporalScope::Closed => 1.0,
         TemporalScope::State | TemporalScope::Trend => {
             let age_days = ctx.age_days.max(0.0);
             (-LN_2 * age_days / config.freshness_half_life_days).exp()
@@ -110,6 +149,10 @@ pub fn user_feedback_weight(input: &TrustFactorInputs, config: &TrustConfig) -> 
 
 pub fn subject_fit_confidence(input: &TrustFactorInputs) -> f64 {
     input.subject_fit_confidence
+}
+
+pub fn internal_consistency(input: &TrustFactorInputs) -> f64 {
+    input.internal_consistency
 }
 
 pub fn cross_entity_coherence(

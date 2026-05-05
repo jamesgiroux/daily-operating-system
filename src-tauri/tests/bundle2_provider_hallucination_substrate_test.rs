@@ -5,7 +5,6 @@ use dailyos_lib::db::claims::*;
 use serde_json::Value;
 
 const METADATA_JSON: &str = include_str!("fixtures/bundle-2/metadata.json");
-const INTERNAL_CONSISTENCY_PROXY: &str = "subject_fit_confidence";
 
 #[test]
 fn provider_hallucination_scores_needs_verification_on_low_source_and_consistency() {
@@ -17,19 +16,12 @@ fn provider_hallucination_scores_needs_verification_on_low_source_and_consistenc
     let ctx = test_context(source_score, internal_consistency_score);
 
     assert_close(source_reliability(&ctx.factor_inputs), source_score);
-    assert_close(
-        subject_fit_confidence(&ctx.factor_inputs),
-        internal_consistency_score,
-    );
+    assert_close(internal_consistency(&ctx.factor_inputs), internal_consistency_score);
 
     let computation = compile_trust(&claim, ctx).expect("compile trust");
 
     assert_factor(&computation, "source_reliability", source_score);
-    assert_factor(
-        &computation,
-        INTERNAL_CONSISTENCY_PROXY,
-        internal_consistency_score,
-    );
+    assert_factor(&computation, "internal_consistency", internal_consistency_score);
     assert!(
         computation.score.value() < 0.5,
         "hallucinated claim should stay below NeedsVerification threshold, got {}",
@@ -53,13 +45,14 @@ fn test_context(source_score: f64, internal_consistency_score: f64) -> TrustCont
         config: TrustConfig {
             weights: TrustFactorWeights {
                 source_reliability: 1.0,
-                subject_fit_confidence: 1.0,
+                internal_consistency: 1.0,
                 ..zero_weights()
             },
             ..TrustConfig::default()
         },
         factor_inputs: TrustFactorInputs {
             source_reliability: source_score,
+            source_reliability_corroborators: Vec::new(),
             freshness: FreshnessContext {
                 timestamp_known: true,
                 age_days: 7.0,
@@ -67,7 +60,9 @@ fn test_context(source_score: f64, internal_consistency_score: f64) -> TrustCont
             corroboration_strength: 1.0,
             contradiction_count: 0,
             user_feedback: UserFeedbackSignal::None,
-            subject_fit_confidence: internal_consistency_score,
+            subject_fit_confidence: 1.0,
+            internal_consistency: internal_consistency_score,
+            source_lifecycle: SourceLifecycleState::Active,
         },
         cross_entity: clean_cross_entity_input(),
         target_surface: None,
@@ -126,8 +121,9 @@ fn test_claim(id: &str) -> IntelligenceClaim {
 
 fn zero_weights() -> TrustFactorWeights {
     TrustFactorWeights {
-        source_reliability: 0.0, freshness_weight: 0.0, corroboration_weight: 0.0,
-        contradiction_penalty: 0.0, user_feedback_weight: 0.0, subject_fit_confidence: 0.0,
+        source_reliability: 0.0, source_lifecycle_weight: 0.0, freshness_weight: 0.0,
+        corroboration_weight: 0.0, contradiction_penalty: 0.0, user_feedback_weight: 0.0,
+        subject_fit_confidence: 0.0, internal_consistency: 0.0,
         cross_entity_coherence: 0.0, sensitivity_aware_filtering: 0.0,
     }
 }

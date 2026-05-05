@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS intelligence_claims (
     -- Threading + claim anatomy (ADR-0124 + ADR-0125).
     thread_id           TEXT,                          -- ADR-0124, nullable
     temporal_scope      TEXT NOT NULL DEFAULT 'state'
-                                  CHECK (temporal_scope IN ('state', 'point_in_time', 'trend')),
+                                  CHECK (temporal_scope IN ('state', 'point_in_time', 'trend', 'closed')),
     sensitivity         TEXT NOT NULL DEFAULT 'internal'
                                   CHECK (sensitivity IN ('public', 'internal', 'confidential', 'user_only'))
 );

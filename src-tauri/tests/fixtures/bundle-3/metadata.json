@@ -8,7 +8,7 @@
   "anonymization_cert": "all-generic-placeholders-2026-05-04",
   "retention_policy": "permanent",
   "prompt_fingerprint_baseline": "bundle-3-v1-synthetic-fingerprint",
-  "trust_factors_dominant": ["user_feedback_weight", "freshness_weight"],
+  "trust_factors_dominant": ["user_feedback_weight", "source_lifecycle_weight"],
   "pass_fail_definition": "PASS = resurrected claim's trust_score < 0.4 (NeedsVerification or below) AND feedback_signal contributes a negative ConfidenceEvidence entry (WrongSubject or Dismissed feedback type per ADR-0123). FAIL = trust_score >= 0.5 (substrate forgot the user correction).",
   "fixture_design_notes": {
     "state_sql": "Seed 1 account (acme.example.com) with prior history: a claim from source-1 was committed at T-30d, then user dismissed it at T-15d via ClaimFeedback (Dismissed). Source-1 is then withdrawn (its source row has lifecycle_state = withdrawn). At T0 (clock.txt), provider returns content from source-1 again as if it were fresh.",

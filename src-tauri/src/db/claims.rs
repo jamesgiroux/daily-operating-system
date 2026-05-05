@@ -31,6 +31,8 @@ pub enum TemporalScope {
     State,
     PointInTime,
     Trend,
+    /// Observation window has ended; later observations must not refresh the claim.
+    Closed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
@@ -209,6 +211,21 @@ mod tests {
         roundtrip_enum(TemporalScope::State, "\"state\"");
         roundtrip_enum(TemporalScope::PointInTime, "\"point_in_time\"");
         roundtrip_enum(TemporalScope::Trend, "\"trend\"");
+        roundtrip_enum(TemporalScope::Closed, "\"closed\"");
+    }
+
+    #[test]
+    fn temporal_scope_match_coverage_includes_closed() {
+        fn label(scope: TemporalScope) -> &'static str {
+            match scope {
+                TemporalScope::State => "state",
+                TemporalScope::PointInTime => "point_in_time",
+                TemporalScope::Trend => "trend",
+                TemporalScope::Closed => "closed",
+            }
+        }
+
+        assert_eq!(label(TemporalScope::Closed), "closed");
     }
 
     #[test]

@@ -40,11 +40,13 @@ impl Default for TrustConfig {
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct TrustFactorWeights {
     pub source_reliability: f64,
+    pub source_lifecycle_weight: f64,
     pub freshness_weight: f64,
     pub corroboration_weight: f64,
     pub contradiction_penalty: f64,
     pub user_feedback_weight: f64,
     pub subject_fit_confidence: f64,
+    pub internal_consistency: f64,
     pub cross_entity_coherence: f64,
     pub sensitivity_aware_filtering: f64,
 }
@@ -53,11 +55,13 @@ impl Default for TrustFactorWeights {
     fn default() -> Self {
         Self {
             source_reliability: 1.0,
+            source_lifecycle_weight: 1.0,
             freshness_weight: 1.0,
             corroboration_weight: 1.0,
             contradiction_penalty: 1.0,
             user_feedback_weight: 1.0,
             subject_fit_confidence: 1.0,
+            internal_consistency: 1.0,
             cross_entity_coherence: 1.0,
             sensitivity_aware_filtering: 1.0,
         }
@@ -65,14 +69,16 @@ impl Default for TrustFactorWeights {
 }
 
 impl TrustFactorWeights {
-    pub const fn as_named_weights(self) -> [(&'static str, f64); 8] {
+    pub const fn as_named_weights(self) -> [(&'static str, f64); 10] {
         [
             ("source_reliability", self.source_reliability),
+            ("source_lifecycle_weight", self.source_lifecycle_weight),
             ("freshness_weight", self.freshness_weight),
             ("corroboration_weight", self.corroboration_weight),
             ("contradiction_penalty", self.contradiction_penalty),
             ("user_feedback_weight", self.user_feedback_weight),
             ("subject_fit_confidence", self.subject_fit_confidence),
+            ("internal_consistency", self.internal_consistency),
             ("cross_entity_coherence", self.cross_entity_coherence),
             (
                 "sensitivity_aware_filtering",
