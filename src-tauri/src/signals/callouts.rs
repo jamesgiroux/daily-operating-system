@@ -144,11 +144,16 @@ pub fn generate_callouts(
         }
     }
 
-    // Convert to callouts
+    // Convert to callouts. Persist-or-drop: callers downstream serialize
+    // returned callouts into directives, while DB-backed dashboard / dismissal
+    // / backfill flows expect the row to exist. Returning a callout we
+    // couldn't persist would create a false-success split between immediate
+    // output and durable state with no retry signal, so we drop unpersisted
+    // entries from the returned list and warn-log the loss.
     let mut callouts: Vec<BriefingCallout> = scored_signals
         .into_iter()
         .filter(|(s, _)| s.confidence >= 0.55)
-        .map(|(signal, relevance)| {
+        .filter_map(|(signal, relevance)| {
             let severity = classify_severity(signal.confidence);
             let (headline, detail) = build_callout_text(&signal);
             let entity_name = Some(helpers::resolve_entity_name(
@@ -176,17 +181,19 @@ pub fn generate_callouts(
                 },
             };
 
-            if let Err(e) = db.upsert_briefing_callout(&callout, &signal.id) {
-                log::warn!(
-                    "generate_callouts: persist failed for signal_id={} entity_type={} entity_id={}: {}",
-                    signal.id,
-                    callout.entity_type,
-                    callout.entity_id,
-                    e
-                );
+            match db.upsert_briefing_callout(&callout, &signal.id) {
+                Ok(()) => Some(callout),
+                Err(e) => {
+                    log::warn!(
+                        "generate_callouts: persist failed for signal_id={} entity_type={} entity_id={}: {}; dropping from returned list",
+                        signal.id,
+                        callout.entity_type,
+                        callout.entity_id,
+                        e
+                    );
+                    None
+                }
             }
-
-            callout
         })
         .collect();
 

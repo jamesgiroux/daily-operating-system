@@ -2793,21 +2793,29 @@ fn build_trust_context_for_claim(
     portfolio_footprints: Vec<crate::abilities::trust::EntityFootprint>,
 ) -> crate::abilities::trust::TrustContext {
     let feedback_signal = trust_feedback_signal_for_claim(db, &claim.id);
+    let (corroborators, corroborator_read_ok) =
+        source_reliability_corroborators_for_claim(db, &claim.id);
+    let (contradiction_count, contradiction_read_ok) =
+        contradiction_count_for_claim(db, &claim.id);
+    let (corroboration_strength, corroboration_strength_read_ok) =
+        corroboration_strength_for_claim(db, &claim.id);
+    let read_state_indeterminate = !corroborator_read_ok
+        || !contradiction_read_ok
+        || !corroboration_strength_read_ok;
     crate::abilities::trust::TrustContext {
         now: ctx.clock.now(),
         config: crate::abilities::trust::TrustConfig::default(),
         factor_inputs: crate::abilities::trust::TrustFactorInputs {
             source_reliability: source_reliability_for_claim(db, input, claim),
-            source_reliability_corroborators: source_reliability_corroborators_for_claim(
-                db, &claim.id,
-            ),
+            source_reliability_corroborators: corroborators,
             freshness: freshness_context_for_claim(ctx.clock.now(), claim),
-            corroboration_strength: corroboration_strength_for_claim(db, &claim.id),
-            contradiction_count: contradiction_count_for_claim(db, &claim.id),
+            corroboration_strength,
+            contradiction_count,
             user_feedback: feedback_signal,
             subject_fit_confidence: subject_fit_confidence_for_feedback(feedback_signal),
             internal_consistency: internal_consistency_for_claim(claim),
             source_lifecycle: source_lifecycle_for_claim(claim),
+            read_state_indeterminate,
         },
         cross_entity: crate::abilities::trust::CrossEntityCoherenceInput {
             claim_text: claim.text.clone(),
@@ -2960,7 +2968,9 @@ fn age_days(now: chrono::DateTime<Utc>, source_time: chrono::DateTime<Utc>) -> f
     (now - source_time).num_seconds() as f64 / 86_400.0
 }
 
-fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> f64 {
+/// Returns (corroboration_strength, read_ok). When read_ok is false, the
+/// recompute pipeline triggers the IndeterminateReadState gate.
+fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> (f64, bool) {
     let mut stmt = match db
         .conn_ref()
         .prepare("SELECT strength FROM claim_corroborations WHERE claim_id = ?1")
@@ -2968,18 +2978,19 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
         Ok(stmt) => stmt,
         Err(e) => {
             log::warn!("TrustRecompute: failed to prepare corroboration read for {claim_id}: {e}");
-            return 0.0;
+            return (0.0, false);
         }
     };
     let strengths = match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0)) {
         Ok(rows) => rows,
         Err(e) => {
             log::warn!("TrustRecompute: failed to read corroborations for {claim_id}: {e}");
-            return 0.0;
+            return (0.0, false);
         }
     };
 
     let mut any = false;
+    let mut had_error = false;
     let mut miss_probability = 1.0;
     for strength in strengths {
         match strength {
@@ -2989,15 +3000,13 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
             }
             Err(e) => {
                 log::warn!("TrustRecompute: malformed corroboration for {claim_id}: {e}");
+                had_error = true;
             }
         }
     }
 
-    if any {
-        1.0 - miss_probability
-    } else {
-        0.0
-    }
+    let value = if any { 1.0 - miss_probability } else { 0.0 };
+    (value, !had_error)
 }
 
 /// Build the per-claim corroborator list for source_reliability_aggregated.
@@ -3008,16 +3017,14 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
 /// signal — matches the ADR-0114 default for authoritative-contradicting
 /// evidence and lets the AuthoritativeContradiction gate fire when the
 /// contradicting side outweighs the confirming side.
+/// Returns (corroborator_list, read_ok). When read_ok is false, the recompute
+/// pipeline triggers the IndeterminateReadState gate — a single synthetic
+/// contradicting weight wasn't enough to dominate strong existing confirming
+/// evidence, so this layer no longer tries to fail-close on its own.
 fn source_reliability_corroborators_for_claim(
     db: &crate::db::ActionDb,
     claim_id: &str,
-) -> Vec<crate::abilities::trust::CorroboratorWeight> {
-    // Read errors here previously short-circuited to an empty list, which
-    // bypassed source_reliability_aggregated and the AuthoritativeContradiction
-    // gate. We now log every error path with claim_id context AND inject a
-    // synthetic contradicting weight so the recompute leans toward
-    // NeedsVerification when corroborator state is unreadable. Strengths
-    // outside [0.0, 1.0] are clamped before construction.
+) -> (Vec<crate::abilities::trust::CorroboratorWeight>, bool) {
     let mut out = Vec::new();
     let mut had_read_error = false;
 
@@ -3092,19 +3099,7 @@ fn source_reliability_corroborators_for_claim(
         }
     }
 
-    // Fail-closed: when reads were partial, lean the recompute toward
-    // NeedsVerification by injecting a single authoritative contradicting
-    // weight. Triggers AuthoritativeContradiction gate when confirming
-    // evidence is empty or weak; safe no-op when confirming evidence is
-    // strong enough to win the gate threshold.
-    if had_read_error {
-        out.push(crate::abilities::trust::CorroboratorWeight {
-            evidence_weight: 1.0,
-            confirms: false,
-        });
-    }
-
-    out
+    (out, !had_read_error)
 }
 
 /// Producing abilities can stamp metadata_json.internal_consistency on a
@@ -3159,20 +3154,24 @@ fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) 
     }
 }
 
-fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> u32 {
-    let count = db
-        .conn_ref()
-        .query_row(
-            "SELECT COUNT(*) FROM claim_contradictions
-             WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1)
-               AND reconciled_at IS NULL
-               AND winner_claim_id IS NULL
-               AND merged_claim_id IS NULL",
-            rusqlite::params![claim_id],
-            |row| row.get::<_, i64>(0),
-        )
-        .unwrap_or(0);
-    count.max(0) as u32
+/// Returns (count, read_ok). When read_ok is false, the recompute pipeline
+/// triggers the IndeterminateReadState gate.
+fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> (u32, bool) {
+    match db.conn_ref().query_row(
+        "SELECT COUNT(*) FROM claim_contradictions
+         WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1)
+           AND reconciled_at IS NULL
+           AND winner_claim_id IS NULL
+           AND merged_claim_id IS NULL",
+        rusqlite::params![claim_id],
+        |row| row.get::<_, i64>(0),
+    ) {
+        Ok(count) => (count.max(0) as u32, true),
+        Err(e) => {
+            log::warn!("TrustRecompute: failed to count contradictions for {claim_id}: {e}");
+            (0, false)
+        }
+    }
 }
 
 fn trust_feedback_signal_for_claim(
@@ -4339,7 +4338,9 @@ mod tests {
         seed_trust_corroboration(&db, &claim_id, "glean");
         seed_trust_corroboration(&db, &claim_id, "calendar");
 
-        assert_float_close(corroboration_strength_for_claim(&db, &claim_id), 0.75);
+        let (strength, ok) = corroboration_strength_for_claim(&db, &claim_id);
+        assert_float_close(strength, 0.75);
+        assert!(ok);
     }
 
     #[test]
@@ -5294,7 +5295,8 @@ mod tests {
             )
             .expect("seed corroborators + contradictions");
 
-        let corroborators = source_reliability_corroborators_for_claim(&db, "c-target");
+        let (corroborators, ok) = source_reliability_corroborators_for_claim(&db, "c-target");
+        assert!(ok, "clean reads should report read_ok=true");
         let confirming: Vec<_> = corroborators.iter().filter(|c| c.confirms).collect();
         let contradicting: Vec<_> = corroborators.iter().filter(|c| !c.confirms).collect();
         assert_eq!(confirming.len(), 2, "two corroboration rows must surface");

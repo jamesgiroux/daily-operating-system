@@ -266,6 +266,13 @@ struct TriggeredGate {
 fn evaluate_trust_gates(claim: &ClaimRow, ctx: &TrustContext) -> Vec<TriggeredGate> {
     let mut gates = Vec::new();
 
+    if ctx.factor_inputs.read_state_indeterminate {
+        gates.push(TriggeredGate {
+            kind: TrustGateKind::IndeterminateReadState,
+            detail: "one or more upstream trust-input reads failed; recompute cannot proceed on a partial picture".to_string(),
+        });
+    }
+
     if let Some(surface) = ctx.target_surface {
         if sensitivity_aware_filtering(&claim.sensitivity, Some(surface)) <= 0.0 {
             gates.push(TriggeredGate {
@@ -505,6 +512,7 @@ mod tests {
                 subject_fit_confidence: 1.0,
                 internal_consistency: 1.0,
                 source_lifecycle: SourceLifecycleState::Active,
+                read_state_indeterminate: false,
             },
             cross_entity: CrossEntityCoherenceInput {
                 claim_text: "The target account has elevated renewal risk.".to_string(),
@@ -1083,6 +1091,37 @@ mod tests {
                 }
             ),
             "expected SourceWithdrawn, got {caveat:?}"
+        );
+    }
+
+    #[test]
+    fn indeterminate_read_state_caps_at_needs_verification_even_with_strong_confirming_evidence() {
+        // A partial DB read from corroborator/contradiction queries previously
+        // let strong confirming evidence preserve a LikelyCurrent score
+        // because the synthetic-contradicting fail-closed path could be
+        // outweighed. The IndeterminateReadState gate fires regardless of
+        // factor weights and pins the band to NeedsVerification.
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.factor_inputs.read_state_indeterminate = true;
+        ctx.factor_inputs.source_reliability_corroborators = vec![
+            CorroboratorWeight { evidence_weight: 1.0, confirms: true },
+            CorroboratorWeight { evidence_weight: 1.0, confirms: true },
+            CorroboratorWeight { evidence_weight: 1.0, confirms: true },
+        ];
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        assert_eq!(computation.band, TrustBand::NeedsVerification);
+        let caveat = gate_caveat(&computation).expect("indeterminate gate caveat");
+        assert!(
+            matches!(
+                caveat,
+                ConfidenceCaveat::TrustGateTriggered {
+                    gate: TrustGateKind::IndeterminateReadState,
+                    ..
+                }
+            ),
+            "expected IndeterminateReadState, got {caveat:?}"
         );
     }
 

@@ -304,6 +304,7 @@ fn cross_entity_coherence_factor(db: &ActionDb, claim_text: &str) -> f64 {
                 subject_fit_confidence: 1.0,
                 internal_consistency: 1.0,
                 source_lifecycle: SourceLifecycleState::Active,
+                read_state_indeterminate: false,
             },
             cross_entity: CrossEntityCoherenceInput {
                 claim_text: claim.text.clone(),

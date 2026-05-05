@@ -74,6 +74,13 @@ pub enum TrustGateKind {
     SensitivityViolation,
     SourceWithdrawn,
     AuthoritativeContradiction,
+    /// One or more trust-input reads failed (DB error, schema skew, or
+    /// malformed row). The recompute can't trust any factor that depends on
+    /// the unreadable state, so we lean to NeedsVerification rather than
+    /// scoring with a possibly-stale partial picture. Producers set
+    /// `TrustFactorInputs.read_state_indeterminate` explicitly when they
+    /// could not enumerate the truth.
+    IndeterminateReadState,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -108,6 +115,13 @@ pub struct TrustFactorInputs {
     /// Range: 0.0 to 1.0.
     pub internal_consistency: f64,
     pub source_lifecycle: SourceLifecycleState,
+    /// True when at least one upstream read (corroborations, contradictions,
+    /// feedback, source weights) failed. Triggers the IndeterminateReadState
+    /// gate so the recompute fails closed instead of scoring on a partial
+    /// picture. Defaults to false; producers explicitly opt in when they
+    /// detected a read error.
+    #[serde(default)]
+    pub read_state_indeterminate: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
