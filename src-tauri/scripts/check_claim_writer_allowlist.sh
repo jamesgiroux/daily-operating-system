@@ -25,7 +25,7 @@ fi
 # writes belong to the claims service; claims_backfill and derived_state are
 # dedicated cutover/projection surfaces. Other direct claim writes must carry
 # a per-line `dos7-allowed:` rationale.
-allowed_basename_regex='services/claims\.rs|services/claims_backfill\.rs|services/derived_state\.rs|migrations/130_dos_7_claims_backfill_a1\.sql|migrations/131_dos_7_claims_backfill_a2\.sql|migrations/129_dos_7_claims_schema\.sql|migrations/133_dos_7_withdraw_unsupported_m5_kinds\.sql|migrations/136_dos_299_source_asof_quarantine\.sql|tests/dos7_d3a1_backfill_test\.rs|tests/dos7_d3a2_backfill_test\.rs|tests/dos7_d1_schema_test\.rs|tests/dos7_d5_ghost_resurrection_test\.rs|tests/dos7_d4_lint_test\.rs|tests/dos311_fixtures/'
+allowed_basename_regex='services/claims\.rs|services/claims_backfill\.rs|services/derived_state\.rs|migrations/130_dos_7_claims_backfill_a1\.sql|migrations/131_dos_7_claims_backfill_a2\.sql|migrations/129_dos_7_claims_schema\.sql|migrations/133_dos_7_withdraw_unsupported_m5_kinds\.sql|migrations/136_dos_299_source_asof_quarantine\.sql|tests/dos7_d3a1_backfill_test\.rs|tests/dos7_d3a2_backfill_test\.rs|tests/dos7_d1_schema_test\.rs|tests/dos7_d5_ghost_resurrection_test\.rs|tests/dos7_d4_lint_test\.rs|tests/dos311_fixtures/|tests/fixtures/bundle-[0-9]+/state\.sql'
 
 pattern='(INSERT([[:space:]]+OR[[:space:]]+(IGNORE|REPLACE))?[[:space:]]+INTO|REPLACE[[:space:]]+INTO|UPDATE)[[:space:]]+(intelligence_claims|claim_corroborations|claim_contradictions)\b'
 
@@ -47,6 +47,7 @@ if [[ -n "$matches" ]]; then
   echo "  - src-tauri/src/services/derived_state.rs"
   echo "  - src-tauri/src/migrations/{129,130,131}_dos_7_*.sql"
   echo "  - src-tauri/tests/dos7_d{1,3a1,3a2}_*.rs (test seeding via execute_batch)"
+  echo "  - src-tauri/tests/fixtures/bundle-N/state.sql (DOS-384 adversarial bundle fixtures)"
   echo
   echo "$matches"
   exit 1
