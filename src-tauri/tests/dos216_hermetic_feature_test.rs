@@ -12,7 +12,7 @@ const HARNESS_DB_PATH_ENV: &str = "DAILYOS_HARNESS_DB_PATH";
 #[test]
 #[cfg(feature = "harness-hermetic")]
 fn harness_hermetic_feature_active_when_enabled() {
-    assert!(cfg!(feature = "harness-hermetic"));
+    const { assert!(cfg!(feature = "harness-hermetic")) };
 }
 
 #[test]

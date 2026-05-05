@@ -3868,6 +3868,7 @@ fn dual_write_enrichment_products(
 // =============================================================================
 
 #[cfg(test)]
+#[allow(clippy::manual_range_contains)]
 mod tests {
     use super::*;
     use crate::abilities::feedback::FeedbackAction;

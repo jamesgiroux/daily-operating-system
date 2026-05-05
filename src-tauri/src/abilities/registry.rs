@@ -1077,6 +1077,7 @@ fn yaml_string(value: &str) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::manual_is_multiple_of, clippy::needless_range_loop)]
 mod tests {
     use super::*;
     use crate::abilities::tracer::{AbilityTracer, SpanHandle};

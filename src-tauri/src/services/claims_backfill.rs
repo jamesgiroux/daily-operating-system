@@ -1030,6 +1030,7 @@ enum CutoverClaimDecision {
 }
 
 #[cfg(test)]
+#[allow(clippy::needless_borrow)]
 mod tests {
     use super::*;
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};

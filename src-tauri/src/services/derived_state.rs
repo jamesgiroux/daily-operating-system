@@ -1247,6 +1247,7 @@ fn emit_enrichment_side_effect_signals(
 }
 
 #[cfg(test)]
+#[allow(clippy::io_other_error)]
 mod tests {
     use super::*;
     use crate::db::claims::{ClaimSensitivity, TemporalScope};
