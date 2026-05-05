@@ -11,11 +11,12 @@
 
 ## Job
 
-A magazine-style entity portrait — a single card that renders an entity's current state at a glance: color-banded aside (state + name + key facts) on the left, main column with a giant italic "quote-mark" glyph + serif lede + threaded events on the right. Used in DailyBriefing's "What's Moving" section.
+A magazine-style entity portrait — a single card that renders an entity's current state at a glance: color-banded aside (state + name + key facts) on the left, main column with a giant italic "quote-mark" glyph + serif lede + threaded events on the right. This exists as D-spine prototype/source work, but is not consumed by shipped DailyBriefing.
 
 ## When to use it
 
-- DailyBriefing's "Moving" section (canonical) — one card per entity that shifted overnight
+- No shipped routed use today. Keep it visible as implemented/unintegrated D-spine work only.
+- Roadmap target: DailyBriefing's "Moving" section, if that section lands.
 - Potential extension: weekly recap surfaces (entities that moved this week), search results that highlight entity context
 
 ## When NOT to use it
@@ -86,11 +87,11 @@ CSS grid 200px aside | 1fr main; min-height 220px.
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.acc-card`, `.acc-aside`, `.acc-main`, `.acc-thread`, `.ent-acme`, `.ent-northwind`, `.ent-priya`)
-- **Code:** shipped in `src/components/dashboard/EntityPortraitCard.tsx`
+- **Code:** `src/components/dashboard/EntityPortraitCard.tsx` exists, but is not consumed by shipped routed UI.
 
 ## Surfaces that consume it
 
-DailyBriefing's Moving section (canonical).
+No shipped routed consumers. D-spine prototype only.
 
 ## Naming notes
 

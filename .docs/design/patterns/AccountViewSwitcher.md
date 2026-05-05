@@ -1,17 +1,17 @@
 # AccountViewSwitcher
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-05
 **`data-ds-name`:** `AccountViewSwitcher`
 **`data-ds-spec`:** `patterns/AccountViewSwitcher.md`
-**Variants:** health; context; work
+**Variants:** `health` ("Health & Outlook"); `context` ("Context"); `work` ("The Work")
 **Design system version introduced:** 0.5.0
 
 ## Job
 
-Provide the fixed bottom view switcher for AccountDetail, letting users move between Health, Context, and Work without leaving the dossier.
+Provide the fixed bottom view switcher for AccountDetail, letting users move between the shipped views labeled "Health & Outlook", "Context", and "The Work" without leaving the dossier.
 
 ## Source
 
@@ -21,4 +21,3 @@ Provide the fixed bottom view switcher for AccountDetail, letting users move bet
 ## Surfaces that consume it
 
 AccountDetailPage.
-

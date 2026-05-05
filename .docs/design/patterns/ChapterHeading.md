@@ -1,7 +1,7 @@
 # ChapterHeading
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `ChapterHeading`

@@ -1,24 +1,23 @@
 # SuggestedActionRow
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
-**Last updated:** 2026-05-03
+**Last updated:** 2026-05-05
 **`data-ds-name`:** `SuggestedActionRow`
 **`data-ds-spec`:** `patterns/SuggestedActionRow.md`
-**Variants:** `context="meeting" | "work"`; `state="suggested" | "pending" | "accepted" | "dismissed"`
+**Variants:** `full`, `compact`, `showBorder=true | false`
 **Design system version introduced:** 0.4.0
 
 ## Job
 
-Render an AI-suggested action item with accept / dismiss controls and an attribution line showing where the suggestion came from. Used in MeetingDetail (post-meeting suggested follow-ups) and v1.4.2 Account Detail Work surface (suggestions to promote to commitments).
+Render an AI-suggested action item with accept / dismiss controls and optional attribution showing where the suggestion came from. The shipped consumer is the ActionsPage backlog view.
 
-Both contexts share the same row shape; secondary metadata differs by context (meeting attributes context quote and timestamp; work attributes priority and owner).
+The component also exposes a compact mode for denser suggestion lists, but the current routed app uses the full backlog row.
 
 ## When to use it
 
-- MeetingDetail's "Commitments & Actions" section (suggested action items pending user accept/dismiss)
-- AccountDetail Work surface (AI suggestions for new commitments)
+- ActionsPage backlog suggestions, where AI-proposed work waits for accept/dismiss
 - Future surfaces that need "AI proposes; user disposes" interaction
 
 ## When NOT to use it
@@ -29,70 +28,72 @@ Both contexts share the same row shape; secondary metadata differs by context (m
 ## Composition
 
 ```
-[Suggested-pill — saffron tint, "Suggested" label]
-[Action title — serif 15-17px, weight 400]
-[Action meta — mono, e.g., "P1 · Owner: you · Due Apr 19"]
-[Optional context line — italic serif, e.g., the source quote with timestamp]
-[Controls — Accept (turmeric) / Dismiss (neutral)]
+[Dashed turmeric left marker]
+[Full mode only: "Suggested" label + optional priority label]
+[Action title - serif 15-17px, weight 400]
+[Optional context line - sans 12-14px]
+[Full mode: source/account metadata; compact mode: sourceLabel only]
+[Controls - square Accept / Dismiss icon buttons]
 ```
 
-Two-column grid: pill + content (left) | controls (right).
+Flex row: content grows left, controls stay fixed on the right.
 
 ## States
 
-- **suggested** — saffron pill, both Accept + Dismiss visible
-- **pending** — neutral pill, single "Mark complete" control (used for committed items now waiting on action)
-- **accepted** — collapses out of suggested list (tracked elsewhere as a commitment)
-- **dismissed** — collapses out (Audit 04 noted: dismissal IS feedback signal, not a void operation)
+- **waiting** — full or compact row with both Accept + Dismiss visible.
+- **accepted** — removed from the suggestion list and tracked as an action.
+- **dismissed** — removed from the suggestion list; the dismissal remains a feedback signal.
 
 ## Variants by context
 
-**`context="meeting"`** (Wave 4 / MeetingDetail):
-- meta: priority (P1/P2) · owner · due date
-- context: source quote with attribution and timestamp ("Apr 24 at 1pm works for us." — Aoife, 11:54)
+**`full`** (ActionsPage backlog):
+- shows the "Suggested" mono label
+- shows priority when present (`Urgent`, `High`, `Medium`, `Low`)
+- shows `context`, then source/account metadata
 
-**`context="work"`** (referenced from Audit 02 / Account Detail Work surface):
-- meta: priority + owner only
-- context: source attribution if available, otherwise omitted
-- Accept promotes to committed item in a separate work tracking system
+**`compact`**:
+- no "Suggested" label or priority label
+- tighter 15px title and 12px context
+- only shows `sourceLabel` metadata
 
 ## Composition contract
 
-Uses:
-- `Pill` (suggested-pill: `tone="turmeric"` with explicit saffron variant; pending-pill: `tone="neutral"`)
-- `Button` (Accept: kind="primary" turmeric; Dismiss: kind="ghost" neutral)
-- `EntityChip` for entity references in title/context (when present)
+Uses inline styles in `src/components/shared/SuggestedActionRow.tsx` today. Extracting these styles into CSS is a cleanup target, but the component itself is shipped and should stay represented in the reference.
 
 ## Tokens consumed
 
-- `--color-spice-saffron-15`, `--color-spice-turmeric` (suggested pill, accept button)
+- `--color-spice-turmeric` (dashed marker and label)
+- `--color-garden-sage` (accept control)
+- `--color-spice-terracotta` (dismiss control and urgent priority)
 - `--color-rule-light` (row border-bottom)
-- `--font-serif` (title), `--font-sans` (meta, controls), `--font-mono` (priority/owner labels), `--font-serif italic` (context quote)
-- `--space-md`, `--space-lg` (vertical rhythm, internal gaps)
+- `--font-serif` (title), `--font-sans` (context and metadata), `--font-mono` (label/priority/source)
 
 ## API sketch
 
 ```tsx
 <SuggestedActionRow
-  context="meeting"
-  state="suggested"
-  title="Schedule the Apr 24 renewal-pricing meeting"
-  meta={{ priority: "P1", owner: "you", due: "Apr 19" }}
-  contextQuote={{ text: "Apr 24 at 1pm works for us.", attribution: "Aoife", timestamp: "11:54" }}
-  onAccept={() => /* commitments service */}
-  onDismiss={() => /* dismissal feedback */}
+  action={{
+    id: "act_123",
+    title: "Schedule the Apr 24 renewal-pricing meeting",
+    priority: 1,
+    context: "Apr 24 at 1pm works for us.",
+    sourceLabel: "Meeting capture",
+    accountName: "Acme Corp",
+  }}
+  onAccept={() => acceptSuggestion("act_123")}
+  onReject={() => rejectSuggestion("act_123")}
+  showBorder
 />
 ```
 
 ## Source
 
-- **Spec:** new for Wave 4 (also referenced from Audit 02)
-- **Code:** shipped in `src/components/shared/SuggestedActionRow.tsx`; consumed from work and meeting-oriented surfaces as a shared action row.
-- **Existing similar:** `src/components/shared/SuggestedActionRow.tsx` exists as a stub per Audit 01; reconcile during implementation
+- **Code:** `src/components/shared/SuggestedActionRow.tsx`
+- **Current consumer:** `src/pages/ActionsPage.tsx` backlog tab
 
 ## Surfaces that consume it
 
-MeetingDetail (canonical Wave 4 use), AccountDetail Work surface (Audit 02 reference), ProjectDetail Work surface (when promoted), PersonDetail Work surface (when promoted).
+ActionsPage backlog tab. MeetingDetail suggested follow-ups use `ActionRow` with `variant="outcome"` today, not `SuggestedActionRow`. Account/Project/Person Work surfaces use `WorkSurface` and `ActionRow` compact rows today.
 
 ## Naming notes
 
@@ -100,4 +101,5 @@ MeetingDetail (canonical Wave 4 use), AccountDetail Work surface (Audit 02 refer
 
 ## History
 
-- 2026-05-03 — Proposed pattern for Wave 4. Reconciles Audit 02 mention from v1.4.2 Account Detail Work surface; same pattern with context-specific meta.
+- 2026-05-03 — Proposed pattern for Wave 4.
+- 2026-05-05 — Corrected consumer list and API to match shipped `SuggestedActionRow.tsx`.

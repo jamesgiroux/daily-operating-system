@@ -1,17 +1,17 @@
 # EntityRow
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-05
 **`data-ds-name`:** `EntityRow`
 **`data-ds-spec`:** `patterns/EntityRow.md`
-**Variants:** accent dot; avatar; nested depth; border/no border; right meta slot
+**Variants:** accent dot; avatar; nested depth; border/no border; nameSuffix; subtitle; right meta slot
 **Design system version introduced:** 0.5.0
 
 ## Job
 
-Render an entity list item with a scannable title, subtitle, accent/avatar identity, nesting, and right-aligned metadata.
+Render an entity list item with a scannable title, optional `nameSuffix`, optional subtitle, accent/avatar identity, nesting, and right-aligned metadata. Accounts can use `HealthBadge` as the avatar when intelligence health exists; People rows use avatar rings; nested account/project rows use indentation.
 
 ## Source
 
@@ -21,4 +21,3 @@ Render an entity list item with a scannable title, subtitle, accent/avatar ident
 ## Surfaces that consume it
 
 AccountsPage, PeoplePage, and ProjectsPage.
-

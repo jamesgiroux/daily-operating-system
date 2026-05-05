@@ -106,11 +106,6 @@
   color: var(--color-spice-saffron);
 }
 
-.EditableVitalsStrip_fieldValue[data-highlight="secondary"],
-.EditableVitalsStrip_clickableFieldValue[data-highlight="secondary"] {
-  color: var(--color-text-secondary);
-}
-
 .EditableVitalsStrip_clickableFieldValue {
   composes: fieldValue;
   cursor: pointer;

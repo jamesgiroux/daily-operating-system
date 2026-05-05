@@ -1,7 +1,7 @@
 # AtmosphereLayer
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `AtmosphereLayer`
@@ -80,7 +80,7 @@ Every editorial surface. Tint per surface:
 - PersonDetail — `larkspur`
 - MePage — `eucalyptus`
 - MeetingDetail — `turmeric` (default; may inherit from primary entity)
-- Settings — `turmeric`
+- Settings — `olive`
 
 ## Naming notes
 

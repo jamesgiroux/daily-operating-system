@@ -48,7 +48,7 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 
 | Name | Status | Job (one line) | Consumers |
 |---|---|---|---|
-| [`SurfaceMasthead`](./SurfaceMasthead.md) | canonical/shipped | Generic surface-top block (eyebrow + title + lede + accessory + glance slot) | Settings, MeetingDetail (subsumes MeetingHero) |
+| [`SurfaceMasthead`](./SurfaceMasthead.md) | canonical/shipped | Generic surface-top block (eyebrow + title + lede + accessory + glance slot) | Settings |
 | [`FormRow`](./FormRow.md) | canonical/shipped | Universal label/help \| ctrl \| aux row | Settings (canonical), future settings-like surfaces |
 | [`GlanceRow`](./GlanceRow.md) | implemented/unintegrated | Horizontal row of GlanceCell instances inside SurfaceMasthead's glance slot | source-only prototype |
 | [`VitalsStrip`](./VitalsStrip.md) | canonical/shipped | Inline entity vital metrics with dot separators, highlights, and optional source attribution | AccountDetail, account/person/project editorial |
@@ -69,7 +69,7 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`FolioActions`](./FolioActions.md) | roadmap/planned | Sub-row of action buttons below FolioBar (actions, not nav per D2) | MeetingDetail (canonical), Reports |
 | [`PostMeetingIntelligence`](./PostMeetingIntelligence.md) | canonical/shipped | Actual post-meeting recap system composing threads, predictions, signals, findings, commitments, and role changes | MeetingDetail |
 | [`TalkBalanceBar`](./TalkBalanceBar.md) | canonical/shipped | Customer/internal talk ratio bar | MeetingDetail |
-| [`ActionRow`](./ActionRow.md) | canonical/shipped | Shared action row variants for list, compact, and meeting outcomes | ActionsPage, MeetingDetail |
+| [`ActionRow`](./ActionRow.md) | canonical/shipped | Shared action row variants for list, compact, and meeting outcomes | ActionsPage, MeetingDetail, TheWork |
 | [`IntelligenceFeedback`](./IntelligenceFeedback.md) | canonical/shipped | Legacy inline helpful/not-helpful feedback control | MeetingDetail, reports, entity chapters |
 | [`FinisMarker`](./FinisMarker.md) | canonical/shipped | Editorial end marker with optional freshness timestamp | editorial surfaces |
 | [`AgendaThreadList`](./AgendaThreadList.md) | shipped-local/extraction-needed | Predicted agenda items checked off post-meeting (✓ / ○ / +) | `PostMeetingIntelligence` local class family |

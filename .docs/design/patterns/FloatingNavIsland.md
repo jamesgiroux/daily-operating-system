@@ -1,7 +1,7 @@
 # FloatingNavIsland
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `FloatingNavIsland`
@@ -112,7 +112,7 @@ Chapter-only mode: pass `chapters` without `onNavigate`.
 Every stable surface. Each surface defines its `chapters` inventory:
 
 - **DailyBriefing** — `Today / Moving / Watch / Ask` (per surface spec)
-- **Settings** — `Identity / Connectors / Briefing / Data / Activity / System / Diagnostics`
+- **Settings** — `You / Connectors / Data / System`, plus `Diagnostics` in development mode
 - **AccountDetail** — provides chapters per the active view (Health / Context / Work)
 - **MeetingDetail** — likely no chapters (short single-purpose surface)
 

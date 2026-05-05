@@ -1,21 +1,23 @@
 # MeetingCard
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-05
 **`data-ds-name`:** `MeetingCard`
 **`data-ds-spec`:** `patterns/MeetingCard.md`
-**Variants:** customer/internal/personal/1:1 accents; upcoming/in-progress/past; navigable/clickable
+**Variants:** customer/internal/personal/1:1 accents; upcoming/in-progress/past; navigable/clickable; subtitle extras; child content
 **Design system version introduced:** 0.5.0
 
 ## Job
 
-Render a meeting as an editorial schedule row with time, duration, title, entity byline, temporal state, and optional intelligence quality.
+Render a meeting as an editorial schedule row with time, duration, title, entity byline, temporal state, optional intelligence quality, and caller-supplied slot content.
+
+`MeetingCard` does **not** own the expanded DailyBriefing prep panel. That state belongs to `BriefingMeetingCard`, which composes `MeetingCard` and renders the inline expansion below it.
 
 ## Composition
 
-Composes `MeetingStatusPill`, `IntelligenceQualityBadge`, title/subtitle slots, type accents, and an optional child slot.
+Composes `MeetingStatusPill`, `IntelligenceQualityBadge`, title/subtitle slots, type accents, and an optional child slot. WeekPage uses the subtitle and child slots for health, "No prep", days-until, outcome summaries, and follow-up counts.
 
 ## Source
 
@@ -25,4 +27,3 @@ Composes `MeetingStatusPill`, `IntelligenceQualityBadge`, title/subtitle slots, 
 ## Surfaces that consume it
 
 DailyBriefing through `BriefingMeetingCard`, and WeekPage timeline/direct meeting lists.
-

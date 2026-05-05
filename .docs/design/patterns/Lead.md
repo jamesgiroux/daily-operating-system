@@ -1,7 +1,7 @@
 # Lead
 
 **Tier:** pattern
-**Status:** planned
+**Status:** roadmap/planned
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `Lead`
@@ -15,7 +15,8 @@ The single-sentence headline that opens DailyBriefing — large serif type that 
 
 ## When to use it
 
-- Top of DailyBriefing (always)
+- No shipped component use today. Shipped DailyBriefing currently uses local `heroHeadline`, `heroNarrative`, `focusBlock`, and `focusCapacity` classes instead.
+- Roadmap target: top of DailyBriefing, if the lead sentence is extracted into a named component.
 - Top of any future surface where a single-sentence summary should establish the day / state / theme
 - Pair with an eyebrow ("Today, Thursday April 23") above
 
@@ -64,7 +65,7 @@ The `.sharp` inline highlight (subtle turmeric underline gradient) marks the mos
 
 ## Surfaces that consume it
 
-DailyBriefing (canonical). Potential extension: the "lead summary" spot at the top of high-information surfaces (e.g., AccountDetail's hero lede could compose this with a different register).
+No shipped routed consumers. DailyBriefing has a local hero treatment today. Potential extension: the "lead summary" spot at the top of high-information surfaces if this pattern is promoted from roadmap.
 
 ## Naming notes
 

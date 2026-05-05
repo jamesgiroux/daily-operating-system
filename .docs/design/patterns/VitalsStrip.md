@@ -1,12 +1,12 @@
 # VitalsStrip
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-05
 **`data-ds-name`:** `VitalsStrip`
 **`data-ds-spec`:** `patterns/VitalsStrip.md`
-**Variants:** read-only; editable; highlight `turmeric | saffron | olive | larkspur | secondary`; optional source attribution
+**Variants:** read-only; editable; highlight `turmeric | saffron | olive | larkspur`; optional source attribution
 **Design system version introduced:** 0.5.0
 
 ## Job

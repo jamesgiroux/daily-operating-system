@@ -20,6 +20,7 @@
 <link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
 <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
 <link rel="stylesheet" href="../_shared/styles/MeetingCard.module.css">
+<link rel="stylesheet" href="../_shared/styles/WeekPage.module.css">
 <link rel="stylesheet" href="../_shared/styles/EntityListShell.module.css">
 <link rel="stylesheet" href="../_shared/styles/EntityRow.module.css">
 <link rel="stylesheet" href="../_shared/styles/TalkBalanceBar.module.css">
@@ -42,6 +43,7 @@
 <link rel="stylesheet" href="../_shared/styles/GlanceCell.module.css">
 <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
 <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
+<link rel="stylesheet" href="../_shared/styles/DailyBriefing.module.css">
 <link rel="stylesheet" href="../_shared/styles/DayChart.module.css">
 <link rel="stylesheet" href="../_shared/styles/AskAnythingDock.module.css">
 <link rel="stylesheet" href="../_shared/styles/EntityPortraitCard.module.css">
@@ -357,12 +359,76 @@
     border-bottom: 1px solid var(--color-rule-light);
   }
 
+  .action-row-compact {
+    position: relative;
+    display: block;
+    padding: 14px 0 14px 20px;
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .action-row-compact::before {
+    content: "";
+    position: absolute;
+    top: 14px;
+    bottom: 14px;
+    left: 0;
+    width: 3px;
+    border-radius: 2px;
+    background: var(--color-spice-turmeric);
+  }
+
+  .action-row-compact-title {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    font-weight: 500;
+    line-height: 1.55;
+  }
+
+  .action-row-meta {
+    display: flex;
+    gap: 16px;
+    margin-top: 4px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    letter-spacing: 0.04em;
+  }
+
   .action-row-check {
     width: 20px;
     height: 20px;
     border-radius: 10px;
     border: 2px solid var(--color-rule-heavy);
     flex-shrink: 0;
+  }
+
+  .action-row-priority {
+    margin-top: 4px;
+    margin-left: auto;
+    color: var(--color-spice-turmeric);
+    font-family: var(--font-mono);
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+  }
+
+  .action-row-decision {
+    display: inline-flex;
+    align-items: center;
+    margin-left: 8px;
+    padding: 1px 6px;
+    border-radius: 3px;
+    background: var(--color-spice-saffron-12);
+    color: var(--color-spice-turmeric);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
   }
 
   .action-row-title {
@@ -380,6 +446,130 @@
     font-family: var(--font-sans);
     font-size: 13px;
     line-height: 1.5;
+  }
+
+  .action-row-outcome {
+    align-items: center;
+    gap: 8px;
+    padding: 3px 4px 3px 8px;
+    border-left: 2px dashed var(--color-spice-turmeric);
+    border-bottom: 0;
+  }
+
+  .action-row-outcome-controls {
+    display: flex;
+    gap: 4px;
+    flex-shrink: 0;
+  }
+
+  .action-row-mini-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 20px;
+    height: 20px;
+    padding: 0;
+    border-radius: 3px;
+    background: transparent;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 1;
+  }
+
+  .action-row-mini-accept {
+    border: 1px solid var(--color-garden-sage);
+    color: var(--color-garden-sage);
+  }
+
+  .action-row-mini-reject {
+    border: 1px solid var(--color-spice-terracotta);
+    color: var(--color-spice-terracotta);
+  }
+
+  .suggested-row-demo {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 14px 0 14px 16px;
+    border-bottom: 1px solid var(--color-rule-light);
+    border-left: 2px dashed var(--color-spice-turmeric);
+  }
+
+  .suggested-row-compact {
+    align-items: center;
+    gap: 10px;
+    padding: 8px 0 8px 12px;
+  }
+
+  .suggested-row-content {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .suggested-row-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin-bottom: 2px;
+    color: var(--color-spice-turmeric);
+    font-family: var(--font-mono);
+    font-size: 10px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+
+  .suggested-row-priority {
+    color: var(--color-spice-terracotta);
+    font-size: 11px;
+    letter-spacing: 0.04em;
+  }
+
+  .suggested-row-title {
+    margin: 0;
+    color: var(--color-text-primary);
+    font-family: var(--font-serif);
+    font-size: 17px;
+    font-weight: 400;
+    line-height: 1.4;
+  }
+
+  .suggested-row-compact .suggested-row-title {
+    font-size: 15px;
+  }
+
+  .suggested-row-context {
+    margin: 4px 0 0;
+    color: var(--color-text-secondary);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+
+  .suggested-row-source {
+    margin-top: 6px;
+    color: var(--color-text-tertiary);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    font-weight: 300;
+  }
+
+  .suggested-row-compact .suggested-row-context {
+    margin-top: 2px;
+    font-size: 12px;
+  }
+
+  .suggested-row-compact .suggested-row-source {
+    margin-top: 4px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+  }
+
+  .suggested-row-controls {
+    display: flex;
+    flex-shrink: 0;
+    gap: 6px;
+    margin-top: 4px;
   }
 
   .finis-demo {
@@ -511,7 +701,7 @@
   <section id="editorial" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Editorial Briefing</h2>
-      <span class="ds-section-count">4 shipped · 4 prototype/roadmap</span>
+      <span class="ds-section-count">5 shipped/local · 6 prototype/roadmap</span>
     </div>
     <p class="ds-section-lede">DailyBriefing patterns split by reality: shipped schedule and attention rows first; Spine-D prototypes stay visible but unintegrated.</p>
     <div class="ds-grid">
@@ -526,7 +716,6 @@
           <section class="editorial-briefing_hero">
             <h4 class="editorial-briefing_heroHeadline">Four meetings today. The Acme renewal is the one to nail.</h4>
             <p class="editorial-briefing_heroNarrative">Customer pressure is concentrated before noon; the afternoon is mostly internal cleanup.</p>
-            <p class="editorial-briefing_staleness">Last refreshed 10 minutes ago</p>
           </section>
         </div>
       </article>
@@ -569,9 +758,21 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MeetingCard</h3></div>
           <a class="ds-spec-link" href="../../patterns/MeetingCard.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> time column, accent bar, title, entity byline, temporal state, and intelligence quality.</p>
-        <div class="ds-variants"><span>customer</span><span>in-progress</span><span>past</span><span>navigable</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> time column, accent bar, title/subtitle slots, temporal state, intelligence quality, and optional child content.</p>
+        <div class="ds-variants"><span>upcoming</span><span>in-progress</span><span>past outcome</span><span>slot extras</span><span>navigable</span></div>
         <div class="ds-demo ds-demo-list" data-ds-name="MeetingCard" data-ds-tier="pattern" data-ds-spec="patterns/MeetingCard.md">
+          <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_navigable">
+            <div class="MeetingCard_time">9:30<span class="MeetingCard_duration">30m</span></div>
+            <div class="MeetingCard_content">
+              <div class="MeetingCard_titleRow"><span class="MeetingCard_title">Security review prep</span></div>
+              <div class="MeetingCard_subtitle">
+                Acme Corp
+                <span class="HealthBadge_badge"><span class="HealthBadge_dot HealthBadge_dotCompact HealthBadge_dotYellow"></span><span class="HealthBadge_score HealthBadge_scoreCompact">71</span></span>
+                <span class="WeekPage_noPrepBadge">No prep</span>
+                <span class="WeekPage_daysUntilLabel">2 days</span>
+              </div>
+            </div>
+          </div>
           <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_active">
             <div class="MeetingCard_time">10:00<span class="MeetingCard_duration">45m</span></div>
             <div class="MeetingCard_content">
@@ -583,7 +784,12 @@
             <div class="MeetingCard_time">8:30<span class="MeetingCard_duration">30m</span></div>
             <div class="MeetingCard_content">
               <div class="MeetingCard_titleRow"><span class="MeetingCard_title">Pipeline sync</span><span class="MeetingCard_pastArrow">-&gt;</span></div>
-              <div class="MeetingCard_subtitle">Internal · actions captured</div>
+              <div class="MeetingCard_subtitle">Internal</div>
+              <span class="WeekPage_outcomeRow">
+                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
+                <span class="WeekPage_outcomeSummaryText">Renewal risk assigned to CSM owner</span>
+                <span class="WeekPage_followUpBadge">2 follow-ups</span>
+              </span>
             </div>
           </div>
         </div>
@@ -594,25 +800,52 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">BriefingMeetingCard</h3></div>
           <a class="ds-spec-link" href="../../patterns/BriefingMeetingCard.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> MeetingCard, KeyPeopleFlow, PrepGrid, MeetingActionChecklist, and bridge link.</p>
-        <div class="ds-variants"><span>up next</span><span>expanded</span><span>past</span><span>empty prep</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> MeetingCard plus inline expansion panel: meeting context, KeyPeopleFlow, PrepGrid, MeetingActionChecklist, and bridge links.</p>
+        <div class="ds-variants"><span>up next expanded</span><span>in-progress expanded</span><span>past summary</span><span>cancelled</span><span>empty prep</span></div>
         <div class="ds-demo" data-ds-name="BriefingMeetingCard" data-ds-tier="pattern" data-ds-spec="patterns/BriefingMeetingCard.md">
-          <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_active editorial-briefing_briefingCardOverride editorial-briefing_scheduleRowExpandable editorial-briefing_scheduleRowExpanded">
+          <div class="MeetingCard_card MeetingCard_accentCustomer editorial-briefing_briefingCardOverride editorial-briefing_scheduleRowExpandable editorial-briefing_scheduleRowExpanded">
             <div class="MeetingCard_time">10:00<span class="MeetingCard_duration">45m</span></div>
             <div class="MeetingCard_content">
               <div class="MeetingCard_titleRow"><span class="MeetingCard_title">Acme renewal call</span><span class="Pill_pill Pill_sage Pill_compact">UP NEXT</span><span class="editorial-briefing_expandHint">collapse</span></div>
-              <div class="MeetingCard_subtitle">Acme Corp · 6 attendees</div>
+              <div class="MeetingCard_subtitle">Acme Corp · 6 attendees <span class="IntelligenceQualityBadge_root"><span class="IntelligenceQualityBadge_dot" data-level="fresh"></span>Fresh</span></div>
             </div>
           </div>
-          <div class="editorial-briefing_expansionPanel editorial-briefing_expansionPanelOpen">
+          <div class="editorial-briefing_expansionPanel editorial-briefing_expansionTintTurmeric editorial-briefing_expansionPanelOpen" style="max-height: 720px;">
             <div class="editorial-briefing_expansionInner">
+              <p class="editorial-briefing_expansionDescription">Review procurement's redlines, confirm executive sponsor coverage, and leave with a named owner for the security questionnaire.</p>
               <div class="editorial-briefing_theRoom">
                 <div class="editorial-briefing_theRoomLabel">The Room</div>
-                <div class="editorial-briefing_theRoomGroup"><div class="editorial-briefing_theRoomGroupLabel">Their Side</div><div class="editorial-briefing_theRoomPerson"><span class="editorial-briefing_theRoomName">Priya Raman</span><span class="editorial-briefing_theRoomCompany">acme.com</span></div></div>
+                <div class="editorial-briefing_theRoomGroup">
+                  <div class="editorial-briefing_theRoomGroupLabel">Their Side</div>
+                  <div class="editorial-briefing_theRoomPerson"><span class="editorial-briefing_theRoomName">Priya Raman</span><span class="editorial-briefing_theRoomCompany">acme.com</span></div>
+                  <div class="editorial-briefing_theRoomPerson"><span class="editorial-briefing_theRoomName">Owen Carter</span><span class="editorial-briefing_theRoomCompany">acme.com</span><span class="editorial-briefing_theRoomRole editorial-briefing_theRoomRoleTentative">tentative</span></div>
+                </div>
+                <div class="editorial-briefing_theRoomGroup">
+                  <div class="editorial-briefing_theRoomGroupLabel">Our Side</div>
+                  <div class="editorial-briefing_theRoomPerson"><span class="editorial-briefing_theRoomName">James Giroux</span><span class="editorial-briefing_theRoomCompany">dailyos.com</span></div>
+                </div>
               </div>
               <div class="editorial-briefing_prepGrid">
-                <div class="editorial-briefing_prepSection"><div class="editorial-briefing_prepLabel editorial-briefing_prepLabelDiscuss">Discuss</div><div class="editorial-briefing_prepItem"><span class="editorial-briefing_prepDot editorial-briefing_prepDotTurmeric"></span><span class="editorial-briefing_prepItemText">Confirm pricing walk owner</span></div></div>
-                <div class="editorial-briefing_prepSection"><div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWatch">Watch</div><div class="editorial-briefing_prepItem"><span class="editorial-briefing_prepDot editorial-briefing_prepDotTerracotta"></span><span class="editorial-briefing_prepItemText">Procurement has joined late</span></div></div>
+                <div class="editorial-briefing_prepSection"><div class="editorial-briefing_prepLabel editorial-briefing_prepLabelDiscuss">Discuss</div><div class="editorial-briefing_prepItem"><span class="editorial-briefing_prepDot editorial-briefing_prepDotTurmeric"></span><span class="editorial-briefing_prepItemText">Confirm pricing walk owner</span><span class="editorial-briefing_prepImpactBadge" data-impact="high">high</span></div></div>
+                <div class="editorial-briefing_prepSection"><div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWatch">Watch</div><div class="editorial-briefing_prepItem"><span class="editorial-briefing_prepDot editorial-briefing_prepDotTerracotta"></span><span class="editorial-briefing_prepItemText">Procurement joined late and may reset timing</span><span class="editorial-briefing_prepImpactBadge" data-impact="medium">medium</span></div></div>
+                <div class="editorial-briefing_prepSection"><div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWins">Wins</div><div class="editorial-briefing_prepItem"><span class="editorial-briefing_prepDot editorial-briefing_prepDotSage"></span><span class="editorial-briefing_prepItemText">Champion forwarded the migration plan</span></div></div>
+              </div>
+              <div class="editorial-briefing_meetingActions">
+                <div class="editorial-briefing_meetingActionsLabel">Before this meeting</div>
+                <div class="editorial-briefing_meetingActionsItem">
+                  <button class="editorial-briefing_meetingActionsCheck" type="button" aria-label="Complete action"></button>
+                  <div><div class="editorial-briefing_meetingActionsText">Send revised pricing appendix</div><div class="editorial-briefing_meetingActionsContext">today · Acme Corp</div></div>
+                </div>
+                <div class="editorial-briefing_meetingActionsItem editorial-briefing_meetingActionsItemCompleted">
+                  <button class="editorial-briefing_meetingActionsCheck editorial-briefing_meetingActionsCheckChecked" type="button" aria-label="Completed action">
+                    <svg width="8" height="8" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
+                  </button>
+                  <div><div class="editorial-briefing_meetingActionsText">Confirm attendee list</div></div>
+                </div>
+              </div>
+              <div class="editorial-briefing_meetingLinks">
+                <a class="editorial-briefing_meetingLinkPrimary" href="../surfaces/meeting.html">Read full briefing -&gt;</a>
+                <button class="editorial-briefing_expansionCollapse" type="button">Collapse</button>
               </div>
             </div>
           </div>
@@ -624,16 +857,47 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DailyBriefingAttentionSection</h3></div>
           <a class="ds-spec-link" href="../../patterns/DailyBriefingAttentionSection.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> priority groups, action rows, email rows, lifecycle rows, and account context.</p>
-        <div class="ds-variants"><span>action</span><span>email</span><span>lifecycle</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> lifecycle confirmation rows, prioritized action rows, scored email rows, aging notice, and view-all links.</p>
+        <div class="ds-variants"><span>lifecycle</span><span>prioritized action</span><span>raw action</span><span>email intelligence</span><span>aging notice</span></div>
         <div class="ds-demo" data-ds-name="DailyBriefingAttentionSection" data-ds-tier="pattern" data-ds-spec="patterns/DailyBriefingAttentionSection.md">
           <section class="editorial-briefing_prioritiesSection">
-            <p class="editorial-briefing_prioritiesIntro">Three things need attention before lunch.</p>
-            <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelToday">Today</div>
-            <div class="editorial-briefing_priorityItems">
-              <article class="editorial-briefing_priorityItem editorial-briefing_priorityItemAccount editorial-briefing_priorityItemToday"><span class="editorial-briefing_priorityDot editorial-briefing_priorityDotTurmeric"></span><div class="editorial-briefing_priorityContent"><h4 class="editorial-briefing_priorityTitle">Send Acme pricing walk</h4><p class="editorial-briefing_priorityContext">Acme Corp · due today</p></div></article>
-              <article class="editorial-briefing_priorityItem editorial-briefing_priorityItemEmail editorial-briefing_priorityItemUpcoming"><span class="editorial-briefing_priorityDot"></span><div class="editorial-briefing_priorityContent"><h4 class="editorial-briefing_priorityTitle"><span class="editorial-briefing_prioritySender">Mina</span><span class="editorial-briefing_prioritySubjectSep">/</span> Security questionnaire</h4><p class="editorial-briefing_priorityContext">Reply before renewal review</p></div></article>
+            <div class="DailyBriefing_lifecycleGroup">
+              <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelToday">Lifecycle</div>
+              <div class="editorial-briefing_priorityItems">
+                <article class="editorial-briefing_priorityItem editorial-briefing_priorityItemToday editorial-briefing_priorityItemAccount">
+                  <span class="editorial-briefing_priorityDot editorial-briefing_priorityDotTurmeric"></span>
+                  <div class="editorial-briefing_priorityContent">
+                    <h4 class="editorial-briefing_priorityTitle">Acme Corp: renewal risk - procurement review</h4>
+                    <p class="editorial-briefing_priorityContext">Stage: legal review · Health 78 - 71 · 82% confidence · May 5</p>
+                    <p class="editorial-briefing_priorityWhy">Procurement joined the renewal thread and asked for security evidence.</p>
+                    <div class="DailyBriefing_lifecycleButtonRow"><button class="DailyBriefing_lifecycleConfirmBtn" type="button">Looks good</button><button class="DailyBriefing_lifecycleCorrectBtn" type="button">Fix something</button></div>
+                  </div>
+                </article>
+              </div>
             </div>
+            <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelOverdue">Actions</div>
+            <div class="editorial-briefing_priorityItems">
+              <a class="editorial-briefing_priorityItem editorial-briefing_priorityItemOverdue editorial-briefing_priorityItemAccount" href="../surfaces/action-detail.html" style="text-decoration:none;">
+                <button class="editorial-briefing_priorityCheck editorial-briefing_priorityCheckOverdue" type="button" aria-label="Complete action"></button>
+                <div class="editorial-briefing_priorityContent"><div class="editorial-briefing_priorityTitle">Send revised pricing walk</div><p class="editorial-briefing_priorityContext">Overdue · Acme Corp · ~15m</p><p class="editorial-briefing_priorityWhy">Blocks the renewal call at 10:00.</p></div>
+              </a>
+              <article class="editorial-briefing_priorityItem editorial-briefing_priorityItemToday editorial-briefing_priorityItemAccount">
+                <button class="editorial-briefing_priorityCheck" type="button" aria-label="Complete action"></button>
+                <div class="editorial-briefing_priorityContent"><a class="editorial-briefing_priorityTitle" href="../surfaces/action-detail.html" style="text-decoration:none;">Confirm attendee list</a><p class="editorial-briefing_priorityContext">today · Acme Corp</p></div>
+              </article>
+            </div>
+            <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelToday">Emails <span class="DailyBriefing_emailSyncTimestamp">as of 9:42 AM</span></div>
+            <div class="editorial-briefing_priorityItems">
+              <a class="editorial-briefing_priorityItem editorial-briefing_priorityItemEmailType" href="../surfaces/emails.html" style="text-decoration:none;">
+                <span class="editorial-briefing_priorityDot editorial-briefing_priorityDotTerracotta"></span>
+                <div class="editorial-briefing_priorityContent">
+                  <div class="editorial-briefing_priorityTitle">Security questionnaire needs an owner before renewal review</div>
+                  <div class="editorial-briefing_replyMeta DailyBriefing_emailMetaRow"><span>Acme Corp</span><span>Mina Patel</span><span class="editorial-briefing_emailScoreReason">customer blocked</span></div>
+                </div>
+              </a>
+            </div>
+            <div class="DailyBriefing_agingNotice">2 items aging toward auto-archive</div>
+            <div class="editorial-briefing_prioritiesViewAll"><a class="editorial-briefing_viewAllLink" href="../surfaces/actions.html">View all 8 actions -&gt;</a><a class="editorial-briefing_viewAllLink" href="../surfaces/emails.html">View all emails -&gt;</a></div>
           </section>
         </div>
       </article>
@@ -1085,28 +1349,13 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SurfaceMasthead</h3></div>
           <a class="ds-spec-link" href="../../patterns/SurfaceMasthead.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> mono eyebrow, serif title, lede, accessory slot, and optional GlanceRow slot.</p>
+        <p class="ds-composition"><strong>Composes:</strong> serif title with optional mono eyebrow, lede, accessory slot, and GlanceRow slot.</p>
         <div class="ds-variants"><span>compact</span><span>default</span><span>rich</span><span>accessory</span><span>glance</span></div>
         <div class="ds-demo" data-ds-name="SurfaceMasthead" data-ds-tier="pattern" data-ds-spec="patterns/SurfaceMasthead.md">
-          <header class="SurfaceMasthead_masthead SurfaceMasthead_default SurfaceMasthead_widthReading">
+          <header class="SurfaceMasthead_masthead SurfaceMasthead_default SurfaceMasthead_widthStandard" style="padding-top:24px;padding-bottom:24px;">
             <div class="SurfaceMasthead_topRow">
               <div class="SurfaceMasthead_titleBlock">
-                <p class="SurfaceMasthead_eyebrow">Meeting Recap · Tuesday Apr 17 · 11:00 AM</p>
-                <h4 class="SurfaceMasthead_title">Meridian Harbor Q2 review</h4>
-                <p class="SurfaceMasthead_lede">Marco raised pricing first; procurement is active, but a joint follow-up is already on the calendar.</p>
-              </div>
-              <div class="SurfaceMasthead_accessory">
-                <span class="Pill_pill Pill_compact Pill_neutral MeetingStatusPill_status MeetingStatusPill_past"><span class="Pill_dot" aria-hidden="true"></span>Wrapped</span>
-              </div>
-            </div>
-            <div class="SurfaceMasthead_glance">
-              <div class="GlanceRow_row GlanceRow_compact">
-                <div class="GlanceRow_cellSlot">
-                  <span class="GlanceCell_cell"><span class="GlanceCell_label">Duration</span><span class="GlanceCell_valueRow"><span class="GlanceCell_dot GlanceCell_neutral" aria-hidden="true"></span><span class="GlanceCell_value">56 min</span></span></span>
-                </div>
-                <div class="GlanceRow_cellSlot">
-                  <span class="GlanceCell_cell"><span class="GlanceCell_label">Risk</span><span class="GlanceCell_valueRow"><span class="GlanceCell_dot GlanceCell_warn" aria-hidden="true"></span><span class="GlanceCell_value">Pricing</span></span></span>
-                </div>
+                <h4 class="SurfaceMasthead_title">Settings</h4>
               </div>
             </div>
             <div class="SurfaceMasthead_rule"></div>
@@ -1256,16 +1505,22 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EntityListShell</h3></div>
           <a class="ds-spec-link" href="../../patterns/EntityListShell.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> editorial header, filter/archive tabs, search input, state helpers, and FinisMarker.</p>
-        <div class="ds-variants"><span>accounts</span><span>people</span><span>projects</span><span>archive</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> editorial header, search input, optional filter/archive tabs, state helpers, and FinisMarker.</p>
+        <div class="ds-variants"><span>accounts lifecycle</span><span>people archive + relationship</span><span>projects archive</span><span>state helpers</span></div>
         <div class="ds-demo" data-ds-name="EntityListShell" data-ds-tier="pattern" data-ds-spec="patterns/EntityListShell.md">
           <div class="EntityListShell_headerContent">
             <div class="EntityListShell_tabs">
-              <button class="EntityListShell_tabButton EntityListShell_tabButtonActive" type="button">active</button>
-              <button class="EntityListShell_tabButton" type="button">archived</button>
-              <button class="EntityListShell_tabButton" type="button">customers</button>
+              <button class="EntityListShell_tabButton EntityListShell_tabButtonActive" type="button">all</button>
+              <button class="EntityListShell_tabButton" type="button">renewal</button>
+              <button class="EntityListShell_tabButton" type="button">expansion</button>
             </div>
             <input class="EntityListShell_searchInput" value="Search accounts" aria-label="Search accounts" />
+            <div class="EntityListShell_tabs">
+              <button class="EntityListShell_tabButton EntityListShell_tabButtonActive" type="button">active</button>
+              <button class="EntityListShell_tabButton" type="button">archived</button>
+              <button class="EntityListShell_tabButton" type="button">external</button>
+              <button class="EntityListShell_tabButton" type="button">internal</button>
+            </div>
           </div>
         </div>
       </article>
@@ -1276,17 +1531,21 @@
           <a class="ds-spec-link" href="../../patterns/EntityRow.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> accent dot or avatar, name, subtitle, suffix slot, metadata slot, and hierarchy depth.</p>
-        <div class="ds-variants"><span>dot</span><span>avatar</span><span>nested</span><span>meta</span></div>
+        <div class="ds-variants"><span>dot</span><span>health avatar</span><span>person avatar</span><span>nested</span><span>nameSuffix</span><span>meta</span></div>
         <div class="ds-demo ds-demo-list" data-ds-name="EntityRow" data-ds-tier="pattern" data-ds-spec="patterns/EntityRow.md">
           <div class="EntityRow_row EntityRow_rowBorder">
-            <span class="EntityRow_dot" data-dot-color="saffron"></span>
-            <div class="EntityRow_content"><div class="EntityRow_nameRow"><span class="EntityRow_name">Acme Corp</span><span class="EntityHeroBase_heroBadge AccountHero_badge AccountHero_customerBadge">Customer</span></div><div class="EntityRow_subtitle">Renewal in 44 days</div></div>
-            <div class="EntityRow_meta"><span class="HealthBadge_badge"><span class="HealthBadge_dot HealthBadge_dotCompact HealthBadge_dotGreen"></span><span class="HealthBadge_score HealthBadge_scoreCompact">82</span></span></div>
+            <span class="HealthBadge_badge"><span class="HealthBadge_dot HealthBadge_dotCompact HealthBadge_dotGreen"></span><span class="HealthBadge_score HealthBadge_scoreCompact">82</span></span>
+            <div class="EntityRow_content"><div class="EntityRow_nameRow"><span class="EntityRow_name">Acme Corp</span></div></div>
+            <div class="EntityRow_meta"><span class="AccountsPage_archivedArrLabel">$240k</span></div>
+          </div>
+          <div class="EntityRow_row EntityRow_rowBorder">
+            <span style="width:32px;height:32px;border-radius:50%;border:2px solid var(--color-spice-turmeric);display:inline-flex;align-items:center;justify-content:center;flex-shrink:0;margin-top:2px;font-family:var(--font-mono);font-size:11px;color:var(--color-text-primary);">PR</span>
+            <div class="EntityRow_content"><div class="EntityRow_nameRow"><span class="EntityRow_name">Priya Raman</span><span style="font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-garden-larkspur);">external</span></div><div class="EntityRow_subtitle">Acme Corp · Economic buyer</div></div>
           </div>
           <div class="EntityRow_row EntityRow_rowBorder" data-depth="1">
             <span class="EntityRow_dot" data-dot-color="larkspur"></span>
-            <div class="EntityRow_content"><div class="EntityRow_nameRow"><span class="EntityRow_name">Priya Raman</span></div><div class="EntityRow_subtitle">Economic buyer · acme.com</div></div>
-            <div class="EntityRow_meta"><span class="Pill_pill Pill_neutral Pill_compact">person</span></div>
+            <div class="EntityRow_content"><div class="EntityRow_nameRow"><span class="EntityRow_name">Platform rollout</span><span style="font-family:var(--font-mono);font-size:10px;font-weight:600;letter-spacing:0.06em;text-transform:uppercase;color:var(--color-garden-sage);">Active</span></div><div class="EntityRow_subtitle">Sam Chen · Q2 milestone</div></div>
+            <div class="EntityRow_meta"><span style="font-family:var(--font-mono);font-size:13px;color:var(--color-text-tertiary);">3 actions</span></div>
           </div>
         </div>
       </article>
@@ -1300,9 +1559,9 @@
         <div class="ds-variants"><span>health</span><span>context</span><span>work</span></div>
         <div class="ds-demo" data-ds-name="AccountViewSwitcher" data-ds-tier="pattern" data-ds-spec="patterns/AccountViewSwitcher.md">
           <div class="AccountViewSwitcher_switcher" style="position:relative;bottom:auto;left:auto;transform:none;">
-            <button class="AccountViewSwitcher_tab AccountViewSwitcher_tabActive" type="button">Health</button>
+            <button class="AccountViewSwitcher_tab AccountViewSwitcher_tabActive" type="button">Health &amp; Outlook</button>
             <button class="AccountViewSwitcher_tab" type="button">Context</button>
-            <button class="AccountViewSwitcher_tab" type="button">Work</button>
+            <button class="AccountViewSwitcher_tab" type="button">The Work</button>
           </div>
         </div>
       </article>
@@ -1312,13 +1571,23 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">WorkSurface</h3></div>
           <a class="ds-spec-link" href="../../patterns/WorkSurface.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> focus list, program pills, commitment cards, suggestion cards, and report cards.</p>
-        <div class="ds-variants"><span>focus</span><span>program</span><span>commitment</span><span>suggestion</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> commitment cards, suggestions, program pills, shared references, recently-landed rows, and report cards.</p>
+        <div class="ds-variants"><span>commitment</span><span>suggestion</span><span>program</span><span>shared</span><span>recently landed</span><span>outputs</span></div>
         <div class="ds-demo" data-ds-name="WorkSurface" data-ds-tier="pattern" data-ds-spec="patterns/WorkSurface.md">
           <div class="WorkSurface_commitmentCard">
             <h4 class="WorkSurface_commitmentHeadline">Send pricing walk and procurement appendix</h4>
             <div class="WorkSurface_commitmentMetaRow"><strong>Owner</strong> You <strong>Due</strong> May 8</div>
-            <p class="WorkSurface_focusPara">The work tab treats commitments as editorial work objects, not generic todos.</p>
+            <div class="WorkSurface_pillRow"><span class="Pill_pill Pill_sage Pill_compact">Customer-facing</span><span class="Pill_pill Pill_neutral Pill_compact">Private</span></div>
+          </div>
+          <div class="WorkSurface_recCard">
+            <div class="WorkSurface_recLabel">Suggestion · one-click accept</div>
+            <h4 class="WorkSurface_recHeadline">Create a follow-up commitment for procurement approval.</h4>
+            <p class="WorkSurface_recRationale">Drafted from the latest renewal call and the open pricing thread.</p>
+          </div>
+          <div class="WorkSurface_refRow"><span class="WorkSurface_refRowId">DOS-241</span><div class="WorkSurface_refRowBody">Security appendix shared to Linear<div class="WorkSurface_refRowSub">Customer-facing tracker</div></div><span class="WorkSurface_refRowMeta">Shared</span></div>
+          <div class="WorkSurface_timelineRow"><span class="WorkSurface_timelineDate">May 3</span><div><div class="WorkSurface_timelineEvent">Pricing walk delivered to Acme.</div><div class="WorkSurface_timelineSource">From renewal meeting</div></div><span class="WorkSurface_refRowMeta WorkSurface_timelineDelivered">Delivered</span></div>
+          <div class="WorkSurface_reportGrid">
+            <article class="WorkSurface_reportCard"><div class="WorkSurface_reportType">Account Health</div><h4 class="WorkSurface_reportTitle">Q2 renewal risk briefing</h4><div class="WorkSurface_reportGen">Generated today · meeting-triggered</div></article>
           </div>
         </div>
       </article>
@@ -1328,12 +1597,12 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SettingsSections</h3></div>
           <a class="ds-spec-link" href="../../patterns/SettingsSections.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> current settings chapters from <code>features/settings-ui</code>, not the older seven-chapter mockup.</p>
-        <div class="ds-variants"><span>you</span><span>connectors</span><span>data</span><span>system</span><span>dev diagnostics</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> shipped Settings chapters: You, Connectors, Data, System, and dev-only Diagnostics.</p>
+        <div class="ds-variants"><span>You</span><span>Connectors</span><span>Data</span><span>System</span><span>Diagnostics dev-only</span></div>
         <div class="ds-demo" data-ds-name="SettingsSections" data-ds-tier="pattern" data-ds-spec="patterns/SettingsSections.md">
           <div class="settings-section-demo">
             <h4 class="settings-section-title">Shipped Settings chapters</h4>
-            <p class="settings-section-copy">settings-you · settings-connectors · settings-data · settings-system · diagnostics in development only</p>
+            <p class="settings-section-copy">YouCard · ContextSourceSection + ConnectorsGrid · DatabaseRecoveryCard + ActivityLogSection + DataPrivacySection · Claude Code + SystemStatus + Notifications + Text Size · Diagnostics in development only</p>
             <div class="StatusDot_wrapper"><span class="StatusDot_dot StatusDot_md StatusDot_connected"></span><span class="StatusDot_label">Google connected</span></div>
           </div>
         </div>
@@ -1379,14 +1648,39 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DiagnosticsSection</h3></div>
           <a class="ds-spec-link" href="../../patterns/DiagnosticsSection.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> developer toggle, schedule rows, manual runs, backfill tools, AI usage, and storage cards.</p>
-        <div class="ds-variants"><span>dev toggle</span><span>schedule</span><span>manual run</span><span>storage</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> developer toggle, schedules, manual runs, backfill tools, feedback learning, AI usage, storage, and archived account recovery.</p>
+        <div class="ds-variants"><span>developer tools</span><span>schedules</span><span>manual run</span><span>feedback learning</span><span>AI usage</span><span>storage</span><span>archived accounts</span></div>
         <div class="ds-demo" data-ds-name="DiagnosticsSection" data-ds-tier="pattern" data-ds-spec="patterns/DiagnosticsSection.md">
-          <div class="DiagnosticsSection_entityModeBtn" data-selected="true">
-            <div class="DiagnosticsSection_entityModeContent"><div class="DiagnosticsSection_entityModeTitle">Background AI guard</div><p class="DiagnosticsSection_entityModeDesc">Inspect recent background work and retry stuck jobs.</p></div>
-            <span class="DiagnosticsSection_entityModeCheck">✓</span>
+          <div style="display:grid;gap:16px;">
+            <div>
+              <div class="DiagnosticsSection_scheduleHeader">
+                <span class="DiagnosticsSection_scheduleLabel">Daily briefing refresh</span>
+                <span class="StatusDot_wrapper"><span class="StatusDot_dot StatusDot_sm StatusDot_connected"></span><span class="StatusDot_label">ready</span></span>
+              </div>
+              <div class="DiagnosticsSection_scheduleCron">0 6 * * * <span class="DiagnosticsSection_scheduleTimezone">America/Toronto</span></div>
+            </div>
+            <div class="DiagnosticsSection_manualRunRow">
+              <button class="DiagnosticsSection_btn DiagnosticsSection_btnPrimary" type="button">Run now</button>
+              <button class="DiagnosticsSection_btn DiagnosticsSection_btnGhost" type="button">View log</button>
+            </div>
+            <div class="DiagnosticsSection_aiStatGrid">
+              <div class="DiagnosticsSection_aiStatCard"><div class="DiagnosticsSection_dbLabel">Tokens today</div><div class="DiagnosticsSection_aiStatNumber">42k</div><p class="DiagnosticsSection_aiStatDescription">Briefings, meeting extraction, and account health.</p></div>
+              <div class="DiagnosticsSection_aiStatCard"><div class="DiagnosticsSection_dbLabel">Guard state</div><div class="DiagnosticsSection_aiStatNumber">On</div><p class="DiagnosticsSection_aiStatDescription">Background AI work can be paused from diagnostics.</p></div>
+            </div>
+            <div class="DiagnosticsSection_dbCard">
+              <div class="DiagnosticsSection_dbHeader"><span class="DiagnosticsSection_dbLabel">Database size</span><span class="DiagnosticsSection_dbSizeDefault">148 MB</span></div>
+              <button class="DiagnosticsSection_dbExpandBtn" type="button">Show table details</button>
+            </div>
+            <div class="DiagnosticsSection_feedbackCard">
+              <div class="DiagnosticsSection_feedbackStatGrid">
+                <div class="DiagnosticsSection_feedbackStatItem"><div class="DiagnosticsSection_feedbackStatNumber">18</div><p class="DiagnosticsSection_feedbackStatDescription">Corrections captured for learning.</p></div>
+                <div class="DiagnosticsSection_feedbackStatItem"><div class="DiagnosticsSection_feedbackStatNumber">6</div><p class="DiagnosticsSection_feedbackStatDescription">Accepted suggestions this week.</p></div>
+              </div>
+            </div>
+            <div class="DiagnosticsSection_archivedAccountsList">
+              <div class="DiagnosticsSection_archivedAccountRowBorder"><span><span class="DiagnosticsSection_archivedAccountName">Meridian Harbor</span><span class="DiagnosticsSection_archivedAccountParent">Archived Apr 29</span></span><button class="DiagnosticsSection_archivedRestoreBtn" type="button">Restore</button></div>
+            </div>
           </div>
-          <div class="DiagnosticsSection_manualRunRow"><button class="DiagnosticsSection_btn DiagnosticsSection_btnPrimary" type="button">Run now</button><button class="DiagnosticsSection_btn DiagnosticsSection_btnGhost" type="button">View log</button></div>
         </div>
       </article>
 
@@ -1396,11 +1690,11 @@
           <a class="ds-spec-link" href="../../patterns/OnboardingFlow.md">Spec</a>
         </div>
         <p class="ds-composition"><strong>Composes:</strong> AtmosphereLayer, FolioBar, FloatingNavIsland, and the shipped eight-chapter setup sequence.</p>
-        <div class="ds-variants"><span>welcome</span><span>connectors</span><span>you</span><span>first account</span><span>prime briefing</span></div>
+        <div class="ds-variants"><span>Welcome</span><span>Google</span><span>Claude</span><span>Glean</span><span>About You</span><span>Account</span><span>Your Role</span><span>Prime</span></div>
         <div class="ds-demo" data-ds-name="OnboardingFlow" data-ds-tier="pattern" data-ds-spec="patterns/OnboardingFlow.md">
           <div class="onboarding-demo-card">
             <h4 class="onboarding_heroHeadline">Let’s make tomorrow morning useful.</h4>
-            <p class="onboarding_bodyTextConstrained">Welcome · Google · Claude Code · Glean · You · First Account · Entity Mode · Prime Briefing</p>
+            <p class="onboarding_bodyTextConstrained">Welcome · Google · Claude · Glean · About You · Account · Your Role · Prime</p>
             <div class="onboarding_ruleSection"><div class="onboarding_sectionLabel">Current step</div><p class="onboarding_bodyText">Prime your first briefing from real workspace data.</p></div>
           </div>
         </div>
@@ -1467,11 +1761,24 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ActionRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/ActionRow.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> action title, completion control, context line, priority, and optional accept/dismiss controls.</p>
-        <div class="ds-variants"><span>compact</span><span>full</span><span>outcome</span></div>
+        <p class="ds-composition"><strong>Composes:</strong> compact linked row, full ActionsPage row, or MeetingDetail outcome triage row.</p>
+        <div class="ds-variants"><span>compact / TheWork</span><span>full / ActionsPage</span><span>outcome / MeetingDetail</span></div>
         <div class="ds-demo ds-demo-list" data-ds-name="ActionRow" data-ds-tier="pattern" data-ds-spec="patterns/ActionRow.md">
-          <div class="action-row-demo"><span class="action-row-check"></span><div><p class="action-row-title">Send pricing walk</p><p class="action-row-context">Acme Corp · due May 8 · High</p></div></div>
-          <div class="action-row-demo"><span class="PostMeetingIntelligence_suggestedPill">Suggested</span><div><p class="action-row-title">Schedule renewal follow-up</p><p class="action-row-context">From MeetingDetail outcome row</p></div></div>
+          <a class="action-row-compact" href="#ActionRow">
+            <p class="action-row-compact-title">Send procurement appendix to Acme</p>
+            <div class="action-row-meta"><span>May 8</span><span>Renewal call</span></div>
+          </a>
+          <div class="action-row-demo">
+            <span class="action-row-check"></span>
+            <div><p class="action-row-title">Send pricing walk <span class="action-row-decision">Decision needed</span></p><p class="action-row-context">Confirm the three pricing options before the follow-up. · Acme Corp · Renewal call</p></div>
+            <span class="action-row-priority">High</span>
+          </div>
+          <div class="action-row-demo action-row-outcome">
+            <div class="action-row-outcome-controls"><button class="action-row-mini-btn action-row-mini-accept" type="button">✓</button><button class="action-row-mini-btn action-row-mini-reject" type="button">×</button></div>
+            <span class="PostMeetingIntelligence_suggestedPill">Suggested</span>
+            <span class="action-row-context" style="margin:0;flex:1;color:var(--color-text-primary);">Schedule renewal follow-up</span>
+            <span class="action-row-meta" style="margin:0;">May 10</span>
+          </div>
         </div>
       </article>
 
@@ -1613,13 +1920,25 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SuggestedActionRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/SuggestedActionRow.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> suggested pill, action title, mono metadata, context quote, and controls.</p>
-        <div class="ds-variants"><span>meeting</span><span>work</span><span>suggested</span><span>pending</span><span>accepted</span><span>dismissed</span></div>
-        <div class="ds-demo" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
-          <div class="PostMeetingIntelligence_actionItem PostMeetingIntelligence_actionItemSuggested">
-            <span class="PostMeetingIntelligence_suggestedPill">Suggested</span>
-            <div class="PostMeetingIntelligence_actionText">Schedule the Apr 24 renewal-pricing meeting <span class="PostMeetingIntelligence_actionMeta PostMeetingIntelligence_priorityP1">Urgent &middot; due Apr 19</span><span class="PostMeetingIntelligence_actionContext">&ldquo;Apr 24 at 1pm works for us.&rdquo; &middot; Aoife, 11:54</span></div>
-            <div class="PostMeetingIntelligence_actionControls"><button class="PostMeetingIntelligence_actionBtn PostMeetingIntelligence_btnAccept" type="button">Accept</button><button class="PostMeetingIntelligence_actionBtn PostMeetingIntelligence_btnDismiss" type="button">Dismiss</button></div>
+        <p class="ds-composition"><strong>Composes:</strong> dashed suggestion marker, optional suggested/priority label, title, context, source/account metadata, and accept/dismiss icon controls.</p>
+        <div class="ds-variants"><span>full</span><span>compact</span><span>bordered</span><span>borderless</span></div>
+        <div class="ds-demo ds-demo-list" data-ds-name="SuggestedActionRow" data-ds-tier="pattern" data-ds-spec="patterns/SuggestedActionRow.md">
+          <div class="suggested-row-demo">
+            <div class="suggested-row-content">
+              <div class="suggested-row-label">Suggested <span class="suggested-row-priority">Urgent</span></div>
+              <p class="suggested-row-title">Schedule the Apr 24 renewal-pricing meeting</p>
+              <p class="suggested-row-context">Apr 24 at 1pm works for us.</p>
+              <div class="suggested-row-source">Meeting capture &middot; Acme Corp</div>
+            </div>
+            <div class="suggested-row-controls"><button class="action-row-mini-btn action-row-mini-accept" type="button">✓</button><button class="action-row-mini-btn action-row-mini-reject" type="button">×</button></div>
+          </div>
+          <div class="suggested-row-demo suggested-row-compact">
+            <div class="suggested-row-content">
+              <p class="suggested-row-title">Create follow-up action for procurement approval</p>
+              <p class="suggested-row-context">From latest email thread</p>
+              <div class="suggested-row-source">Actions backlog</div>
+            </div>
+            <div class="suggested-row-controls" style="margin-top:0;"><button class="action-row-mini-btn action-row-mini-accept" type="button">✓</button><button class="action-row-mini-btn action-row-mini-reject" type="button">×</button></div>
           </div>
         </div>
       </article>

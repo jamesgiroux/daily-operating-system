@@ -15,7 +15,8 @@ Visual at-a-glance shape of the day — hour-tick row + colored horizontal bars 
 
 ## When to use it
 
-- DailyBriefing's "Today" section (above the meeting list) — anchor that lets the user see "shape of the day" before reading individual meetings
+- No shipped routed use today. This remains a D-spine prototype pattern until the product approves the day-shape treatment.
+- Roadmap target: DailyBriefing's "Today" section above the meeting list, if the day-shape treatment lands.
 - Potential extension: any surface that needs to render a single-day timeline (e.g., a meeting's day-in-context view)
 
 ## When NOT to use it
@@ -85,11 +86,11 @@ Hover interaction: subtle Y translate + box-shadow on bars.
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.day-chart`, `.day-bars`, `.bar`, `.now-line`)
-- **Code:** shipped in `src/components/dashboard/DayChart.tsx`
+- **Code:** `src/components/dashboard/DayChart.tsx` exists, but is not consumed by shipped routed UI.
 
 ## Surfaces that consume it
 
-DailyBriefing (canonical). Potential reuse on MeetingDetail (day-in-context view), maybe in account "today's calls with this account" view.
+No shipped routed consumers. D-spine prototype only.
 
 ## Naming notes
 

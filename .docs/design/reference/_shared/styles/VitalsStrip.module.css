@@ -62,10 +62,6 @@
   color: var(--color-spice-saffron);
 }
 
-.VitalsStrip_vitalText[data-highlight="secondary"] {
-  color: var(--color-text-secondary);
-}
-
 .VitalsStrip_attribution {
   font-family: var(--font-mono);
   font-size: 10px;

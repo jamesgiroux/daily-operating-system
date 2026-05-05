@@ -1,9 +1,9 @@
 # SurfaceMasthead
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
-**Last updated:** 2026-05-03
+**Last updated:** 2026-05-05
 **`data-ds-name`:** `SurfaceMasthead`
 **`data-ds-spec`:** `patterns/SurfaceMasthead.md`
 **Variants:** `density="compact" | "default" | "rich"`; `accessory` slot; `glance` slot for `GlanceRow`
@@ -54,10 +54,11 @@ Two-column layout when accessory is present (title block | accessory). Single co
 - accessory: `<MeetingStatusPill state="wrapped" duration="56 min" />`
 
 **Settings masthead** = SurfaceMasthead with:
-- eyebrow: "Settings · Last edited 4 minutes ago"
 - title: "Settings"
-- lede: "A quiet morning, all systems steady. One connector — Gravatar — is refreshing its avatar cache; nothing to act on."
-- glance: `<GlanceRow cells={[connectors, database, ai, anomalies]} />`
+- density: `default`
+- width: `standard`
+
+The richer Settings masthead with lede/glance cells was a prototype direction; it is not the shipped Settings page today.
 
 ## Tokens consumed
 
@@ -85,7 +86,9 @@ Two-column layout when accessory is present (title block | accessory). Single co
 
 ## Surfaces that consume it
 
-Settings (canonical Wave 3 use), MeetingDetail (Wave 4 — replaces standalone MeetingHero), future Reports surfaces, future "deliverable" surfaces (case studies, briefings-as-deliverable).
+Settings (canonical Wave 3 use), future Reports surfaces, future "deliverable" surfaces (case studies, briefings-as-deliverable).
+
+MeetingDetail currently uses its own `meeting-intel` hero classes rather than `SurfaceMasthead`.
 
 **Not consumed by**: DailyBriefing (uses `Lead`), AccountDetail / ProjectDetail / PersonDetail (use entity-specific heroes already canonical in `src/components/entity/EntityHeroBase.tsx`).
 

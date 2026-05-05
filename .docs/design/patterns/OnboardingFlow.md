@@ -1,12 +1,12 @@
 # OnboardingFlow
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-05
 **`data-ds-name`:** `OnboardingFlow`
 **`data-ds-spec`:** `patterns/OnboardingFlow.md`
-**Variants:** welcome; Google; Claude Code; Glean; You card; first account; entity mode; prime briefing
+**Variants:** Welcome; Google; Claude; Glean; About You; Account; Your Role; Prime
 **Design system version introduced:** 0.5.0
 
 ## Job
@@ -21,4 +21,3 @@ Render the shipped onboarding journey and its chrome: atmosphere, folio bar, flo
 ## Surfaces that consume it
 
 Onboarding.
-

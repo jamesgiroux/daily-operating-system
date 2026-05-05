@@ -1,9 +1,10 @@
 /**
  * Shared SuggestedActionRow — renders a suggested action with accept/reject.
  *
- * Consolidates duplicate implementations from:
+ * Shipped consumer:
  * - ActionsPage.tsx (full: "Suggested" label, priority, context)
- * - DailyBriefing.tsx (compact: smaller, no label/priority)
+ *
+ * Compact mode remains available for dense suggestion lists.
  *
  * ADR-0084 C2.
  */

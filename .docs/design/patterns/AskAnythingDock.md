@@ -15,7 +15,8 @@ Multi-line "front door" to the conversational layer of DailyOS — an editorial 
 
 ## When to use it
 
-- DailyBriefing (canonical; placed at the bottom of the briefing as a "what now?" affordance)
+- No shipped routed use today. Keep it visible as implemented/unintegrated D-spine work only.
+- Roadmap target: DailyBriefing bottom-of-briefing "what now?" affordance, if approved.
 - Any future surface where the user benefits from being able to ask the assistant something with context
 - Cross-version foundational pattern for v1.4.6 (Proactive Intelligence)
 
@@ -89,11 +90,11 @@ Receives context seeded by `ThreadMark` clicks (via global event or context prov
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.ask`, `.ask-bar`, `.ask-bar-input`, `.ask-bar-suggestions`, `.ask-bar-scope`, `.ask-chip`)
-- **Code:** shipped in `src/components/dashboard/AskAnythingDock.tsx`
+- **Code:** `src/components/dashboard/AskAnythingDock.tsx` exists, but is not consumed by shipped routed UI.
 
 ## Surfaces that consume it
 
-DailyBriefing (canonical). Cross-version: foundational for v1.4.6 (Proactive Intelligence) — should propagate as a global / persistent affordance once that version's scope is settled.
+No shipped routed consumers. D-spine prototype only. Cross-version: possible foundation for v1.4.6 (Proactive Intelligence) once that version's scope is settled.
 
 ## Naming notes
 

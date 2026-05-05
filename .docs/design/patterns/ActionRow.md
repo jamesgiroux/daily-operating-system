@@ -1,7 +1,7 @@
 # ActionRow
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** canonical/shipped
 **Owner:** James
 **Last updated:** 2026-05-05
 **`data-ds-name`:** `ActionRow`
@@ -20,5 +20,4 @@ Render a work action at the density required by its surface: compact linked row,
 
 ## Surfaces that consume it
 
-ActionsPage and MeetingDetailPage.
-
+ActionsPage uses `variant="full"` for action lists. MeetingDetailPage uses `variant="outcome"` for meeting outcome triage. `src/components/entity/TheWork.tsx` uses `variant="compact"` for linked Work rows.

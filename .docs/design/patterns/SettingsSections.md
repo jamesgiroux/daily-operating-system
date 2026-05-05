@@ -6,12 +6,20 @@
 **Last updated:** 2026-05-05
 **`data-ds-name`:** `SettingsSections`
 **`data-ds-spec`:** `patterns/SettingsSections.md`
-**Variants:** connectors; context sources; data/privacy; system; diagnostics; notifications; text size
+**Variants:** You; Connectors; Data; System; dev-only Diagnostics
 **Design system version introduced:** 0.5.0
 
 ## Job
 
-Document the real shipped Settings section vocabulary from `features/settings-ui`, rather than the older speculative Settings redesign language.
+Document the real shipped Settings chapter vocabulary, rather than the older speculative Settings redesign language.
+
+The shipped chapters are:
+
+- **You** — `YouCard`
+- **Connectors** — `ContextSourceSection` and `ConnectorsGrid`
+- **Data** — `DatabaseRecoveryCard`, `ActivityLogSection`, and `DataPrivacySection`
+- **System** — inline Claude Code status plus `SystemStatus`, `NotificationSection`, and `TextSizeSection`
+- **Diagnostics** — `DiagnosticsSection`, development mode only
 
 ## Source
 
@@ -22,4 +30,3 @@ Document the real shipped Settings section vocabulary from `features/settings-ui
 ## Surfaces that consume it
 
 Settings.
-
