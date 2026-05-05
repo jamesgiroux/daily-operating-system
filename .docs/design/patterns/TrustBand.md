@@ -1,7 +1,7 @@
 # TrustBand
 
 **Tier:** pattern
-**Status:** canonical
+**Status:** implemented/unintegrated
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `TrustBand`

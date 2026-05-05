@@ -1,9 +1,9 @@
 # DailyBriefing
 
 **Tier:** surface
-**Status:** redesigning (v1.4.3)
+**Status:** shipped surface + prototype roadmap separated
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-05
 **`data-ds-name`:** `DailyBriefing`
 **`data-ds-spec`:** `surfaces/DailyBriefing.md`
 **Canonical name:** `DailyBriefing`
@@ -15,7 +15,7 @@
 - `src/hooks/useDashboardData.ts`
 - `src/styles/editorial-briefing.module.css`
 - `src/components/onboarding/chapters/DashboardTour.tsx`
-- v1.4.3 redesign references `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html`
+- Spine-D references remain roadmap material until adopted by routed UI.
 
 **Design system version introduced:** 0.1.0
 
@@ -25,23 +25,14 @@ The morning chief-of-staff briefing — a single editorial page that tells the u
 
 ## Layout regions
 
-In reading order:
+In the shipped source, reading order is:
 
-1. **FolioBar** — surface label "Daily Briefing", center timestamp ("THU · APR 23 · LIVE"), right action set (refresh + Ask anything ⌘K), pulsing brand mark for live status
-2. **The Lead** (`Lead` pattern) — single sentence, optional inline `.sharp` highlight; eyebrow ("Today, Thursday April 23")
-3. **Today** section (in `MarginGrid`):
-   - `ChapterHeading`-style section heading + summary
-   - `DayChart` — visual day shape with NOW line
-   - Stack of `MeetingSpineItem` instances — one per meeting, full editorial context
-4. **What's Moving** section (in `MarginGrid`):
-   - Section heading + summary
-   - Stack of `EntityPortraitCard` instances — one per entity that shifted overnight
-5. **Watch** section (in `MarginGrid`):
-   - Section heading + summary
-   - List of `WatchListRow` items (passive tracking, with `InferredAction` per item)
-6. **Ask** section (in `MarginGrid`):
-   - `AskAnythingDock` — multi-line conversational dock
-7. **Briefing-end footer** — closer line, refresh status
+1. **FolioBar / magazine shell actions** — Daily Briefing label, refresh action via `FolioRefreshButton`, and live/stale status copy.
+2. **Surface-local hero** — lead-like editorial copy implemented with `editorial-briefing` classes, not the standalone `Lead` pattern.
+3. **Today / schedule** — `MarginGrid` section containing `BriefingMeetingCard` rows. `BriefingMeetingCard` composes `MeetingCard`, `KeyPeopleFlow`, `PrepGrid`, and `MeetingActionChecklist`.
+4. **Health / account context where available** — `HealthBadge` and entity chips in shipped briefing rows.
+5. **Attention section** — shipped local rows for prioritized actions, priority email, and lifecycle updates.
+6. **Finis** — `FinisMarker`.
 
 `AtmosphereLayer` (turmeric tint) renders behind everything.
 
@@ -49,10 +40,9 @@ In reading order:
 
 **Provides chapters to `FloatingNavIsland`** per D2 (synthesis). The chapters inventory:
 
-- `today` → "Today" — the meeting spine
-- `moving` → "Moving" — entity portraits
-- `watch` → "Watch" — passive tracking
-- `ask` → "Ask" — the conversational dock
+- `hero` / lead context
+- `schedule` / meetings
+- `attention` / priorities
 
 Local pill renders these via `FloatingNavIsland`'s chapters contract; click smooth-scrolls to the section. Active chapter highlights via scroll-spy.
 
@@ -64,22 +54,27 @@ Local pill renders these via `FloatingNavIsland`'s chapters contract; click smoo
 - `FloatingNavIsland` (chrome) — receives `chapters` prop
 - `AtmosphereLayer` (chrome, tint=turmeric)
 - `MarginGrid` (every section)
-- `Lead` (the lead sentence)
-- `DayChart` (Today section)
-- `MeetingSpineItem` (Today section, repeated)
-- `EntityPortraitCard` (Moving section, repeated)
-- `ThreadMark` (universal hover affordance)
-- `AskAnythingDock` (Ask section)
-- (proposed Wave 2: `WatchListRow` + `InferredAction` for Watch section — these are v1.4.5 territory; for v1.4.3 the Watch section uses a simpler row pattern documented inline)
+- `MeetingCard`
+- `BriefingMeetingCard`
+- `DailyBriefingAttentionSection` (shipped-local)
+- `FinisMarker`
+
+Roadmap/prototype only:
+
+- `Lead`
+- `DayChart`
+- `MeetingSpineItem`
+- `EntityPortraitCard`
+- `ThreadMark`
+- `AskAnythingDock`
 
 ## Primitives consumed
 
 - `Pill` (status pills, prep states)
 - `IntelligenceQualityBadge` (per-meeting prep state — replacing the local `prep-state` chip from D-spine)
-- `TrustBandBadge` (where surface-level trust signals appear)
-- `FreshnessIndicator` (chapter-level "as of" labels, claim freshness)
-- `ProvenanceTag` (where source attribution helps)
 - `EntityChip` (entity references inside content)
+- `HealthBadge`
+- `FolioRefreshButton`
 
 ## Tokens
 
@@ -89,9 +84,9 @@ Local pill renders these via `FloatingNavIsland`'s chapters contract; click smoo
 ## Notable interactions
 
 - **Live refresh**: surface refreshes every 2 minutes when on screen; FolioBar's pulsing brand mark indicates live status
-- **`ThreadMark` everywhere**: hover any addressable line (meeting, thread item, watch row) → "talk" button appears → click seeds AskAnythingDock with context
-- **Inferred actions**: Watch items render with default-action button + chev → click chev opens popover with ranked alternatives (Bayesian); v1.4.5 work
-- **Briefing readiness**: each meeting shows prep state (`ready` / `building` / `needs`) — drives whether the foot shows briefing link or "Create briefing" CTA
+- **Inline meeting expansion**: upcoming/in-progress rows expand in place to show prep, the room, and before-meeting actions.
+- **Past meeting navigation**: past rows navigate to MeetingDetail.
+- **Priority completion**: action rows can be completed from the briefing.
 
 ## Empty / loading / error states
 
@@ -113,5 +108,5 @@ Per Audit 04: `DailyBriefing` accepts `freshness` prop but it's currently aliase
 ## History
 
 - 2026-05-02 — Surface spec authored as part of Wave 1 (v1.4.3 substrate prep).
-- v1.4.3 redesign in progress — D-spine mockup is the chosen direction.
+- 2026-05-05 — Corrected spec to shipped source. Spine-D components remain prototype/roadmap until routed UI consumes them.
 - DOS-360 — `Dashboard` → `DailyBriefing` rename, deferred post-v1.4.3.

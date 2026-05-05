@@ -1,7 +1,7 @@
 # TypeBadge
 
 **Tier:** primitive
-**Status:** canonical
+**Status:** shipped-local/extraction-needed
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `TypeBadge`

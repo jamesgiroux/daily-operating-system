@@ -1,9 +1,9 @@
 # MeetingDetail
 
 **Tier:** surface
-**Status:** redesigning (Wave 4 substrate prep)
+**Status:** shipped surface + extraction targets
 **Owner:** James
-**Last updated:** 2026-05-03
+**Last updated:** 2026-05-05
 **`data-ds-name`:** `MeetingDetail`
 **`data-ds-spec`:** `surfaces/MeetingDetail.md`
 **Canonical name:** `MeetingDetail`
@@ -23,33 +23,13 @@ The post-meeting recap surface — what happened in the room, how predictions he
 
 In reading order:
 
-1. **FolioBar** — surface label "Meeting", crumbs ("Meetings / [Meeting name + date]"), center timestamp, right-side: status dot ("processed") + folio status text
-2. **`FolioActions`** sub-row — Copy / Share / Send Recap (primary turmeric) / Re-extract toolbar
-3. **`SurfaceMasthead`** (composed as MeetingHero per D-reconciliation):
-   - accessory: `<MeetingStatusPill state="wrapped" duration="56 min" />`
-   - eyebrow: "Meeting Recap · [day date · time range]"
-   - title: meeting subject
-   - lede: one-paragraph synthesis (the room's actual outcome, in plain prose)
-4. **What Happened to Your Plan** chapter:
-   - `AgendaThreadList` — predicted agenda items checked off (✓ confirmed / ○ open / + new attendee) with per-item time-spent metadata; carried-over items render with overdue affordance
-5. **Predictions vs. Reality** chapter:
-   - `PredictionsVsRealityGrid` — two-column risks vs wins comparison; each finding has dot + title + impact paragraph
-6. **Conversation** chapter:
-   - `TalkBalanceBar` (existing in `src/components/shared/`) — proportional segments by speaker
-   - `SignalGrid` — 2x2 stats (Question density / Decision maker active / Forward-looking / Monologue risk)
-   - `EscalationQuote` — highlighted attributed quote where the room turned
-   - Competitor mentions — inline list
-7. **Findings** chapter:
-   - `FindingsTriad` — three-column Wins / Risks / Decisions, each with evidence quotes + attribution
-8. **Champion Health** chapter:
-   - `ChampionHealthBlock` — name + status arc + evidence quote + risk paragraph
-9. **Commitments & Actions** chapter:
-   - `CommitmentRow` instances (YOURS / THEIRS captured commitments)
-   - `SuggestedActionRow` instances (AI-suggested follow-ups with Accept/Dismiss)
-   - "Pending" rows for previously-committed but still-open items
-10. **Role Changes** chapter:
-    - `RoleTransitionRow` instances — name + before-status → after-status pill chain
-11. **Finis** — `FinisMarker` + "Processed [timestamp] — from [transcript source]"
+1. **FolioBar / magazine shell actions** — meeting label, crumbs, refresh action, and status text.
+2. **Inline folio actions** — source-local action buttons in `MeetingDetailPage.tsx`; no exported `FolioActions` component yet.
+3. **Meeting hero** — current source uses `MeetingDetailPage.module.css` hero classes rather than `SurfaceMasthead`.
+4. **Editable meeting intelligence** — `EditableText`, `IntelligenceFeedback`, entity chips, health badges, and refresh controls.
+5. **Post-meeting intelligence** — `PostMeetingIntelligence` renders the real agenda threads, predictions, conversation signals, escalation quote, findings, champion health, commitments, action rows, and role transitions.
+6. **Outcomes/actions** — `ActionRow` outcome variant.
+7. **Finis** — `FinisMarker`.
 
 `AtmosphereLayer` (turmeric default; may inherit primary entity tint).
 
@@ -72,19 +52,35 @@ Local pill renders these via FloatingNavIsland's chapters contract; scroll-spy h
 ## Patterns consumed
 
 - `FolioBar`, `FloatingNavIsland`, `AtmosphereLayer` (chrome)
-- `FolioActions` (Wave 4) — action toolbar sub-row
-- `SurfaceMasthead` (Wave 3) — composed with MeetingStatusPill accessory; this IS the "MeetingHero"
-- `AgendaThreadList`, `PredictionsVsRealityGrid`, `SignalGrid`, `EscalationQuote`, `FindingsTriad`, `ChampionHealthBlock`, `CommitmentRow`, `SuggestedActionRow`, `RoleTransitionRow` (all Wave 4)
-- `TalkBalanceBar` (existing in `src/components/shared/`; not re-spec'd)
-- `FinisMarker` (existing canonical from Wave 1)
+- `PostMeetingIntelligence`
+- `TalkBalanceBar`
+- `ActionRow`
+- `IntelligenceFeedback`
+- `FinisMarker`
+
+Shipped as local `PostMeetingIntelligence` class families, not exported components:
+
+- `AgendaThreadList`
+- `PredictionsVsRealityGrid`
+- `SignalGrid`
+- `EscalationQuote`
+- `FindingsTriad`
+- `ChampionHealthBlock`
+- `CommitmentRow`
+- `RoleTransitionRow`
+
+Roadmap/planned:
+
+- `FolioActions` as an extracted toolbar pattern.
+- `SurfaceMasthead` replacement for the current inline hero.
 
 ## Primitives consumed
 
-- `MeetingStatusPill` (Wave 4)
 - `Pill` (commitment YOURS/THEIRS tags, finding dots)
 - `EntityChip` (attendee references, account references)
-- `TrustBandBadge`, `FreshnessIndicator`, `ProvenanceTag` (claim-level signals on findings)
-- `Button` (Send Recap primary, Re-extract icon, Accept / Dismiss / Mark complete in actions)
+- `HealthBadge`
+- `EditableText`
+- `FolioRefreshButton`
 
 ## Notable interactions
 
@@ -110,4 +106,4 @@ The mockup uses `cur-pm-*` and `cur-folio-*` prefixed classes (current/post-meet
 ## History
 
 - 2026-05-03 — Surface spec authored as part of Wave 4 (MeetingDetail redesign substrate prep).
-- Wave 4 entry count clarification: original synthesis listed `MeetingHero` as a separate Wave 4 pattern; reconciled into `SurfaceMasthead` per D-series reconciliation. Wave 4 entry count: 13 → 12 (MeetingHero subsumed).
+- 2026-05-05 — Corrected spec to shipped source. Wave 4 child patterns are real shipped UI where they are local `PostMeetingIntelligence` class families; `FolioActions` and `SurfaceMasthead` remain extraction targets.

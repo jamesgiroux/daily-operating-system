@@ -1,16 +1,17 @@
 # Settings
 
 **Tier:** surface
-**Status:** redesigning (separate project)
+**Status:** shipped source reconciled
 **Owner:** James
-**Last updated:** 2026-05-03
+**Last updated:** 2026-05-05
 **`data-ds-name`:** `Settings`
 **`data-ds-spec`:** `surfaces/Settings.md`
 **Canonical name:** `Settings`
 **Source files:**
 - `src/pages/SettingsPage.tsx` (current router target)
 - `src/pages/SettingsPage.module.css`
-- Settings redesign mockup: `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/`
+- `src/features/settings-ui/*` (actual section implementations)
+- Settings redesign mockup: `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/` (roadmap/reference only)
 
 **Design system version introduced:** 0.3.0
 
@@ -22,21 +23,14 @@ The user's configuration surface — accounts, connectors, briefing preferences,
 
 In reading order:
 
-1. **FolioBar** — surface label "Settings", crumbs "Settings", status text "Auto-saved · just now", minimal action set (search only)
-2. **SurfaceMasthead** — eyebrow ("Settings · Last edited 4 minutes ago"), title ("Settings"), lede (one-line state of the system), `glance` slot with `GlanceRow` of 4 cells:
-   - Connectors (count + status dot)
-   - Database (size + status dot)
-   - AI today (% used + warn dot if over threshold)
-   - Anomalies 24h (count + warn dot)
-3. **Section content** — sequence of `SectionHead` + section body for each chapter:
-   - **Identity** — user profile, role, role preset
-   - **Connectors** — Gmail, Calendar, Drive, Granola, Linear, Quill, Clay, Gravatar, Claude Desktop (each via `ConnectorSurface` pattern)
-   - **Briefing & AI** — briefing settings, AI usage budget, system prompt customization
-   - **Data** — data privacy, data retention, export
-   - **Activity** — activity log
-   - **System** — system status, native integrations
-   - **Diagnostics** — health checks, repair tools, debug
-4. **Finis** — closer marker + "Auto-saved just now" timestamp
+1. **FolioBar / magazine shell** — Settings label and surface actions.
+2. **SurfaceMasthead** — shipped title block from `SettingsPage.tsx`.
+3. **You chapter** — `YouCard` identity, domains, role, workspace, day start, and personality controls.
+4. **Connectors chapter** — `ConnectorsGrid`, connector detail components, and connector status dots.
+5. **Data chapter** — context sources, privacy, notification/text-size controls, and data management sections.
+6. **System chapter** — system status, sync/security sections, Claude Code state, and recovery controls.
+7. **Diagnostics** — development-only diagnostics section.
+8. **Finis** — `FinisMarker`.
 
 `AtmosphereLayer` (turmeric tint) renders behind everything.
 
@@ -44,13 +38,11 @@ In reading order:
 
 **Provides chapters to `FloatingNavIsland`** per D2 (synthesis):
 
-- `identity` → "01 You"
-- `connectors` → "02 Connectors" (warn dot if any connector unhealthy)
-- `briefing` → "03 Briefing & AI"
-- `data` → "04 Data"
-- `activity` → "05 Activity"
-- `system` → "06 System"
-- `diagnostics` → "07 Diagnostics"
+- `settings-you`
+- `settings-connectors`
+- `settings-data`
+- `settings-system`
+- `settings-diagnostics` in development only
 
 Local pill renders these via FloatingNavIsland's chapters contract; click smooth-scrolls. Active chapter highlights via scroll-spy (IntersectionObserver, per mockup `app.jsx`).
 
@@ -59,20 +51,26 @@ Local pill renders these via FloatingNavIsland's chapters contract; click smooth
 ## Patterns consumed
 
 - `FolioBar`, `FloatingNavIsland`, `AtmosphereLayer` (chrome)
-- `SurfaceMasthead` (Wave 3) — masthead with glance slot
-- `GlanceRow` (Wave 3) — at-a-glance stats
-- `SectionHead` (likely a Wave 3 minor pattern; needs explicit spec) — eyebrow + h2 + epi + meta + action
-- `FormRow` (Wave 3) — universal label/help | ctrl | aux
-- `ConnectorSurface` (per-connector pattern; lives under settings-ui)
-- `FinisMarker` (existing in src; canonical from Wave 1 chrome)
+- `SurfaceMasthead`
+- `FormRow`
+- `YouCard`
+- `SettingsSections`
+- `ActivityLogSection`
+- `DiagnosticsSection`
+- `FinisMarker`
 
 ## Primitives consumed
 
-- `GlanceCell` (Wave 3) — k/v cell with status dot inside GlanceRow
-- `InlineInput`, `Switch`, `Segmented` (Wave 3 form primitives)
-- `RemovableChip` (Wave 3 — distinguished from Pill)
-- `Btn` / Button — kind variants per section
-- `Pill` (status indicators in connector rows)
+- `StatusDot`
+- `Switch`
+- `Segmented`
+- Settings-local buttons/inputs and chips from `features/settings-ui`.
+
+Not shipped in the current Settings route:
+
+- `GlanceRow` / `GlanceCell`
+- `InlineInput`
+- standalone `ConnectorSurface`
 
 ## Notable interactions
 
@@ -94,4 +92,4 @@ Canonical name `Settings`. Already matches the user-facing label and the route. 
 ## History
 
 - 2026-05-03 — Surface spec authored as part of Wave 3 (Settings redesign substrate prep).
-- Settings redesign is a separate project from v1.4.x; ships when the Wave 3 substrate is in place and v1.4.3 / v1.4.4 stabilize.
+- 2026-05-05 — Corrected spec to current shipped `SettingsPage.tsx` and `features/settings-ui/*`. Older 7-chapter redesign concepts are roadmap/reference only.
