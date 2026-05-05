@@ -65,4 +65,5 @@ pub struct ExpectedArtifacts {
     pub output: serde_json::Value,
     pub provenance: serde_json::Value,
     pub state: Option<serde_json::Value>,
+    pub expected_render_policy: String,
 }

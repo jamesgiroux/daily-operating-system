@@ -19,8 +19,10 @@ use dailyos_lib::services::context::{
     ExecutionMode, GleanAccountFacts, GleanClientHandle, SeedableRng, SeededRng,
 };
 use harness::{
-    discover_fixtures, load_fixture, prepare_fixture_for_run, run_fixture, FixtureLoadError,
-    FixtureRef, RunError, RunnerDeps,
+    canonical_json_eq, diff_internal_provenance, diff_rendered_provenance, discover_fixtures,
+    load_fixture, prepare_fixture_for_run, run_fixture, CategoryScorer, FixtureLoadError,
+    FixtureRef, MaintenanceScorer, PublishScorer, ReadScorer, RunError, RunnerDeps,
+    TransformScorer,
 };
 use serde_json::json;
 
@@ -276,8 +278,268 @@ fn runner_propagates_byte_equal_unavailable_for_unauthorized_ability() {
     assert_eq!(unauthorized_error, "AbilityUnavailable");
 }
 
+#[test]
+fn read_scorer_passes_on_exact_canonical_output_match() {
+    let expected = expected_artifacts(
+        json!({"answer": {"count": 1, "label": "ready"}}),
+        json!({"sources": [{"title": "source-a"}], "warnings": ["b", "a"]}),
+        None,
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({"answer": {"label": "ready", "count": 1}}),
+        json!({"warnings": ["a", "b"], "sources": [{"title": "source-a"}]}),
+        None,
+    );
+
+    let score = ReadScorer.score(&expected, &actual);
+
+    assert!(score.passed, "{:?}", score.diffs);
+    assert!(score.diffs.is_empty());
+    assert_eq!(score.category, harness::AbilityCategory::Read);
+    assert_eq!(score.continuous_score, None);
+}
+
+#[test]
+fn read_scorer_fails_on_output_mismatch_with_path_diff() {
+    let expected = expected_artifacts(
+        json!({"items": [{"name": "first"}, {"name": "expected"}]}),
+        json!({"sources": []}),
+        None,
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({"items": [{"name": "first"}, {"name": "actual"}]}),
+        json!({"sources": []}),
+        None,
+    );
+
+    let score = ReadScorer.score(&expected, &actual);
+
+    assert!(!score.passed);
+    assert!(score.diffs.iter().any(|diff| {
+        diff.kind == harness::DiffKind::OutputMismatch
+            && diff.path == "/items/1/name"
+            && diff.expected == json!("expected")
+            && diff.actual == json!("actual")
+    }));
+}
+
+#[test]
+fn read_scorer_fails_on_provenance_mismatch() {
+    let expected = expected_artifacts(
+        json!({"ok": true}),
+        json!({"sources": [{"title": "source-a", "source_asof": "2026-01-01"}]}),
+        None,
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({"ok": true}),
+        json!({"sources": [{"title": "source-a", "source_asof": "2026-01-02"}]}),
+        None,
+    );
+
+    let score = ReadScorer.score(&expected, &actual);
+
+    assert!(!score.passed);
+    assert!(score.diffs.iter().any(|diff| {
+        diff.kind == harness::DiffKind::ProvenanceMismatch
+            && diff.path == "/sources/0/source_asof"
+    }));
+}
+
+#[test]
+fn read_scorer_fails_on_state_mismatch_when_expected_state_present() {
+    let expected = expected_artifacts(
+        json!({"ok": true}),
+        json!({"sources": []}),
+        Some(json!({"post_action_state": {"trust": [{"score": 0.9}]}})),
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({"ok": true}),
+        json!({"sources": []}),
+        Some(json!({"post_action_state": {"trust": [{"score": 0.1}]}})),
+    );
+
+    let score = ReadScorer.score(&expected, &actual);
+
+    assert!(!score.passed);
+    assert!(score.diffs.iter().any(|diff| {
+        diff.kind == harness::DiffKind::StateMismatch
+            && diff.path == "/post_action_state/trust/0/score"
+    }));
+}
+
+#[test]
+fn transform_scorer_returns_continuous_score_one_on_match() {
+    let expected = expected_artifacts(
+        json!({"summary": "stable"}),
+        json!({"sources": [{"title": "source-a"}]}),
+        None,
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({"summary": "stable"}),
+        json!({"sources": [{"title": "source-a"}]}),
+        None,
+    );
+
+    let score = TransformScorer { threshold: 0.8 }.score(&expected, &actual);
+
+    assert!(score.passed, "{:?}", score.diffs);
+    assert_eq!(score.category, harness::AbilityCategory::Transform);
+    assert_eq!(score.continuous_score, Some(1.0));
+}
+
+#[test]
+fn maintenance_scorer_compares_planned_mutations_field() {
+    let expected = expected_artifacts(
+        json!({
+            "planned_mutations": [{"table": "records", "value": "expected"}],
+            "ignored_rendered_output": "expected"
+        }),
+        json!({"sources": []}),
+        None,
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({
+            "planned_mutations": [{"table": "records", "value": "actual"}],
+            "ignored_rendered_output": "actual"
+        }),
+        json!({"sources": []}),
+        None,
+    );
+
+    let score = MaintenanceScorer.score(&expected, &actual);
+
+    assert!(!score.passed);
+    assert_eq!(score.category, harness::AbilityCategory::Maintenance);
+    assert_eq!(score.diffs.len(), 1);
+    assert_eq!(score.diffs[0].kind, harness::DiffKind::OutputMismatch);
+    assert_eq!(score.diffs[0].path, "/planned_mutations/0/value");
+}
+
+#[test]
+fn publish_scorer_compares_outbox_field_only() {
+    let expected = expected_artifacts(
+        json!({
+            "outbox": [{"channel": "email", "to": "person@example.invalid"}],
+            "external_side_effect": "not-sent"
+        }),
+        json!({"sources": []}),
+        None,
+        "show-public-only",
+    );
+    let actual_with_same_outbox = run_result(
+        json!({
+            "outbox": [{"channel": "email", "to": "person@example.invalid"}],
+            "external_side_effect": "sent"
+        }),
+        json!({"sources": []}),
+        None,
+    );
+    let actual_with_changed_outbox = run_result(
+        json!({
+            "outbox": [{"channel": "email", "to": "other@example.invalid"}],
+            "external_side_effect": "not-sent"
+        }),
+        json!({"sources": []}),
+        None,
+    );
+
+    let passing_score = PublishScorer.score(&expected, &actual_with_same_outbox);
+    let failing_score = PublishScorer.score(&expected, &actual_with_changed_outbox);
+
+    assert!(passing_score.passed, "{:?}", passing_score.diffs);
+    assert!(!failing_score.passed);
+    assert_eq!(failing_score.category, harness::AbilityCategory::Publish);
+    assert_eq!(failing_score.diffs.len(), 1);
+    assert_eq!(failing_score.diffs[0].path, "/outbox/0/to");
+}
+
+#[test]
+fn diff_internal_provenance_returns_path_for_mismatched_field() {
+    let diffs = diff_internal_provenance(
+        &json!({"invocation_id": "expected", "sources": []}),
+        &json!({"invocation_id": "actual", "sources": []}),
+    );
+
+    assert_eq!(diffs.len(), 1);
+    assert_eq!(diffs[0].kind, harness::DiffKind::ProvenanceMismatch);
+    assert_eq!(diffs[0].path, "/invocation_id");
+}
+
+#[test]
+fn diff_rendered_provenance_strips_internal_ids_before_comparison() {
+    let diffs = diff_rendered_provenance(
+        &json!({
+            "invocation_id": "expected",
+            "prompt_hash": "expected-hash",
+            "seed": 1,
+            "summary": "visible",
+            "children": [{"invocation_id": "child-expected", "summary": "deep"}],
+            "sources": [{"source_id": "source-expected", "title": "source-a"}]
+        }),
+        &json!({
+            "invocation_id": "actual",
+            "prompt_hash": "actual-hash",
+            "seed": 2,
+            "summary": "visible",
+            "children": [{"invocation_id": "child-actual", "summary": "changed"}],
+            "sources": [{"source_id": "source-actual", "title": "source-a"}]
+        }),
+    );
+
+    assert!(diffs.is_empty(), "{diffs:?}");
+}
+
+#[test]
+fn canonical_json_eq_handles_object_key_order() {
+    assert!(canonical_json_eq(
+        &json!({"b": 2, "a": {"d": 4, "c": 3}}),
+        &json!({"a": {"c": 3, "d": 4}, "b": 2})
+    ));
+}
+
+#[test]
+fn canonical_json_eq_handles_float_tolerance_for_close_values() {
+    assert!(canonical_json_eq(
+        &json!({"score": 1.0}),
+        &json!({"score": 1.0 + (f64::EPSILON * 128.0)})
+    ));
+}
+
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+fn expected_artifacts(
+    output: serde_json::Value,
+    provenance: serde_json::Value,
+    state: Option<serde_json::Value>,
+    expected_render_policy: &str,
+) -> harness::ExpectedArtifacts {
+    harness::ExpectedArtifacts {
+        output,
+        provenance,
+        state,
+        expected_render_policy: expected_render_policy.to_string(),
+    }
+}
+
+fn run_result(
+    actual_output: serde_json::Value,
+    actual_provenance: serde_json::Value,
+    actual_state: Option<serde_json::Value>,
+) -> harness::RunResult {
+    harness::RunResult {
+        actual_output,
+        actual_provenance,
+        actual_state,
+        diagnostics: Vec::new(),
+    }
 }
 
 fn bundle_fixture(bundle: u32) -> harness::EvalFixture {

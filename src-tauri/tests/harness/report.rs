@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
 use super::classifier::RegressionEvidence;
-use super::scoring::CategoryScore;
+use super::scoring::ScoreResult;
 use super::types::FixtureRef;
 
 #[derive(Debug, Clone, PartialEq)]
@@ -12,6 +12,6 @@ pub struct HarnessReport {
 #[derive(Debug, Clone, PartialEq)]
 pub struct HarnessReportEntry {
     pub fixture: FixtureRef,
-    pub score: Option<CategoryScore>,
+    pub score: Option<ScoreResult>,
     pub regression: Option<RegressionEvidence>,
 }

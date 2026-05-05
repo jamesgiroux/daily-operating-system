@@ -90,6 +90,7 @@ pub fn load_fixture(fixture_dir: &Path) -> Result<EvalFixture, FixtureLoadError>
     }
 
     let metadata = read_json::<FixtureMetadata>(&fixture_dir.join("metadata.json"))?;
+    let expected_render_policy = metadata.expected_render_policy.clone();
     let state_sql = read_to_string(&fixture_dir.join("state.sql"))?;
     let inputs_json = read_json(&fixture_dir.join("inputs.json"))?;
     let provider_replay = read_json(&fixture_dir.join("provider_replay.json"))?;
@@ -119,6 +120,7 @@ pub fn load_fixture(fixture_dir: &Path) -> Result<EvalFixture, FixtureLoadError>
             output: expected_output,
             provenance: expected_provenance,
             state: expected_state,
+            expected_render_policy,
         },
     })
 }
