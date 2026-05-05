@@ -68,11 +68,20 @@ body.ds-inspect-on [data-ds-tier="primitive"]:hover { outline-color: rgba(30, 16
 body.ds-inspect-on [data-ds-tier="pattern"]:hover   { outline-color: rgba(217, 122, 26, 0.8); }
 body.ds-inspect-on [data-ds-tier="surface"]:hover   { outline-color: rgba(196, 69, 105, 0.8); }
 
+body.ds-inspect-on .ds-inspector-active {
+  outline: 1px dashed rgba(91, 108, 255, 0.65);
+  outline-offset: 2px;
+}
+body.ds-inspect-on .ds-inspector-active-token     { outline-color: rgba(91, 108, 255, 0.85); }
+body.ds-inspect-on .ds-inspector-active-primitive { outline-color: rgba(30, 166, 114, 0.85); }
+body.ds-inspect-on .ds-inspector-active-pattern   { outline-color: rgba(217, 122, 26, 0.85); }
+body.ds-inspect-on .ds-inspector-active-surface   { outline-color: rgba(196, 69, 105, 0.85); }
+
 /* Persistent hint in the corner when inspect mode is on */
 body.ds-inspect-on::after {
   content: "inspect on — press ? to exit";
   position: fixed;
-  bottom: 12px;
+  bottom: 58px;
   right: 12px;
   z-index: 99998;
   background: rgba(20, 20, 24, 0.85);

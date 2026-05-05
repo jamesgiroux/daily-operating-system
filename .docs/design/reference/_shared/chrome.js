@@ -399,6 +399,39 @@
     return t;
   }
 
+  function buildInspectorToggle() {
+    const t = el('button', {
+      class: 'chrome-toggle inspector-toggle off',
+      type: 'button',
+      'aria-pressed': 'false',
+      title: 'Show primitive and pattern labels on hover',
+    });
+    t.append(el('span', { class: 'dot' }), 'Inspect off');
+
+    function sync(enabled) {
+      t.classList.toggle('off', !enabled);
+      t.setAttribute('aria-pressed', enabled ? 'true' : 'false');
+      t.lastChild.textContent = enabled ? 'Inspect on' : 'Inspect off';
+    }
+
+    t.addEventListener('click', () => {
+      document.dispatchEvent(new CustomEvent('dailyos:toggle-inspector'));
+    });
+    document.addEventListener('dailyos:inspectorchange', (e) => {
+      sync(Boolean(e.detail && e.detail.enabled));
+    });
+
+    sync(document.body.classList.contains('ds-inspect-on'));
+    return t;
+  }
+
+  function buildReferenceControls() {
+    return el('div', { class: 'reference-controls', 'aria-label': 'Reference controls' },
+      buildChromeToggle(),
+      buildInspectorToggle()
+    );
+  }
+
   // Wire onboarding action buttons to advance through chapters. Mirrors
   // OnboardingFlow.tsx's goToChapter() — non-functional in the actual app
   // logic, but lets reviewers click through the static reference end-to-end.
@@ -449,8 +482,8 @@
     target.prepend(buildFolio(body));
     target.append(buildNav(body));
 
-    // Chrome toggle is a reference-only control, body-level is fine.
-    body.append(buildChromeToggle());
+    // Reference controls are intentionally outside the copied app chrome.
+    body.append(buildReferenceControls());
 
     wireOnboardingNav(body);
   }

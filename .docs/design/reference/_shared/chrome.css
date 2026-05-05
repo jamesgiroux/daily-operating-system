@@ -71,10 +71,18 @@ a { color: inherit; }
   color: var(--color-spice-turmeric);
 }
 
-/* ── Chrome toggle (reference-only control, not in app) ──────────────────── */
-.chrome-toggle {
-  position: fixed; bottom: 16px; left: 16px;
+/* ── Reference controls (not in app) ─────────────────────────────────────── */
+.reference-controls {
+  position: fixed;
+  right: 16px;
+  bottom: 16px;
   z-index: 200;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chrome-toggle {
   background: var(--color-desk-charcoal);
   color: var(--color-paper-cream);
   font-family: var(--font-mono); font-size: 10px;
@@ -93,6 +101,16 @@ a { color: inherit; }
   background: var(--color-garden-sage);
 }
 .chrome-toggle.off .dot { background: var(--color-text-tertiary); opacity: 0.5; }
+.inspector-toggle:not(.off) .dot { background: var(--color-spice-turmeric); }
+
+@media (max-width: 560px) {
+  .reference-controls {
+    right: 12px;
+    bottom: 12px;
+    flex-direction: column;
+    align-items: flex-end;
+  }
+}
 
 /* When chrome is off, hide injected app shell but keep page content */
 body[data-chrome="off"] .FolioBar_folio,
