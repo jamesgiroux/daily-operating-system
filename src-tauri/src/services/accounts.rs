@@ -1000,7 +1000,29 @@ pub fn confirm_lifecycle_change(
         .ok_or_else(|| format!("Lifecycle change not found: {change_id}"))?;
     db.set_lifecycle_change_response(change_id, "confirmed", None)
         .map_err(|e| e.to_string())?;
-    let _ = db.upsert_signal_weight(&change.source, "account", "lifecycle_transition", 1.0, 0.0);
+    if let Err(e) = db.upsert_signal_weight(
+        &change.source,
+        "account",
+        "lifecycle_transition",
+        1.0,
+        0.0,
+    ) {
+        log::warn!(
+            "accounts: upsert_signal_weight dropped on lifecycle confirm for source={} account={}: {e}",
+            change.source,
+            change.account_id
+        );
+        let _ = crate::services::mutations::record_pipeline_failure(
+            ctx,
+            db,
+            "accounts_lifecycle_confirm_signal_weight_drop",
+            Some(&change.account_id),
+            Some("account"),
+            "upsert_signal_weight_failed",
+            Some(&format!("source={} error={e}", change.source)),
+            1,
+        );
+    }
     crate::services::signals::emit_and_propagate(
         ctx,
         db,
@@ -1031,7 +1053,23 @@ pub fn correct_account_product(
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.update_account_product(product_id, name, status, None, "user_correction", 1.0)
         .map_err(|e| e.to_string())?;
-    let _ = db.upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0);
+    if let Err(e) =
+        db.upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0)
+    {
+        log::warn!(
+            "accounts: upsert_signal_weight dropped on product correction for source={source_to_penalize} account={account_id}: {e}"
+        );
+        let _ = crate::services::mutations::record_pipeline_failure(
+            ctx,
+            db,
+            "accounts_product_correct_signal_weight_drop",
+            Some(account_id),
+            Some("account"),
+            "upsert_signal_weight_failed",
+            Some(&format!("source={source_to_penalize} error={e}")),
+            1,
+        );
+    }
     crate::services::signals::emit_and_propagate(
         ctx,
         db,
@@ -1074,7 +1112,29 @@ pub fn correct_lifecycle_change(
     apply_lifecycle_transition(ctx, db, engine, &change.account_id, &transition)?;
     db.set_lifecycle_change_response(change_id, "corrected", notes)
         .map_err(|e| e.to_string())?;
-    let _ = db.upsert_signal_weight(&change.source, "account", "lifecycle_transition", 0.0, 1.0);
+    if let Err(e) = db.upsert_signal_weight(
+        &change.source,
+        "account",
+        "lifecycle_transition",
+        0.0,
+        1.0,
+    ) {
+        log::warn!(
+            "accounts: upsert_signal_weight dropped on lifecycle correction for source={} account={}: {e}",
+            change.source,
+            change.account_id
+        );
+        let _ = crate::services::mutations::record_pipeline_failure(
+            ctx,
+            db,
+            "accounts_lifecycle_correct_signal_weight_drop",
+            Some(&change.account_id),
+            Some("account"),
+            "upsert_signal_weight_failed",
+            Some(&format!("source={} error={e}", change.source)),
+            1,
+        );
+    }
     Ok(())
 }
 

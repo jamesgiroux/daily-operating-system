@@ -331,7 +331,7 @@ pub fn submit_intelligence_correction(
                 action,
                 field
             );
-            let _ = crate::services::mutations::record_pipeline_failure(
+            if let Err(telemetry_err) = crate::services::mutations::record_pipeline_failure(
                 ctx,
                 db,
                 "feedback_signal_weight_drop",
@@ -343,7 +343,11 @@ pub fn submit_intelligence_correction(
                     action
                 )),
                 1,
-            );
+            ) {
+                log::warn!(
+                    "feedback: record_pipeline_failure ALSO failed (telemetry blind spot): {telemetry_err}"
+                );
+            }
         }
     }
 
@@ -380,7 +384,7 @@ pub fn submit_intelligence_correction(
         log::warn!(
             "submit_intelligence_feedback: signals::emit failed for {signal_type} on {entity_type}/{entity_id}: {e}; feedback row landed but downstream propagation skipped"
         );
-        let _ = crate::services::mutations::record_pipeline_failure(
+        if let Err(telemetry_err) = crate::services::mutations::record_pipeline_failure(
             ctx,
             db,
             "feedback_signal_emit_drop",
@@ -389,7 +393,11 @@ pub fn submit_intelligence_correction(
             "feedback_signal_emit_failed",
             Some(&format!("signal_type={signal_type} error={e}")),
             1,
-        );
+        ) {
+            log::warn!(
+                "feedback: record_pipeline_failure ALSO failed for signal_emit_drop (telemetry blind spot): {telemetry_err}"
+            );
+        }
     }
 
     // Self-healing tie-in: a correction is a strong negative signal for the

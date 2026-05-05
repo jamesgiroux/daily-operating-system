@@ -562,8 +562,9 @@ fn auto_link_action_to_objectives(
                 );
                 continue;
             }
-            // Emit signal (best-effort, no propagation engine needed here)
-            let _ = crate::services::signals::emit(
+            // Emit signal — warn-log on failure so the auto-link history isn't
+            // silently lost when downstream propagation needs it.
+            if let Err(e) = crate::services::signals::emit(
                 ctx,
                 db,
                 "account",
@@ -575,7 +576,12 @@ fn auto_link_action_to_objectives(
                     action_id, objective.id, score
                 )),
                 score,
-            );
+            ) {
+                log::warn!(
+                    "actions: action_auto_linked emit dropped for account={account_id} action={action_id} objective={}: {e}",
+                    objective.id
+                );
+            }
             log::info!(
                 "Auto-linked action {} to objective {} (score: {:.2})",
                 action_id,
