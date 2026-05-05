@@ -299,16 +299,51 @@ pub fn submit_intelligence_correction(
     // reject the AI output).
     if let Some(ref source) = prior_source {
         let field_category = field_to_signal_category(field);
-        match action {
-            CorrectionAction::Confirmed => {
-                let _ = db.upsert_signal_weight(source, entity_type, &field_category, 1.0, 0.0);
-            }
+        let weight_result = match action {
+            CorrectionAction::Confirmed => Some(db.upsert_signal_weight(
+                source,
+                entity_type,
+                &field_category,
+                1.0,
+                0.0,
+            )),
             CorrectionAction::Rejected
             | CorrectionAction::Corrected
-            | CorrectionAction::Dismissed => {
-                let _ = db.upsert_signal_weight(source, entity_type, &field_category, 0.0, 1.0);
-            }
-            CorrectionAction::Annotated => {}
+            | CorrectionAction::Dismissed => Some(db.upsert_signal_weight(
+                source,
+                entity_type,
+                &field_category,
+                0.0,
+                1.0,
+            )),
+            CorrectionAction::Annotated => None,
+        };
+        if let Some(Err(e)) = weight_result {
+            // Don't fail the whole feedback acceptance — the user has already
+            // submitted, and the feedback row landed. But the source-weight
+            // miss means future trust recomputes won't reflect this signal,
+            // so warn loudly and surface as a pipeline failure for recovery.
+            log::warn!(
+                "submit_intelligence_feedback: upsert_signal_weight failed for source={} entity={}/{} action={:?} field={}: {e}; feedback row landed but source reliability is stale",
+                source,
+                entity_type,
+                entity_id,
+                action,
+                field
+            );
+            let _ = crate::services::mutations::record_pipeline_failure(
+                ctx,
+                db,
+                "feedback_signal_weight_drop",
+                Some(entity_id),
+                Some(entity_type),
+                "upsert_signal_weight_failed",
+                Some(&format!(
+                    "source={source} action={:?} field={field} error={e}",
+                    action
+                )),
+                1,
+            );
         }
     }
 
@@ -332,7 +367,7 @@ pub fn submit_intelligence_correction(
         "item_key": item_key,
     })
     .to_string();
-    let _ = crate::services::signals::emit(
+    if let Err(e) = crate::services::signals::emit(
         ctx,
         db,
         entity_type,
@@ -341,7 +376,21 @@ pub fn submit_intelligence_correction(
         "user_feedback",
         Some(&value_json),
         0.8,
-    );
+    ) {
+        log::warn!(
+            "submit_intelligence_feedback: signals::emit failed for {signal_type} on {entity_type}/{entity_id}: {e}; feedback row landed but downstream propagation skipped"
+        );
+        let _ = crate::services::mutations::record_pipeline_failure(
+            ctx,
+            db,
+            "feedback_signal_emit_drop",
+            Some(entity_id),
+            Some(entity_type),
+            "feedback_signal_emit_failed",
+            Some(&format!("signal_type={signal_type} error={e}")),
+            1,
+        );
+    }
 
     // Self-healing tie-in: a correction is a strong negative signal for the
     // attributed enrichment source on Clay-enrichable account fields. Reuses

@@ -3187,12 +3187,24 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
 
     let mut any = false;
     let mut had_error = false;
+    let mut had_out_of_range = false;
     let mut miss_probability = 1.0;
     for strength in strengths {
         match strength {
-            Ok(value) => {
+            Ok(value) if value.is_finite() && (0.0..=1.0).contains(&value) => {
                 any = true;
                 miss_probability *= 1.0 - value;
+            }
+            Ok(value) => {
+                log::warn!(
+                    "TrustRecompute: corroboration strength {value} out of [0.0, 1.0] for {claim_id}; clamping into noisy-OR but marking read indeterminate"
+                );
+                let clamped = value.clamp(0.0, 1.0);
+                if clamped.is_finite() {
+                    any = true;
+                    miss_probability *= 1.0 - clamped;
+                }
+                had_out_of_range = true;
             }
             Err(e) => {
                 log::warn!("TrustRecompute: malformed corroboration for {claim_id}: {e}");
@@ -3204,6 +3216,8 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
     let value = if any { 1.0 - miss_probability } else { 0.0 };
     if had_error {
         TrustInput::indeterminate(value, "corroboration_strength_row_decode_failed")
+    } else if had_out_of_range {
+        TrustInput::indeterminate(value, "corroboration_strength_out_of_range")
     } else {
         TrustInput::ok(value)
     }
@@ -3233,11 +3247,24 @@ fn source_reliability_corroborators_for_claim(
                 Ok(rows) => {
                     for row in rows {
                         match row {
+                            Ok(strength) if strength.is_finite() && (0.0..=1.0).contains(&strength) => {
+                                out.push(crate::abilities::trust::CorroboratorWeight {
+                                    evidence_weight: strength,
+                                    confirms: true,
+                                });
+                            }
                             Ok(strength) if strength.is_finite() => {
+                                // Out-of-range but finite — clamp + mark indeterminate so
+                                // we don't silently feed corrupt weights into the
+                                // aggregation.
+                                log::warn!(
+                                    "TrustRecompute: corroborator strength {strength} out of [0.0, 1.0] for {claim_id}; clamping but marking read indeterminate"
+                                );
                                 out.push(crate::abilities::trust::CorroboratorWeight {
                                     evidence_weight: strength.clamp(0.0, 1.0),
                                     confirms: true,
                                 });
+                                indeterminate = Some("corroborators_strength_out_of_range");
                             }
                             Ok(other) => {
                                 log::warn!(
