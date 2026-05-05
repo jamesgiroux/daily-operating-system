@@ -46,6 +46,7 @@ pub struct TrustFactorWeights {
     pub user_feedback_weight: f64,
     pub subject_fit_confidence: f64,
     pub cross_entity_coherence: f64,
+    pub sensitivity_aware_filtering: f64,
 }
 
 impl Default for TrustFactorWeights {
@@ -58,12 +59,13 @@ impl Default for TrustFactorWeights {
             user_feedback_weight: 1.0,
             subject_fit_confidence: 1.0,
             cross_entity_coherence: 1.0,
+            sensitivity_aware_filtering: 1.0,
         }
     }
 }
 
 impl TrustFactorWeights {
-    pub const fn as_named_weights(self) -> [(&'static str, f64); 7] {
+    pub const fn as_named_weights(self) -> [(&'static str, f64); 8] {
         [
             ("source_reliability", self.source_reliability),
             ("freshness_weight", self.freshness_weight),
@@ -72,6 +74,10 @@ impl TrustFactorWeights {
             ("user_feedback_weight", self.user_feedback_weight),
             ("subject_fit_confidence", self.subject_fit_confidence),
             ("cross_entity_coherence", self.cross_entity_coherence),
+            (
+                "sensitivity_aware_filtering",
+                self.sensitivity_aware_filtering,
+            ),
         ]
     }
 }

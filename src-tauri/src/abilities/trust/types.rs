@@ -70,6 +70,16 @@ pub struct TrustContext {
     pub config: TrustConfig,
     pub factor_inputs: TrustFactorInputs,
     pub cross_entity: CrossEntityCoherenceInput,
+    pub target_surface: Option<SurfaceClass>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum SurfaceClass {
+    Public,
+    Internal,
+    Confidential,
+    UserOnly,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]

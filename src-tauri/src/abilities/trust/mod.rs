@@ -10,14 +10,15 @@ pub mod types;
 
 use factors::{
     contradiction_penalty, corroboration_weight, cross_entity_coherence, freshness_weight,
-    source_reliability, subject_fit_confidence, user_feedback_weight,
+    sensitivity_aware_filtering, source_reliability, subject_fit_confidence, user_feedback_weight,
 };
 
 pub use config::{TrustConfig, TrustConfigError, TrustFactorWeights};
 pub use types::{
     ConfidenceCaveat, ConfidenceEvidence, CrossEntityCoherenceInput, CrossEntityHit,
-    CrossEntityHitKind, EntityFootprint, FactorEvidence, FreshnessContext, TargetFootprint,
-    TrustBand, TrustComputation, TrustContext, TrustFactorInputs, TrustScore, UserFeedbackSignal,
+    CrossEntityHitKind, EntityFootprint, FactorEvidence, FreshnessContext, SurfaceClass,
+    TargetFootprint, TrustBand, TrustComputation, TrustContext, TrustFactorInputs, TrustScore,
+    UserFeedbackSignal,
 };
 
 pub type ClaimRow = crate::db::claims::IntelligenceClaim;
@@ -78,6 +79,11 @@ pub fn compile_trust(
             name: "cross_entity_coherence",
             raw_value: cross_entity.value,
             weight: ctx.config.weights.cross_entity_coherence,
+        },
+        NamedFactor {
+            name: "sensitivity_aware_filtering",
+            raw_value: sensitivity_aware_filtering(&claim.sensitivity, ctx.target_surface),
+            weight: ctx.config.weights.sensitivity_aware_filtering,
         },
     ];
 
@@ -386,6 +392,7 @@ mod tests {
                 }],
                 cross_entity_context_expected: false,
             },
+            target_surface: None,
         }
     }
 
@@ -425,6 +432,7 @@ mod tests {
             user_feedback_weight: 0.0,
             subject_fit_confidence: 0.0,
             cross_entity_coherence: 0.0,
+            sensitivity_aware_filtering: 0.0,
         }
     }
 
@@ -523,10 +531,66 @@ mod tests {
                 "user_feedback_weight",
                 "subject_fit_confidence",
                 "cross_entity_coherence",
+                "sensitivity_aware_filtering",
             ]
         );
         assert_eq!(names[..5].len(), 5, "ADR-0114 canonical factor count");
-        assert_eq!(names[5..].len(), 2, "Trust Compiler local helper count");
+        assert_eq!(names[5..].len(), 3, "Trust Compiler local helper count");
+    }
+
+    #[test]
+    fn compile_trust_scores_low_for_private_claim_on_public_surface_via_floor_clamp() {
+        let mut claim = test_claim();
+        claim.sensitivity = ClaimSensitivity::Confidential;
+        let mut ctx = test_context();
+        ctx.target_surface = Some(SurfaceClass::Public);
+        ctx.config.weights = TrustFactorWeights {
+            sensitivity_aware_filtering: 1.0,
+            ..zero_weights()
+        };
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        let sensitivity = factor_evidence(&computation, "sensitivity_aware_filtering");
+
+        assert_close(sensitivity.raw_value, 0.0);
+        assert_close(sensitivity.value, TrustConfig::default().clamp_floor);
+        assert_close(
+            computation.score.value(),
+            TrustConfig::default().clamp_floor,
+        );
+        assert!(computation.score.value() < 0.5);
+        assert_eq!(computation.band, TrustBand::NeedsVerification);
+    }
+
+    #[test]
+    fn compile_trust_passes_for_public_claim_on_public_surface_with_normal_other_factors() {
+        let mut claim = test_claim();
+        claim.sensitivity = ClaimSensitivity::Public;
+        let mut ctx = test_context();
+        ctx.target_surface = Some(SurfaceClass::Public);
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        let sensitivity = factor_evidence(&computation, "sensitivity_aware_filtering");
+
+        assert_close(sensitivity.raw_value, 1.0);
+        assert_close(sensitivity.value, 1.0);
+        assert_close(computation.score.value(), 1.0);
+        assert_eq!(computation.band, TrustBand::LikelyCurrent);
+    }
+
+    #[test]
+    fn compile_trust_target_surface_none_does_not_apply_sensitivity_filter() {
+        let mut claim = test_claim();
+        claim.sensitivity = ClaimSensitivity::UserOnly;
+        let ctx = test_context();
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        let sensitivity = factor_evidence(&computation, "sensitivity_aware_filtering");
+
+        assert_close(sensitivity.raw_value, 1.0);
+        assert_close(sensitivity.value, 1.0);
+        assert_close(computation.score.value(), 1.0);
+        assert_eq!(computation.band, TrustBand::LikelyCurrent);
     }
 
     #[test]
@@ -608,6 +672,7 @@ mod tests {
             user_feedback_weight: 0.0,
             subject_fit_confidence: 0.0,
             cross_entity_coherence: 0.0,
+            sensitivity_aware_filtering: 0.0,
         };
 
         assert!(matches!(

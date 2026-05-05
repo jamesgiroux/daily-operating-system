@@ -2778,6 +2778,7 @@ fn build_trust_context_for_claim(
             portfolio_footprints,
             cross_entity_context_expected: cross_entity_context_expected(claim),
         },
+        target_surface: None,
     }
 }
 
