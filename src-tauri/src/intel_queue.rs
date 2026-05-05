@@ -2801,24 +2801,28 @@ fn build_trust_context_for_claim(
         corroboration_strength_for_claim(db, &claim.id);
     let (source_reliability, source_reliability_read_ok) =
         source_reliability_for_claim(db, input, claim);
+    let (freshness, freshness_read_ok) = freshness_context_for_claim(ctx.clock.now(), claim);
+    let (source_lifecycle, lifecycle_read_ok) = source_lifecycle_for_claim(claim);
     let read_state_indeterminate = !corroborator_read_ok
         || !contradiction_read_ok
         || !corroboration_strength_read_ok
         || !feedback_read_ok
-        || !source_reliability_read_ok;
+        || !source_reliability_read_ok
+        || !freshness_read_ok
+        || !lifecycle_read_ok;
     crate::abilities::trust::TrustContext {
         now: ctx.clock.now(),
         config: crate::abilities::trust::TrustConfig::default(),
         factor_inputs: crate::abilities::trust::TrustFactorInputs {
             source_reliability,
             source_reliability_corroborators: corroborators,
-            freshness: freshness_context_for_claim(ctx.clock.now(), claim),
+            freshness,
             corroboration_strength,
             contradiction_count,
             user_feedback: feedback_signal,
             subject_fit_confidence: subject_fit_confidence_for_feedback(feedback_signal),
             internal_consistency: internal_consistency_for_claim(claim),
-            source_lifecycle: source_lifecycle_for_claim(claim),
+            source_lifecycle,
             read_state_indeterminate,
         },
         cross_entity: crate::abilities::trust::CrossEntityCoherenceInput {
@@ -2902,13 +2906,37 @@ fn trust_subject_from_claim_json(
 /// pipeline triggers the IndeterminateReadState gate. A row that is genuinely
 /// absent from signal_weights is not an error — it means the source has no
 /// per-entity reliability signal yet, and 1.0 is the documented default.
+/// Malformed rows where alpha+beta is zero, non-finite, or negative would
+/// otherwise compute NaN and silently land as a non-finite factor that
+/// compile_trust rejects, preserving stale prior trust; we treat those rows
+/// as a read failure instead.
 fn source_reliability_for_claim(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     claim: &crate::db::claims::IntelligenceClaim,
 ) -> (f64, bool) {
     match db.get_signal_weight(&claim.data_source, &input.entity_type, "enrichment_quality") {
-        Ok(Some((alpha, beta, _))) => (alpha / (alpha + beta), true),
+        Ok(Some((alpha, beta, _))) => {
+            let denom = alpha + beta;
+            if !alpha.is_finite() || !beta.is_finite() || !denom.is_finite() || denom <= 0.0 {
+                log::warn!(
+                    "TrustRecompute: malformed signal_weights row for source={} entity_type={} on {}: alpha={alpha} beta={beta}",
+                    claim.data_source,
+                    input.entity_type,
+                    claim.id
+                );
+                return (1.0, false);
+            }
+            let value = alpha / denom;
+            if !value.is_finite() {
+                log::warn!(
+                    "TrustRecompute: non-finite source_reliability computed for {} (alpha={alpha} beta={beta})",
+                    claim.id
+                );
+                return (1.0, false);
+            }
+            (value, true)
+        }
         Ok(None) => (1.0, true),
         Err(e) => {
             log::warn!(
@@ -2922,23 +2950,35 @@ fn source_reliability_for_claim(
     }
 }
 
+/// Returns (lifecycle, read_ok). When metadata_json is present but
+/// unparseable, read_ok is false so the recompute pipeline triggers
+/// IndeterminateReadState — a malformed metadata blob otherwise lets the
+/// SourceWithdrawn gate be silently bypassed.
 fn source_lifecycle_for_claim(
     claim: &crate::db::claims::IntelligenceClaim,
-) -> crate::abilities::trust::SourceLifecycleState {
-    let metadata_state = claim
-        .metadata_json
-        .as_deref()
-        .and_then(|raw| serde_json::from_str::<serde_json::Value>(raw).ok())
-        .and_then(|value| {
-            value
+) -> (crate::abilities::trust::SourceLifecycleState, bool) {
+    let mut read_ok = true;
+    let metadata_state = match claim.metadata_json.as_deref() {
+        None => None,
+        Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
+            Ok(value) => value
                 .get("source_lifecycle_state")
                 .or_else(|| value.get("source_lifecycle"))
                 .or_else(|| value.get("lifecycle_state"))
                 .and_then(|state| state.as_str())
-                .map(|state| state.to_ascii_lowercase().replace('-', "_"))
-        });
+                .map(|state| state.to_ascii_lowercase().replace('-', "_")),
+            Err(e) => {
+                log::warn!(
+                    "TrustRecompute: malformed metadata_json on lifecycle read for {}: {e}",
+                    claim.id
+                );
+                read_ok = false;
+                None
+            }
+        },
+    };
 
-    match metadata_state.as_deref() {
+    let lifecycle = match metadata_state.as_deref() {
         Some("withdrawn") => crate::abilities::trust::SourceLifecycleState::Withdrawn,
         Some("dismissed") | Some("user_dismissed") => {
             crate::abilities::trust::SourceLifecycleState::Dismissed
@@ -2950,35 +2990,71 @@ fn source_lifecycle_for_claim(
             crate::abilities::trust::SourceLifecycleState::Withdrawn
         }
         _ => crate::abilities::trust::SourceLifecycleState::Active,
-    }
+    };
+    (lifecycle, read_ok)
 }
 
+/// Returns (freshness, read_ok). When read_ok is false the recompute pipeline
+/// triggers IndeterminateReadState — malformed timestamps would otherwise
+/// look freshly observed and silently inflate the freshness factor.
 fn freshness_context_for_claim(
     now: chrono::DateTime<Utc>,
     claim: &crate::db::claims::IntelligenceClaim,
-) -> crate::abilities::trust::FreshnessContext {
+) -> (crate::abilities::trust::FreshnessContext, bool) {
+    let mut read_ok = true;
+
     if let Some(source_asof) = claim.source_asof.as_deref() {
-        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(source_asof) {
-            return crate::abilities::trust::FreshnessContext {
-                timestamp_known: true,
-                age_days: age_days(now, parsed.with_timezone(&Utc)),
-            };
+        match chrono::DateTime::parse_from_rfc3339(source_asof) {
+            Ok(parsed) => {
+                return (
+                    crate::abilities::trust::FreshnessContext {
+                        timestamp_known: true,
+                        age_days: age_days(now, parsed.with_timezone(&Utc)),
+                    },
+                    true,
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "TrustRecompute: malformed source_asof on {}: {e}; falling back to observed_at",
+                    claim.id
+                );
+                read_ok = false;
+            }
         }
     }
 
-    for fallback in [&claim.observed_at, &claim.created_at] {
-        if let Ok(parsed) = chrono::DateTime::parse_from_rfc3339(fallback) {
-            return crate::abilities::trust::FreshnessContext {
-                timestamp_known: false,
-                age_days: age_days(now, parsed.with_timezone(&Utc)),
-            };
+    for (label, fallback) in [
+        ("observed_at", &claim.observed_at),
+        ("created_at", &claim.created_at),
+    ] {
+        match chrono::DateTime::parse_from_rfc3339(fallback) {
+            Ok(parsed) => {
+                return (
+                    crate::abilities::trust::FreshnessContext {
+                        timestamp_known: false,
+                        age_days: age_days(now, parsed.with_timezone(&Utc)),
+                    },
+                    read_ok,
+                );
+            }
+            Err(e) => {
+                log::warn!(
+                    "TrustRecompute: malformed {label} on {}: {e}",
+                    claim.id
+                );
+                read_ok = false;
+            }
         }
     }
 
-    crate::abilities::trust::FreshnessContext {
-        timestamp_known: false,
-        age_days: 0.0,
-    }
+    (
+        crate::abilities::trust::FreshnessContext {
+            timestamp_known: false,
+            age_days: 0.0,
+        },
+        read_ok,
+    )
 }
 
 fn age_days(now: chrono::DateTime<Utc>, source_time: chrono::DateTime<Utc>) -> f64 {
@@ -4322,7 +4398,7 @@ mod tests {
         });
         let claim = load_single_trust_claim(&db, account_id);
 
-        let freshness = freshness_context_for_claim(
+        let (freshness, ok) = freshness_context_for_claim(
             Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
             &claim,
         );
@@ -4333,6 +4409,7 @@ mod tests {
         );
         let expected_base = (-std::f64::consts::LN_2 / 90.0).exp();
 
+        assert!(ok);
         assert!(!freshness.timestamp_known);
         assert_float_close(freshness.age_days, 1.0);
         assert_float_close(weight, expected_base * 0.8);
@@ -4355,11 +4432,12 @@ mod tests {
         });
         let claim = load_single_trust_claim(&db, account_id);
 
-        let freshness = freshness_context_for_claim(
+        let (freshness, ok) = freshness_context_for_claim(
             Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
             &claim,
         );
 
+        assert!(ok);
         assert!(freshness.timestamp_known);
         assert_float_close(freshness.age_days, 1.0);
     }
@@ -4759,11 +4837,13 @@ mod tests {
     }
 
     #[test]
-    fn finalize_mode_trust_recompute_handles_compile_error_without_corrupting_state() {
-        // Aggregated source reliability (ADR-0114) supersedes the legacy static
-        // source_weight whenever corroborations exist. To exercise the legacy
-        // malformed-weight rollback path, this test deliberately seeds NO
-        // corroboration so the recompute falls through to the malformed weight.
+    fn finalize_mode_trust_recompute_caps_at_needs_verification_on_malformed_signal_weights() {
+        // Malformed signal_weights row (alpha=0,beta=0) used to compute NaN
+        // and trigger compile_trust rollback to prior trust. The cycle-7 fix
+        // catches the malformed row at read time, marks read_state as
+        // indeterminate, and lets compile_trust succeed under the
+        // IndeterminateReadState gate — fail-closed at NeedsVerification
+        // rather than preserving a possibly-stale LikelyCurrent score.
         let db = trust_test_db();
         let account_id = "acct-compile-error";
         let data_source = "bad_source_weight";
@@ -4776,38 +4856,28 @@ mod tests {
         );
         seed_prior_trust(&db, &claim_id, 0.82, 7);
         seed_malformed_source_weight(&db, data_source);
-        let before = read_trust_columns(&db, &claim_id);
 
         run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
 
-        assert_eq!(read_trust_columns(&db, &claim_id), before);
-        assert_eq!(signal_count(&db, "ClaimTrustChanged"), 0);
-        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 0);
-        assert_eq!(pipeline_failure_count(&db, "trust_compile_failed"), 1);
+        let (score, _, version) = read_trust_columns(&db, &claim_id);
+        let s = score.expect("score must be set after recompute");
+        assert!(
+            s < 0.5,
+            "malformed weights must fail closed under NeedsVerification, got {s}"
+        );
+        assert_eq!(version, Some(8), "version must increment for the recompute");
     }
 
     #[test]
-    fn record_trust_recompute_pipeline_failure_emits_for_compile_failure_and_update_failure() {
+    fn record_trust_recompute_pipeline_failure_emits_for_update_failure() {
+        // The compile-failure half of this metric used to be exercised by
+        // seeding a malformed signal_weights row, but cycle-7 hardening
+        // catches that upstream and routes it through the
+        // IndeterminateReadState gate instead — compile_trust no longer
+        // fails on legitimate-but-suspect data, so trust_compile_failed is
+        // unreachable through the production data path. Update-failure is
+        // still a valid pipeline failure mode and stays covered here.
         let db = trust_test_db();
-
-        let compile_account_id = "acct-pipeline-compile-error";
-        let compile_data_source = "bad_pipeline_source_weight";
-        seed_trust_account(&db, compile_account_id);
-        let _compile_claim_id = seed_trust_claim(
-            &db,
-            compile_account_id,
-            "The account has malformed source reliability input.",
-            compile_data_source,
-        );
-        // No corroborator seed: aggregated source reliability would mask the
-        // malformed legacy weight, so we deliberately exercise the fallback
-        // path the malformed-weight rollback test guards.
-        seed_malformed_source_weight(&db, compile_data_source);
-
-        run_trust_finalize(&db, compile_account_id, FinalizeMode::TrustRecompute);
-
-        assert_eq!(pipeline_failure_count(&db, "trust_compile_failed"), 1);
-        assert_eq!(pipeline_failure_count(&db, "trust_update_failed"), 0);
 
         let update_account_id = "acct-pipeline-update-error";
         seed_trust_account(&db, update_account_id);
@@ -4834,7 +4904,6 @@ mod tests {
 
         run_trust_finalize(&db, update_account_id, FinalizeMode::TrustRecompute);
 
-        assert_eq!(pipeline_failure_count(&db, "trust_compile_failed"), 1);
         assert_eq!(pipeline_failure_count(&db, "trust_update_failed"), 1);
         assert_eq!(signal_count(&db, "ClaimTrustChanged"), 0);
     }

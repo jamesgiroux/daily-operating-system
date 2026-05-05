@@ -86,17 +86,27 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
 // Callout generation
 // ---------------------------------------------------------------------------
 
-/// Outcome metadata from a callout generation pass. Lets callers detect
-/// degraded persistence so a partial briefing isn't silently treated as a
-/// successful empty/short result.
+/// Outcome metadata from a callout generation pass. Lets callers distinguish
+/// between "no eligible signals" and the various degradation modes so a
+/// partial briefing isn't silently treated as a successful empty result.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub struct GenerateCalloutsOutcome {
     /// Count of callouts that were generated in-memory but then failed to
     /// persist via upsert_briefing_callout. The returned Vec only contains
     /// successfully-persisted callouts; this field surfaces how many were
-    /// dropped so callers can distinguish "no qualifying signals" from
-    /// "partial DB outage during write".
+    /// dropped during write.
     pub dropped_due_to_persist_failure: u32,
+    /// True when get_recent_callout_signals errored. The returned Vec is
+    /// empty in this case, but the empty result is NOT equivalent to "no
+    /// eligible signals" — callers should warn or retry instead of treating
+    /// an empty briefing as the user's actual reality.
+    pub signal_query_failed: bool,
+}
+
+impl GenerateCalloutsOutcome {
+    pub fn is_degraded(&self) -> bool {
+        self.signal_query_failed || self.dropped_due_to_persist_failure > 0
+    }
 }
 
 /// Generate briefing callouts from recent high-confidence signals.
@@ -115,18 +125,23 @@ pub fn generate_callouts(
     todays_meetings: &[Value],
     user_entity: Option<&crate::types::UserEntity>,
 ) -> (Vec<BriefingCallout>, GenerateCalloutsOutcome) {
-    let outcome_default = GenerateCalloutsOutcome::default();
     // Get recent signals (last 24h) of callout-worthy types
     let signals = match db.get_recent_callout_signals(24, CALLOUT_SIGNAL_TYPES) {
         Ok(s) => s,
         Err(e) => {
             log::warn!("generate_callouts: failed to query signals: {}", e);
-            return (Vec::new(), outcome_default);
+            return (
+                Vec::new(),
+                GenerateCalloutsOutcome {
+                    signal_query_failed: true,
+                    ..Default::default()
+                },
+            );
         }
     };
 
     if signals.is_empty() {
-        return (Vec::new(), outcome_default);
+        return (Vec::new(), GenerateCalloutsOutcome::default());
     }
 
     // Optionally rank by relevance to today's meetings
@@ -235,6 +250,7 @@ pub fn generate_callouts(
         callouts,
         GenerateCalloutsOutcome {
             dropped_due_to_persist_failure,
+            signal_query_failed: false,
         },
     )
 }

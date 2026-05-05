@@ -939,9 +939,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                     &classified,
                     user_entity.as_ref(),
                 );
-                if outcome.dropped_due_to_persist_failure > 0 {
+                if outcome.is_degraded() {
                     log::warn!(
-                        "prepare/orchestrate: callout briefing degraded — {} callout(s) generated but failed to persist; surface remains short of full intelligence",
+                        "prepare/orchestrate: callout briefing degraded — signal_query_failed={} dropped_persist={} (empty list does NOT necessarily mean no eligible signals)",
+                        outcome.signal_query_failed,
                         outcome.dropped_due_to_persist_failure
                     );
                 }
@@ -1335,9 +1336,10 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     &classified,
                     user_entity.as_ref(),
                 );
-                if outcome.dropped_due_to_persist_failure > 0 {
+                if outcome.is_degraded() {
                     log::warn!(
-                        "prepare/orchestrate: weekly callout briefing degraded — {} callout(s) generated but failed to persist",
+                        "prepare/orchestrate: weekly callout briefing degraded — signal_query_failed={} dropped_persist={} (empty list does NOT necessarily mean no eligible signals)",
+                        outcome.signal_query_failed,
                         outcome.dropped_due_to_persist_failure
                     );
                 }
