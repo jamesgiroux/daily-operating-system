@@ -1,6 +1,7 @@
 #![allow(dead_code)]
 
 use serde_json::{Map, Value};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use super::runner::RunResult;
@@ -9,7 +10,7 @@ use super::types::EvalFixture;
 
 pub struct RegressionClassifier;
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum RegressionClass {
     InputChange,
     PromptChange,
@@ -18,7 +19,7 @@ pub enum RegressionClass {
     LogicChange,
 }
 
-#[derive(Debug, PartialEq, Eq, Clone)]
+#[derive(Debug, PartialEq, Eq, Clone, Serialize, Deserialize)]
 pub enum Severity {
     /// PromptChange + ProviderDrift + LogicChange: blocks pending explicit
     /// reviewer rebaseline, not because the change is inherently wrong.

@@ -1,8 +1,16 @@
 #![allow(dead_code)]
 
-use crate::harness::loader::FixtureLoadError;
-use crate::harness::types::EvalFixture;
+use crate::harness::classifier::{
+    baseline_fingerprint_for_fixture, current_fingerprint_for_run, RegressionClassifier,
+};
+use crate::harness::loader::{load_fixture, FixtureLoadError};
+use crate::harness::report::{FixtureRunSummary, HarnessReport};
+use crate::harness::scoring::{
+    CategoryScorer, MaintenanceScorer, PublishScorer, ReadScorer, ScoreResult, TransformScorer,
+};
+use crate::harness::types::{AbilityCategory, EvalFixture, FixtureRef};
 use base64::Engine;
+use dailyos_lib::abilities::Actor;
 use dailyos_lib::abilities::NoopAbilityTracer;
 use dailyos_lib::bridges::eval::{EvalAbilityBridge, EvalAbilityDeps, EvalFixtureServices};
 use dailyos_lib::intelligence::provider::{Completion, FingerprintMetadata, ReplayProvider};
@@ -16,8 +24,10 @@ use serde::Deserialize;
 use serde_json::{Map, Number, Value};
 use std::collections::HashMap;
 use std::fs;
+use std::io;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::Instant;
 
 const HARNESS_AUTH_SCOPE_ID: &str = "harness-default-tenant";
 const HARNESS_IN_MEMORY_DB_PATH: &str = ":memory:";
@@ -49,6 +59,8 @@ pub enum RunError {
     Json(#[from] serde_json::Error),
     #[error("required dep not yet wired: {0}")]
     NotYetWired(String),
+    #[error("harness report write failed: {0}")]
+    ReportWrite(#[source] io::Error),
     #[cfg(feature = "harness-hermetic")]
     #[error("harness hermetic invariant failed: {0}")]
     HermeticInvariant(String),
@@ -57,6 +69,44 @@ pub enum RunError {
 pub struct RunnerDeps {
     /// W3-A registry — provides invoke_by_name_json or the eval bridge.
     pub registry: Arc<dailyos_lib::abilities::registry::AbilityRegistry>,
+}
+
+pub fn run_harness_suite(
+    deps: &RunnerDeps,
+    fixture_refs: &[FixtureRef],
+    output_path: &Path,
+) -> Result<HarnessReport, RunError> {
+    let mut report = HarnessReport::new();
+
+    for fixture_ref in fixture_refs {
+        let fixture = load_fixture(&fixture_ref.fixture_dir)?;
+        let category = category_for_fixture(deps, &fixture)?;
+        let started = Instant::now();
+        let run_result = run_fixture(deps, &fixture)?;
+        let runtime_ms = started.elapsed().as_millis() as u64;
+        let score = score_fixture(category, &fixture, &run_result);
+        let baseline = baseline_fingerprint_for_fixture(&fixture);
+        let current = current_fingerprint_for_run(&fixture, &run_result);
+        let regression =
+            RegressionClassifier.classify(&baseline, &current, &score.diffs);
+
+        report.add_fixture_summary(FixtureRunSummary {
+            fixture_dir: fixture.fixture_dir.display().to_string(),
+            bundle: fixture.metadata.bundle,
+            scenario_id: fixture.metadata.scenario_id.clone(),
+            category,
+            passed: score.passed,
+            continuous_score: score.continuous_score,
+            regression,
+            diff_count: score.diffs.len(),
+            runtime_ms,
+        });
+    }
+
+    report.finalize();
+    report.write_json(output_path).map_err(RunError::ReportWrite)?;
+
+    Ok(report)
 }
 
 pub(crate) struct PreparedFixtureRun {
@@ -71,6 +121,53 @@ impl PreparedFixtureRun {
     pub fn service_context(&self) -> ServiceContext<'_> {
         ServiceContext::new_evaluate(&self.clock, &self.rng, &self.external_clients)
             .with_actor("eval_fixture")
+    }
+}
+
+fn score_fixture(
+    category: AbilityCategory,
+    fixture: &EvalFixture,
+    run_result: &RunResult,
+) -> ScoreResult {
+    match category {
+        AbilityCategory::Read => ReadScorer.score(&fixture.expected, run_result),
+        AbilityCategory::Transform => {
+            TransformScorer { threshold: 0.8 }.score(&fixture.expected, run_result)
+        }
+        AbilityCategory::Maintenance => MaintenanceScorer.score(&fixture.expected, run_result),
+        AbilityCategory::Publish => PublishScorer.score(&fixture.expected, run_result),
+    }
+}
+
+fn category_for_fixture(
+    deps: &RunnerDeps,
+    fixture: &EvalFixture,
+) -> Result<AbilityCategory, RunError> {
+    let ability_name = fixture
+        .inputs_json
+        .get("ability_name")
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RunError::InvocationFailed(
+                "inputs.json ability_name must be a non-empty string".to_string(),
+            )
+        })?;
+
+    deps.registry
+        .iter_for(Actor::System)
+        .find(|descriptor| descriptor.name == ability_name)
+        .map(|descriptor| harness_category_from_registry(descriptor.category))
+        .ok_or_else(|| RunError::InvocationFailed("AbilityUnavailable".to_string()))
+}
+
+fn harness_category_from_registry(
+    category: dailyos_lib::abilities::AbilityCategory,
+) -> AbilityCategory {
+    match category {
+        dailyos_lib::abilities::AbilityCategory::Read => AbilityCategory::Read,
+        dailyos_lib::abilities::AbilityCategory::Transform => AbilityCategory::Transform,
+        dailyos_lib::abilities::AbilityCategory::Maintenance => AbilityCategory::Maintenance,
+        dailyos_lib::abilities::AbilityCategory::Publish => AbilityCategory::Publish,
     }
 }
 

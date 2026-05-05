@@ -21,9 +21,10 @@ use dailyos_lib::services::context::{
 use harness::{
     baseline_fingerprint_for_fixture, canonical_json_eq, diff_internal_provenance,
     diff_rendered_provenance, discover_fixtures, load_fixture, prepare_fixture_for_run,
-    run_fixture, severity_of, CategoryScorer, ClassificationFingerprint, FixtureLoadError,
-    FixtureRef, MaintenanceScorer, PublishScorer, ReadScorer, RegressionClass,
-    RegressionClassifier, RunError, RunnerDeps, Severity, TransformScorer,
+    run_fixture, run_harness_suite, severity_of, CategoryScorer, ClassificationFingerprint,
+    FixtureLoadError, FixtureRef, FixtureRunSummary, HarnessReport, MaintenanceScorer,
+    PublishScorer, ReadScorer, RegressionClass, RegressionClassifier, RunError, RunnerDeps,
+    Severity, TransformScorer,
 };
 use serde_json::json;
 
@@ -641,6 +642,240 @@ fn baseline_fingerprint_reads_prompt_fingerprint_baseline_from_metadata() {
     );
 }
 
+#[test]
+fn harness_report_aggregates_per_fixture_summaries() {
+    let mut report = HarnessReport::new();
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-2",
+        Some(2),
+        "read-pass",
+        harness::AbilityCategory::Read,
+        true,
+        None,
+        0,
+    ));
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-3",
+        Some(3),
+        "transform-fail",
+        harness::AbilityCategory::Transform,
+        false,
+        Some((RegressionClass::LogicChange, Severity::FailSoft)),
+        2,
+    ));
+
+    report.finalize();
+
+    assert_eq!(
+        report.category_counts["Read"],
+        harness::CategorySummary {
+            total: 1,
+            passed: 1,
+            failed: 0,
+        }
+    );
+    assert_eq!(
+        report.category_counts["Transform"],
+        harness::CategorySummary {
+            total: 1,
+            passed: 0,
+            failed: 1,
+        }
+    );
+    assert_eq!(report.regression_class_counts["LogicChange"], 1);
+    assert_eq!(report.regression_class_counts["InputChange"], 0);
+}
+
+#[test]
+fn harness_report_computes_bundle_coverage_from_fixtures() {
+    let mut report = HarnessReport::new();
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-2/a",
+        Some(2),
+        "bundle-2-pass",
+        harness::AbilityCategory::Read,
+        true,
+        None,
+        0,
+    ));
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-3/a",
+        Some(3),
+        "bundle-3-pass",
+        harness::AbilityCategory::Read,
+        true,
+        None,
+        0,
+    ));
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-3/b",
+        Some(3),
+        "bundle-3-fail",
+        harness::AbilityCategory::Read,
+        false,
+        Some((RegressionClass::ProviderDrift, Severity::FailSoft)),
+        1,
+    ));
+
+    report.finalize();
+
+    assert_eq!(report.bundle_coverage.bundles_run, vec![2, 3]);
+    assert_eq!(report.bundle_coverage.bundles_passed, vec![2]);
+    assert_eq!(report.bundle_coverage.bundles_failed, vec![3]);
+    assert_eq!(
+        report.bundle_coverage.bundles_unblocked,
+        vec![1, 2, 3, 4, 6, 7, 8]
+    );
+}
+
+#[test]
+fn harness_report_serializes_to_json_with_stable_field_order() {
+    let mut report = HarnessReport::new();
+    report.run_id = "harness-stable-run".to_string();
+    report.started_at = fixed_report_time();
+    report.finished_at = fixed_report_time();
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-2",
+        Some(2),
+        "stable-order",
+        harness::AbilityCategory::Read,
+        true,
+        None,
+        0,
+    ));
+    report.finalize();
+    report.started_at = fixed_report_time();
+    report.finished_at = fixed_report_time();
+
+    let first = serde_json::to_string_pretty(&report).expect("serialize first report");
+    let second = serde_json::to_string_pretty(&report).expect("serialize second report");
+
+    assert_eq!(first, second);
+    assert_substrings_in_order(
+        &first,
+        &[
+            "\"run_id\"",
+            "\"started_at\"",
+            "\"finished_at\"",
+            "\"fixtures\"",
+            "\"bundle_coverage\"",
+            "\"regression_class_counts\"",
+            "\"category_counts\"",
+        ],
+    );
+    let regression_counts = section_between(
+        &first,
+        "\"regression_class_counts\"",
+        "\"category_counts\"",
+    );
+    assert_substrings_in_order(
+        regression_counts,
+        &[
+            "\"CanonicalizationBug\"",
+            "\"InputChange\"",
+            "\"LogicChange\"",
+            "\"PromptChange\"",
+            "\"ProviderDrift\"",
+        ],
+    );
+    assert_substrings_in_order(
+        section_after(&first, "\"category_counts\""),
+        &["\"Maintenance\"", "\"Publish\"", "\"Read\"", "\"Transform\""],
+    );
+}
+
+#[test]
+fn harness_report_writes_to_target_eval_harness_report_json() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output_path = temp_dir.path().join("target/eval/harness-report.json");
+    let mut report = HarnessReport::new();
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-2",
+        Some(2),
+        "write-report",
+        harness::AbilityCategory::Read,
+        true,
+        None,
+        0,
+    ));
+    report.finalize();
+
+    report
+        .write_json(&output_path)
+        .expect("write harness-report.json");
+
+    let written = fs::read_to_string(&output_path).expect("read harness-report.json");
+    let parsed: serde_json::Value =
+        serde_json::from_str(&written).expect("parse harness-report.json");
+
+    assert!(output_path.is_file());
+    assert_eq!(parsed["fixtures"].as_array().expect("fixtures array").len(), 1);
+    assert_eq!(parsed["bundle_coverage"]["bundles_run"], json!([2]));
+}
+
+#[test]
+fn run_harness_suite_iterates_all_provided_fixtures_and_writes_report() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let output_path = temp_dir.path().join("target/eval/harness-report.json");
+    let fixture_refs = vec![
+        FixtureRef {
+            fixture_dir: fixture_root().join("bundle-2"),
+            labels: vec!["bundle-2".to_string()],
+        },
+        FixtureRef {
+            fixture_dir: fixture_root().join("bundle-3"),
+            labels: vec!["bundle-3".to_string()],
+        },
+    ];
+    let deps = synthetic_runner_deps();
+
+    let report = run_harness_suite(&deps, &fixture_refs, &output_path)
+        .expect("suite runs and writes report");
+
+    assert_eq!(report.fixtures.len(), 2);
+    assert_eq!(report.bundle_coverage.bundles_run, vec![2, 3]);
+    assert!(report
+        .fixtures
+        .iter()
+        .all(|summary| summary.category == harness::AbilityCategory::Read));
+    assert!(report
+        .fixtures
+        .iter()
+        .all(|summary| !summary.fixture_dir.is_empty()));
+    assert_eq!(report.regression_class_counts["LogicChange"], 2);
+    assert!(output_path.is_file());
+
+    let written = fs::read_to_string(output_path).expect("read report");
+    let parsed: serde_json::Value = serde_json::from_str(&written).expect("parse report");
+    assert_eq!(parsed["fixtures"].as_array().expect("fixtures array").len(), 2);
+}
+
+#[test]
+fn harness_report_records_regression_class_when_classifier_fires() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.inputs_hash = "inputs-current".to_string();
+    let regression = RegressionClassifier
+        .classify(&baseline, &current, &[])
+        .expect("classifier fires");
+    let mut report = HarnessReport::new();
+
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-2",
+        Some(2),
+        "input-change",
+        harness::AbilityCategory::Read,
+        false,
+        Some(regression.clone()),
+        1,
+    ));
+    report.finalize();
+
+    assert_eq!(regression, (RegressionClass::InputChange, Severity::Hard));
+    assert_eq!(report.regression_class_counts["InputChange"], 1);
+    assert_eq!(report.fixtures[0].regression.as_ref(), Some(&regression));
+}
+
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
@@ -689,6 +924,59 @@ fn run_result(
         actual_state,
         diagnostics: Vec::new(),
     }
+}
+
+fn fixture_summary(
+    fixture_dir: &str,
+    bundle: Option<u32>,
+    scenario_id: &str,
+    category: harness::AbilityCategory,
+    passed: bool,
+    regression: Option<(RegressionClass, Severity)>,
+    diff_count: usize,
+) -> FixtureRunSummary {
+    FixtureRunSummary {
+        fixture_dir: fixture_dir.to_string(),
+        bundle,
+        scenario_id: scenario_id.to_string(),
+        category,
+        passed,
+        continuous_score: None,
+        regression,
+        diff_count,
+        runtime_ms: 1,
+    }
+}
+
+fn fixed_report_time() -> chrono::DateTime<chrono::Utc> {
+    chrono::DateTime::parse_from_rfc3339("2026-05-01T12:00:00Z")
+        .expect("valid report time")
+        .with_timezone(&chrono::Utc)
+}
+
+fn assert_substrings_in_order(haystack: &str, needles: &[&str]) {
+    let mut offset = 0;
+    for needle in needles {
+        let position = haystack[offset..]
+            .find(needle)
+            .unwrap_or_else(|| panic!("missing substring `{needle}` in `{haystack}`"));
+        offset += position + needle.len();
+    }
+}
+
+fn section_between<'a>(haystack: &'a str, start: &str, end: &str) -> &'a str {
+    let after_start = section_after(haystack, start);
+    let end_position = after_start
+        .find(end)
+        .unwrap_or_else(|| panic!("missing section end `{end}` in `{after_start}`"));
+    &after_start[..end_position]
+}
+
+fn section_after<'a>(haystack: &'a str, start: &str) -> &'a str {
+    let start_position = haystack
+        .find(start)
+        .unwrap_or_else(|| panic!("missing section start `{start}` in `{haystack}`"));
+    &haystack[start_position + start.len()..]
 }
 
 fn bundle_fixture(bundle: u32) -> harness::EvalFixture {
