@@ -1,3 +1,7 @@
+> **Superseded 2026-05-05.** This document has been replaced by the per-entry specs in [`tokens/`](../tokens/), [`primitives/`](../primitives/), and [`patterns/`](../patterns/).
+>
+> Kept here for historical context. Do not update.
+
 # DailyOS Design System
 
 **Source of truth for all visual decisions.** This document consolidates ADRs 0073, 0076, 0077, 0083, and 0084 into a single actionable reference.

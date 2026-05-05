@@ -1,3 +1,7 @@
+> **Superseded 2026-05-05.** This document has been replaced by descoped — feature is not in current product scope.
+>
+> Kept here for historical context. Do not update.
+
 # DailyOS Plugin Marketplace Design
 
 > "I've got to put together a Risk Report on Nexus Analytics." That's all you say. And it just happens.

@@ -1,31 +1,23 @@
 # Design System Documentation
 
 **Owner:** Product Design
-**Last audit:** 2026-03-15
-**Status:** Living document. Engineers MUST reference this before building UI.
+**Status:** Living documentation. Engineers MUST reference this before building UI.
 
 ---
 
-## What This Directory Contains
+## Layout
 
-| Document | Purpose | Read before... |
-|----------|---------|----------------|
-| [DESIGN-SYSTEM.md](./DESIGN-SYSTEM.md) | The rules. Typography, color, spacing, layout, components. | Writing any CSS or building any component |
-| [COMPONENT-INVENTORY.md](./COMPONENT-INVENTORY.md) | Every shared component, its job, its compliance status | Deciding whether to build a new component |
-| [PAGE-ARCHITECTURE.md](./PAGE-ARCHITECTURE.md) | How each page is structured, JTBD, data sources, state patterns | Touching any page file |
-| [STATE-PATTERNS.md](./STATE-PATTERNS.md) | Per-page state patterns, hooks, data flow, loading/error handling | Adding state management or data fetching |
-| [NAVIGATION-ARCHITECTURE.md](./NAVIGATION-ARCHITECTURE.md) | Navigation system, shell routing, FloatingNavIsland, FolioBar, deep linking | Modifying navigation or adding routes |
-| [INTERACTION-PATTERNS.md](./INTERACTION-PATTERNS.md) | Interactive patterns: inline editing, modals, command menu, keyboard shortcuts | Building interactive features |
-| [DATA-PRESENTATION-GUIDELINES.md](./DATA-PRESENTATION-GUIDELINES.md) | How data is displayed: intelligence, health scores, timelines, emails, meetings | Rendering data on any surface |
-| [ARCHITECTURE-MAP.md](./ARCHITECTURE-MAP.md) | Backend modules, data flow, async tasks, IPC surface | Any backend structural work |
-| [SERVICE-CONTRACTS.md](./SERVICE-CONTRACTS.md) | Target service layer, extraction contracts, migration path | Refactoring commands.rs or db.rs |
-| [INTELLIGENCE-CONSISTENCY-REFERENCE.md](./INTELLIGENCE-CONSISTENCY-REFERENCE.md) | Contradiction guardrails, thresholds, and SQL diagnostics for briefing trust issues | Debugging cross-entity bleed or inconsistent intelligence claims |
+The design system has migrated from monolithic top-level docs to per-entry specs plus canonical reference renders. Read in this order:
 
-## The Problem This Solves
-
-DailyOS has 84 ADRs, a 350KB backlog, and a design language spec split across ADRs 0073, 0076, 0077, 0083, and 0084. No engineer has time to read all of that before adding a `<div>`. The result: every page is slightly different, hardcoded colors creep in, spacing is inconsistent, and the editorial magazine aesthetic we spent weeks perfecting gets eroded by well-intentioned but unguided implementation.
-
-**This directory is the single reference.** If it's not documented here, check the ADRs. If it conflicts with an ADR, the ADR wins and this document needs updating.
+| Layer | Where | What it is |
+|---|---|---|
+| **Tokens** | [`tokens/`](./tokens/) | Color, typography, spacing, motion — the primitive values everything else composes from |
+| **Primitives** | [`primitives/`](./primitives/) | 19 atomic UI elements (Pill, Chip, BrandMark, etc.) — one spec per primitive |
+| **Patterns** | [`patterns/`](./patterns/) | 32 composed UI patterns (MeetingCard, StakeholderGallery, ChapterHeading, etc.) — one spec per pattern |
+| **Surfaces** | [`surfaces/`](./surfaces/) + [`reference/surfaces/`](./reference/surfaces/) | Per-screen specs + faithful 1:1 HTML mirrors of every routed page, report, onboarding chapter, and splash mode |
+| **Journeys** | [`reference/journeys/`](./reference/journeys/) | JTBD flows mapping which surfaces a CSM touches to accomplish each job |
+| **Inventory** | [`INVENTORY.md`](./INVENTORY.md) | Full surface roster (referenced + spec'd + gap) |
+| **Audits** | [`_audits/`](./_audits/) | Drift audits, fidelity reports, consolidation analyses |
 
 ## The Design Philosophy (30-second version)
 
@@ -42,9 +34,25 @@ DailyOS is a **magazine, not a dashboard**. Every surface is a document the user
 | Question | Answer |
 |----------|--------|
 | Wrap this in a Card? | Probably not. Cards are for meeting cards, priority items, signal cards, and the focus callout. Everything else is text rows. |
-| Use a hardcoded hex color? | Never. Use design tokens from `design-tokens.css` or Tailwind semantic classes. |
-| Add a new font? | No. Newsreader, DM Sans, JetBrains Mono, Montserrat (mark only). That's the stack. |
-| Use inline `style={{}}` props? | Avoid. Use CSS modules or Tailwind classes. Inline styles are untraceable. |
-| Build a new component for this? | Check [COMPONENT-INVENTORY.md](./COMPONENT-INVENTORY.md) first. There are 90+ components. Yours probably exists. |
-| Use "intelligence" or "enrichment" in user-facing text? | Never. See the vocabulary table in DESIGN-SYSTEM.md. System terms stay in code. |
-| Skip the FinisMarker? | No. Every editorial page ends with one. |
+| Use a hardcoded hex color? | Never. Use design tokens from `design-tokens.css` or Tailwind semantic classes — see [`tokens/color.md`](./tokens/color.md). |
+| Add a new font? | No. Newsreader, DM Sans, JetBrains Mono, Montserrat (mark only). See [`tokens/typography.md`](./tokens/typography.md). |
+| Use inline `style={{}}` props? | Avoid. Use CSS modules or Tailwind classes. The reference-fidelity audit at [`_audits/audit-reference.py`](./_audits/audit-reference.py) flags inline-style invention against canonical TSX. |
+| Build a new component for this? | Check [`primitives/`](./primitives/) and [`patterns/`](./patterns/) first. There are 51 documented; yours probably exists. |
+| Use "intelligence" or "enrichment" in user-facing text? | Never. System terms stay in code. See vocabulary guidance in `src/CLAUDE.md`. |
+| Skip the FinisMarker? | No. Every editorial page ends with one. See [`patterns/FinisMarker.md`](./patterns/FinisMarker.md). |
+
+## Substrate references
+
+Domain-specific reference docs that don't fit the token/primitive/pattern/surface taxonomy:
+
+- [`INTELLIGENCE-CONSISTENCY-REFERENCE.md`](./INTELLIGENCE-CONSISTENCY-REFERENCE.md) — contradiction guardrails and SQL diagnostics for briefing trust issues
+- [`SIGNAL-SCORING-REFERENCE.md`](./SIGNAL-SCORING-REFERENCE.md) — signal scoring algebra
+- [`FIELD-PROMOTION-MATRIX.md`](./FIELD-PROMOTION-MATRIX.md) — field promotion rules
+- [`NAMING.md`](./NAMING.md) — naming conventions
+- [`POSITIONING.md`](./POSITIONING.md), [`PRODUCT-PRINCIPLES.md`](./PRODUCT-PRINCIPLES.md), [`SYSTEM-MAP.md`](./SYSTEM-MAP.md) — strategy
+- [`VERSION.md`](./VERSION.md), [`VIOLATIONS.md`](./VIOLATIONS.md), [`CHANGELOG.md`](./CHANGELOG.md) — process
+- Backend architecture docs (data flow, service contracts, etc.) live under [`../architecture/`](../architecture/), not here.
+
+## What got moved
+
+Earlier monolithic top-level docs (DESIGN-SYSTEM.md, COMPONENT-INVENTORY.md, PAGE-ARCHITECTURE.md, etc.) have been superseded by the per-entry layout above and live under [`_archive/`](./_archive/) for historical context.

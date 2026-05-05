@@ -10,7 +10,17 @@ Superseded entries. Kept for context — we don't delete history, we date it.
 
 ## What's here today
 
-_(empty — populates once the audits land and the existing `.docs/design/*.md` files are absorbed into per-entry specs)_
+The original monolithic top-level design docs, now superseded by per-entry specs in `tokens/`, `primitives/`, `patterns/`, and `surfaces/` plus canonical reference renders in `reference/surfaces/`:
+
+- `DESIGN-SYSTEM.md`, `COMPONENT-INVENTORY.md`, `PAGE-ARCHITECTURE.md`, `STATE-PATTERNS.md`, `NAVIGATION-ARCHITECTURE.md`, `INTERACTION-PATTERNS.md`, `DATA-PRESENTATION-GUIDELINES.md` — each carries a redirect note pointing at its successor location.
+
+Surface- and feature-scoped historicals:
+
+- `account-detail-content-design.md` — superseded by `reference/surfaces/account.html`
+- `I644-FIELD-MATRIX.md` — issue-scoped historical
+- `PLUGIN-MARKETPLACE-DESIGN.md` — feature was descoped
+
+Backend architecture references that previously sat under `design/` have been relocated to `../architecture/` rather than archived (they're current, just in the wrong place).
 
 ## What does NOT go here
 

@@ -1,3 +1,7 @@
+> **Superseded 2026-05-05.** This document has been replaced by [`reference/surfaces/account.html`](../reference/surfaces/account.html) (canonical render).
+>
+> Kept here for historical context. Do not update.
+
 # Account Detail Page — Content Design Principles
 **Related Linear:** DOS-48 (parent IA redesign), DOS-113 (sentiment), new issues for Context and Work tabs
 **Session date:** 2026-04-17

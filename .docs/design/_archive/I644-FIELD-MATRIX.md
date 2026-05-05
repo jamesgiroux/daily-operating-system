@@ -1,3 +1,7 @@
+> **Superseded 2026-05-05.** This document has been replaced by historical (issue I644-scoped); see git history for context.
+>
+> Kept here for historical context. Do not update.
+
 # I644 Field Promotion Matrix
 
 Maps every Glean-accessible field to its DB destination, source kind, freshness, and I644 acceptance criterion.

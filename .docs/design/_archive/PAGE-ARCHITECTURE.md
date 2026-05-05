@@ -1,3 +1,7 @@
+> **Superseded 2026-05-05.** This document has been replaced by [`surfaces/`](../surfaces/) per-entry specs and [`reference/surfaces/`](../reference/surfaces/) HTMLs.
+>
+> Kept here for historical context. Do not update.
+
 # Page Architecture
 
 **Last audited:** 2026-03-15
