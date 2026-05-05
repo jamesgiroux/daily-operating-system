@@ -2798,13 +2798,15 @@ fn build_trust_context_for_claim(
         config: crate::abilities::trust::TrustConfig::default(),
         factor_inputs: crate::abilities::trust::TrustFactorInputs {
             source_reliability: source_reliability_for_claim(db, input, claim),
-            source_reliability_corroborators: Vec::new(),
+            source_reliability_corroborators: source_reliability_corroborators_for_claim(
+                db, &claim.id,
+            ),
             freshness: freshness_context_for_claim(ctx.clock.now(), claim),
             corroboration_strength: corroboration_strength_for_claim(db, &claim.id),
             contradiction_count: contradiction_count_for_claim(db, &claim.id),
             user_feedback: feedback_signal,
             subject_fit_confidence: subject_fit_confidence_for_feedback(feedback_signal),
-            internal_consistency: 1.0,
+            internal_consistency: internal_consistency_for_claim(claim),
             source_lifecycle: source_lifecycle_for_claim(claim),
         },
         cross_entity: crate::abilities::trust::CrossEntityCoherenceInput {
@@ -2996,6 +2998,71 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
     } else {
         0.0
     }
+}
+
+/// Build the per-claim corroborator list for source_reliability_aggregated.
+/// Confirming entries come from claim_corroborations.strength; contradicting
+/// entries come from unreconciled rows in claim_contradictions where this
+/// claim sits on either side. Contradictions don't carry a strength column, so
+/// we treat each unreconciled link as a single high-weight (1.0) contradicting
+/// signal — matches the ADR-0114 default for authoritative-contradicting
+/// evidence and lets the AuthoritativeContradiction gate fire when the
+/// contradicting side outweighs the confirming side.
+fn source_reliability_corroborators_for_claim(
+    db: &crate::db::ActionDb,
+    claim_id: &str,
+) -> Vec<crate::abilities::trust::CorroboratorWeight> {
+    let mut out = Vec::new();
+    if let Ok(mut stmt) = db
+        .conn_ref()
+        .prepare("SELECT strength FROM claim_corroborations WHERE claim_id = ?1")
+    {
+        if let Ok(rows) = stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0)) {
+            for strength in rows.flatten() {
+                out.push(crate::abilities::trust::CorroboratorWeight {
+                    evidence_weight: strength,
+                    confirms: true,
+                });
+            }
+        }
+    }
+    if let Ok(count) = db.conn_ref().query_row(
+        "SELECT COUNT(*) FROM claim_contradictions \
+         WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1) \
+           AND reconciled_at IS NULL \
+           AND winner_claim_id IS NULL \
+           AND merged_claim_id IS NULL",
+        rusqlite::params![claim_id],
+        |row| row.get::<_, i64>(0),
+    ) {
+        for _ in 0..count.max(0) {
+            out.push(crate::abilities::trust::CorroboratorWeight {
+                evidence_weight: 1.0,
+                confirms: false,
+            });
+        }
+    }
+    out
+}
+
+/// Producing abilities can stamp metadata_json.internal_consistency on a
+/// claim when they detect tension between its sub-statements (e.g. transcript
+/// extraction noticing self-contradicting language). Anything in [0.0, 1.0] is
+/// honored; anything missing or malformed defaults to 1.0 (no signal).
+fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) -> f64 {
+    let raw = match claim.metadata_json.as_deref() {
+        Some(s) => s,
+        None => return 1.0,
+    };
+    let value: serde_json::Value = match serde_json::from_str(raw) {
+        Ok(v) => v,
+        Err(_) => return 1.0,
+    };
+    value
+        .get("internal_consistency")
+        .and_then(|v| v.as_f64())
+        .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
+        .unwrap_or(1.0)
 }
 
 fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> u32 {
@@ -4558,6 +4625,10 @@ mod tests {
 
     #[test]
     fn finalize_mode_trust_recompute_handles_compile_error_without_corrupting_state() {
+        // Aggregated source reliability (ADR-0114) supersedes the legacy static
+        // source_weight whenever corroborations exist. To exercise the legacy
+        // malformed-weight rollback path, this test deliberately seeds NO
+        // corroboration so the recompute falls through to the malformed weight.
         let db = trust_test_db();
         let account_id = "acct-compile-error";
         let data_source = "bad_source_weight";
@@ -4568,7 +4639,6 @@ mod tests {
             "The account has malformed source reliability input.",
             data_source,
         );
-        seed_trust_corroboration(&db, &claim_id, "glean");
         seed_prior_trust(&db, &claim_id, 0.82, 7);
         seed_malformed_source_weight(&db, data_source);
         let before = read_trust_columns(&db, &claim_id);
@@ -4588,13 +4658,15 @@ mod tests {
         let compile_account_id = "acct-pipeline-compile-error";
         let compile_data_source = "bad_pipeline_source_weight";
         seed_trust_account(&db, compile_account_id);
-        let compile_claim_id = seed_trust_claim(
+        let _compile_claim_id = seed_trust_claim(
             &db,
             compile_account_id,
             "The account has malformed source reliability input.",
             compile_data_source,
         );
-        seed_trust_corroboration(&db, &compile_claim_id, "glean");
+        // No corroborator seed: aggregated source reliability would mask the
+        // malformed legacy weight, so we deliberately exercise the fallback
+        // path the malformed-weight rollback test guards.
         seed_malformed_source_weight(&db, compile_data_source);
 
         run_trust_finalize(&db, compile_account_id, FinalizeMode::TrustRecompute);
@@ -5102,5 +5174,95 @@ mod tests {
             skip.is_some(),
             "age_check itself would skip, but Manual bypasses the check in the loop"
         );
+    }
+
+    #[test]
+    fn source_reliability_corroborators_reads_corroborations_and_unreconciled_contradictions() {
+        let db = trust_test_db();
+        db.conn_ref()
+            .execute_batch(
+                "INSERT INTO intelligence_claims \
+                 (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json) \
+                 VALUES \
+                 ('c-target', '{\"kind\":\"account\",\"id\":\"a-1\"}', 'fact', 'target', 'd-target', 'system', 'manual', '2026-05-01', '{}'), \
+                 ('c-other',  '{\"kind\":\"account\",\"id\":\"a-1\"}', 'fact', 'other',  'd-other',  'system', 'manual', '2026-05-01', '{}');",
+            )
+            .expect("seed claims");
+        db.conn_ref()
+            .execute_batch(
+                "INSERT INTO claim_corroborations (id, claim_id, data_source, strength) \
+                 VALUES ('cor-1', 'c-target', 'glean', 0.7), \
+                        ('cor-2', 'c-target', 'manual', 0.4); \
+                 INSERT INTO claim_contradictions (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at) \
+                 VALUES ('con-1', 'c-target', 'c-other', 'contradiction', '2026-05-01'); \
+                 INSERT INTO claim_contradictions (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at, reconciled_at, winner_claim_id) \
+                 VALUES ('con-2', 'c-target', 'c-other', 'contradiction', '2026-05-01', '2026-05-02', 'c-target');",
+            )
+            .expect("seed corroborators + contradictions");
+
+        let corroborators = source_reliability_corroborators_for_claim(&db, "c-target");
+        let confirming: Vec<_> = corroborators.iter().filter(|c| c.confirms).collect();
+        let contradicting: Vec<_> = corroborators.iter().filter(|c| !c.confirms).collect();
+        assert_eq!(confirming.len(), 2, "two corroboration rows must surface");
+        assert!(confirming.iter().any(|c| (c.evidence_weight - 0.7).abs() < 1e-9));
+        assert!(confirming.iter().any(|c| (c.evidence_weight - 0.4).abs() < 1e-9));
+        assert_eq!(
+            contradicting.len(),
+            1,
+            "reconciled contradiction must NOT count, only the unreconciled one"
+        );
+        assert!((contradicting[0].evidence_weight - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn internal_consistency_honors_metadata_hint_otherwise_defaults_to_one() {
+        let mut claim = crate::db::claims::IntelligenceClaim {
+            id: "c-1".into(),
+            subject_ref: "{}".into(),
+            claim_type: "fact".into(),
+            field_path: None,
+            topic_key: None,
+            text: "x".into(),
+            dedup_key: "d-1".into(),
+            item_hash: None,
+            actor: "agent".into(),
+            data_source: "manual".into(),
+            source_ref: None,
+            source_asof: None,
+            observed_at: "2026-05-01".into(),
+            created_at: "2026-05-01".into(),
+            provenance_json: "{}".into(),
+            metadata_json: None,
+            claim_state: crate::db::claims::ClaimState::Active,
+            surfacing_state: crate::db::claims::SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score: None,
+            trust_computed_at: None,
+            trust_version: None,
+            thread_id: None,
+            temporal_scope: crate::db::claims::TemporalScope::State,
+            sensitivity: crate::db::claims::ClaimSensitivity::Internal,
+            verification_state: crate::db::claims::ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
+        };
+        assert_eq!(internal_consistency_for_claim(&claim), 1.0);
+
+        claim.metadata_json = Some(r#"{"internal_consistency":0.3}"#.into());
+        assert!((internal_consistency_for_claim(&claim) - 0.3).abs() < 1e-9);
+
+        claim.metadata_json = Some(r#"{"internal_consistency":1.5}"#.into());
+        assert_eq!(
+            internal_consistency_for_claim(&claim),
+            1.0,
+            "out-of-range hints fall back to 1.0"
+        );
+
+        claim.metadata_json = Some("not-json".into());
+        assert_eq!(internal_consistency_for_claim(&claim), 1.0);
     }
 }
