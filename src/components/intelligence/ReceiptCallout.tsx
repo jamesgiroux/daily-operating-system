@@ -214,6 +214,7 @@ export function ReceiptCallout({
       data-position={position}
       data-band={band}
       data-ds-name="ReceiptCallout"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/ReceiptCallout.md"
       {...sectionProps}
     >

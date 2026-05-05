@@ -1,4 +1,4 @@
-@import '../../styles/design-tokens.css';
+@import './design-tokens.css';
 
 .WatchListPrograms_section {
   margin-top: var(--space-2xl);

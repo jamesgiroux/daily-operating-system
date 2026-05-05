@@ -46,6 +46,7 @@ export function SurfaceMasthead({
       )}
       style={cssVars}
       data-ds-name="SurfaceMasthead"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/SurfaceMasthead.md"
       {...rest}
     >

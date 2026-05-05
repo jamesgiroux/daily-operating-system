@@ -1,7 +1,7 @@
 # RoleTransitionRow
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `RoleTransitionRow`
@@ -58,7 +58,7 @@ Composes person name text, two `Pill` primitive instances, and a transition arro
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/RoleTransitionRow.tsx`
+- **Roadmap target:** `src/components/meeting/RoleTransitionRow.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 328-343
 
 ## Surfaces that consume it

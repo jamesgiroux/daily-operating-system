@@ -15,7 +15,9 @@
   <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
   <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
 
-  <!-- Surface-specific modules used by AccountDetailEditorial.tsx -->
+  <!-- Surface-specific modules used by AccountDetailPage.tsx.
+       AccountDetailEditorial classes below are legacy child-module coverage only;
+       the canonical routed surface metadata is AccountDetailPage. -->
   <link rel="stylesheet" href="../_shared/styles/AccountDetailPage.module.css">
   <link rel="stylesheet" href="../_shared/styles/AccountDetailEditorial.module.css">
   <link rel="stylesheet" href="../_shared/styles/entity-detail.module.css">
@@ -25,14 +27,23 @@
   <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
   <link rel="stylesheet" href="../_shared/styles/EditableVitalsStrip.module.css">
   <link rel="stylesheet" href="../_shared/styles/VitalsStrip.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FreshnessIndicator.module.css">
   <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
   <link rel="stylesheet" href="../_shared/styles/StateBlock.module.css">
   <link rel="stylesheet" href="../_shared/styles/IntelligenceFeedback.module.css">
+  <link rel="stylesheet" href="../_shared/styles/IntelligenceCorrection.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AccountViewSwitcher.module.css">
+  <link rel="stylesheet" href="../_shared/styles/RiskBriefingStatus.module.css">
   <link rel="stylesheet" href="../_shared/styles/AccountOutlook.module.css">
   <link rel="stylesheet" href="../_shared/styles/ProvenanceTag.module.css">
+  <link rel="stylesheet" href="../_shared/styles/QuoteWall.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AboutThisDossier.module.css">
   <link rel="stylesheet" href="../_shared/styles/AccountTechnicalFootprint.module.css">
   <link rel="stylesheet" href="../_shared/styles/ReferenceGrid.module.css">
   <link rel="stylesheet" href="../_shared/styles/StateOfPlay.module.css">
+  <link rel="stylesheet" href="../_shared/styles/StakeholderGrid.module.css">
+  <link rel="stylesheet" href="../_shared/styles/PendingStakeholderQueue.module.css">
+  <link rel="stylesheet" href="../_shared/styles/RelationshipFabric.module.css">
   <link rel="stylesheet" href="../_shared/styles/StakeholderGallery.module.css">
   <link rel="stylesheet" href="../_shared/styles/EngagementSelector.module.css">
   <link rel="stylesheet" href="../_shared/styles/TeamRoleSelector.module.css">
@@ -45,6 +56,7 @@
   <link rel="stylesheet" href="../_shared/styles/AddToRecord.module.css">
   <link rel="stylesheet" href="../_shared/styles/RecommendedActions.module.css">
   <link rel="stylesheet" href="../_shared/styles/TheWork.module.css">
+  <link rel="stylesheet" href="../_shared/styles/WorkSurface.module.css">
   <link rel="stylesheet" href="../_shared/styles/FileListSection.module.css">
   <link rel="stylesheet" href="../_shared/styles/FolioReportsDropdown.module.css">
   <link rel="stylesheet" href="../_shared/styles/FolioToolsDropdown.module.css">
@@ -71,7 +83,7 @@
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
-<div class="AccountDetailPage_view" data-ds-name="AccountDetailEditorial" data-ds-tier="surface" data-ds-spec="surfaces/AccountDetailEditorial.md">
+<div class="AccountDetailPage_view" data-ds-name="AccountDetailPage" data-ds-tier="surface" data-ds-spec="surfaces/AccountDetailPage.md">
 
   <section id="headline" class="entity-detail_chapterSection">
     <div class="AccountHero_hero EntityHeroBase_hero">
@@ -189,7 +201,7 @@
                 <div class="AccountOutlook_signalMeta">
                   <span class="AccountOutlook_badge AccountOutlook_badgeSage">Evaluating</span>
                   <span class="AccountOutlook_arrImpact">+$140K ARR</span>
-                  <span class="ProvenanceTag_tag" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from Glean</span>
+                  <span class="ProvenanceTag_tag" data-ds-tier="primitive" data-ds-name="ProvenanceTag" data-ds-spec="primitives/ProvenanceTag.md">from Glean</span>
                 </div>
               </div>
               <span class="AccountOutlook_itemActions">
@@ -880,6 +892,61 @@
   </div>
 
   <template data-account-conditional-branches>
+    <!-- Current AccountDetailPage conditional branch coverage. The visible static
+         reference above preserves a representative account state; this template
+         keeps conditionally rendered tabs/states aligned with routed source
+         components so fidelity audits can catch missing source modules. -->
+    <div class="RiskBriefingStatus_riskBriefingStatus">
+      <span class="RiskBriefingStatus_riskBriefingStatusLabel">Risk briefing</span>
+      <span class="RiskBriefingStatus_riskBriefingStatusDetail">Running</span>
+    </div>
+    <span class="FreshnessIndicator_root FreshnessIndicator_inline">
+      <span class="FreshnessIndicator_timeText">Updated today</span>
+    </span>
+    <div class="IntelligenceCorrection_wrapper">
+      <span class="IntelligenceCorrection_prompt">About this intelligence</span>
+    </div>
+    <div class="StakeholderGrid_section">
+      <div class="StakeholderGrid_subsectionLabel">Relationship map</div>
+    </div>
+    <div class="PendingStakeholderQueue_section">
+      <div class="PendingStakeholderQueue_label">Suggested stakeholders</div>
+    </div>
+    <div class="QuoteWall_wall">
+      <div class="QuoteWall_card">
+        <blockquote class="QuoteWall_quote">Customer quote</blockquote>
+      </div>
+    </div>
+    <div class="RelationshipFabric_list">
+      <div class="RelationshipFabric_row">
+        <span class="RelationshipFabric_label">Relationship fabric</span>
+      </div>
+    </div>
+    <section class="AboutThisDossier_section">
+      <div class="AboutThisDossier_eyebrow">About the dossier</div>
+      <div class="AboutThisDossier_card">About this dossier</div>
+    </section>
+    <div class="WorkSurface_commitmentList">
+      <div class="WorkSurface_commitmentCard">
+        <div class="WorkSurface_commitmentHeadline">What we've said we'll do</div>
+        <a class="WorkSurface_visibilityLink" href="#">See Context value →</a>
+      </div>
+      <div class="WorkSurface_recCard">
+        <div class="WorkSurface_recLabel">Sugges- tions</div>
+      </div>
+      <div class="WorkSurface_refRow">
+        <strong>Shared with the team</strong>
+      </div>
+      <div class="WorkSurface_timelineRow">
+        <span class="WorkSurface_timelineEvent">Recently landed</span>
+      </div>
+    </div>
+    <div class="AccountViewSwitcher_switcher">
+      <button type="button" class="AccountViewSwitcher_tab AccountViewSwitcher_tabActive">Health</button>
+      <button type="button" class="AccountViewSwitcher_tab">Context</button>
+      <button type="button" class="AccountViewSwitcher_tab">Work</button>
+    </div>
+
     <div class="entity-detail_folioActions">
       <div class="FolioReportsDropdown_wrapper">
         <button type="button" class="FolioReportsDropdown_button">Reports ▾</button>

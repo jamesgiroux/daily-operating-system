@@ -1,7 +1,7 @@
 # DayChart
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `DayChart`
@@ -85,7 +85,7 @@ Hover interaction: subtle Y translate + box-shadow on bars.
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.day-chart`, `.day-bars`, `.bar`, `.now-line`)
-- **Code:** to be implemented in `src/components/dashboard/DayChart.tsx`
+- **Code:** shipped in `src/components/dashboard/DayChart.tsx`
 
 ## Surfaces that consume it
 

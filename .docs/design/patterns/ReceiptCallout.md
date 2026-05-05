@@ -1,7 +1,7 @@
 # ReceiptCallout
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `ReceiptCallout`
@@ -97,7 +97,7 @@ When `mode="collapsed"`, renders as ClaimRow with chevron; click toggles to `exp
 
 - **Spec:** new for Wave 2
 - **v1.4.4 contract:** receipt experience per the Linear v1.4.4 project description ("inspectable receipts for provenance, trust, freshness, contradictions, corrections, and audit boundaries")
-- **Code:** to be implemented in `src/components/intelligence/ReceiptCallout.tsx`
+- **Code:** shipped in `src/components/intelligence/ReceiptCallout.tsx`
 
 ## Surfaces that consume it
 

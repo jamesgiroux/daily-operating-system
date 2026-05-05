@@ -68,6 +68,7 @@ export function AsOfTimestamp({
       className={clsx(styles.timestamp, className)}
       data-state={date ? "available" : "unavailable"}
       data-ds-name="AsOfTimestamp"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/AsOfTimestamp.md"
     >
       {prefix} {label}

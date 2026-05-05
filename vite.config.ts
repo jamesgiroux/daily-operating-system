@@ -3,6 +3,12 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 
+const ignoredWatchPaths = [
+  path.join(__dirname, "src-tauri/**"),
+  path.join(__dirname, ".worktrees/**"),
+  path.join(__dirname, ".codex/worktrees/**"),
+];
+
 // https://vitejs.dev/config/
 export default defineConfig({
   plugins: [react(), tailwindcss()],
@@ -26,7 +32,7 @@ export default defineConfig({
     port: 1420,
     strictPort: true,
     watch: {
-      ignored: ["**/src-tauri/**"],
+      ignored: ignoredWatchPaths,
     },
   },
 });

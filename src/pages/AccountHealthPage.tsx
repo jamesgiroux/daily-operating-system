@@ -343,7 +343,12 @@ export default function AccountHealthPage() {
 
   // Render the 5-slide review with scroll-snap
   return (
-    <div className={slides.slideContainer}>
+    <div
+      className={slides.slideContainer}
+      data-ds-tier="surface"
+      data-ds-name="AccountHealthPage"
+      data-ds-spec="surfaces/AccountHealthPage.md"
+    >
       {/* Slide 1: Cover */}
       <section id="cover" className={slides.slideSection}>
         <AccountHealthCover

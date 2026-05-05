@@ -43,7 +43,7 @@ exploration         →    promotion       →    canonical          →    supe
 - **Looking for a component?** Path is predictable: `primitives/[Name].md` or `patterns/[Name].md`.
 - **Building a new surface?** Start with `surfaces/[Name].md` — list the patterns and primitives it consumes. Anything missing is a gap. File it.
 - **Reviewing a PR?** Check that any UI it adds either consumes an existing entry or proposes a new one with an `.md` spec. No "we'll spec it later."
-- **Exporting to Figma / Playwright / Claude Design?** Tokens live in `tokens/` as markdown + the rendered CSS in `reference/_shared/tokens.css`. That's the export surface.
+- **Exporting to Figma / Playwright / Claude Design?** Tokens live in `tokens/` as markdown + the rendered CSS in `reference/_shared/styles/design-tokens.css`. `reference/_shared/tokens.css` is a compatibility entrypoint that imports the mirrored export and reference fonts.
 
 ## Naming discipline
 

@@ -1,7 +1,7 @@
 # EscalationQuote
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `EscalationQuote`
@@ -59,7 +59,7 @@ Composes a highlighted quote container, serif quote text, and mono/sans attribut
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/EscalationQuote.tsx`
+- **Roadmap target:** `src/components/meeting/EscalationQuote.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 183-186
 
 ## Surfaces that consume it

@@ -1,0 +1,182 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Action Detail · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../_shared/styles/ActionDetailPage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
+  <link rel="stylesheet" href="../_shared/styles/editable-date.module.css">
+  <link rel="stylesheet" href="../_shared/styles/editable-inline.module.css">
+  <link rel="stylesheet" href="../_shared/styles/editable-textarea.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
+
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+</head>
+<body
+  data-folio-label="Send Jen Park final MSA..."
+  data-folio-crumbs="Actions > Send Jen Park final MSA redline owner summary"
+  data-tint="terracotta"
+  data-active-page="actions"
+  data-nav-base="."
+  data-folio-readiness="Saving...,terracotta">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div
+  class="ActionDetailPage_container"
+  data-ds-name="ActionDetailPage"
+  data-ds-tier="surface"
+  data-ds-spec="surfaces/ActionDetailPage.md"
+>
+  <div class="ActionDetailPage_titleBand">
+    <button class="ActionDetailPage_toggleButton" type="button" title="Complete action" style="cursor:pointer;color:var(--color-spice-terracotta);opacity:1;">
+      <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><circle cx="12" cy="12" r="10"/></svg>
+    </button>
+    <div class="ActionDetailPage_titleWrapper">
+      <span class="EditableText_editable ActionDetailPage_titleEditable ActionDetailPage_titleDisplay">Send Jen Park final MSA redline owner summary</span>
+    </div>
+  </div>
+
+  <div class="ActionDetailPage_statusStrip">
+    <span class="ActionDetailPage_priorityPill ActionDetailPage_priorityP1">Urgent</span>
+    <span class="ActionDetailPage_statusText">Open</span>
+    <span class="ActionDetailPage_monoBadge">Waiting: Legal</span>
+    <a class="ActionDetailPage_monoBadgeLink" href="meeting.html">From meeting</a>
+  </div>
+
+  <div class="ActionDetailPage_priorityPickerRow">
+    <span class="ActionDetailPage_monoLabel">Priority</span>
+    <button class="ui-button ui-button-sm ui-button-outline" type="button">Urgent</button>
+    <button class="ui-button ui-button-sm ui-button-ghost" type="button">High</button>
+    <button class="ui-button ui-button-sm ui-button-ghost" type="button">Medium</button>
+    <button class="ui-button ui-button-sm ui-button-ghost" type="button">Low</button>
+  </div>
+
+  <div class="ActionDetailPage_separator"></div>
+
+  <section class="ActionDetailPage_section">
+    <div class="ActionDetailPage_sectionLabel">Context</div>
+    <div class="editable-textarea_display">
+      <p class="editable-textarea_displayText">Procurement needs a single owner before Friday's package. Summarize the legal redlines and call out what still needs finance sign-off.</p>
+    </div>
+    <p class="ActionDetailPage_autoNote">Auto-generated — may be updated by next briefing</p>
+  </section>
+
+  <section class="ActionDetailPage_section">
+    <div class="ActionDetailPage_sectionLabelWide">Reference</div>
+    <div class="ActionDetailPage_refSection">
+      <div class="ActionDetailPage_refRow">
+        <span class="ActionDetailPage_refKey">Account</span>
+        <div class="ActionDetailPage_refValue">
+          <span class="ActionDetailPage_accountChip">
+            <span class="ActionDetailPage_accountDot"></span>
+            <a class="ActionDetailPage_accountLink" href="account.html">Acme Corp</a>
+            <button class="ActionDetailPage_removeButton" type="button" title="Remove account">&times;</button>
+          </span>
+        </div>
+      </div>
+      <div class="ActionDetailPage_refRow">
+        <span class="ActionDetailPage_refKey">Due</span>
+        <div class="ActionDetailPage_refValue" style="color:var(--color-spice-terracotta);">
+          <span class="editable-date_wrapper">
+            <button class="editable-date_trigger" type="button">Apr 17, 2026</button>
+            <button class="editable-date_clearButton" type="button">Clear</button>
+          </span>
+        </div>
+      </div>
+      <div class="ActionDetailPage_refRow">
+        <span class="ActionDetailPage_refKey">Created</span>
+        <span class="ActionDetailPage_refValue">April 12, 2026</span>
+      </div>
+      <div class="ActionDetailPage_refRow">
+        <span class="ActionDetailPage_refKey">Completed</span>
+        <span class="ActionDetailPage_refValue">April 18, 2026</span>
+      </div>
+      <div class="ActionDetailPage_refRow">
+        <span class="ActionDetailPage_refKey">Source</span>
+        <div class="ActionDetailPage_refValue">
+          <a class="ActionDetailPage_accountLink" href="meeting.html">Acme renewal checkpoint</a>
+        </div>
+      </div>
+      <div class="ActionDetailPage_refRow">
+        <span class="ActionDetailPage_refKey">Manual</span>
+        <div class="ActionDetailPage_refValue">
+          <span class="editable-inline_display editable-inline_placeholder">Add source</span>
+          <input class="editable-inline_input" value="Slack #cs-team" aria-label="Manual source" />
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="ActionDetailPage_section">
+    <div class="ActionDetailPage_sectionLabel">Linear</div>
+    <div class="ActionDetailPage_linearPushRow">
+      <select class="ActionDetailPage_linearSelect" aria-label="Linear team">
+        <option>Select a project</option>
+        <option>Customer Success</option>
+      </select>
+      <button class="ActionDetailPage_linearPushReady" type="button">Create Linear Issue</button>
+    </div>
+    <div class="ActionDetailPage_refSection" aria-label="Linked Linear issue">
+      <div class="ActionDetailPage_refRow">
+        <span class="ActionDetailPage_refKey">Issue</span>
+        <div class="ActionDetailPage_refValue">
+          <a class="ActionDetailPage_accountLink" href="#">DOS-412</a>
+        </div>
+      </div>
+    </div>
+    <button class="ActionDetailPage_linearPushDisabled" type="button">Creating...</button>
+    <p class="ActionDetailPage_autoNote">Push to Linear is available for suggested and active actions.</p>
+  </section>
+
+  <div class="ActionDetailPage_actionBar">
+    <span class="ActionDetailPage_saveStatus" style="opacity:1;">Saving…</span>
+    <span class="ActionDetailPage_saveStatus">Saved</span>
+    <button class="ActionDetailPage_actionButton" type="button" style="cursor:pointer;opacity:1;">Mark Complete</button>
+    <button class="ActionDetailPage_actionButton" type="button">Reopen</button>
+  </div>
+
+  <template data-state="loading">
+    <div class="editorial-loading ActionDetailPage_loadingSkeleton">
+      <div class="ActionDetailPage_skeletonBar ActionDetailPage_skeletonTitle"></div>
+      <div class="ActionDetailPage_skeletonBar ActionDetailPage_skeletonHeadline"></div>
+      <div class="ActionDetailPage_skeletonBar ActionDetailPage_skeletonSubhead"></div>
+      <div class="ActionDetailPage_skeletonRule"></div>
+      <div class="ActionDetailPage_skeletonBody">
+        <div class="ActionDetailPage_skeletonBlock ActionDetailPage_skeletonBlockSmall"></div>
+        <div class="ActionDetailPage_skeletonBlock ActionDetailPage_skeletonBlockLarge"></div>
+      </div>
+    </div>
+  </template>
+
+  <template data-state="error-and-completed">
+    <div class="ActionDetailPage_errorState">
+      <p class="ActionDetailPage_errorTitle">Something went wrong</p>
+      <p class="ActionDetailPage_errorMessage">Action not found</p>
+      <button class="ActionDetailPage_retryButton" type="button">Try again</button>
+    </div>
+    <span class="ActionDetailPage_titleEditable ActionDetailPage_titleCompleted">Completed action title</span>
+    <input class="ActionDetailPage_titleInput" value="Editing title" aria-label="Action title" />
+  </template>
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

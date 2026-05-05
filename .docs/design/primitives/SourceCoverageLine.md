@@ -1,7 +1,7 @@
 # SourceCoverageLine
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `SourceCoverageLine`
@@ -59,7 +59,7 @@ type SourceCoverageLineProps = {
 - **Spec:** new for Wave 2
 - **Substrate contract:** v1.4.0 source manifest and `source_asof` metadata used by receipt and inspection surfaces
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
-- **Code:** to be implemented in `src/components/ui/SourceCoverageLine.tsx`
+- **Code:** shipped in `src/components/ui/SourceCoverageLine.tsx`
 
 ## Surfaces that consume it
 

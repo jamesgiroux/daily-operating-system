@@ -37,6 +37,7 @@ export function Segmented<Value extends string | number = string>({
       className={clsx(styles.group, styles[tint], className)}
       data-disabled={disabled}
       data-ds-name="Segmented"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/Segmented.md"
       {...rest}
     >

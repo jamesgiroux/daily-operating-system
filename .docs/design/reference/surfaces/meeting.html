@@ -48,7 +48,7 @@
 <div class="MagazinePageLayout_magazinePage">
 <main class="MagazinePageLayout_pageContainer">
 
-<div class="meeting-intel_pageContainer" data-ds-name="MeetingDetailPage" data-ds-tier="surface" data-ds-spec="surfaces/MeetingDetailPage.md">
+<div class="meeting-intel_pageContainer" data-ds-name="MeetingDetail" data-ds-tier="surface" data-ds-spec="surfaces/MeetingDetail.md">
 
   <!-- Post-meeting intelligence — replaces flat outcomes when available. -->
   <div class="meeting-intel_outcomesWrap">
@@ -328,7 +328,7 @@
       <div class="meeting-intel_entityChipsWrap">
         <div class="flex flex-col gap-2">
           <div class="flex flex-wrap items-center gap-2">
-            <span class="Pill_pill Pill_neutral Pill_standard RemovableChip_chip EntityChip_chip EntityChip_chip-account" data-tone="neutral" data-ds-name="RemovableChip" data-ds-spec="primitives/RemovableChip.md" data-entity-type="account">
+            <span class="Pill_pill Pill_neutral Pill_standard RemovableChip_chip EntityChip_chip EntityChip_chip-account" data-tone="neutral" data-ds-tier="primitive" data-ds-name="RemovableChip" data-ds-spec="primitives/RemovableChip.md" data-entity-type="account">
               <span class="RemovableChip_label">
                 <svg class="EntityChip_icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M6 22V4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18Z"/><path d="M6 12H4a2 2 0 0 0-2 2v6a2 2 0 0 0 2 2h2"/><path d="M18 9h2a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2h-2"/><path d="M10 6h4"/><path d="M10 10h4"/><path d="M10 14h4"/><path d="M10 18h4"/></svg>
                 <span class="EntityChip_name"><a href="account.html">Acme Corp</a></span>
@@ -717,6 +717,23 @@
 
 </main>
 </div>
+
+<template data-meeting-conditional-branches>
+  <div>Building context</div>
+  <div>Updating briefing...</div>
+  <div>No briefing available</div>
+  <div>Meeting context will appear here after the daily briefing runs.</div>
+  <div>Meeting context will appear here once analysis completes.</div>
+  <div>This meeting&apos;s context wasn&apos;t captured before it started.</div>
+  <div>No agenda prepared yet.</div>
+  <div>No linked account or project</div>
+  <div>Not ready yet</div>
+  <div>New information available since your last view</div>
+  <div>Meeting Outcomes</div>
+  <div>Format</div>
+  <div>Plain text</div>
+  <div>Markdown</div>
+</template>
 
 <script src="../_shared/chrome.js"></script>
 <script src="../_shared/inspector.js"></script>

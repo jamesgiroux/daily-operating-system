@@ -50,6 +50,7 @@ export function ThreadMark({
       type={type}
       className={clsx(styles.threadMark, persistent && styles.persistent, className)}
       data-ds-name="ThreadMark"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/ThreadMark.md"
       data-thread-mark=""
       data-thread-id={threadId}

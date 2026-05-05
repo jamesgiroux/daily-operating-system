@@ -48,6 +48,7 @@ export function FormRow({
         className,
       )}
       data-ds-name="FormRow"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/FormRow.md"
       {...rest}
     >

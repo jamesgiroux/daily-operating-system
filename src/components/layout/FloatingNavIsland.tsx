@@ -179,7 +179,12 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   // ─── Chapter-only mode (OnboardingFlow) ───────────────────────────────
   if (!hasGlobalPill && hasChapters) {
     return (
-      <nav className={`${styles.navIslandGlobal} ${styles[`color${capitalize(activeColor)}`] || ''}`}>
+      <nav
+        className={`${styles.navIslandGlobal} ${styles[`color${capitalize(activeColor)}`] || ''}`}
+        data-ds-name="FloatingNavIsland"
+        data-ds-tier="pattern"
+        data-ds-spec="patterns/FloatingNavIsland.md"
+      >
         {/* Home button — Brand mark */}
         <button
           className={styles.navIslandMark}
@@ -259,7 +264,12 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
 
   // ─── Dual-pill render ─────────────────────────────────────────────────
   return (
-    <div className={styles.navIslandContainer}>
+    <div
+      className={styles.navIslandContainer}
+      data-ds-name="FloatingNavIsland"
+      data-ds-tier="pattern"
+      data-ds-spec="patterns/FloatingNavIsland.md"
+    >
       {/* LOCAL PILL — chapter/section navigation (left side) */}
       <nav
         ref={localPillRef}

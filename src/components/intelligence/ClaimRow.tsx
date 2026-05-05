@@ -194,6 +194,7 @@ export function ClaimRow({
       data-state={state}
       data-loading={loading ? "true" : undefined}
       data-ds-name="ClaimRow"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/ClaimRow.md"
       aria-busy={loading ? "true" : undefined}
       {...articleProps}

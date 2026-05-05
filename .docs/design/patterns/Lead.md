@@ -1,7 +1,7 @@
 # Lead
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `Lead`
@@ -60,7 +60,7 @@ The `.sharp` inline highlight (subtle turmeric underline gradient) marks the mos
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.lead`, `.lead-sentence`, `.lead-eyebrow`)
-- **Code:** to be implemented in `src/components/dashboard/Lead.tsx` (Wave 1 follow-on for v1.4.3)
+- **Roadmap target:** `src/components/dashboard/Lead.tsx` (not shipped yet)
 
 ## Surfaces that consume it
 

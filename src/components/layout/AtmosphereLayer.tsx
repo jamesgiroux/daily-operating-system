@@ -30,7 +30,12 @@ export const AtmosphereLayer: React.FC<AtmosphereLayerProps> = ({
   className = '',
 }) => {
   return (
-    <div className={`${styles.atmosphere} ${styles[color]} ${className}`}>
+    <div
+      className={`${styles.atmosphere} ${styles[color]} ${className}`}
+      data-ds-name="AtmosphereLayer"
+      data-ds-tier="pattern"
+      data-ds-spec="patterns/AtmosphereLayer.md"
+    >
       {/* Watermark asterisk — subtly visible, for visual interest */}
       <div className={`${styles.watermark} ${styles[`watermark${capitalize(color)}`] || ''}`}>
         <BrandMark size="100%" />

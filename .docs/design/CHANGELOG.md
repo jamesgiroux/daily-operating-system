@@ -107,7 +107,7 @@ Format:
 
 ### Added
 
-- **Tokens** (4 specs): `color`, `typography`, `spacing`, `motion`. Color spec includes 5 entity color aliases (`--color-entity-{account,project,person,action,user}`) reintroduced via DOS-357.
+- **Tokens** (9 specs): `color`, `typography`, `spacing`, `motion`, `layout`, `radius`, `shadows`, `glass`, `z-index`. Color spec includes named surface/entity color aliases for account, project, person, action, and self.
 - **Primitives** (7 specs): `Pill` (canonical), `TrustBandBadge` (proposed, new per v1.4.0 substrate), `IntelligenceQualityBadge` (canonical, existing), `FreshnessIndicator` (proposed, new), `ProvenanceTag` (canonical, existing), `EntityChip` (canonical, post-DOS-357), `TypeBadge` (canonical).
 - **Patterns** (11 specs): `FolioBar`, `FloatingNavIsland` (dual-pill production component, the canonical local-nav pattern per D2), `AtmosphereLayer`, `MarginGrid`, `ChapterHeading` (5 chrome/layout); `Lead`, `DayChart`, `MeetingSpineItem`, `EntityPortraitCard`, `ThreadMark`, `AskAnythingDock` (6 D-spine briefing patterns).
 - **Surfaces** (1 spec): `DailyBriefing` — first canonical surface spec, documents chapter inventory for FloatingNavIsland adoption.
@@ -117,7 +117,7 @@ Format:
 ### Notes
 
 - Wave 1 closes the v1.4.3 (Briefing) substrate prep. v1.4.3 implementation can begin against these specs.
-- Trust band CSS tokens (`--color-trust-{likely-current,use-with-caution,needs-verification}`) are proposed in `tokens/color.md` but not yet added to runtime CSS — added during Wave 1 implementation.
+- Trust band CSS tokens (`--color-trust-{likely-current,use-with-caution,needs-verification}` plus `8`, `10`, `12`, `15` alpha aliases) are shipped in runtime CSS and documented in `tokens/color.md`.
 - Local-nav decision: `FloatingNavIsland` (production dual-pill) is canonical. Mockup `DayStrip` and `SectionTabbar` are rejected per D2; surfaces provide chapters to FloatingNavIsland instead.
 - 16 Linear issues (DOS-353 through DOS-361) track the remaining waves and cross-cutting work.
 

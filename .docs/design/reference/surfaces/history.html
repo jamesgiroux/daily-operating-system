@@ -1,0 +1,116 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Processing History · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../_shared/styles/HistoryPage.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EditorialPageHeader.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+</head>
+<body
+  data-folio-label="Processing History"
+  data-folio-crumbs="Reference > Surfaces > Processing History"
+  data-tint="olive"
+  data-active-page="dropbox"
+  data-nav-base=".">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div
+  class="HistoryPage_container"
+  data-ds-name="HistoryPage"
+  data-ds-tier="surface"
+  data-ds-spec="surfaces/HistoryPage.md"
+>
+  <section class="EditorialPageHeader_header EditorialPageHeader_scaleStandard EditorialPageHeader_widthStandard EditorialPageHeader_ruleStandard">
+    <div class="EditorialPageHeader_topRow">
+      <div class="EditorialPageHeader_titleBlock">
+        <h1 class="EditorialPageHeader_title">Processing History</h1>
+      </div>
+      <div class="EditorialPageHeader_meta">5 entries</div>
+    </div>
+    <div class="EditorialPageHeader_rule"></div>
+  </section>
+
+  <div class="HistoryPage_headerRow">
+    <span class="HistoryPage_headerCell">FILE</span>
+    <span class="HistoryPage_headerCell">CLASS</span>
+    <span class="HistoryPage_headerCell">STATUS</span>
+    <span class="HistoryPage_headerCell">DESTINATION</span>
+    <span class="HistoryPage_headerCell">TIME</span>
+  </div>
+
+  <div class="HistoryPage_entryRow HistoryPage_entryRowBorder">
+    <span class="HistoryPage_cellFilename" title="acme-renewal-notes.pdf">acme-renewal-notes.pdf</span>
+    <span class="HistoryPage_cellMono">account</span>
+    <span class="HistoryPage_statusCell">
+      <span class="HistoryPage_statusDot HistoryPage_statusDotSuccess"></span>
+      <span class="HistoryPage_cellMono">success</span>
+    </span>
+    <span class="HistoryPage_cellMono HistoryPage_cellTruncate" title="Accounts / Acme Corp / Notes">Accounts / Acme Corp / Notes</span>
+    <span class="HistoryPage_cellMono HistoryPage_cellNoWrap">May 5, 9:18 AM</span>
+  </div>
+
+  <div class="HistoryPage_entryRow HistoryPage_entryRowBorder">
+    <span class="HistoryPage_cellFilename" title="northwind-q2-launch.txt">northwind-q2-launch.txt</span>
+    <span class="HistoryPage_cellMono">project</span>
+    <span class="HistoryPage_statusCell">
+      <span class="HistoryPage_statusDot HistoryPage_statusDotSuccess"></span>
+      <span class="HistoryPage_cellMono">success</span>
+    </span>
+    <span class="HistoryPage_cellMono HistoryPage_cellTruncate" title="Projects / Q2 Launch">Projects / Q2 Launch</span>
+    <span class="HistoryPage_cellMono HistoryPage_cellNoWrap">May 5, 8:42 AM</span>
+  </div>
+
+  <div class="HistoryPage_entryRow">
+    <span class="HistoryPage_cellFilename" title="unknown-forward.eml">unknown-forward.eml</span>
+    <span class="HistoryPage_cellMono">email</span>
+    <span class="HistoryPage_statusCell">
+      <span class="HistoryPage_statusDot HistoryPage_statusDotError"></span>
+      <span class="HistoryPage_cellMono HistoryPage_statusTextError">error</span>
+    </span>
+    <span class="HistoryPage_cellMono HistoryPage_cellTruncate" title="">—</span>
+    <span class="HistoryPage_cellMono HistoryPage_cellNoWrap">May 4, 4:12 PM</span>
+    <div class="HistoryPage_errorRow">Could not classify this file with enough confidence. Send it through inbox triage.</div>
+  </div>
+
+  <div class="finis-marker">
+    <div class="finis-marker-marks">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+    </div>
+  </div>
+
+  <template data-state="loading-error-empty">
+    <div class="editorial-loading">Loading history</div>
+    <div class="editorial-error">Failed to load history</div>
+    <div class="empty-state">
+      <h2>No processing history yet</h2>
+      <p>Files you route through DailyOS will appear here.</p>
+      <button class="ui-button ui-button-default ui-button-default-size" type="button">Go to inbox</button>
+    </div>
+  </template>
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

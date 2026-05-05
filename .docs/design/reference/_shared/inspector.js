@@ -8,7 +8,7 @@
  * Convention (see SYSTEM-MAP.md → Inspectability):
  *   data-ds-tier="token | primitive | pattern | surface"
  *   data-ds-name="VitalsStrip"
- *   data-ds-spec="primitives/VitalsStrip.md"
+ *   data-ds-spec="patterns/VitalsStrip.md"
  *   data-ds-variant="default"            (optional)
  *   data-ds-state="loading | error | empty"   (optional)
  */

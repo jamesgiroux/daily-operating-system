@@ -4,7 +4,7 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 
 ## Summary
 
-- Audited: 18 primitives + 31 patterns (49 total)
+- Audited: 18 primitives + 32 patterns (50 total after `VitalsStrip` promotion)
 - Recommend extract: 14 primitives + 10 patterns = 24 entries (5 clusters)
 - Recommend keep-embedded: 1 entry (TypeBadge)
 - Already canonical (no action): 3 primitives + 21 patterns = 24 entries

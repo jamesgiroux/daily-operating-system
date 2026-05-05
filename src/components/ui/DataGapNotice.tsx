@@ -25,6 +25,7 @@ export function DataGapNotice({
       className={clsx(styles.notice, className)}
       data-severity={severity}
       data-ds-name="DataGapNotice"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/DataGapNotice.md"
     >
       <Icon className={styles.icon} aria-hidden="true" />

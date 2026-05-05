@@ -372,7 +372,12 @@ export default function EbrQbrPage() {
 
   // Render the 7-slide review with scroll-snap
   return (
-    <div className={slides.slideContainer}>
+    <div
+      className={slides.slideContainer}
+      data-ds-tier="surface"
+      data-ds-name="EbrQbrPage"
+      data-ds-spec="surfaces/EbrQbrPage.md"
+    >
       {/* Slide 1: Cover */}
       <section id="cover" className={slides.slideSection}>
         <EbrCover

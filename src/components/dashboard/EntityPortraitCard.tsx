@@ -94,6 +94,7 @@ export function EntityPortraitCard({
       className={clsx(styles.card, ACCENT_CLASS[accent], className)}
       data-entity-type={entityType}
       data-ds-name="EntityPortraitCard"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/EntityPortraitCard.md"
       {...rest}
     >

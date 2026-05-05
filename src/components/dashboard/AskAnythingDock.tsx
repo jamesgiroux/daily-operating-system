@@ -177,6 +177,7 @@ export function AskAnythingDock({
       id={id}
       onSubmit={handleSubmit}
       data-ds-name="AskAnythingDock"
+      data-ds-tier="pattern"
       data-ds-spec="patterns/AskAnythingDock.md"
       data-placement={placement}
       {...rest}

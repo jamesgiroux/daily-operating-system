@@ -45,6 +45,8 @@
 <link rel="stylesheet" href="../_shared/styles/GlanceRow.module.css">
 <link rel="stylesheet" href="../_shared/styles/FormRow.module.css">
 <link rel="stylesheet" href="../_shared/styles/SurfaceMasthead.module.css">
+<link rel="stylesheet" href="../_shared/styles/VitalsStrip.module.css">
+<link rel="stylesheet" href="../_shared/styles/EditableVitalsStrip.module.css">
 <link rel="stylesheet" href="../_shared/chrome.css">
 <link rel="stylesheet" href="../_shared/inspector.css">
 
@@ -195,8 +197,8 @@
 
   .ds-grid {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: var(--space-md);
+    grid-template-columns: minmax(0, 1fr);
+    gap: var(--space-lg);
   }
 
   .ds-card {
@@ -207,6 +209,10 @@
     border: 1px solid var(--color-rule-light);
     border-radius: var(--radius-editorial-sm);
     background: var(--color-paper-warm-white);
+  }
+
+  .ds-card[data-status="planned"] {
+    border-style: dashed;
   }
 
   .ds-card-header {
@@ -234,6 +240,14 @@
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
+  }
+
+  .ds-card[data-status="planned"] .ds-tier {
+    background: var(--color-spice-turmeric);
+  }
+
+  .ds-card[data-status="planned"] .ds-tier::after {
+    content: " / roadmap";
   }
 
   .ds-card-title {
@@ -364,10 +378,10 @@
     <h1 class="ds-title">Patterns</h1>
     <p class="ds-lede">Composed, opinionated UI contracts. This strict pass renders every promoted demo with canonical scoped module classes only.</p>
     <div class="ds-meta">
-      <span>31 patterns</span>
-      <span>31 canonical demos</span>
-      <span>0 promotion-needed demos</span>
-      <span>0 showcase-local demo classes</span>
+      <span>32 patterns</span>
+      <span>17 canonical demos</span>
+      <span>15 roadmap demos</span>
+      <span>render mode shown per card</span>
     </div>
     <nav class="ds-reference-nav" aria-label="Reference sections">
       <a href="../index.html">Index</a>
@@ -388,11 +402,11 @@
   <section id="editorial" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Editorial Briefing</h2>
-      <span class="ds-section-count">8 patterns</span>
+      <span class="ds-section-count">6 canonical · 2 roadmap</span>
     </div>
     <p class="ds-section-lede">DailyBriefing and editorial-surface patterns: lead voice, marginalia, day shape, meeting spine, moving entity portraits, and conversational affordances.</p>
     <div class="ds-grid">
-      <article id="Lead" class="ds-card">
+      <article id="Lead" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">Lead</h3></div>
           <a class="ds-spec-link" href="../../patterns/Lead.md">Spec</a>
@@ -483,7 +497,7 @@
         </div>
       </article>
 
-      <article id="MeetingSpineItem" class="ds-card">
+      <article id="MeetingSpineItem" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MeetingSpineItem</h3></div>
           <a class="ds-spec-link" href="../../patterns/MeetingSpineItem.md">Spec</a>
@@ -665,7 +679,7 @@
   <section id="trust" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Trust UI</h2>
-      <span class="ds-section-count">7 patterns</span>
+      <span class="ds-section-count">3 canonical · 4 roadmap</span>
     </div>
     <p class="ds-section-lede">The claim, provenance, freshness, correction, and receipt layer. These patterns answer whether intelligence can be trusted and why.</p>
     <div class="ds-grid">
@@ -784,7 +798,7 @@
         </div>
       </article>
 
-      <article id="AboutThisIntelligencePanel" class="ds-card">
+      <article id="AboutThisIntelligencePanel" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AboutThisIntelligencePanel</h3></div>
           <a class="ds-spec-link" href="../../patterns/AboutThisIntelligencePanel.md">Spec</a>
@@ -803,7 +817,7 @@
         </div>
       </article>
 
-      <article id="DossierSourceCoveragePanel" class="ds-card">
+      <article id="DossierSourceCoveragePanel" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DossierSourceCoveragePanel</h3></div>
           <a class="ds-spec-link" href="../../patterns/DossierSourceCoveragePanel.md">Spec</a>
@@ -825,7 +839,7 @@
         </div>
       </article>
 
-      <article id="ConsistencyFindingBanner" class="ds-card">
+      <article id="ConsistencyFindingBanner" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ConsistencyFindingBanner</h3></div>
           <a class="ds-spec-link" href="../../patterns/ConsistencyFindingBanner.md">Spec</a>
@@ -840,7 +854,7 @@
         </div>
       </article>
 
-      <article id="StaleReportBanner" class="ds-card">
+      <article id="StaleReportBanner" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">StaleReportBanner</h3></div>
           <a class="ds-spec-link" href="../../patterns/StaleReportBanner.md">Spec</a>
@@ -860,9 +874,9 @@
   <section id="forms" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Forms &amp; Mastheads</h2>
-      <span class="ds-section-count">3 patterns</span>
+      <span class="ds-section-count">4 patterns</span>
     </div>
-    <p class="ds-section-lede">Settings and non-briefing surface openers: structured mastheads, at-a-glance stats, and predictable settings rows.</p>
+    <p class="ds-section-lede">Settings and non-briefing surface openers: structured mastheads, at-a-glance stats, entity vitals, and predictable settings rows.</p>
     <div class="ds-grid">
       <article id="SurfaceMasthead" class="ds-card">
         <div class="ds-card-header">
@@ -895,6 +909,88 @@
             </div>
             <div class="SurfaceMasthead_rule"></div>
           </header>
+        </div>
+      </article>
+
+      <article id="VitalsStrip" class="ds-card">
+        <div class="ds-card-header">
+          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">VitalsStrip</h3></div>
+          <a class="ds-spec-link" href="../../patterns/VitalsStrip.md">Spec</a>
+        </div>
+        <p class="ds-composition"><strong>Composes:</strong> horizontal rule pair, mono vital values, dot separators, finite highlights, optional source attribution, and editable inline controls.</p>
+        <div class="ds-variants"><span>read-only</span><span>editable</span><span>attributed</span><span>empty editable</span></div>
+        <div class="ds-demo" data-ds-name="VitalsStrip" data-ds-tier="pattern" data-ds-spec="patterns/VitalsStrip.md">
+          <div class="VitalsStrip_strip" aria-label="Read-only entity vitals">
+            <div class="VitalsStrip_items">
+              <span class="VitalsStrip_item">
+                <span class="VitalsStrip_fieldStack">
+                  <span class="VitalsStrip_vitalText" data-highlight="turmeric">$240k ARR</span>
+                  <span class="VitalsStrip_attribution">Salesforce</span>
+                </span>
+              </span>
+              <span class="VitalsStrip_item">
+                <span class="VitalsStrip_separatorDot" aria-hidden="true"></span>
+                <span class="VitalsStrip_fieldStack">
+                  <span class="VitalsStrip_vitalText" data-highlight="saffron">Healthy</span>
+                  <span class="VitalsStrip_attribution">Gong</span>
+                </span>
+              </span>
+              <span class="VitalsStrip_item">
+                <span class="VitalsStrip_separatorDot" aria-hidden="true"></span>
+                <span class="VitalsStrip_fieldStack">
+                  <span class="VitalsStrip_vitalText" data-highlight="olive">Renewal in 44d</span>
+                </span>
+              </span>
+              <span class="VitalsStrip_item">
+                <span class="VitalsStrip_separatorDot" aria-hidden="true"></span>
+                <span class="VitalsStrip_fieldStack">
+                  <span class="VitalsStrip_vitalText" data-highlight="larkspur">8 meetings / quarter</span>
+                </span>
+              </span>
+            </div>
+          </div>
+          <div class="EditableVitalsStrip_strip" aria-label="Editable entity vitals">
+            <div class="EditableVitalsStrip_stripItems">
+              <span class="EditableVitalsStrip_itemWithSeparator">
+                <span class="EditableVitalsStrip_fieldStack">
+                  <span class="EditableVitalsStrip_fieldRow EditableVitalsStrip_fieldRowGap">
+                    <span class="EditableVitalsStrip_clickableFieldValue" data-highlight="turmeric">$240k ARR</span>
+                  </span>
+                  <span class="EditableVitalsStrip_sourceAttribution">Salesforce</span>
+                </span>
+              </span>
+              <span class="EditableVitalsStrip_itemWithSeparator">
+                <span class="EditableVitalsStrip_separatorDot" aria-hidden="true"></span>
+                <span class="EditableVitalsStrip_fieldStack">
+                  <span class="EditableVitalsStrip_fieldRow">
+                    <span class="EditableVitalsStrip_clickableFieldValue EditableVitalsStrip_emptyFieldValue">Owner</span>
+                  </span>
+                </span>
+              </span>
+              <span class="EditableVitalsStrip_itemWithSeparator">
+                <span class="EditableVitalsStrip_separatorDot" aria-hidden="true"></span>
+                <span class="EditableVitalsStrip_fieldStack">
+                  <span class="EditableVitalsStrip_fieldRow">
+                    <select class="EditableVitalsStrip_inlineSelect" aria-label="Health">
+                      <option>Healthy</option>
+                      <option>Watch</option>
+                    </select>
+                  </span>
+                </span>
+              </span>
+              <span class="EditableVitalsStrip_itemWithSeparator">
+                <span class="EditableVitalsStrip_separatorDot" aria-hidden="true"></span>
+                <span class="EditableVitalsStrip_fieldStack">
+                  <span class="EditableVitalsStrip_fieldRow EditableVitalsStrip_fieldRowGap">
+                    <span class="EditableVitalsStrip_inlineInputRoot">
+                      <span class="EditableVitalsStrip_inputPrefix">$</span>
+                      <input class="EditableVitalsStrip_inlineInput EditableVitalsStrip_inlineInputNumber" value="240000" aria-label="ARR" />
+                    </span>
+                  </span>
+                </span>
+              </span>
+            </div>
+          </div>
         </div>
       </article>
 
@@ -948,11 +1044,11 @@
   <section id="meeting" class="ds-section">
     <div class="ds-section-header">
       <h2 class="ds-section-title">Meeting Intelligence</h2>
-      <span class="ds-section-count">10 patterns</span>
+      <span class="ds-section-count">1 canonical · 9 roadmap</span>
     </div>
     <p class="ds-section-lede">Post-meeting and meeting-detail patterns: plans versus outcomes, behavior signals, findings, champion health, commitments, suggestions, and role changes.</p>
     <div class="ds-grid">
-      <article id="FolioActions" class="ds-card">
+      <article id="FolioActions" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FolioActions</h3></div>
           <a class="ds-spec-link" href="../../patterns/FolioActions.md">Spec</a>
@@ -969,7 +1065,7 @@
         </div>
       </article>
 
-      <article id="AgendaThreadList" class="ds-card">
+      <article id="AgendaThreadList" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">AgendaThreadList</h3></div>
           <a class="ds-spec-link" href="../../patterns/AgendaThreadList.md">Spec</a>
@@ -985,7 +1081,7 @@
         </div>
       </article>
 
-      <article id="PredictionsVsRealityGrid" class="ds-card">
+      <article id="PredictionsVsRealityGrid" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">PredictionsVsRealityGrid</h3></div>
           <a class="ds-spec-link" href="../../patterns/PredictionsVsRealityGrid.md">Spec</a>
@@ -1005,7 +1101,7 @@
         </div>
       </article>
 
-      <article id="SignalGrid" class="ds-card">
+      <article id="SignalGrid" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">SignalGrid</h3></div>
           <a class="ds-spec-link" href="../../patterns/SignalGrid.md">Spec</a>
@@ -1022,7 +1118,7 @@
         </div>
       </article>
 
-      <article id="EscalationQuote" class="ds-card">
+      <article id="EscalationQuote" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">EscalationQuote</h3></div>
           <a class="ds-spec-link" href="../../patterns/EscalationQuote.md">Spec</a>
@@ -1037,7 +1133,7 @@
         </div>
       </article>
 
-      <article id="FindingsTriad" class="ds-card">
+      <article id="FindingsTriad" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">FindingsTriad</h3></div>
           <a class="ds-spec-link" href="../../patterns/FindingsTriad.md">Spec</a>
@@ -1060,7 +1156,7 @@
         </div>
       </article>
 
-      <article id="ChampionHealthBlock" class="ds-card">
+      <article id="ChampionHealthBlock" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">ChampionHealthBlock</h3></div>
           <a class="ds-spec-link" href="../../patterns/ChampionHealthBlock.md">Spec</a>
@@ -1074,7 +1170,7 @@
         </div>
       </article>
 
-      <article id="CommitmentRow" class="ds-card">
+      <article id="CommitmentRow" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">CommitmentRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/CommitmentRow.md">Spec</a>
@@ -1105,7 +1201,7 @@
         </div>
       </article>
 
-      <article id="RoleTransitionRow" class="ds-card">
+      <article id="RoleTransitionRow" class="ds-card" data-status="planned">
         <div class="ds-card-header">
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">RoleTransitionRow</h3></div>
           <a class="ds-spec-link" href="../../patterns/RoleTransitionRow.md">Spec</a>

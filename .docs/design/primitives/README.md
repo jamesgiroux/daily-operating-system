@@ -10,39 +10,39 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 
 | Name | Status | Job (one line) | Source |
 |---|---|---|---|
-| [`Pill`](./Pill.md) | canonical | Visual primitive for inline status / label / category badges | `_shared/.pill` |
-| [`TrustBandBadge`](./TrustBandBadge.md) | proposed | v1.4.0 surface trust band (`likely_current` / `use_with_caution` / `needs_verification`) | new (DOS-320 contract) |
-| [`IntelligenceQualityBadge`](./IntelligenceQualityBadge.md) | canonical | Intelligence completeness (`sparse` / `developing` / `ready` / `fresh`) | `src/components/entity/` |
-| [`FreshnessIndicator`](./FreshnessIndicator.md) | proposed | Raw recency timestamp + relative age | new (`source_asof` contract) |
-| [`ProvenanceTag`](./ProvenanceTag.md) | canonical | Source attribution label, suppresses synthesized | `src/components/ui/` |
-| [`EntityChip`](./EntityChip.md) | canonical | Entity reference with entity-type color | `src/components/ui/{meeting,email}-entity-chip.tsx` |
-| [`TypeBadge`](./TypeBadge.md) | canonical | Account-type categorical (Customer / Internal / Partner) | `_shared/.type-badge` + AccountHero |
+| [`Pill`](./Pill.md) | canonical/shipped | Visual primitive for inline status / label / category badges | `src/components/ui/Pill.tsx` |
+| [`TrustBandBadge`](./TrustBandBadge.md) | canonical/shipped | v1.4.0 surface trust band (`likely_current` / `use_with_caution` / `needs_verification`) | `src/components/ui/TrustBandBadge.tsx` |
+| [`IntelligenceQualityBadge`](./IntelligenceQualityBadge.md) | canonical/shipped | Intelligence completeness (`sparse` / `developing` / `ready` / `fresh`) | `src/components/entity/` |
+| [`FreshnessIndicator`](./FreshnessIndicator.md) | canonical/shipped | Raw recency timestamp + relative age | `src/components/ui/FreshnessIndicator.tsx` |
+| [`ProvenanceTag`](./ProvenanceTag.md) | canonical/shipped | Source attribution label, suppresses synthesized | `src/components/ui/` |
+| [`EntityChip`](./EntityChip.md) | canonical/shipped | Entity reference with entity-type color | `src/components/ui/EntityChip.tsx` |
+| [`TypeBadge`](./TypeBadge.md) | canonical/shipped | Account-type categorical (Customer / Internal / Partner) | `_shared/.type-badge` + AccountHero |
 
 ### Wave 2 (v1.4.4 trust UI, 0.2.0)
 
 | Name | Status | Job (one line) | Source |
 |---|---|---|---|
-| [`SourceCoverageLine`](./SourceCoverageLine.md) | proposed | Compact line summarizing source coverage (e.g., "Glean · 4 sources · 2 stale") | new |
-| [`ConfidenceScoreChip`](./ConfidenceScoreChip.md) | proposed | Numerical confidence score chip with threshold-based tone | new |
-| [`VerificationStatusFlag`](./VerificationStatusFlag.md) | proposed | Consistency state per v1.4.0 (`ok` / `corrected` / `flagged`) | new |
-| [`DataGapNotice`](./DataGapNotice.md) | proposed | Inline warning that intelligence is missing critical inputs | new |
-| [`AsOfTimestamp`](./AsOfTimestamp.md) | proposed | Static "as of" timestamp label (companion to FreshnessIndicator) | new |
+| [`SourceCoverageLine`](./SourceCoverageLine.md) | canonical/shipped | Compact line summarizing source coverage (e.g., "Glean · 4 sources · 2 stale") | `src/components/ui/SourceCoverageLine.tsx` |
+| [`ConfidenceScoreChip`](./ConfidenceScoreChip.md) | canonical/shipped | Numerical confidence score chip with threshold-based tone | `src/components/ui/ConfidenceScoreChip.tsx` |
+| [`VerificationStatusFlag`](./VerificationStatusFlag.md) | canonical/shipped | Consistency state per v1.4.0 (`ok` / `corrected` / `flagged`) | `src/components/ui/VerificationStatusFlag.tsx` |
+| [`DataGapNotice`](./DataGapNotice.md) | canonical/shipped | Inline warning that intelligence is missing critical inputs | `src/components/ui/DataGapNotice.tsx` |
+| [`AsOfTimestamp`](./AsOfTimestamp.md) | canonical/shipped | Static "as of" timestamp label (companion to FreshnessIndicator) | `src/components/ui/AsOfTimestamp.tsx` |
 
 ### Wave 3 (Settings substrate, 0.3.0)
 
 | Name | Status | Job (one line) | Source |
 |---|---|---|---|
-| [`InlineInput`](./InlineInput.md) | proposed | Click-to-edit text input with pencil affordance | mockup `settings/parts.jsx` |
-| [`Switch`](./Switch.md) | proposed | Aria-checked toggle button | mockup `settings/parts.jsx` |
-| [`Segmented`](./Segmented.md) | proposed | Tinted button group with `aria-pressed` state | mockup `settings/parts.jsx` |
-| [`RemovableChip`](./RemovableChip.md) | proposed | Chip with × removal affordance (distinct from `Pill`) | mockup `settings/parts.jsx` |
-| [`GlanceCell`](./GlanceCell.md) | proposed | Single key/value stat cell (composed in `GlanceRow`) | mockup `settings/app.jsx` masthead |
+| [`InlineInput`](./InlineInput.md) | roadmap/planned | Click-to-edit text input with pencil affordance | target `src/components/ui/InlineInput.tsx` |
+| [`Switch`](./Switch.md) | canonical/shipped | Aria-checked toggle button | `src/components/ui/Switch.tsx` |
+| [`Segmented`](./Segmented.md) | canonical/shipped | Tinted button group with `aria-pressed` state | `src/components/ui/Segmented.tsx` |
+| [`RemovableChip`](./RemovableChip.md) | canonical/shipped | Chip with × removal affordance (distinct from `Pill`) | `src/components/ui/RemovableChip.tsx` |
+| [`GlanceCell`](./GlanceCell.md) | canonical/shipped | Single key/value stat cell (composed in `GlanceRow`) | `src/components/ui/GlanceCell.tsx` |
 
 ### Wave 4 (Meeting Detail substrate, 0.4.0)
 
 | Name | Status | Job (one line) | Source |
 |---|---|---|---|
-| [`MeetingStatusPill`](./MeetingStatusPill.md) | proposed | Meeting status (wrapped / processing / failed) for MeetingHero accessory | mockup `meeting/current/after.html` |
+| [`MeetingStatusPill`](./MeetingStatusPill.md) | canonical/shipped | Meeting status (wrapped / processing / failed) for MeetingHero accessory | `src/components/meeting/MeetingStatusPill.tsx` |
 
 ## Conventions
 

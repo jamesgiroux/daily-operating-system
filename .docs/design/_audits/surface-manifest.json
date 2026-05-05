@@ -9,7 +9,7 @@
     },
     {
       "html": ".docs/design/reference/surfaces/account.html",
-      "primary": "src/pages/AccountDetailEditorial.tsx",
+      "primary": "src/pages/AccountDetailPage.tsx",
       "module": "src/pages/AccountDetailPage.module.css",
       "module_prefix": "AccountDetailPage"
     },
@@ -26,10 +26,26 @@
       "module_prefix": "ActionsPage"
     },
     {
+      "html": ".docs/design/reference/surfaces/action-detail.html",
+      "primary": "src/pages/ActionDetailPage.tsx",
+      "module": "src/pages/ActionDetailPage.module.css",
+      "module_prefix": "ActionDetailPage",
+      "component": "ActionDetailPage",
+      "route_paths": ["/actions/$actionId"]
+    },
+    {
       "html": ".docs/design/reference/surfaces/inbox.html",
       "primary": "src/pages/InboxPage.tsx",
       "module": "src/pages/InboxPage.module.css",
       "module_prefix": "InboxPage"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/emails.html",
+      "primary": "src/pages/EmailsPage.tsx",
+      "module": "src/pages/EmailsPage.module.css",
+      "module_prefix": "EmailsPage",
+      "component": "EmailsPage",
+      "route_paths": ["/emails"]
     },
     {
       "html": ".docs/design/reference/surfaces/me.html",
@@ -80,6 +96,14 @@
       "module_prefix": "WeekPage"
     },
     {
+      "html": ".docs/design/reference/surfaces/history.html",
+      "primary": "src/pages/HistoryPage.tsx",
+      "module": "src/pages/HistoryPage.module.css",
+      "module_prefix": "HistoryPage",
+      "component": "HistoryPage",
+      "route_paths": ["/history"]
+    },
+    {
       "html": ".docs/design/reference/surfaces/onboarding/welcome.html",
       "primary": "src/components/onboarding/chapters/Welcome.tsx",
       "module": "src/components/onboarding/onboarding.module.css",
@@ -128,6 +152,18 @@
       "module_prefix": "onboarding"
     },
     {
+      "html": ".docs/design/reference/surfaces/splash/splash.html",
+      "primary": "src/components/startup/StartupBriefingScreen.tsx",
+      "module": "src/components/startup/StartupBriefingScreen.module.css",
+      "module_prefix": "StartupBriefingScreen"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/splash/progress.html",
+      "primary": "src/components/startup/StartupBriefingScreen.tsx",
+      "module": "src/components/startup/StartupBriefingScreen.module.css",
+      "module_prefix": "StartupBriefingScreen"
+    },
+    {
       "html": ".docs/design/reference/surfaces/reports/risk-briefing.html",
       "primary": "src/pages/RiskBriefingPage.tsx",
       "module": "src/pages/report-slides.module.css",
@@ -168,6 +204,207 @@
       "primary": "src/pages/BookOfBusinessPage.tsx",
       "module": "src/pages/book-of-business.module.css",
       "module_prefix": "book-of-business"
+    },
+    {
+      "html": ".docs/design/reference/surfaces/reports/generic-report.html",
+      "primary": "src/pages/ReportPage.tsx",
+      "module": "src/pages/report-page.module.css",
+      "module_prefix": "report-page",
+      "component": "ReportPage",
+      "route_paths": [
+        "/accounts/$accountId/reports/$reportType",
+        "/me/reports/$reportType"
+      ]
+    }
+  ],
+  "route_coverage": [
+    {
+      "route": "/",
+      "component": "DashboardPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/briefing.html",
+      "spec": ".docs/design/surfaces/DailyBriefing.md",
+      "covered_by": "src/components/dashboard/DailyBriefing.tsx"
+    },
+    {
+      "route": "/actions",
+      "component": "ActionsPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/actions.html",
+      "spec": ".docs/design/surfaces/ActionsPage.md"
+    },
+    {
+      "route": "/actions/$actionId",
+      "component": "ActionDetailPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/action-detail.html",
+      "spec": ".docs/design/surfaces/ActionDetailPage.md"
+    },
+    {
+      "route": "/accounts",
+      "component": "AccountsPage",
+      "status": "referenced",
+      "reference": ".docs/design/reference/surfaces/accounts.html"
+    },
+    {
+      "route": "/accounts/$accountId",
+      "component": "AccountDetailPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/account.html",
+      "spec": ".docs/design/surfaces/AccountDetailPage.md",
+      "notes": "Canonical route coverage. Deprecated AccountDetailEditorial is legacy only."
+    },
+    {
+      "route": "/accounts/$accountId/reports/risk_briefing",
+      "component": "RiskBriefingPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/risk-briefing.html",
+      "spec": ".docs/design/surfaces/RiskBriefingPage.md"
+    },
+    {
+      "route": "/accounts/$accountId/reports/swot",
+      "component": "SwotPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/swot.html",
+      "spec": ".docs/design/surfaces/SwotPage.md"
+    },
+    {
+      "route": "/accounts/$accountId/reports/account_health",
+      "component": "AccountHealthPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/account-health.html",
+      "spec": ".docs/design/surfaces/AccountHealthPage.md"
+    },
+    {
+      "route": "/accounts/$accountId/reports/ebr_qbr",
+      "component": "EbrQbrPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/ebr-qbr.html",
+      "spec": ".docs/design/surfaces/EbrQbrPage.md"
+    },
+    {
+      "route": "/accounts/$accountId/reports/$reportType",
+      "component": "ReportPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/generic-report.html",
+      "spec": ".docs/design/surfaces/ReportPage.md",
+      "notes": "Dedicated report references cover named report examples; generic-report.html covers the wildcard ReportPage shell and JSON fallback."
+    },
+    {
+      "route": "/me/reports/weekly_impact",
+      "component": "WeeklyImpactPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/weekly-impact.html",
+      "spec": ".docs/design/surfaces/WeeklyImpactPage.md"
+    },
+    {
+      "route": "/me/reports/monthly_wrapped",
+      "component": "MonthlyWrappedPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/monthly-wrapped.html",
+      "spec": ".docs/design/surfaces/MonthlyWrappedPage.md"
+    },
+    {
+      "route": "/me/reports/book_of_business",
+      "component": "BookOfBusinessPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/book-of-business.html",
+      "spec": ".docs/design/surfaces/BookOfBusinessPage.md"
+    },
+    {
+      "route": "/me/reports/$reportType",
+      "component": "ReportPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/reports/generic-report.html",
+      "spec": ".docs/design/surfaces/ReportPage.md",
+      "notes": "Dedicated personal report references cover named report examples; generic-report.html covers the wildcard ReportPage shell and JSON fallback."
+    },
+    {
+      "route": "/inbox",
+      "component": "InboxPage",
+      "status": "referenced",
+      "reference": ".docs/design/reference/surfaces/inbox.html"
+    },
+    {
+      "route": "/emails",
+      "component": "EmailsPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/emails.html",
+      "spec": ".docs/design/surfaces/EmailsPage.md"
+    },
+    {
+      "route": "/meeting/$meetingId",
+      "component": "MeetingDetailPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/meeting.html",
+      "spec": ".docs/design/surfaces/MeetingDetail.md"
+    },
+    {
+      "route": "/meeting/history/$meetingId",
+      "component": "MeetingHistoryDetailPage",
+      "status": "covered-by",
+      "covered_by": "/meeting/$meetingId",
+      "reference": ".docs/design/reference/surfaces/meeting.html"
+    },
+    {
+      "route": "/projects",
+      "component": "ProjectsPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/projects.html",
+      "spec": ".docs/design/surfaces/ProjectsPage.md"
+    },
+    {
+      "route": "/projects/$projectId",
+      "component": "ProjectDetailEditorial",
+      "status": "referenced",
+      "reference": ".docs/design/reference/surfaces/project.html"
+    },
+    {
+      "route": "/settings",
+      "component": "SettingsPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/settings.html",
+      "spec": ".docs/design/surfaces/Settings.md"
+    },
+    {
+      "route": "/me",
+      "component": "MePage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/me.html",
+      "spec": ".docs/design/surfaces/MePage.md"
+    },
+    {
+      "route": "/week",
+      "component": "WeekPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/week.html",
+      "spec": ".docs/design/surfaces/WeekPage.md"
+    },
+    {
+      "route": "/history",
+      "component": "HistoryPage",
+      "status": "referenced+spec",
+      "reference": ".docs/design/reference/surfaces/history.html",
+      "spec": ".docs/design/surfaces/HistoryPage.md"
+    },
+    {
+      "route": "/people",
+      "component": "PeoplePage",
+      "status": "referenced",
+      "reference": ".docs/design/reference/surfaces/people.html"
+    },
+    {
+      "route": "/people/$personId",
+      "component": "PersonDetailEditorial",
+      "status": "referenced",
+      "reference": ".docs/design/reference/surfaces/person.html"
+    },
+    {
+      "component": "AccountDetailEditorial",
+      "status": "legacy+covered-by",
+      "covered_by": "/accounts/$accountId",
+      "reference": ".docs/design/reference/surfaces/account.html",
+      "notes": "Deprecated implementation, no longer a router target."
     }
   ]
 }

@@ -1,7 +1,7 @@
 # MeetingStatusPill
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `MeetingStatusPill`
@@ -59,7 +59,7 @@ Composes the `Pill` primitive with meeting-specific status tokens, an icon slot,
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/MeetingStatusPill.tsx`
+- **Code:** shipped in `src/components/meeting/MeetingStatusPill.tsx`
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 39-43
 
 ## Surfaces that consume it

@@ -1,7 +1,7 @@
 # TrustBand
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `TrustBand`
@@ -72,7 +72,7 @@ When `claim` prop is passed, the pattern reads `band`, `source`, `asOf` from it.
 
 - **Spec:** new for Wave 2
 - **Composed primitives:** `TrustBandBadge`, `ProvenanceTag`, `FreshnessIndicator` (all Wave 1)
-- **Code:** to be implemented in `src/components/intelligence/TrustBand.tsx` (Wave 2 follow-on for v1.4.4)
+- **Code:** shipped in `src/components/intelligence/TrustBand.tsx`
 
 ## Surfaces that consume it
 

@@ -8,7 +8,8 @@
 **`data-ds-spec`:** `surfaces/Settings.md`
 **Canonical name:** `Settings`
 **Source files:**
-- `src/features/settings-ui/` (current implementation directory)
+- `src/pages/SettingsPage.tsx` (current router target)
+- `src/pages/SettingsPage.module.css`
 - Settings redesign mockup: `.docs/_archive/mockups/claude-design-project/mockups/surfaces/settings/`
 
 **Design system version introduced:** 0.3.0

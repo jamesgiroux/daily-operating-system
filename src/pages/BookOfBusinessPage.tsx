@@ -666,7 +666,12 @@ export default function BookOfBusinessPage() {
   const c = content!;
 
   return (
-    <div className={slides.slideContainer}>
+    <div
+      className={slides.slideContainer}
+      data-ds-tier="surface"
+      data-ds-name="BookOfBusinessPage"
+      data-ds-spec="surfaces/BookOfBusinessPage.md"
+    >
       {/* Slide 1: Cover — vitals, exec summary */}
       <section id="cover" className={slides.slideSection}>
         <CoverSlide

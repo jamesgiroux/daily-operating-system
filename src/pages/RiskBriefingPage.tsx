@@ -400,7 +400,12 @@ export default function RiskBriefingPage() {
 
   // Render the 6-slide briefing with scroll-snap
   return (
-    <div className={slides.slideContainer}>
+    <div
+      className={slides.slideContainer}
+      data-ds-tier="surface"
+      data-ds-name="RiskBriefingPage"
+      data-ds-spec="surfaces/RiskBriefingPage.md"
+    >
       {/* Slide 1: Cover */}
       <section id="cover" className={slides.slideSection}>
         <RiskCover

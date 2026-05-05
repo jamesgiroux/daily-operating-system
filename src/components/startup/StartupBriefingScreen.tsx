@@ -84,7 +84,13 @@ export function StartupBriefingScreen({
 
   if (mode === "progress") {
     return (
-      <section className={`${styles.screen} ${styles.progress}`} aria-label={STARTUP_BRIEFING_COPY.title}>
+      <section
+        className={`${styles.screen} ${styles.progress}`}
+        aria-label={STARTUP_BRIEFING_COPY.title}
+        data-ds-tier="surface"
+        data-ds-name="StartupBriefingScreen"
+        data-ds-spec="surfaces/StartupBriefingScreen.md"
+      >
         <div className={styles.elapsed}>{formatElapsed(elapsed)}</div>
         <div className={styles.progressSpacer} />
         <div className={styles.progressContent}>
@@ -126,7 +132,13 @@ export function StartupBriefingScreen({
   }
 
   return (
-    <div className={`${styles.screen} ${styles.overlay} ${fading ? styles.fading : ""}`} aria-label={STARTUP_BRIEFING_COPY.title}>
+    <div
+      className={`${styles.screen} ${styles.overlay} ${fading ? styles.fading : ""}`}
+      aria-label={STARTUP_BRIEFING_COPY.title}
+      data-ds-tier="surface"
+      data-ds-name="StartupBriefingScreen"
+      data-ds-spec="surfaces/StartupBriefingScreen.md"
+    >
       <div className={styles.splashStack}>
         <div className={`${styles.rule} ${styles.ruleTop}`} />
         <BrandMark />

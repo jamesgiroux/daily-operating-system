@@ -1,7 +1,7 @@
 # AgendaThreadList
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `AgendaThreadList`
@@ -61,7 +61,7 @@ Composes icon markers, text labels, and metadata text in a vertical list. Icons 
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/AgendaThreadList.tsx`
+- **Roadmap target:** `src/components/meeting/AgendaThreadList.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html` lines 67-113
 
 ## Surfaces that consume it

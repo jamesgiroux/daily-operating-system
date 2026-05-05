@@ -69,6 +69,7 @@ export function Pill(props: PillProps) {
   const dataAttrs = {
     "data-tone": tone,
     "data-ds-name": "Pill",
+    "data-ds-tier": "primitive",
     "data-ds-spec": "primitives/Pill.md",
   };
 

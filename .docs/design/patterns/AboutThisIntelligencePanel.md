@@ -1,7 +1,7 @@
 # AboutThisIntelligencePanel
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `AboutThisIntelligencePanel`
@@ -78,10 +78,10 @@ Composes trust primitives in a short explanatory stack:
 
 ## Source
 
-- **Code:** `src/components/health/AboutIntelligence.tsx`
-- **Code:** `src/components/context/AboutThisDossier.tsx`
+- **Related code:** `src/components/health/AboutIntelligence.tsx`
+- **Related code:** `src/components/context/AboutThisDossier.tsx`
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/_audits/04-trust-ui-inventory.md`
-- **Note:** Wave 2 follow-on for v1.4.4
+- **Roadmap target:** canonical `AboutThisIntelligencePanel` pattern (not shipped under this name yet)
 
 ## Surfaces that consume it
 

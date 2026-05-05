@@ -87,6 +87,7 @@ export function EntityChip({
         aria-label={ariaLabel ?? defaultRemoveLabel(entityName)}
         data-entity-type={normalizedEntityType}
         data-ds-name="EntityChip"
+        data-ds-tier="primitive"
         data-ds-spec="primitives/EntityChip.md"
         {...rest}
       />
@@ -104,6 +105,7 @@ export function EntityChip({
       aria-label={ariaLabel}
       data-entity-type={normalizedEntityType}
       data-ds-name="EntityChip"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/EntityChip.md"
       {...rest}
     >

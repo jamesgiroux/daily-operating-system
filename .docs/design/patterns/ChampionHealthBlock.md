@@ -1,7 +1,7 @@
 # ChampionHealthBlock
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** planned
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `ChampionHealthBlock`
@@ -71,7 +71,7 @@ Render the current state of a champion relationship in one focused block so the 
 
 ## Source
 
-- **Code:** to be implemented in `src/components/meeting/ChampionHealthBlock.tsx`
+- **Roadmap target:** `src/components/meeting/ChampionHealthBlock.tsx` (not shipped yet)
 - **Mockup origin:** `.docs/_archive/mockups/claude-design-project/mockups/meeting/current/after.html:243-259`
 - **Reference render:** Meeting "Champion Health" chapter.
 

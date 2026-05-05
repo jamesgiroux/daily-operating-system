@@ -1,7 +1,7 @@
 # AskAnythingDock
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** canonical
 **Owner:** James
 **Last updated:** 2026-05-02
 **`data-ds-name`:** `AskAnythingDock`
@@ -89,7 +89,7 @@ Receives context seeded by `ThreadMark` clicks (via global event or context prov
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.ask`, `.ask-bar`, `.ask-bar-input`, `.ask-bar-suggestions`, `.ask-bar-scope`, `.ask-chip`)
-- **Code:** to be implemented in `src/components/dashboard/AskAnythingDock.tsx` (Wave 1 follow-on)
+- **Code:** shipped in `src/components/dashboard/AskAnythingDock.tsx`
 
 ## Surfaces that consume it
 

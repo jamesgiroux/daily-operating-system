@@ -33,6 +33,7 @@ export function Switch({
       data-checked={checked}
       data-size={size}
       data-ds-name="Switch"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/Switch.md"
       disabled={disabled}
       onClick={handleClick}
