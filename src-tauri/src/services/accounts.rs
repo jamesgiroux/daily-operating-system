@@ -1137,12 +1137,13 @@ pub fn correct_lifecycle_change(
         completion_trigger: None,
     };
     // Outer transaction wraps the whole correction flow. Pending-row claim
-    // runs FIRST so that an already-reviewed change short-circuits BEFORE
-    // any destructive account mutation — apply_lifecycle_transition would
-    // otherwise overwrite lifecycle / stage / signal state for a stale
-    // request even if the response row had already been consumed by a
-    // prior reviewer. Only after rows=1 do we apply the transition and
-    // source-weight penalty; any failure rolls the claim back via the tx.
+    // runs FIRST. Then we re-read account state inside the same txn to
+    // detect drift: a manual lifecycle edit between auto-generation of the
+    // change row and submission of this correction would otherwise have
+    // apply_lifecycle_transition clobber the user's manual edit. If the
+    // current lifecycle/stage no longer matches what the change row
+    // recorded as its previous_*, mark the row reviewed (already done by
+    // the pending claim) but skip the transition + source-weight penalty.
     db.with_transaction(|tx_db| {
         let rows = tx_db
             .set_lifecycle_change_response_if_pending(change_id, "corrected", notes)
@@ -1150,6 +1151,32 @@ pub fn correct_lifecycle_change(
         if rows == 0 {
             log::info!(
                 "correct_lifecycle_change: change_id={change_id} already reviewed; idempotent no-op"
+            );
+            return Ok(());
+        }
+        let account_now = tx_db
+            .get_account(&change.account_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Account not found: {}", change.account_id))?;
+        let current_lifecycle = account_now
+            .lifecycle
+            .as_deref()
+            .map(normalized_lifecycle);
+        let expected_lifecycle = change
+            .previous_lifecycle
+            .as_deref()
+            .map(normalized_lifecycle);
+        let current_stage = tx_db
+            .get_account_renewal_stage(&change.account_id)
+            .map_err(|e| e.to_string())?;
+        let expected_stage = change.previous_stage.clone();
+        if current_lifecycle != expected_lifecycle || current_stage != expected_stage {
+            log::warn!(
+                "correct_lifecycle_change: change_id={change_id} stale — account lifecycle/stage drifted from {:?}/{:?} to {:?}/{:?}; marking reviewed but skipping transition",
+                expected_lifecycle,
+                expected_stage,
+                current_lifecycle,
+                current_stage
             );
             return Ok(());
         }
