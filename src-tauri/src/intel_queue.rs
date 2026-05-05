@@ -2624,7 +2624,36 @@ fn run_finalize_trust_recompute(
 
     let claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
         .map_err(|e| format!("load claims for trust recompute: {e}"))?;
+    if claims.is_empty() {
+        return Ok(());
+    }
+
     let ctx = state.live_service_context();
+    let extraction_context = match crate::services::trust_extraction::build_account_extraction_context(
+        db,
+        &input.entity_type,
+        &input.entity_id,
+    ) {
+        Ok(context) => context,
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: extractor context error on {}:{}: {}",
+                input.entity_type,
+                input.entity_id,
+                e
+            );
+            for claim in claims {
+                record_trust_recompute_pipeline_failure(
+                    &ctx,
+                    db,
+                    input,
+                    "extractor_error",
+                    Some(&format!("claim_id={} error={e}", claim.id)),
+                );
+            }
+            return Ok(());
+        }
+    };
 
     for claim in claims {
         let subject = match trust_subject_from_claim_json(&claim.subject_ref) {
@@ -2639,15 +2668,21 @@ fn run_finalize_trust_recompute(
             }
         };
 
-        match crate::services::trust_extraction::extract_target_footprint(
-            db,
-            &subject,
-            &input.entity_type,
-            &input.entity_id,
-        ) {
-            Ok(crate::services::trust_extraction::ExtractionOutcome::SkipExtractorMismatch {
+        let extraction_outcome = extraction_context.as_ref().map_or(
+            crate::services::trust_extraction::ExtractionOutcome::SkipExtractorMismatch {
+                reason: crate::services::trust_extraction::ExtractionMismatchReason::TargetNotFound,
+            },
+            |context| {
+                crate::services::trust_extraction::extract_target_footprint_from_context(
+                    context, &subject,
+                )
+            },
+        );
+
+        match extraction_outcome {
+            crate::services::trust_extraction::ExtractionOutcome::SkipExtractorMismatch {
                 reason,
-            }) => {
+            } => {
                 log::debug!(
                     "TrustRecompute: extractor mismatch for claim {} on {}:{} ({:?}); preserving prior trust",
                     claim.id,
@@ -2664,10 +2699,10 @@ fn run_finalize_trust_recompute(
                 );
                 continue;
             }
-            Ok(crate::services::trust_extraction::ExtractionOutcome::Ok {
+            crate::services::trust_extraction::ExtractionOutcome::Ok {
                 footprint,
                 portfolio_footprints,
-            }) => {
+            } => {
                 let trust_ctx = build_trust_context_for_claim(
                     &ctx,
                     db,
@@ -2728,23 +2763,6 @@ fn run_finalize_trust_recompute(
                     &claim.id,
                     &computation.evidence,
                 );
-            }
-            Err(e) => {
-                log::warn!(
-                    "TrustRecompute: extractor error for claim {} on {}:{}: {}",
-                    claim.id,
-                    input.entity_type,
-                    input.entity_id,
-                    e
-                );
-                record_trust_recompute_pipeline_failure(
-                    &ctx,
-                    db,
-                    input,
-                    "extractor_error",
-                    Some(&format!("claim_id={} error={e}", claim.id)),
-                );
-                continue;
             }
         }
     }
@@ -4355,7 +4373,38 @@ mod tests {
         assert!(score.is_some_and(|value| value > 0.75));
         assert!(computed_at.is_some());
         assert_eq!(version, Some(1));
-        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 7);
+        assert_eq!(signal_count(&db, "ConfidenceEvidence"), 8);
+    }
+
+    #[test]
+    #[ignore = "micro-bench for on-demand trust extraction performance checks"]
+    fn trust_recompute_50_claims_500_accounts_under_50ms() {
+        let db = trust_test_db();
+        let account_id = "acct-scale-000";
+        for idx in 0..500 {
+            seed_trust_account(&db, &format!("acct-scale-{idx:03}"));
+        }
+        for idx in 0..50 {
+            seed_trust_claim(
+                &db,
+                account_id,
+                &format!("Scale recompute claim {idx} remains current."),
+                "unit_test_source",
+            );
+        }
+
+        let state = AppState::new();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let input = trust_input(account_id, dir.path());
+
+        let start = std::time::Instant::now();
+        run_finalize_trust_recompute(&state, &db, &input).expect("run trust recompute");
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed < std::time::Duration::from_millis(50),
+            "trust recompute for 50 claims over 500 accounts took {elapsed:?}"
+        );
     }
 
     #[test]

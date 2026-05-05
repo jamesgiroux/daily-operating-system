@@ -39,6 +39,16 @@ pub enum ExtractionError {
     Db(#[from] DbError),
 }
 
+#[derive(Debug, Clone)]
+pub struct AccountExtractionContext {
+    pub accounts_with_domains: HashMap<String, (DbAccount, Vec<String>)>,
+    pub target_account: DbAccount,
+    pub target_domains: Vec<String>,
+    pub target_aliases: Vec<String>,
+    pub related_subjects: Vec<SubjectRef>,
+    pub portfolio_footprints: Vec<EntityFootprint>,
+}
+
 pub fn extract_target_footprint(
     db: &ActionDb,
     subject: &SubjectRef,
@@ -63,45 +73,76 @@ pub fn extract_target_footprint(
         });
     }
 
-    if normalize_entity_type(entity_type) != "account" {
-        return Ok(ExtractionOutcome::SkipExtractorMismatch {
-            reason: ExtractionMismatchReason::TargetNotFound,
-        });
-    }
-
-    let Some(target) = db.get_account(entity_id)? else {
+    let Some(context) = build_account_extraction_context(db, entity_type, entity_id)? else {
         return Ok(ExtractionOutcome::SkipExtractorMismatch {
             reason: ExtractionMismatchReason::TargetNotFound,
         });
     };
 
+    Ok(extract_target_footprint_from_context(&context, subject))
+}
+
+pub fn build_account_extraction_context(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<Option<AccountExtractionContext>, ExtractionError> {
+    if normalize_entity_type(entity_type) != "account" {
+        return Ok(None);
+    }
+
+    let Some(target_account) = db.get_account(entity_id)? else {
+        return Ok(None);
+    };
+
     let accounts_with_domains = db.get_all_accounts_with_domains(false)?;
-    let by_id: HashMap<String, (DbAccount, Vec<String>)> = accounts_with_domains
+    let accounts_with_domains: HashMap<String, (DbAccount, Vec<String>)> = accounts_with_domains
         .into_iter()
         .map(|(account, domains)| (account.id.clone(), (account, domains)))
         .collect();
 
     let target_domains = db.get_account_domains(entity_id)?;
-    let target_aliases = aliases_for_account(&target);
-    let related_subjects = related_subjects_for_account(&target, &by_id);
-    let portfolio_ids = portfolio_account_ids(&target, &by_id);
+    let target_aliases = aliases_for_account(&target_account);
+    let related_subjects = related_subjects_for_account(&target_account, &accounts_with_domains);
+    let portfolio_ids = portfolio_account_ids(&target_account, &accounts_with_domains);
 
     let portfolio_footprints = portfolio_ids
         .into_iter()
-        .filter_map(|account_id| by_id.get(&account_id))
+        .filter_map(|account_id| accounts_with_domains.get(&account_id))
         .map(|(account, domains)| entity_footprint(account, domains))
         .collect();
 
-    Ok(ExtractionOutcome::Ok {
+    Ok(Some(AccountExtractionContext {
+        accounts_with_domains,
+        target_account,
+        target_domains,
+        target_aliases,
+        related_subjects,
+        portfolio_footprints,
+    }))
+}
+
+pub fn extract_target_footprint_from_context(
+    context: &AccountExtractionContext,
+    subject: &SubjectRef,
+) -> ExtractionOutcome {
+    let expected_subject = SubjectRef::Account(context.target_account.id.clone());
+    if subject != &expected_subject {
+        return ExtractionOutcome::SkipExtractorMismatch {
+            reason: ExtractionMismatchReason::SubjectRefMismatch,
+        };
+    }
+
+    ExtractionOutcome::Ok {
         footprint: TargetFootprint {
             subject: expected_subject,
-            names: names_for_account(&target),
-            domains: domain_variants(&target_domains),
-            related_subjects,
-            allowed_aliases: target_aliases,
+            names: names_for_account(&context.target_account),
+            domains: domain_variants(&context.target_domains),
+            related_subjects: context.related_subjects.clone(),
+            allowed_aliases: context.target_aliases.clone(),
         },
-        portfolio_footprints,
-    })
+        portfolio_footprints: context.portfolio_footprints.clone(),
+    }
 }
 
 fn entity_exists(db: &ActionDb, entity_type: &str, entity_id: &str) -> Result<bool, DbError> {
@@ -167,6 +208,7 @@ fn related_subjects_for_account(
             .map(|(account, _)| account.id.clone()),
     );
 
+    related_ids.sort();
     let mut seen = HashSet::new();
     related_ids
         .into_iter()
@@ -198,6 +240,7 @@ fn portfolio_account_ids(
             .map(|(account, _)| account.id.clone()),
     );
 
+    ids.sort();
     let mut seen = HashSet::new();
     ids.into_iter()
         .filter(|id| id != &target.id && seen.insert(id.clone()))
@@ -585,6 +628,76 @@ mod tests {
         assert!(portfolio_footprints.iter().any(|peer| peer.subject
             == SubjectRef::Account("acct-child".into())
             && peer.names.contains(&"Child Account".to_string())));
+    }
+
+    #[test]
+    fn extraction_context_built_once_returns_same_outcomes_as_per_claim_extraction() {
+        let conn = fresh_db();
+        let db = db_view(&conn);
+        insert_account(
+            db,
+            "acct-parent",
+            "Parent Account",
+            None,
+            &["parent.test"],
+            None,
+        );
+        insert_account(
+            db,
+            "acct-target",
+            "Target Account",
+            Some("acct-parent"),
+            &["target.test", "app.target.test"],
+            Some(r#"{"aliases":["Target Co"],"dba":"Target Labs"}"#),
+        );
+        insert_account(
+            db,
+            "acct-sibling",
+            "Sibling Account",
+            Some("acct-parent"),
+            &["sibling.test"],
+            None,
+        );
+        insert_account(
+            db,
+            "acct-child",
+            "Child Account",
+            Some("acct-target"),
+            &["child.test"],
+            None,
+        );
+        insert_account(
+            db,
+            "acct-unrelated",
+            "Unrelated Account",
+            None,
+            &["unrelated.test"],
+            None,
+        );
+
+        let context = build_account_extraction_context(db, "account", "acct-target")
+            .expect("build context")
+            .expect("account context");
+        assert_eq!(context.accounts_with_domains.len(), 5);
+
+        let subjects = [
+            SubjectRef::Account("acct-target".into()),
+            SubjectRef::Account("acct-sibling".into()),
+            SubjectRef::Project("acct-target".into()),
+        ];
+
+        let context_outcomes: Vec<_> = subjects
+            .iter()
+            .map(|subject| extract_target_footprint_from_context(&context, subject))
+            .collect();
+        let per_claim_outcomes: Vec<_> = subjects
+            .iter()
+            .map(|subject| {
+                extract_target_footprint(db, subject, "account", "acct-target").expect("extract")
+            })
+            .collect();
+
+        assert_eq!(context_outcomes, per_claim_outcomes);
     }
 
     #[test]
