@@ -2703,7 +2703,7 @@ fn run_finalize_trust_recompute(
                 footprint,
                 portfolio_footprints,
             } => {
-                let trust_ctx = build_trust_context_for_claim(
+                let (trust_ctx, indeterminate_reasons) = build_trust_context_for_claim(
                     &ctx,
                     db,
                     input,
@@ -2711,6 +2711,19 @@ fn run_finalize_trust_recompute(
                     footprint,
                     portfolio_footprints,
                 );
+                if !indeterminate_reasons.is_empty() {
+                    record_trust_recompute_pipeline_failure(
+                        &ctx,
+                        db,
+                        input,
+                        "trust_read_state_indeterminate",
+                        Some(&format!(
+                            "claim_id={} reasons={}",
+                            claim.id,
+                            indeterminate_reasons.join(",")
+                        )),
+                    );
+                }
                 let previous_score = claim.trust_score;
                 let previous_band =
                     previous_score.and_then(|score| trust_band_for_score(score, &trust_ctx.config));
@@ -2784,6 +2797,47 @@ fn run_finalize_trust_recompute(
     Ok(())
 }
 
+/// Result of a single trust input read. Carries the value plus an optional
+/// reason string for why the read couldn't be trusted as authoritative.
+/// `Some(reason)` triggers IndeterminateReadState in compile_trust and gets
+/// recorded as a pipeline_failure for observability — the reviewer-cited
+/// gap was that bool tuples couldn't carry the reason and the indeterminate
+/// path emitted no metric. Reasons are static strings to keep allocation
+/// cheap on the hot path.
+#[derive(Debug, Clone)]
+struct TrustInput<T> {
+    value: T,
+    indeterminate_reason: Option<&'static str>,
+}
+
+impl<T> TrustInput<T> {
+    fn ok(value: T) -> Self {
+        Self {
+            value,
+            indeterminate_reason: None,
+        }
+    }
+    fn indeterminate(value: T, reason: &'static str) -> Self {
+        Self {
+            value,
+            indeterminate_reason: Some(reason),
+        }
+    }
+    fn into_parts(self) -> (T, Option<&'static str>) {
+        (self.value, self.indeterminate_reason)
+    }
+}
+
+/// Aggregate a TrustInput into the reasons sink and return the value. Wired
+/// from build_trust_context_for_claim once per helper.
+fn collect_trust_input<T>(input: TrustInput<T>, reasons: &mut Vec<&'static str>) -> T {
+    let (value, reason) = input.into_parts();
+    if let Some(r) = reason {
+        reasons.push(r);
+    }
+    value
+}
+
 fn build_trust_context_for_claim(
     ctx: &crate::services::context::ServiceContext<'_>,
     db: &crate::db::ActionDb,
@@ -2791,29 +2845,44 @@ fn build_trust_context_for_claim(
     claim: &crate::db::claims::IntelligenceClaim,
     footprint: crate::abilities::trust::TargetFootprint,
     portfolio_footprints: Vec<crate::abilities::trust::EntityFootprint>,
-) -> crate::abilities::trust::TrustContext {
-    let (feedback_signal, feedback_read_ok) = trust_feedback_signal_for_claim(db, &claim.id);
-    let (corroborators, corroborator_read_ok) =
-        source_reliability_corroborators_for_claim(db, &claim.id);
-    let (contradiction_count, contradiction_read_ok) =
-        contradiction_count_for_claim(db, &claim.id);
-    let (corroboration_strength, corroboration_strength_read_ok) =
-        corroboration_strength_for_claim(db, &claim.id);
-    let (source_reliability, source_reliability_read_ok) =
-        source_reliability_for_claim(db, input, claim);
-    let (freshness, freshness_read_ok) = freshness_context_for_claim(ctx.clock.now(), claim);
-    let (source_lifecycle, lifecycle_read_ok) = source_lifecycle_for_claim(claim);
-    let (internal_consistency, internal_consistency_read_ok) =
-        internal_consistency_for_claim(claim);
-    let read_state_indeterminate = !corroborator_read_ok
-        || !contradiction_read_ok
-        || !corroboration_strength_read_ok
-        || !feedback_read_ok
-        || !source_reliability_read_ok
-        || !freshness_read_ok
-        || !lifecycle_read_ok
-        || !internal_consistency_read_ok;
-    crate::abilities::trust::TrustContext {
+) -> (crate::abilities::trust::TrustContext, Vec<&'static str>) {
+    let mut indeterminate_reasons: Vec<&'static str> = Vec::new();
+
+    let feedback_signal =
+        collect_trust_input(trust_feedback_signal_for_claim(db, &claim.id), &mut indeterminate_reasons);
+    let corroborators = collect_trust_input(
+        source_reliability_corroborators_for_claim(db, &claim.id),
+        &mut indeterminate_reasons,
+    );
+    let contradiction_count = collect_trust_input(
+        contradiction_count_for_claim(db, &claim.id),
+        &mut indeterminate_reasons,
+    );
+    let corroboration_strength = collect_trust_input(
+        corroboration_strength_for_claim(db, &claim.id),
+        &mut indeterminate_reasons,
+    );
+    let source_reliability = collect_trust_input(
+        source_reliability_for_claim(db, input, claim),
+        &mut indeterminate_reasons,
+    );
+    let freshness = collect_trust_input(
+        freshness_context_for_claim(ctx.clock.now(), claim),
+        &mut indeterminate_reasons,
+    );
+    let source_lifecycle =
+        collect_trust_input(source_lifecycle_for_claim(claim), &mut indeterminate_reasons);
+    let internal_consistency =
+        collect_trust_input(internal_consistency_for_claim(claim), &mut indeterminate_reasons);
+    let read_state_indeterminate = !indeterminate_reasons.is_empty();
+    if read_state_indeterminate {
+        log::warn!(
+            "TrustRecompute: claim {} reads indeterminate, reasons: {}",
+            claim.id,
+            indeterminate_reasons.join(",")
+        );
+    }
+    let trust_ctx = crate::abilities::trust::TrustContext {
         now: ctx.clock.now(),
         config: crate::abilities::trust::TrustConfig::default(),
         factor_inputs: crate::abilities::trust::TrustFactorInputs {
@@ -2835,7 +2904,8 @@ fn build_trust_context_for_claim(
             cross_entity_context_expected: cross_entity_context_expected(claim),
         },
         target_surface: None,
-    }
+    };
+    (trust_ctx, indeterminate_reasons)
 }
 
 fn claim_subject_ref_json_for_entity(entity_type: &str, entity_id: &str) -> Option<String> {
@@ -2905,27 +2975,18 @@ fn trust_subject_from_claim_json(
     }
 }
 
-/// Returns (source_reliability, read_ok). When read_ok is false the recompute
-/// pipeline triggers the IndeterminateReadState gate. A row that is genuinely
-/// absent from signal_weights is not an error — it means the source has no
-/// per-entity reliability signal yet, and 1.0 is the documented default.
-/// Malformed rows where alpha+beta is zero, non-finite, or negative would
-/// otherwise compute NaN and silently land as a non-finite factor that
-/// compile_trust rejects, preserving stale prior trust; we treat those rows
-/// as a read failure instead.
+/// Reads source reliability from signal_weights. Returns TrustInput so the
+/// caller can route corruption (negative components, non-finite values,
+/// out-of-range computed reliability) through IndeterminateReadState while
+/// retaining the legacy 1.0 fallback for compatibility.
 fn source_reliability_for_claim(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     claim: &crate::db::claims::IntelligenceClaim,
-) -> (f64, bool) {
+) -> TrustInput<f64> {
     match db.get_signal_weight(&claim.data_source, &input.entity_type, "enrichment_quality") {
         Ok(Some((alpha, beta, _))) => {
             let denom = alpha + beta;
-            // Bayesian alpha/beta must each be non-negative and finite, and
-            // their sum must be strictly positive. Negative components or a
-            // non-positive denom would otherwise produce a value > 1.0 or
-            // NaN that compile_trust silently clamps, inflating reliability
-            // on a corrupt row instead of failing closed.
             if !alpha.is_finite()
                 || !beta.is_finite()
                 || alpha < 0.0
@@ -2939,7 +3000,7 @@ fn source_reliability_for_claim(
                     input.entity_type,
                     claim.id
                 );
-                return (1.0, false);
+                return TrustInput::indeterminate(1.0, "source_reliability_malformed_components");
             }
             let value = alpha / denom;
             if !value.is_finite() || !(0.0..=1.0).contains(&value) {
@@ -2947,11 +3008,11 @@ fn source_reliability_for_claim(
                     "TrustRecompute: out-of-range source_reliability computed for {} (alpha={alpha} beta={beta} value={value})",
                     claim.id
                 );
-                return (1.0, false);
+                return TrustInput::indeterminate(1.0, "source_reliability_out_of_range");
             }
-            (value, true)
+            TrustInput::ok(value)
         }
-        Ok(None) => (1.0, true),
+        Ok(None) => TrustInput::ok(1.0),
         Err(e) => {
             log::warn!(
                 "TrustRecompute: failed to read signal_weights for source={} entity_type={} on {}: {e}",
@@ -2959,20 +3020,15 @@ fn source_reliability_for_claim(
                 input.entity_type,
                 claim.id
             );
-            (1.0, false)
+            TrustInput::indeterminate(1.0, "source_reliability_read_failed")
         }
     }
 }
 
-/// Returns (lifecycle, read_ok). When metadata_json is present but
-/// unparseable OR contains a lifecycle key with a non-string / unknown /
-/// whitespace-only value, read_ok is false so the recompute pipeline
-/// triggers IndeterminateReadState — corrupted metadata otherwise lets the
-/// SourceWithdrawn gate be silently bypassed by falling through to Active.
 fn source_lifecycle_for_claim(
     claim: &crate::db::claims::IntelligenceClaim,
-) -> (crate::abilities::trust::SourceLifecycleState, bool) {
-    let mut read_ok = true;
+) -> TrustInput<crate::abilities::trust::SourceLifecycleState> {
+    let mut indeterminate: Option<&'static str> = None;
     let lifecycle_field = match claim.metadata_json.as_deref() {
         None => None,
         Some(raw) => match serde_json::from_str::<serde_json::Value>(raw) {
@@ -2986,7 +3042,7 @@ fn source_lifecycle_for_claim(
                     "TrustRecompute: malformed metadata_json on lifecycle read for {}: {e}",
                     claim.id
                 );
-                read_ok = false;
+                indeterminate = Some("source_lifecycle_metadata_malformed");
                 None
             }
         },
@@ -3002,7 +3058,7 @@ fn source_lifecycle_for_claim(
                     "TrustRecompute: empty/whitespace lifecycle field for {}",
                     claim.id
                 );
-                read_ok = false;
+                indeterminate = Some("source_lifecycle_empty_field");
                 None
             } else {
                 Some(normalized)
@@ -3013,7 +3069,7 @@ fn source_lifecycle_for_claim(
                 "TrustRecompute: non-string lifecycle field for {}: {other}",
                 claim.id
             );
-            read_ok = false;
+            indeterminate = Some("source_lifecycle_non_string_field");
             None
         }
     };
@@ -3029,10 +3085,7 @@ fn source_lifecycle_for_claim(
                 "TrustRecompute: unknown lifecycle value '{unknown}' for {}; routing through indeterminate gate",
                 claim.id
             );
-            read_ok = false;
-            // Conservative fallback: treat unknown lifecycle as Active so the
-            // SourceWithdrawn gate doesn't false-trigger, but read_ok=false
-            // routes the claim through IndeterminateReadState anyway.
+            indeterminate = Some("source_lifecycle_unknown_value");
             crate::abilities::trust::SourceLifecycleState::Active
         }
         None if matches!(
@@ -3044,35 +3097,32 @@ fn source_lifecycle_for_claim(
         }
         None => crate::abilities::trust::SourceLifecycleState::Active,
     };
-    (lifecycle, read_ok)
+    match indeterminate {
+        Some(reason) => TrustInput::indeterminate(lifecycle, reason),
+        None => TrustInput::ok(lifecycle),
+    }
 }
 
-/// Returns (freshness, read_ok). When read_ok is false the recompute pipeline
-/// triggers IndeterminateReadState — malformed timestamps would otherwise
-/// look freshly observed and silently inflate the freshness factor.
 fn freshness_context_for_claim(
     now: chrono::DateTime<Utc>,
     claim: &crate::db::claims::IntelligenceClaim,
-) -> (crate::abilities::trust::FreshnessContext, bool) {
-    let mut read_ok = true;
+) -> TrustInput<crate::abilities::trust::FreshnessContext> {
+    let mut indeterminate: Option<&'static str> = None;
 
     if let Some(source_asof) = claim.source_asof.as_deref() {
         match chrono::DateTime::parse_from_rfc3339(source_asof) {
             Ok(parsed) => {
-                return (
-                    crate::abilities::trust::FreshnessContext {
-                        timestamp_known: true,
-                        age_days: age_days(now, parsed.with_timezone(&Utc)),
-                    },
-                    true,
-                );
+                return TrustInput::ok(crate::abilities::trust::FreshnessContext {
+                    timestamp_known: true,
+                    age_days: age_days(now, parsed.with_timezone(&Utc)),
+                });
             }
             Err(e) => {
                 log::warn!(
                     "TrustRecompute: malformed source_asof on {}: {e}; falling back to observed_at",
                     claim.id
                 );
-                read_ok = false;
+                indeterminate = Some("freshness_source_asof_malformed");
             }
         }
     }
@@ -3083,40 +3133,40 @@ fn freshness_context_for_claim(
     ] {
         match chrono::DateTime::parse_from_rfc3339(fallback) {
             Ok(parsed) => {
-                return (
-                    crate::abilities::trust::FreshnessContext {
-                        timestamp_known: false,
-                        age_days: age_days(now, parsed.with_timezone(&Utc)),
-                    },
-                    read_ok,
-                );
+                let value = crate::abilities::trust::FreshnessContext {
+                    timestamp_known: false,
+                    age_days: age_days(now, parsed.with_timezone(&Utc)),
+                };
+                return match indeterminate {
+                    Some(reason) => TrustInput::indeterminate(value, reason),
+                    None => TrustInput::ok(value),
+                };
             }
             Err(e) => {
                 log::warn!(
                     "TrustRecompute: malformed {label} on {}: {e}",
                     claim.id
                 );
-                read_ok = false;
+                indeterminate = Some("freshness_fallback_malformed");
             }
         }
     }
 
-    (
-        crate::abilities::trust::FreshnessContext {
-            timestamp_known: false,
-            age_days: 0.0,
-        },
-        read_ok,
-    )
+    let value = crate::abilities::trust::FreshnessContext {
+        timestamp_known: false,
+        age_days: 0.0,
+    };
+    match indeterminate {
+        Some(reason) => TrustInput::indeterminate(value, reason),
+        None => TrustInput::ok(value),
+    }
 }
 
 fn age_days(now: chrono::DateTime<Utc>, source_time: chrono::DateTime<Utc>) -> f64 {
     (now - source_time).num_seconds() as f64 / 86_400.0
 }
 
-/// Returns (corroboration_strength, read_ok). When read_ok is false, the
-/// recompute pipeline triggers the IndeterminateReadState gate.
-fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> (f64, bool) {
+fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> TrustInput<f64> {
     let mut stmt = match db
         .conn_ref()
         .prepare("SELECT strength FROM claim_corroborations WHERE claim_id = ?1")
@@ -3124,14 +3174,14 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
         Ok(stmt) => stmt,
         Err(e) => {
             log::warn!("TrustRecompute: failed to prepare corroboration read for {claim_id}: {e}");
-            return (0.0, false);
+            return TrustInput::indeterminate(0.0, "corroboration_strength_prepare_failed");
         }
     };
     let strengths = match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0)) {
         Ok(rows) => rows,
         Err(e) => {
             log::warn!("TrustRecompute: failed to read corroborations for {claim_id}: {e}");
-            return (0.0, false);
+            return TrustInput::indeterminate(0.0, "corroboration_strength_query_failed");
         }
     };
 
@@ -3152,7 +3202,11 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
     }
 
     let value = if any { 1.0 - miss_probability } else { 0.0 };
-    (value, !had_error)
+    if had_error {
+        TrustInput::indeterminate(value, "corroboration_strength_row_decode_failed")
+    } else {
+        TrustInput::ok(value)
+    }
 }
 
 /// Build the per-claim corroborator list for source_reliability_aggregated.
@@ -3163,16 +3217,12 @@ fn corroboration_strength_for_claim(db: &crate::db::ActionDb, claim_id: &str) ->
 /// signal — matches the ADR-0114 default for authoritative-contradicting
 /// evidence and lets the AuthoritativeContradiction gate fire when the
 /// contradicting side outweighs the confirming side.
-/// Returns (corroborator_list, read_ok). When read_ok is false, the recompute
-/// pipeline triggers the IndeterminateReadState gate — a single synthetic
-/// contradicting weight wasn't enough to dominate strong existing confirming
-/// evidence, so this layer no longer tries to fail-close on its own.
 fn source_reliability_corroborators_for_claim(
     db: &crate::db::ActionDb,
     claim_id: &str,
-) -> (Vec<crate::abilities::trust::CorroboratorWeight>, bool) {
+) -> TrustInput<Vec<crate::abilities::trust::CorroboratorWeight>> {
     let mut out = Vec::new();
-    let mut had_read_error = false;
+    let mut indeterminate: Option<&'static str> = None;
 
     match db
         .conn_ref()
@@ -3193,13 +3243,13 @@ fn source_reliability_corroborators_for_claim(
                                 log::warn!(
                                     "TrustRecompute: discarding non-finite corroboration strength {other} for {claim_id}"
                                 );
-                                had_read_error = true;
+                                indeterminate = Some("corroborators_row_decode_failed");
                             }
                             Err(e) => {
                                 log::warn!(
                                     "TrustRecompute: malformed corroboration row for {claim_id}: {e}"
                                 );
-                                had_read_error = true;
+                                indeterminate = Some("corroborators_row_decode_failed");
                             }
                         }
                     }
@@ -3208,7 +3258,7 @@ fn source_reliability_corroborators_for_claim(
                     log::warn!(
                         "TrustRecompute: failed to query corroborations for {claim_id}: {e}"
                     );
-                    had_read_error = true;
+                    indeterminate = Some("corroborators_query_failed");
                 }
             }
         }
@@ -3216,7 +3266,7 @@ fn source_reliability_corroborators_for_claim(
             log::warn!(
                 "TrustRecompute: failed to prepare corroboration query for {claim_id}: {e}"
             );
-            had_read_error = true;
+            indeterminate = Some("corroborators_prepare_failed");
         }
     }
 
@@ -3241,25 +3291,24 @@ fn source_reliability_corroborators_for_claim(
             log::warn!(
                 "TrustRecompute: failed to count contradictions for {claim_id}: {e}"
             );
-            had_read_error = true;
+            indeterminate = Some("corroborators_contradiction_count_failed");
         }
     }
 
-    (out, !had_read_error)
+    match indeterminate {
+        Some(reason) => TrustInput::indeterminate(out, reason),
+        None => TrustInput::ok(out),
+    }
 }
 
 /// Producing abilities can stamp metadata_json.internal_consistency on a
 /// claim when they detect tension between its sub-statements (e.g. transcript
 /// extraction noticing self-contradicting language). Anything in [0.0, 1.0] is
 /// honored; anything missing or malformed defaults to 1.0 (no signal).
-/// Returns (internal_consistency, read_ok). A missing hint is the legitimate
-/// no-signal case and stays read_ok=true. Present-but-invalid hints —
-/// non-numeric, out of range, oversized metadata, malformed JSON — set
-/// read_ok=false so the IndeterminateReadState gate fires.
-fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) -> (f64, bool) {
+fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) -> TrustInput<f64> {
     let raw = match claim.metadata_json.as_deref() {
         Some(s) => s,
-        None => return (1.0, true),
+        None => return TrustInput::ok(1.0),
     };
     // Cap metadata_json size before parsing to avoid pathological inputs
     // (deeply nested JSON, gigabyte strings) consuming the trust recompute
@@ -3271,7 +3320,7 @@ fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) 
             raw.len(),
             claim.id
         );
-        return (1.0, false);
+        return TrustInput::indeterminate(1.0, "internal_consistency_metadata_oversized");
     }
     let value: serde_json::Value = match serde_json::from_str(raw) {
         Ok(v) => v,
@@ -3280,33 +3329,31 @@ fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) 
                 "TrustRecompute: malformed metadata_json for {}: {e}; defaulting internal_consistency to 1.0",
                 claim.id
             );
-            return (1.0, false);
+            return TrustInput::indeterminate(1.0, "internal_consistency_metadata_malformed");
         }
     };
     let hint = value.get("internal_consistency");
     match hint.and_then(|v| v.as_f64()) {
-        Some(v) if v.is_finite() && (0.0..=1.0).contains(&v) => (v, true),
+        Some(v) if v.is_finite() && (0.0..=1.0).contains(&v) => TrustInput::ok(v),
         Some(v) => {
             log::warn!(
                 "TrustRecompute: internal_consistency hint {v} out of range for {}; defaulting to 1.0",
                 claim.id
             );
-            (1.0, false)
+            TrustInput::indeterminate(1.0, "internal_consistency_hint_out_of_range")
         }
         None if hint.is_some() => {
             log::warn!(
                 "TrustRecompute: internal_consistency hint not a number for {}; defaulting to 1.0",
                 claim.id
             );
-            (1.0, false)
+            TrustInput::indeterminate(1.0, "internal_consistency_hint_not_numeric")
         }
-        None => (1.0, true),
+        None => TrustInput::ok(1.0),
     }
 }
 
-/// Returns (count, read_ok). When read_ok is false, the recompute pipeline
-/// triggers the IndeterminateReadState gate.
-fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> (u32, bool) {
+fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> TrustInput<u32> {
     match db.conn_ref().query_row(
         "SELECT COUNT(*) FROM claim_contradictions
          WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1)
@@ -3316,22 +3363,18 @@ fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> (u
         rusqlite::params![claim_id],
         |row| row.get::<_, i64>(0),
     ) {
-        Ok(count) => (count.max(0) as u32, true),
+        Ok(count) => TrustInput::ok(count.max(0) as u32),
         Err(e) => {
             log::warn!("TrustRecompute: failed to count contradictions for {claim_id}: {e}");
-            (0, false)
+            TrustInput::indeterminate(0, "contradiction_count_query_failed")
         }
     }
 }
 
-/// Returns (signal, read_ok). When read_ok is false the recompute pipeline
-/// triggers the IndeterminateReadState gate. A `mark_false` or `wrong_subject`
-/// being silently erased by a transient claim_feedback read error was the
-/// motivating gap from cycle-6 review.
 fn trust_feedback_signal_for_claim(
     db: &crate::db::ActionDb,
     claim_id: &str,
-) -> (crate::abilities::trust::UserFeedbackSignal, bool) {
+) -> TrustInput<crate::abilities::trust::UserFeedbackSignal> {
     let mut stmt = match db.conn_ref().prepare(
         "SELECT feedback_type FROM claim_feedback
          WHERE claim_id = ?1
@@ -3340,38 +3383,46 @@ fn trust_feedback_signal_for_claim(
         Ok(stmt) => stmt,
         Err(e) => {
             log::warn!("TrustRecompute: failed to prepare feedback read for {claim_id}: {e}");
-            return (crate::abilities::trust::UserFeedbackSignal::None, false);
+            return TrustInput::indeterminate(
+                crate::abilities::trust::UserFeedbackSignal::None,
+                "feedback_prepare_failed",
+            );
         }
     };
     let rows = match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, String>(0)) {
         Ok(rows) => rows,
         Err(e) => {
             log::warn!("TrustRecompute: failed to read feedback for {claim_id}: {e}");
-            return (crate::abilities::trust::UserFeedbackSignal::None, false);
+            return TrustInput::indeterminate(
+                crate::abilities::trust::UserFeedbackSignal::None,
+                "feedback_query_failed",
+            );
         }
     };
 
     let mut had_row_error = false;
     for row in rows {
         match row {
-            Ok(value) => match value.as_str() {
-                "confirm_current" => {
-                    return (crate::abilities::trust::UserFeedbackSignal::Confirmed, !had_row_error);
+            Ok(value) => {
+                let signal = match value.as_str() {
+                    "confirm_current" => Some(crate::abilities::trust::UserFeedbackSignal::Confirmed),
+                    "mark_false" => Some(crate::abilities::trust::UserFeedbackSignal::Retracted),
+                    "wrong_subject" => {
+                        Some(crate::abilities::trust::UserFeedbackSignal::WrongSubject)
+                    }
+                    "mark_outdated" | "wrong_source" | "needs_nuance" => {
+                        Some(crate::abilities::trust::UserFeedbackSignal::Corrected)
+                    }
+                    _ => None,
+                };
+                if let Some(s) = signal {
+                    return if had_row_error {
+                        TrustInput::indeterminate(s, "feedback_row_decode_failed")
+                    } else {
+                        TrustInput::ok(s)
+                    };
                 }
-                "mark_false" => {
-                    return (crate::abilities::trust::UserFeedbackSignal::Retracted, !had_row_error);
-                }
-                "wrong_subject" => {
-                    return (
-                        crate::abilities::trust::UserFeedbackSignal::WrongSubject,
-                        !had_row_error,
-                    );
-                }
-                "mark_outdated" | "wrong_source" | "needs_nuance" => {
-                    return (crate::abilities::trust::UserFeedbackSignal::Corrected, !had_row_error);
-                }
-                _ => {}
-            },
+            }
             Err(e) => {
                 log::warn!("TrustRecompute: malformed claim_feedback row for {claim_id}: {e}");
                 had_row_error = true;
@@ -3379,10 +3430,14 @@ fn trust_feedback_signal_for_claim(
         }
     }
 
-    (
-        crate::abilities::trust::UserFeedbackSignal::None,
-        !had_row_error,
-    )
+    if had_row_error {
+        TrustInput::indeterminate(
+            crate::abilities::trust::UserFeedbackSignal::None,
+            "feedback_row_decode_failed",
+        )
+    } else {
+        TrustInput::ok(crate::abilities::trust::UserFeedbackSignal::None)
+    }
 }
 
 fn subject_fit_confidence_for_feedback(
@@ -4455,10 +4510,12 @@ mod tests {
         });
         let claim = load_single_trust_claim(&db, account_id);
 
-        let (freshness, ok) = freshness_context_for_claim(
+        let (freshness, reason) = freshness_context_for_claim(
             Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
             &claim,
-        );
+        )
+        .into_parts();
+        let ok = reason.is_none();
         let weight = crate::abilities::trust::factors::freshness_weight(
             &freshness,
             &claim.temporal_scope,
@@ -4489,10 +4546,12 @@ mod tests {
         });
         let claim = load_single_trust_claim(&db, account_id);
 
-        let (freshness, ok) = freshness_context_for_claim(
+        let (freshness, reason) = freshness_context_for_claim(
             Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap(),
             &claim,
-        );
+        )
+        .into_parts();
+        let ok = reason.is_none();
 
         assert!(ok);
         assert!(freshness.timestamp_known);
@@ -4513,9 +4572,9 @@ mod tests {
         seed_trust_corroboration(&db, &claim_id, "glean");
         seed_trust_corroboration(&db, &claim_id, "calendar");
 
-        let (strength, ok) = corroboration_strength_for_claim(&db, &claim_id);
+        let (strength, reason) = corroboration_strength_for_claim(&db, &claim_id).into_parts();
         assert_float_close(strength, 0.75);
-        assert!(ok);
+        assert!(reason.is_none(), "clean read should report no indeterminate reason");
     }
 
     #[test]
@@ -5461,8 +5520,9 @@ mod tests {
             )
             .expect("seed corroborators + contradictions");
 
-        let (corroborators, ok) = source_reliability_corroborators_for_claim(&db, "c-target");
-        assert!(ok, "clean reads should report read_ok=true");
+        let (corroborators, reason) =
+            source_reliability_corroborators_for_claim(&db, "c-target").into_parts();
+        assert!(reason.is_none(), "clean reads should report no reason");
         let confirming: Vec<_> = corroborators.iter().filter(|c| c.confirms).collect();
         let contradicting: Vec<_> = corroborators.iter().filter(|c| !c.confirms).collect();
         assert_eq!(confirming.len(), 2, "two corroboration rows must surface");
@@ -5482,11 +5542,11 @@ mod tests {
         db.conn_ref()
             .execute_batch("DROP TABLE claim_feedback;")
             .expect("drop claim_feedback to simulate read failure");
-        let (signal, ok) = trust_feedback_signal_for_claim(&db, "c-target");
+        let (signal, reason) = trust_feedback_signal_for_claim(&db, "c-target").into_parts();
         assert_eq!(signal, crate::abilities::trust::UserFeedbackSignal::None);
         assert!(
-            !ok,
-            "missing claim_feedback table must propagate as read_ok=false"
+            reason.is_some(),
+            "missing claim_feedback table must propagate an indeterminate reason"
         );
     }
 
@@ -5532,10 +5592,10 @@ mod tests {
         };
         let tmp = std::path::PathBuf::from(".");
         let input = trust_input("a-1", &tmp);
-        let (_value, ok) = source_reliability_for_claim(&db, &input, &claim);
+        let (_value, reason) = source_reliability_for_claim(&db, &input, &claim).into_parts();
         assert!(
-            !ok,
-            "missing signal_weights table must propagate as read_ok=false"
+            reason.is_some(),
+            "missing signal_weights table must propagate an indeterminate reason"
         );
     }
 
@@ -5575,23 +5635,29 @@ mod tests {
             verification_reason: None,
             needs_user_decision_at: None,
         };
-        let (value, ok) = internal_consistency_for_claim(&claim);
+        let (value, reason) = internal_consistency_for_claim(&claim).into_parts();
         assert_eq!(value, 1.0);
-        assert!(ok, "absent metadata is not an error");
+        assert!(reason.is_none(), "absent metadata is not an error");
 
         claim.metadata_json = Some(r#"{"internal_consistency":0.3}"#.into());
-        let (value, ok) = internal_consistency_for_claim(&claim);
+        let (value, reason) = internal_consistency_for_claim(&claim).into_parts();
         assert!((value - 0.3).abs() < 1e-9);
-        assert!(ok);
+        assert!(reason.is_none());
 
         claim.metadata_json = Some(r#"{"internal_consistency":1.5}"#.into());
-        let (value, ok) = internal_consistency_for_claim(&claim);
+        let (value, reason) = internal_consistency_for_claim(&claim).into_parts();
         assert_eq!(value, 1.0, "out-of-range hints fall back to 1.0");
-        assert!(!ok, "out-of-range hint must surface as read_ok=false");
+        assert!(
+            reason.is_some(),
+            "out-of-range hint must surface an indeterminate reason"
+        );
 
         claim.metadata_json = Some("not-json".into());
-        let (value, ok) = internal_consistency_for_claim(&claim);
+        let (value, reason) = internal_consistency_for_claim(&claim).into_parts();
         assert_eq!(value, 1.0);
-        assert!(!ok, "malformed metadata_json must surface as read_ok=false");
+        assert!(
+            reason.is_some(),
+            "malformed metadata_json must surface an indeterminate reason"
+        );
     }
 }

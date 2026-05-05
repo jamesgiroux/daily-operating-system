@@ -1087,7 +1087,15 @@ pub fn upsert_entity_intelligence_legacy_snapshot(
         upsert_entity_health_legacy_projection(db, &intel.entity_id, &intel.entity_type, health)?;
     }
 
-    emit_enrichment_side_effect_signals(db, intel);
+    let side_effect_outcome = emit_enrichment_side_effect_signals(db, intel);
+    if side_effect_outcome.is_degraded() {
+        log::warn!(
+            "derived_state: enrichment side-effect signals degraded for {}/{} — {} signal(s) dropped after snapshot commit; downstream callouts may be incomplete",
+            intel.entity_type,
+            intel.entity_id,
+            side_effect_outcome.dropped_signal_count
+        );
+    }
 
     Ok(())
 }
@@ -1182,10 +1190,46 @@ pub fn update_account_ai_columns_projection(
     Ok(())
 }
 
+/// Outcome metadata from emit_enrichment_side_effect_signals. Lets callers
+/// detect when regulatory or stakeholder signals failed to reach the bus
+/// after the enrichment snapshot already committed — without this, dropped
+/// signals never surface upstream and the callout pipeline silently misses
+/// expected entries.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct EnrichmentSideEffectOutcome {
+    pub dropped_signal_count: u32,
+}
+
+impl EnrichmentSideEffectOutcome {
+    pub fn is_degraded(&self) -> bool {
+        self.dropped_signal_count > 0
+    }
+}
+
 fn emit_enrichment_side_effect_signals(
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
-) {
+) -> EnrichmentSideEffectOutcome {
+    let mut dropped: u32 = 0;
+    let mut try_emit = |signal_type: &str, value: &str, confidence: f64| {
+        if let Err(e) = crate::signals::bus::emit_signal(
+            db,
+            &intel.entity_type,
+            &intel.entity_id,
+            signal_type,
+            "enrichment_write",
+            Some(value),
+            confidence,
+        ) {
+            log::warn!(
+                "emit_enrichment_side_effect_signals: dropped {signal_type} for {}/{}: {e}",
+                intel.entity_type,
+                intel.entity_id
+            );
+            dropped += 1;
+        }
+    };
+
     for item in &intel.regulatory_context {
         if item.status == "gap" {
             let value = serde_json::json!({
@@ -1193,30 +1237,14 @@ fn emit_enrichment_side_effect_signals(
                 "evidence": item.evidence,
             })
             .to_string();
-            let _ = crate::signals::bus::emit_signal(
-                db,
-                &intel.entity_type,
-                &intel.entity_id,
-                "regulatory_gap_detected",
-                "enrichment_write",
-                Some(&value),
-                0.9,
-            );
+            try_emit("regulatory_gap_detected", &value, 0.9);
         } else if item.status == "required" || item.status == "in_progress" {
             let value = serde_json::json!({
                 "standard": item.standard,
                 "status": item.status,
             })
             .to_string();
-            let _ = crate::signals::bus::emit_signal(
-                db,
-                &intel.entity_type,
-                &intel.entity_id,
-                "regulatory_requirement_detected",
-                "enrichment_write",
-                Some(&value),
-                0.85,
-            );
+            try_emit("regulatory_requirement_detected", &value, 0.85);
         }
     }
 
@@ -1233,16 +1261,11 @@ fn emit_enrichment_side_effect_signals(
                 "verified_source": insight.verified_source,
             })
             .to_string();
-            let _ = crate::signals::bus::emit_signal(
-                db,
-                &intel.entity_type,
-                &intel.entity_id,
-                signal_type,
-                "enrichment_write",
-                Some(&value),
-                confidence,
-            );
+            try_emit(signal_type, &value, confidence);
         }
+    }
+    EnrichmentSideEffectOutcome {
+        dropped_signal_count: dropped,
     }
 }
 

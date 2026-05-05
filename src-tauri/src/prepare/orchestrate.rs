@@ -941,9 +941,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                 );
                 if outcome.is_degraded() {
                     log::warn!(
-                        "prepare/orchestrate: callout briefing degraded — signal_query_failed={} dropped_persist={} (empty list does NOT necessarily mean no eligible signals)",
+                        "prepare/orchestrate: callout briefing degraded — signal_query_failed={} dropped_persist={} signal_decode_failures={} (empty list does NOT necessarily mean no eligible signals)",
                         outcome.signal_query_failed,
-                        outcome.dropped_due_to_persist_failure
+                        outcome.dropped_due_to_persist_failure,
+                        outcome.signal_decode_failures
                     );
                 }
                 list
@@ -1338,9 +1339,10 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                 );
                 if outcome.is_degraded() {
                     log::warn!(
-                        "prepare/orchestrate: weekly callout briefing degraded — signal_query_failed={} dropped_persist={} (empty list does NOT necessarily mean no eligible signals)",
+                        "prepare/orchestrate: weekly callout briefing degraded — signal_query_failed={} dropped_persist={} signal_decode_failures={} (empty list does NOT necessarily mean no eligible signals)",
                         outcome.signal_query_failed,
-                        outcome.dropped_due_to_persist_failure
+                        outcome.dropped_due_to_persist_failure,
+                        outcome.signal_decode_failures
                     );
                 }
                 list
