@@ -658,6 +658,47 @@ impl From<crate::db::types::DbError> for ServiceError {
     }
 }
 
+#[cfg(feature = "harness-hermetic")]
+pub fn validate_harness_hermetic_db_path(db_path: &str) -> Result<(), ServiceError> {
+    let db_path = db_path.trim();
+    if db_path == ":memory:" {
+        return Ok(());
+    }
+
+    if db_path.is_empty() {
+        return Err(ServiceError::Invariant(
+            "harness-hermetic requires a non-empty DB path".to_string(),
+        ));
+    }
+
+    let path = std::path::Path::new(db_path);
+    if path
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return Err(ServiceError::Invariant(format!(
+            "harness-hermetic DB path must not contain '..': {db_path}"
+        )));
+    }
+
+    let manifest_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR"));
+    let fixtures_dir = manifest_dir.join("tests").join("fixtures");
+    let absolute_path = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        manifest_dir.join(path)
+    };
+
+    if absolute_path.starts_with(&fixtures_dir) {
+        Ok(())
+    } else {
+        Err(ServiceError::Invariant(format!(
+            "harness-hermetic DB path must be :memory: or under {}; got {db_path}",
+            fixtures_dir.display()
+        )))
+    }
+}
+
 /// Per-call service execution context.
 ///
 /// `mode`, `clock`, `rng`, `actor`, `external` are public read capabilities
@@ -776,9 +817,9 @@ impl<'a> ServiceContext<'a> {
     /// wrappers are a programming error in this mode. This constructor
     /// asserts that replay fixtures populate `external` before construction.
     ///
-    /// **Boot-time guard for production-DB-path rejection** lands in
-    /// the DB-plumbing phase; the fixture-DB invariant is documented
-    /// here but unverified at the substrate level.
+    /// With `harness-hermetic`, the harness runner must call
+    /// `validate_harness_hermetic_db_path` before constructing this context.
+    /// The runtime replay-mode assertion remains active in all builds.
     pub fn new_evaluate(
         clock: &'a dyn Clock,
         rng: &'a dyn SeededRng,

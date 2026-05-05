@@ -3,11 +3,13 @@ name: Test
 on:
   push:
     branches:
+      - dev
       - trunk
     tags-ignore:
       - 'v*'
   pull_request:
     branches:
+      - dev
       - trunk
 
 jobs:
@@ -86,6 +88,12 @@ jobs:
 
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
+
+      - name: Run hermetic harness tests
+        working-directory: src-tauri
+        run: |
+          cargo test --features harness-hermetic --test harness
+          cargo test --features harness-hermetic --test dos216_hermetic_feature_test
 
       - name: Run Rust tests
         working-directory: src-tauri

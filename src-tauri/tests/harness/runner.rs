@@ -6,6 +6,8 @@ use base64::Engine;
 use dailyos_lib::abilities::NoopAbilityTracer;
 use dailyos_lib::bridges::eval::{EvalAbilityBridge, EvalAbilityDeps, EvalFixtureServices};
 use dailyos_lib::intelligence::provider::{Completion, FingerprintMetadata, ReplayProvider};
+#[cfg(feature = "harness-hermetic")]
+use dailyos_lib::services::context::validate_harness_hermetic_db_path;
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::external_replay::JsonExternalReplayFixture;
 use rusqlite::types::ValueRef;
@@ -18,6 +20,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 const HARNESS_AUTH_SCOPE_ID: &str = "harness-default-tenant";
+const HARNESS_IN_MEMORY_DB_PATH: &str = ":memory:";
+#[cfg(feature = "harness-hermetic")]
+const HARNESS_DB_PATH_ENV: &str = "DAILYOS_HARNESS_DB_PATH";
 
 /// Output of running a single fixture through its ability.
 pub struct RunResult {
@@ -44,6 +49,9 @@ pub enum RunError {
     Json(#[from] serde_json::Error),
     #[error("required dep not yet wired: {0}")]
     NotYetWired(String),
+    #[cfg(feature = "harness-hermetic")]
+    #[error("harness hermetic invariant failed: {0}")]
+    HermeticInvariant(String),
 }
 
 pub struct RunnerDeps {
@@ -122,8 +130,7 @@ pub fn run_fixture(deps: &RunnerDeps, fixture: &EvalFixture) -> Result<RunResult
 pub(crate) fn prepare_fixture_for_run(
     fixture: &EvalFixture,
 ) -> Result<PreparedFixtureRun, RunError> {
-    let conn = Connection::open_in_memory()
-        .map_err(|error| RunError::StateSqlFailed(error.to_string()))?;
+    let conn = open_harness_connection()?;
     conn.execute_batch(&fixture.state_sql)
         .map_err(|error| RunError::StateSqlFailed(error.to_string()))?;
 
@@ -145,6 +152,25 @@ pub(crate) fn prepare_fixture_for_run(
         external_clients,
         provider,
     })
+}
+
+#[cfg(not(feature = "harness-hermetic"))]
+fn open_harness_connection() -> Result<Connection, RunError> {
+    Connection::open_in_memory().map_err(|error| RunError::StateSqlFailed(error.to_string()))
+}
+
+#[cfg(feature = "harness-hermetic")]
+fn open_harness_connection() -> Result<Connection, RunError> {
+    let db_path = std::env::var(HARNESS_DB_PATH_ENV)
+        .unwrap_or_else(|_| HARNESS_IN_MEMORY_DB_PATH.to_string());
+    validate_harness_hermetic_db_path(&db_path)
+        .map_err(|error| RunError::HermeticInvariant(error.to_string()))?;
+
+    if db_path == HARNESS_IN_MEMORY_DB_PATH {
+        Connection::open_in_memory().map_err(|error| RunError::StateSqlFailed(error.to_string()))
+    } else {
+        Connection::open(&db_path).map_err(|error| RunError::StateSqlFailed(error.to_string()))
+    }
 }
 
 fn replay_provider_from_fixture(value: &Value) -> Result<ReplayProvider, RunError> {
