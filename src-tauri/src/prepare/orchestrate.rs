@@ -933,12 +933,19 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             Some(db) => {
                 let model_ref = state.embedding_model.as_ref();
                 let user_entity = crate::services::user_entity::get_user_entity_from_db(db).ok();
-                crate::signals::callouts::generate_callouts(
+                let (list, outcome) = crate::signals::callouts::generate_callouts(
                     db,
                     Some(model_ref),
                     &classified,
                     user_entity.as_ref(),
-                )
+                );
+                if outcome.dropped_due_to_persist_failure > 0 {
+                    log::warn!(
+                        "prepare/orchestrate: callout briefing degraded — {} callout(s) generated but failed to persist; surface remains short of full intelligence",
+                        outcome.dropped_due_to_persist_failure
+                    );
+                }
+                list
             }
             None => Vec::new(),
         }
@@ -1322,12 +1329,19 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                 // Generate callouts
                 let model_ref = state.embedding_model.as_ref();
                 let user_entity = crate::services::user_entity::get_user_entity_from_db(db).ok();
-                crate::signals::callouts::generate_callouts(
+                let (list, outcome) = crate::signals::callouts::generate_callouts(
                     db,
                     Some(model_ref),
                     &classified,
                     user_entity.as_ref(),
-                )
+                );
+                if outcome.dropped_due_to_persist_failure > 0 {
+                    log::warn!(
+                        "prepare/orchestrate: weekly callout briefing degraded — {} callout(s) generated but failed to persist",
+                        outcome.dropped_due_to_persist_failure
+                    );
+                }
+                list
             }
             None => Vec::new(),
         }

@@ -2792,21 +2792,25 @@ fn build_trust_context_for_claim(
     footprint: crate::abilities::trust::TargetFootprint,
     portfolio_footprints: Vec<crate::abilities::trust::EntityFootprint>,
 ) -> crate::abilities::trust::TrustContext {
-    let feedback_signal = trust_feedback_signal_for_claim(db, &claim.id);
+    let (feedback_signal, feedback_read_ok) = trust_feedback_signal_for_claim(db, &claim.id);
     let (corroborators, corroborator_read_ok) =
         source_reliability_corroborators_for_claim(db, &claim.id);
     let (contradiction_count, contradiction_read_ok) =
         contradiction_count_for_claim(db, &claim.id);
     let (corroboration_strength, corroboration_strength_read_ok) =
         corroboration_strength_for_claim(db, &claim.id);
+    let (source_reliability, source_reliability_read_ok) =
+        source_reliability_for_claim(db, input, claim);
     let read_state_indeterminate = !corroborator_read_ok
         || !contradiction_read_ok
-        || !corroboration_strength_read_ok;
+        || !corroboration_strength_read_ok
+        || !feedback_read_ok
+        || !source_reliability_read_ok;
     crate::abilities::trust::TrustContext {
         now: ctx.clock.now(),
         config: crate::abilities::trust::TrustConfig::default(),
         factor_inputs: crate::abilities::trust::TrustFactorInputs {
-            source_reliability: source_reliability_for_claim(db, input, claim),
+            source_reliability,
             source_reliability_corroborators: corroborators,
             freshness: freshness_context_for_claim(ctx.clock.now(), claim),
             corroboration_strength,
@@ -2894,14 +2898,27 @@ fn trust_subject_from_claim_json(
     }
 }
 
+/// Returns (source_reliability, read_ok). When read_ok is false the recompute
+/// pipeline triggers the IndeterminateReadState gate. A row that is genuinely
+/// absent from signal_weights is not an error — it means the source has no
+/// per-entity reliability signal yet, and 1.0 is the documented default.
 fn source_reliability_for_claim(
     db: &crate::db::ActionDb,
     input: &EnrichmentInput,
     claim: &crate::db::claims::IntelligenceClaim,
-) -> f64 {
+) -> (f64, bool) {
     match db.get_signal_weight(&claim.data_source, &input.entity_type, "enrichment_quality") {
-        Ok(Some((alpha, beta, _))) => alpha / (alpha + beta),
-        _ => 1.0,
+        Ok(Some((alpha, beta, _))) => (alpha / (alpha + beta), true),
+        Ok(None) => (1.0, true),
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: failed to read signal_weights for source={} entity_type={} on {}: {e}",
+                claim.data_source,
+                input.entity_type,
+                claim.id
+            );
+            (1.0, false)
+        }
     }
 }
 
@@ -3174,10 +3191,14 @@ fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> (u
     }
 }
 
+/// Returns (signal, read_ok). When read_ok is false the recompute pipeline
+/// triggers the IndeterminateReadState gate. A `mark_false` or `wrong_subject`
+/// being silently erased by a transient claim_feedback read error was the
+/// motivating gap from cycle-6 review.
 fn trust_feedback_signal_for_claim(
     db: &crate::db::ActionDb,
     claim_id: &str,
-) -> crate::abilities::trust::UserFeedbackSignal {
+) -> (crate::abilities::trust::UserFeedbackSignal, bool) {
     let mut stmt = match db.conn_ref().prepare(
         "SELECT feedback_type FROM claim_feedback
          WHERE claim_id = ?1
@@ -3186,30 +3207,49 @@ fn trust_feedback_signal_for_claim(
         Ok(stmt) => stmt,
         Err(e) => {
             log::warn!("TrustRecompute: failed to prepare feedback read for {claim_id}: {e}");
-            return crate::abilities::trust::UserFeedbackSignal::None;
+            return (crate::abilities::trust::UserFeedbackSignal::None, false);
         }
     };
     let rows = match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, String>(0)) {
         Ok(rows) => rows,
         Err(e) => {
             log::warn!("TrustRecompute: failed to read feedback for {claim_id}: {e}");
-            return crate::abilities::trust::UserFeedbackSignal::None;
+            return (crate::abilities::trust::UserFeedbackSignal::None, false);
         }
     };
 
-    for row in rows.flatten() {
-        match row.as_str() {
-            "confirm_current" => return crate::abilities::trust::UserFeedbackSignal::Confirmed,
-            "mark_false" => return crate::abilities::trust::UserFeedbackSignal::Retracted,
-            "wrong_subject" => return crate::abilities::trust::UserFeedbackSignal::WrongSubject,
-            "mark_outdated" | "wrong_source" | "needs_nuance" => {
-                return crate::abilities::trust::UserFeedbackSignal::Corrected
+    let mut had_row_error = false;
+    for row in rows {
+        match row {
+            Ok(value) => match value.as_str() {
+                "confirm_current" => {
+                    return (crate::abilities::trust::UserFeedbackSignal::Confirmed, !had_row_error);
+                }
+                "mark_false" => {
+                    return (crate::abilities::trust::UserFeedbackSignal::Retracted, !had_row_error);
+                }
+                "wrong_subject" => {
+                    return (
+                        crate::abilities::trust::UserFeedbackSignal::WrongSubject,
+                        !had_row_error,
+                    );
+                }
+                "mark_outdated" | "wrong_source" | "needs_nuance" => {
+                    return (crate::abilities::trust::UserFeedbackSignal::Corrected, !had_row_error);
+                }
+                _ => {}
+            },
+            Err(e) => {
+                log::warn!("TrustRecompute: malformed claim_feedback row for {claim_id}: {e}");
+                had_row_error = true;
             }
-            _ => {}
         }
     }
 
-    crate::abilities::trust::UserFeedbackSignal::None
+    (
+        crate::abilities::trust::UserFeedbackSignal::None,
+        !had_row_error,
+    )
 }
 
 fn subject_fit_confidence_for_feedback(
@@ -5308,6 +5348,69 @@ mod tests {
             "reconciled contradiction must NOT count, only the unreconciled one"
         );
         assert!((contradicting[0].evidence_weight - 1.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn trust_feedback_signal_reports_read_error_when_table_missing() {
+        let db = trust_test_db();
+        db.conn_ref()
+            .execute_batch("DROP TABLE claim_feedback;")
+            .expect("drop claim_feedback to simulate read failure");
+        let (signal, ok) = trust_feedback_signal_for_claim(&db, "c-target");
+        assert_eq!(signal, crate::abilities::trust::UserFeedbackSignal::None);
+        assert!(
+            !ok,
+            "missing claim_feedback table must propagate as read_ok=false"
+        );
+    }
+
+    #[test]
+    fn source_reliability_reports_read_error_when_signal_weights_missing() {
+        let db = trust_test_db();
+        db.conn_ref()
+            .execute_batch("DROP TABLE signal_weights;")
+            .expect("drop signal_weights to simulate read failure");
+        let claim = crate::db::claims::IntelligenceClaim {
+            id: "c-1".into(),
+            subject_ref: "{}".into(),
+            claim_type: "fact".into(),
+            field_path: None,
+            topic_key: None,
+            text: "x".into(),
+            dedup_key: "d-1".into(),
+            item_hash: None,
+            actor: "agent".into(),
+            data_source: "glean".into(),
+            source_ref: None,
+            source_asof: None,
+            observed_at: "2026-05-01".into(),
+            created_at: "2026-05-01".into(),
+            provenance_json: "{}".into(),
+            metadata_json: None,
+            claim_state: crate::db::claims::ClaimState::Active,
+            surfacing_state: crate::db::claims::SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score: None,
+            trust_computed_at: None,
+            trust_version: None,
+            thread_id: None,
+            temporal_scope: crate::db::claims::TemporalScope::State,
+            sensitivity: crate::db::claims::ClaimSensitivity::Internal,
+            verification_state: crate::db::claims::ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
+        };
+        let tmp = std::path::PathBuf::from(".");
+        let input = trust_input("a-1", &tmp);
+        let (_value, ok) = source_reliability_for_claim(&db, &input, &claim);
+        assert!(
+            !ok,
+            "missing signal_weights table must propagate as read_ok=false"
+        );
     }
 
     #[test]

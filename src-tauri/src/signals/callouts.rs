@@ -86,28 +86,47 @@ const CALLOUT_SIGNAL_TYPES: &[&str] = &[
 // Callout generation
 // ---------------------------------------------------------------------------
 
+/// Outcome metadata from a callout generation pass. Lets callers detect
+/// degraded persistence so a partial briefing isn't silently treated as a
+/// successful empty/short result.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct GenerateCalloutsOutcome {
+    /// Count of callouts that were generated in-memory but then failed to
+    /// persist via upsert_briefing_callout. The returned Vec only contains
+    /// successfully-persisted callouts; this field surfaces how many were
+    /// dropped so callers can distinguish "no qualifying signals" from
+    /// "partial DB outage during write".
+    pub dropped_due_to_persist_failure: u32,
+}
+
 /// Generate briefing callouts from recent high-confidence signals.
 ///
 /// Optionally ranks by embedding similarity to today's meetings if an
 /// embedding model is provided. When a UserEntity is provided, signal
 /// relevance is multiplied by alignment with user priorities.
+///
+/// Returns the persisted callouts and a GenerateCalloutsOutcome carrying any
+/// persistence-degradation metadata. Callers serialize the Vec into the
+/// briefing surface and check the outcome to decide whether to flag a partial
+/// failure or surface a retry signal.
 pub fn generate_callouts(
     db: &ActionDb,
     model: Option<&EmbeddingModel>,
     todays_meetings: &[Value],
     user_entity: Option<&crate::types::UserEntity>,
-) -> Vec<BriefingCallout> {
+) -> (Vec<BriefingCallout>, GenerateCalloutsOutcome) {
+    let outcome_default = GenerateCalloutsOutcome::default();
     // Get recent signals (last 24h) of callout-worthy types
     let signals = match db.get_recent_callout_signals(24, CALLOUT_SIGNAL_TYPES) {
         Ok(s) => s,
         Err(e) => {
             log::warn!("generate_callouts: failed to query signals: {}", e);
-            return Vec::new();
+            return (Vec::new(), outcome_default);
         }
     };
 
     if signals.is_empty() {
-        return Vec::new();
+        return (Vec::new(), outcome_default);
     }
 
     // Optionally rank by relevance to today's meetings
@@ -148,8 +167,10 @@ pub fn generate_callouts(
     // returned callouts into directives, while DB-backed dashboard / dismissal
     // / backfill flows expect the row to exist. Returning a callout we
     // couldn't persist would create a false-success split between immediate
-    // output and durable state with no retry signal, so we drop unpersisted
-    // entries from the returned list and warn-log the loss.
+    // output and durable state. Dropped entries are warn-logged AND counted
+    // in the returned outcome so callers can distinguish "no qualifying
+    // signal" from "partial DB outage during write".
+    let mut dropped_due_to_persist_failure = 0_u32;
     let mut callouts: Vec<BriefingCallout> = scored_signals
         .into_iter()
         .filter(|(s, _)| s.confidence >= 0.55)
@@ -191,6 +212,7 @@ pub fn generate_callouts(
                         callout.entity_id,
                         e
                     );
+                    dropped_due_to_persist_failure += 1;
                     None
                 }
             }
@@ -209,7 +231,12 @@ pub fn generate_callouts(
             .unwrap_or(std::cmp::Ordering::Equal)
     });
 
-    callouts
+    (
+        callouts,
+        GenerateCalloutsOutcome {
+            dropped_due_to_persist_failure,
+        },
+    )
 }
 
 fn severity_order(severity: &str) -> u8 {
@@ -797,8 +824,9 @@ mod tests {
     #[test]
     fn test_generate_callouts_empty() {
         let db = test_db();
-        let callouts = generate_callouts(&db, None, &[], None);
+        let (callouts, outcome) = generate_callouts(&db, None, &[], None);
         assert!(callouts.is_empty());
+        assert_eq!(outcome, GenerateCalloutsOutcome::default());
     }
 
     #[test]
@@ -825,10 +853,11 @@ mod tests {
             )
             .unwrap();
 
-        let callouts = generate_callouts(&db, None, &[], None);
+        let (callouts, outcome) = generate_callouts(&db, None, &[], None);
         assert_eq!(callouts.len(), 1);
         assert_eq!(callouts[0].severity, "critical");
         assert_eq!(callouts[0].entity_name.as_deref(), Some("Acme Corp"));
+        assert_eq!(outcome.dropped_due_to_persist_failure, 0);
     }
 
     #[test]

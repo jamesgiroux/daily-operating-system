@@ -163,14 +163,22 @@ pub fn get_by_type(
     bus::get_active_signals_by_type(db, entity_type, entity_id, signal_type)
 }
 
-/// Generate signal-based briefing callouts.
+/// Generate signal-based briefing callouts. Discards the persistence-outcome
+/// metadata in this convenience accessor — callers that need the degradation
+/// signal call `signals::callouts::generate_callouts` directly.
 pub fn get_callouts(
     db: &ActionDb,
     model: Option<&EmbeddingModel>,
     todays_meetings: &[Value],
 ) -> Vec<BriefingCallout> {
     let user_entity = crate::services::user_entity::get_user_entity_from_db(db).ok();
-    crate::signals::callouts::generate_callouts(db, model, todays_meetings, user_entity.as_ref())
+    let (list, _outcome) = crate::signals::callouts::generate_callouts(
+        db,
+        model,
+        todays_meetings,
+        user_entity.as_ref(),
+    );
+    list
 }
 
 /// Run cross-entity propagation rules for a signal.
