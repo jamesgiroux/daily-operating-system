@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 
-use super::classifier::RegressionEvidence;
+use super::classifier::{RegressionClass, Severity};
 use super::scoring::ScoreResult;
 use super::types::FixtureRef;
 
@@ -13,5 +13,5 @@ pub struct HarnessReport {
 pub struct HarnessReportEntry {
     pub fixture: FixtureRef,
     pub score: Option<ScoreResult>,
-    pub regression: Option<RegressionEvidence>,
+    pub regression: Option<(RegressionClass, Severity)>,
 }

@@ -19,10 +19,11 @@ use dailyos_lib::services::context::{
     ExecutionMode, GleanAccountFacts, GleanClientHandle, SeedableRng, SeededRng,
 };
 use harness::{
-    canonical_json_eq, diff_internal_provenance, diff_rendered_provenance, discover_fixtures,
-    load_fixture, prepare_fixture_for_run, run_fixture, CategoryScorer, FixtureLoadError,
-    FixtureRef, MaintenanceScorer, PublishScorer, ReadScorer, RunError, RunnerDeps,
-    TransformScorer,
+    baseline_fingerprint_for_fixture, canonical_json_eq, diff_internal_provenance,
+    diff_rendered_provenance, discover_fixtures, load_fixture, prepare_fixture_for_run,
+    run_fixture, severity_of, CategoryScorer, ClassificationFingerprint, FixtureLoadError,
+    FixtureRef, MaintenanceScorer, PublishScorer, ReadScorer, RegressionClass,
+    RegressionClassifier, RunError, RunnerDeps, Severity, TransformScorer,
 };
 use serde_json::json;
 
@@ -511,8 +512,156 @@ fn canonical_json_eq_handles_float_tolerance_for_close_values() {
     ));
 }
 
+#[test]
+fn classifier_input_change_takes_priority_when_inputs_hash_diff() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.inputs_hash = "inputs-current".to_string();
+    current.prompt_template_version = Some("prompt-v2".to_string());
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::InputChange, Severity::Hard))
+    );
+}
+
+#[test]
+fn classifier_input_change_when_state_sql_hash_diff() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.state_sql_hash = "state-current".to_string();
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::InputChange, Severity::Hard))
+    );
+}
+
+#[test]
+fn classifier_prompt_change_when_template_version_diff_and_inputs_match() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.prompt_template_version = Some("prompt-v2".to_string());
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::PromptChange, Severity::FailSoft))
+    );
+}
+
+#[test]
+fn classifier_canonicalization_bug_when_canonical_hash_diff_and_template_inputs_match() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.canonical_prompt_hash = Some("canonical-current".to_string());
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::CanonicalizationBug, Severity::Hard))
+    );
+}
+
+#[test]
+fn classifier_provider_drift_when_completion_text_diff_and_fingerprint_matches() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.completion_text_hash = Some("completion-current".to_string());
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::ProviderDrift, Severity::FailSoft))
+    );
+}
+
+#[test]
+fn classifier_logic_change_when_no_fingerprint_diff_but_score_diffs_present() {
+    let baseline = classification_fingerprint();
+    let current = baseline.clone();
+    let diffs = vec![score_diff()];
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &diffs),
+        Some((RegressionClass::LogicChange, Severity::FailSoft))
+    );
+}
+
+#[test]
+fn classifier_returns_none_when_all_match() {
+    let baseline = classification_fingerprint();
+    let current = baseline.clone();
+
+    assert_eq!(RegressionClassifier.classify(&baseline, &current, &[]), None);
+}
+
+#[test]
+fn classifier_severity_input_change_is_hard() {
+    assert_eq!(severity_of(&RegressionClass::InputChange), Severity::Hard);
+}
+
+#[test]
+fn classifier_severity_prompt_change_is_fail_soft() {
+    assert_eq!(
+        severity_of(&RegressionClass::PromptChange),
+        Severity::FailSoft
+    );
+}
+
+#[test]
+fn classifier_severity_canonicalization_bug_is_hard() {
+    assert_eq!(
+        severity_of(&RegressionClass::CanonicalizationBug),
+        Severity::Hard
+    );
+}
+
+#[test]
+fn classifier_precedence_input_beats_prompt_when_both_differ() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.inputs_hash = "inputs-current".to_string();
+    current.prompt_template_version = Some("prompt-v2".to_string());
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::InputChange, Severity::Hard))
+    );
+}
+
+#[test]
+fn baseline_fingerprint_reads_prompt_fingerprint_baseline_from_metadata() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+
+    let fingerprint = baseline_fingerprint_for_fixture(&fixture);
+
+    assert_eq!(
+        fingerprint.canonical_prompt_hash,
+        Some("fingerprint".to_string())
+    );
+}
+
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+fn classification_fingerprint() -> ClassificationFingerprint {
+    ClassificationFingerprint {
+        inputs_hash: "inputs-baseline".to_string(),
+        state_sql_hash: "state-baseline".to_string(),
+        prompt_template_version: Some("prompt-v1".to_string()),
+        canonical_prompt_hash: Some("canonical-baseline".to_string()),
+        completion_text_hash: Some("completion-baseline".to_string()),
+    }
+}
+
+fn score_diff() -> harness::Diff {
+    harness::Diff {
+        kind: harness::DiffKind::OutputMismatch,
+        path: "/value".to_string(),
+        expected: json!("expected"),
+        actual: json!("actual"),
+    }
 }
 
 fn expected_artifacts(

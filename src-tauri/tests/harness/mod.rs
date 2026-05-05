@@ -6,6 +6,11 @@ pub mod classifier;
 pub mod report;
 pub mod scoring;
 
+#[allow(unused_imports)]
+pub use classifier::{
+    baseline_fingerprint_for_fixture, current_fingerprint_for_run, severity_of,
+    ClassificationFingerprint, RegressionClass, RegressionClassifier, Severity,
+};
 pub use loader::{discover_fixtures, load_fixture, FixtureLoadError};
 pub(crate) use runner::prepare_fixture_for_run;
 #[allow(unused_imports)]
