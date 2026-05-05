@@ -540,7 +540,12 @@ pub fn mcp_route_for_tool_name(name: &str) -> McpToolRoute {
 pub fn list_hybrid_tools_for_bridge(ability_bridge: &McpAbilityBridge<'_>) -> Vec<Tool> {
     let mut tools = DailyOsMcp::tool_box().list();
     tools.push(get_provenance_tool_descriptor());
-    tools.push(request_confirmation_tool_descriptor());
+    // Hide request_confirmation from the advertised tool set while the gate
+    // is off so MCP clients don't see a tool that always returns
+    // ability_unavailable.
+    if ability_bridge.confirmation_enabled() {
+        tools.push(request_confirmation_tool_descriptor());
+    }
     tools.extend(
         ability_bridge
             .list_descriptors()
@@ -1168,7 +1173,10 @@ mod tests {
                 LIVE_MODES,
             ),
         ]);
-        let bridge = McpAbilityBridge::new(&registry);
+        // Confirmation flow is gated off by default until the W5/W6 prompt UI
+        // ships; tools that need to assert request_confirmation appears in the
+        // advertised list flip the gate on for that scope only.
+        let bridge = McpAbilityBridge::new(&registry).with_confirmation_enabled();
         let tools = list_hybrid_tools_for_bridge(&bridge);
         let names = tools
             .iter()
@@ -1215,6 +1223,22 @@ mod tests {
                 .get("additionalProperties")
             .and_then(serde_json::Value::as_bool),
             Some(false)
+        );
+    }
+
+    #[test]
+    fn mcp_list_tools_omits_request_confirmation_when_gate_disabled() {
+        let registry = registry_with(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let tools = list_hybrid_tools_for_bridge(&bridge);
+        let names: Vec<&str> = tools.iter().map(|t| t.name.as_ref()).collect();
+        assert!(
+            !names.contains(&"request_confirmation"),
+            "request_confirmation must not be advertised while the gate is off"
+        );
+        assert!(
+            names.contains(&"get_provenance"),
+            "other inherent tools should still appear"
         );
     }
 
@@ -1288,7 +1312,7 @@ mod tests {
             AGENT_ACTORS,
             LIVE_MODES,
         ))]);
-        let ability_bridge = McpAbilityBridge::new(&registry);
+        let ability_bridge = McpAbilityBridge::new(&registry).with_confirmation_enabled();
         let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
             &registry,
             Arc::new(ApprovingAttestationHost),
@@ -1367,7 +1391,7 @@ mod tests {
             AGENT_ACTORS,
             LIVE_MODES,
         ))]);
-        let ability_bridge = McpAbilityBridge::new(&registry);
+        let ability_bridge = McpAbilityBridge::new(&registry).with_confirmation_enabled();
         let tauri_bridge = TauriAbilityBridge::new_with_attestation_host(
             &registry,
             Arc::new(ApprovingAttestationHost),

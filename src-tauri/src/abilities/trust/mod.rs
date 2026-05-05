@@ -101,12 +101,17 @@ pub fn compile_trust(
 
     let geometric_score = aggregate_geometric_mean(&factors, ctx.config.clamp_floor)?;
     let triggered_gates = evaluate_trust_gates(claim, &ctx);
-    let score = if triggered_gates.is_empty() {
-        geometric_score
+    let (score, band) = if triggered_gates.is_empty() {
+        let s = geometric_score;
+        (s, band_for_score(s, &ctx.config))
     } else {
-        gate_cap_score(&ctx.config).min(geometric_score)
+        // Force NeedsVerification on any triggered gate regardless of how
+        // TrustConfig thresholds are tuned. The numeric cap stays as
+        // additional belt-and-suspenders for callers that read the score
+        // directly, but the band is the contract surface.
+        let s = gate_cap_score(&ctx.config).min(geometric_score);
+        (s, TrustBand::NeedsVerification)
     };
-    let band = band_for_score(score, &ctx.config);
     let evidence = confidence_evidence(
         claim,
         ScoreOutcome { score, band },

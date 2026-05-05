@@ -910,11 +910,18 @@ fn create_backup_via_api(
     // the user manually intervened. Chunked stepping avoids the edge case and
     // gives us progress logging while a multi-hundred-MB copy runs.
     const PAGES_PER_STEP: i32 = 1024;
+    // A long-running concurrent writer can leave the source DB perpetually
+    // Busy/Locked and trap the migration without surfacing anything to the
+    // user. Bound the wait so startup either gets a backup or fails loudly
+    // with a recoverable error.
+    const MAX_BUSY_RETRIES: u32 = 600; // 600 * 50ms = 30s wall clock
     let mut step_count = 0_u64;
+    let mut busy_retries = 0_u32;
     loop {
         match backup.step(PAGES_PER_STEP) {
             Ok(rusqlite::backup::StepResult::More) => {
                 step_count += 1;
+                busy_retries = 0;
                 if step_count.is_multiple_of(64) {
                     log::info!(
                         "Pre-migration backup in progress: ~{} pages copied",
@@ -925,6 +932,21 @@ fn create_backup_via_api(
             Ok(rusqlite::backup::StepResult::Done) => break,
             Ok(rusqlite::backup::StepResult::Busy)
             | Ok(rusqlite::backup::StepResult::Locked) => {
+                busy_retries += 1;
+                if busy_retries >= MAX_BUSY_RETRIES {
+                    return Err(format!(
+                        "Pre-migration backup gave up after {} consecutive Busy/Locked retries (~{}s); a long writer may be holding the source DB",
+                        busy_retries,
+                        (busy_retries as u64 * 50) / 1000
+                    ));
+                }
+                if busy_retries.is_multiple_of(40) {
+                    log::warn!(
+                        "Pre-migration backup waiting on Busy/Locked source: retry {} of {}",
+                        busy_retries,
+                        MAX_BUSY_RETRIES
+                    );
+                }
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
             Ok(other) => {

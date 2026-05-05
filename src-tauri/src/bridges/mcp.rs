@@ -205,6 +205,10 @@ impl<'registry> McpAbilityBridge<'registry> {
         self
     }
 
+    pub fn confirmation_enabled(&self) -> bool {
+        self.mcp_confirmation_enabled
+    }
+
     /// Returns the cached actor-filtered descriptor list. The bridge does NOT
     /// re-scan the registry on every call; it scans once at construction.
     pub fn list_descriptors(&self) -> &[&'registry AbilityDescriptor] {
