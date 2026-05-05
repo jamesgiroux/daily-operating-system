@@ -3,13 +3,18 @@ mod harness;
 
 use std::{
     collections::BTreeSet,
+    future::Future,
     fs,
+    pin::Pin,
     path::{Path, PathBuf},
     sync::Arc,
 };
 
 use base64::Engine;
-use dailyos_lib::abilities::registry::AbilityRegistry;
+use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
+use dailyos_lib::abilities::{
+    AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+};
 use dailyos_lib::services::context::{
     ExecutionMode, GleanAccountFacts, GleanClientHandle, SeedableRng, SeededRng,
 };
@@ -194,30 +199,202 @@ fn runner_loads_external_replay_fixture_into_external_clients() {
 }
 
 #[test]
-fn runner_returns_not_yet_wired_for_ability_invocation_pending_chunk_3() {
-    let temp_dir = tempfile::tempdir().expect("tempdir");
-    write_minimal_fixture(temp_dir.path(), true);
-    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
-    let registry =
-        AbilityRegistry::from_descriptors_checked(Vec::new()).expect("empty registry is valid");
-    let deps = RunnerDeps {
-        registry: Arc::new(registry),
-    };
+fn runner_invokes_bundle_fixture_through_eval_bridge_and_captures_output() {
+    let fixture = bundle_fixture(2);
+    let deps = synthetic_runner_deps();
 
-    let Err(error) = run_fixture(&deps, &fixture) else {
-        panic!("chunk 2 should defer ability invocation");
+    let result = run_fixture(&deps, &fixture).expect("fixture invokes through eval bridge");
+
+    assert!(result
+        .actual_output
+        .as_object()
+        .is_some_and(|object| !object.is_empty()));
+    assert_eq!(
+        result.actual_output["stub_kind"],
+        "enrich_account_intelligence_test_stub"
+    );
+    assert_eq!(result.actual_output["entity_id"], "acct-test-1");
+    assert_eq!(result.actual_provenance["surface"], "eval");
+}
+
+#[test]
+fn runner_captures_post_action_state_with_intelligence_claims_rows() {
+    let fixture = bundle_fixture(2);
+    let deps = synthetic_runner_deps();
+
+    let result = run_fixture(&deps, &fixture).expect("fixture invokes");
+    let state = result.actual_state.expect("post-action state captured");
+    let claims = state["post_action_state"]["intelligence_claims"]
+        .as_array()
+        .expect("intelligence_claims array captured");
+    let ground_truth = claims
+        .iter()
+        .find(|claim| claim["claim_id"] == "claim-test-ground-truth-eu-expansion")
+        .expect("seeded claim captured");
+
+    assert_eq!(ground_truth["subject_ref"]["kind"], "account");
+    assert_eq!(ground_truth["trust_score"], json!(0.92));
+    assert_eq!(ground_truth["trust_version"], json!(1));
+    assert_eq!(ground_truth["trust_band"], "likely_current");
+    assert!(state["post_action_state"]["preserved_claims"]
+        .as_array()
+        .expect("preserved_claims array captured")
+        .iter()
+        .any(|claim| claim
+            .as_str()
+            .is_some_and(|text| text.contains("claim-test-ground-truth-eu-expansion"))));
+}
+
+#[test]
+fn runner_propagates_invocation_failed_on_unknown_ability_name() {
+    let fixture = fixture_with_ability_name(bundle_fixture(2), "unknown_ability");
+    let deps = synthetic_runner_deps();
+    let error = match run_fixture(&deps, &fixture) {
+        Ok(_) => panic!("unknown ability should fail"),
+        Err(error) => error,
     };
 
     match error {
-        RunError::NotYetWired(message) => {
-            assert!(message.contains("ability invocation pending W4-C bridge integration"));
+        RunError::InvocationFailed(message) => {
+            assert_eq!(message, "AbilityUnavailable");
         }
-        other => panic!("expected NotYetWired, got {other:?}"),
+        other => panic!("expected InvocationFailed, got {other:?}"),
     }
+}
+
+#[test]
+fn runner_propagates_byte_equal_unavailable_for_unauthorized_ability() {
+    let unknown_fixture = fixture_with_ability_name(bundle_fixture(2), "unknown_ability");
+    let authorized_deps = synthetic_runner_deps();
+    let unauthorized_deps = runner_deps_with(vec![unauthorized_enrich_descriptor()]);
+
+    let unknown_error = invocation_failed_message(run_fixture(&authorized_deps, &unknown_fixture));
+    let unauthorized_error =
+        invocation_failed_message(run_fixture(&unauthorized_deps, &bundle_fixture(2)));
+
+    assert_eq!(unauthorized_error, unknown_error);
+    assert_eq!(unauthorized_error, "AbilityUnavailable");
 }
 
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+}
+
+fn bundle_fixture(bundle: u32) -> harness::EvalFixture {
+    load_fixture(&fixture_root().join(format!("bundle-{bundle}"))).expect("bundle fixture loads")
+}
+
+fn fixture_with_ability_name(
+    mut fixture: harness::EvalFixture,
+    ability_name: &str,
+) -> harness::EvalFixture {
+    fixture.inputs_json["ability_name"] = json!(ability_name);
+    fixture
+}
+
+fn synthetic_runner_deps() -> RunnerDeps {
+    runner_deps_with(vec![enrich_account_intelligence_descriptor()])
+}
+
+fn runner_deps_with(descriptors: Vec<AbilityDescriptor>) -> RunnerDeps {
+    RunnerDeps {
+        registry: Arc::new(AbilityRegistry::from_descriptors_checked(descriptors).unwrap()),
+    }
+}
+
+fn invocation_failed_message(result: Result<harness::RunResult, RunError>) -> String {
+    match result {
+        Ok(_) => panic!("fixture should fail"),
+        Err(RunError::InvocationFailed(message)) => message,
+        Err(other) => panic!("expected InvocationFailed, got {other:?}"),
+    }
+}
+
+type ErasedFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
+
+const SYSTEM_ACTORS: &[Actor] = &[Actor::System];
+const USER_ACTORS: &[Actor] = &[Actor::User];
+const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
+
+fn enrich_account_intelligence_descriptor() -> AbilityDescriptor {
+    enrich_descriptor_with_policy(SYSTEM_ACTORS)
+}
+
+fn unauthorized_enrich_descriptor() -> AbilityDescriptor {
+    enrich_descriptor_with_policy(USER_ACTORS)
+}
+
+fn enrich_descriptor_with_policy(allowed_actors: &'static [Actor]) -> AbilityDescriptor {
+    AbilityDescriptor {
+        name: "enrich_account_intelligence",
+        version: "0.0.1-test",
+        schema_version: 1,
+        category: AbilityCategory::Read,
+        policy: AbilityPolicy {
+            allowed_actors,
+            allowed_modes: EVALUATE_MODES,
+            requires_confirmation: false,
+            may_publish: false,
+        },
+        composes: &[],
+        mutates: &[],
+        experimental: false,
+        registered_at: None,
+        signal_policy: SignalPolicy::default(),
+        invoke_erased: enrich_account_intelligence_test_stub,
+        input_schema: enrich_input_schema,
+        output_schema: closed_object_schema,
+    }
+}
+
+fn enrich_account_intelligence_test_stub<'a>(
+    ctx: &'a AbilityContext<'a>,
+    input: serde_json::Value,
+) -> ErasedFuture<'a> {
+    Box::pin(async move {
+        Ok(json!({
+            "data": {
+                "stub_kind": "enrich_account_intelligence_test_stub",
+                "entity_type": input["entity_type"],
+                "entity_id": input["entity_id"],
+                "schema_version": input["schema_version"],
+                "mode": ctx.mode().as_str(),
+                "actor": format!("{:?}", ctx.actor)
+            },
+            "ability_version": { "major": 0, "minor": 1 },
+            "diagnostics": { "warnings": [] },
+            "provenance": {
+                "invocation_id": "cccccccc-cccc-4ccc-8ccc-cccccccccccc",
+                "ability_name": "enrich_account_intelligence",
+                "ability_version": { "major": 0, "minor": 1 },
+                "ability_schema_version": 1,
+                "actor": format!("{:?}", ctx.actor),
+                "mode": ctx.mode().as_str(),
+                "warnings": []
+            }
+        }))
+    })
+}
+
+fn enrich_input_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["entity_type", "entity_id", "schema_version"],
+        "properties": {
+            "entity_type": { "type": "string" },
+            "entity_id": { "type": "string" },
+            "schema_version": { "type": "integer" }
+        }
+    })
+}
+
+fn closed_object_schema() -> serde_json::Value {
+    json!({
+        "type": "object",
+        "additionalProperties": false
+    })
 }
 
 fn write_minimal_fixture(fixture_dir: &Path, include_expected_state: bool) {
@@ -242,7 +419,20 @@ fn write_minimal_fixture(fixture_dir: &Path, include_expected_state: bool) {
             "post_action_state": null
         }),
     );
-    write_json(&fixture_dir.join("inputs.json"), json!({"input": true}));
+    write_json(
+        &fixture_dir.join("inputs.json"),
+        json!({
+            "ability_name": "enrich_account_intelligence",
+            "input_json": {
+                "entity_type": "account",
+                "entity_id": "acct-test-1",
+                "schema_version": 1
+            },
+            "actor": "user",
+            "mode": "evaluate",
+            "dry_run": false
+        }),
+    );
     write_json(
         &fixture_dir.join("provider_replay.json"),
         json!({"version": 1, "fixtures": []}),

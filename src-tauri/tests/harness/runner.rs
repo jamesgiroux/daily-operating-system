@@ -2,11 +2,16 @@
 
 use crate::harness::loader::FixtureLoadError;
 use crate::harness::types::EvalFixture;
+use base64::Engine;
+use dailyos_lib::abilities::NoopAbilityTracer;
+use dailyos_lib::bridges::eval::{EvalAbilityBridge, EvalAbilityDeps, EvalFixtureServices};
 use dailyos_lib::intelligence::provider::{Completion, FingerprintMetadata, ReplayProvider};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::external_replay::JsonExternalReplayFixture;
+use rusqlite::types::ValueRef;
 use rusqlite::Connection;
-use serde_json::Value;
+use serde::Deserialize;
+use serde_json::{Map, Number, Value};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -35,6 +40,8 @@ pub enum RunError {
     StateSqlFailed(String),
     #[error("ability invocation failed: {0}")]
     InvocationFailed(String),
+    #[error("JSON serialization failed: {0}")]
+    Json(#[from] serde_json::Error),
     #[error("required dep not yet wired: {0}")]
     NotYetWired(String),
 }
@@ -59,23 +66,57 @@ impl PreparedFixtureRun {
     }
 }
 
+struct PreparedFixtureServices<'run> {
+    clock: &'run FixedClock,
+    rng: &'run SeedableRng,
+    external_clients: &'run ExternalClients,
+}
+
+impl EvalFixtureServices for PreparedFixtureServices<'_> {
+    fn service_context(&self) -> ServiceContext<'_> {
+        ServiceContext::new_evaluate(self.clock, self.rng, self.external_clients)
+            .with_actor("eval_fixture")
+    }
+}
+
 /// Run a single fixture: build evaluate context from fixture clock/seed/replay,
 /// load state.sql into in-memory SQLite, invoke ability, capture output.
 pub fn run_fixture(deps: &RunnerDeps, fixture: &EvalFixture) -> Result<RunResult, RunError> {
-    let _prepared = prepare_fixture_for_run(fixture)?;
+    let prepared = prepare_fixture_for_run(fixture)?;
+    let invocation = parse_invocation_envelope(&fixture.inputs_json)?;
+    let tracer = NoopAbilityTracer;
+    let fixture_services = PreparedFixtureServices {
+        clock: &prepared.clock,
+        rng: &prepared.rng,
+        external_clients: &prepared.external_clients,
+    };
+    let eval_bridge = EvalAbilityBridge::new(
+        deps.registry.as_ref(),
+        EvalAbilityDeps {
+            fixture_services: &fixture_services,
+            provider: &prepared.provider,
+            tracer: &tracer,
+        },
+    );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .map_err(|error| RunError::InvocationFailed(format!("tokio runtime: {error}")))?;
+    let response = runtime
+        .block_on(eval_bridge.invoke_json(
+            &invocation.ability_name,
+            invocation.input_json,
+            invocation.dry_run,
+        ))
+        .map_err(|error| RunError::InvocationFailed(format!("{error:?}")))?;
+    let actual_state = capture_post_action_state(&prepared.conn)?;
 
-    // W4-C's EvalAbilityBridge is public, but the runner still needs the chunk-3
-    // glue that binds fixture ability names, replay providers, and state capture
-    // into the bridge result. Chunk 2 intentionally stops after proving the
-    // hermetic run context and fixture DB setup.
-    let _registered_abilities = deps
-        .registry
-        .iter_for(dailyos_lib::abilities::registry::Actor::System)
-        .count();
-
-    Err(RunError::NotYetWired(
-        "ability invocation pending W4-C bridge integration in chunk 3".to_string(),
-    ))
+    Ok(RunResult {
+        actual_output: response.data,
+        actual_provenance: serde_json::to_value(&response.rendered_provenance)?,
+        actual_state: Some(actual_state),
+        diagnostics: diagnostics_to_strings(&response.diagnostics),
+    })
 }
 
 pub(crate) fn prepare_fixture_for_run(
@@ -83,7 +124,6 @@ pub(crate) fn prepare_fixture_for_run(
 ) -> Result<PreparedFixtureRun, RunError> {
     let conn = Connection::open_in_memory()
         .map_err(|error| RunError::StateSqlFailed(error.to_string()))?;
-    apply_all_migrations(&conn)?;
     conn.execute_batch(&fixture.state_sql)
         .map_err(|error| RunError::StateSqlFailed(error.to_string()))?;
 
@@ -119,20 +159,22 @@ fn replay_provider_from_fixture(value: &Value) -> Result<ReplayProvider, RunErro
 
     let mut completions = HashMap::with_capacity(fixtures.len());
     for fixture in fixtures {
-        let prompt_replay_hash = fixture
+        let replay_key = fixture
             .get("prompt_replay_hash")
             .and_then(Value::as_str)
+            .or_else(|| fixture.get("request_key_hex").and_then(Value::as_str))
             .ok_or_else(|| {
                 RunError::NotYetWired(
-                    "provider_replay fixture is not keyed by prompt_replay_hash".to_string(),
+                    "provider_replay fixture is not keyed by prompt_replay_hash or request_key_hex"
+                        .to_string(),
                 )
             })?;
         let completion_text = completion_text(fixture)?;
 
         completions.insert(
-            prompt_replay_hash.to_string(),
+            replay_key.to_string(),
             Completion {
-                text: completion_text.to_string(),
+                text: completion_text,
                 fingerprint_metadata: FingerprintMetadata::default(),
             },
         );
@@ -141,21 +183,351 @@ fn replay_provider_from_fixture(value: &Value) -> Result<ReplayProvider, RunErro
     Ok(ReplayProvider::new(completions))
 }
 
-fn completion_text(fixture: &Value) -> Result<&str, RunError> {
+fn completion_text(fixture: &Value) -> Result<String, RunError> {
     match fixture.get("completion") {
-        Some(Value::String(text)) => Ok(text.as_str()),
+        Some(Value::String(text)) => Ok(text.clone()),
         Some(Value::Object(completion)) => completion
             .get("text")
             .and_then(Value::as_str)
+            .map(str::to_string)
             .ok_or_else(|| {
                 RunError::NotYetWired(
                     "provider_replay completion object must contain text".to_string(),
                 )
             }),
+        _ if fixture.get("response").is_some() => response_body_text(fixture),
         _ => Err(RunError::NotYetWired(
             "provider_replay fixture must contain completion text".to_string(),
         )),
     }
+}
+
+fn response_body_text(fixture: &Value) -> Result<String, RunError> {
+    let body_base64 = fixture
+        .get("response")
+        .and_then(|response| response.get("body_base64"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RunError::NotYetWired(
+                "provider_replay response fixture must contain body_base64".to_string(),
+            )
+        })?;
+    let body = base64::engine::general_purpose::STANDARD
+        .decode(body_base64)
+        .map_err(|error| RunError::NotYetWired(format!("provider_replay body_base64: {error}")))?;
+    String::from_utf8(body)
+        .map_err(|error| RunError::NotYetWired(format!("provider_replay body UTF-8: {error}")))
+}
+
+struct InvocationEnvelope {
+    ability_name: String,
+    input_json: Value,
+    dry_run: bool,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RawInvocationEnvelope {
+    ability_name: String,
+    input_json: Value,
+    actor: String,
+    mode: String,
+    dry_run: bool,
+}
+
+fn parse_invocation_envelope(value: &Value) -> Result<InvocationEnvelope, RunError> {
+    let raw: RawInvocationEnvelope =
+        serde_json::from_value(value.clone()).map_err(|error| {
+            RunError::InvocationFailed(format!("invalid inputs.json invocation envelope: {error}"))
+        })?;
+    if raw.ability_name.trim().is_empty() {
+        return Err(RunError::InvocationFailed(
+            "inputs.json ability_name must be non-empty".to_string(),
+        ));
+    }
+    if !matches!(raw.actor.as_str(), "user" | "agent" | "system") {
+        return Err(RunError::InvocationFailed(format!(
+            "inputs.json actor must be user, agent, or system; got `{}`",
+            raw.actor
+        )));
+    }
+    if raw.mode != "evaluate" {
+        return Err(RunError::InvocationFailed(format!(
+            "inputs.json mode must be evaluate; got `{}`",
+            raw.mode
+        )));
+    }
+
+    Ok(InvocationEnvelope {
+        ability_name: raw.ability_name,
+        input_json: raw.input_json,
+        dry_run: raw.dry_run,
+    })
+}
+
+fn capture_post_action_state(conn: &Connection) -> Result<Value, RunError> {
+    let mut post_action_state = Map::new();
+    post_action_state.insert(
+        "intelligence_claims".to_string(),
+        Value::Array(capture_intelligence_claims(conn)?),
+    );
+    post_action_state.insert(
+        "preserved_claims".to_string(),
+        Value::Array(capture_preserved_claims(conn)?),
+    );
+
+    let claim_corroborations = capture_table_rows(
+        conn,
+        "claim_corroborations",
+        &[
+            "id",
+            "claim_id",
+            "data_source",
+            "source_asof",
+            "source_mechanism",
+            "strength",
+            "reinforcement_count",
+            "last_reinforced_at",
+            "created_at",
+        ],
+        &[],
+        "id",
+    )?;
+    if !claim_corroborations.is_empty() {
+        post_action_state.insert(
+            "claim_corroborations".to_string(),
+            Value::Array(claim_corroborations),
+        );
+    }
+
+    let claim_feedback = capture_table_rows(
+        conn,
+        "claim_feedback",
+        &[
+            "id",
+            "claim_id",
+            "feedback_type",
+            "actor",
+            "actor_id",
+            "payload_json",
+            "submitted_at",
+            "applied_at",
+        ],
+        &["payload_json"],
+        "id",
+    )?;
+    if !claim_feedback.is_empty() {
+        post_action_state.insert("claim_feedback".to_string(), Value::Array(claim_feedback));
+    }
+
+    Ok(serde_json::json!({ "post_action_state": post_action_state }))
+}
+
+fn capture_intelligence_claims(conn: &Connection) -> Result<Vec<Value>, RunError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Ok(Vec::new());
+    }
+
+    let mut statement = conn
+        .prepare(
+            "SELECT id, subject_ref, claim_type, field_path, topic_key, text, data_source, \
+                    source_ref, source_asof, observed_at, claim_state, surfacing_state, \
+                    verification_state, verification_reason, trust_score, trust_computed_at, \
+                    trust_version, temporal_scope, sensitivity, metadata_json, \
+                    (SELECT COUNT(*) FROM claim_corroborations WHERE claim_id = intelligence_claims.id) \
+             FROM intelligence_claims \
+             ORDER BY id",
+        )
+        .map_err(sql_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let trust_score = row.get::<_, Option<f64>>(14)?;
+            let mut claim = Map::new();
+            insert_text(&mut claim, "claim_id", row.get(0)?);
+            insert_json_text(&mut claim, "subject_ref", row.get(1)?);
+            insert_text(&mut claim, "claim_type", row.get(2)?);
+            insert_optional_text(&mut claim, "field_path", row.get(3)?);
+            insert_optional_text(&mut claim, "topic_key", row.get(4)?);
+            insert_text(&mut claim, "text", row.get(5)?);
+            insert_text(&mut claim, "data_source", row.get(6)?);
+            insert_optional_json_text(&mut claim, "source_ref", row.get(7)?);
+            insert_optional_text(&mut claim, "source_asof", row.get(8)?);
+            insert_text(&mut claim, "observed_at", row.get(9)?);
+            insert_text(&mut claim, "claim_state", row.get(10)?);
+            insert_text(&mut claim, "surfacing_state", row.get(11)?);
+            insert_text(&mut claim, "verification_state", row.get(12)?);
+            insert_optional_text(&mut claim, "verification_reason", row.get(13)?);
+            insert_optional_f64(&mut claim, "trust_score", trust_score);
+            insert_optional_text(&mut claim, "trust_computed_at", row.get(15)?);
+            insert_optional_i64(&mut claim, "trust_version", row.get(16)?);
+            insert_text(&mut claim, "temporal_scope", row.get(17)?);
+            insert_text(&mut claim, "sensitivity", row.get(18)?);
+            insert_optional_json_text(&mut claim, "metadata", row.get(19)?);
+            insert_optional_text(
+                &mut claim,
+                "trust_band",
+                trust_score.map(trust_band_for_score),
+            );
+            insert_optional_i64(&mut claim, "corroboration_count", row.get(20)?);
+            Ok(Value::Object(claim))
+        })
+        .map_err(sql_error)?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(sql_error)
+}
+
+fn capture_preserved_claims(conn: &Connection) -> Result<Vec<Value>, RunError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Ok(Vec::new());
+    }
+
+    let mut statement = conn
+        .prepare("SELECT id, text FROM intelligence_claims ORDER BY id")
+        .map_err(sql_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let id: String = row.get(0)?;
+            let text: String = row.get(1)?;
+            Ok(Value::String(format!("{id}: {text}")))
+        })
+        .map_err(sql_error)?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(sql_error)
+}
+
+fn capture_table_rows(
+    conn: &Connection,
+    table: &str,
+    columns: &[&str],
+    json_columns: &[&str],
+    order_by: &str,
+) -> Result<Vec<Value>, RunError> {
+    if !table_exists(conn, table)? {
+        return Ok(Vec::new());
+    }
+
+    let sql = format!(
+        "SELECT {} FROM {} ORDER BY {}",
+        columns.join(", "),
+        table,
+        order_by
+    );
+    let mut statement = conn.prepare(&sql).map_err(sql_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            let mut object = Map::new();
+            for (index, column) in columns.iter().enumerate() {
+                let mut value = sqlite_value_to_json(row.get_ref(index)?);
+                if json_columns.contains(column) {
+                    value = parse_json_value(value);
+                }
+                object.insert((*column).to_string(), value);
+            }
+            Ok(Value::Object(object))
+        })
+        .map_err(sql_error)?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(sql_error)
+}
+
+fn table_exists(conn: &Connection, table: &str) -> Result<bool, RunError> {
+    let count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?1",
+            [table],
+            |row| row.get(0),
+        )
+        .map_err(sql_error)?;
+    Ok(count > 0)
+}
+
+fn insert_text(object: &mut Map<String, Value>, key: &str, value: String) {
+    object.insert(key.to_string(), Value::String(value));
+}
+
+fn insert_optional_text(object: &mut Map<String, Value>, key: &str, value: Option<String>) {
+    if let Some(value) = value {
+        object.insert(key.to_string(), Value::String(value));
+    }
+}
+
+fn insert_json_text(object: &mut Map<String, Value>, key: &str, value: String) {
+    object.insert(key.to_string(), parse_json_string(value));
+}
+
+fn insert_optional_json_text(object: &mut Map<String, Value>, key: &str, value: Option<String>) {
+    if let Some(value) = value {
+        object.insert(key.to_string(), parse_json_string(value));
+    }
+}
+
+fn insert_optional_f64(object: &mut Map<String, Value>, key: &str, value: Option<f64>) {
+    if let Some(value) = value.and_then(Number::from_f64) {
+        object.insert(key.to_string(), Value::Number(value));
+    }
+}
+
+fn insert_optional_i64(object: &mut Map<String, Value>, key: &str, value: Option<i64>) {
+    if let Some(value) = value {
+        object.insert(key.to_string(), Value::Number(Number::from(value)));
+    }
+}
+
+fn parse_json_string(value: String) -> Value {
+    serde_json::from_str(&value).unwrap_or(Value::String(value))
+}
+
+fn parse_json_value(value: Value) -> Value {
+    match value {
+        Value::String(text) => parse_json_string(text),
+        value => value,
+    }
+}
+
+fn sqlite_value_to_json(value: ValueRef<'_>) -> Value {
+    match value {
+        ValueRef::Null => Value::Null,
+        ValueRef::Integer(value) => Value::Number(Number::from(value)),
+        ValueRef::Real(value) => Number::from_f64(value)
+            .map(Value::Number)
+            .unwrap_or(Value::Null),
+        ValueRef::Text(value) => Value::String(String::from_utf8_lossy(value).into_owned()),
+        ValueRef::Blob(value) => Value::String(hex::encode(value)),
+    }
+}
+
+fn trust_band_for_score(score: f64) -> String {
+    if score >= 0.75 {
+        "likely_current".to_string()
+    } else if score >= 0.5 {
+        "mixed".to_string()
+    } else {
+        "needs_verification".to_string()
+    }
+}
+
+fn diagnostics_to_strings(diagnostics: &Value) -> Vec<String> {
+    if let Some(warnings) = diagnostics.get("warnings").and_then(Value::as_array) {
+        return warnings.iter().map(diagnostic_value_to_string).collect();
+    }
+    if let Some(items) = diagnostics.as_array() {
+        return items.iter().map(diagnostic_value_to_string).collect();
+    }
+    if diagnostics == &serde_json::json!({ "warnings": [] }) {
+        return Vec::new();
+    }
+    vec![diagnostic_value_to_string(diagnostics)]
+}
+
+fn diagnostic_value_to_string(value: &Value) -> String {
+    value
+        .as_str()
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("{value:?}"))
+}
+
+fn sql_error(error: rusqlite::Error) -> RunError {
+    RunError::StateSqlFailed(error.to_string())
 }
 
 fn apply_all_migrations(conn: &Connection) -> Result<(), RunError> {
