@@ -1136,24 +1136,24 @@ pub fn correct_lifecycle_change(
         evidence: notes.map(str::to_string),
         completion_trigger: None,
     };
-    // Outer transaction wraps the whole correction flow: lifecycle transition
-    // + response marker + source-weight penalty all roll back together if any
-    // step fails. apply_lifecycle_transition uses with_transaction internally
-    // and composes correctly under nesting (db/core.rs returns the inner
-    // closure result when already in a tx). The conditional response setter
-    // is also retry-idempotent — duplicate corrections become a no-op
-    // instead of double-incrementing source weights.
+    // Outer transaction wraps the whole correction flow. Pending-row claim
+    // runs FIRST so that an already-reviewed change short-circuits BEFORE
+    // any destructive account mutation — apply_lifecycle_transition would
+    // otherwise overwrite lifecycle / stage / signal state for a stale
+    // request even if the response row had already been consumed by a
+    // prior reviewer. Only after rows=1 do we apply the transition and
+    // source-weight penalty; any failure rolls the claim back via the tx.
     db.with_transaction(|tx_db| {
-        apply_lifecycle_transition(ctx, tx_db, engine, &change.account_id, &transition)?;
         let rows = tx_db
             .set_lifecycle_change_response_if_pending(change_id, "corrected", notes)
             .map_err(|e| e.to_string())?;
         if rows == 0 {
             log::info!(
-                "correct_lifecycle_change: change_id={change_id} already reviewed; transition applied but no source-weight penalty"
+                "correct_lifecycle_change: change_id={change_id} already reviewed; idempotent no-op"
             );
             return Ok(());
         }
+        apply_lifecycle_transition(ctx, tx_db, engine, &change.account_id, &transition)?;
         tx_db
             .upsert_signal_weight(
                 &change.source,
