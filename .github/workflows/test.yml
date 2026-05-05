@@ -75,6 +75,7 @@ jobs:
         run: |
           bash src-tauri/scripts/check_ability_surface_drift.sh
           bash src-tauri/scripts/check_no_live_external_clients_in_eval.sh
+          bash src-tauri/scripts/check_fixture_anonymization.sh
 
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh

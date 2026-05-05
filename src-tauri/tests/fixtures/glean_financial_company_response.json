@@ -29,7 +29,7 @@
         "source": "glean_crm",
         "confidence": 0.85,
         "sourcedAt": "2026-03-29T00:00:00Z",
-        "reference": "REDACTED opportunity record"
+        "reference": "external opportunity record"
       }
     }
   ],
