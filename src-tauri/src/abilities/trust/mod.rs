@@ -19,7 +19,8 @@ pub use types::{
     ConfidenceCaveat, ConfidenceEvidence, CorroboratorWeight, CrossEntityCoherenceInput,
     CrossEntityHit, CrossEntityHitKind, EntityFootprint, FactorEvidence, FreshnessContext,
     SourceLifecycleState, SourceReliabilityInput, SurfaceClass, TargetFootprint, TrustBand,
-    TrustComputation, TrustContext, TrustFactorInputs, TrustScore, UserFeedbackSignal,
+    TrustComputation, TrustContext, TrustFactorInputs, TrustGateKind, TrustScore,
+    UserFeedbackSignal,
 };
 
 pub type ClaimRow = crate::db::claims::IntelligenceClaim;
@@ -98,16 +99,23 @@ pub fn compile_trust(
         },
     ];
 
-    let score = aggregate_geometric_mean(&factors, ctx.config.clamp_floor)?;
+    let geometric_score = aggregate_geometric_mean(&factors, ctx.config.clamp_floor)?;
+    let triggered_gates = evaluate_trust_gates(claim, &ctx);
+    let score = if triggered_gates.is_empty() {
+        geometric_score
+    } else {
+        gate_cap_score(&ctx.config).min(geometric_score)
+    };
     let band = band_for_score(score, &ctx.config);
     let evidence = confidence_evidence(
         claim,
-        score,
-        band,
+        ScoreOutcome { score, band },
         &factors,
-        ctx.config.clamp_floor,
         &ctx,
-        cross_entity.hits.len(),
+        EvidenceContext {
+            cross_entity_hit_count: cross_entity.hits.len(),
+            triggered_gates: &triggered_gates,
+        },
     );
 
     Ok(TrustComputation {
@@ -239,6 +247,94 @@ fn clamp_factor(value: f64, clamp_floor: f64) -> f64 {
     value.clamp(clamp_floor, FACTOR_CEILING)
 }
 
+/// Hard-policy gates that run BEFORE the weighted geometric mean. Returning
+/// these as separate evidence keeps the trust math composable for ordinary
+/// factors while preventing dilution of blockers under default equal weights
+/// (a single 0.0 across 10 weight-1 factors only drops the geometric mean to
+/// roughly 0.74 — well above NeedsVerification).
+#[derive(Debug, Clone)]
+struct TriggeredGate {
+    kind: TrustGateKind,
+    detail: String,
+}
+
+fn evaluate_trust_gates(claim: &ClaimRow, ctx: &TrustContext) -> Vec<TriggeredGate> {
+    let mut gates = Vec::new();
+
+    if let Some(surface) = ctx.target_surface {
+        if sensitivity_aware_filtering(&claim.sensitivity, Some(surface)) <= 0.0 {
+            gates.push(TriggeredGate {
+                kind: TrustGateKind::SensitivityViolation,
+                detail: format!(
+                    "{:?} claim cannot render on {:?} surface",
+                    claim.sensitivity, surface
+                ),
+            });
+        }
+    }
+
+    if matches!(
+        ctx.factor_inputs.source_lifecycle,
+        SourceLifecycleState::Withdrawn
+    ) {
+        gates.push(TriggeredGate {
+            kind: TrustGateKind::SourceWithdrawn,
+            detail: "source is withdrawn; cannot resurrect with fresh content".to_string(),
+        });
+    }
+
+    if let Some((confirming, contradicting, max_contradicting_weight)) =
+        contradicting_corroborator_summary(&ctx.factor_inputs.source_reliability_corroborators)
+    {
+        if max_contradicting_weight >= 0.8 && confirming <= 0.5 * contradicting {
+            gates.push(TriggeredGate {
+                kind: TrustGateKind::AuthoritativeContradiction,
+                detail: format!(
+                    "authoritative contradicting evidence (max weight {max_contradicting_weight:.2}) \
+                     outweighs confirming evidence ({confirming:.2} vs {contradicting:.2})"
+                ),
+            });
+        }
+    }
+
+    gates
+}
+
+fn contradicting_corroborator_summary(
+    corroborators: &[CorroboratorWeight],
+) -> Option<(f64, f64, f64)> {
+    if corroborators.is_empty() {
+        return None;
+    }
+    let mut confirming = 0.0;
+    let mut contradicting = 0.0;
+    let mut max_contradicting_weight = 0.0_f64;
+    for c in corroborators {
+        if !c.evidence_weight.is_finite() {
+            continue;
+        }
+        let w = c.evidence_weight.clamp(0.0, FACTOR_CEILING);
+        if c.confirms {
+            confirming += w;
+        } else {
+            contradicting += w;
+            if w > max_contradicting_weight {
+                max_contradicting_weight = w;
+            }
+        }
+    }
+    Some((confirming, contradicting, max_contradicting_weight))
+}
+
+/// Cap a gated score safely below `use_with_caution_min` so the band lands at
+/// NeedsVerification regardless of weight tuning. Sits one clamp_floor below
+/// the threshold to keep room for adjacent factor evidence to differentiate.
+fn gate_cap_score(config: &TrustConfig) -> f64 {
+    (config.use_with_caution_min - config.clamp_floor.max(0.05))
+        .max(TrustScore::MIN)
+        .min(config.use_with_caution_min)
+}
+
 fn band_for_score(score: f64, config: &TrustConfig) -> TrustBand {
     if score >= config.likely_current_min {
         TrustBand::LikelyCurrent
@@ -249,15 +345,24 @@ fn band_for_score(score: f64, config: &TrustConfig) -> TrustBand {
     }
 }
 
-fn confidence_evidence(
-    claim: &ClaimRow,
+struct ScoreOutcome {
     score: f64,
     band: TrustBand,
-    factors: &[NamedFactor],
-    clamp_floor: f64,
-    ctx: &TrustContext,
+}
+
+struct EvidenceContext<'a> {
     cross_entity_hit_count: usize,
+    triggered_gates: &'a [TriggeredGate],
+}
+
+fn confidence_evidence(
+    claim: &ClaimRow,
+    outcome: ScoreOutcome,
+    factors: &[NamedFactor],
+    ctx: &TrustContext,
+    extras: EvidenceContext<'_>,
 ) -> ConfidenceEvidence {
+    let clamp_floor = ctx.config.clamp_floor;
     let factor_breakdown = factors
         .iter()
         .map(|factor| {
@@ -277,10 +382,10 @@ fn confidence_evidence(
         .collect();
 
     ConfidenceEvidence {
-        score,
-        band_label: band_label(band).to_string(),
+        score: outcome.score,
+        band_label: band_label(outcome.band).to_string(),
         factor_breakdown,
-        caveats: caveats(claim, ctx, cross_entity_hit_count),
+        caveats: caveats(claim, ctx, extras.cross_entity_hit_count, extras.triggered_gates),
     }
 }
 
@@ -288,8 +393,15 @@ fn caveats(
     claim: &ClaimRow,
     ctx: &TrustContext,
     cross_entity_hit_count: usize,
+    triggered_gates: &[TriggeredGate],
 ) -> Vec<ConfidenceCaveat> {
     let mut caveats = Vec::new();
+    for gate in triggered_gates {
+        caveats.push(ConfidenceCaveat::TrustGateTriggered {
+            gate: gate.kind,
+            detail: gate.detail.clone(),
+        });
+    }
 
     if ctx.factor_inputs.corroboration_strength <= 0.0 {
         caveats.push(ConfidenceCaveat::FewSources);
@@ -902,6 +1014,109 @@ mod tests {
         assert!(
             p99 < 5_000,
             "trust compiler p99 {p99}us exceeded 5ms budget"
+        );
+    }
+
+    fn gate_caveat(computation: &TrustComputation) -> Option<&ConfidenceCaveat> {
+        computation
+            .evidence
+            .caveats
+            .iter()
+            .find(|c| matches!(c, ConfidenceCaveat::TrustGateTriggered { .. }))
+    }
+
+    #[test]
+    fn confidential_on_public_caps_at_needs_verification_under_default_weights() {
+        // Without a gate, geometric mean over 10 weight-1 factors with one 0.0
+        // (clamped to 0.05) is exp(ln(0.05)/10) ≈ 0.741, which is UseWithCaution.
+        // The sensitivity gate must override that and force NeedsVerification.
+        let mut claim = test_claim();
+        claim.sensitivity = ClaimSensitivity::Confidential;
+        let mut ctx = test_context();
+        ctx.target_surface = Some(SurfaceClass::Public);
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        assert!(
+            computation.score.value() < 0.5,
+            "confidential-on-public must be NeedsVerification, got {}",
+            computation.score.value()
+        );
+        assert_eq!(computation.band, TrustBand::NeedsVerification);
+        let caveat = gate_caveat(&computation).expect("sensitivity gate caveat");
+        assert!(
+            matches!(
+                caveat,
+                ConfidenceCaveat::TrustGateTriggered {
+                    gate: TrustGateKind::SensitivityViolation,
+                    ..
+                }
+            ),
+            "expected SensitivityViolation, got {caveat:?}"
+        );
+    }
+
+    #[test]
+    fn withdrawn_source_caps_at_needs_verification_under_default_weights() {
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.factor_inputs.source_lifecycle = SourceLifecycleState::Withdrawn;
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        assert!(
+            computation.score.value() < 0.5,
+            "withdrawn source must be NeedsVerification, got {}",
+            computation.score.value()
+        );
+        assert_eq!(computation.band, TrustBand::NeedsVerification);
+        let caveat = gate_caveat(&computation).expect("withdrawn source gate caveat");
+        assert!(
+            matches!(
+                caveat,
+                ConfidenceCaveat::TrustGateTriggered {
+                    gate: TrustGateKind::SourceWithdrawn,
+                    ..
+                }
+            ),
+            "expected SourceWithdrawn, got {caveat:?}"
+        );
+    }
+
+    #[test]
+    fn single_strong_contradiction_caps_at_needs_verification_under_default_weights() {
+        // 5×0.2 weak confirms (sum 1.0) vs 1×1.0 strong contradiction. Confirming
+        // (1.0) is exactly equal to contradicting (1.0), so the existing factor-level
+        // arithmetic would not flag it. The authoritative gate fires once the strong
+        // contradicting weight (≥0.8) outweighs confirming by 2×, so we lift the
+        // contradicting side to make the asymmetry explicit.
+        let claim = test_claim();
+        let mut ctx = test_context();
+        ctx.factor_inputs.source_reliability_corroborators = vec![
+            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
+            CorroboratorWeight { evidence_weight: 1.0, confirms: false },
+            CorroboratorWeight { evidence_weight: 1.0, confirms: false },
+        ];
+
+        let computation = compile_trust(&claim, ctx).unwrap();
+        assert!(
+            computation.score.value() < 0.5,
+            "authoritative contradiction must be NeedsVerification, got {}",
+            computation.score.value()
+        );
+        assert_eq!(computation.band, TrustBand::NeedsVerification);
+        let caveat = gate_caveat(&computation).expect("contradiction gate caveat");
+        assert!(
+            matches!(
+                caveat,
+                ConfidenceCaveat::TrustGateTriggered {
+                    gate: TrustGateKind::AuthoritativeContradiction,
+                    ..
+                }
+            ),
+            "expected AuthoritativeContradiction, got {caveat:?}"
         );
     }
 }

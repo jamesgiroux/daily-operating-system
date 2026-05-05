@@ -915,7 +915,7 @@ fn create_backup_via_api(
         match backup.step(PAGES_PER_STEP) {
             Ok(rusqlite::backup::StepResult::More) => {
                 step_count += 1;
-                if step_count % 64 == 0 {
+                if step_count.is_multiple_of(64) {
                     log::info!(
                         "Pre-migration backup in progress: ~{} pages copied",
                         step_count * PAGES_PER_STEP as u64

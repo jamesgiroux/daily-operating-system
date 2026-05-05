@@ -61,6 +61,19 @@ pub enum ConfidenceCaveat {
     InsufficientSignalDensity,
     UnknownTimestamp,
     CrossEntityReferences { hit_count: usize },
+    /// A pre-aggregation gate fired and capped the score below
+    /// use_with_caution_min. Equal-weight geometric mean would otherwise dilute
+    /// hard-policy factors (a single 0.0 across 10 factors is only ~0.741),
+    /// so blockers run as gates instead of weighted contributions.
+    TrustGateTriggered { gate: TrustGateKind, detail: String },
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum TrustGateKind {
+    SensitivityViolation,
+    SourceWithdrawn,
+    AuthoritativeContradiction,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
