@@ -998,44 +998,38 @@ pub fn confirm_lifecycle_change(
         .get_lifecycle_change(change_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Lifecycle change not found: {change_id}"))?;
-    db.set_lifecycle_change_response(change_id, "confirmed", None)
-        .map_err(|e| e.to_string())?;
-    if let Err(e) = db.upsert_signal_weight(
-        &change.source,
-        "account",
-        "lifecycle_transition",
-        1.0,
-        0.0,
-    ) {
-        log::warn!(
-            "accounts: upsert_signal_weight dropped on lifecycle confirm for source={} account={}: {e}",
-            change.source,
-            change.account_id
-        );
-        let _ = crate::services::mutations::record_pipeline_failure(
+    // Wrap response + source-weight + signal emission in one transaction so a
+    // failure in any step rolls back ALL durable state. Without this, a
+    // signal-emit failure left the response durably "confirmed" and the
+    // source-weight already shifted, while returning Err to the caller —
+    // safe-looking retries then double-applied weights.
+    db.with_transaction(|tx_db| {
+        tx_db
+            .set_lifecycle_change_response(change_id, "confirmed", None)
+            .map_err(|e| e.to_string())?;
+        tx_db
+            .upsert_signal_weight(
+                &change.source,
+                "account",
+                "lifecycle_transition",
+                1.0,
+                0.0,
+            )
+            .map_err(|e| format!("upsert_signal_weight failed: {e}"))?;
+        crate::services::signals::emit_and_propagate(
             ctx,
-            db,
-            "accounts_lifecycle_confirm_signal_weight_drop",
-            Some(&change.account_id),
-            Some("account"),
-            "upsert_signal_weight_failed",
-            Some(&format!("source={} error={e}", change.source)),
-            1,
-        );
-    }
-    crate::services::signals::emit_and_propagate(
-        ctx,
-        db,
-        engine,
-        "account",
-        &change.account_id,
-        "lifecycle_change_confirmed",
-        "user_feedback",
-        Some(&format!("{{\"change_id\":{change_id}}}")),
-        0.95,
-    )
-    .map_err(|e| format!("signal emit failed: {e}"))?;
-    Ok(())
+            tx_db,
+            engine,
+            "account",
+            &change.account_id,
+            "lifecycle_change_confirmed",
+            "user_feedback",
+            Some(&format!("{{\"change_id\":{change_id}}}")),
+            0.95,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
 }
 
 // ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
@@ -1051,40 +1045,47 @@ pub fn correct_account_product(
     source_to_penalize: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    db.update_account_product(product_id, name, status, None, "user_correction", 1.0)
-        .map_err(|e| e.to_string())?;
-    if let Err(e) =
-        db.upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0)
-    {
-        log::warn!(
-            "accounts: upsert_signal_weight dropped on product correction for source={source_to_penalize} account={account_id}: {e}"
-        );
-        let _ = crate::services::mutations::record_pipeline_failure(
+    // Single transaction: scoped product update + source-weight + signal
+    // emission all roll back together if any step fails. The scoped UPDATE
+    // also blocks cross-account writes — zero rows affected means the
+    // product_id doesn't belong to account_id, and we abort before any
+    // side-effect lands.
+    db.with_transaction(|tx_db| {
+        let rows = tx_db
+            .update_account_product_scoped(
+                account_id,
+                product_id,
+                name,
+                status,
+                None,
+                "user_correction",
+                1.0,
+            )
+            .map_err(|e| e.to_string())?;
+        if rows == 0 {
+            return Err(format!(
+                "correct_account_product: product_id={product_id} does not belong to account_id={account_id}"
+            ));
+        }
+        tx_db
+            .upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0)
+            .map_err(|e| format!("upsert_signal_weight failed: {e}"))?;
+        crate::services::signals::emit_and_propagate(
             ctx,
-            db,
-            "accounts_product_correct_signal_weight_drop",
-            Some(account_id),
-            Some("account"),
-            "upsert_signal_weight_failed",
-            Some(&format!("source={source_to_penalize} error={e}")),
-            1,
-        );
-    }
-    crate::services::signals::emit_and_propagate(
-        ctx,
-        db,
-        engine,
-        "account",
-        account_id,
-        "product_data_updated",
-        "user_correction",
-        Some(&format!(
-            "{{\"product_id\":{product_id},\"name\":\"{name}\"}}"
-        )),
-        1.0,
-    )
-    .map_err(|e| format!("signal emit failed: {e}"))?;
-    Ok(())
+            tx_db,
+            engine,
+            "account",
+            account_id,
+            "product_data_updated",
+            "user_correction",
+            Some(&format!(
+                "{{\"product_id\":{product_id},\"name\":\"{name}\"}}"
+            )),
+            1.0,
+        )
+        .map_err(|e| format!("signal emit failed: {e}"))?;
+        Ok(())
+    })
 }
 
 pub fn correct_lifecycle_change(

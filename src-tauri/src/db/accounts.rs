@@ -1769,6 +1769,46 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Update an account_product row scoped to (id, account_id) so the caller
+    /// cannot accidentally cross-write into another account's product on a
+    /// stale or mismatched product_id. Returns the number of rows affected:
+    /// 0 = mismatch (either id wrong or product belongs to a different
+    /// account), 1 = expected. Callers that pass both ids must check this
+    /// before applying downstream side-effects (source weights, signals).
+    #[allow(clippy::too_many_arguments)]
+    pub fn update_account_product_scoped(
+        &self,
+        account_id: &str,
+        product_id: i64,
+        name: &str,
+        status: Option<&str>,
+        notes: Option<&str>,
+        source: &str,
+        confidence: f64,
+    ) -> Result<usize, DbError> {
+        let rows = self.conn.execute(
+            "UPDATE account_products
+             SET name = ?1,
+                 status = COALESCE(?2, status),
+                 notes = COALESCE(?3, notes),
+                 source = ?4,
+                 confidence = ?5,
+                 updated_at = ?6
+             WHERE id = ?7 AND account_id = ?8",
+            params![
+                name,
+                status,
+                notes,
+                source,
+                confidence,
+                Utc::now().to_rfc3339(),
+                product_id,
+                account_id,
+            ],
+        )?;
+        Ok(rows)
+    }
+
     /// Delete a product row.
     pub fn delete_account_product(&self, product_id: i64) -> Result<(), DbError> {
         self.conn.execute(
