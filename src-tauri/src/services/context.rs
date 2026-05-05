@@ -35,7 +35,7 @@ use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 
 use crate::services::external_replay::{
-    ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
+    AuthScopeId, ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
     ReplayResponse, RequestKey,
 };
 
@@ -203,10 +203,12 @@ pub struct ExternalClients {
 }
 
 impl ExternalClients {
-    pub fn from_replay(
-        fixture: Arc<dyn ExternalReplayFixture>,
-        auth_scope_id: String,
-    ) -> Self {
+    pub fn from_replay<T>(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: T) -> Self
+    where
+        T: TryInto<AuthScopeId>,
+        T::Error: std::fmt::Display,
+    {
+        let auth_scope_id = auth_scope_id_or_panic(auth_scope_id);
         Self {
             glean: ReplayGleanClient::new(fixture.clone(), auth_scope_id.clone()).into(),
             slack: ReplaySlackClient::new(fixture.clone(), auth_scope_id.clone()).into(),
@@ -278,11 +280,12 @@ impl GleanClientHandle {
         account_id: &str,
         auth_scope_id: &str,
     ) -> RequestKey {
+        let auth_scope_id = auth_scope_id_or_panic(auth_scope_id);
         replay_request_key(
             "GET",
             &glean_account_facts_url(account_id),
             b"",
-            auth_scope_id,
+            &auth_scope_id,
         )
     }
 }
@@ -310,14 +313,18 @@ impl Default for GleanClientMode {
 #[derive(Clone)]
 pub struct ReplayGleanClient {
     fixture: Arc<dyn ExternalReplayFixture>,
-    auth_scope_id: String,
+    auth_scope_id: AuthScopeId,
 }
 
 impl ReplayGleanClient {
-    pub fn new(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: String) -> Self {
+    pub fn new<T>(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: T) -> Self
+    where
+        T: TryInto<AuthScopeId>,
+        T::Error: std::fmt::Display,
+    {
         Self {
             fixture,
-            auth_scope_id,
+            auth_scope_id: auth_scope_id_or_panic(auth_scope_id),
         }
     }
 
@@ -391,14 +398,18 @@ pub enum SlackClientMode {
 #[derive(Clone)]
 pub struct ReplaySlackClient {
     fixture: Arc<dyn ExternalReplayFixture>,
-    auth_scope_id: String,
+    auth_scope_id: AuthScopeId,
 }
 
 impl ReplaySlackClient {
-    pub fn new(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: String) -> Self {
+    pub fn new<T>(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: T) -> Self
+    where
+        T: TryInto<AuthScopeId>,
+        T::Error: std::fmt::Display,
+    {
         Self {
             fixture,
-            auth_scope_id,
+            auth_scope_id: auth_scope_id_or_panic(auth_scope_id),
         }
     }
 
@@ -469,14 +480,18 @@ pub enum GmailClientMode {
 #[derive(Clone)]
 pub struct ReplayGmailClient {
     fixture: Arc<dyn ExternalReplayFixture>,
-    auth_scope_id: String,
+    auth_scope_id: AuthScopeId,
 }
 
 impl ReplayGmailClient {
-    pub fn new(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: String) -> Self {
+    pub fn new<T>(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: T) -> Self
+    where
+        T: TryInto<AuthScopeId>,
+        T::Error: std::fmt::Display,
+    {
         Self {
             fixture,
-            auth_scope_id,
+            auth_scope_id: auth_scope_id_or_panic(auth_scope_id),
         }
     }
 
@@ -524,11 +539,12 @@ impl SalesforceClientHandle {
     }
 
     pub fn request_key_for_fetch_account(account_id: &str, auth_scope_id: &str) -> RequestKey {
+        let auth_scope_id = auth_scope_id_or_panic(auth_scope_id);
         replay_request_key(
             "GET",
             &REDACTED_account_url(account_id),
             b"",
-            auth_scope_id,
+            &auth_scope_id,
         )
     }
 }
@@ -551,14 +567,18 @@ pub enum SalesforceClientMode {
 #[derive(Clone)]
 pub struct ReplaySalesforceClient {
     fixture: Arc<dyn ExternalReplayFixture>,
-    auth_scope_id: String,
+    auth_scope_id: AuthScopeId,
 }
 
 impl ReplaySalesforceClient {
-    pub fn new(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: String) -> Self {
+    pub fn new<T>(fixture: Arc<dyn ExternalReplayFixture>, auth_scope_id: T) -> Self
+    where
+        T: TryInto<AuthScopeId>,
+        T::Error: std::fmt::Display,
+    {
         Self {
             fixture,
-            auth_scope_id,
+            auth_scope_id: auth_scope_id_or_panic(auth_scope_id),
         }
     }
 
@@ -585,9 +605,7 @@ fn lookup_replay(
     method: &str,
     url: &str,
 ) -> Result<ReplayResponse, ExternalReplayFixtureMissing> {
-    fixture
-        .lookup(key)
-        .map_err(|_| ExternalReplayFixtureMissing::new(key, method, url))
+    fixture.lookup(key, method, url)
 }
 
 fn decode_replay_json<T>(
@@ -602,8 +620,23 @@ where
     })
 }
 
-fn replay_request_key(method: &str, url: &str, body: &[u8], auth_scope_id: &str) -> RequestKey {
+fn replay_request_key(
+    method: &str,
+    url: &str,
+    body: &[u8],
+    auth_scope_id: &AuthScopeId,
+) -> RequestKey {
     RequestKey::canonicalize(method, url, &HeaderMap::new(), body, auth_scope_id)
+}
+
+fn auth_scope_id_or_panic<T>(auth_scope_id: T) -> AuthScopeId
+where
+    T: TryInto<AuthScopeId>,
+    T::Error: std::fmt::Display,
+{
+    auth_scope_id
+        .try_into()
+        .unwrap_or_else(|err| panic!("invalid auth_scope_id: {err}"))
 }
 
 fn glean_account_facts_url(account_id: &str) -> String {
@@ -931,6 +964,8 @@ mod tests {
         fn lookup(
             &self,
             key: &RequestKey,
+            _method: &str,
+            _url: &str,
         ) -> Result<ReplayResponse, ExternalReplayFixtureMissing> {
             self.responses
                 .get(key)
@@ -1197,7 +1232,7 @@ mod tests {
             err,
             expected_key,
             "GET",
-            "https://glean.example.com/v1/facts",
+            "https://glean.example.com/<redacted>",
         );
     }
 
@@ -1215,7 +1250,7 @@ mod tests {
             err,
             expected_key,
             "GET",
-            "https://REDACTED.example.com/v1/accounts/acct-test-1",
+            "https://redacted.example.com/<redacted>",
         );
     }
 
@@ -1260,7 +1295,7 @@ mod tests {
             other_err,
             other_key,
             "GET",
-            "https://glean.example.com/v1/facts",
+            "https://glean.example.com/<redacted>",
         );
     }
 

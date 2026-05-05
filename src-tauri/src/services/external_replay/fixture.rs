@@ -4,8 +4,11 @@ use base64::Engine;
 use serde::Deserialize;
 use thiserror::Error;
 
-use super::key::{RequestKey, RequestKeyHexError};
+use super::key::{AuthScopeId, AuthScopeIdError, RequestKey, RequestKeyHexError};
 use super::{ExternalReplayFixture, ExternalReplayFixtureMissing, ReplayResponse};
+
+const MAX_FIXTURE_BYTES: u64 = 10 * 1024 * 1024;
+const MAX_RESPONSE_BODY_BYTES: u64 = 1024 * 1024;
 
 #[derive(Debug)]
 pub struct JsonExternalReplayFixture {
@@ -20,6 +23,14 @@ pub enum FixtureLoadError {
         fixture_path: String,
         #[source]
         source: std::io::Error,
+    },
+    #[error(
+        "external replay fixture {fixture_path} is too large: {byte_count} bytes exceeds {cap} bytes"
+    )]
+    FixtureTooLarge {
+        fixture_path: String,
+        byte_count: u64,
+        cap: u64,
     },
     #[error("failed to parse external replay fixture {fixture_path}: {source}")]
     Parse {
@@ -37,6 +48,15 @@ pub enum FixtureLoadError {
         request_key_hex: String,
         #[source]
         source: RequestKeyHexError,
+    },
+    #[error(
+        "external replay fixture {fixture_path} has invalid auth_scope_id for request `{request_key_hex}`: {source}"
+    )]
+    InvalidAuthScopeId {
+        fixture_path: String,
+        request_key_hex: String,
+        #[source]
+        source: AuthScopeIdError,
     },
     #[error(
         "external replay fixture {fixture_path} has invalid body_base64 for request `{request_key_hex}`: {source}"
@@ -57,10 +77,32 @@ pub enum FixtureLoadError {
 impl JsonExternalReplayFixture {
     pub fn from_json_file(path: &Path) -> Result<Self, FixtureLoadError> {
         let fixture_path = path.display().to_string();
+        let metadata = fs::metadata(path).map_err(|source| FixtureLoadError::Read {
+            fixture_path: fixture_path.clone(),
+            source,
+        })?;
+        let byte_count = metadata.len();
+        if byte_count > MAX_FIXTURE_BYTES {
+            return Err(FixtureLoadError::FixtureTooLarge {
+                fixture_path,
+                byte_count,
+                cap: MAX_FIXTURE_BYTES,
+            });
+        }
+
         let content = fs::read_to_string(path).map_err(|source| FixtureLoadError::Read {
             fixture_path: fixture_path.clone(),
             source,
         })?;
+        let byte_count = content.len() as u64;
+        if byte_count > MAX_FIXTURE_BYTES {
+            return Err(FixtureLoadError::FixtureTooLarge {
+                fixture_path,
+                byte_count,
+                cap: MAX_FIXTURE_BYTES,
+            });
+        }
+
         let value =
             serde_json::from_str::<serde_json::Value>(&content).map_err(|source| {
                 FixtureLoadError::Parse {
@@ -98,6 +140,13 @@ impl JsonExternalReplayFixture {
                     source,
                 }
             })?;
+            AuthScopeId::try_new(&fixture.auth_scope_id).map_err(|source| {
+                FixtureLoadError::InvalidAuthScopeId {
+                    fixture_path: fixture_path.to_string(),
+                    request_key_hex: fixture.request_key_hex.clone(),
+                    source,
+                }
+            })?;
             let body = base64::engine::general_purpose::STANDARD
                 .decode(&fixture.response.body_base64)
                 .map_err(|source| FixtureLoadError::InvalidBodyBase64 {
@@ -105,6 +154,14 @@ impl JsonExternalReplayFixture {
                     request_key_hex: fixture.request_key_hex.clone(),
                     source,
                 })?;
+            let byte_count = body.len() as u64;
+            if byte_count > MAX_RESPONSE_BODY_BYTES {
+                return Err(FixtureLoadError::FixtureTooLarge {
+                    fixture_path: fixture_path.to_string(),
+                    byte_count,
+                    cap: MAX_RESPONSE_BODY_BYTES,
+                });
+            }
             let response = ReplayResponse {
                 status: fixture.response.status,
                 headers: fixture.response.headers,
@@ -139,11 +196,16 @@ impl JsonExternalReplayFixture {
 }
 
 impl ExternalReplayFixture for JsonExternalReplayFixture {
-    fn lookup(&self, key: &RequestKey) -> Result<ReplayResponse, ExternalReplayFixtureMissing> {
+    fn lookup(
+        &self,
+        key: &RequestKey,
+        method: &str,
+        url: &str,
+    ) -> Result<ReplayResponse, ExternalReplayFixtureMissing> {
         self.map
             .get(key)
             .cloned()
-            .ok_or_else(|| ExternalReplayFixtureMissing::for_key(key))
+            .ok_or_else(|| ExternalReplayFixtureMissing::new(key, method, url))
     }
 }
 
@@ -156,6 +218,8 @@ struct RawFixtureFile {
 #[derive(Debug, Deserialize)]
 struct RawFixture {
     request_key_hex: String,
+    #[serde(default)]
+    auth_scope_id: String,
     response: RawFixtureResponse,
 }
 

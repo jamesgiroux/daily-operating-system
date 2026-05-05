@@ -26,7 +26,7 @@ mod key;
 mod fixture;
 
 pub use fixture::{FixtureLoadError, JsonExternalReplayFixture};
-pub use key::{RequestKey, RequestKeyHexError};
+pub use key::{AuthScopeId, AuthScopeIdError, RequestKey, RequestKeyHexError};
 
 use thiserror::Error;
 
@@ -54,17 +54,15 @@ impl ExternalReplayFixtureMissing {
         }
     }
 
-    fn for_key(key: &RequestKey) -> Self {
-        Self {
-            request_key_hex: key.to_hex(),
-            method: String::new(),
-            url_redacted: String::new(),
-        }
-    }
 }
 
 pub trait ExternalReplayFixture: Send + Sync {
-    fn lookup(&self, key: &RequestKey) -> Result<ReplayResponse, ExternalReplayFixtureMissing>;
+    fn lookup(
+        &self,
+        key: &RequestKey,
+        method: &str,
+        url: &str,
+    ) -> Result<ReplayResponse, ExternalReplayFixtureMissing>;
 }
 
 #[cfg(test)]
@@ -76,7 +74,7 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        ExternalReplayFixture, ExternalReplayFixtureMissing, FixtureLoadError,
+        AuthScopeId, AuthScopeIdError, ExternalReplayFixture, ExternalReplayFixtureMissing, FixtureLoadError,
         JsonExternalReplayFixture, RequestKey, ReplayResponse,
     };
 
@@ -92,6 +90,7 @@ mod tests {
     }
 
     fn request_key(body: &[u8], auth_scope_id: &str) -> RequestKey {
+        let auth_scope_id = AuthScopeId::try_new(auth_scope_id).unwrap();
         RequestKey::canonicalize(
             "GET",
             "https://example.com/api/foo?a=1&b=2",
@@ -101,7 +100,7 @@ mod tests {
                 ("Accept", "application/json"),
             ]),
             body,
-            auth_scope_id,
+            &auth_scope_id,
         )
     }
 
@@ -143,14 +142,36 @@ mod tests {
                 "https://example.com/api/foo",
                 &stable_headers,
                 b"",
-                "test-tenant-1",
+                &AuthScopeId::try_new("test-tenant-1").unwrap(),
             ),
             RequestKey::canonicalize(
                 "GET",
                 "https://example.com/api/foo",
                 &volatile_headers,
                 b"",
-                "test-tenant-1",
+                &AuthScopeId::try_new("test-tenant-1").unwrap(),
+            )
+        );
+    }
+
+    #[test]
+    fn request_key_includes_content_encoding_header() {
+        let auth_scope_id = AuthScopeId::try_new("test-tenant-1").unwrap();
+
+        assert_ne!(
+            RequestKey::canonicalize(
+                "POST",
+                "https://example.com/api/foo",
+                &headers(&[("Content-Encoding", "gzip")]),
+                b"compressed",
+                &auth_scope_id,
+            ),
+            RequestKey::canonicalize(
+                "POST",
+                "https://example.com/api/foo",
+                &headers(&[("Content-Encoding", "identity")]),
+                b"compressed",
+                &auth_scope_id,
             )
         );
     }
@@ -165,14 +186,14 @@ mod tests {
                 "https://example.com/api/foo?b=2&a=1",
                 &headers,
                 b"",
-                "test-tenant-1",
+                &AuthScopeId::try_new("test-tenant-1").unwrap(),
             ),
             RequestKey::canonicalize(
                 "GET",
                 "https://example.com/api/foo?a=1&b=2",
                 &headers,
                 b"",
-                "test-tenant-1",
+                &AuthScopeId::try_new("test-tenant-1").unwrap(),
             )
         );
     }
@@ -195,14 +216,14 @@ mod tests {
                 "https://example.com/api/foo",
                 &headers,
                 b"",
-                "test-tenant-1",
+                &AuthScopeId::try_new("test-tenant-1").unwrap(),
             ),
             RequestKey::canonicalize(
                 "GET",
                 "https://example.com/api/foo",
                 &headers,
                 b"",
-                "test-tenant-1",
+                &AuthScopeId::try_new("test-tenant-1").unwrap(),
             )
         );
     }
@@ -225,15 +246,64 @@ mod tests {
                 "https://example.com/api/foo#bar",
                 &headers,
                 b"",
-                "test-tenant-1",
+                &AuthScopeId::try_new("test-tenant-1").unwrap(),
             ),
             RequestKey::canonicalize(
                 "GET",
                 "https://example.com/api/foo",
                 &headers,
                 b"",
-                "test-tenant-1",
+                &AuthScopeId::try_new("test-tenant-1").unwrap(),
             )
+        );
+    }
+
+    #[test]
+    fn request_key_strips_url_userinfo() {
+        let headers = headers(&[]);
+        let auth_scope_id = AuthScopeId::try_new("test-tenant-1").unwrap();
+
+        assert_eq!(
+            RequestKey::canonicalize(
+                "GET",
+                "https://user:password@example.com/api/foo",
+                &headers,
+                b"",
+                &auth_scope_id,
+            ),
+            RequestKey::canonicalize(
+                "GET",
+                "https://example.com/api/foo",
+                &headers,
+                b"",
+                &auth_scope_id,
+            )
+        );
+    }
+
+    #[test]
+    fn request_key_rejects_empty_auth_scope_id() {
+        let err = RequestKey::try_canonicalize(
+            "GET",
+            "https://example.com/api/foo",
+            &headers(&[]),
+            b"",
+            "",
+        )
+        .unwrap_err();
+
+        assert_eq!(err, AuthScopeIdError::Empty);
+    }
+
+    #[test]
+    fn auth_scope_id_rejects_whitespace_and_reserved_values() {
+        assert_eq!(
+            AuthScopeId::try_new("test tenant").unwrap_err(),
+            AuthScopeIdError::ContainsWhitespace
+        );
+        assert_eq!(
+            AuthScopeId::try_new("production").unwrap_err(),
+            AuthScopeIdError::Reserved
         );
     }
 
@@ -249,7 +319,13 @@ mod tests {
         .unwrap();
         let key = request_key(b"", "test-tenant-1");
 
-        let error = ExternalReplayFixture::lookup(&fixture, &key).unwrap_err();
+        let error = ExternalReplayFixture::lookup(
+            &fixture,
+            &key,
+            "GET",
+            "https://example.com/api/foo?secret=redacted",
+        )
+        .unwrap_err();
 
         assert_eq!(error.request_key_hex, key.to_hex());
         assert_eq!(
@@ -272,7 +348,7 @@ mod tests {
         );
 
         assert_eq!(error.method, "GET");
-        assert_eq!(error.url_redacted, "https://example.com/api/foo");
+        assert_eq!(error.url_redacted, "https://example.com/<redacted>");
     }
 
     #[test]
@@ -308,7 +384,8 @@ mod tests {
         assert_eq!(fixture.fixture_path(), fixture_path.display().to_string());
         assert_eq!(fixture.len(), 1);
         assert_eq!(
-            ExternalReplayFixture::lookup(&fixture, &key).unwrap(),
+            ExternalReplayFixture::lookup(&fixture, &key, "GET", "https://example.com/api/foo")
+                .unwrap(),
             ReplayResponse {
                 status: 200,
                 headers: vec![("Content-Type".to_string(), "application/json".to_string())],
@@ -343,7 +420,8 @@ mod tests {
 
         assert_eq!(fixture.fixture_path(), "inline-fixture");
         assert_eq!(
-            ExternalReplayFixture::lookup(&fixture, &key).unwrap(),
+            ExternalReplayFixture::lookup(&fixture, &key, "GET", "https://example.com/api/foo")
+                .unwrap(),
             ReplayResponse {
                 status: 202,
                 headers: vec![("Accept".to_string(), "application/json".to_string())],
@@ -402,6 +480,93 @@ mod tests {
                 fixture_path,
                 ..
             } if request_key_hex == "not-a-valid-request-key" && fixture_path == "inline"
+        ));
+    }
+
+    #[test]
+    fn json_fixture_load_fails_when_file_exceeds_size_cap() {
+        let tempdir = tempfile::tempdir().unwrap();
+        let fixture_path = tempdir.path().join("oversized_external_replay.json");
+        fs::write(&fixture_path, vec![b'{'; 10 * 1024 * 1024 + 1]).unwrap();
+
+        let error = JsonExternalReplayFixture::from_json_file(&fixture_path).unwrap_err();
+
+        assert!(matches!(
+            error,
+            FixtureLoadError::FixtureTooLarge {
+                byte_count,
+                cap,
+                fixture_path: _
+            } if byte_count == 10 * 1024 * 1024 + 1 && cap == 10 * 1024 * 1024
+        ));
+    }
+
+    #[test]
+    fn json_fixture_load_fails_when_response_body_exceeds_size_cap() {
+        let key = request_key(b"", "test-tenant-1");
+        let oversized_body = vec![b'a'; 1024 * 1024 + 1];
+        let error = JsonExternalReplayFixture::from_json_value(
+            &json!({
+                "version": 1,
+                "fixtures": [
+                    {
+                        "request_key_hex": key.to_hex(),
+                        "method": "GET",
+                        "url": "https://example.com/api/foo",
+                        "auth_scope_id": "test-tenant-1",
+                        "response": {
+                            "status": 200,
+                            "headers": [],
+                            "body_base64": response_body_base64(&oversized_body)
+                        }
+                    }
+                ]
+            }),
+            "inline",
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            FixtureLoadError::FixtureTooLarge {
+                byte_count,
+                cap,
+                fixture_path
+            } if byte_count == 1024 * 1024 + 1 && cap == 1024 * 1024 && fixture_path == "inline"
+        ));
+    }
+
+    #[test]
+    fn json_fixture_load_fails_on_empty_auth_scope_id() {
+        let key = request_key(b"", "test-tenant-1");
+        let error = JsonExternalReplayFixture::from_json_value(
+            &json!({
+                "version": 1,
+                "fixtures": [
+                    {
+                        "request_key_hex": key.to_hex(),
+                        "method": "GET",
+                        "url": "https://example.com/api/foo",
+                        "auth_scope_id": "",
+                        "response": {
+                            "status": 200,
+                            "headers": [],
+                            "body_base64": ""
+                        }
+                    }
+                ]
+            }),
+            "inline",
+        )
+        .unwrap_err();
+
+        assert!(matches!(
+            error,
+            FixtureLoadError::InvalidAuthScopeId {
+                request_key_hex,
+                fixture_path,
+                source: AuthScopeIdError::Empty
+            } if request_key_hex == key.to_hex() && fixture_path == "inline"
         ));
     }
 }

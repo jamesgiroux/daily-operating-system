@@ -28,50 +28,18 @@ for root in "$ROOT_DIR/src-tauri/tests" "$ROOT_DIR/src-tauri/src/abilities"; do
 done
 
 labels=(
-  "reqwest::Client::new"
-  "reqwest::Client::builder"
-  "Glean::new"
-  "glean_api::client::Client::new"
-  "glean::Client::new"
-  "GleanMcpClient::new"
-  "slack_morphism::Client::new"
-  "slack_morphism::SlackClient::new"
-  "SlackClient::new"
-  "gmail::Client::new"
-  "GmailClient::new"
-  "REDACTED::Client::new"
-  "SalesforceClient::new"
-  "google_drive::Client::new"
-  "GoogleDriveClient::new"
-  "LinearClient::new"
-  "ClayClient::new"
-  "std::net::*"
+  "external HTTP client constructor"
+  "std::net raw socket"
   "std::net imported raw socket"
   "TcpListener raw socket"
   "TcpStream raw socket"
   "UdpSocket raw socket"
-  "tokio::net::*"
+  "tokio::net raw socket"
   "tokio::net imported raw socket"
 )
 
 patterns=(
-  "reqwest::Client::new[[:space:]]*\\("
-  "reqwest::Client::builder[[:space:]]*\\("
-  "(^|[^[:alnum:]_])Glean::new[[:space:]]*\\("
-  "glean_api::client::Client::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])glean::Client::new[[:space:]]*\\("
-  "GleanMcpClient::new[[:space:]]*\\("
-  "slack_morphism::Client::new[[:space:]]*\\("
-  "slack_morphism::SlackClient::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])SlackClient::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])gmail::Client::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])GmailClient::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])REDACTED::Client::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])SalesforceClient::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])google_drive::Client::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])GoogleDriveClient::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])LinearClient::new[[:space:]]*\\("
-  "(^|[^[:alnum:]_])ClayClient::new[[:space:]]*\\("
+  "(^|[^[:alnum:]_])([A-Za-z_][A-Za-z0-9_]*::)*[A-Za-z_][A-Za-z0-9_]*Client::(new|builder)[[:space:]]*\\("
   "std::net::[A-Za-z0-9_:]+"
   "use[[:space:]]+std::net(::|[[:space:]]*\\{)"
   "(^|[^[:alnum:]_])TcpListener::(bind|from_std)[[:space:]]*\\("
@@ -81,9 +49,34 @@ patterns=(
   "use[[:space:]]+tokio::net(::|[[:space:]]*\\{)"
 )
 
-has_file_exemption() {
+allowed_external_constructor() {
+  local rel_path="$1"
+  local line="$2"
+
+  if [[ "$rel_path" == "src-tauri/src/services/context.rs" ]]; then
+    [[ "$line" =~ (^|[^[:alnum:]_:])((crate::|dailyos_lib::)?services::context::)?ExternalClients::default[[:space:]]*\( ]] && return 0
+    [[ "$line" =~ (^|[^[:alnum:]_])Replay(Glean|Slack|Gmail|Salesforce)Client::new[[:space:]]*\( ]] && return 0
+  fi
+
+  return 1
+}
+
+reqwest_alias_patterns() {
   local file="$1"
-  grep -qE '^[[:space:]]*//[[:space:]]*LINT-ALLOW:[[:space:]]*live-external-client[[:space:]]+\(justification:[[:space:]]*[^)]+' "$file"
+  local aliases
+
+  aliases="$(
+    grep -oE 'use[[:space:]]+reqwest::Client([[:space:]]+as[[:space:]]+[A-Za-z_][A-Za-z0-9_]*)?[[:space:]]*;' "$file" 2>/dev/null \
+      | sed -E 's/.*as[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*;/\1/' \
+      | sed -E 's/^use[[:space:]]+reqwest::Client[[:space:]]*;$/Client/' || true
+    grep -oE 'type[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*=[[:space:]]*reqwest::Client[[:space:]]*;' "$file" 2>/dev/null \
+      | sed -E 's/type[[:space:]]+([A-Za-z_][A-Za-z0-9_]*)[[:space:]]*=.*/\1/' || true
+  )"
+
+  while IFS= read -r alias; do
+    [[ -z "$alias" ]] && continue
+    printf '(^|[^[:alnum:]_])%s::(new|builder)[[:space:]]*\\(\n' "$alias"
+  done <<< "$aliases"
 }
 
 violations=""
@@ -91,16 +84,6 @@ violations=""
 if [[ "${#scan_roots[@]}" -gt 0 ]]; then
   while IFS= read -r -d '' file; do
     rel_path="${file#$ROOT_DIR/}"
-
-    case "$rel_path" in
-      src-tauri/src/services/context.rs)
-        continue
-        ;;
-    esac
-
-    if has_file_exemption "$file"; then
-      continue
-    fi
 
     for i in "${!patterns[@]}"; do
       found="$(grep -nE "${patterns[$i]}" "$file" 2>/dev/null || true)"
@@ -112,9 +95,30 @@ if [[ "${#scan_roots[@]}" -gt 0 ]]; then
         [[ -z "$match" ]] && continue
         line_no="${match%%:*}"
         line="${match#*:}"
+        if allowed_external_constructor "$rel_path" "$line"; then
+          continue
+        fi
         violations+="${rel_path}:${line_no}:${labels[$i]}: ${line}"$'\n'
       done <<< "$found"
     done
+
+    while IFS= read -r alias_pattern; do
+      [[ -z "$alias_pattern" ]] && continue
+      found="$(grep -nE "$alias_pattern" "$file" 2>/dev/null || true)"
+      if [[ -z "$found" ]]; then
+        continue
+      fi
+
+      while IFS= read -r match; do
+        [[ -z "$match" ]] && continue
+        line_no="${match%%:*}"
+        line="${match#*:}"
+        if allowed_external_constructor "$rel_path" "$line"; then
+          continue
+        fi
+        violations+="${rel_path}:${line_no}:external HTTP client constructor: ${line}"$'\n'
+      done <<< "$found"
+    done < <(reqwest_alias_patterns "$file")
   done < <(find "${scan_roots[@]}" -type f -name '*.rs' -print0)
 fi
 
@@ -122,9 +126,9 @@ if [[ -n "$violations" ]]; then
   echo "Live external client constructors are forbidden in eval/test paths."
   echo "Use replay clients through ServiceContext / ExternalClients::from_replay."
   echo
-  echo "Allowed exemptions:"
-  echo "  - src-tauri/src/services/context.rs owns the Live/Replay split"
-  echo "  - file-level // LINT-ALLOW: live-external-client (justification: ...)"
+  echo "Allowed constructors:"
+  echo "  - services::context::ExternalClients::default()"
+  echo "  - replay wrapper constructors in services::context"
   echo
   echo "Violations:"
   printf "%s" "$violations"

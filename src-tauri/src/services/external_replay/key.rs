@@ -3,6 +3,20 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 use url::Url;
 
+/// Non-empty tenant/auth boundary used when deriving replay fixture keys.
+#[derive(Clone, Debug, Eq, Hash, PartialEq)]
+pub struct AuthScopeId(String);
+
+#[derive(Clone, Debug, Eq, Error, PartialEq)]
+pub enum AuthScopeIdError {
+    #[error("auth_scope_id must not be empty")]
+    Empty,
+    #[error("auth_scope_id must not contain whitespace")]
+    ContainsWhitespace,
+    #[error("auth_scope_id value is reserved")]
+    Reserved,
+}
+
 /// Deterministic SHA-256 key for an external replay fixture request.
 #[derive(Clone, Copy, Debug, Eq, Hash, PartialEq)]
 pub struct RequestKey([u8; 32]);
@@ -18,18 +32,75 @@ pub enum RequestKeyHexError {
     },
 }
 
+impl AuthScopeId {
+    pub fn try_new(value: &str) -> Result<Self, AuthScopeIdError> {
+        if value.is_empty() {
+            return Err(AuthScopeIdError::Empty);
+        }
+
+        if value.chars().any(char::is_whitespace) {
+            return Err(AuthScopeIdError::ContainsWhitespace);
+        }
+
+        let lowercase = value.to_ascii_lowercase();
+        if matches!(
+            lowercase.as_str(),
+            "default"
+                | "evaluate"
+                | "live"
+                | "none"
+                | "null"
+                | "prod"
+                | "production"
+                | "replay"
+                | "simulate"
+                | "undefined"
+        ) {
+            return Err(AuthScopeIdError::Reserved);
+        }
+
+        Ok(Self(value.to_string()))
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl TryFrom<&str> for AuthScopeId {
+    type Error = AuthScopeIdError;
+
+    fn try_from(value: &str) -> Result<Self, Self::Error> {
+        Self::try_new(value)
+    }
+}
+
+impl TryFrom<String> for AuthScopeId {
+    type Error = AuthScopeIdError;
+
+    fn try_from(value: String) -> Result<Self, Self::Error> {
+        Self::try_new(&value)
+    }
+}
+
+impl AsRef<str> for AuthScopeId {
+    fn as_ref(&self) -> &str {
+        self.as_str()
+    }
+}
+
 impl RequestKey {
     pub fn canonicalize(
         method: &str,
         url: &str,
         headers: &HeaderMap,
         body: &[u8],
-        auth_scope_id: &str,
+        auth_scope_id: &AuthScopeId,
     ) -> Self {
         let method = method.to_ascii_uppercase();
         let url = canonicalize_url(url);
         let headers = canonicalize_headers(headers);
-        let auth_scope = format!("auth:{auth_scope_id}:");
+        let auth_scope = format!("auth:{}:", auth_scope_id.as_str());
 
         let mut hasher = Sha256::new();
         update_component(&mut hasher, b"method", method.as_bytes());
@@ -42,6 +113,23 @@ impl RequestKey {
         let mut bytes = [0_u8; 32];
         bytes.copy_from_slice(&digest);
         Self(bytes)
+    }
+
+    pub fn try_canonicalize(
+        method: &str,
+        url: &str,
+        headers: &HeaderMap,
+        body: &[u8],
+        auth_scope_id: &str,
+    ) -> Result<Self, AuthScopeIdError> {
+        let auth_scope_id = AuthScopeId::try_new(auth_scope_id)?;
+        Ok(Self::canonicalize(
+            method,
+            url,
+            headers,
+            body,
+            &auth_scope_id,
+        ))
     }
 
     pub fn from_hex(value: &str) -> Result<Self, RequestKeyHexError> {
@@ -62,11 +150,25 @@ impl RequestKey {
 }
 
 pub(crate) fn redact_url(url: &str) -> String {
-    let without_fragment = url.split_once('#').map_or(url, |(prefix, _)| prefix);
-    without_fragment
-        .split_once('?')
-        .map_or(without_fragment, |(prefix, _)| prefix)
-        .to_string()
+    let Ok(parsed) = Url::parse(url) else {
+        return "<redacted>".to_string();
+    };
+
+    let Some(host) = parsed.host_str() else {
+        return "<redacted>".to_string();
+    };
+
+    let host = if host.contains(':') && !host.starts_with('[') {
+        format!("[{host}]")
+    } else {
+        host.to_string()
+    };
+    let port = parsed
+        .port()
+        .map(|port| format!(":{port}"))
+        .unwrap_or_default();
+
+    format!("{}://{}{}{}", parsed.scheme(), host, port, "/<redacted>")
 }
 
 fn update_component(hasher: &mut Sha256, label: &[u8], value: &[u8]) {
@@ -83,6 +185,8 @@ fn canonicalize_url(url: &str) -> String {
         return canonicalize_unparsed_url(url);
     };
 
+    let _ = parsed.set_username("");
+    let _ = parsed.set_password(None);
     parsed.set_fragment(None);
 
     if parsed.query().is_some() {
@@ -153,7 +257,7 @@ fn canonicalize_headers(headers: &HeaderMap) -> Vec<u8> {
             let name = name.as_str().to_ascii_lowercase();
             matches!(
                 name.as_str(),
-                "accept" | "content-type" | "user-agent"
+                "accept" | "content-encoding" | "content-type" | "user-agent"
             )
             .then(|| (name, value.as_bytes().to_vec()))
         })

@@ -36,6 +36,7 @@ mod dos383_external_replay_integration_test {
                 "fixtures": [
                     {
                         "request_key_hex": key.to_hex(),
+                        "auth_scope_id": AUTH_SCOPE_ID,
                         "response": {
                             "status": 200,
                             "headers": [["Content-Type", "application/json"]],
@@ -77,7 +78,7 @@ mod dos383_external_replay_integration_test {
                 assert_eq!(missing.request_key_hex, expected_key.to_hex());
                 assert!(!missing.request_key_hex.is_empty());
                 assert_eq!(missing.method, "GET");
-                assert_eq!(missing.url_redacted, "https://glean.example.com/v1/facts");
+                assert_eq!(missing.url_redacted, "https://glean.example.com/<redacted>");
             }
             other => panic!("expected ExternalReplayFixtureMissing, got {other:?}"),
         }
