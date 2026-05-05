@@ -38,7 +38,7 @@ A surface can hold multiple states (e.g. `spec+referenced`).
 |---|---:|---:|---:|---:|---:|---:|
 | Router routes | 26 | 19 | 26 | 1 | 0 | 0 |
 | Legacy page implementations | 1 | 0 | 0 | 1 | 1 | 0 |
-| Non-route full-screen | 5 | 1 | 10 chapter/state refs | 0 | 0 | 1 (3 `documented`-only) |
+| Non-route full-screen | 5 | 2 | 10 chapter/state refs | 0 | 0 | 0 (3 `documented`-only) |
 | Dialogs / sheets | 19 | 2 | 2 | 0 | 0 | 15 (10 `documented`-only) |
 
 ## Routed pages — `src/pages/*.tsx`
@@ -58,7 +58,7 @@ A surface can hold multiple states (e.g. `spec+referenced`).
 | HistoryPage | `src/pages/HistoryPage.tsx` | `/history` | Review past inbox processing activity and where files were classified or routed. | `referenced+spec` | `history.html` | `surfaces/HistoryPage.md` | — | Processing-history companion to InboxPage and EmailsPage. |
 | InboxPage | `src/pages/InboxPage.tsx` | `/inbox` | Drop or import files, classify them, and route them to the right account/project. | `referenced` | `inbox.html` | — | — | Processing history is HistoryPage. |
 | MePage | `src/pages/MePage.tsx` | `/me` | Maintain the user's profile, priorities, context, attachments, personal report entry points. | `referenced+spec` | `me.html` | `surfaces/MePage.md` | — | Personal reports route to WeeklyImpact, MonthlyWrapped, BookOfBusiness. |
-| MeetingDetailPage | `src/pages/MeetingDetailPage.tsx` | `/meeting/$meetingId` | Prepare for or review a meeting — context, risks, room, plan, outcomes, transcript actions. | `referenced+spec` | `meeting.html` | `surfaces/MeetingDetail.md` | — | Current implementation is pre/post-briefing oriented; spec describes the Wave 4 post-meeting recap target. |
+| MeetingDetailPage | `src/pages/MeetingDetailPage.tsx` | `/meeting/$meetingId` | Prepare for or review a meeting — context, risks, room, plan, outcomes, transcript actions. | `referenced+spec` | `meeting.html` | `surfaces/MeetingDetail.md` | — | Spec reconciled to shipped source plus explicit extraction targets. |
 | MeetingHistoryDetailPage | `src/pages/MeetingHistoryDetailPage.tsx` | `/meeting/history/$meetingId` | Preserve legacy meeting-history links by redirecting to the canonical route. | `covered-by` | `meeting.html` via MeetingDetailPage | `surfaces/MeetingDetail.md` | — | **Consolidation candidate.** Wrapper/redirect only. |
 | MonthlyWrappedPage | `src/pages/monthly-wrapped/MonthlyWrappedPage.tsx` | `/me/reports/monthly_wrapped` | Generate a monthly retrospective of work, wins, watch items. | `referenced+spec` | `reports/monthly-wrapped.html` | `surfaces/MonthlyWrappedPage.md` | — | Dedicated report spec added during the parity pass. Lives in subdirectory. |
 | PeoplePage | `src/pages/PeoplePage.tsx` | `/people` | Browse, search, create, archive, and clean up people across internal/external/unknown. | `referenced` | `people.html` | — | — | Add-new flow tracked by DOS-369. |
@@ -67,7 +67,7 @@ A surface can hold multiple states (e.g. `spec+referenced`).
 | ProjectsPage | `src/pages/ProjectsPage.tsx` | `/projects` | Browse, search, create, and archive the project hierarchy. | `referenced+spec` | `projects.html` | `surfaces/ProjectsPage.md` | — | Add-new flow tracked by DOS-369. |
 | ReportPage | `src/pages/ReportPage.tsx` | `/accounts/.../reports/$reportType`, `/me/reports/$reportType` | Render a generic saved report for account- or user-scoped report routes. | `referenced+spec` | `reports/generic-report.html` | `surfaces/ReportPage.md` | — | **Consolidation candidate.** Generic shell now has standalone coverage; dedicated report references cover named report examples. |
 | RiskBriefingPage | `src/pages/RiskBriefingPage.tsx` | `/accounts/$accountId/reports/risk_briefing` | Generate and edit an executive risk briefing and recovery plan. | `referenced+spec` | `reports/risk-briefing.html` | `surfaces/RiskBriefingPage.md` | — | Dedicated report spec added during the parity pass. |
-| SettingsPage | `src/pages/SettingsPage.tsx` | `/settings` | Configure identity, connectors, data, system, notifications, diagnostics. | `referenced+spec` | `settings.html` | `surfaces/Settings.md` | — | Spec source files reconciled to `src/pages/SettingsPage.tsx` and `SettingsPage.module.css`. |
+| SettingsPage | `src/pages/SettingsPage.tsx` | `/settings` | Configure identity, connectors, data, system, notifications, diagnostics. | `referenced+spec` | `settings.html` | `surfaces/Settings.md` | — | Spec source files reconciled to `src/pages/SettingsPage.tsx`, `SettingsPage.module.css`, and `src/features/settings-ui/*`. |
 | SwotPage | `src/pages/SwotPage.tsx` | `/accounts/$accountId/reports/swot` | Generate and edit a SWOT analysis slide deck. | `referenced+spec` | `reports/swot.html` | `surfaces/SwotPage.md` | — | Dedicated report spec added during the parity pass. |
 | WeekPage | `src/pages/WeekPage.tsx` | `/week` | Understand the upcoming week's meeting load and briefing readiness. | `referenced+spec` | `week.html` | `surfaces/WeekPage.md` | — | — |
 | WeeklyImpactPage | `src/pages/WeeklyImpactPage.tsx` | `/me/reports/weekly_impact` | Generate and edit a weekly impact report — work moved, wins, watch items, next week. | `referenced+spec` | `reports/weekly-impact.html` | `surfaces/WeeklyImpactPage.md` | — | Dedicated report spec added during the parity pass. |
@@ -81,7 +81,7 @@ These render at app-shell scale, not inside a page container.
 | DatabaseRecovery | `src/components/DatabaseRecovery.tsx` | Recover from unsafe database startup — restore backup, export copy, start fresh, or update app. | `documented` | — | Full-window startup gate; documented in `NAVIGATION-ARCHITECTURE.md` but no reference render. |
 | EncryptionRecovery | `src/components/EncryptionRecovery.tsx` | Explain that encrypted DB can't be opened without macOS Keychain key; offer recovery or fresh-start. | `documented` | — | Full-window startup gate; same status as DatabaseRecovery. |
 | LockOverlay | `src/components/LockOverlay.tsx` | Block app access while locked; unlock with Touch ID. | `documented` | — | Full-window startup gate. |
-| OnboardingFlow | `src/components/onboarding/OnboardingFlow.tsx` | Guide first-run setup — Google, Claude Code, Glean, user context, first account, role, initial briefing. | `referenced+gap` | [DOS-371](https://linear.app/a8c/issue/DOS-371) | Chapter references exist under `reference/surfaces/onboarding/`; no canonical flow spec yet. |
+| OnboardingFlow | `src/components/onboarding/OnboardingFlow.tsx` | Guide first-run setup — Google, Claude Code, Glean, user context, first account, role, initial briefing. | `referenced+spec` | — | Chapter references exist under `reference/surfaces/onboarding/`; canonical shipped sequence is `surfaces/OnboardingFlow.md`. |
 | StartupBriefingScreen | `src/components/startup/StartupBriefingScreen.tsx` | Hold the cold-start moment with branded splash/progress while DailyOS prepares context. | `referenced+spec` | — | Splash/progress references exist under `reference/surfaces/splash/` and are covered by the manifest fidelity audit; canonical spec is `surfaces/StartupBriefingScreen.md`. |
 
 ## Significant dialogs / sheets / banners
@@ -133,7 +133,7 @@ Every gap above maps to a filed Linear issue (or is flagged as needing one):
 | Linear issue | Covers |
 |---|---|
 | [DOS-369](https://linear.app/a8c/issue/DOS-369) — DS-SURF-03 | AccountCreateInlineFlow, AccountCreateChildDialog, ProjectCreateInlineFlow, ProjectCreateSubProjectDialog, PersonCreateInlineForm |
-| [DOS-371](https://linear.app/a8c/issue/DOS-371) — DS-SURF-05 | OnboardingFlow, ProfileSelector |
+| [DOS-371](https://linear.app/a8c/issue/DOS-371) — DS-SURF-05 | ProfileSelector and any future onboarding chapter variants not in the shipped flow |
 | **Unfiled** | PersonMergePickerDialog |
 
 When DS-NAV-01 ([DOS-364](https://linear.app/a8c/issue/DOS-364)) builds the reference index, it should consume this file as the source of truth for surface enumeration, JTBD copy, and gap status.

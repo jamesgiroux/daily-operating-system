@@ -12,8 +12,8 @@ The design system has migrated from monolithic top-level docs to per-entry specs
 | Layer | Where | What it is |
 |---|---|---|
 | **Tokens** | [`tokens/`](./tokens/) | Color, typography, spacing, motion, radius, shadows, glass, layout, and z-index — the primitive values everything else composes from |
-| **Primitives** | [`primitives/`](./primitives/) | 18 atomic UI elements (Pill, EntityChip, TypeBadge, etc.) — one spec per primitive |
-| **Patterns** | [`patterns/`](./patterns/) | 32 composed UI patterns (FolioBar, ChapterHeading, TrustBand, VitalsStrip, etc.) — one spec per pattern |
+| **Primitives** | [`primitives/`](./primitives/) | 23 atomic UI elements (Pill, EntityChip, HealthBadge, EditableText, etc.) — one spec per primitive |
+| **Patterns** | [`patterns/`](./patterns/) | 49 composed UI patterns (FolioBar, ChapterHeading, MeetingCard, EntityListShell, PostMeetingIntelligence, etc.) — one spec per pattern |
 | **Surfaces** | [`surfaces/`](./surfaces/) + [`reference/surfaces/`](./reference/surfaces/) | Per-screen specs + manifest-backed fidelity checks for covered routed pages, reports, onboarding chapters, and splash modes; see [`INVENTORY.md`](./INVENTORY.md) for acknowledged gaps |
 | **Journeys** | [`reference/journeys/`](./reference/journeys/) | JTBD flows mapping which surfaces a CSM touches to accomplish each job |
 | **Inventory** | [`INVENTORY.md`](./INVENTORY.md) | Full surface roster (referenced + spec'd + gap) |
@@ -37,7 +37,7 @@ DailyOS is a **magazine, not a dashboard**. Every surface is a document the user
 | Use a hardcoded hex color? | Never. Use design tokens from `design-tokens.css` or Tailwind semantic classes — see [`tokens/color.md`](./tokens/color.md). |
 | Add a new font? | No. Newsreader, DM Sans, JetBrains Mono, Montserrat (mark only). See [`tokens/typography.md`](./tokens/typography.md). |
 | Use inline `style={{}}` props? | Avoid. Use CSS modules or Tailwind classes. The reference-fidelity audit at [`_audits/audit-reference.py`](./_audits/audit-reference.py) flags inline-style invention against canonical TSX. |
-| Build a new component for this? | Check [`primitives/`](./primitives/) and [`patterns/`](./patterns/) first. There are 50 documented primitive/pattern specs, and status labels distinguish shipped specs from roadmap entries. |
+| Build a new component for this? | Check [`primitives/`](./primitives/) and [`patterns/`](./patterns/) first. There are 72 documented primitive/pattern specs, and status labels distinguish canonical shipped, shipped-local, implemented/unintegrated, and roadmap entries. |
 | Use "intelligence" or "enrichment" in user-facing text? | Never. System terms stay in code. See vocabulary guidance in `src/CLAUDE.md`. |
 | Skip the FinisMarker? | No. Every editorial page ends with one. See [`patterns/FinisMarker.md`](./patterns/FinisMarker.md). |
 
@@ -48,6 +48,7 @@ Domain-specific reference docs that don't fit the token/primitive/pattern/surfac
 - [`INTELLIGENCE-CONSISTENCY-REFERENCE.md`](./INTELLIGENCE-CONSISTENCY-REFERENCE.md) — contradiction guardrails and SQL diagnostics for briefing trust issues
 - [`SIGNAL-SCORING-REFERENCE.md`](./SIGNAL-SCORING-REFERENCE.md) — signal scoring algebra
 - [`FIELD-PROMOTION-MATRIX.md`](./FIELD-PROMOTION-MATRIX.md) — field promotion rules
+- [`_audits/shipped-component-inventory.md`](./_audits/shipped-component-inventory.md) — shipped-source-first component inventory and status corrections
 - [`NAMING.md`](./NAMING.md) — naming conventions
 - [`POSITIONING.md`](./POSITIONING.md), [`PRODUCT-PRINCIPLES.md`](./PRODUCT-PRINCIPLES.md), [`SYSTEM-MAP.md`](./SYSTEM-MAP.md) — strategy
 - [`VERSION.md`](./VERSION.md), [`VIOLATIONS.md`](./VIOLATIONS.md), [`CHANGELOG.md`](./CHANGELOG.md) — process

@@ -6,18 +6,18 @@
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `MeetingStatusPill`
 **`data-ds-spec`:** `primitives/MeetingStatusPill.md`
-**Variants:** `wrapped`, `processing`, `failed`
+**Variants:** `upcoming`, `in-progress`, `past`, `cancelled`
 **Design system version introduced:** `0.4.0`
 
 ## Job
 
-Show the extraction state of a meeting recap in one compact, readable pill so the user can trust whether the meeting intelligence is ready, still being produced, or needs attention.
+Show the temporal state of a meeting in one compact, readable pill so the user can scan schedule rows and in-progress meetings.
 
 ## When to use it
 
-- In the `SurfaceMasthead` accessory slot for MeetingDetail.
-- When status copy must pair a state icon with meeting-specific timing or recording metadata.
-- When the status belongs to the meeting recap as a whole, not to an individual action, finding, or transcript claim.
+- In `MeetingCard` title rows when a meeting is happening now.
+- When schedule or timeline UI needs a compact temporal label.
+- When the status belongs to the meeting row as a whole, not to an individual action, finding, or transcript claim.
 
 ## When NOT to use it
 
@@ -27,9 +27,10 @@ Show the extraction state of a meeting recap in one compact, readable pill so th
 
 ## States / variants
 
-- `wrapped` — sage background, rosemary text, check icon, copy like "Wrapped 8 minutes ago · 56 min recorded".
-- `processing` — saffron background, turmeric text, progress/spinner icon, copy like "Processing transcript".
-- `failed` — terracotta background, chili text, warning icon, copy like "Extraction failed".
+- `upcoming` — sage tone.
+- `in-progress` — turmeric tone, often rendered as "NOW".
+- `past` — neutral tone.
+- `cancelled` — terracotta tone.
 - Disabled is not exposed; the pill is informational.
 
 ## Composition
@@ -51,10 +52,11 @@ Composes the `Pill` primitive with meeting-specific status tokens, an icon slot,
 
 ```tsx
 <MeetingStatusPill
-  state="wrapped"
-  wrappedAtLabel="8 minutes ago"
-  recordedDurationLabel="56 min"
-/>
+  state="in-progress"
+  size="compact"
+>
+  NOW
+</MeetingStatusPill>
 ```
 
 ## Source
@@ -64,7 +66,8 @@ Composes the `Pill` primitive with meeting-specific status tokens, an icon slot,
 
 ## Surfaces that consume it
 
-- [MeetingDetail](../surfaces/MeetingDetail.md) canonical
+- `MeetingCard` in DailyBriefing and WeekPage.
+- MeetingDetail schedule/hero contexts when temporal state is shown.
 
 ## Naming notes
 

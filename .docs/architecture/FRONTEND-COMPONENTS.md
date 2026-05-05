@@ -103,7 +103,7 @@ Audited: 2026-03-02. Source: `src/components/` and `src/pages/`.
 | `connectors/LinearConnector.tsx` | 593 | Y | 6 | N | ConnectorsGrid (via registry) |
 | `connectors/ClayConnector.tsx` | 388 | Y | 8 | N | ConnectorsGrid (via registry) |
 | `connectors/GoogleConnector.tsx` | 332 | Y | 2 | N | ConnectorsGrid (via registry) |
-| `connectors/GoogleDriveConnector.tsx` | 277 | Y | 3 | N | ConnectorsGrid (via registry) |
+| `connectors/GoogleDriveConnector.tsx` | 277 | Y | 3 | N | Source-present, not in current registry; Drive is folded into Google connection |
 | `connectors/ClaudeDesktopConnector.tsx` | 251 | Y | N | N | ConnectorsGrid (via registry) |
 | `connectors/QuillConnector.tsx` | 231 | Y | 2 | N | ConnectorsGrid (via registry) |
 | `connectors/GranolaConnector.tsx` | 198 | Y | 2 | N | ConnectorsGrid (via registry) |
@@ -113,23 +113,23 @@ Audited: 2026-03-02. Source: `src/components/` and `src/pages/`.
 
 | File | Lines | State | invoke() | listen() | Parents |
 |------|------:|:-----:|:--------:|:--------:|---------|
-| `OnboardingFlow.tsx` | 301 | Y | 7 | N | router.tsx (RootLayout) |
-| `chapters/AboutYou.tsx` | 449 | Y | 2 | N | OnboardingFlow (via render map) |
+| `OnboardingFlow.tsx` | 301 | Y | 7 | N | router.tsx (RootLayout); shipped sequence has 8 chapters |
+| `chapters/AboutYou.tsx` | 449 | Y | 2 | N | Source-present, not imported by current OnboardingFlow |
 | `chapters/InternalTeamSetup.tsx` | 431 | Y | 1 | N | **GHOST** (not imported by OnboardingFlow) |
 | `chapters/InboxTraining.tsx` | 427 | Y | 1 | Y (drag-drop) | **GHOST** (not imported by OnboardingFlow) |
 | `chapters/DashboardTour.tsx` | 313 | Y | N | N | **GHOST** (not imported by OnboardingFlow) |
 | `chapters/YouCardStep.tsx` | 266 | Y | 3 | N | OnboardingFlow |
 | `chapters/ClaudeCode.tsx` | 249 | Y | N | N | OnboardingFlow |
 | `chapters/PopulateWorkspace.tsx` | 237 | Y | 1 | N | **GHOST** (not imported by OnboardingFlow) |
-| `chapters/PrimeBriefing.tsx` | 207 | Y | N | N | **GHOST** (not imported by OnboardingFlow) |
+| `chapters/PrimeBriefing.tsx` | 207 | Y | N | N | OnboardingFlow |
 | `chapters/MeetingDeepDive.tsx` | 186 | N | N | N | **GHOST** (not imported by OnboardingFlow) |
 | `chapters/GoogleConnect.tsx` | 176 | Y | N | N | OnboardingFlow |
 | `chapters/EntityMode.tsx` | 128 | Y | 1 | N | OnboardingFlow |
 | `chapters/FirstAccountStep.tsx` | 126 | Y | 2 | N | OnboardingFlow |
-| `chapters/Workspace.tsx` | 155 | Y | 1 | N | OnboardingFlow |
+| `chapters/Workspace.tsx` | 155 | Y | 1 | N | Source-present, not imported by current OnboardingFlow |
 | `chapters/Welcome.tsx` | 153 | N | N | N | OnboardingFlow |
-| `chapters/Ready.tsx` | 175 | N | N | N | OnboardingFlow |
-| `FolderTree.tsx` | 119 | N | N | N | Workspace, OnboardingFlow |
+| `chapters/Ready.tsx` | 175 | N | N | N | Source-present, not imported by current OnboardingFlow |
+| `FolderTree.tsx` | 119 | N | N | N | Workspace only; not reached by shipped OnboardingFlow |
 | `TourHighlight.tsx` | 28 | N | N | N | DashboardTour |
 
 #### `components/layout/` (5 files)
@@ -320,7 +320,6 @@ Components that are exported but never imported by any other file (including via
 | `onboarding/chapters/InternalTeamSetup.tsx` | 431 | **Wire in or delete** -- fully built with invoke() calls. Was likely planned for onboarding but cut from the chapter list. |
 | `onboarding/chapters/InboxTraining.tsx` | 427 | **Wire in or delete** -- has drag-drop listen(), invoke(), a complete UI. Never referenced. |
 | `onboarding/chapters/PopulateWorkspace.tsx` | 237 | **Wire in or delete** -- has invoke("populate_workspace"). Built but unreferenced. |
-| `onboarding/chapters/PrimeBriefing.tsx` | 207 | **Wire in or delete** -- loading/progress UI for initial briefing generation. |
 | `onboarding/chapters/MeetingDeepDive.tsx` | 186 | **Wire in or delete** -- static educational content. |
 | **Reports not used by ReportPage:** | | |
 | `reports/MonthlyWrappedReport.tsx` | 277 | **Likely replaced** -- MonthlyWrappedPage uses its own custom Wrapped slides instead of this report format. Delete. |
@@ -343,7 +342,7 @@ Components that are exported but never imported by any other file (including via
 | `editorial/EditorialEmpty.tsx` | 34 | **Delete** -- superseded by `editorial/EmptyState.tsx` which is the active empty state. |
 | `ProfileSelector.tsx` | 137 | **Delete or wire in** -- profile switching UI with invoke("set_profile"). Not connected to any page. |
 
-**Summary**: 23 ghost files totaling ~3,440 lines. 7 are shadcn/ui primitives to keep. 6 are substantial onboarding chapters (2,801 lines total) that were built but never wired into OnboardingFlow -- these represent the biggest waste and should be either integrated or removed. The remaining 10 are superseded or duplicate patterns.
+**Summary**: PrimeBriefing is no longer a ghost; it is in the shipped OnboardingFlow sequence. The remaining ghost inventory still needs a fresh source-count pass before deletion decisions, especially for source-present onboarding variants such as AboutYou, Workspace, Ready, DashboardTour, InternalTeamSetup, InboxTraining, PopulateWorkspace, and MeetingDeepDive.
 
 ---
 

@@ -1,7 +1,7 @@
 # StaleReportBanner
 
 **Tier:** pattern
-**Status:** planned
+**Status:** shipped-local/extraction-needed
 **Owner:** James
 **Last updated:** 2026-05-03
 **`data-ds-name`:** `StaleReportBanner`

@@ -4,7 +4,8 @@ DOS-375 Phase 1. Per-entry plan for promoting the spec'd primitives and patterns
 
 ## Summary
 
-- Audited: 18 primitives + 32 patterns (50 total after `VitalsStrip` promotion)
+- Superseded count note: the design system now tracks 23 primitives + 49 patterns (72 total) after the 2026-05-05 shipped-source inventory pass.
+- Original audited scope: 18 primitives + 32 patterns (50 total after `VitalsStrip` promotion)
 - Recommend extract: 14 primitives + 10 patterns = 24 entries (5 clusters)
 - Recommend keep-embedded: 1 entry (TypeBadge)
 - Already canonical (no action): 3 primitives + 21 patterns = 24 entries

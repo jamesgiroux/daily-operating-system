@@ -6,13 +6,14 @@ Full screens. The user-visible products built on top of patterns and primitives.
 
 | Canonical name | Current src name | Status | Spec |
 |---|---|---|---|
-| [`DailyBriefing`](./DailyBriefing.md) | `DashboardPage` inline in `src/router.tsx` + `src/components/dashboard/DailyBriefing.tsx` | Redesigning (v1.4.3) | ✓ Wave 1 (0.1.0) |
-| [`Settings`](./Settings.md) | `src/pages/SettingsPage.tsx` | Redesigning (separate project) | ✓ Wave 3 (0.3.0) |
-| [`MeetingDetail`](./MeetingDetail.md) | `src/pages/MeetingDetailPage.tsx` | Redesigning | ✓ Wave 4 (0.4.0) |
+| [`DailyBriefing`](./DailyBriefing.md) | `DashboardPage` inline in `src/router.tsx` + `src/components/dashboard/DailyBriefing.tsx` | Canonical shipped + roadmap split | ✓ Reconciled (2026-05-05) |
+| [`Settings`](./Settings.md) | `src/pages/SettingsPage.tsx` + `src/features/settings-ui/*` | Canonical shipped + roadmap split | ✓ Reconciled (2026-05-05) |
+| [`MeetingDetail`](./MeetingDetail.md) | `src/pages/MeetingDetailPage.tsx` | Canonical shipped + extraction targets | ✓ Reconciled (2026-05-05) |
 | [`AccountDetailPage`](./AccountDetailPage.md) | `src/pages/AccountDetailPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`ActionsPage`](./ActionsPage.md) | `src/pages/ActionsPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`MePage`](./MePage.md) | `src/pages/MePage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`ProjectsPage`](./ProjectsPage.md) | `src/pages/ProjectsPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
+| [`OnboardingFlow`](./OnboardingFlow.md) | `src/components/onboarding/OnboardingFlow.tsx` | Canonical | ✓ Shipped sequence reconciled (2026-05-05) |
 | [`WeekPage`](./WeekPage.md) | `src/pages/WeekPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`AccountHealthPage`](./AccountHealthPage.md) | `src/pages/AccountHealthPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`BookOfBusinessPage`](./BookOfBusinessPage.md) | `src/pages/BookOfBusinessPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
