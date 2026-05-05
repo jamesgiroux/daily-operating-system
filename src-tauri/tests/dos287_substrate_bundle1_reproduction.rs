@@ -308,6 +308,7 @@ fn cross_entity_coherence_factor(db: &ActionDb, claim_text: &str) -> f64 {
                 portfolio_footprints,
                 cross_entity_context_expected: false,
             },
+            target_surface: None,
         },
     )
     .expect("compile trust");
