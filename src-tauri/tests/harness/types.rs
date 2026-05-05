@@ -30,6 +30,12 @@ pub struct FixtureRef {
     pub labels: Vec<String>,
 }
 
+impl FixtureRef {
+    pub fn has_label(&self, label: &str) -> bool {
+        self.labels.iter().any(|candidate| candidate == label)
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct FixtureMetadata {
     pub bundle: Option<u32>,

@@ -3,10 +3,11 @@ mod harness;
 
 use std::{
     collections::BTreeSet,
-    future::Future,
     fs,
-    pin::Pin,
+    future::Future,
     path::{Path, PathBuf},
+    pin::Pin,
+    process::{Command, Output},
     sync::Arc,
 };
 
@@ -15,8 +16,12 @@ use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
 use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
+use dailyos_lib::intelligence::provider::{
+    prompt_replay_hash, IntelligenceProvider, ModelTier, PromptInput, ProviderError,
+};
 use dailyos_lib::services::context::{
-    ExecutionMode, GleanAccountFacts, GleanClientHandle, SeedableRng, SeededRng,
+    ExecutionMode, ExternalClientError, GleanAccountFacts, GleanClientHandle, SeedableRng,
+    SeededRng,
 };
 use harness::{
     baseline_fingerprint_for_fixture, canonical_json_eq, diff_internal_provenance,
@@ -51,6 +56,25 @@ fn loader_loads_all_committed_bundles() {
     }
 
     assert_eq!(seen, expected);
+}
+
+#[test]
+fn harness_loads_fixture_manifest_and_metadata() {
+    let root = fixture_root();
+    let discovered: Vec<FixtureRef> =
+        discover_fixtures(&[root.as_path()]).expect("fixture discovery succeeds");
+
+    assert!(!discovered.is_empty(), "committed fixtures are discovered");
+
+    for fixture_ref in discovered {
+        let fixture = load_fixture(&fixture_ref.fixture_dir).expect("fixture loads");
+        let bundle = fixture.metadata.bundle.expect("bundle metadata is set");
+
+        assert!(fixture_ref.has_label(&format!("bundle-{bundle}")));
+        assert!(!fixture.metadata.scenario_id.trim().is_empty());
+        assert!(!fixture.metadata.invariant.trim().is_empty());
+        assert!(!fixture.metadata.expected_render_policy.trim().is_empty());
+    }
 }
 
 #[test]
@@ -203,6 +227,79 @@ fn runner_loads_external_replay_fixture_into_external_clients() {
 }
 
 #[test]
+fn harness_loads_provider_replay_by_prompt_hash() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    let prompt = PromptInput::new("provider replay prompt");
+    let replay_hash = prompt_replay_hash(&prompt);
+    write_json(
+        &temp_dir.path().join("provider_replay.json"),
+        json!({
+            "version": 1,
+            "fixtures": [{
+                "prompt_replay_hash": replay_hash,
+                "completion": { "text": "fixture completion" }
+            }]
+        }),
+    );
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+    let prepared = prepare_fixture_for_run(&fixture).expect("fixture prepares");
+
+    let completion =
+        complete_replay_provider(&prepared.provider, prompt).expect("provider replay fixture hit");
+
+    assert_eq!(completion, "fixture completion");
+}
+
+#[test]
+fn harness_replay_provider_missing_hash_is_hard_failure() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+    let prepared = prepare_fixture_for_run(&fixture).expect("fixture prepares");
+    let prompt = PromptInput::new("provider replay prompt not present");
+    let expected_hash = prompt_replay_hash(&prompt);
+
+    let Err(error) = complete_replay_provider(&prepared.provider, prompt) else {
+        panic!("missing replay hash should fail closed");
+    };
+
+    match error {
+        ProviderError::ReplayFixtureMissing(actual_hash) => {
+            assert_eq!(actual_hash, expected_hash);
+        }
+        other => panic!("expected ReplayFixtureMissing, got {other:?}"),
+    }
+}
+
+#[test]
+fn harness_external_replay_missing_flow_is_hard_failure() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+    let prepared = prepare_fixture_for_run(&fixture).expect("fixture prepares");
+    let missing_account_id = "acct-missing-example";
+    let expected_key = GleanClientHandle::request_key_for_fetch_account_facts(
+        missing_account_id,
+        "harness-default-tenant",
+    );
+
+    let error = prepared
+        .external_clients
+        .glean
+        .fetch_account_facts(missing_account_id)
+        .expect_err("missing external replay flow should fail closed");
+
+    match error {
+        ExternalClientError::ReplayFixtureMissing(missing) => {
+            assert_eq!(missing.request_key_hex, expected_key.to_hex());
+            assert_eq!(missing.method, "GET");
+        }
+        other => panic!("expected ReplayFixtureMissing, got {other:?}"),
+    }
+}
+
+#[test]
 fn runner_invokes_bundle_fixture_through_eval_bridge_and_captures_output() {
     let fixture = bundle_fixture(2);
     let deps = synthetic_runner_deps();
@@ -345,8 +442,112 @@ fn read_scorer_fails_on_provenance_mismatch() {
 
     assert!(!score.passed);
     assert!(score.diffs.iter().any(|diff| {
-        diff.kind == harness::DiffKind::ProvenanceMismatch
-            && diff.path == "/sources/0/source_asof"
+        diff.kind == harness::DiffKind::ProvenanceMismatch && diff.path == "/sources/0/source_asof"
+    }));
+}
+
+#[test]
+fn harness_provenance_warning_diff_fails() {
+    let expected = expected_artifacts(
+        json!({"ok": true}),
+        json!({"warnings": ["expected warning"]}),
+        None,
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({"ok": true}),
+        json!({"warnings": ["actual warning"]}),
+        None,
+    );
+
+    let score = ReadScorer.score(&expected, &actual);
+
+    assert!(!score.passed);
+    assert!(score
+        .diffs
+        .iter()
+        .any(|diff| { diff.kind == harness::DiffKind::SourceWarning && diff.path == "/warnings" }));
+}
+
+#[test]
+fn harness_expected_internal_provenance_diff_fails_full_envelope() {
+    let expected = expected_artifacts(
+        json!({"ok": true}),
+        json!({
+            "invocation_id": "expected",
+            "prompt_hash": "expected-hash",
+            "seed": 1,
+            "summary": "visible"
+        }),
+        None,
+        "show-public-only",
+    );
+    let actual = run_result(
+        json!({"ok": true}),
+        json!({
+            "invocation_id": "actual",
+            "prompt_hash": "actual-hash",
+            "seed": 2,
+            "summary": "visible"
+        }),
+        None,
+    );
+
+    let score = ReadScorer.score(&expected, &actual);
+
+    assert!(!score.passed);
+    assert!(score.diffs.iter().any(|diff| {
+        diff.kind == harness::DiffKind::ProvenanceMismatch && diff.path == "/invocation_id"
+    }));
+    assert!(score.diffs.iter().any(|diff| {
+        diff.kind == harness::DiffKind::ProvenanceMismatch && diff.path == "/prompt_hash"
+    }));
+    assert!(score.diffs.iter().any(|diff| {
+        diff.kind == harness::DiffKind::ProvenanceMismatch && diff.path == "/seed"
+    }));
+}
+
+#[test]
+fn harness_expected_rendered_provenance_diff_via_eval_bridge_smoke_when_dos217_landed() {
+    let expected = expected_artifacts(
+        json!({"ok": true}),
+        json!({
+            "invocation_id": "expected",
+            "prompt_hash": "expected-hash",
+            "seed": 1,
+            "summary": "visible"
+        }),
+        None,
+        "show",
+    );
+    let actual_internal_only_changed = run_result(
+        json!({"ok": true}),
+        json!({
+            "invocation_id": "actual",
+            "prompt_hash": "actual-hash",
+            "seed": 2,
+            "summary": "visible"
+        }),
+        None,
+    );
+    let actual_visible_changed = run_result(
+        json!({"ok": true}),
+        json!({
+            "invocation_id": "actual",
+            "prompt_hash": "actual-hash",
+            "seed": 2,
+            "summary": "changed"
+        }),
+        None,
+    );
+
+    let passing_score = ReadScorer.score(&expected, &actual_internal_only_changed);
+    let failing_score = ReadScorer.score(&expected, &actual_visible_changed);
+
+    assert!(passing_score.passed, "{:?}", passing_score.diffs);
+    assert!(!failing_score.passed);
+    assert!(failing_score.diffs.iter().any(|diff| {
+        diff.kind == harness::DiffKind::ProvenanceMismatch && diff.path == "/summary"
     }));
 }
 
@@ -514,6 +715,47 @@ fn canonical_json_eq_handles_float_tolerance_for_close_values() {
 }
 
 #[test]
+fn harness_fixture_labels_core_regression_edge_subset() {
+    let fixtures = [
+        FixtureRef {
+            fixture_dir: PathBuf::from("fixtures/bundle-1/core"),
+            labels: vec![
+                "@core".to_string(),
+                "@regression".to_string(),
+                "@golden-daily-loop".to_string(),
+            ],
+        },
+        FixtureRef {
+            fixture_dir: PathBuf::from("fixtures/bundle-5/edge"),
+            labels: vec!["@edge".to_string(), "@golden-daily-loop".to_string()],
+        },
+        FixtureRef {
+            fixture_dir: PathBuf::from("fixtures/bundle-6/regression"),
+            labels: vec!["@regression".to_string()],
+        },
+    ];
+
+    let selected_dirs = |label: &str| -> Vec<String> {
+        fixtures
+            .iter()
+            .filter(|fixture| fixture.has_label(label))
+            .map(|fixture| fixture.fixture_dir.display().to_string())
+            .collect()
+    };
+
+    assert_eq!(selected_dirs("@core"), vec!["fixtures/bundle-1/core"]);
+    assert_eq!(
+        selected_dirs("@regression"),
+        vec!["fixtures/bundle-1/core", "fixtures/bundle-6/regression"]
+    );
+    assert_eq!(selected_dirs("@edge"), vec!["fixtures/bundle-5/edge"]);
+    assert_eq!(
+        selected_dirs("@golden-daily-loop"),
+        vec!["fixtures/bundle-1/core", "fixtures/bundle-5/edge"]
+    );
+}
+
+#[test]
 fn classifier_input_change_takes_priority_when_inputs_hash_diff() {
     let baseline = classification_fingerprint();
     let mut current = baseline.clone();
@@ -587,11 +829,74 @@ fn classifier_logic_change_when_no_fingerprint_diff_but_score_diffs_present() {
 }
 
 #[test]
+fn harness_classifies_provider_drift() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.completion_text_hash = Some("completion-current".to_string());
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::ProviderDrift, Severity::FailSoft))
+    );
+}
+
+#[test]
+fn harness_classifies_prompt_change_fail_soft() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.prompt_template_version = Some("prompt-v2".to_string());
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::PromptChange, Severity::FailSoft))
+    );
+}
+
+#[test]
+fn harness_classifies_input_change() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.inputs_hash = "inputs-current".to_string();
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::InputChange, Severity::Hard))
+    );
+}
+
+#[test]
+fn harness_classifies_canonicalization_bug_hard_fail() {
+    let baseline = classification_fingerprint();
+    let mut current = baseline.clone();
+    current.canonical_prompt_hash = Some("canonical-current".to_string());
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        Some((RegressionClass::CanonicalizationBug, Severity::Hard))
+    );
+}
+
+#[test]
+fn harness_classifies_logic_change_fail_soft() {
+    let baseline = classification_fingerprint();
+    let current = baseline.clone();
+    let diffs = vec![score_diff()];
+
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &diffs),
+        Some((RegressionClass::LogicChange, Severity::FailSoft))
+    );
+}
+
+#[test]
 fn classifier_returns_none_when_all_match() {
     let baseline = classification_fingerprint();
     let current = baseline.clone();
 
-    assert_eq!(RegressionClassifier.classify(&baseline, &current, &[]), None);
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        None
+    );
 }
 
 #[test]
@@ -640,6 +945,86 @@ fn baseline_fingerprint_reads_prompt_fingerprint_baseline_from_metadata() {
         fingerprint.canonical_prompt_hash,
         Some("fingerprint".to_string())
     );
+}
+
+#[test]
+fn harness_w2_prompt_replay_hash_rejected_as_canonical_regression_hash() {
+    let mut fixture = bundle_fixture(2);
+    fixture.metadata.prompt_fingerprint_baseline = "canonical-baseline".to_string();
+    let result = run_result(
+        json!({"ok": true}),
+        json!({
+            "prompt_fingerprint": {
+                "prompt_replay_hash": "w2-replay-only"
+            }
+        }),
+        None,
+    );
+
+    let fingerprint = harness::current_fingerprint_for_run(&fixture, &result);
+
+    assert_eq!(
+        fingerprint.canonical_prompt_hash,
+        Some("canonical-baseline".to_string())
+    );
+    assert_ne!(
+        fingerprint.canonical_prompt_hash,
+        Some("w2-replay-only".to_string())
+    );
+}
+
+#[test]
+fn harness_metadata_json_required_fields_validated() {
+    let root = fixture_root();
+    let discovered = discover_fixtures(&[root.as_path()]).expect("fixture discovery succeeds");
+
+    assert!(!discovered.is_empty(), "committed fixtures are discovered");
+
+    for fixture_ref in discovered {
+        let metadata_path = fixture_ref.fixture_dir.join("metadata.json");
+        let metadata_json: serde_json::Value =
+            serde_json::from_str(&fs::read_to_string(&metadata_path).expect("read metadata.json"))
+                .expect("parse metadata.json");
+        let fixture = load_fixture(&fixture_ref.fixture_dir).expect("metadata deserializes");
+
+        assert!(
+            fixture.metadata.bundle.is_some_and(|bundle| bundle > 0),
+            "{} has populated bundle",
+            metadata_path.display()
+        );
+        for field in [
+            "scenario_id",
+            "invariant",
+            "expected_render_policy",
+            "anonymization_cert",
+            "retention_policy",
+            "prompt_fingerprint_baseline",
+            "pass_fail_definition",
+        ] {
+            assert!(
+                metadata_json
+                    .get(field)
+                    .and_then(serde_json::Value::as_str)
+                    .is_some_and(|value| !value.trim().is_empty()),
+                "{} has populated {field}",
+                metadata_path.display()
+            );
+        }
+        for field in [
+            "surfaces_exercised",
+            "source_lifecycle_refs",
+            "trust_factors_dominant",
+        ] {
+            assert!(
+                metadata_json
+                    .get(field)
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|value| !value.is_empty()),
+                "{} has non-empty {field}",
+                metadata_path.display()
+            );
+        }
+    }
 }
 
 #[test]
@@ -729,6 +1114,36 @@ fn harness_report_computes_bundle_coverage_from_fixtures() {
 }
 
 #[test]
+fn harness_reports_bundle_coverage_1_and_5() {
+    let mut report = HarnessReport::new();
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-1/core",
+        Some(1),
+        "bundle-1-core",
+        harness::AbilityCategory::Read,
+        true,
+        None,
+        0,
+    ));
+    report.add_fixture_summary(fixture_summary(
+        "fixtures/bundle-5/correction-resurrection",
+        Some(5),
+        "bundle-5-correction-resurrection",
+        harness::AbilityCategory::Maintenance,
+        false,
+        Some((RegressionClass::LogicChange, Severity::FailSoft)),
+        1,
+    ));
+
+    report.finalize();
+
+    assert_eq!(report.bundle_coverage.bundles_run, vec![1, 5]);
+    assert_eq!(report.bundle_coverage.bundles_passed, vec![1]);
+    assert_eq!(report.bundle_coverage.bundles_failed, vec![5]);
+    assert_eq!(report.regression_class_counts["LogicChange"], 1);
+}
+
+#[test]
 fn harness_report_serializes_to_json_with_stable_field_order() {
     let mut report = HarnessReport::new();
     report.run_id = "harness-stable-run".to_string();
@@ -763,11 +1178,8 @@ fn harness_report_serializes_to_json_with_stable_field_order() {
             "\"category_counts\"",
         ],
     );
-    let regression_counts = section_between(
-        &first,
-        "\"regression_class_counts\"",
-        "\"category_counts\"",
-    );
+    let regression_counts =
+        section_between(&first, "\"regression_class_counts\"", "\"category_counts\"");
     assert_substrings_in_order(
         regression_counts,
         &[
@@ -780,7 +1192,12 @@ fn harness_report_serializes_to_json_with_stable_field_order() {
     );
     assert_substrings_in_order(
         section_after(&first, "\"category_counts\""),
-        &["\"Maintenance\"", "\"Publish\"", "\"Read\"", "\"Transform\""],
+        &[
+            "\"Maintenance\"",
+            "\"Publish\"",
+            "\"Read\"",
+            "\"Transform\"",
+        ],
     );
 }
 
@@ -809,7 +1226,10 @@ fn harness_report_writes_to_target_eval_harness_report_json() {
         serde_json::from_str(&written).expect("parse harness-report.json");
 
     assert!(output_path.is_file());
-    assert_eq!(parsed["fixtures"].as_array().expect("fixtures array").len(), 1);
+    assert_eq!(
+        parsed["fixtures"].as_array().expect("fixtures array").len(),
+        1
+    );
     assert_eq!(parsed["bundle_coverage"]["bundles_run"], json!([2]));
 }
 
@@ -847,7 +1267,10 @@ fn run_harness_suite_iterates_all_provided_fixtures_and_writes_report() {
 
     let written = fs::read_to_string(output_path).expect("read report");
     let parsed: serde_json::Value = serde_json::from_str(&written).expect("parse report");
-    assert_eq!(parsed["fixtures"].as_array().expect("fixtures array").len(), 2);
+    assert_eq!(
+        parsed["fixtures"].as_array().expect("fixtures array").len(),
+        2
+    );
 }
 
 #[test]
@@ -876,6 +1299,57 @@ fn harness_report_records_regression_class_when_classifier_fires() {
     assert_eq!(report.fixtures[0].regression.as_ref(), Some(&regression));
 }
 
+#[test]
+fn eval_fixture_governance_rejects_phone_like_tokens() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let fixture_root = temp_dir.path().join("fixtures");
+    fs::create_dir_all(&fixture_root).expect("create fixture root");
+    fs::write(
+        fixture_root.join("inputs.json"),
+        r#"{"support_phone":"555-010-0000"}"#,
+    )
+    .expect("write fixture with phone-like token");
+
+    let output = run_fixture_anonymization_lint_for_root(&fixture_root);
+    let text = fixture_lint_output_text(&output);
+
+    assert!(
+        !output.status.success(),
+        "lint must reject phone tokens\n{text}"
+    );
+    assert!(
+        text.contains("phone-like-number"),
+        "lint output must identify phone-like token\n{text}"
+    );
+}
+
+#[test]
+fn eval_fixture_governance_rejects_identity_map_in_tree() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    let fixture_root = temp_dir.path().join("fixtures");
+    fs::create_dir_all(&fixture_root).expect("create fixture root");
+    fs::write(fixture_root.join("fixture_identity_map.json"), "{}")
+        .expect("write identity map fixture");
+
+    let output = run_fixture_anonymization_lint_for_root(&fixture_root);
+    let text = fixture_lint_output_text(&output);
+
+    assert!(
+        !output.status.success(),
+        "lint must reject in-tree identity maps\n{text}"
+    );
+    assert!(
+        text.contains("identity-map-file"),
+        "lint output must identify identity map\n{text}"
+    );
+}
+
+#[test]
+#[ignore = "TODO(DOS-216): wire the harness startup guard that aborts non-harness-hermetic runs; current verification intentionally runs the non-feature harness binary"]
+fn harness_requires_hermetic_feature() {
+    panic!("TODO(DOS-216): harness runner must fail closed unless built with harness-hermetic");
+}
+
 fn fixture_root() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
 }
@@ -897,6 +1371,43 @@ fn score_diff() -> harness::Diff {
         expected: json!("expected"),
         actual: json!("actual"),
     }
+}
+
+fn complete_replay_provider(
+    provider: &dyn IntelligenceProvider,
+    prompt: PromptInput,
+) -> Result<String, ProviderError> {
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+    runtime
+        .block_on(provider.complete(prompt, ModelTier::Synthesis))
+        .map(|completion| completion.text)
+}
+
+fn run_fixture_anonymization_lint_for_root(fixture_root: &Path) -> Output {
+    let repo_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+        .parent()
+        .expect("repo root")
+        .to_path_buf();
+    let script = repo_root.join("src-tauri/scripts/check_fixture_anonymization.sh");
+
+    Command::new("bash")
+        .arg(script)
+        .current_dir(&repo_root)
+        .env("DOS216_FIXTURE_LINT_ROOT_OVERRIDE", &repo_root)
+        .env("DOS216_FIXTURE_LINT_FIXTURE_ROOT_OVERRIDE", fixture_root)
+        .output()
+        .expect("run DOS-216 fixture anonymization lint")
+}
+
+fn fixture_lint_output_text(output: &Output) -> String {
+    format!(
+        "--- stdout ---\n{}\n--- stderr ---\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    )
 }
 
 fn expected_artifacts(
@@ -1140,14 +1651,20 @@ fn write_minimal_fixture(fixture_dir: &Path, include_expected_state: bool) {
         &fixture_dir.join("external_replay.json"),
         json!({"version": 1, "fixtures": []}),
     );
-    write_json(&fixture_dir.join("expected_output.json"), json!({"ok": true}));
+    write_json(
+        &fixture_dir.join("expected_output.json"),
+        json!({"ok": true}),
+    );
     write_json(
         &fixture_dir.join("expected_provenance.json"),
         json!({"sources": []}),
     );
 
     if include_expected_state {
-        write_json(&fixture_dir.join("expected_state.json"), json!({"state": true}));
+        write_json(
+            &fixture_dir.join("expected_state.json"),
+            json!({"state": true}),
+        );
     }
 }
 
