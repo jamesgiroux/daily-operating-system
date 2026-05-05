@@ -465,8 +465,10 @@ impl ActionDb {
                   rule_id, confidence, evidence_json, graph_version, created_at) \
                  VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11) \
                  ON CONFLICT(owner_type, owner_id, entity_id, entity_type) DO UPDATE SET \
-                   role = excluded.role, \
-                   source = excluded.source, \
+                   role = CASE WHEN linked_entities_raw.source = 'user_dismissed' \
+                               THEN linked_entities_raw.role ELSE excluded.role END, \
+                   source = CASE WHEN linked_entities_raw.source = 'user_dismissed' \
+                                 THEN linked_entities_raw.source ELSE excluded.source END, \
                    rule_id = excluded.rule_id, \
                    confidence = excluded.confidence, \
                    evidence_json = excluded.evidence_json, \
@@ -887,5 +889,148 @@ impl<T> OptionalExt<T> for Result<T, rusqlite::Error> {
             Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
             Err(e) => Err(e),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+
+    fn write(entity_id: &str, role: &str, source: &str, rule_id: &str) -> LinkedEntityRawWrite {
+        LinkedEntityRawWrite {
+            owner_type: "meeting".to_string(),
+            owner_id: "mtg-test".to_string(),
+            entity_id: entity_id.to_string(),
+            entity_type: "account".to_string(),
+            role: role.to_string(),
+            source: source.to_string(),
+            rule_id: Some(rule_id.to_string()),
+            confidence: Some(0.93),
+            evidence_json: Some("{}".to_string()),
+            graph_version: 1,
+        }
+    }
+
+    /// Recompute must not clobber `source='user_dismissed'`.
+    ///
+    /// Reproduces the ghost-resurrection mechanism: after a user dismisses a
+    /// linked entity, the next recompute calls `upsert_linked_entity_raw` with
+    /// the rule-derived source for the same key. The ON CONFLICT DO UPDATE
+    /// must keep `source` and `role` pinned when the existing row is
+    /// `user_dismissed`, otherwise the dismissal flips back to `rule:Pxx`.
+    #[test]
+    fn upsert_preserves_user_dismissed_source_on_conflict() {
+        let db = test_db();
+
+        // Initial rule-derived row.
+        db.upsert_linked_entity_raw(&write("acct-a", "related", "rule:P4a", "P4a"))
+            .expect("initial upsert");
+
+        // User dismisses.
+        db.set_link_user_dismissed("meeting", "mtg-test", "acct-a", "account")
+            .expect("set_link_user_dismissed");
+
+        // Sanity: dismissal landed.
+        let row = db
+            .conn_ref()
+            .query_row(
+                "SELECT role, source, graph_version FROM linked_entities_raw \
+                 WHERE owner_id = 'mtg-test' AND entity_id = 'acct-a'",
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)),
+            )
+            .expect("read after dismiss");
+        assert_eq!(row.1, "user_dismissed");
+
+        // Recompute re-upserts the same key with rule-derived data and a bumped graph_version.
+        let mut second = write("acct-a", "related", "rule:P4a", "P4a");
+        second.graph_version = 2;
+        db.upsert_linked_entity_raw(&second).expect("second upsert");
+
+        // Source + role must remain pinned at user_dismissed; metadata fields update.
+        let after = db
+            .conn_ref()
+            .query_row(
+                "SELECT role, source, graph_version FROM linked_entities_raw \
+                 WHERE owner_id = 'mtg-test' AND entity_id = 'acct-a'",
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)),
+            )
+            .expect("read after recompute");
+        assert_eq!(after.1, "user_dismissed", "source must stay user_dismissed");
+        assert_eq!(after.0, "related", "role preserved alongside source");
+        assert_eq!(after.2, 2, "metadata fields (graph_version) still update");
+    }
+
+    /// `manual_set_primary` uses `INSERT OR REPLACE` so an explicit user
+    /// choice overrides any prior row for the same key — including a
+    /// `related` row from the rule engine or a `user_dismissed` tombstone.
+    /// Without `OR REPLACE`, a plain INSERT collides on the PK and the
+    /// transaction rolls back, surfacing as "Could not set primary" in the UI.
+    #[test]
+    fn manual_set_primary_replaces_existing_row_for_same_key() {
+        let db = test_db();
+
+        // Pre-existing related row from the rule engine.
+        db.upsert_linked_entity_raw(&write("acct-c", "related", "rule:P4a", "P4a"))
+            .expect("seed related row");
+
+        // Mirror the SQL `manual_set_primary` issues for an explicit user choice.
+        db.conn_ref()
+            .execute(
+                "INSERT OR REPLACE INTO linked_entities_raw \
+                 (owner_type, owner_id, entity_id, entity_type, role, source, \
+                  rule_id, confidence, graph_version, created_at) \
+                 VALUES ('meeting', 'mtg-test', 'acct-c', 'account', 'primary', 'user', 'P1', 1.0, 5, '2026-05-05T13:00:00Z')",
+                [],
+            )
+            .expect("manual_set_primary insert");
+
+        // Exactly one row, now at role=primary / source=user.
+        let (count, role, source, rule_id): (i64, String, String, String) = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*), MAX(role), MAX(source), MAX(rule_id) FROM linked_entities_raw \
+                 WHERE owner_id = 'mtg-test' AND entity_id = 'acct-c'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .expect("read");
+        assert_eq!(count, 1, "exactly one row per (owner, entity) key");
+        assert_eq!(role, "primary");
+        assert_eq!(source, "user");
+        assert_eq!(rule_id, "P1");
+    }
+
+    /// Non-dismissed rows still update normally on conflict.
+    #[test]
+    fn upsert_updates_non_dismissed_rows_on_conflict() {
+        let db = test_db();
+
+        db.upsert_linked_entity_raw(&write("acct-b", "related", "rule:P4a", "P4a"))
+            .expect("initial upsert");
+
+        // Recompute changes role + rule.
+        let next = LinkedEntityRawWrite {
+            role: "primary".to_string(),
+            source: "rule:P5".to_string(),
+            rule_id: Some("P5".to_string()),
+            graph_version: 2,
+            ..write("acct-b", "related", "rule:P4a", "P4a")
+        };
+        db.upsert_linked_entity_raw(&next).expect("second upsert");
+
+        let row = db
+            .conn_ref()
+            .query_row(
+                "SELECT role, source FROM linked_entities_raw \
+                 WHERE owner_id = 'mtg-test' AND entity_id = 'acct-b'",
+                [],
+                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)),
+            )
+            .expect("read");
+        assert_eq!(row.0, "primary");
+        assert_eq!(row.1, "rule:P5");
     }
 }

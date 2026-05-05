@@ -219,9 +219,13 @@ pub async fn manual_set_primary(
                 if let Some(ref ent) = entity {
                     let now = service_ctx.clock.now().to_rfc3339();
                     let version = db.get_entity_graph_version().unwrap_or(0);
+                    // INSERT OR REPLACE: the user is explicitly choosing this entity
+                    // as primary, which overrides any prior state for that key —
+                    // including a `related` row from the rule engine or a
+                    // `user_dismissed` row from a previous dismissal.
                     db.conn_ref()
                         .execute(
-                            "INSERT INTO linked_entities_raw \
+                            "INSERT OR REPLACE INTO linked_entities_raw \
                              (owner_type, owner_id, entity_id, entity_type, role, source, \
                               rule_id, confidence, graph_version, created_at) \
                              VALUES (?1, ?2, ?3, ?4, 'primary', 'user', 'P1', 1.0, ?5, ?6)",

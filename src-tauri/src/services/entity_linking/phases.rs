@@ -316,6 +316,13 @@ pub fn run_phases(
             }
         }
 
+        // Suppress related candidates the user has dismissed.
+        p3.related_candidates.retain(|cand| {
+            !dismissals.iter().any(|(eid, etype)| {
+                eid == &cand.entity.entity_id && etype == &cand.entity.entity_type
+            })
+        });
+
         // Delete old auto-resolution rows. Preserves source='user' and
         // source='user_dismissed' so user overrides and dismissals survive.
         db.delete_auto_links_for_owner(
