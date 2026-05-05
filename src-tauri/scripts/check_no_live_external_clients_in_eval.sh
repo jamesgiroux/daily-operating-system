@@ -39,7 +39,7 @@ labels=(
 )
 
 patterns=(
-  "(^|[^[:alnum:]_])([A-Za-z_][A-Za-z0-9_]*::)*[A-Za-z_][A-Za-z0-9_]*Client::(new|builder)[[:space:]]*\\("
+  "(^|[^[:alnum:]_])([A-Za-z_][A-Za-z0-9_]*::)*([A-Za-z_][A-Za-z0-9_]*Client|Client)::(new|builder)[[:space:]]*\\("
   "std::net::[A-Za-z0-9_:]+"
   "use[[:space:]]+std::net(::|[[:space:]]*\\{)"
   "(^|[^[:alnum:]_])TcpListener::(bind|from_std)[[:space:]]*\\("
@@ -124,7 +124,7 @@ fi
 
 if [[ -n "$violations" ]]; then
   echo "Live external client constructors are forbidden in eval/test paths."
-  echo "Use replay clients through ServiceContext / ExternalClients::from_replay."
+  echo "Use replay-backed ExternalClients from ServiceContext."
   echo
   echo "Allowed constructors:"
   echo "  - services::context::ExternalClients::default()"

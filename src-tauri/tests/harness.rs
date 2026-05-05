@@ -200,6 +200,7 @@ fn runner_loads_external_replay_fixture_into_external_clients() {
             "version": 1,
             "fixtures": [{
                 "request_key_hex": key.to_hex(),
+                "auth_scope_id": "harness-default-tenant",
                 "response": {
                     "status": 200,
                     "headers": [["Content-Type", "application/json"]],

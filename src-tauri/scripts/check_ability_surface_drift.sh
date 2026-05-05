@@ -3,14 +3,17 @@ set -euo pipefail
 
 # DOS-217 Phase 2 surface drift guard.
 #
-# Allowed Tauri command files are the pre-existing hand-written command
-# modules plus the single registry bridge command in commands/abilities.rs.
-# New capability-level Tauri commands must be implemented as abilities and
-# exposed through invoke_ability.
+# Allowed Tauri command names are the pre-existing hand-written commands
+# registered in src-tauri/src/lib.rs, minus the single registry bridge command
+# in commands/abilities.rs. New capability-level Tauri commands must be
+# implemented as abilities and exposed through invoke_ability.
 #
 # Allowed MCP #[tool] handlers are the Phase 2 static mechanical reads below.
 # Registry-backed abilities, get_provenance, and request_confirmation are
 # manually routed and must not be added as new hand-written #[tool] handlers.
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+TAURI_ALLOWLIST_FILE="$SCRIPT_DIR/ability_surface_allowlist.txt"
 
 if [[ -n "${DOS217_SURFACE_DRIFT_ROOT_OVERRIDE:-}" ]]; then
   ROOT_DIR="$DOS217_SURFACE_DRIFT_ROOT_OVERRIDE"
@@ -20,25 +23,77 @@ else
   ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 fi
 
-is_allowed_tauri_command_file() {
-  case "$1" in
-    src-tauri/src/commands/abilities.rs | \
-    src-tauri/src/commands/accounts_content_chat.rs | \
-    src-tauri/src/commands/actions_calendar.rs | \
-    src-tauri/src/commands/app_support.rs | \
-    src-tauri/src/commands/core.rs | \
-    src-tauri/src/commands/integrations.rs | \
-    src-tauri/src/commands/people_entities.rs | \
-    src-tauri/src/commands/planning_reports.rs | \
-    src-tauri/src/commands/projects_data.rs | \
-    src-tauri/src/commands/success_plans.rs | \
-    src-tauri/src/commands/workspace.rs)
-      return 0
-      ;;
-    *)
-      return 1
-      ;;
-  esac
+if [[ ! -f "$TAURI_ALLOWLIST_FILE" ]]; then
+  echo "Ability surface drift: missing Tauri command allowlist: $TAURI_ALLOWLIST_FILE"
+  exit 1
+fi
+
+normalized_tauri_allowlist="$(mktemp)"
+trap 'rm -f "$normalized_tauri_allowlist"' EXIT
+
+if ! awk '
+  /^[[:space:]]*($|#)/ {
+    next
+  }
+  {
+    if ($0 !~ /^[A-Za-z_][A-Za-z0-9_]*$/) {
+      printf("Ability surface drift: invalid Tauri command allowlist entry at %s:%d: %s\n", FILENAME, NR, $0)
+      invalid = 1
+      next
+    }
+    print
+  }
+  END {
+    exit invalid ? 10 : 0
+  }
+' "$TAURI_ALLOWLIST_FILE" > "$normalized_tauri_allowlist"; then
+  exit 1
+fi
+
+if [[ ! -s "$normalized_tauri_allowlist" ]]; then
+  echo "Ability surface drift: Tauri command allowlist is empty: $TAURI_ALLOWLIST_FILE"
+  exit 1
+fi
+
+duplicate_tauri_commands="$(sort "$normalized_tauri_allowlist" | uniq -d)"
+if [[ -n "$duplicate_tauri_commands" ]]; then
+  echo "Ability surface drift: duplicate Tauri command allowlist entries:"
+  echo "$duplicate_tauri_commands"
+  exit 1
+fi
+
+is_allowed_tauri_command() {
+  grep -qxF "$1" "$normalized_tauri_allowlist"
+}
+
+extract_tauri_commands() {
+  local file_path="$1"
+  local rel_path="$2"
+
+  awk -v rel="$rel_path" '
+    /^[[:space:]]*#\[tauri::command([^]]*)?\]/ {
+      pending = NR
+      next
+    }
+
+    pending {
+      trimmed = $0
+      sub(/^[[:space:]]+/, "", trimmed)
+
+      if (trimmed ~ /^#\[/ || trimmed ~ /^$/ || trimmed ~ /^\/\//) {
+        next
+      }
+
+      if (trimmed ~ /^(pub(\([^)]*\))?[[:space:]]+)?(async[[:space:]]+)?fn[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/) {
+        name = trimmed
+        sub(/^(pub(\([^)]*\))?[[:space:]]+)?(async[[:space:]]+)?fn[[:space:]]+/, "", name)
+        sub(/\(.*/, "", name)
+        printf("%s\t%d\t%s\n", rel, NR, name)
+      }
+
+      pending = 0
+    }
+  ' "$file_path"
 }
 
 violations=0
@@ -47,37 +102,18 @@ commands_dir="$ROOT_DIR/src-tauri/src/commands"
 if [[ -d "$commands_dir" ]]; then
   while IFS= read -r file_path; do
     rel_path="${file_path#$ROOT_DIR/}"
-    if ! grep -qE '^[[:space:]]*#\[tauri::command\]' "$file_path"; then
-      continue
-    fi
 
-    if ! is_allowed_tauri_command_file "$rel_path"; then
-      echo "Ability surface drift: new hand-written Tauri command file is not allowlisted: $rel_path"
-      violations=1
-      continue
-    fi
+    while IFS=$'\t' read -r command_rel_path command_line command_name; do
+      if [[ "$command_rel_path" == "src-tauri/src/commands/abilities.rs" && "$command_name" == "invoke_ability" ]]; then
+        continue
+      fi
 
-    if [[ "$rel_path" == "src-tauri/src/commands/abilities.rs" ]]; then
-      if ! awk -v rel="$rel_path" '
-        /^[[:space:]]*#\[tauri::command\]/ {
-          pending = NR
-          next
-        }
-        pending && /^[[:space:]]*(pub[[:space:]]+)?(async[[:space:]]+)?fn[[:space:]]+[A-Za-z_][A-Za-z0-9_]*/ {
-          line = $0
-          sub(/^[[:space:]]*(pub[[:space:]]+)?(async[[:space:]]+)?fn[[:space:]]+/, "", line)
-          sub(/\(.*/, "", line)
-          if (line != "invoke_ability") {
-            printf("Ability surface drift: %s:%d new bridge command `%s` is not allowed\n", rel, NR, line)
-            found = 1
-          }
-          pending = 0
-        }
-        END { exit found ? 10 : 0 }
-      ' "$file_path"; then
+      if ! is_allowed_tauri_command "$command_name"; then
+        printf 'Ability surface drift: %s:%s new hand-written Tauri command `%s` is not allowlisted\n' \
+          "$command_rel_path" "$command_line" "$command_name"
         violations=1
       fi
-    fi
+    done < <(extract_tauri_commands "$file_path" "$rel_path")
   done < <(find "$commands_dir" -maxdepth 1 -type f -name '*.rs' | sort)
 fi
 
@@ -134,8 +170,8 @@ if [[ "$violations" -ne 0 ]]; then
 Ability surface drift detected.
 
 Add capability-level operations as W3 registry abilities and expose them through
-the DOS-217 bridge. Update this allowlist only for explicit Phase 2 static
-mechanical-read exceptions.
+the DOS-217 bridge. Update the MCP tool allowlist only for explicit Phase 2
+static mechanical-read exceptions.
 EOF
   exit 1
 fi

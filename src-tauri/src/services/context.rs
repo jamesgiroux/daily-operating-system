@@ -10,7 +10,7 @@
 //!   (`mode`, `clock`, `rng`, `actor`, `external`) and `pub(in crate::services)`
 //!   service-internal fields.
 //! - `ExternalClients` — named wrapper struct for `glean` / `slack` /
-//!   `gmail` / `REDACTED`; live in `Live`, replay/fixture in
+//!   `gmail` / `redacted`; live in `Live`, replay/fixture in
 //!   `Simulate`/`Evaluate`.
 //! - `TxCtx<'tx>` — transaction-scoped context. Has no external clients
 //!   and no `IntelligenceProvider` per ADR-0104's ban on external/LLM
@@ -199,7 +199,7 @@ pub struct ExternalClients {
     pub glean: GleanClientHandle,
     pub slack: SlackClientHandle,
     pub gmail: GmailClientHandle,
-    pub REDACTED: SalesforceClientHandle,
+    pub redacted: SalesforceClientHandle,
 }
 
 impl ExternalClients {
@@ -213,7 +213,7 @@ impl ExternalClients {
             glean: ReplayGleanClient::new(fixture.clone(), auth_scope_id.clone()).into(),
             slack: ReplaySlackClient::new(fixture.clone(), auth_scope_id.clone()).into(),
             gmail: ReplayGmailClient::new(fixture.clone(), auth_scope_id.clone()).into(),
-            REDACTED: ReplaySalesforceClient::new(fixture, auth_scope_id).into(),
+            redacted: ReplaySalesforceClient::new(fixture, auth_scope_id).into(),
         }
     }
 
@@ -221,7 +221,7 @@ impl ExternalClients {
         self.glean.is_replay()
             && self.slack.is_replay()
             && self.gmail.is_replay()
-            && self.REDACTED.is_replay()
+            && self.redacted.is_replay()
     }
 }
 
@@ -510,7 +510,7 @@ impl ReplayGmailClient {
     }
 }
 
-/// Mode-aware REDACTED client wrapper. Placeholder — Glean is the REDACTED
+/// Mode-aware redacted client wrapper. Placeholder — Glean is the redacted
 /// data plane today; the seam reserves direct-integration scope.
 #[derive(Clone, Default)]
 pub struct SalesforceClientHandle {
@@ -532,7 +532,7 @@ impl SalesforceClientHandle {
     ) -> Result<SalesforceAccountRecord, ExternalClientError> {
         match &self.mode {
             SalesforceClientMode::Live => Err(ExternalClientError::LiveClientUnavailable {
-                client: "REDACTED",
+                client: "redacted",
             }),
             SalesforceClientMode::Replay(client) => client.fetch_account(account_id),
         }
@@ -542,7 +542,7 @@ impl SalesforceClientHandle {
         let auth_scope_id = auth_scope_id_or_panic(auth_scope_id);
         replay_request_key(
             "GET",
-            &REDACTED_account_url(account_id),
+            &redacted_account_url(account_id),
             b"",
             &auth_scope_id,
         )
@@ -586,10 +586,10 @@ impl ReplaySalesforceClient {
         &self,
         account_id: &str,
     ) -> Result<SalesforceAccountRecord, ExternalClientError> {
-        let url = REDACTED_account_url(account_id);
+        let url = redacted_account_url(account_id);
         let key = replay_request_key("GET", &url, b"", &self.auth_scope_id);
         let response = lookup_replay(&self.fixture, &key, "GET", &url)?;
-        decode_replay_json("REDACTED", response)
+        decode_replay_json("redacted", response)
     }
 }
 
@@ -646,9 +646,9 @@ fn glean_account_facts_url(account_id: &str) -> String {
     )
 }
 
-fn REDACTED_account_url(account_id: &str) -> String {
+fn redacted_account_url(account_id: &str) -> String {
     format!(
-        "https://REDACTED.example.com/v1/accounts/{}",
+        "https://redacted.example.com/v1/accounts/{}",
         url_encode(account_id)
     )
 }
@@ -1182,11 +1182,11 @@ mod tests {
         assert!(clients.glean.is_replay());
         assert!(clients.slack.is_replay());
         assert!(clients.gmail.is_replay());
-        assert!(clients.REDACTED.is_replay());
+        assert!(clients.redacted.is_replay());
         assert!(!clients.glean.is_live());
         assert!(!clients.slack.is_live());
         assert!(!clients.gmail.is_live());
-        assert!(!clients.REDACTED.is_live());
+        assert!(!clients.redacted.is_live());
     }
 
     #[test]
@@ -1237,14 +1237,14 @@ mod tests {
     }
 
     #[test]
-    fn replay_REDACTED_client_returns_typed_missing_error_for_unknown_request_key() {
+    fn replay_redacted_client_returns_typed_missing_error_for_unknown_request_key() {
         let clients = replay_external(StaticReplayFixture::default(), "auth-scope-test-1");
         let expected_key = SalesforceClientHandle::request_key_for_fetch_account(
             "acct-test-1",
             "auth-scope-test-1",
         );
 
-        let err = clients.REDACTED.fetch_account("acct-test-1").unwrap_err();
+        let err = clients.redacted.fetch_account("acct-test-1").unwrap_err();
 
         assert_replay_missing(
             err,
@@ -1306,10 +1306,10 @@ mod tests {
         assert!(clients.glean.is_live());
         assert!(clients.slack.is_live());
         assert!(clients.gmail.is_live());
-        assert!(clients.REDACTED.is_live());
+        assert!(clients.redacted.is_live());
         assert!(!clients.glean.is_replay());
         assert!(!clients.slack.is_replay());
         assert!(!clients.gmail.is_replay());
-        assert!(!clients.REDACTED.is_replay());
+        assert!(!clients.redacted.is_replay());
     }
 }

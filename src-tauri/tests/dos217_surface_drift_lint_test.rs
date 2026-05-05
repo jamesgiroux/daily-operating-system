@@ -61,6 +61,33 @@ fn surface_drift_lint_blocks_new_capability_tauri_command() {
 }
 
 #[test]
+fn surface_drift_lint_blocks_new_capability_command_in_existing_file() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let commands_dir = tmp.path().join("src-tauri/src/commands");
+    std::fs::create_dir_all(&commands_dir).expect("mkdir commands");
+
+    let core_command_path = repo_root().join("src-tauri/src/commands/core.rs");
+    let mut synthetic_core =
+        std::fs::read_to_string(&core_command_path).expect("read existing core command file");
+    synthetic_core.push_str(
+        "\n#[tauri::command]\npub async fn synthesize_existing_file_surface_drift() {}\n",
+    );
+    std::fs::write(commands_dir.join("core.rs"), synthetic_core)
+        .expect("write synthetic core command file");
+
+    let (ok, stdout, stderr) = run_lint(tmp.path());
+
+    assert!(
+        !ok,
+        "lint must fail for a new hand-written Tauri command in an existing file. stdout: {stdout}, stderr: {stderr}"
+    );
+    assert!(
+        stdout.contains("synthesize_existing_file_surface_drift"),
+        "stdout: {stdout}"
+    );
+}
+
+#[test]
 fn surface_drift_lint_blocks_new_handwritten_mcp_tool() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let mcp_dir = tmp.path().join("src-tauri/src/mcp");
