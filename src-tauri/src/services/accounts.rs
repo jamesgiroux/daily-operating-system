@@ -998,15 +998,21 @@ pub fn confirm_lifecycle_change(
         .get_lifecycle_change(change_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Lifecycle change not found: {change_id}"))?;
-    // Wrap response + source-weight + signal emission in one transaction so a
-    // failure in any step rolls back ALL durable state. Without this, a
-    // signal-emit failure left the response durably "confirmed" and the
-    // source-weight already shifted, while returning Err to the caller —
-    // safe-looking retries then double-applied weights.
+    // Wrap response + source-weight + signal emission in one transaction so
+    // a failure in any step rolls back ALL durable state. The conditional
+    // response setter ALSO makes the operation idempotent: a duplicate
+    // command (double-click, retry-after-success) sees rows=0, skips the
+    // side effects, and returns Ok with the existing committed state.
     db.with_transaction(|tx_db| {
-        tx_db
-            .set_lifecycle_change_response(change_id, "confirmed", None)
+        let rows = tx_db
+            .set_lifecycle_change_response_if_pending(change_id, "confirmed", None)
             .map_err(|e| e.to_string())?;
+        if rows == 0 {
+            log::info!(
+                "confirm_lifecycle_change: change_id={change_id} already reviewed; idempotent no-op"
+            );
+            return Ok(());
+        }
         tx_db
             .upsert_signal_weight(
                 &change.source,
@@ -1050,7 +1056,27 @@ pub fn correct_account_product(
     // also blocks cross-account writes — zero rows affected means the
     // product_id doesn't belong to account_id, and we abort before any
     // side-effect lands.
+    //
+    // The source we penalize is loaded from the row's current
+    // `source` column inside the same transaction, NOT trusted from
+    // `source_to_penalize`. A caller could otherwise send any source name
+    // alongside a valid (product, account) pair and shift its Bayesian
+    // weights. We log a mismatch (renderer state vs durable state) for
+    // telemetry but always penalize the row's actual source.
     db.with_transaction(|tx_db| {
+        let actual_source = tx_db
+            .get_account_product_source_scoped(account_id, product_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| {
+                format!(
+                    "correct_account_product: product_id={product_id} does not belong to account_id={account_id}"
+                )
+            })?;
+        if actual_source != source_to_penalize {
+            log::warn!(
+                "correct_account_product: caller-supplied source_to_penalize={source_to_penalize} != row source={actual_source} on product_id={product_id} account_id={account_id}; penalizing row source"
+            );
+        }
         let rows = tx_db
             .update_account_product_scoped(
                 account_id,
@@ -1064,11 +1090,11 @@ pub fn correct_account_product(
             .map_err(|e| e.to_string())?;
         if rows == 0 {
             return Err(format!(
-                "correct_account_product: product_id={product_id} does not belong to account_id={account_id}"
+                "correct_account_product: product_id={product_id} disappeared during update"
             ));
         }
         tx_db
-            .upsert_signal_weight(source_to_penalize, "account", "product_adoption", 0.0, 1.0)
+            .upsert_signal_weight(&actual_source, "account", "product_adoption", 0.0, 1.0)
             .map_err(|e| format!("upsert_signal_weight failed: {e}"))?;
         crate::services::signals::emit_and_propagate(
             ctx,
@@ -1110,33 +1136,35 @@ pub fn correct_lifecycle_change(
         evidence: notes.map(str::to_string),
         completion_trigger: None,
     };
-    apply_lifecycle_transition(ctx, db, engine, &change.account_id, &transition)?;
-    db.set_lifecycle_change_response(change_id, "corrected", notes)
-        .map_err(|e| e.to_string())?;
-    if let Err(e) = db.upsert_signal_weight(
-        &change.source,
-        "account",
-        "lifecycle_transition",
-        0.0,
-        1.0,
-    ) {
-        log::warn!(
-            "accounts: upsert_signal_weight dropped on lifecycle correction for source={} account={}: {e}",
-            change.source,
-            change.account_id
-        );
-        let _ = crate::services::mutations::record_pipeline_failure(
-            ctx,
-            db,
-            "accounts_lifecycle_correct_signal_weight_drop",
-            Some(&change.account_id),
-            Some("account"),
-            "upsert_signal_weight_failed",
-            Some(&format!("source={} error={e}", change.source)),
-            1,
-        );
-    }
-    Ok(())
+    // Outer transaction wraps the whole correction flow: lifecycle transition
+    // + response marker + source-weight penalty all roll back together if any
+    // step fails. apply_lifecycle_transition uses with_transaction internally
+    // and composes correctly under nesting (db/core.rs returns the inner
+    // closure result when already in a tx). The conditional response setter
+    // is also retry-idempotent — duplicate corrections become a no-op
+    // instead of double-incrementing source weights.
+    db.with_transaction(|tx_db| {
+        apply_lifecycle_transition(ctx, tx_db, engine, &change.account_id, &transition)?;
+        let rows = tx_db
+            .set_lifecycle_change_response_if_pending(change_id, "corrected", notes)
+            .map_err(|e| e.to_string())?;
+        if rows == 0 {
+            log::info!(
+                "correct_lifecycle_change: change_id={change_id} already reviewed; transition applied but no source-weight penalty"
+            );
+            return Ok(());
+        }
+        tx_db
+            .upsert_signal_weight(
+                &change.source,
+                "account",
+                "lifecycle_transition",
+                0.0,
+                1.0,
+            )
+            .map_err(|e| format!("upsert_signal_weight failed: {e}"))?;
+        Ok(())
+    })
 }
 
 // ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.

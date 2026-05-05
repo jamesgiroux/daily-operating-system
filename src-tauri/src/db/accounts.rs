@@ -1517,6 +1517,29 @@ impl ActionDb {
         Ok(())
     }
 
+    /// Conditional response setter: only writes when the row is still pending
+    /// (`reviewed_at IS NULL`). Returns the number of rows affected — 0 means
+    /// the change was already reviewed (idempotent no-op for retries / double
+    /// clicks), 1 means a fresh transition. Callers gate downstream side
+    /// effects (source-weight increments, signal emission) on the rows count
+    /// so a duplicate command doesn't double-apply.
+    pub fn set_lifecycle_change_response_if_pending(
+        &self,
+        change_id: i64,
+        user_response: &str,
+        response_notes: Option<&str>,
+    ) -> Result<usize, DbError> {
+        let rows = self.conn.execute(
+            "UPDATE lifecycle_changes
+             SET user_response = ?1,
+                 response_notes = ?2,
+                 reviewed_at = datetime('now')
+             WHERE id = ?3 AND reviewed_at IS NULL",
+            params![user_response, response_notes, change_id],
+        )?;
+        Ok(rows)
+    }
+
     /// Fetch recent lifecycle changes for an account, most recent first.
     pub fn get_account_lifecycle_changes(
         &self,
@@ -1767,6 +1790,28 @@ impl ActionDb {
             ],
         )?;
         Ok(())
+    }
+
+    /// Read the source attribution for a single account_product scoped to
+    /// (id, account_id). Used by correction flows to derive the
+    /// to-be-penalized source from durable row state rather than trust a
+    /// caller-supplied value, which would let any caller penalize an
+    /// arbitrary source on a valid (product, account) pair.
+    pub fn get_account_product_source_scoped(
+        &self,
+        account_id: &str,
+        product_id: i64,
+    ) -> Result<Option<String>, DbError> {
+        let row = self.conn.query_row(
+            "SELECT source FROM account_products WHERE id = ?1 AND account_id = ?2",
+            params![product_id, account_id],
+            |row| row.get::<_, String>(0),
+        );
+        match row {
+            Ok(source) => Ok(Some(source)),
+            Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+            Err(e) => Err(e.into()),
+        }
     }
 
     /// Update an account_product row scoped to (id, account_id) so the caller
