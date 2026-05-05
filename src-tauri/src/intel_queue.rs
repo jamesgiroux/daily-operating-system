@@ -3012,21 +3012,62 @@ fn source_reliability_corroborators_for_claim(
     db: &crate::db::ActionDb,
     claim_id: &str,
 ) -> Vec<crate::abilities::trust::CorroboratorWeight> {
+    // Read errors here previously short-circuited to an empty list, which
+    // bypassed source_reliability_aggregated and the AuthoritativeContradiction
+    // gate. We now log every error path with claim_id context AND inject a
+    // synthetic contradicting weight so the recompute leans toward
+    // NeedsVerification when corroborator state is unreadable. Strengths
+    // outside [0.0, 1.0] are clamped before construction.
     let mut out = Vec::new();
-    if let Ok(mut stmt) = db
+    let mut had_read_error = false;
+
+    match db
         .conn_ref()
         .prepare("SELECT strength FROM claim_corroborations WHERE claim_id = ?1")
     {
-        if let Ok(rows) = stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0)) {
-            for strength in rows.flatten() {
-                out.push(crate::abilities::trust::CorroboratorWeight {
-                    evidence_weight: strength,
-                    confirms: true,
-                });
+        Ok(mut stmt) => {
+            match stmt.query_map(rusqlite::params![claim_id], |row| row.get::<_, f64>(0)) {
+                Ok(rows) => {
+                    for row in rows {
+                        match row {
+                            Ok(strength) if strength.is_finite() => {
+                                out.push(crate::abilities::trust::CorroboratorWeight {
+                                    evidence_weight: strength.clamp(0.0, 1.0),
+                                    confirms: true,
+                                });
+                            }
+                            Ok(other) => {
+                                log::warn!(
+                                    "TrustRecompute: discarding non-finite corroboration strength {other} for {claim_id}"
+                                );
+                                had_read_error = true;
+                            }
+                            Err(e) => {
+                                log::warn!(
+                                    "TrustRecompute: malformed corroboration row for {claim_id}: {e}"
+                                );
+                                had_read_error = true;
+                            }
+                        }
+                    }
+                }
+                Err(e) => {
+                    log::warn!(
+                        "TrustRecompute: failed to query corroborations for {claim_id}: {e}"
+                    );
+                    had_read_error = true;
+                }
             }
         }
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: failed to prepare corroboration query for {claim_id}: {e}"
+            );
+            had_read_error = true;
+        }
     }
-    if let Ok(count) = db.conn_ref().query_row(
+
+    match db.conn_ref().query_row(
         "SELECT COUNT(*) FROM claim_contradictions \
          WHERE (primary_claim_id = ?1 OR contradicting_claim_id = ?1) \
            AND reconciled_at IS NULL \
@@ -3035,13 +3076,34 @@ fn source_reliability_corroborators_for_claim(
         rusqlite::params![claim_id],
         |row| row.get::<_, i64>(0),
     ) {
-        for _ in 0..count.max(0) {
-            out.push(crate::abilities::trust::CorroboratorWeight {
-                evidence_weight: 1.0,
-                confirms: false,
-            });
+        Ok(count) => {
+            for _ in 0..count.max(0) {
+                out.push(crate::abilities::trust::CorroboratorWeight {
+                    evidence_weight: 1.0,
+                    confirms: false,
+                });
+            }
+        }
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: failed to count contradictions for {claim_id}: {e}"
+            );
+            had_read_error = true;
         }
     }
+
+    // Fail-closed: when reads were partial, lean the recompute toward
+    // NeedsVerification by injecting a single authoritative contradicting
+    // weight. Triggers AuthoritativeContradiction gate when confirming
+    // evidence is empty or weak; safe no-op when confirming evidence is
+    // strong enough to win the gate threshold.
+    if had_read_error {
+        out.push(crate::abilities::trust::CorroboratorWeight {
+            evidence_weight: 1.0,
+            confirms: false,
+        });
+    }
+
     out
 }
 
@@ -3054,15 +3116,47 @@ fn internal_consistency_for_claim(claim: &crate::db::claims::IntelligenceClaim) 
         Some(s) => s,
         None => return 1.0,
     };
+    // Cap metadata_json size before parsing to avoid pathological inputs
+    // (deeply nested JSON, gigabyte strings) consuming the trust recompute
+    // hot path. 64 KiB is well above any legitimate consistency hint.
+    const MAX_METADATA_BYTES: usize = 64 * 1024;
+    if raw.len() > MAX_METADATA_BYTES {
+        log::warn!(
+            "TrustRecompute: metadata_json oversized ({} bytes) for {}, defaulting internal_consistency to 1.0",
+            raw.len(),
+            claim.id
+        );
+        return 1.0;
+    }
     let value: serde_json::Value = match serde_json::from_str(raw) {
         Ok(v) => v,
-        Err(_) => return 1.0,
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: malformed metadata_json for {}: {e}; defaulting internal_consistency to 1.0",
+                claim.id
+            );
+            return 1.0;
+        }
     };
-    value
-        .get("internal_consistency")
-        .and_then(|v| v.as_f64())
-        .filter(|v| v.is_finite() && (0.0..=1.0).contains(v))
-        .unwrap_or(1.0)
+    let hint = value.get("internal_consistency");
+    match hint.and_then(|v| v.as_f64()) {
+        Some(v) if v.is_finite() && (0.0..=1.0).contains(&v) => v,
+        Some(v) => {
+            log::warn!(
+                "TrustRecompute: internal_consistency hint {v} out of range for {}; defaulting to 1.0",
+                claim.id
+            );
+            1.0
+        }
+        None if hint.is_some() => {
+            log::warn!(
+                "TrustRecompute: internal_consistency hint not a number for {}; defaulting to 1.0",
+                claim.id
+            );
+            1.0
+        }
+        None => 1.0,
+    }
 }
 
 fn contradiction_count_for_claim(db: &crate::db::ActionDb, claim_id: &str) -> u32 {

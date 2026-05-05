@@ -176,7 +176,15 @@ pub fn generate_callouts(
                 },
             };
 
-            let _ = db.upsert_briefing_callout(&callout, &signal.id);
+            if let Err(e) = db.upsert_briefing_callout(&callout, &signal.id) {
+                log::warn!(
+                    "generate_callouts: persist failed for signal_id={} entity_type={} entity_id={}: {}",
+                    signal.id,
+                    callout.entity_type,
+                    callout.entity_id,
+                    e
+                );
+            }
 
             callout
         })
