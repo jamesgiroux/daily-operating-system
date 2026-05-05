@@ -681,6 +681,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 139,
         sql: include_str!("migrations/139_dos_301_projection_failed_index_v2.sql"),
     },
+    // Existing databases at v139 keep the original temporal_scope CHECK that
+    // omits 'closed'. Rebuild the table so writes of TemporalScope::Closed land.
+    Migration {
+        version: 140,
+        sql: include_str!("migrations/140_dos_287_temporal_scope_closed.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -2520,5 +2526,94 @@ mod tests {
             .expect("fetch row");
         assert_eq!(rid, "P4b", "P4a shifted forward to P4b");
         assert_eq!(src, "rule:P4b", "rule:P4a shifted forward to rule:P4b");
+    }
+
+    #[test]
+    fn migration_140_relaxes_temporal_scope_to_accept_closed() {
+        // Build a v139-shaped intelligence_claims table directly: original CHECK
+        // omits 'closed'. Seed one pre-existing row, prove 'closed' is rejected,
+        // run migration 140, then prove the seed row survives and 'closed' lands.
+        let conn = mem_db();
+
+        conn.execute_batch(
+            "CREATE TABLE intelligence_claims (
+                id TEXT PRIMARY KEY,
+                subject_ref TEXT NOT NULL,
+                claim_type TEXT NOT NULL,
+                field_path TEXT,
+                topic_key TEXT,
+                text TEXT NOT NULL,
+                dedup_key TEXT NOT NULL,
+                item_hash TEXT,
+                actor TEXT NOT NULL,
+                data_source TEXT NOT NULL,
+                source_ref TEXT,
+                source_asof TEXT,
+                observed_at TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                provenance_json TEXT NOT NULL,
+                metadata_json TEXT,
+                claim_state TEXT NOT NULL DEFAULT 'active'
+                    CHECK (claim_state IN ('active','dormant','tombstoned','withdrawn')),
+                surfacing_state TEXT NOT NULL DEFAULT 'active'
+                    CHECK (surfacing_state IN ('active','dormant')),
+                demotion_reason TEXT,
+                reactivated_at TEXT,
+                retraction_reason TEXT,
+                expires_at TEXT,
+                superseded_by TEXT,
+                trust_score REAL,
+                trust_computed_at TEXT,
+                trust_version INTEGER,
+                thread_id TEXT,
+                temporal_scope TEXT NOT NULL DEFAULT 'state'
+                    CHECK (temporal_scope IN ('state','point_in_time','trend')),
+                sensitivity TEXT NOT NULL DEFAULT 'internal'
+                    CHECK (sensitivity IN ('public','internal','confidential','user_only')),
+                verification_state TEXT NOT NULL DEFAULT 'active'
+                    CHECK (verification_state IN ('active','contested','needs_user_decision')),
+                verification_reason TEXT,
+                needs_user_decision_at TEXT
+            );",
+        )
+        .expect("seed v139 intelligence_claims shape");
+        conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json) \
+             VALUES ('c-pre', 'a-pre', 'fact', 'pre-migration', 'd-pre', 'system', 'manual', '2026-05-05', '{}')",
+            [],
+        )
+        .expect("legal v139 row should insert");
+        let rejected = conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json, temporal_scope) \
+             VALUES ('c-closed-pre', 'a-pre', 'fact', 'should fail', 'd-closed', 'system', 'manual', '2026-05-05', '{}', 'closed')",
+            [],
+        );
+        assert!(rejected.is_err(), "v139 schema must reject temporal_scope='closed'");
+
+        let migration_140 = MIGRATIONS
+            .iter()
+            .find(|m| m.version == 140)
+            .expect("migration 140 must be registered");
+        conn.execute_batch(migration_140.sql)
+            .expect("migration 140 applies cleanly on v139 table");
+
+        let preserved: String = conn
+            .query_row(
+                "SELECT text FROM intelligence_claims WHERE id = 'c-pre'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("v139 row survives migration 140");
+        assert_eq!(preserved, "pre-migration");
+
+        conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json, temporal_scope) \
+             VALUES ('c-closed-post', 'a-post', 'fact', 'closed window', 'd-closed-post', 'system', 'manual', '2026-05-05', '{}', 'closed')",
+            [],
+        )
+        .expect("post-migration schema accepts temporal_scope='closed'");
     }
 }
