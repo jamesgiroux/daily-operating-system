@@ -7,7 +7,6 @@
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use uuid::Uuid;
 
 use crate::db::{ActionDb, DbError};
 use crate::embeddings::EmbeddingModel;
@@ -158,8 +157,12 @@ pub fn generate_callouts(
                 &signal.entity_id,
             ));
 
+            // Stable id keyed on signal.id so INSERT OR IGNORE in
+            // upsert_briefing_callout actually dedupes across reruns. Earlier
+            // builds used a fresh UUID per call, which let the dedup miss and
+            // grew the table unboundedly under repeated meeting-prep sweeps.
             let callout = BriefingCallout {
-                id: format!("bc-{}", Uuid::new_v4()),
+                id: format!("bc-{}", signal.id),
                 severity,
                 headline,
                 detail,
@@ -173,7 +176,6 @@ pub fn generate_callouts(
                 },
             };
 
-            // Persist callout
             let _ = db.upsert_briefing_callout(&callout, &signal.id);
 
             callout
@@ -812,5 +814,39 @@ mod tests {
         assert_eq!(callouts.len(), 1);
         assert_eq!(callouts[0].severity, "critical");
         assert_eq!(callouts[0].entity_name.as_deref(), Some("Acme Corp"));
+    }
+
+    #[test]
+    fn callout_id_is_stable_so_repeated_runs_do_not_duplicate() {
+        let db = test_db();
+        super::super::bus::emit_signal(
+            &db,
+            "account",
+            "a1",
+            "stakeholder_change",
+            "propagation",
+            Some("{\"detail\": \"Alice promoted to CRO\"}"),
+            0.85,
+        )
+        .expect("emit");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES ('a1', 'Acme Corp', '2026-01-01')",
+                [],
+            )
+            .unwrap();
+
+        for _ in 0..5 {
+            generate_callouts(&db, None, &[], None);
+        }
+
+        let row_count: i64 = db
+            .conn_ref()
+            .query_row("SELECT COUNT(*) FROM briefing_callouts", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            row_count, 1,
+            "5 reruns of the same signal must collapse to one row via INSERT OR IGNORE"
+        );
     }
 }
