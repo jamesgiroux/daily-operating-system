@@ -1013,6 +1013,42 @@ pub fn confirm_lifecycle_change(
             );
             return Ok(());
         }
+        // Drift guard symmetric to correct_lifecycle_change. The "Looks good"
+        // confirmation should only reward the source if the account is still
+        // in the state the change row reported as new_*. A manual edit or
+        // subsequent transition between auto-detection and user click would
+        // otherwise have us bless a stale source and emit a confirmation
+        // signal that doesn't match current account reality.
+        let account_now = tx_db
+            .get_account(&change.account_id)
+            .map_err(|e| e.to_string())?
+            .ok_or_else(|| format!("Account not found: {}", change.account_id))?;
+        let current_lifecycle = account_now
+            .lifecycle
+            .as_deref()
+            .map(normalized_lifecycle);
+        let expected_lifecycle = Some(normalized_lifecycle(&change.new_lifecycle));
+        let current_stage = tx_db
+            .get_account_renewal_stage(&change.account_id)
+            .map_err(|e| e.to_string())?;
+        let expected_stage = change.new_stage.clone();
+        let current_contract_end = account_now.contract_end.clone();
+        let expected_contract_end = change.new_contract_end.clone();
+        if current_lifecycle != expected_lifecycle
+            || current_stage != expected_stage
+            || current_contract_end != expected_contract_end
+        {
+            log::warn!(
+                "confirm_lifecycle_change: change_id={change_id} stale — account state drifted from change.new_* (lifecycle {:?}/{:?}, stage {:?}/{:?}, contract_end {:?}/{:?}); marking reviewed but skipping source-weight reward + confirmation signal",
+                expected_lifecycle,
+                current_lifecycle,
+                expected_stage,
+                current_stage,
+                expected_contract_end,
+                current_contract_end
+            );
+            return Ok(());
+        }
         tx_db
             .upsert_signal_weight(
                 &change.source,
@@ -4935,7 +4971,12 @@ mod tests {
         let engine = PropagationEngine::default();
 
         let mut account = make_account("acc-confirm", "Confirm Corp");
-        account.lifecycle = Some("renewing".to_string());
+        // In production, apply_lifecycle_transition updates the account to
+        // new_lifecycle BEFORE creating the lifecycle_changes row, so the row
+        // and account state match. The cycle-16 drift guard rightly rejects
+        // a confirmation when current account state does NOT match
+        // change.new_*; the test simulates the real post-transition state.
+        account.lifecycle = Some("active".to_string());
         db.upsert_account(&account).expect("upsert");
 
         // Insert a pending lifecycle change
