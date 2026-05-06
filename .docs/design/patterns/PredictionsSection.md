@@ -2,26 +2,51 @@
 
 **Tier:** pattern
 **Status:** proposed
-**Owner:** DOS-425 (W3)
+**Owner:** James
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `PredictionsSection`
 **`data-ds-spec`:** `patterns/PredictionsSection.md`
-**Module CSS (canonical):** `_shared/styles/PredictionsSection.module.css`
-**Composes:** `MarginGrid` (parent), `TrustBandBadge` (per item)
+**Variants:** `default` (collapsed/expanded is interaction state, not a variant)
+**Design system version introduced:** 0.6.0
 
 ## Job
 
-Render the Daily Briefing Predictions section: a minimal one-line collapsed default, click-to-expand inline list of predictions sourced from the abilities runtime (DOS-218/219 outputs). Restraint: collapsed default takes <32px vertical space.
+Render the Daily Briefing Predictions section: a minimal one-line collapsed default, click-to-expand inline list of predictions sourced from the abilities runtime (DOS-218 / DOS-219 outputs). Restraint contract: the collapsed default takes <32px vertical space so the section doesn't dominate the briefing when predictions aren't the user's focus.
 
-## Anatomy
+## When to use it
 
-Collapsed default:
+- Inside the Daily Briefing, immediately below `Lead` and above `Moving` / `Watch`
+- When the surface needs to surface ability-runtime predictions without forcing them into the user's primary focus
+- When the count is small (≤10 — service-capped) and the payload is eager-loadable
+
+## When NOT to use it
+
+- For a deep-dive predictions surface — that's a dedicated route, not this section
+- For ad-hoc inline predictions on entity pages — use a smaller pattern (TBD post-W6)
+- For predictions that aren't claim-bearing (must be `TrustMixin`-typed)
+
+## States / variants
+
+The pattern has one variant; collapsed vs expanded is interaction state, not a structural variant.
+
+- **Collapsed (default)** — single line, no payload visible. `aria-expanded="false"`.
+- **Expanded** — card list visible inline. `aria-expanded="true"`.
+- **Empty (count = 0)** — collapsed line shows "0 predictions today" muted, trigger disabled.
+
+Loading / error are handled by the parent `BriefingLoadState`; this section never renders a per-section loading state.
+
+## Composition
+
+Composes:
+
+- `MarginGrid` — parent layout (label column + content column)
+- `TrustBandBadge` — per prediction item
+
+Collapsed:
 
 ```
 3 predictions today    EXPAND
 ```
-
-Single button with `aria-expanded="false"`, label + hint span. Click toggles `aria-expanded="true"` and reveals the list inline (no route change).
 
 Expanded:
 
@@ -35,28 +60,59 @@ Expanded:
   [next prediction...]
 ```
 
-Each prediction item: text (serif 17px) + meta line (mono 11px, confidence + ability source + basis link) + TrustBandBadge.
+Each prediction item: text (serif 17px) + meta line (mono 11px, confidence + ability source + basis link) + `TrustBandBadge`.
 
-## Variants
+The collapsed trigger is a `<button>` with `aria-expanded` + `aria-controls`. Payload is eager-loaded — predictions count is small, expand intent is friction-free, no on-expand fetch.
 
-- **Collapsed** (default): single line, no payload visible.
-- **Expanded**: card list visible inline.
+## Tokens consumed
 
-The variant is UI state, not data state. Payload is eager-loaded (per ADR 0129 rationale: predictions count is small, payload size acceptable, expand intent is friction-free).
+- `--color-text-primary` — prediction text
+- `--color-text-secondary` — collapsed label
+- `--color-text-tertiary` — meta line, confidence, ability source
+- `--color-spice-saffron` — expand/collapse hint
+- `--font-serif` — prediction text
+- `--font-sans` — collapsed label, trigger
+- `--font-mono` — meta line
+- `--space-md`, `--space-lg` — item spacing in expanded list
+- `--margin-grid-label-width` — label column width (inherited)
 
-## Contract type
+## API sketch
+
+```tsx
+<PredictionsSection
+  label="Predictions"
+  countLabel="3 today"
+  collapsedLabel="3 predictions today"
+  expandHint="expand"
+  count={3}
+  predictions={[
+    {
+      id: "pred_1",
+      text: "Northwind QBR likely raises pricing pushback once Kevin sees the renewal terms.",
+      confidence: { value: 0.72, label: "72%" },
+      abilitySource: { id: "predict_meeting_friction", label: "predict_meeting_friction" },
+      basisLink: { label: "basis", href: "/predictions/pred_1" },
+      trustBand: "likely_current",
+    },
+    /* ... */
+  ]}
+/>
+```
+
+Contract type:
 
 ```ts
 interface PredictionsViewModel {
-  label: string;            // "Predictions" — margin grid label
-  countLabel: string;       // "3 today" — margin grid count
-  collapsedLabel: string;   // "3 predictions today" — default state line
-  expandHint: string;       // "expand" — affordance hint
-  count: number;            // for type-narrowing + analytics
-  predictions: PredictionItem[];
+  label: string;            // "Predictions"
+  countLabel: string;       // "3 today"
+  collapsedLabel: string;   // "3 predictions today"
+  expandHint: string;       // "expand"
+  count: number;
+  predictions: PredictionItem[];   // service-capped at ≤10
 }
 
 interface PredictionItem extends TrustMixin {
+  id: string;
   text: string;
   confidence: { value: number; label: string };
   abilitySource: { id: string; label: string };
@@ -64,27 +120,23 @@ interface PredictionItem extends TrustMixin {
 }
 ```
 
-## States
+The view does not fetch — `PredictionsService` (DOS-418) shapes data. The view does not update — basis link navigates, dismiss button emits `predictions::ack(id)`. No animation beyond editorial default (no slide, no fade).
 
-- **Loading / error / empty** — handled at the top-level envelope. When the parent BriefingViewModel is in `success`, this section's `count: 0` indicates no predictions; the collapsed label shows "0 predictions today" and the trigger is disabled.
+## Source
 
-## Composition rules
+- **Code:** ships W3 (DOS-425) at `src/components/dashboard/PredictionsSection.tsx` + `src/components/dashboard/PredictionsSection.module.css`
+- **Reference render:** `.docs/design/reference/surfaces/briefing-redesign.html` (Predictions section, between Lead and Moving)
 
-- The collapsed trigger is a `<button>` with `aria-expanded` + `aria-controls`.
-- Each item composes a `TrustBandBadge` showing the band level.
-- The basis link text is service-rendered (don't compose "view basis" in view).
+## Surfaces that consume it
 
-## What it doesn't do
+- DailyBriefing (Predictions section)
 
-- Fetch predictions — `PredictionsService` (DOS-418) shapes the data.
-- Update state — clicking the basis link navigates; clicking dismiss emits `predictions::ack`.
-- Animate the expand/collapse beyond the editorial default (no slide, no fade).
+## Naming notes
 
-## Open questions
+`PredictionsSection` is the canonical name. The `Section` suffix is intentional — this pattern wraps a `MarginGrid` row with predictions-specific contract semantics (collapsed / expanded behavior, ability sourcing, trust integration). Distinct from a raw `<section>` element. See `NAMING.md`.
 
-- When count is 0, hide the section entirely or show "0 predictions today" muted? Current spec leans toward the latter for predictability.
-- Keyboard shortcut for expand? TBD with accessibility review.
+The pattern is briefing-resident today but is named generically so a future surface can adopt it. Restraint contract (collapsed <32px) is a property of the pattern, not the briefing.
 
-## Spec status
+## History
 
-**proposed** — TSX ships in W3 (DOS-425). Reference HTML at `briefing-redesign.html` consumes the canonical module CSS today.
+- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. TSX ships W3 under DOS-425.

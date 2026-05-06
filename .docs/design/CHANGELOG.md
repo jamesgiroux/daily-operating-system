@@ -22,6 +22,53 @@ Format:
 
 ---
 
+## [0.6.0] — 2026-05-06
+
+### Added
+
+**Daily Briefing redesign substrate (DOS-413, BriefingViewModel contract):**
+
+Primitives:
+- `SignalDot` (`primitives/SignalDot.md`) — tinted-dot signal-feed bullet with eight `kind` variants (meeting, action, email, lifecycle, gongCall, zendeskTicket, slackThread, linearIssue). Carries `LifecycleMixin` correction states. Reference: `briefing-redesign.html` Moving section.
+- `ProvenanceStat` (`primitives/ProvenanceStat.md`) — labeled metric with optional trend tint (up / down / flat). Carries `TrustMixin` for per-stat provenance. Reference: `briefing-redesign.html` MovingRow right column.
+
+Patterns:
+- `MovingRow` (`patterns/MovingRow.md`) — three-column entity-movement row (identity / lede + signals / stacked stats). Five `kind` variants (customer, person, project, internal, lifecycle). Composes `Pill`, `SignalDot`, `ProvenanceStat`, `EntityChip`. Click target: whole row via `role="link"` + tabindex (not wrapping `<a>`).
+- `WatchRow` (`patterns/WatchRow.md`) — adaptive triage row, four `kind` variants (`suggestedAction`, `openAction`, `parked`, `aging`) selecting different right-column affordances. Composes `InferredActionSelector`.
+- `PredictionsSection` (`patterns/PredictionsSection.md`) — collapsed-by-default predictions list within a `MarginGrid`. Composes `TrustBandBadge` per item. Restraint contract: collapsed default <32px vertical.
+- `EditorialLoadingState` (`patterns/EditorialLoadingState.md`) — centered editorial holding state with optional pulsing dot. Surface-specific copy passed via props.
+- `EditorialErrorState` (`patterns/EditorialErrorState.md`) — centered editorial error frame with retry / diagnostics affordances and optional `code` / `service` meta line.
+- `EditorialEmptyState` (`patterns/EditorialEmptyState.md`) — left-aligned cold-start frame with eyebrow / headline / lede / optional checklist / optional CTA.
+
+Tokens (`tokens/color.md` → "Signal kind"):
+- `--color-signal-meeting` → `--color-garden-larkspur` (shared paint with `--color-person`)
+- `--color-signal-action` → `--color-spice-saffron`
+- `--color-signal-email` → `--color-garden-sage`
+- `--color-signal-lifecycle` → `--color-spice-turmeric`
+- `--color-signal-gong-call` → `--color-spice-terracotta`
+- `--color-signal-zendesk-ticket` → `--color-text-tertiary`
+- `--color-signal-slack-thread` → `--color-garden-eucalyptus`
+- `--color-signal-linear-issue` → `--color-garden-olive`
+
+Eight aliases mapped to existing paint tokens; tint variants (`-8`, `-15`, etc.) are not aliased — surfaces that need tinted SignalDot backgrounds reference the underlying paint family directly (e.g. `--color-garden-larkspur-15`). Use the signal alias for the dot fill only.
+
+Reference renders:
+- `briefing-redesign.html` — DailyBriefing redesign success state
+- `briefing-redesign-loading.html` — loading state stub
+- `briefing-redesign-error.html` — error state stub
+- `briefing-redesign-empty.html` — empty state stub
+
+ADR:
+- `decisions/0129-briefing-view-model-contract.md` — full contract + typography appendix + auth-error disambiguation + future-tax follow-up.
+
+### Notes
+
+- All eight new specs at `proposed` status. TSX ships across W1 / W3 / W5 of the Daily Briefing redesign waves (DOS-422..429).
+- Three state patterns originally drafted as `Briefing{Loading,Error,Empty}State` — renamed to `Editorial{...}State` per `NAMING.md` rule "patterns are named for the pattern, not the surface." Surface-specific copy now passes through props instead of being baked in.
+- Reference HTMLs use provisional `.dspine-*` class names until W1 cuts over to scoped `MovingRow_*` / `WatchRow_*` names; pre-implementation entries land in `_audits/surface-manifest.json` so the audit doesn't fail before TSX exists.
+
+---
+
 ## [0.5.0] — 2026-05-03
 
 ### Added

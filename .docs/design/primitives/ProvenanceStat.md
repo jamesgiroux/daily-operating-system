@@ -2,56 +2,95 @@
 
 **Tier:** primitive
 **Status:** proposed
-**Owner:** DOS-423 (W1, ships alongside MovingRow)
+**Owner:** James
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `ProvenanceStat`
 **`data-ds-spec`:** `primitives/ProvenanceStat.md`
-**Module CSS (canonical):** `_shared/styles/ProvenanceStat.module.css`
+**Variants:** `trend="up" | "down" | "flat"` (optional; absent = default)
+**Design system version introduced:** 0.6.0
 
 ## Job
 
-Render a label + value pair representing a tracked metric on an entity (Health, Stage, Confidence, Owner, Last touch, Tenure, etc.). Composed in stacked groups in the right column of MovingRow patterns. Distinct from `ProvenanceTag` (which represents source attribution like "from Glean") — ProvenanceStat is a labeled metric.
+Render a label + value pair representing a tracked metric on an entity (Health, Stage, Confidence, Owner, Last touch, Tenure). Composed in stacked groups in the right column of `MovingRow`. The value can carry a trend hint via color so a stack of stats is scannable at a glance without numeric scrutiny.
 
-## Anatomy
+## When to use it
 
+- Right-column metric stack on an entity row pattern (today: `MovingRow`)
+- When the value is a short rendered string (≤14 chars) and the label is a short noun (≤14 chars)
+- When per-stat trust attribution matters — Health vs Confidence may carry different trust bands
+
+## When NOT to use it
+
+- For source attribution ("from Glean", "from CRM") — that's `ProvenanceTag`
+- For a composite trust band on the entity as a whole — that's `TrustBandBadge`
+- For freeform key/value display where the value is multi-line or rich — use a generic definition list pattern instead
+- For action-bearing rows (clickable, mutable) — that's an action pattern, not a stat
+
+## States / variants
+
+- **Default** — label + value, no trend tint.
+- **`ProvenanceStat_up`** — value text in `--color-garden-sage`. Driven by `trend: "up"`.
+- **`ProvenanceStat_down`** — value text in `--color-spice-terracotta`. Driven by `trend: "down"`.
+- **`ProvenanceStat_flat`** — value text muted via `--color-text-tertiary`. Driven by `trend: "flat"`.
+
+## Composition
+
+Primitive — no sub-primitives. Renders:
+
+```html
+<div class="ProvenanceStat" data-ds-name="ProvenanceStat" data-ds-spec="primitives/ProvenanceStat.md">
+  <span class="ProvenanceStat_label">Health</span>
+  <span class="ProvenanceStat_value ProvenanceStat_up">71 +3</span>
+</div>
 ```
-[label]   [value]
+
+Two-column grid: `80px auto`. Both columns mono 11px. Label `--color-text-tertiary`, value `--color-text-primary` (or trend tint).
+
+## Tokens consumed
+
+- `--color-text-primary` — value (default)
+- `--color-text-tertiary` — label
+- `--color-garden-sage` — value (trend up)
+- `--color-spice-terracotta` — value (trend down)
+- `--font-mono` — label + value text
+- `--space-xs` — vertical gap between stacked stats
+
+## API sketch
+
+```tsx
+<ProvenanceStat label="Health" value="71 +3" trend="up" />
+<ProvenanceStat label="Stage" value="Renewal" />
+<ProvenanceStat label="Confidence" value="82%" trend="up" />
+<ProvenanceStat label="Owner" value="You" />
 ```
 
-Two-column CSS grid: `80px auto`. Mono font, 11px, label muted, value emphasized.
-
-## Variants
-
-- **Default** — label + value.
-- **Trending up** (`ProvenanceStat_up`) — value text in `--color-garden-sage`.
-- **Trending down** (`ProvenanceStat_down`) — value text in `--color-spice-terracotta`.
-- **Trending flat** (`ProvenanceStat_flat`) — value text muted (tertiary).
-
-The trend variant is selected by the contract's `ProvenanceStat.trend` field; absent = default.
-
-## Contract type
+Contract type:
 
 ```ts
 interface ProvenanceStat extends TrustMixin {
-  label: string;          // "Health", "Stage", "Confidence", "Owner"
-  value: string;          // "71 +3", "Renewal", "82%", "You"
+  label: string;              // ≤14 chars (typography contract)
+  value: string;              // ≤14 chars rendered
   trend?: "up" | "down" | "flat";
 }
 ```
 
-The trust mixin lets a stat carry its own per-field trust band (Health and Confidence have different provenance and may have different trust bands).
+The TrustMixin carries per-stat provenance (Health and Confidence may have different trust bands and `source_asof` values).
 
-## What it doesn't do
+## Source
 
-- Compose the value — service produces "71 +3" as a single rendered string. The view does not concatenate.
-- Render the trust band — `TrustBandBadge` is a separate primitive composed alongside if visible UI is needed (typical: ProvenanceStat does not render the band visually; it carries the trust metadata for analytics + downstream sensitivity decisions).
+- **Code:** ships W1 (DOS-423) at `src/components/dashboard/ProvenanceStat.tsx` + `src/components/dashboard/ProvenanceStat.module.css`
+- **Reference render:** `.docs/design/reference/surfaces/briefing-redesign.html` (right column of each MovingRow)
 
-## Truncation + label kinds — resolved
+## Surfaces that consume it
 
-**Truncation:** label column is 80px; values that don't fit truncate via CSS `text-overflow: ellipsis`. Service-side budget is ≤14 characters per label (typography contract appendix). Long-tail label strings ("Mtgs moved" already at 10 chars; "Last touch" at 10) fit. If a future use needs longer labels, lift to 96px and update the typography contract.
+- DailyBriefing (via `MovingRow`)
 
-**Kind discriminator:** intentionally text-only. The `label` field is the discriminator. Analytics consumers join on `label` string — keeps the type simple, avoids enum-mismatch with services that produce open-ended stat sets per entity kind.
+## Naming notes
 
-## Spec status
+`ProvenanceStat` is the canonical name. Distinct from `ProvenanceTag` (source attribution label, e.g. "from Glean"). The `Stat` suffix is intentional and uncommon in the system — it signals "labeled metric on an entity" and is reserved for that role. See `NAMING.md`.
 
-**proposed** — TSX + final module CSS ship in W1 alongside MovingRow.
+The `label` field is the kind discriminator (no enum). Analytics consumers join on the rendered label string — keeps the contract simple and lets services emit open-ended stat sets per entity kind. Truncation: label column is 80px with `text-overflow: ellipsis`; service-side budget is ≤14 characters per label. If a future use needs longer labels, lift to 96px and update the typography contract.
+
+## History
+
+- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. TSX ships W1 alongside `MovingRow` under DOS-423.

@@ -114,6 +114,8 @@ Use these tokens in `SignalDot.module.css` only. Do not reference them from enti
 - `--color-signal-slack-thread`   → `--color-garden-eucalyptus` (shared paint with `--color-self`; signal context)
 - `--color-signal-linear-issue`   → `--color-garden-olive` (shared paint with `--color-project`; signal context)
 
+**Tint variant inheritance:** the eight signal aliases map only the base paint; tint stops (`-8`, `-15`, etc.) are NOT re-aliased. If a future surface needs a tinted SignalDot background, reference the underlying paint family directly (`--color-garden-larkspur-15`) — not a non-existent `--color-signal-meeting-15`. The signal alias is the dot-fill contract; tint backgrounds are paint-family contracts.
+
 ### Tint variants
 
 Tint variants are available only where runtime defines them; not every accent family has every percentage stop. Use the existing named token instead of raw `rgba()`, and add a token only when the tint is load-bearing across consumers. Examples:

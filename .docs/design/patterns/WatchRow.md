@@ -2,75 +2,128 @@
 
 **Tier:** pattern
 **Status:** proposed
-**Owner:** DOS-424 (W1)
+**Owner:** James
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `WatchRow`
 **`data-ds-spec`:** `patterns/WatchRow.md`
-**Composes:** `InferredActionSelector`
+**Variants:** `kind="suggestedAction" | "openAction" | "parked" | "aging"`
+**Design system version introduced:** 0.6.0
 
 ## Job
 
-Render one Watch-section row in the Daily Briefing. Adaptive across four kinds: suggested actions (with InferredActionSelector dropdown), open actions (with completion checkbox), parked items (passive label), aging items (with restore/archive choices).
+Render one Watch-section row in the Daily Briefing. Adaptive across four kinds: suggested actions (with `InferredActionSelector` dropdown), open actions (with completion checkbox), parked items (passive label), aging items (with restore / archive choices). The pattern is the action triage register — three columns, who / what / affordance — and the kind discriminator picks the right-column affordance per row.
 
-## Anatomy
+## When to use it
 
-Three columns, kind-dependent affordance in the right column:
+- Inside the Daily Briefing Watch section (DOS-413 contract)
+- When the surface needs to triage many small items adaptively (different rows have different right-column affordances) without making each row a separate pattern
+- When the items are claim-bearing (suggested actions carry `LifecycleMixin`)
+
+## When NOT to use it
+
+- For "what's moving on this entity" — that's `MovingRow`
+- For a generic action row outside the briefing's restraint contract — that's `ActionRow` or a list pattern that doesn't enforce kind discrimination
+- For an editorial meeting row — that's `BriefingMeetingCard`
+- For a parked item that has no human-relevant context (then drop it from the contract — service decides)
+
+## States / variants
+
+`kind` is the discriminator. Four variants:
+
+- **`suggestedAction`** — affordance is `InferredActionSelector` (trigger button + dropdown of options). Carries `LifecycleMixin` (correctionState) — these rows are claim-bearing.
+- **`openAction`** — affordance is a circular check button. Click triggers `actions::mark_complete(actionId)`.
+- **`parked`** — affordance is a muted "Parked" / "Snoozed until Q3" label. Non-interactive.
+- **`aging`** — affordance is a pair of small choice buttons (restore / archive). Click triggers `actions::restore(actionId)` or `actions::archive(actionId)`.
+
+States across all variants:
+
+- **Default**, **hover** (border-color shift), **focus** (focus ring on row).
+- **Loading / error / empty** — handled by parent `BriefingLoadState`; never per-row.
+
+## Composition
+
+Three columns: `minmax(110px, 0.22fr) minmax(0, 1fr) auto;`
 
 ```
 [WHO]   [What text — service-rendered editorial]   [Affordance]
 ```
 
-`grid-template-columns: minmax(110px, 0.22fr) minmax(0, 1fr) auto;`
-
-### Per-variant affordance anatomy
+Per-variant right-column anatomy:
 
 **`suggestedAction`:**
 ```
 [Globex Inc]   Pushing intro to Q3; not dead.   [Snooze to Q3 ▾]
                                                  └─ menu opens inline
 ```
-The affordance is the InferredActionSelector trigger button + dropdown. Click triggers `actions::snooze(actionId, until)` or `actions::dismiss(actionId)` based on selected option.
 
 **`openAction`:**
 ```
 [Acme Corp]    Send revised pricing appendix.    [○]
                                                   └─ click marks complete
 ```
-The affordance is a circular check button (28px, 1px border, hover-fill turmeric). Click triggers `actions::mark_complete(actionId)`.
 
 **`parked`:**
 ```
 [Internal]     New tier 3 deck circulating.      [Parked]
 ```
-The affordance is a muted text label (mono 11px, tertiary color). Non-interactive.
 
 **`aging`:**
 ```
 [Stark]        Old support thread, no movement.  [Restore] [Archive]
 ```
-The affordance is a pair of small buttons (32px h, secondary tone). Click triggers `actions::restore(actionId)` or `actions::archive(actionId)`.
 
-### Mobile collapse (≤720px)
+Mobile collapse (≤720px) — single-column stack of `[WHO] / [What] / [Affordance]` for all four variants.
 
-Single-column stack:
+Composes:
+
+- `InferredActionSelector` — trigger button + dropdown for `suggestedAction` variant
+- `Pill` — optional secondary tags inside `who` (e.g. account-type pill)
+
+## Tokens consumed
+
+- `--color-text-primary`, `--color-text-secondary`, `--color-text-tertiary` — who / what / parked-label text
+- `--color-border-subtle`, `--color-border-strong` — row border default / hover
+- `--color-account-turmeric` — open-action check button hover fill
+- `--color-spice-saffron` — suggested-action selector accent
+- `--font-serif` — `who` text
+- `--font-sans` — `what` text + affordance labels
+- `--font-mono` — parked / age labels
+- `--space-md`, `--space-lg` — column gap and row padding
+
+## API sketch
+
+```tsx
+<WatchRow
+  kind="suggestedAction"
+  who="Globex Inc"
+  what="Pushing intro to Q3; not dead."
+  selector={{ trigger: "Snooze to Q3", options: [...] }}
+/>
+
+<WatchRow
+  kind="openAction"
+  who="Acme Corp"
+  what="Send revised pricing appendix."
+  actionId="act_abc"
+  checkButtonLabel="Mark complete"
+/>
+
+<WatchRow kind="parked" who="Internal" what="New tier 3 deck circulating." parkedLabel="Parked" />
+
+<WatchRow
+  kind="aging"
+  who="Stark"
+  what="Old support thread, no movement."
+  ageLabel="2w"
+  since="2026-04-22"
+  options={[
+    { label: "Restore", actionId: "act_def" },
+    { label: "Archive", actionId: "act_def" },
+  ]}
+/>
 ```
-[WHO]
-[What text]
-[Affordance]
-```
-All four variants follow the same collapse rule.
 
-## Variants
-
-`kind` is the discriminator. Four variants:
-
-- **`suggestedAction`** — affordance is `InferredActionSelector` (trigger button + dropdown menu of options).
-  - Carries `LifecycleMixin` (correctionState) — these rows are claim-bearing.
-- **`openAction`** — affordance is a circular check button. Click marks complete via `actions::mark_complete`.
-- **`parked`** — affordance is a muted "Parked" label (or "Snoozed until Q3"); informational only.
-- **`aging`** — affordance is a pair of small choice buttons: restore / archive. Click triggers `actions::restore` or `actions::archive`.
-
-## Contract type
+Contract type:
 
 ```ts
 type WatchRowViewModel =
@@ -102,23 +155,28 @@ interface WatchParkedRow extends WatchRowBase {
 
 interface WatchAgingRow extends WatchRowBase {
   kind: "aging";
+  actionId: string;
   ageLabel: string;
   since: string;
   options: WatchAgingOption[];
 }
 ```
 
-## What it doesn't do
+The view does not decide which kind to render — `WatchService` (DOS-415) picks the kind from TODAY-relevance + claim-bearing rules. The view does not mutate — it emits the corresponding `actions::*` or `claims::*` call.
 
-- Decide which kind to render — `WatchService` (DOS-415) selects the kind based on TODAY-relevance + claim-bearing rules.
-- Compose the `what` text — service-rendered.
-- Mutate state — clicking emits the corresponding mutation call (`actions::*` or `claims::*`); this pattern is read + emit, not write itself.
+## Source
 
-## Open questions
+- **Code:** ships W1 (DOS-424) at `src/components/dashboard/WatchRow.tsx` + `src/components/dashboard/WatchRow.module.css`
+- **Reference render:** `.docs/design/reference/surfaces/briefing-redesign.html` (Watch section)
 
-- Mobile layout: collapse to single column? Current d-spine HTML uses `1fr` at <720px.
-- Aging variant's two-button pair: should they fit inline with the row, or stack? TBD by W1 design pass.
+## Surfaces that consume it
 
-## Spec status
+- DailyBriefing (Watch section)
 
-**proposed** — TSX ships in W1 (DOS-424). Reference HTML uses `.dspine-watch-row` today; W1 cuts over to `WatchRow_*` scoped classes.
+## Naming notes
+
+`WatchRow` is the canonical name. Not `BriefingWatchRow` — patterns are named for the pattern, not the surface (`NAMING.md`). The "Watch" register comes from the contract section name (DOS-413). Distinct from `ActionRow` (generic action list row) and `EntityRow` (entity directory row).
+
+## History
+
+- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. TSX ships W1 under DOS-424. Reference HTML uses provisional `.dspine-watch-row` class until W1 cutover to `WatchRow_*` scoped names.

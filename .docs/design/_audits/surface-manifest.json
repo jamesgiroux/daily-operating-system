@@ -8,6 +8,34 @@
       "module_prefix": "DailyBriefing"
     },
     {
+      "html": ".docs/design/reference/surfaces/briefing-redesign.html",
+      "primary": "src/components/dashboard/DailyBriefingRedesign.tsx",
+      "module": "src/components/dashboard/DailyBriefingRedesign.module.css",
+      "module_prefix": "DailyBriefingRedesign",
+      "_pending_implementation": "TSX ships across W1-W5 of Daily Briefing redesign waves (DOS-422..429). Until then the script's missing-file early-return at audit-reference.py:704 yields empty findings — no false-positive failures."
+    },
+    {
+      "html": ".docs/design/reference/surfaces/briefing-redesign-loading.html",
+      "primary": "src/components/dashboard/EditorialLoadingState.tsx",
+      "module": "src/components/dashboard/EditorialLoadingState.module.css",
+      "module_prefix": "EditorialLoadingState",
+      "_pending_implementation": "TSX ships W5 (DOS-429). Pre-implementation entry; audit early-returns on missing TSX."
+    },
+    {
+      "html": ".docs/design/reference/surfaces/briefing-redesign-error.html",
+      "primary": "src/components/dashboard/EditorialErrorState.tsx",
+      "module": "src/components/dashboard/EditorialErrorState.module.css",
+      "module_prefix": "EditorialErrorState",
+      "_pending_implementation": "TSX ships W5 (DOS-429). Pre-implementation entry; audit early-returns on missing TSX."
+    },
+    {
+      "html": ".docs/design/reference/surfaces/briefing-redesign-empty.html",
+      "primary": "src/components/dashboard/EditorialEmptyState.tsx",
+      "module": "src/components/dashboard/EditorialEmptyState.module.css",
+      "module_prefix": "EditorialEmptyState",
+      "_pending_implementation": "TSX ships W5 (DOS-429). Pre-implementation entry; audit early-returns on missing TSX."
+    },
+    {
       "html": ".docs/design/reference/surfaces/account.html",
       "primary": "src/pages/AccountDetailPage.tsx",
       "module": "src/pages/AccountDetailPage.module.css",

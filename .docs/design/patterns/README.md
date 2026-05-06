@@ -79,6 +79,17 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`CommitmentRow`](./CommitmentRow.md) | integrated | Captured commitment with YOURS / THEIRS tag | `PostMeetingIntelligence` local class family |
 | [`RoleTransitionRow`](./RoleTransitionRow.md) | integrated | Person role transition (before-status → after-status pill chain) | `PostMeetingIntelligence` local class family |
 
+### Daily Briefing redesign (0.6.0)
+
+| Name | Status | Job (one line) | Consumers |
+|---|---|---|---|
+| [`MovingRow`](./MovingRow.md) | proposed | Three-column entity-movement row (identity / lede + signals / stats); 5 kinds | DailyBriefing (Moving section) |
+| [`WatchRow`](./WatchRow.md) | proposed | Adaptive triage row, 4 kinds (suggestedAction / openAction / parked / aging) | DailyBriefing (Watch section) |
+| [`PredictionsSection`](./PredictionsSection.md) | proposed | Collapsed-by-default predictions list within MarginGrid | DailyBriefing |
+| [`EditorialLoadingState`](./EditorialLoadingState.md) | proposed | Centered editorial holding state with optional pulsing dot | DailyBriefing (and future editorial surfaces) |
+| [`EditorialErrorState`](./EditorialErrorState.md) | proposed | Centered editorial error frame with retry / diagnostics affordances | DailyBriefing (and future editorial surfaces) |
+| [`EditorialEmptyState`](./EditorialEmptyState.md) | proposed | Left-aligned cold-start frame with eyebrow / headline / lede / checklist / CTA | DailyBriefing (and future editorial surfaces) |
+
 ## Conventions
 
 - **Named after the job, not the surface.** `TrustBand`, not `BriefingTrustBand`. If a pattern is unique to one surface, it's probably surface-internal and doesn't need promotion yet.

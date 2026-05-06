@@ -79,7 +79,7 @@ the strict surface manifest until source routing exists.
 
 | Surface | File | Target route | JTBD | State | Reference | Spec | Notes |
 |---|---|---|---|---|---|---|---|
-| DailyBriefingRedesign | Proposed DailyBriefing redesign | `/` candidate | Explore the Daily Briefing redesign schedule-as-spine redesign using the current DailyBriefing reference foundation. | `proposed reference` | `briefing-redesign.html` | `surfaces/DailyBriefingRedesign.md` | Built from `DayStrip`, `DayChart`, `MeetingSpineItem`, `InferredActionSelector`, and current DailyBriefing chrome. |
+| DailyBriefingRedesign | Proposed DailyBriefing redesign | `/` candidate | Explore the Daily Briefing redesign schedule-as-spine redesign using the current DailyBriefing reference foundation. | `proposed reference` | `briefing-redesign.html`, `briefing-redesign-loading.html`, `briefing-redesign-error.html`, `briefing-redesign-empty.html` | `surfaces/DailyBriefingRedesign.md` | Built from `DayStrip`, `DayChart`, `MeetingSpineItem`, `InferredActionSelector`, current DailyBriefing chrome, plus 0.6.0 substrate (`SignalDot`, `ProvenanceStat`, `MovingRow`, `WatchRow`, `PredictionsSection`, `EditorialLoadingState`, `EditorialErrorState`, `EditorialEmptyState`). DOS-413 plan + ADR 0129 govern the contract. |
 
 ## Full-screen non-route surfaces
 

@@ -1,6 +1,8 @@
 # Design System Version
 
-**Current:** `0.5.0` — Reference renders + substrate promotion (DOS-358)
+**Current:** `0.6.0` — Daily Briefing redesign substrate (DOS-413): 2 new primitives, 6 new patterns, 8 signal-kind token aliases.
+
+**Previous:** `0.5.0` — Reference renders + substrate promotion (DOS-358)
 
 **Stability statement:** Pre-stable. Expect breaking changes until 1.0.0. Pre-1.0, treat any minor bump as potentially breaking (standard semver-zero convention).
 

@@ -55,6 +55,13 @@ A primitive is *not* a primitive if it knows about claims, trust, briefings, or 
 |---|---|---|---|
 | [`MeetingStatusPill`](./MeetingStatusPill.md) | integrated | Meeting temporal state (`upcoming` / `in-progress` / `past` / `cancelled`) | `src/components/meeting/MeetingStatusPill.tsx` |
 
+### Daily Briefing redesign (0.6.0)
+
+| Name | Status | Job (one line) | Source |
+|---|---|---|---|
+| [`SignalDot`](./SignalDot.md) | proposed | Tinted-dot signal-feed bullet (8 kinds: meeting, action, email, lifecycle, gongCall, zendeskTicket, slackThread, linearIssue) | target `src/components/dashboard/SignalDot.tsx` (W1) |
+| [`ProvenanceStat`](./ProvenanceStat.md) | proposed | Labeled metric with optional trend tint (up/down/flat) | target `src/components/dashboard/ProvenanceStat.tsx` (W1) |
+
 ## Conventions
 
 - **Names are short and generic.** `Button`, not `BaseButton` or `PrimaryActionButton`.
