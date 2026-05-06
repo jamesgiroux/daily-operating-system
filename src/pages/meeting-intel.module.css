@@ -628,6 +628,126 @@ details[open] .detailsChevron {
   color: var(--color-text-primary);
 }
 
+.trustLineBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
+  min-width: 0;
+}
+
+.trustEvidenceSurface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  margin-top: var(--space-xl);
+}
+
+.trustEvidenceEmpty {
+  margin: 0;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--color-text-tertiary);
+}
+
+.trustBackground {
+  border-top: 1px solid var(--color-rule-light);
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.trustBackgroundSummary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-xs);
+  padding: var(--space-sm) 0;
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.trustCount {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 18px;
+  height: 18px;
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-surface-subtle);
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  line-height: 1;
+}
+
+.trustEvidenceList {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-sm);
+  padding-bottom: var(--space-sm);
+}
+
+.trustEvidenceList[hidden] {
+  display: none;
+}
+
+.trustEvidenceItem {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.trustEvidenceSection {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 700;
+  color: var(--color-text-tertiary);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.trustShowAll {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-xs);
+}
+
+.trustShowAllButton {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-xs);
+  width: fit-content;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  color: var(--color-spice-terracotta);
+  background: none;
+  border: 1px solid var(--color-spice-terracotta);
+  border-radius: var(--radius-editorial-sm);
+  cursor: pointer;
+  padding: var(--space-xs) var(--space-sm);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.trustShowAllButton[aria-pressed="true"] {
+  background: var(--color-spice-terracotta-12);
+}
+
+.trustShowAllStatus {
+  font-family: var(--font-sans);
+  font-size: 12px;
+  color: var(--color-text-tertiary);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    RISKS CHAPTER
    ───────────────────────────────────────────────────────────────────────────── */
@@ -924,6 +1044,10 @@ details[open] .detailsChevron {
 }
 
 .planItemBody {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   flex: 1;
   min-width: 0;
 }
@@ -1378,6 +1502,10 @@ details[open] .detailsChevron {
 }
 
 .currentStateItem {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 6px;
   font-size: 13px;
   line-height: 1.5;
   color: var(--color-text-secondary);

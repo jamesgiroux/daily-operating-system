@@ -14,13 +14,25 @@
  * - Cancelled: line-through, no interaction
  */
 
-import { useState, useRef, useLayoutEffect, useCallback } from "react";
+import { useState, useRef, useLayoutEffect, useCallback, useId, useMemo } from "react";
 import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
-import { stripMarkdown, stripHtml, formatMeetingType } from "@/lib/utils";
+import { stripMarkdown, stripHtml, formatMeetingType, formatShortDate } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { MeetingCard } from "@/components/shared/MeetingCard";
 import { Pill } from "@/components/ui/Pill";
+import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
+import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
+import {
+  fieldPathCandidates,
+  extractMostCautiousTrustBand,
+  getNewestRenderedProvenanceSourceDate,
+  partitionTrustEvidence,
+  readShowAllEvidenceState,
+  renderedProvenanceFrom,
+  writeShowAllEvidenceState,
+  type TrustBandWire,
+} from "@/lib/trust-band";
 import type { Meeting, CalendarEvent, Action, Stakeholder, CalendarAttendee } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
@@ -253,18 +265,55 @@ export function KeyPeopleFlow({
 
 /** 2-column prep grid: Discuss, Watch, Wins, At a Glance. */
 export function PrepGrid({ meeting }: { meeting: Meeting }) {
+  const needsVerificationId = useId();
   const prep = meeting.prep;
+  const surfaceId = `briefing-prep-grid-${meeting.id}`;
+  const [showAllEvidence, setShowAllEvidence] = useState(() =>
+    readShowAllEvidenceState(surfaceId),
+  );
+  const renderedProvenance = renderedProvenanceFrom(prep);
+  const newestEvidenceDate = getNewestRenderedProvenanceSourceDate(renderedProvenance);
+  const partition = useMemo(() => {
+    if (!prep) {
+      return partitionTrustEvidence<ParsedPrepGridItem>([], { showAllEvidence });
+    }
+    const wins = buildPrepGridItems(prep.wins ?? [], "wins", renderedProvenance, (i) => [
+      ...fieldPathCandidates(`wins[${i}]`),
+      ...fieldPathCandidates(`recentWins[${i}]`),
+    ]);
+    const winKeys = new Set(wins.map((item) => normalizePrepGridText(item.text)));
+    const discuss = [
+      ...buildPrepGridItems(prep.actions ?? [], "discuss", renderedProvenance, (i) => [
+        ...fieldPathCandidates(`actions[${i}]`),
+        ...fieldPathCandidates(`talkingPoints[${i}]`),
+      ]),
+      ...buildPrepGridItems(prep.questions ?? [], "discuss", renderedProvenance, (i) => [
+        ...fieldPathCandidates(`questions[${i}]`),
+      ]),
+    ].filter((item) => item.text && !winKeys.has(normalizePrepGridText(item.text)));
+    const watch = buildPrepGridItems(prep.risks ?? [], "watch", renderedProvenance, (i) => [
+      ...fieldPathCandidates(`risks[${i}]`),
+    ]);
+
+    return partitionTrustEvidence([...discuss, ...watch, ...wins], {
+      showAllEvidence,
+      getBand: (item) => item.trustBand,
+    });
+  }, [prep, renderedProvenance, showAllEvidence]);
+
   if (!prep) return null;
 
-  const wins = (prep.wins ?? []).map(parsePrepGridItem).filter((item) => item.text);
-  const winKeys = new Set(wins.map((item) => normalizePrepGridText(item.text)));
-  const discuss = (prep.actions ?? prep.questions ?? [])
-    .map(parsePrepGridItem)
-    .filter((item) => item.text && !winKeys.has(normalizePrepGridText(item.text)));
-  const watch = (prep.risks ?? []).map(parsePrepGridItem).filter((item) => item.text);
+  const discuss = partition.current.filter((item) => item.section === "discuss");
+  const watch = partition.current.filter((item) => item.section === "watch");
+  const wins = partition.current.filter((item) => item.section === "wins");
 
-  const hasSections = discuss.length > 0 || watch.length > 0 || wins.length > 0;
+  const hasSections = partition.totalCount > 0;
   if (!hasSections) return null;
+
+  const setShowAllEvidenceForSurface = (next: boolean) => {
+    writeShowAllEvidenceState(surfaceId, next);
+    setShowAllEvidence(next);
+  };
 
   return (
     <div className={s.prepGrid}>
@@ -272,10 +321,7 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
         <div className={s.prepSection}>
           <div className={clsx(s.prepLabel, s.prepLabelDiscuss)}>Discuss</div>
           {discuss.slice(0, 1).map((item, i) => (
-            <div key={i} className={s.prepItem}>
-              <span className={clsx(s.prepDot, s.prepDotTurmeric)} />
-              <PrepItemContent item={item} />
-            </div>
+            <PrepEvidenceItem key={i} item={item} dotClassName={s.prepDotTurmeric} />
           ))}
         </div>
       )}
@@ -284,10 +330,7 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
         <div className={s.prepSection}>
           <div className={clsx(s.prepLabel, s.prepLabelWatch)}>Watch</div>
           {watch.slice(0, 1).map((item, i) => (
-            <div key={i} className={s.prepItem}>
-              <span className={clsx(s.prepDot, s.prepDotTerracotta)} />
-              <PrepItemContent item={item} />
-            </div>
+            <PrepEvidenceItem key={i} item={item} dotClassName={s.prepDotTerracotta} />
           ))}
         </div>
       )}
@@ -296,23 +339,66 @@ export function PrepGrid({ meeting }: { meeting: Meeting }) {
         <div className={s.prepSection}>
           <div className={clsx(s.prepLabel, s.prepLabelWins)}>Wins</div>
           {wins.slice(0, 1).map((item, i) => (
-            <div key={i} className={s.prepItem}>
-              <span className={clsx(s.prepDot, s.prepDotSage)} />
-              <PrepItemContent item={item} />
-            </div>
+            <PrepEvidenceItem key={i} item={item} dotClassName={s.prepDotSage} />
           ))}
         </div>
       )}
 
+      {partition.current.length === 0 && (
+        <p className={s.trustEvidenceEmpty}>
+          No high-confidence current-state evidence
+          {newestEvidenceDate ? ` since ${formatShortDate(newestEvidenceDate)}` : ""}.
+        </p>
+      )}
+
+      {partition.caution.length > 0 && (
+        <details className={s.trustBackground}>
+          <summary className={s.trustBackgroundSummary}>
+            Background
+            <span className={s.trustCount}>{partition.caution.length}</span>
+          </summary>
+          <div className={s.trustEvidenceList}>
+            {partition.caution.map((item, i) => (
+              <PrepBackgroundEvidenceItem key={`${item.section}-${i}`} item={item} />
+            ))}
+          </div>
+        </details>
+      )}
+
+      {partition.needsVerification.length > 0 && (
+        <div className={s.trustShowAll}>
+          <button
+            type="button"
+            className={s.trustShowAllButton}
+            aria-pressed={showAllEvidence}
+            aria-controls={needsVerificationId}
+            onClick={() => setShowAllEvidenceForSurface(!showAllEvidence)}
+          >
+            {showAllEvidence ? "Hide low-confidence evidence" : "Show all evidence"}
+            <span className={s.trustCount}>{partition.needsVerification.length}</span>
+          </button>
+          <span role="status" aria-live="polite" className={s.trustShowAllStatus}>
+            {showAllEvidence ? "Showing low-confidence evidence" : "Hiding low-confidence evidence"}
+          </span>
+          <div id={needsVerificationId} hidden={!showAllEvidence} className={s.trustEvidenceList}>
+            {partition.revealedNeedsVerification.map((item, i) => (
+              <PrepBackgroundEvidenceItem key={`${item.section}-${i}`} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
 
 type PrepImpact = "high" | "medium" | "low";
+type PrepGridSectionKey = "discuss" | "watch" | "wins";
 
 interface ParsedPrepGridItem {
   text: string;
   impact?: PrepImpact;
+  section?: PrepGridSectionKey;
+  trustBand?: TrustBandWire;
 }
 
 const PREP_IMPACT_TAIL_RE = /\s+[—-]\s*(high|medium|low)\s*$/i;
@@ -331,10 +417,29 @@ function normalizePrepGridText(value: string): string {
   return value.toLowerCase().replace(/\s+/g, " ").trim();
 }
 
+function buildPrepGridItems(
+  rawItems: string[],
+  section: PrepGridSectionKey,
+  renderedProvenance: unknown,
+  getFieldPaths: (index: number) => string[],
+): ParsedPrepGridItem[] {
+  return rawItems
+    .map((raw, index) => ({
+      ...parsePrepGridItem(raw),
+      section,
+      trustBand: extractMostCautiousTrustBand(renderedProvenance, getFieldPaths(index)),
+    }))
+    .filter((item) => item.text);
+}
+
 function PrepItemContent({ item }: { item: ParsedPrepGridItem }) {
   return (
     <>
-      <span className={s.prepItemText}>{item.text}</span>
+      <ClaimTextRenderer
+        value={item.text}
+        className={s.prepItemText}
+        surface="tauri_briefing_prep"
+      />
       {item.impact && (
         <span className={s.prepImpactBadge} data-impact={item.impact}>
           {item.impact}
@@ -342,6 +447,47 @@ function PrepItemContent({ item }: { item: ParsedPrepGridItem }) {
       )}
     </>
   );
+}
+
+function PrepEvidenceItem({
+  item,
+  dotClassName,
+}: {
+  item: ParsedPrepGridItem;
+  dotClassName: string;
+}) {
+  return (
+    <div className={s.prepItem}>
+      <span className={clsx(s.prepDot, dotClassName)} />
+      <div className={s.prepItemBody}>
+        <PrepItemContent item={item} />
+        <TrustBandIndicator band={item.trustBand ?? "unscored"} />
+      </div>
+    </div>
+  );
+}
+
+function PrepBackgroundEvidenceItem({ item }: { item: ParsedPrepGridItem }) {
+  return (
+    <div className={s.trustEvidenceItem}>
+      <span className={s.trustEvidenceSection}>{sectionLabel(item.section)}</span>
+      <ClaimTextRenderer value={item.text} surface="tauri_briefing_prep" />
+      <TrustBandIndicator band={item.trustBand ?? "unscored"} />
+    </div>
+  );
+}
+
+function sectionLabel(section: PrepGridSectionKey | undefined): string {
+  switch (section) {
+    case "discuss":
+      return "Discuss";
+    case "watch":
+      return "Watch";
+    case "wins":
+      return "Wins";
+    default:
+      return "Prep";
+  }
 }
 
 /** "Before this meeting" action checklist with completion circles. */

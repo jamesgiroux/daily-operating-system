@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback, useMemo, useRef } from "react";
+import { useState, useEffect, useCallback, useMemo, useRef, useId } from "react";
 import { useParams, Link, useNavigate } from "@tanstack/react-router";
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -31,7 +31,7 @@ import type {
   ContinuityThread,
   PredictionScorecard,
 } from "@/types";
-import { parseDate, formatRelativeDateLong, stripHtml } from "@/lib/utils";
+import { parseDate, formatRelativeDateLong, formatShortDate, stripHtml } from "@/lib/utils";
 import { getPrimaryEntityName } from "@/lib/entity-helpers";
 import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
@@ -49,7 +49,18 @@ import { EditorialError } from "@/components/editorial/EditorialError";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
 import { PostMeetingIntelligence } from "@/components/meeting/PostMeetingIntelligence";
 import { EditableText } from "@/components/ui/EditableText";
+import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
+import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
 import { useIntelligenceFeedback } from "@/hooks/useIntelligenceFeedback";
+import {
+  fieldPathCandidates,
+  partitionTrustEvidence,
+  readShowAllEvidenceState,
+  renderedProvenanceFrom,
+  writeShowAllEvidenceState,
+  type TrustEvidencePartition,
+  type TrustBandWire,
+} from "@/lib/trust-band";
 import {
   AlignLeft,
   AlertTriangle,
@@ -154,6 +165,18 @@ interface GranolaManualSyncResult {
   contentType?: "transcript" | "notes";
 }
 
+interface MeetingTrustEvidenceItem {
+  id: string;
+  section: string;
+  text: string;
+  fieldPaths: string[];
+  saveFieldPath?: string;
+  urgency?: string;
+  trustBand?: TrustBandWire;
+}
+
+type MeetingTrustPartition = TrustEvidencePartition<MeetingTrustEvidenceItem>;
+
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
   const navigate = useNavigate();
@@ -205,6 +228,15 @@ export default function MeetingDetailPage() {
   // Persisted user overrides
   const [dismissedTopics, setDismissedTopics] = useState<string[]>([]);
   const [hiddenAttendees, setHiddenAttendees] = useState<string[]>([]);
+  const trustSurfaceId = `meeting-detail-${meetingId ?? "unknown"}`;
+  const needsVerificationId = useId();
+  const [showAllEvidence, setShowAllEvidence] = useState(() =>
+    readShowAllEvidenceState(trustSurfaceId),
+  );
+
+  useEffect(() => {
+    setShowAllEvidence(readShowAllEvidenceState(trustSurfaceId));
+  }, [trustSurfaceId]);
 
   const invokeGranolaSync = useCallback(async (force: boolean) => {
     if (!meetingId) {
@@ -1008,31 +1040,38 @@ Thanks!`;
     data.stakeholderSignals
   );
   const hasLinkedEntities = linkedEntities.length > 0;
+  const renderedProvenance = renderedProvenanceFrom(data);
+  const meetingTrustPartition = buildMeetingTrustPartition(data, renderedProvenance, showAllEvidence);
+  const sinceLastTrustItems = trustItemsForSection(meetingTrustPartition, "Since Last Meeting");
+  const currentStateTrustItems = trustItemsForSection(meetingTrustPartition, "Account Pulse");
+  const readinessTrustItems = trustItemsForSection(meetingTrustPartition, "Before This Meeting");
+  const riskTrustItems = trustItemsForSection(meetingTrustPartition, "Risks").slice(0, 3);
+  const recentWinTrustItems = trustItemsForSection(meetingTrustPartition, "Recent Wins");
+  const setShowAllEvidenceForSurface = (next: boolean) => {
+    writeShowAllEvidenceState(trustSurfaceId, next);
+    setShowAllEvidence(next);
+  };
 
   // Derived data — track source for inline editing
-  const topRiskEntries = [
-    ...((data.entityRisks ?? []).map((risk, i) => ({
-      text: sanitizeInlineText(risk.text),
-      fieldPath: `entityRisks[${i}].text`,
-    }))),
-    ...((data.risks ?? []).map((risk, i) => ({
-      text: sanitizeInlineText(risk),
-      fieldPath: `risks[${i}]`,
-    }))),
-  ]
-    .filter((r) => r.text.length > 0)
-    .slice(0, 3);
-  const topRisks = topRiskEntries.map((r) => r.text);
   const lifecycle = getLifecycleForDisplay(data);
   const agendaItems = (data.proposedAgenda ?? [])
-    .map((item) => ({
+    .map((item, index) => ({
       ...item,
+      originalIndex: index,
       topic: cleanPrepLine(item.topic),
       why: item.why ? cleanPrepLine(item.why) : undefined,
     }))
     .filter((item) => item.topic.length > 0);
   const agendaNonWinItems = agendaItems.filter((item) => item.source !== "talking_point");
   const agendaDisplayItems = agendaNonWinItems.length > 0 ? agendaNonWinItems : agendaItems;
+  const agendaTrustPartition = partitionTrustEvidence(agendaDisplayItems, {
+    renderedProvenance,
+    showAllEvidence,
+    getFieldPaths: (item) => [
+      ...fieldPathCandidates(`proposedAgenda[${item.originalIndex}].topic`),
+      ...fieldPathCandidates(`proposedAgenda[${item.originalIndex}].why`),
+    ],
+  });
   const calendarNotes = stripHtml(data.calendarNotes);
 
   // Build unified attendees
@@ -1052,16 +1091,9 @@ Thanks!`;
     : undefined;
 
   // Track which risks are high urgency for the pulse animation
-  const topRiskUrgencies = [
-    ...((data.entityRisks ?? []).map((risk) => ({ text: sanitizeInlineText(risk.text), urgency: risk.urgency }))),
-    ...(data.risks ?? []).map((risk) => ({ text: sanitizeInlineText(risk), urgency: undefined as string | undefined })),
-  ]
-    .filter((r) => r.text.length > 0)
-    .slice(0, 3);
-
-  const hasRisks = topRisks.length > 0;
+  const hasRisks = riskTrustItems.length > 0;
   const hasRoom = unifiedAttendees.length > 0;
-  const hasPlan = agendaDisplayItems.length > 0 || (meetingId && isEditable);
+  const hasPlan = agendaTrustPartition.current.length > 0 || (meetingId && isEditable);
   return (
     <>
       <div className={styles.pageContainer}>
@@ -1343,14 +1375,17 @@ Thanks!`;
               )}
 
               {/* Since Last Meeting — compact timeline of what changed */}
-              {data.sinceLast && data.sinceLast.length > 0 && (
+              {sinceLastTrustItems.length > 0 && (
                 <div className={styles.sinceLastWrap}>
                   <p className={styles.sinceLastHeading}>Since Last Meeting</p>
                   <ul className={styles.sinceLastList}>
-                    {data.sinceLast.map((item, i) => (
-                      <li key={i} className={styles.sinceLastItem}>
+                    {sinceLastTrustItems.map((item) => (
+                      <li key={item.id} className={styles.sinceLastItem}>
                         <span className={styles.bulletDotTurmericMuted} />
-                        <span>{sanitizeInlineText(item)}</span>
+                        <span className={styles.trustLineBody}>
+                          <ClaimTextRenderer value={item.text} surface="tauri_briefing_prep" />
+                          <TrustBandIndicator band={item.trustBand ?? "unscored"} />
+                        </span>
                       </li>
                     ))}
                   </ul>
@@ -1358,13 +1393,14 @@ Thanks!`;
               )}
 
               {/* Account Pulse — what's working / not working */}
-              {data.currentState && data.currentState.length > 0 && (
+              {currentStateTrustItems.length > 0 && (
                 <div className={styles.currentStateWrap}>
                   <p className={styles.currentStateHeading}>Account Pulse</p>
                   <div className={styles.currentStateGrid}>
-                    {data.currentState.map((item, i) => (
-                      <span key={i} className={styles.currentStateItem}>
-                        {sanitizeInlineText(item)}
+                    {currentStateTrustItems.map((item) => (
+                      <span key={item.id} className={styles.currentStateItem}>
+                        <ClaimTextRenderer value={item.text} surface="tauri_briefing_prep" />
+                        <TrustBandIndicator band={item.trustBand ?? "unscored"} />
                       </span>
                     ))}
                   </div>
@@ -1372,19 +1408,29 @@ Thanks!`;
               )}
 
               {/* Entity Readiness — "Before This Meeting" checklist */}
-              {data.entityReadiness && data.entityReadiness.length > 0 && (
+              {readinessTrustItems.length > 0 && (
                 <div className={styles.readinessWrap}>
                   <p className={styles.readinessHeading}>Before This Meeting</p>
                   <ul className={styles.readinessList}>
-                    {data.entityReadiness.slice(0, 4).map((item, i) => (
-                      <li key={i} className={styles.readinessItem}>
+                    {readinessTrustItems.slice(0, 4).map((item) => (
+                      <li key={item.id} className={styles.readinessItem}>
                         <span className={styles.bulletDotTurmericMuted} />
-                        <span>{item}</span>
+                        <span className={styles.trustLineBody}>
+                          <ClaimTextRenderer value={item.text} surface="tauri_briefing_prep" />
+                          <TrustBandIndicator band={item.trustBand ?? "unscored"} />
+                        </span>
                       </li>
                     ))}
                   </ul>
                 </div>
               )}
+
+              <MeetingTrustBackground
+                partition={meetingTrustPartition}
+                showAllEvidence={showAllEvidence}
+                needsVerificationId={needsVerificationId}
+                onToggleShowAll={setShowAllEvidenceForSurface}
+              />
             </section>
 
             {/* ================================================================
@@ -1396,19 +1442,23 @@ Thanks!`;
               <section id="risks" className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="The Risks" />
                 <div className={styles.risksContainer}>
-                  {topRisks.map((risk, i) => {
-                    const isHighUrgency = topRiskUrgencies[i]?.urgency === "high";
-                    const fieldPath = topRiskEntries[i]?.fieldPath;
+                  {riskTrustItems.map((risk, i) => {
+                    const isHighUrgency = risk.urgency === "high";
+                    const fieldPath = risk.saveFieldPath;
                     const riskContent = isEditable ? (
                       <EditableText
-                        value={risk}
-                        onChange={(v) => savePrepField(fieldPath, v)}
+                        value={risk.text}
+                        onChange={(v) => {
+                          if (fieldPath) savePrepField(fieldPath, v);
+                        }}
                         as="p"
                         multiline
                         className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}
                       />
                     ) : (
-                      <p className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}>{risk}</p>
+                      <p className={i === 0 ? styles.featuredRiskText : styles.subordinateRiskText}>
+                        <ClaimTextRenderer value={risk.text} surface="tauri_briefing_prep" />
+                      </p>
                     );
                     const itemActions = (
                       <span className={styles.itemActions}>
@@ -1434,6 +1484,7 @@ Thanks!`;
                         className={clsx(styles.featuredRisk, isHighUrgency && "risk-pulse-once")}
                       >
                         <div className={styles.intelRowBody}>{riskContent}</div>
+                        <TrustBandIndicator band={risk.trustBand ?? "unscored"} />
                         {itemActions}
                       </blockquote>
                     ) : (
@@ -1442,6 +1493,7 @@ Thanks!`;
                         className={clsx(styles.subordinateRisk, isHighUrgency && styles.subordinateRiskHighUrgency, isHighUrgency && "risk-pulse-once")}
                       >
                         <div className={styles.intelRowBody}>{riskContent}</div>
+                        <TrustBandIndicator band={risk.trustBand ?? "unscored"} />
                         {itemActions}
                       </div>
                     );
@@ -1451,14 +1503,17 @@ Thanks!`;
             )}
 
             {/* Recent Wins — positive context after risks */}
-            {data.recentWins && data.recentWins.length > 0 && (
+            {recentWinTrustItems.length > 0 && (
               <section className={clsx("editorial-reveal", styles.chapterSection)}>
                 <ChapterHeading title="Recent Wins" />
                 <div className={styles.recentWinsContainer}>
-                  {data.recentWins.map((win, i) => (
-                    <div key={i} className={styles.recentWinItem}>
+                  {recentWinTrustItems.map((win, i) => (
+                    <div key={win.id} className={styles.recentWinItem}>
                       <span className={styles.bulletDotSage} />
-                      <p className={styles.recentWinText}>{cleanPrepLine(win)}</p>
+                      <p className={styles.recentWinText}>
+                        <ClaimTextRenderer value={win.text} surface="tauri_briefing_prep" />
+                      </p>
+                      <TrustBandIndicator band={win.trustBand ?? "unscored"} />
                       <span className={styles.itemActions}>
                         <IntelligenceFeedback
                           value={feedback.getFeedback(`recentWins[${i}]`)}
@@ -1468,7 +1523,9 @@ Thanks!`;
                           <button
                             type="button"
                             className={styles.dismissButton}
-                            onClick={() => savePrepField(`recentWins[${i}]`, "")}
+                            onClick={() => {
+                              if (win.saveFieldPath) savePrepField(win.saveFieldPath, "");
+                            }}
                             title="Dismiss"
                           >
                             <X size={13} />
@@ -1608,7 +1665,7 @@ Thanks!`;
                 )}
 
                 <UnifiedPlanEditor
-                  proposedItems={agendaDisplayItems}
+                  proposedItems={agendaTrustPartition.current}
                   userAgenda={data.userAgenda}
                   meetingId={meetingId ?? undefined}
                   isEditable={isEditable}
@@ -1979,6 +2036,95 @@ function UnifiedAttendeeList({
   );
 }
 
+function MeetingTrustBackground({
+  partition,
+  showAllEvidence,
+  needsVerificationId,
+  onToggleShowAll,
+}: {
+  partition: MeetingTrustPartition;
+  showAllEvidence: boolean;
+  needsVerificationId: string;
+  onToggleShowAll: (next: boolean) => void;
+}) {
+  const hasBackground = partition.caution.length > 0;
+  const hasNeedsVerification = partition.needsVerification.length > 0;
+  if (!hasBackground && !hasNeedsVerification) return null;
+  const newestDate = newestTrustSourceDate([
+    ...partition.current,
+    ...partition.caution,
+    ...partition.needsVerification,
+  ]);
+
+  return (
+    <div className={styles.trustEvidenceSurface}>
+      {partition.current.length === 0 && partition.totalCount > 0 && (
+        <p className={styles.trustEvidenceEmpty}>
+          No high-confidence current-state evidence
+          {newestDate ? ` since ${formatShortDate(newestDate)}` : ""}.
+        </p>
+      )}
+
+      {hasBackground && (
+        <details className={styles.trustBackground}>
+          <summary className={styles.trustBackgroundSummary}>
+            Background
+            <span className={styles.trustCount}>{partition.caution.length}</span>
+          </summary>
+          <div className={styles.trustEvidenceList}>
+            {partition.caution.map((item) => (
+              <MeetingTrustEvidenceRow key={item.id} item={item} />
+            ))}
+          </div>
+        </details>
+      )}
+
+      {hasNeedsVerification && (
+        <div className={styles.trustShowAll}>
+          <button
+            type="button"
+            className={styles.trustShowAllButton}
+            aria-pressed={showAllEvidence}
+            aria-controls={needsVerificationId}
+            onClick={() => onToggleShowAll(!showAllEvidence)}
+          >
+            {showAllEvidence ? "Hide low-confidence evidence" : "Show all evidence"}
+            <span className={styles.trustCount}>{partition.needsVerification.length}</span>
+          </button>
+          <span role="status" aria-live="polite" className={styles.trustShowAllStatus}>
+            {showAllEvidence ? "Showing low-confidence evidence" : "Hiding low-confidence evidence"}
+          </span>
+          <div id={needsVerificationId} hidden={!showAllEvidence} className={styles.trustEvidenceList}>
+            {partition.revealedNeedsVerification.map((item) => (
+              <MeetingTrustEvidenceRow key={item.id} item={item} />
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function newestTrustSourceDate(items: Array<{ trustSourceDate?: string | null }>): string | null {
+  const newest = items
+    .map((item) => item.trustSourceDate)
+    .filter((date): date is string => typeof date === "string" && date.length > 0)
+    .map((date) => ({ raw: date, time: Date.parse(date) }))
+    .filter((date) => Number.isFinite(date.time))
+    .sort((a, b) => b.time - a.time)[0];
+  return newest?.raw ?? null;
+}
+
+function MeetingTrustEvidenceRow({ item }: { item: MeetingTrustEvidenceItem & { trustBand?: TrustBandWire } }) {
+  return (
+    <div className={styles.trustEvidenceItem}>
+      <span className={styles.trustEvidenceSection}>{item.section}</span>
+      <ClaimTextRenderer value={item.text} surface="tauri_briefing_prep" />
+      <TrustBandIndicator band={item.trustBand ?? "unscored"} />
+    </div>
+  );
+}
+
 // =============================================================================
 // User Editability Components (ADR-0065)
 // =============================================================================
@@ -1992,7 +2138,13 @@ function UnifiedPlanEditor({
   initialDismissedTopics,
   onSaveStatus,
 }: {
-  proposedItems: Array<{ topic: string; why?: string; source?: string }>;
+  proposedItems: Array<{
+    topic: string;
+    why?: string;
+    source?: string;
+    originalIndex?: number;
+    trustBand?: TrustBandWire;
+  }>;
   userAgenda?: string[];
   meetingId?: string;
   isEditable: boolean;
@@ -2026,14 +2178,22 @@ function UnifiedPlanEditor({
   const overrideValues = new Set(proposedOverrides.values());
   userItems.forEach((raw, i) => { if (overrideValues.has(raw)) overriddenUserIndices.add(i); });
 
-  const allItems: Array<{ topic: string; why?: string; source?: string; isUser: boolean; userIndex?: number; originalProposedTopic?: string }> = [
+  const allItems: Array<{
+    topic: string;
+    why?: string;
+    source?: string;
+    isUser: boolean;
+    userIndex?: number;
+    originalProposedTopic?: string;
+    trustBand?: TrustBandWire;
+  }> = [
     ...proposedItems
       .filter((item) => !dismissedTopics.has(item.topic) || proposedOverrides.has(item.topic))
       .map((item) => {
         const override = proposedOverrides.get(item.topic);
         if (override) {
           const parsed = parseUserItem(override);
-          return { ...parsed, source: item.source, isUser: false, originalProposedTopic: item.topic };
+          return { ...parsed, source: item.source, trustBand: item.trustBand, isUser: false, originalProposedTopic: item.topic };
         }
         return { ...item, isUser: false, originalProposedTopic: item.topic };
       }),
@@ -2184,6 +2344,7 @@ function UnifiedPlanEditor({
                         {item.why}
                       </p>
                     )}
+                    <TrustBandIndicator band={item.trustBand ?? "unscored"} />
                   </>
                 )}
               </div>
@@ -2439,6 +2600,111 @@ function extractKeyInsight(intelligenceSummary?: string, meetingContext?: string
   }
   // If no sentence-ending punctuation, use the whole first line
   return trimmed;
+}
+
+function buildMeetingTrustPartition(
+  data: FullMeetingPrep | null,
+  renderedProvenance: unknown,
+  showAllEvidence: boolean,
+): MeetingTrustPartition {
+  if (!data) {
+    return partitionTrustEvidence<MeetingTrustEvidenceItem>([], { showAllEvidence });
+  }
+
+  const items: MeetingTrustEvidenceItem[] = [];
+  addTextEvidence(items, "Since Last Meeting", data.sinceLast, "sinceLast", "since_last", cleanPrepLine);
+  addTextEvidence(items, "Account Pulse", data.currentState, "currentState", "current_state", cleanPrepLine);
+  addTextEvidence(
+    items,
+    "Before This Meeting",
+    data.entityReadiness,
+    "entityReadiness",
+    "entity_readiness",
+    cleanPrepLine,
+  );
+  addTextEvidence(items, "Recent Wins", data.recentWins, "recentWins", "recent_wins", cleanPrepLine);
+
+  for (let i = 0; i < (data.entityRisks ?? []).length; i++) {
+    const risk = data.entityRisks![i];
+    const text = sanitizeInlineText(risk.text);
+    if (!text) continue;
+    const saveFieldPath = `entityRisks[${i}].text`;
+    items.push({
+      id: `entity-risk-${i}`,
+      section: "Risks",
+      text,
+      saveFieldPath,
+      urgency: risk.urgency,
+      fieldPaths: fieldPathCandidates(saveFieldPath),
+    });
+  }
+
+  for (let i = 0; i < (data.risks ?? []).length; i++) {
+    const text = sanitizeInlineText(data.risks![i]);
+    if (!text) continue;
+    const saveFieldPath = `risks[${i}]`;
+    items.push({
+      id: `risk-${i}`,
+      section: "Risks",
+      text,
+      saveFieldPath,
+      fieldPaths: fieldPathCandidates(saveFieldPath),
+    });
+  }
+
+  for (let i = 0; i < (data.proposedAgenda ?? []).length; i++) {
+    const item = data.proposedAgenda![i];
+    const topic = cleanPrepLine(item.topic);
+    if (!topic) continue;
+    const why = item.why ? cleanPrepLine(item.why) : "";
+    items.push({
+      id: `agenda-${i}`,
+      section: "Your Plan",
+      text: why ? `${topic} - ${why}` : topic,
+      fieldPaths: [
+        ...fieldPathCandidates(`proposedAgenda[${i}].topic`),
+        ...fieldPathCandidates(`proposedAgenda[${i}].why`),
+      ],
+    });
+  }
+
+  return partitionTrustEvidence(items, {
+    renderedProvenance,
+    showAllEvidence,
+    getFieldPaths: (item) => item.fieldPaths,
+  });
+}
+
+function addTextEvidence(
+  items: MeetingTrustEvidenceItem[],
+  section: string,
+  values: string[] | undefined,
+  camelField: string,
+  snakeField: string,
+  clean: (value: string) => string,
+) {
+  for (let i = 0; i < (values ?? []).length; i++) {
+    const text = clean(values![i]);
+    if (!text) continue;
+    const saveFieldPath = `${camelField}[${i}]`;
+    items.push({
+      id: `${camelField}-${i}`,
+      section,
+      text,
+      saveFieldPath,
+      fieldPaths: [
+        ...fieldPathCandidates(saveFieldPath),
+        `/${snakeField}/${i}`,
+      ],
+    });
+  }
+}
+
+function trustItemsForSection(
+  partition: MeetingTrustPartition,
+  section: string,
+): Array<MeetingTrustEvidenceItem & { trustBand?: TrustBandWire }> {
+  return partition.current.filter((item) => item.section === section);
 }
 
 function buildUnifiedAttendees(

@@ -23,6 +23,7 @@ export default defineConfig({
       ...configDefaults.exclude,
       ".claude/**",
       ".context/**",
+      ".codex/**",
     ],
   },
   // Prevent vite from obscuring rust errors

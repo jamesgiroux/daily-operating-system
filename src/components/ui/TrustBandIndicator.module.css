@@ -1,0 +1,54 @@
+.indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  width: fit-content;
+  max-width: 100%;
+  padding: 0.15rem 0.45rem;
+  border: 1px solid currentColor;
+  border-radius: var(--radius-editorial-sm);
+  background: var(--trust-band-bg);
+  color: var(--trust-band-color);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.indicator[data-compact="false"] {
+  font-size: 11px;
+  padding: 0.25rem 0.55rem;
+}
+
+.icon {
+  width: 0.9em;
+  height: 0.9em;
+  flex: 0 0 auto;
+  stroke-width: 2.4;
+}
+
+.label {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.likelyCurrent {
+  --trust-band-bg: var(--color-garden-sage-12);
+  --trust-band-color: var(--color-garden-sage);
+}
+
+.useWithCaution {
+  --trust-band-bg: var(--color-spice-turmeric-12);
+  --trust-band-color: var(--color-spice-turmeric);
+}
+
+.needsVerification {
+  --trust-band-bg: var(--color-spice-terracotta-12);
+  --trust-band-color: var(--color-spice-terracotta);
+}
+
+.unscored {
+  --trust-band-bg: var(--color-surface-subtle);
+  --trust-band-color: var(--color-text-tertiary);
+}

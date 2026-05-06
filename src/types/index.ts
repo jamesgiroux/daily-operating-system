@@ -117,6 +117,63 @@ export interface RenderableClaimText {
   policy: RenderPolicy;
 }
 
+export type TrustBandWire =
+  | "likely_current"
+  | "use_with_caution"
+  | "needs_verification"
+  | "unscored";
+
+export interface RenderedProvenanceSourceSummary {
+  source_asof?: string | null;
+  sourceAsof?: string | null;
+  observed_at?: string | null;
+  observedAt?: string | null;
+  [key: string]: unknown;
+}
+
+export interface RenderedFieldAttribution {
+  subject?: unknown;
+  derivation?: unknown;
+  source_refs?: unknown[];
+  sourceRefs?: unknown[];
+  confidence?: unknown;
+  explanation?: string | null;
+  trust_band?: TrustBandWire | null;
+  trustBand?: TrustBandWire | null;
+  [key: string]: unknown;
+}
+
+export interface RenderedProvenanceSummary {
+  surface?: string;
+  value: {
+    sources?: RenderedProvenanceSourceSummary[];
+    field_attributions?: Record<string, RenderedFieldAttribution>;
+    fieldAttributions?: Record<string, RenderedFieldAttribution>;
+    produced_at?: string;
+    producedAt?: string;
+    [key: string]: unknown;
+  };
+  [key: string]: unknown;
+}
+
+export interface AbilityResponseJson<T> {
+  invocation_id: string;
+  ability_name: string;
+  ability_version: string;
+  schema_version: number;
+  data: T;
+  rendered_provenance: RenderedProvenanceSummary;
+  diagnostics?: unknown;
+}
+
+export type TrustAnnotated<T> = T & {
+  trustBand?: TrustBandWire;
+  trust_band?: TrustBandWire;
+  trustFieldPath?: string;
+  trustSourceDate?: string | null;
+  renderedProvenance?: RenderedProvenanceSummary | null;
+};
+
 export interface DatabaseRecoveryStatus {
   required: boolean;
   reason: string;
@@ -280,6 +337,8 @@ export interface MeetingPrep {
   openItems?: string[];
   historicalContext?: string;
   sourceReferences?: SourceReference[];
+  renderedProvenance?: RenderedProvenanceSummary;
+  rendered_provenance?: RenderedProvenanceSummary;
 }
 
 export interface Action {
@@ -1243,6 +1302,8 @@ export interface FullMeetingPrep {
   calendarEventId?: string;
   title: string;
   timeRange: string;
+  renderedProvenance?: RenderedProvenanceSummary;
+  rendered_provenance?: RenderedProvenanceSummary;
   meetingContext?: string;
   /** Calendar event description from Google Calendar  */
   calendarNotes?: string;
