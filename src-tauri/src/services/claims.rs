@@ -617,6 +617,25 @@ fn read_claim_row(row: &rusqlite::Row<'_>) -> Result<IntelligenceClaim, ClaimErr
     })
 }
 
+/// Sensitivity gate for data crossing an LLM prompt-input boundary.
+pub fn prompt_input_sensitivity_allowed(sensitivity: &ClaimSensitivity) -> bool {
+    matches!(
+        sensitivity,
+        ClaimSensitivity::Public | ClaimSensitivity::Internal
+    )
+}
+
+pub fn claim_allowed_for_prompt_input(claim: &IntelligenceClaim) -> bool {
+    prompt_input_sensitivity_allowed(&claim.sensitivity)
+}
+
+pub fn prompt_input_sensitivity_name_allowed(sensitivity: &str) -> bool {
+    matches!(
+        sensitivity.trim().to_ascii_lowercase().as_str(),
+        "public" | "internal"
+    )
+}
+
 fn load_claim_by_id(
     conn: &rusqlite::Connection,
     claim_id: &str,

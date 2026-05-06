@@ -188,10 +188,11 @@ pub async fn build_meeting_brief(
     ctx: &AbilityContext<'_>,
     input: PrepareMeetingInput,
 ) -> AbilityResult<MeetingBrief> {
-    let context = match input.context.clone() {
+    let mut context = match input.context.clone() {
         Some(context) => context,
         None => MeetingBriefContext::from_meeting_id(ctx, &input.meeting_id).await?,
     };
+    context.retain_prompt_input_allowed_evidence();
     build_meeting_brief_from_context(ctx, input, context).await
 }
 
@@ -377,9 +378,10 @@ fn filter_prompt_entity_entries(
     claims: &[IntelligenceClaim],
     allowed_subjects: &BTreeSet<String>,
 ) -> Vec<EntityContextEntry> {
-    let sensitivity_by_id: BTreeMap<&str, &ClaimSensitivity> = claims
+    let prompt_allowed_claim_ids: BTreeSet<&str> = claims
         .iter()
-        .map(|claim| (claim.id.as_str(), &claim.sensitivity))
+        .filter(|claim| crate::services::claims::claim_allowed_for_prompt_input(claim))
+        .map(|claim| claim.id.as_str())
         .collect();
 
     entries
@@ -393,9 +395,7 @@ fn filter_prompt_entity_entries(
                 return false;
             }
 
-            sensitivity_by_id
-                .get(entry.id.as_str())
-                .is_some_and(|sensitivity| prompt_input_sensitivity_allowed(sensitivity))
+            prompt_allowed_claim_ids.contains(entry.id.as_str())
         })
         .collect()
 }
@@ -437,6 +437,7 @@ impl MeetingBriefContext {
         let evidence = snapshot
             .claims
             .iter()
+            .filter(|claim| crate::services::claims::claim_allowed_for_prompt_input(claim))
             .map(evidence_from_claim)
             .collect::<Result<Vec<_>, _>>()?;
         let entity_contexts = snapshot
@@ -456,6 +457,11 @@ impl MeetingBriefContext {
             evidence,
             entity_contexts,
         })
+    }
+
+    fn retain_prompt_input_allowed_evidence(&mut self) {
+        self.evidence
+            .retain(evidence_source_allowed_for_prompt_input);
     }
 }
 
@@ -1485,11 +1491,8 @@ fn context_depth_levels(depth: u8) -> usize {
     }
 }
 
-fn prompt_input_sensitivity_allowed(sensitivity: &ClaimSensitivity) -> bool {
-    matches!(
-        sensitivity,
-        ClaimSensitivity::Public | ClaimSensitivity::Internal
-    )
+fn evidence_source_allowed_for_prompt_input(evidence: &EvidenceSource) -> bool {
+    crate::services::claims::prompt_input_sensitivity_name_allowed(&evidence.sensitivity)
 }
 
 fn config_for(
@@ -2177,6 +2180,222 @@ mod tests {
             !serialized.contains(user_only_text),
             "user-only context must not cross the provider boundary"
         );
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_filters_private_claims_from_all_prompt_claim_channels() {
+        let public_text = "Target Example public readiness note is allowed.";
+        let internal_text = "Target Example internal launch context is allowed.";
+        let confidential_text = "Target Example confidential renewal risk is private.";
+        let user_only_text = "Target Example user-only negotiation note is private.";
+        let public_claim = fixture_claim_with_sensitivity(
+            "claim-sweep-public",
+            "account",
+            "acct-sweep",
+            public_text,
+            ClaimSensitivity::Public,
+        );
+        let internal_claim = fixture_claim_with_sensitivity(
+            "claim-sweep-internal",
+            "account",
+            "acct-sweep",
+            internal_text,
+            ClaimSensitivity::Internal,
+        );
+        let confidential_claim = fixture_claim_with_sensitivity(
+            "claim-sweep-confidential",
+            "account",
+            "acct-sweep",
+            confidential_text,
+            ClaimSensitivity::Confidential,
+        );
+        let user_only_claim = fixture_claim_with_sensitivity(
+            "claim-sweep-user-only",
+            "account",
+            "acct-sweep",
+            user_only_text,
+            ClaimSensitivity::UserOnly,
+        );
+        let claims = vec![
+            public_claim.clone(),
+            internal_claim.clone(),
+            confidential_claim.clone(),
+            user_only_claim.clone(),
+        ];
+        let snapshot = fixture_meeting_snapshot(
+            "meeting-sensitivity-sweep",
+            vec![PrepareMeetingAttendeeSnapshot {
+                name: "Tara Example".into(),
+                email: Some("tara@example.com".into()),
+                person_id: Some("person-tara".into()),
+                account_id: Some("acct-sweep".into()),
+                domain: Some("example.com".into()),
+            }],
+            vec![PrepareMeetingSubjectSnapshot {
+                kind: "account".into(),
+                id: "acct-sweep".into(),
+                display_name: "Target Example".into(),
+            }],
+            claims.clone(),
+        );
+        let harness = Harness::new(empty_completion())
+            .with_claims(claims)
+            .with_meeting_context(snapshot);
+
+        harness
+            .run(public_input("meeting-sensitivity-sweep"))
+            .await
+            .unwrap();
+        let prompt = harness.captured_prompt();
+        let canonical_inputs = prompt
+            .canonical_json_inputs
+            .clone()
+            .expect("prepare_meeting prompt has canonical JSON inputs");
+        let evidence = canonical_inputs
+            .pointer("/context/evidence")
+            .and_then(serde_json::Value::as_array)
+            .expect("canonical PromptContext.evidence exists");
+        let entity_contexts = canonical_inputs
+            .pointer("/context/entity_contexts")
+            .cloned()
+            .expect("canonical PromptContext.entity_contexts exists");
+        let canonical_json =
+            serde_json::to_string(&canonical_inputs).expect("canonical inputs serialize");
+        let entity_context_json =
+            serde_json::to_string(&entity_contexts).expect("entity contexts serialize");
+
+        for (id, text) in [
+            ("claim-sweep-public", public_text),
+            ("claim-sweep-internal", internal_text),
+        ] {
+            assert!(
+                evidence
+                    .iter()
+                    .any(|source| source["id"].as_str() == Some(id)),
+                "{id} must remain in PromptContext.evidence"
+            );
+            assert!(
+                canonical_json.contains(id) && canonical_json.contains(text),
+                "{id} and its text must remain in canonical prompt JSON"
+            );
+            assert!(
+                prompt.text.contains(id) && prompt.text.contains(text),
+                "{id} and its text must remain in rendered provider prompt text"
+            );
+            assert!(
+                entity_context_json.contains(id) && entity_context_json.contains(text),
+                "{id} and its text must remain in PromptContext.entity_contexts"
+            );
+        }
+
+        for (id, text) in [
+            ("claim-sweep-confidential", confidential_text),
+            ("claim-sweep-user-only", user_only_text),
+        ] {
+            assert!(
+                evidence
+                    .iter()
+                    .all(|source| source["id"].as_str() != Some(id)),
+                "{id} must not enter PromptContext.evidence"
+            );
+            assert!(
+                !canonical_json.contains(id) && !canonical_json.contains(text),
+                "{id} and its text must not enter canonical prompt JSON"
+            );
+            assert!(
+                !prompt.text.contains(id) && !prompt.text.contains(text),
+                "{id} and its text must not enter rendered provider prompt text"
+            );
+            assert!(
+                !entity_context_json.contains(id) && !entity_context_json.contains(text),
+                "{id} and its text must not enter PromptContext.entity_contexts"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_filters_private_prebuilt_context_evidence_from_prompt_input() {
+        let public_claim = fixture_claim_with_sensitivity(
+            "claim-direct-public",
+            "meeting",
+            "meeting-direct-sensitivity",
+            "Direct public claim text is allowed.",
+            ClaimSensitivity::Public,
+        );
+        let internal_claim = fixture_claim_with_sensitivity(
+            "claim-direct-internal",
+            "meeting",
+            "meeting-direct-sensitivity",
+            "Direct internal claim text is allowed.",
+            ClaimSensitivity::Internal,
+        );
+        let confidential_claim = fixture_claim_with_sensitivity(
+            "claim-direct-confidential",
+            "meeting",
+            "meeting-direct-sensitivity",
+            "Direct confidential claim text is private.",
+            ClaimSensitivity::Confidential,
+        );
+        let user_only_claim = fixture_claim_with_sensitivity(
+            "claim-direct-user-only",
+            "meeting",
+            "meeting-direct-sensitivity",
+            "Direct user-only claim text is private.",
+            ClaimSensitivity::UserOnly,
+        );
+        let evidence = [
+            public_claim,
+            internal_claim,
+            confidential_claim,
+            user_only_claim,
+        ]
+        .iter()
+        .map(evidence_from_claim)
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+        let input = PrepareMeetingInput {
+            meeting_id: "meeting-direct-sensitivity".into(),
+            depth: 2,
+            include_open_loops: true,
+            schema_version: SchemaVersion(1),
+            context: Some(MeetingBriefContext {
+                meeting: MeetingSummary {
+                    id: "meeting-direct-sensitivity".into(),
+                    title: "Direct sensitivity meeting".into(),
+                    starts_at: Some("2026-05-06T15:00:00Z".into()),
+                    ends_at: Some("2026-05-06T15:30:00Z".into()),
+                    attendees: vec![MeetingAttendee {
+                        name: "Alex Example".into(),
+                        email: Some("alex@example.com".into()),
+                        person_id: Some("person-alex".into()),
+                        account_id: None,
+                        domain: Some("example.com".into()),
+                    }],
+                },
+                evidence,
+                entity_contexts: Vec::new(),
+            }),
+        };
+        let harness = Harness::new(empty_completion());
+
+        harness.run(input).await.unwrap();
+        let prompt = harness.captured_prompt();
+        let canonical_inputs = prompt
+            .canonical_json_inputs
+            .expect("prepare_meeting prompt has canonical JSON inputs");
+        let serialized =
+            serde_json::to_string(&canonical_inputs).expect("canonical prompt inputs serialize");
+
+        assert!(serialized.contains("claim-direct-public"));
+        assert!(serialized.contains("Direct public claim text is allowed."));
+        assert!(serialized.contains("claim-direct-internal"));
+        assert!(serialized.contains("Direct internal claim text is allowed."));
+        assert!(!serialized.contains("claim-direct-confidential"));
+        assert!(!serialized.contains("Direct confidential claim text is private."));
+        assert!(!serialized.contains("claim-direct-user-only"));
+        assert!(!serialized.contains("Direct user-only claim text is private."));
+        assert!(!prompt.text.contains("claim-direct-confidential"));
+        assert!(!prompt.text.contains("claim-direct-user-only"));
     }
 
     #[tokio::test]

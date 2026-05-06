@@ -344,6 +344,9 @@ fn load_prepare_meeting_claims(
         for claim in crate::services::claims::load_claims_active(db, &subject_ref, None)
             .map_err(|error| format!("load active claims for {subject_ref}: {error}"))?
         {
+            if !crate::services::claims::claim_allowed_for_prompt_input(&claim) {
+                continue;
+            }
             if seen.insert(claim.id.clone()) {
                 claims.push(claim);
             }
@@ -353,6 +356,9 @@ fn load_prepare_meeting_claims(
     for claim in crate::services::claims::load_claims_active_by_source_ref(db, meeting_id)
         .map_err(|error| format!("load active claims for source_ref {meeting_id}: {error}"))?
     {
+        if !crate::services::claims::claim_allowed_for_prompt_input(&claim) {
+            continue;
+        }
         let Some(subject_ref) = canonical_claim_subject_ref(&claim) else {
             continue;
         };
@@ -4486,8 +4492,11 @@ mod tests {
     use super::persist_classification_entities_scored;
     use super::plan_refresh_completion;
     use super::restore_meeting_entity;
+    use super::{load_prepare_meeting_context_snapshot, subject_ref_json};
+    use crate::db::claims::{ClaimSensitivity, TemporalScope};
     use crate::db::test_utils::test_db;
     use crate::google_api::classify::ResolvedMeetingEntity;
+    use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::state::AppState;
     use chrono::TimeZone;
@@ -4498,6 +4507,125 @@ mod tests {
         ext: &'a ExternalClients,
     ) -> ServiceContext<'a> {
         ServiceContext::test_live(clock, rng, ext)
+    }
+
+    #[test]
+    fn load_prepare_meeting_context_snapshot_filters_private_claim_sensitivity() {
+        let db = test_db();
+        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
+        let rng = SeedableRng::new(907);
+        let ext = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &ext);
+        let meeting_id = "meeting-prepare-sensitivity";
+        let account_id = "acct-prepare-sensitivity";
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+                 VALUES (?1, 'Sensitivity Sweep Prep', 'external', '2026-05-10T17:00:00Z',
+                         '2026-05-10T17:30:00Z', '[\"taylor@example.com\"]', '2026-05-05T09:00:00Z')",
+                rusqlite::params![meeting_id],
+            )
+            .expect("seed meeting");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entities (id, name, entity_type, updated_at)
+                 VALUES (?1, 'Target Example', 'account', '2026-05-05T09:00:00Z')",
+                rusqlite::params![account_id],
+            )
+            .expect("seed entity");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meeting_entities (meeting_id, entity_id, entity_type, confidence, is_primary)
+                 VALUES (?1, ?2, 'account', 0.95, 1)",
+                rusqlite::params![meeting_id, account_id],
+            )
+            .expect("seed meeting entity");
+        let subject_ref = subject_ref_json("account", account_id).expect("subject ref");
+        let mut seeded_claims = Vec::new();
+        for (text, sensitivity) in [
+            (
+                "Target Example public source_ref claim is allowed.",
+                ClaimSensitivity::Public,
+            ),
+            (
+                "Target Example internal source_ref claim is allowed.",
+                ClaimSensitivity::Internal,
+            ),
+            (
+                "Target Example confidential source_ref claim is private.",
+                ClaimSensitivity::Confidential,
+            ),
+            (
+                "Target Example user-only source_ref claim is private.",
+                ClaimSensitivity::UserOnly,
+            ),
+        ] {
+            let claim_id = insert_prepare_meeting_claim(
+                &ctx,
+                &db,
+                &subject_ref,
+                text,
+                meeting_id,
+                sensitivity.clone(),
+            );
+            seeded_claims.push((claim_id, text, sensitivity));
+        }
+
+        let snapshot = load_prepare_meeting_context_snapshot(&db, meeting_id).unwrap();
+        let serialized = serde_json::to_string(&snapshot.claims).expect("claims serialize");
+
+        for (claim_id, text, sensitivity) in seeded_claims {
+            let canonical_text = text.to_lowercase();
+            if matches!(
+                sensitivity,
+                ClaimSensitivity::Public | ClaimSensitivity::Internal
+            ) {
+                assert!(serialized.contains(&claim_id));
+                assert!(serialized.contains(&canonical_text));
+            } else {
+                assert!(!serialized.contains(&claim_id));
+                assert!(!serialized.contains(&canonical_text));
+            }
+        }
+    }
+
+    fn insert_prepare_meeting_claim(
+        ctx: &ServiceContext<'_>,
+        db: &crate::db::ActionDb,
+        subject_ref: &str,
+        text: &str,
+        source_ref: &str,
+        sensitivity: ClaimSensitivity,
+    ) -> String {
+        match commit_claim(
+            ctx,
+            db,
+            ClaimProposal {
+                subject_ref: subject_ref.to_string(),
+                claim_type: "risk".to_string(),
+                field_path: Some("health.risk".to_string()),
+                topic_key: None,
+                text: text.to_string(),
+                actor: "agent:fixture".to_string(),
+                data_source: "user".to_string(),
+                source_ref: Some(source_ref.to_string()),
+                source_asof: Some("2026-05-05T09:30:00Z".to_string()),
+                observed_at: "2026-05-05T09:30:00Z".to_string(),
+                provenance_json: "{}".to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: Some(TemporalScope::State),
+                sensitivity: Some(sensitivity),
+                tombstone: None,
+            },
+        )
+        .expect("seed prepare_meeting claim")
+        {
+            CommittedClaim::Inserted { claim }
+            | CommittedClaim::Reinforced { claim, .. }
+            | CommittedClaim::Tombstoned { claim } => claim.id,
+            CommittedClaim::Forked { new_claim_id, .. } => new_claim_id,
+        }
     }
 
     /// Chip dismissal contract: after the UI dismisses an

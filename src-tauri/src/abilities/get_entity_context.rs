@@ -13,7 +13,7 @@ use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
 use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
-use crate::db::claims::{ClaimSensitivity, IntelligenceClaim};
+use crate::db::claims::IntelligenceClaim;
 use crate::types::EntityContextEntry;
 
 const ABILITY_NAME: &str = "get_entity_context";
@@ -177,10 +177,7 @@ fn filter_claims_for_actor(actor: Actor, claims: Vec<IntelligenceClaim>) -> Vec<
 }
 
 fn agent_can_read_claim(claim: &IntelligenceClaim) -> bool {
-    matches!(
-        claim.sensitivity,
-        ClaimSensitivity::Public | ClaimSensitivity::Internal
-    )
+    crate::services::claims::claim_allowed_for_prompt_input(claim)
 }
 
 fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
