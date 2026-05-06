@@ -10,10 +10,10 @@ use crate::abilities::provenance::{
     SubjectAttribution, SubjectRef,
 };
 use crate::abilities::{
-    AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult,
+    AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
 use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
-use crate::db::claims::IntelligenceClaim;
+use crate::db::claims::{ClaimSensitivity, IntelligenceClaim};
 use crate::types::EntityContextEntry;
 
 const ABILITY_NAME: &str = "get_entity_context";
@@ -64,6 +64,7 @@ pub async fn get_entity_context(
         )
         .await
         .map_err(|error| hard_error("entity context claim read failed", error))?;
+    let claims = filter_claims_for_actor(ctx.actor, claims);
     let entries = claims
         .iter()
         .map(entry_for_claim)
@@ -164,18 +165,36 @@ fn provenance_config(ctx: &AbilityContext<'_>, schema_version: u32) -> Provenanc
     config
 }
 
-fn provenance_actor(actor: crate::abilities::Actor) -> crate::abilities::provenance::Actor {
+fn filter_claims_for_actor(actor: Actor, claims: Vec<IntelligenceClaim>) -> Vec<IntelligenceClaim> {
+    if actor == Actor::Agent {
+        claims
+            .into_iter()
+            .filter(agent_can_read_claim)
+            .collect::<Vec<_>>()
+    } else {
+        claims
+    }
+}
+
+fn agent_can_read_claim(claim: &IntelligenceClaim) -> bool {
+    matches!(
+        claim.sensitivity,
+        ClaimSensitivity::Public | ClaimSensitivity::Internal
+    )
+}
+
+fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
     match actor {
-        crate::abilities::Actor::User => crate::abilities::provenance::Actor::User,
-        crate::abilities::Actor::Agent => crate::abilities::provenance::Actor::Agent {
+        Actor::User => crate::abilities::provenance::Actor::User,
+        Actor::Agent => crate::abilities::provenance::Actor::Agent {
             name: "agent".to_string(),
             version: "unknown".to_string(),
         },
-        crate::abilities::Actor::Admin => crate::abilities::provenance::Actor::Human {
+        Actor::Admin => crate::abilities::provenance::Actor::Human {
             role: "admin".to_string(),
             id: "admin".to_string(),
         },
-        crate::abilities::Actor::System => crate::abilities::provenance::Actor::System {
+        Actor::System => crate::abilities::provenance::Actor::System {
             component: "dailyos".to_string(),
         },
     }

@@ -206,19 +206,35 @@ async fn build_meeting_brief_from_context(
         ));
     }
 
+    let prompt_allowed_subjects = meeting_scope_source_subjects(&context);
     let mut composed_children = Vec::new();
     for entity_context in &context.entity_contexts {
+        let depth = context_depth(input.depth);
         let child = get_entity_context(
             ctx,
             GetEntityContextInput {
                 schema_version: 1,
                 entity_type: entity_context.subject.kind.clone(),
                 entity_id: entity_context.subject.id.clone(),
-                depth: context_depth(input.depth),
+                depth: depth.clone(),
             },
         )
         .await?;
         let (entries, provenance) = child.into_parts();
+        let entry_claims = ctx
+            .services()
+            .read_entity_context_claims(
+                entity_context.subject.kind.clone(),
+                entity_context.subject.id.clone(),
+                context_depth_levels(input.depth),
+            )
+            .await
+            .map_err(|error| AbilityError {
+                kind: AbilityErrorKind::HardError("entity_context_claim_read".into()),
+                message: error,
+            })?;
+        let entries =
+            filter_prompt_entity_entries(entries, &entry_claims, &prompt_allowed_subjects);
         composed_children.push(ComposedEntityContext {
             subject: entity_context.subject.clone(),
             entries,
@@ -354,6 +370,34 @@ impl<'a> PromptContext<'a> {
                 .collect(),
         }
     }
+}
+
+fn filter_prompt_entity_entries(
+    entries: Vec<EntityContextEntry>,
+    claims: &[IntelligenceClaim],
+    allowed_subjects: &BTreeSet<String>,
+) -> Vec<EntityContextEntry> {
+    let sensitivity_by_id: BTreeMap<&str, &ClaimSensitivity> = claims
+        .iter()
+        .map(|claim| (claim.id.as_str(), &claim.sensitivity))
+        .collect();
+
+    entries
+        .into_iter()
+        .filter(|entry| {
+            let subject = BriefSubjectRef {
+                kind: entry.entity_type.clone(),
+                id: entry.entity_id.clone(),
+            };
+            if !allowed_subjects.contains(&subject.key()) {
+                return false;
+            }
+
+            sensitivity_by_id
+                .get(entry.id.as_str())
+                .is_some_and(|sensitivity| prompt_input_sensitivity_allowed(sensitivity))
+        })
+        .collect()
 }
 
 impl MeetingBriefContext {
@@ -1433,6 +1477,21 @@ fn context_depth(depth: u8) -> ContextDepth {
     }
 }
 
+fn context_depth_levels(depth: u8) -> usize {
+    match depth {
+        0 | 1 => 1,
+        2 => 2,
+        _ => 3,
+    }
+}
+
+fn prompt_input_sensitivity_allowed(sensitivity: &ClaimSensitivity) -> bool {
+    matches!(
+        sensitivity,
+        ClaimSensitivity::Public | ClaimSensitivity::Internal
+    )
+}
+
 fn config_for(
     ctx: &AbilityContext<'_>,
     ability_name: &str,
@@ -1545,7 +1604,7 @@ fn temporal_scope_name(scope: &TemporalScope) -> &'static str {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
+    use std::sync::{Arc, Mutex};
 
     use async_trait::async_trait;
     use chrono::TimeZone;
@@ -1566,15 +1625,34 @@ mod tests {
 
     struct StaticProvider {
         completion: String,
+        prompt: Mutex<Option<PromptInput>>,
+    }
+
+    impl StaticProvider {
+        fn new(completion: String) -> Self {
+            Self {
+                completion,
+                prompt: Mutex::new(None),
+            }
+        }
+
+        fn captured_prompt(&self) -> PromptInput {
+            self.prompt
+                .lock()
+                .expect("prompt capture mutex")
+                .clone()
+                .expect("provider captured a prompt")
+        }
     }
 
     #[async_trait]
     impl IntelligenceProvider for StaticProvider {
         async fn complete(
             &self,
-            _prompt: PromptInput,
+            prompt: PromptInput,
             _tier: ModelTier,
         ) -> Result<Completion, ProviderError> {
+            *self.prompt.lock().expect("prompt capture mutex") = Some(prompt);
             Ok(Completion {
                 text: self.completion.clone(),
                 fingerprint_metadata: FingerprintMetadata {
@@ -1598,6 +1676,55 @@ mod tests {
     #[derive(Clone)]
     struct FixtureEntityContextClaimReader {
         claims: Vec<IntelligenceClaim>,
+        related_subjects: BTreeMap<String, Vec<BriefSubjectRef>>,
+    }
+
+    impl FixtureEntityContextClaimReader {
+        fn new(claims: Vec<IntelligenceClaim>) -> Self {
+            Self {
+                claims,
+                related_subjects: BTreeMap::new(),
+            }
+        }
+
+        fn with_related_subjects(
+            claims: Vec<IntelligenceClaim>,
+            related_subjects: BTreeMap<String, Vec<BriefSubjectRef>>,
+        ) -> Self {
+            Self {
+                claims,
+                related_subjects,
+            }
+        }
+
+        fn subjects_within_depth(
+            &self,
+            entity_type: &str,
+            entity_id: &str,
+            depth: usize,
+        ) -> BTreeSet<String> {
+            let mut allowed = BTreeSet::new();
+            let mut queue = vec![(
+                BriefSubjectRef {
+                    kind: entity_type.to_string(),
+                    id: entity_id.to_string(),
+                },
+                1usize,
+            )];
+
+            while let Some((subject, level)) = queue.pop() {
+                if !allowed.insert(subject.key()) || level >= depth {
+                    continue;
+                }
+                if let Some(related) = self.related_subjects.get(&subject.key()) {
+                    for related_subject in related {
+                        queue.push((related_subject.clone(), level + 1));
+                    }
+                }
+            }
+
+            allowed
+        }
     }
 
     impl EntityContextClaimReadHandle for FixtureEntityContextClaimReader {
@@ -1605,9 +1732,10 @@ mod tests {
             &'a self,
             entity_type: String,
             entity_id: String,
-            _depth: usize,
+            depth: usize,
         ) -> EntityContextClaimReadFuture<'a> {
             Box::pin(async move {
+                let subjects = self.subjects_within_depth(&entity_type, &entity_id, depth);
                 Ok(self
                     .claims
                     .iter()
@@ -1615,9 +1743,7 @@ mod tests {
                         claim.claim_state == ClaimState::Active
                             && claim.surfacing_state == SurfacingState::Active
                             && brief_subject_from_claim(claim)
-                                .map(|subject| {
-                                    subject.kind == entity_type && subject.id == entity_id
-                                })
+                                .map(|subject| subjects.contains(&subject.key()))
                                 .unwrap_or(false)
                     })
                     .cloned()
@@ -1661,16 +1787,28 @@ mod tests {
             Self {
                 clock: FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap()),
                 rng: SeedableRng::new(219),
-                provider: Arc::new(StaticProvider {
-                    completion: completion.to_string(),
-                }),
-                claim_reader: Arc::new(FixtureEntityContextClaimReader { claims: Vec::new() }),
+                provider: Arc::new(StaticProvider::new(completion.to_string())),
+                claim_reader: Arc::new(FixtureEntityContextClaimReader::new(Vec::new())),
                 meeting_context_reader: Arc::new(FixturePrepareMeetingContextReader { snapshot }),
             }
         }
 
         fn with_claims(mut self, claims: Vec<IntelligenceClaim>) -> Self {
-            self.claim_reader = Arc::new(FixtureEntityContextClaimReader { claims });
+            self.claim_reader = Arc::new(FixtureEntityContextClaimReader::with_related_subjects(
+                claims,
+                self.claim_reader.related_subjects.clone(),
+            ));
+            self
+        }
+
+        fn with_related_subjects(
+            mut self,
+            related_subjects: BTreeMap<String, Vec<BriefSubjectRef>>,
+        ) -> Self {
+            self.claim_reader = Arc::new(FixtureEntityContextClaimReader::with_related_subjects(
+                self.claim_reader.claims.clone(),
+                related_subjects,
+            ));
             self
         }
 
@@ -1691,6 +1829,10 @@ mod tests {
                 None,
             );
             build_meeting_brief(&ctx, input).await
+        }
+
+        fn captured_prompt(&self) -> PromptInput {
+            self.provider.captured_prompt()
         }
 
         async fn run_erased_as_agent(
@@ -1899,6 +2041,142 @@ mod tests {
             .to_rfc3339();
 
         assert_eq!(child_source_asof, "2026-04-28T12:00:00+00:00");
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_filters_hierarchy_only_adjacent_entity_context_from_prompt_input() {
+        let target_text = "Target Example account wants launch readiness by Friday.";
+        let adjacent_text = "Adjacent Example account has an unrelated infrastructure escalation.";
+        let target_claim = fixture_claim(
+            "claim-target-account",
+            "account",
+            "acct-target",
+            target_text,
+            "2026-05-05T15:30:00Z",
+            Some("2026-05-05T15:30:00Z"),
+        );
+        let adjacent_claim = fixture_claim(
+            "claim-adjacent-account",
+            "account",
+            "acct-adjacent",
+            adjacent_text,
+            "2026-05-05T15:31:00Z",
+            Some("2026-05-05T15:31:00Z"),
+        );
+        let snapshot = fixture_meeting_snapshot(
+            "meeting-hierarchy",
+            vec![PrepareMeetingAttendeeSnapshot {
+                name: "Tara Example".into(),
+                email: Some("tara@example.com".into()),
+                person_id: Some("person-tara".into()),
+                account_id: Some("acct-target".into()),
+                domain: Some("example.com".into()),
+            }],
+            vec![PrepareMeetingSubjectSnapshot {
+                kind: "account".into(),
+                id: "acct-target".into(),
+                display_name: "Target Example".into(),
+            }],
+            vec![target_claim.clone()],
+        );
+        let mut related_subjects = BTreeMap::new();
+        related_subjects.insert(
+            BriefSubjectRef::account("acct-target").key(),
+            vec![BriefSubjectRef::account("acct-adjacent")],
+        );
+        let harness = Harness::new(empty_completion())
+            .with_claims(vec![target_claim, adjacent_claim])
+            .with_related_subjects(related_subjects)
+            .with_meeting_context(snapshot);
+
+        harness
+            .run(public_input("meeting-hierarchy"))
+            .await
+            .unwrap();
+        let entity_contexts = captured_entity_contexts(&harness);
+        let serialized =
+            serde_json::to_string(&entity_contexts).expect("entity contexts serialize");
+
+        assert!(
+            serialized.contains(target_text),
+            "in-scope target context must remain in PromptContext.entity_contexts"
+        );
+        assert!(
+            !serialized.contains(adjacent_text),
+            "hierarchy-only adjacent context must not cross the provider boundary"
+        );
+        assert!(
+            !serialized.contains("acct-adjacent"),
+            "adjacent account subject must be absent from PromptContext.entity_contexts"
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_filters_private_entity_context_sensitivity_from_prompt_input() {
+        let internal_text = "Target Example internal launch context is allowed.";
+        let confidential_text = "Target Example confidential renewal risk is private.";
+        let user_only_text = "Target Example user-only note is private.";
+        let internal_claim = fixture_claim_with_sensitivity(
+            "claim-target-internal",
+            "account",
+            "acct-target",
+            internal_text,
+            ClaimSensitivity::Internal,
+        );
+        let confidential_claim = fixture_claim_with_sensitivity(
+            "claim-target-confidential",
+            "account",
+            "acct-target",
+            confidential_text,
+            ClaimSensitivity::Confidential,
+        );
+        let user_only_claim = fixture_claim_with_sensitivity(
+            "claim-target-user-only",
+            "account",
+            "acct-target",
+            user_only_text,
+            ClaimSensitivity::UserOnly,
+        );
+        let snapshot = fixture_meeting_snapshot(
+            "meeting-sensitivity",
+            vec![PrepareMeetingAttendeeSnapshot {
+                name: "Tara Example".into(),
+                email: Some("tara@example.com".into()),
+                person_id: Some("person-tara".into()),
+                account_id: Some("acct-target".into()),
+                domain: Some("example.com".into()),
+            }],
+            vec![PrepareMeetingSubjectSnapshot {
+                kind: "account".into(),
+                id: "acct-target".into(),
+                display_name: "Target Example".into(),
+            }],
+            vec![internal_claim.clone()],
+        );
+        let harness = Harness::new(empty_completion())
+            .with_claims(vec![internal_claim, confidential_claim, user_only_claim])
+            .with_meeting_context(snapshot);
+
+        harness
+            .run(public_input("meeting-sensitivity"))
+            .await
+            .unwrap();
+        let entity_contexts = captured_entity_contexts(&harness);
+        let serialized =
+            serde_json::to_string(&entity_contexts).expect("entity contexts serialize");
+
+        assert!(
+            serialized.contains(internal_text),
+            "internal context should remain available to the prompt"
+        );
+        assert!(
+            !serialized.contains(confidential_text),
+            "confidential context must not cross the provider boundary"
+        );
+        assert!(
+            !serialized.contains(user_only_text),
+            "user-only context must not cross the provider boundary"
+        );
     }
 
     #[tokio::test]
@@ -2215,6 +2493,26 @@ mod tests {
         }
     }
 
+    fn empty_completion() -> serde_json::Value {
+        serde_json::json!({
+            "topics": [],
+            "attendee_context": [],
+            "open_loops": [],
+            "what_changed_since_last": [],
+            "suggested_outcomes": []
+        })
+    }
+
+    fn captured_entity_contexts(harness: &Harness) -> serde_json::Value {
+        harness
+            .captured_prompt()
+            .canonical_json_inputs
+            .expect("prepare_meeting prompt has canonical JSON inputs")
+            .pointer("/context/entity_contexts")
+            .cloned()
+            .expect("canonical PromptContext.entity_contexts exists")
+    }
+
     fn attendee_for_account(name: &str, email: &str, account_id: &str) -> MeetingAttendee {
         MeetingAttendee {
             name: name.into(),
@@ -2301,5 +2599,24 @@ mod tests {
             verification_reason: None,
             needs_user_decision_at: None,
         }
+    }
+
+    fn fixture_claim_with_sensitivity(
+        id: &str,
+        entity_type: &str,
+        entity_id: &str,
+        text: &str,
+        sensitivity: ClaimSensitivity,
+    ) -> IntelligenceClaim {
+        let mut claim = fixture_claim(
+            id,
+            entity_type,
+            entity_id,
+            text,
+            "2026-05-05T15:30:00Z",
+            Some("2026-05-05T15:30:00Z"),
+        );
+        claim.sensitivity = sensitivity;
+        claim
     }
 }
