@@ -4,9 +4,10 @@ mod harness;
 use harness::{
     bundle_helpers::{
         actual_post_action_state, assert_eval_bridge_stub_invoked, assert_fixture_metadata,
-        assert_state_string_array_contains, assert_string_array_contains_all, bundle_fixture_path,
+        assert_state_string_array_contains, assert_string_array_contains_all,
         assert_trust_score_at_least, assert_trust_score_below, assert_warning_present,
-        claim_by_id, expected_post_action_state, run_with_synthetic_enrich_stub,
+        bundle_fixture_path, claim_by_id, expected_post_action_state,
+        run_with_synthetic_enrich_stub,
     },
     load_fixture,
 };

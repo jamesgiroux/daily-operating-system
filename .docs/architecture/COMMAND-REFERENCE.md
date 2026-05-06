@@ -2,11 +2,17 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-05-04 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~398 commands
-**Source files:** 11
+**Auto-generated:** 2026-05-05 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~397 commands
+**Source files:** 12
 
 ---
+
+## `commands/abilities`
+
+| Command | Async | Parameters |
+|---------|-------|------------|
+| `invoke_ability` | yes | ability_name, input_json, dry_run, confirmation |
 
 ## `commands/accounts_content_chat`
 
@@ -133,8 +139,6 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `dev_run_today_full` | — | — |
 | `dev_run_today_mechanical` | — | — |
 | `dev_set_auth_override` | — | claude_mode, google_mode |
-| `devtools_audit_cross_contamination` | yes | — |
-| `devtools_clear_contaminated_enrichment` | yes | account_id |
 | `export_all_data` | yes | dest_path |
 | `get_ai_usage_diagnostics` | yes | — |
 | `get_app_state` | yes | — |

@@ -10,8 +10,13 @@ mod dos383_external_replay_lint_test {
     }
 
     fn run_lint(current_dir: &Path) -> (bool, String, String) {
-        let script = repo_root().join("src-tauri/scripts/check_no_live_external_clients_in_eval.sh");
-        assert!(script.is_file(), "missing lint script: {}", script.display());
+        let script =
+            repo_root().join("src-tauri/scripts/check_no_live_external_clients_in_eval.sh");
+        assert!(
+            script.is_file(),
+            "missing lint script: {}",
+            script.display()
+        );
 
         let output = Command::new("bash")
             .arg(script)
@@ -52,7 +57,10 @@ mod dos383_external_replay_lint_test {
             !ok,
             "lint must fail for a live HTTP client constructor. stdout: {stdout}, stderr: {stderr}"
         );
-        assert!(stdout.contains("bad_live_external_client.rs"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("bad_live_external_client.rs"),
+            "stdout: {stdout}"
+        );
         assert!(stdout.contains("reqwest"), "stdout: {stdout}");
     }
 
@@ -78,7 +86,10 @@ mod dos383_external_replay_lint_test {
             "lint must fail for aliased reqwest constructors. stdout: {stdout}, stderr: {stderr}"
         );
         assert!(stdout.contains("bad_alias.rs"), "stdout: {stdout}");
-        assert!(stdout.contains("external HTTP client constructor"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("external HTTP client constructor"),
+            "stdout: {stdout}"
+        );
     }
 
     #[test]
@@ -103,7 +114,10 @@ mod dos383_external_replay_lint_test {
             "lint must fail for replay wrapper constructors outside services::context. stdout: {stdout}, stderr: {stderr}"
         );
         assert!(stdout.contains("bad_replay_wrapper.rs"), "stdout: {stdout}");
-        assert!(stdout.contains("ReplayGmailClient::new"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("ReplayGmailClient::new"),
+            "stdout: {stdout}"
+        );
     }
 
     #[test]
@@ -116,11 +130,7 @@ mod dos383_external_replay_lint_test {
             "new(); }\n",
         ]
         .concat();
-        write_synthetic_rust_file(
-            tmp.path(),
-            "src-tauri/tests/bad_legacy_allow.rs",
-            &contents,
-        );
+        write_synthetic_rust_file(tmp.path(), "src-tauri/tests/bad_legacy_allow.rs", &contents);
 
         let (ok, stdout, stderr) = run_lint(tmp.path());
 
@@ -154,7 +164,10 @@ mod dos383_external_replay_lint_test {
             "lint must fail for raw async socket imports in ability code. stdout: {stdout}, stderr: {stderr}"
         );
         assert!(stdout.contains("bad_socket.rs"), "stdout: {stdout}");
-        assert!(stdout.contains("tokio::net imported raw socket"), "stdout: {stdout}");
+        assert!(
+            stdout.contains("tokio::net imported raw socket"),
+            "stdout: {stdout}"
+        );
     }
 
     #[test]

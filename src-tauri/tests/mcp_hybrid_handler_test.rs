@@ -1,10 +1,7 @@
 #[test]
 fn mcp_hybrid_handler_source_preserves_inherent_tool_box_only() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/mcp/main.rs"
-    ))
-    .expect("read mcp main source");
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/mcp/main.rs"))
+        .expect("read mcp main source");
 
     assert!(source.contains("#[tool(tool_box)]\nimpl DailyOsMcp"));
     assert!(!source.contains("#[tool(tool_box)]\nimpl ServerHandler for DailyOsMcp"));
@@ -13,11 +10,8 @@ fn mcp_hybrid_handler_source_preserves_inherent_tool_box_only() {
 
 #[test]
 fn mcp_hybrid_handler_source_routes_static_before_ability_bridge() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/mcp/main.rs"
-    ))
-    .expect("read mcp main source");
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/mcp/main.rs"))
+        .expect("read mcp main source");
 
     let static_route = source.find("McpToolRoute::Static").unwrap();
     let ability_route = source.find("invoke_mcp_ability_tool").unwrap();
@@ -29,11 +23,8 @@ fn mcp_hybrid_handler_source_routes_static_before_ability_bridge() {
 
 #[test]
 fn mcp_hybrid_call_tool_routes_get_provenance_to_bridge_session_scoped_lookup() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/mcp/main.rs"
-    ))
-    .expect("read mcp main source");
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/mcp/main.rs"))
+        .expect("read mcp main source");
 
     assert!(source.contains("McpToolRoute::GetProvenance"));
     assert!(source.contains("invoke_mcp_get_provenance_tool("));
@@ -44,25 +35,20 @@ fn mcp_hybrid_call_tool_routes_get_provenance_to_bridge_session_scoped_lookup() 
 
 #[test]
 fn mcp_hybrid_call_tool_routes_request_confirmation_to_bridge() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/mcp/main.rs"
-    ))
-    .expect("read mcp main source");
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/mcp/main.rs"))
+        .expect("read mcp main source");
 
     assert!(source.contains("McpToolRoute::RequestConfirmation"));
     assert!(source.contains("invoke_mcp_request_confirmation_tool("));
     assert!(source.contains("request_confirmation_args(&request)"));
-    assert!(source.contains(".request_confirmation_tool(session_id, &ability, &input_json, tauri_bridge)"));
+    assert!(source
+        .contains(".request_confirmation_tool(session_id, &ability, &input_json, tauri_bridge)"));
 }
 
 #[test]
 fn mcp_hybrid_list_tools_includes_get_provenance_with_additional_properties_false_schema() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/mcp/main.rs"
-    ))
-    .expect("read mcp main source");
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/mcp/main.rs"))
+        .expect("read mcp main source");
 
     assert!(source.contains("tools.push(get_provenance_tool_descriptor())"));
     assert!(source.contains("Tool::new(\n        \"get_provenance\""));
@@ -74,11 +60,8 @@ fn mcp_hybrid_list_tools_includes_get_provenance_with_additional_properties_fals
 
 #[test]
 fn mcp_hybrid_list_tools_includes_request_confirmation_with_closed_schema() {
-    let source = std::fs::read_to_string(concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/src/mcp/main.rs"
-    ))
-    .expect("read mcp main source");
+    let source = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/mcp/main.rs"))
+        .expect("read mcp main source");
 
     assert!(source.contains("tools.push(request_confirmation_tool_descriptor())"));
     assert!(source.contains("Tool::new(\n        \"request_confirmation\""));
@@ -183,9 +166,11 @@ mod mcp_open_schema_runtime {
 
     #[tokio::test]
     async fn mcp_call_tool_open_schema_descriptor_yields_byte_equal_unavailable() {
-        let unknown =
-            error_bytes_for(AbilityRegistry::from_descriptors_checked(vec![]).unwrap(), "unknown")
-                .await;
+        let unknown = error_bytes_for(
+            AbilityRegistry::from_descriptors_checked(vec![]).unwrap(),
+            "unknown",
+        )
+        .await;
         let open_schema = error_bytes_for(
             AbilityRegistry::from_descriptors_unchecked_for_runtime_validation_tests(vec![
                 descriptor("open_runtime_schema"),

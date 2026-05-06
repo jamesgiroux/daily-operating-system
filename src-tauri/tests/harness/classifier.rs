@@ -1,7 +1,7 @@
 #![allow(dead_code)]
 
-use serde_json::{Map, Value};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use sha2::{Digest, Sha256};
 
 use super::runner::RunResult;
@@ -115,7 +115,8 @@ pub fn current_fingerprint_for_run(
             .or_else(|| Some(fixture.metadata.prompt_fingerprint_baseline.clone())),
         completion_text_hash: diagnostic_field(&result.diagnostics, "completion_text_hash")
             .or_else(|| {
-                diagnostic_field(&result.diagnostics, "completion_text").map(|text| hash_text(&text))
+                diagnostic_field(&result.diagnostics, "completion_text")
+                    .map(|text| hash_text(&text))
             }),
     }
 }

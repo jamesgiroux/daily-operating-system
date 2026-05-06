@@ -1,0 +1,20 @@
+{
+  "bundle": 1,
+  "scenario_id": "bundle1-entity-context-parity",
+  "invariant": "The get_entity_context Read ability returns only user-authored context entries for the requested entity and preserves the legacy created_at descending order without merging sibling account context.",
+  "expected_render_policy": "show",
+  "surfaces_exercised": ["get-entity-context-read"],
+  "source_lifecycle_refs": ["ctx-target-newer", "ctx-target-older"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-06",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-1-get-entity-context-v1",
+  "trust_factors_dominant": ["subject_fit", "source_time"],
+  "pass_fail_definition": "PASS = output is byte-identical to the legacy entity_context_entries projection for dos287-target-example and excludes the adjacent account row. FAIL = foreign account notes appear, order changes, or source_asof/user provenance is missing.",
+  "fixture_design_notes": {
+    "state_sql": "Copies the DOS-287 bundle-1 reproduction seed pattern with parent, target, adjacent account, domains, stakeholders, and synthetic entity_context_entries. The adjacent account has a newer row that must not bleed into the target account read.",
+    "provider_replay": "Empty because DOS-218 is a pure Read ability and makes no provider calls.",
+    "external_replay": "Empty because DOS-218 is a pure Read ability and makes no external service calls.",
+    "expected_output": "The two target account context entries ordered by created_at DESC, matching the legacy command DTO shape.",
+    "expected_provenance": "Direct user source attribution for each returned row, direct subject attribution on every leaf, empty thread_ids, and no composed children."
+  }
+}

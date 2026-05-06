@@ -1,0 +1,11 @@
+{
+  "ability_name": "prepare_meeting",
+  "scenario_id": "bundle13-prepare-meeting-subject-bleed",
+  "expected": {
+    "category": "transform",
+    "allowed_subject": { "kind": "account", "id": "dos287-target-example" },
+    "blocked_subject": { "kind": "account", "id": "dos287-adjacent-example" },
+    "warnings": ["SubjectAmbiguous"],
+    "source_asof_reachable": ["2026-05-05T09:30:00Z", "2026-05-05T10:30:00Z"]
+  }
+}

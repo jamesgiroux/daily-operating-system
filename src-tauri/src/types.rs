@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 
 use chrono::{DateTime, Utc};
+use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::error::WorkflowError;
@@ -2460,7 +2461,7 @@ pub struct UserContextEntry {
 }
 
 /// A structured context entry attached to an entity (account, person, or project).
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityContextEntry {
     pub id: String,

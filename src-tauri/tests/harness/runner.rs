@@ -16,8 +16,10 @@ use dailyos_lib::bridges::eval::{EvalAbilityBridge, EvalAbilityDeps, EvalFixture
 use dailyos_lib::intelligence::provider::{Completion, FingerprintMetadata, ReplayProvider};
 #[cfg(feature = "harness-hermetic")]
 use dailyos_lib::services::context::validate_harness_hermetic_db_path;
+use dailyos_lib::services::context::{EntityContextReadFuture, EntityContextReadHandle};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::external_replay::JsonExternalReplayFixture;
+use dailyos_lib::types::EntityContextEntry;
 use rusqlite::types::ValueRef;
 use rusqlite::Connection;
 use serde::Deserialize;
@@ -89,8 +91,7 @@ pub fn run_harness_suite(
         let score = score_fixture(category, &fixture, &run_result);
         let baseline = baseline_fingerprint_for_fixture(&fixture);
         let current = current_fingerprint_for_run(&fixture, &run_result);
-        let regression =
-            RegressionClassifier.classify(&baseline, &current, &score.diffs);
+        let regression = RegressionClassifier.classify(&baseline, &current, &score.diffs);
 
         report.add_fixture_summary(FixtureRunSummary {
             fixture_dir: fixture.fixture_dir.display().to_string(),
@@ -106,7 +107,9 @@ pub fn run_harness_suite(
     }
 
     report.finalize();
-    report.write_json(output_path).map_err(RunError::ReportWrite)?;
+    report
+        .write_json(output_path)
+        .map_err(RunError::ReportWrite)?;
 
     Ok(report)
 }
@@ -117,12 +120,16 @@ pub(crate) struct PreparedFixtureRun {
     pub rng: SeedableRng,
     pub external_clients: ExternalClients,
     pub provider: ReplayProvider,
+    pub entity_context_rows: Vec<EntityContextEntry>,
 }
 
 impl PreparedFixtureRun {
     pub fn service_context(&self) -> ServiceContext<'_> {
         ServiceContext::new_evaluate(&self.clock, &self.rng, &self.external_clients)
             .with_actor("eval_fixture")
+            .with_entity_context_reader(Arc::new(FixtureEntityContextReader {
+                rows: self.entity_context_rows.clone(),
+            }))
     }
 }
 
@@ -177,12 +184,38 @@ struct PreparedFixtureServices<'run> {
     clock: &'run FixedClock,
     rng: &'run SeedableRng,
     external_clients: &'run ExternalClients,
+    entity_context_rows: &'run [EntityContextEntry],
 }
 
 impl EvalFixtureServices for PreparedFixtureServices<'_> {
     fn service_context(&self) -> ServiceContext<'_> {
         ServiceContext::new_evaluate(self.clock, self.rng, self.external_clients)
             .with_actor("eval_fixture")
+            .with_entity_context_reader(Arc::new(FixtureEntityContextReader {
+                rows: self.entity_context_rows.to_vec(),
+            }))
+    }
+}
+
+#[derive(Clone)]
+struct FixtureEntityContextReader {
+    rows: Vec<EntityContextEntry>,
+}
+
+impl EntityContextReadHandle for FixtureEntityContextReader {
+    fn read_entity_context_entries<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+    ) -> EntityContextReadFuture<'a> {
+        Box::pin(async move {
+            Ok(self
+                .rows
+                .iter()
+                .filter(|row| row.entity_type == entity_type && row.entity_id == entity_id)
+                .cloned()
+                .collect())
+        })
     }
 }
 
@@ -196,6 +229,7 @@ pub fn run_fixture(deps: &RunnerDeps, fixture: &EvalFixture) -> Result<RunResult
         clock: &prepared.clock,
         rng: &prepared.rng,
         external_clients: &prepared.external_clients,
+        entity_context_rows: &prepared.entity_context_rows,
     };
     let eval_bridge = EvalAbilityBridge::new(
         deps.registry.as_ref(),
@@ -232,6 +266,7 @@ pub(crate) fn prepare_fixture_for_run(
     let conn = open_harness_connection()?;
     conn.execute_batch(&fixture.state_sql)
         .map_err(|error| RunError::StateSqlFailed(error.to_string()))?;
+    let entity_context_rows = capture_entity_context_rows(&conn)?;
 
     let clock = FixedClock::new(fixture.clock);
     let rng = SeedableRng::new(fixture.seed);
@@ -250,6 +285,7 @@ pub(crate) fn prepare_fixture_for_run(
         rng,
         external_clients,
         provider,
+        entity_context_rows,
     })
 }
 
@@ -364,10 +400,9 @@ struct RawInvocationEnvelope {
 }
 
 fn parse_invocation_envelope(value: &Value) -> Result<InvocationEnvelope, RunError> {
-    let raw: RawInvocationEnvelope =
-        serde_json::from_value(value.clone()).map_err(|error| {
-            RunError::InvocationFailed(format!("invalid inputs.json invocation envelope: {error}"))
-        })?;
+    let raw: RawInvocationEnvelope = serde_json::from_value(value.clone()).map_err(|error| {
+        RunError::InvocationFailed(format!("invalid inputs.json invocation envelope: {error}"))
+    })?;
     if raw.ability_name.trim().is_empty() {
         return Err(RunError::InvocationFailed(
             "inputs.json ability_name must be non-empty".to_string(),
@@ -449,6 +484,35 @@ fn capture_post_action_state(conn: &Connection) -> Result<Value, RunError> {
     }
 
     Ok(serde_json::json!({ "post_action_state": post_action_state }))
+}
+
+fn capture_entity_context_rows(conn: &Connection) -> Result<Vec<EntityContextEntry>, RunError> {
+    if !table_exists(conn, "entity_context_entries")? {
+        return Ok(Vec::new());
+    }
+
+    let mut statement = conn
+        .prepare(
+            "SELECT id, entity_type, entity_id, title, content, created_at, updated_at
+             FROM entity_context_entries
+             ORDER BY created_at DESC",
+        )
+        .map_err(sql_error)?;
+    let rows = statement
+        .query_map([], |row| {
+            Ok(EntityContextEntry {
+                id: row.get("id")?,
+                entity_type: row.get("entity_type")?,
+                entity_id: row.get("entity_id")?,
+                title: row.get("title")?,
+                content: row.get("content")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
+            })
+        })
+        .map_err(sql_error)?;
+
+    rows.collect::<Result<Vec<_>, _>>().map_err(sql_error)
 }
 
 fn capture_intelligence_claims(conn: &Connection) -> Result<Vec<Value>, RunError> {

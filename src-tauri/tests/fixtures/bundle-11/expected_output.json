@@ -1,0 +1,23 @@
+{
+  "meeting": {
+    "id": "meeting-b11-stale-glean",
+    "title": "Stale Account Check-in",
+    "starts_at": "2026-05-08T13:00:00Z",
+    "ends_at": "2026-05-08T13:30:00Z",
+    "attendees": [
+      {
+        "name": "Taylor Tran",
+        "email": "taylor@stale-account.example.com",
+        "person_id": "person-b11-taylor",
+        "account_id": "acct-b11-stale",
+        "domain": "stale-account.example.com"
+      }
+    ]
+  },
+  "topics": [],
+  "attendee_context": [],
+  "open_loops": [],
+  "what_changed_since_last": [],
+  "suggested_outcomes": [],
+  "schema_version": 1
+}

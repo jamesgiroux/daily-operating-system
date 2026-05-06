@@ -29,10 +29,7 @@ fn sensitivity_class_leak_fixture_blocks_confidential_claim_on_public_surface() 
     let public_claim = claim_by_id(expected_state, "claim-test-public-stated-goal");
     let confidential_claim = claim_by_id(expected_state, "claim-test-private-stakeholder-concern");
     assert_eq!(public_claim["sensitivity"], "public");
-    assert_eq!(
-        public_claim["metadata"]["public_render_allowed"],
-        true
-    );
+    assert_eq!(public_claim["metadata"]["public_render_allowed"], true);
     assert_eq!(confidential_claim["sensitivity"], "confidential");
     assert_eq!(
         confidential_claim["metadata"]["public_render_allowed"],
@@ -57,7 +54,9 @@ fn sensitivity_class_leak_fixture_blocks_confidential_claim_on_public_surface() 
         "public"
     );
     assert_eq!(
-        sensitivity["factor"]["value"].as_f64().expect("factor value"),
+        sensitivity["factor"]["value"]
+            .as_f64()
+            .expect("factor value"),
         0.0
     );
     assert_eq!(

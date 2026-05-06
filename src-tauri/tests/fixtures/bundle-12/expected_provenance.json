@@ -1,0 +1,10 @@
+{
+  "ability_name": "prepare_meeting",
+  "scenario_id": "bundle12-prepare-meeting-revoked-source",
+  "expected": {
+    "category": "transform",
+    "warnings": ["SourceRevoked"],
+    "masked_source": "src-b12-revoked",
+    "rendered_fact_count": 0
+  }
+}

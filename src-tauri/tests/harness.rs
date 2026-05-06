@@ -39,7 +39,7 @@ fn loader_loads_all_committed_bundles() {
     let discovered: Vec<FixtureRef> =
         discover_fixtures(&[root.as_path()]).expect("fixture discovery succeeds");
 
-    let expected = BTreeSet::from([2_u32, 3, 4, 6, 7, 8]);
+    let expected = BTreeSet::from([1_u32, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13]);
     let mut seen = BTreeSet::new();
 
     for fixture_ref in discovered {
@@ -56,6 +56,54 @@ fn loader_loads_all_committed_bundles() {
     }
 
     assert_eq!(seen, expected);
+}
+
+#[test]
+fn prepare_meeting_eval_fixtures_cover_required_scenarios() {
+    let root = fixture_root();
+    let discovered: Vec<FixtureRef> =
+        discover_fixtures(&[root.as_path()]).expect("fixture discovery succeeds");
+    let mut prepare_bundles = BTreeSet::new();
+    let mut scenario_tags = BTreeSet::new();
+
+    for fixture_ref in discovered {
+        let fixture = load_fixture(&fixture_ref.fixture_dir).expect("fixture loads");
+        if fixture
+            .metadata
+            .surfaces_exercised
+            .iter()
+            .any(|surface| surface == "prepare_meeting")
+        {
+            prepare_bundles.insert(fixture.metadata.bundle.expect("bundle metadata is set"));
+            scenario_tags.extend(fixture.metadata.surfaces_exercised);
+        }
+    }
+
+    assert!(
+        prepare_bundles.len() >= 5,
+        "at least five prepare_meeting fixtures are committed"
+    );
+    assert!(
+        prepare_bundles.contains(&5),
+        "bundle-5 parity fixture exists"
+    );
+    assert!(scenario_tags.contains("first-meeting-person"));
+    assert!(scenario_tags.contains("recurring-one-on-one"));
+    assert!(scenario_tags.contains("multi-attendee-known-account"));
+    assert!(scenario_tags.contains("stale-glean"));
+    assert!(scenario_tags.contains("revoked-source"));
+    assert!(scenario_tags.contains("subject-bleed-gate"));
+}
+
+#[test]
+fn prepare_meeting_bundle5_parity_fixture_is_byte_identical() {
+    let bundle_dir = fixture_root().join("bundle-5");
+    let legacy = fs::read_to_string(bundle_dir.join("legacy_output.json"))
+        .expect("bundle-5 legacy output fixture reads");
+    let expected = fs::read_to_string(bundle_dir.join("expected_output.json"))
+        .expect("bundle-5 expected output fixture reads");
+
+    assert_eq!(legacy, expected);
 }
 
 #[test]

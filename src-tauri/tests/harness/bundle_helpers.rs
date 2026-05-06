@@ -115,7 +115,9 @@ pub fn claim_by_id<'a>(state: &'a Value, claim_id: &str) -> &'a Value {
 }
 
 pub fn optional_claim_by_id<'a>(state: &'a Value, claim_id: &str) -> Option<&'a Value> {
-    claims(state).iter().find(|claim| claim["claim_id"] == claim_id)
+    claims(state)
+        .iter()
+        .find(|claim| claim["claim_id"] == claim_id)
 }
 
 pub fn trust_score(claim: &Value) -> f64 {
@@ -182,7 +184,11 @@ pub fn confidence_evidence_for<'a>(
 pub fn warning_present(provenance: &Value, warning_name: &str) -> bool {
     provenance["provenance"]["warnings"]
         .as_array()
-        .is_some_and(|warnings| warnings.iter().any(|warning| warning.get(warning_name).is_some()))
+        .is_some_and(|warnings| {
+            warnings
+                .iter()
+                .any(|warning| warning.get(warning_name).is_some())
+        })
 }
 
 pub fn assert_warning_present(fixture: &EvalFixture, warning_name: &str) {

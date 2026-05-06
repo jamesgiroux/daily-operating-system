@@ -1,0 +1,20 @@
+[
+  {
+    "id": "ctx-target-newer",
+    "entityType": "account",
+    "entityId": "dos287-target-example",
+    "title": "Renewal owner",
+    "content": "Alice Adams owns the Target Example rollout and renewal plan.",
+    "createdAt": "2026-05-05T09:00:00Z",
+    "updatedAt": "2026-05-05T10:00:00Z"
+  },
+  {
+    "id": "ctx-target-older",
+    "entityType": "account",
+    "entityId": "dos287-target-example",
+    "title": "Boundary note",
+    "content": "Do not merge Adjacent Example infrastructure risks into Target Example.",
+    "createdAt": "2026-05-04T09:00:00Z",
+    "updatedAt": "2026-05-04T10:00:00Z"
+  }
+]

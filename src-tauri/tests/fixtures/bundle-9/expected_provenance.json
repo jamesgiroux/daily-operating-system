@@ -1,0 +1,10 @@
+{
+  "ability_name": "prepare_meeting",
+  "scenario_id": "bundle9-prepare-meeting-recurring-one-on-one",
+  "expected": {
+    "category": "transform",
+    "composes": ["get_entity_context"],
+    "source_asof_reachable": ["2026-05-04T14:15:00Z"],
+    "temporal_scope": ["state"]
+  }
+}

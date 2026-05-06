@@ -1,0 +1,49 @@
+{
+  "ability_name": "prepare_meeting",
+  "input_json": {
+    "schema_version": 1,
+    "meeting_id": "meeting-b9-recurring-one-on-one",
+    "depth": 2,
+    "include_open_loops": true,
+    "context": {
+      "meeting": {
+        "id": "meeting-b9-recurring-one-on-one",
+        "title": "Weekly 1:1 with Morgan Malik",
+        "starts_at": "2026-05-06T16:00:00Z",
+        "ends_at": "2026-05-06T16:30:00Z",
+        "attendees": [
+          {
+            "name": "Morgan Malik",
+            "email": "morgan@one-on-one.example.com",
+            "person_id": "person-b9-morgan",
+            "domain": "one-on-one.example.com"
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "id": "src-b9-prior-action",
+          "subject": { "kind": "person", "id": "person-b9-morgan" },
+          "claim_type": "open_loop",
+          "text": "Morgan Malik still needs the rollout checklist from last week's one-on-one.",
+          "source_asof": "2026-05-04T14:15:00Z",
+          "observed_at": "2026-05-04T14:15:00Z",
+          "data_source": "user",
+          "lifecycle": "active",
+          "confidence": 0.9,
+          "temporal_scope": "state",
+          "sensitivity": "internal"
+        }
+      ],
+      "entity_contexts": [
+        {
+          "subject": { "kind": "person", "id": "person-b9-morgan" },
+          "display_name": "Morgan Malik"
+        }
+      ]
+    }
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

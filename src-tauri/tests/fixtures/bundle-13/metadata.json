@@ -1,0 +1,20 @@
+{
+  "bundle": 13,
+  "scenario_id": "bundle13-prepare-meeting-subject-bleed-from-bundle1",
+  "invariant": "The prepare_meeting subject-bleed gate uses the DOS-218 bundle-1 target and adjacent account pattern so claims about Account B cannot be attributed to Account A.",
+  "expected_render_policy": "show-with-warnings",
+  "surfaces_exercised": ["prepare_meeting", "subject-bleed-gate", "bundle-1-parity-pattern"],
+  "source_lifecycle_refs": ["src-b13-target", "src-b13-adjacent", "ctx-b13-target", "ctx-b13-adjacent"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-06",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-13-prepare-meeting-prompt-v1",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "fixture-provider-replay-not-pinned",
+  "trust_factors_dominant": ["subject_fit", "composition", "source_time"],
+  "pass_fail_definition": "PASS = Account B source evidence is either omitted or rendered only as SubjectAmbiguous warning and never as a fact attributed to Account A. FAIL = src-b13-adjacent can produce an account fact for dos287-target-example.",
+  "fixture_design_notes": {
+    "state_sql": "Copies the DOS-218 bundle-1 target/adjacent account boundary with separate entity_context_entries rows for each account.",
+    "expected_output": "Only Target Example content is allowed in rendered MeetingBrief sections.",
+    "expected_provenance": "Records the allowed and blocked subjects plus source_asof values that must remain reachable through direct and composed provenance."
+  }
+}

@@ -2,6 +2,8 @@
 
 pub mod claims;
 pub mod feedback;
+pub mod get_entity_context;
+pub mod prepare_meeting;
 pub mod provenance;
 pub mod registry;
 pub mod threads;

@@ -10,7 +10,11 @@ fn repo_root() -> PathBuf {
 
 fn run_lint(current_dir: &Path) -> (bool, String, String) {
     let script = repo_root().join("src-tauri/scripts/check_ability_surface_drift.sh");
-    assert!(script.is_file(), "missing lint script: {}", script.display());
+    assert!(
+        script.is_file(),
+        "missing lint script: {}",
+        script.display()
+    );
     let output = Command::new("bash")
         .arg(script)
         .current_dir(current_dir)

@@ -583,9 +583,7 @@ fn get_provenance_tool_descriptor() -> Tool {
     );
     schema.insert(
         "required".to_string(),
-        serde_json::Value::Array(vec![serde_json::Value::String(
-            "invocation_id".to_string(),
-        )]),
+        serde_json::Value::Array(vec![serde_json::Value::String("invocation_id".to_string())]),
     );
 
     Tool::new(
@@ -757,9 +755,8 @@ fn get_provenance_invocation_id(request: &CallToolRequestParam) -> Result<Invoca
         ));
     };
 
-    InvocationId::parse(invocation_id).map_err(|_| {
-        mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable)
-    })
+    InvocationId::parse(invocation_id)
+        .map_err(|_| mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable))
 }
 
 pub fn mcp_error_from_bridge_surface_error(error: BridgeSurfaceError) -> McpError {
@@ -810,11 +807,7 @@ impl ServerHandler for DailyOsMcp {
                 Self::tool_box().call(context).await
             }
             McpToolRoute::GetProvenance => {
-                invoke_mcp_get_provenance_tool(
-                    &self.ability_bridge,
-                    self.mcp_session_id,
-                    request,
-                )
+                invoke_mcp_get_provenance_tool(&self.ability_bridge, self.mcp_session_id, request)
             }
             McpToolRoute::RequestConfirmation => {
                 invoke_mcp_request_confirmation_tool(
@@ -1137,16 +1130,12 @@ mod tests {
 
     #[test]
     fn mcp_serverhandler_tool_box_macro_removed_and_manual_routes_static_or_ability() {
-        let source = std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/src/mcp/main.rs"
-        ))
-        .unwrap();
+        let source =
+            std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/mcp/main.rs"))
+                .unwrap();
         let inherent_tool_box = concat!("#[tool", "(tool_box)]\nimpl DailyOsMcp");
-        let serverhandler_tool_box = concat!(
-            "#[tool",
-            "(tool_box)]\nimpl ServerHandler for DailyOsMcp"
-        );
+        let serverhandler_tool_box =
+            concat!("#[tool", "(tool_box)]\nimpl ServerHandler for DailyOsMcp");
 
         assert!(source.contains(inherent_tool_box));
         assert!(!source.contains(serverhandler_tool_box));
@@ -1197,7 +1186,7 @@ mod tests {
             ability_tool
                 .input_schema
                 .get("additionalProperties")
-            .and_then(serde_json::Value::as_bool),
+                .and_then(serde_json::Value::as_bool),
             Some(false)
         );
 
@@ -1221,7 +1210,7 @@ mod tests {
             request_confirmation_tool
                 .input_schema
                 .get("additionalProperties")
-            .and_then(serde_json::Value::as_bool),
+                .and_then(serde_json::Value::as_bool),
             Some(false)
         );
     }
@@ -1268,8 +1257,14 @@ mod tests {
 
     #[test]
     fn mcp_call_tool_routes_to_inherent_for_static_name() {
-        assert_eq!(mcp_route_for_tool_name("get_briefing"), McpToolRoute::Static);
-        assert_eq!(mcp_route_for_tool_name("query_entity"), McpToolRoute::Static);
+        assert_eq!(
+            mcp_route_for_tool_name("get_briefing"),
+            McpToolRoute::Static
+        );
+        assert_eq!(
+            mcp_route_for_tool_name("query_entity"),
+            McpToolRoute::Static
+        );
         assert_eq!(
             mcp_route_for_tool_name("get_provenance"),
             McpToolRoute::GetProvenance
@@ -1342,10 +1337,13 @@ mod tests {
         .unwrap();
         assert_eq!(ability_result.is_error, Some(false));
 
-        let second_call =
-            invoke_mcp_ability_tool(&ability_bridge, session_id, request("agent_confirmed", input))
-                .await
-                .unwrap_err();
+        let second_call = invoke_mcp_ability_tool(
+            &ability_bridge,
+            session_id,
+            request("agent_confirmed", input),
+        )
+        .await
+        .unwrap_err();
         let expected = mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable);
         assert_eq!(
             serde_json::to_vec(&second_call).unwrap(),
@@ -1472,7 +1470,10 @@ mod tests {
         )
         .unwrap();
         assert_eq!(cross_session.is_error, Some(true));
-        assert_eq!(tool_result_json(&cross_session), json!("ability_unavailable"));
+        assert_eq!(
+            tool_result_json(&cross_session),
+            json!("ability_unavailable")
+        );
     }
 
     #[tokio::test]

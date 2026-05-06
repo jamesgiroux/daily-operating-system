@@ -2637,14 +2637,14 @@ mod tests {
         )
         .expect("seed v139 intelligence_claims shape");
         conn.execute(
-            "INSERT INTO intelligence_claims \
+            "INSERT INTO intelligence_claims /* dos7-allowed: migration test seeds v139-shape row to verify migration 140 preserves data */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json) \
              VALUES ('c-pre', 'a-pre', 'fact', 'pre-migration', 'd-pre', 'system', 'manual', '2026-05-05', '{}')",
             [],
         )
         .expect("legal v139 row should insert");
         let rejected = conn.execute(
-            "INSERT INTO intelligence_claims \
+            "INSERT INTO intelligence_claims /* dos7-allowed: migration test asserts pre-migration schema rejects post-migration value */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json, temporal_scope) \
              VALUES ('c-closed-pre', 'a-pre', 'fact', 'should fail', 'd-closed', 'system', 'manual', '2026-05-05', '{}', 'closed')",
             [],
@@ -2668,7 +2668,7 @@ mod tests {
         assert_eq!(preserved, "pre-migration");
 
         conn.execute(
-            "INSERT INTO intelligence_claims \
+            "INSERT INTO intelligence_claims /* dos7-allowed: migration test asserts post-migration schema accepts new temporal_scope value */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json, temporal_scope) \
              VALUES ('c-closed-post', 'a-post', 'fact', 'closed window', 'd-closed-post', 'system', 'manual', '2026-05-05', '{}', 'closed')",
             [],

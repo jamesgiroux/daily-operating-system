@@ -1,0 +1,23 @@
+{
+  "meeting": {
+    "id": "meeting-b12-revoked-source",
+    "title": "Revoked Source Review",
+    "starts_at": "2026-05-09T15:00:00Z",
+    "ends_at": "2026-05-09T15:30:00Z",
+    "attendees": [
+      {
+        "name": "Casey Chen",
+        "email": "casey@revoked-source.example.com",
+        "person_id": "person-b12-casey",
+        "account_id": "acct-b12-revoked",
+        "domain": "revoked-source.example.com"
+      }
+    ]
+  },
+  "topics": [],
+  "attendee_context": [],
+  "open_loops": [],
+  "what_changed_since_last": [],
+  "suggested_outcomes": [],
+  "schema_version": 1
+}

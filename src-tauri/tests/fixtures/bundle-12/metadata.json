@@ -1,0 +1,19 @@
+{
+  "bundle": 12,
+  "scenario_id": "bundle12-prepare-meeting-revoked-source",
+  "invariant": "Revoked source evidence is masked end-to-end and cannot render as a meeting-prep fact.",
+  "expected_render_policy": "show-with-warnings",
+  "surfaces_exercised": ["prepare_meeting", "revoked-source"],
+  "source_lifecycle_refs": ["src-b12-revoked", "ctx-b12-revoked-account"],
+  "anonymization_cert": "all-generic-placeholders-2026-05-06",
+  "retention_policy": "permanent",
+  "prompt_fingerprint_baseline": "bundle-12-prepare-meeting-prompt-v1",
+  "prompt_template_version": "1.0.0",
+  "completion_text_hash": "fixture-provider-replay-not-pinned",
+  "trust_factors_dominant": ["source_lifecycle", "subject_fit"],
+  "pass_fail_definition": "PASS = revoked source evidence produces a masked provenance warning and no rendered MeetingBrief fact. FAIL = revoked evidence appears in topics, attendee_context, open_loops, change markers, or suggested outcomes.",
+  "fixture_design_notes": {
+    "state_sql": "Seeds child account context while the direct evidence source is revoked.",
+    "expected_output": "All brief content sections are empty because the only direct evidence is revoked."
+  }
+}

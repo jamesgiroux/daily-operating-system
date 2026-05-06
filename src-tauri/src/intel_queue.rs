@@ -5528,7 +5528,7 @@ mod tests {
         let db = trust_test_db();
         db.conn_ref()
             .execute_batch(
-                "INSERT INTO intelligence_claims \
+                "INSERT INTO intelligence_claims /* dos7-allowed: in-module unit test seeds rows for source_reliability_corroborators read path */ \
                  (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json) \
                  VALUES \
                  ('c-target', '{\"kind\":\"account\",\"id\":\"a-1\"}', 'fact', 'target', 'd-target', 'system', 'manual', '2026-05-01', '{}'), \
@@ -5537,12 +5537,12 @@ mod tests {
             .expect("seed claims");
         db.conn_ref()
             .execute_batch(
-                "INSERT INTO claim_corroborations (id, claim_id, data_source, strength) \
+                "INSERT INTO claim_corroborations /* dos7-allowed: paired test seed for source_reliability_corroborators read path */ (id, claim_id, data_source, strength) \
                  VALUES ('cor-1', 'c-target', 'glean', 0.7), \
                         ('cor-2', 'c-target', 'manual', 0.4); \
-                 INSERT INTO claim_contradictions (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at) \
+                 INSERT INTO claim_contradictions /* dos7-allowed: paired test seed for source_reliability_corroborators read path */ (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at) \
                  VALUES ('con-1', 'c-target', 'c-other', 'contradiction', '2026-05-01'); \
-                 INSERT INTO claim_contradictions (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at, reconciled_at, winner_claim_id) \
+                 INSERT INTO claim_contradictions /* dos7-allowed: paired test seed for source_reliability_corroborators read path */ (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at, reconciled_at, winner_claim_id) \
                  VALUES ('con-2', 'c-target', 'c-other', 'contradiction', '2026-05-01', '2026-05-02', 'c-target');",
             )
             .expect("seed corroborators + contradictions");

@@ -26,8 +26,10 @@ fn corroboration_spam_fixture_keeps_weak_cluster_below_trust_boundary() {
     assert_eval_bridge_stub_invoked(&result);
 
     let expected_state = expected_post_action_state(&fixture);
-    let false_provider_claim =
-        claim_by_id(expected_state, "claim-test-provider-primary-contact-unknown");
+    let false_provider_claim = claim_by_id(
+        expected_state,
+        "claim-test-provider-primary-contact-unknown",
+    );
     assert_trust_score_below(false_provider_claim, 0.5);
     assert_eq!(false_provider_claim["trust_band"], "needs_verification");
     assert_eq!(false_provider_claim["verification_state"], "contested");
@@ -39,8 +41,14 @@ fn corroboration_spam_fixture_keeps_weak_cluster_below_trust_boundary() {
         false_provider_claim["metadata"]["contradicts_claim_id"],
         "claim-test-strong-primary-contact-jane"
     );
-    assert_eq!(false_provider_claim["metadata"]["raw_corroborator_count"], 5);
-    assert_eq!(false_provider_claim["metadata"]["naive_count_rejected"], true);
+    assert_eq!(
+        false_provider_claim["metadata"]["raw_corroborator_count"],
+        5
+    );
+    assert_eq!(
+        false_provider_claim["metadata"]["naive_count_rejected"],
+        true
+    );
     assert_string_array_contains_all(
         &false_provider_claim["dominant_penalties"],
         &["source_reliability", "contradiction_penalty"],

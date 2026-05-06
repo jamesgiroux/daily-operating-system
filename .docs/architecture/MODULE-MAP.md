@@ -3,7 +3,7 @@
 > Rust backend module inventory (`src-tauri/src/`).
 > **Auto-generated:** 2026-05-05 by `.docs/generators/gen-module-map.sh`
 
-**314** Rust files across **38** module directories and **44** standalone modules.
+**319** Rust files across **41** module directories and **44** standalone modules.
 
 ---
 
@@ -11,7 +11,7 @@
 
 | Module | Files | Public Fns | Purpose |
 |--------|-------|-----------|---------|
-| `abilities/` | 18 | 19 | Ability substrate modules. |
+| `abilities/` | 23 | 28 | Ability substrate modules. |
 | `bin/` | 2 | 0 | Binary entry points |
 | `bridges/` | 6 | 1 | Runtime-surface bridges for ability invocation. |
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment. |
@@ -39,7 +39,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0. |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (–). |
-| `services/` | 60 | 346 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 60 | 348 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 21 | 55 | Universal signal bus for intelligence fusion (ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -74,12 +74,12 @@
 | `focus_prioritization.rs` | 398 | 1 | — |
 | `google.rs` | 1729 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 493 | 12 | — |
-| `intel_queue.rs` | 5005 | 8 | Background intelligence enrichment queue. |
+| `intel_queue.rs` | 5690 | 8 | Background intelligence enrichment queue. |
 | `json_loader.rs` | 426 | 1 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics. |
 | `lib.rs` | 1066 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 1044 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 2524 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 2678 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 258 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 639 | 7 | People workspace file I/O (ADR-0047). |
@@ -90,7 +90,7 @@
 | `scheduler.rs` | 758 | 2 | Scheduler for cron-based workflow execution |
 | `state.rs` | 1903 | 13 | AppState — DB, PTY, config |
 | `task_supervisor.rs` | 34 | 1 | — |
-| `types.rs` | 3376 | 7 | Shared type definitions |
+| `types.rs` | 3377 | 7 | Shared type definitions |
 | `util.rs` | 1267 | 28 | — |
 | `watcher.rs` | 879 | 1 | File watcher for _inbox/ directory |
 

@@ -25,8 +25,7 @@ mod dos383_external_replay_integration_test {
     }
 
     fn fixture_with_glean_account_facts() -> JsonExternalReplayFixture {
-        let key =
-            GleanClientHandle::request_key_for_fetch_account_facts(ACCOUNT_ID, AUTH_SCOPE_ID);
+        let key = GleanClientHandle::request_key_for_fetch_account_facts(ACCOUNT_ID, AUTH_SCOPE_ID);
         let body = br#"{"account_id":"acme.example.com","facts":["example account fact","example renewal fact"]}"#;
         let body_base64 = base64::engine::general_purpose::STANDARD.encode(body);
 
@@ -120,7 +119,8 @@ mod dos383_external_replay_integration_test {
     }
 
     #[test]
-    fn harness_service_context_new_evaluate_default_constructs_replay_context_with_no_fixture_required() {
+    fn harness_service_context_new_evaluate_default_constructs_replay_context_with_no_fixture_required(
+    ) {
         let clock = fixture_clock();
         let rng = fixture_rng();
 

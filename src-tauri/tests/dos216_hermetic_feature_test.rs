@@ -29,7 +29,9 @@ fn harness_hermetic_runner_rejects_non_fixture_db_path_under_feature() {
             panic!("non-fixture DB path should fail under harness-hermetic");
         };
         assert!(
-            error.to_string().contains("harness hermetic invariant failed"),
+            error
+                .to_string()
+                .contains("harness hermetic invariant failed"),
             "unexpected error: {error}"
         );
     }

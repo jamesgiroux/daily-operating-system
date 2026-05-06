@@ -48,8 +48,14 @@ pub struct PublishScorer;
 impl CategoryScorer for ReadScorer {
     fn score(&self, expected: &ExpectedArtifacts, actual: &RunResult) -> ScoreResult {
         let mut diffs = diff_output(&expected.output, &actual.actual_output);
-        diffs.extend(diff_expected_provenance(expected, &actual.actual_provenance));
-        diffs.extend(diff_expected_state(expected.state.as_ref(), actual.actual_state.as_ref()));
+        diffs.extend(diff_expected_provenance(
+            expected,
+            &actual.actual_provenance,
+        ));
+        diffs.extend(diff_expected_state(
+            expected.state.as_ref(),
+            actual.actual_state.as_ref(),
+        ));
 
         ScoreResult {
             category: AbilityCategory::Read,
@@ -63,8 +69,14 @@ impl CategoryScorer for ReadScorer {
 impl CategoryScorer for TransformScorer {
     fn score(&self, expected: &ExpectedArtifacts, actual: &RunResult) -> ScoreResult {
         let mut diffs = diff_output(&expected.output, &actual.actual_output);
-        diffs.extend(diff_expected_provenance(expected, &actual.actual_provenance));
-        diffs.extend(diff_expected_state(expected.state.as_ref(), actual.actual_state.as_ref()));
+        diffs.extend(diff_expected_provenance(
+            expected,
+            &actual.actual_provenance,
+        ));
+        diffs.extend(diff_expected_state(
+            expected.state.as_ref(),
+            actual.actual_state.as_ref(),
+        ));
 
         let match_counts = transform_match_counts(expected, actual);
         let continuous_score = match_counts.score();
@@ -80,12 +92,12 @@ impl CategoryScorer for TransformScorer {
 
 impl CategoryScorer for MaintenanceScorer {
     fn score(&self, expected: &ExpectedArtifacts, actual: &RunResult) -> ScoreResult {
-        let mut diffs = diff_output_field(
-            &expected.output,
-            &actual.actual_output,
-            "planned_mutations",
-        );
-        diffs.extend(diff_expected_provenance(expected, &actual.actual_provenance));
+        let mut diffs =
+            diff_output_field(&expected.output, &actual.actual_output, "planned_mutations");
+        diffs.extend(diff_expected_provenance(
+            expected,
+            &actual.actual_provenance,
+        ));
 
         ScoreResult {
             category: AbilityCategory::Maintenance,
@@ -99,7 +111,10 @@ impl CategoryScorer for MaintenanceScorer {
 impl CategoryScorer for PublishScorer {
     fn score(&self, expected: &ExpectedArtifacts, actual: &RunResult) -> ScoreResult {
         let mut diffs = diff_publish_output(&expected.output, &actual.actual_output);
-        diffs.extend(diff_expected_provenance(expected, &actual.actual_provenance));
+        diffs.extend(diff_expected_provenance(
+            expected,
+            &actual.actual_provenance,
+        ));
 
         ScoreResult {
             category: AbilityCategory::Publish,
@@ -221,7 +236,10 @@ impl MatchCounts {
 
 fn transform_match_counts(expected: &ExpectedArtifacts, actual: &RunResult) -> MatchCounts {
     let mut counts = match_counts(&expected.output, &actual.actual_output, "");
-    counts.add(match_expected_provenance(expected, &actual.actual_provenance));
+    counts.add(match_expected_provenance(
+        expected,
+        &actual.actual_provenance,
+    ));
     counts.add(match_expected_state(
         expected.state.as_ref(),
         actual.actual_state.as_ref(),
@@ -280,9 +298,7 @@ fn object_match_counts(
             (Some(expected), None) => {
                 MatchCounts::mismatch(leaf_count(expected, &child_path).max(1))
             }
-            (None, Some(actual)) => {
-                MatchCounts::mismatch(leaf_count(actual, &child_path).max(1))
-            }
+            (None, Some(actual)) => MatchCounts::mismatch(leaf_count(actual, &child_path).max(1)),
             (None, None) => MatchCounts::exact(0),
         };
         counts.add(child_counts);
@@ -331,9 +347,7 @@ fn leaf_count(value: &Value, path: &str) -> usize {
             .iter()
             .map(|(key, value)| leaf_count(value, &pointer_path(path, key)))
             .sum(),
-        Value::Array(values) if is_non_significant_array(path) => {
-            usize::from(!values.is_empty())
-        }
+        Value::Array(values) if is_non_significant_array(path) => usize::from(!values.is_empty()),
         Value::Array(values) => values
             .iter()
             .enumerate()

@@ -58,16 +58,32 @@ impl std::fmt::Display for FixtureLoadError {
                 write!(f, "missing required fixture file: {}", path.display())
             }
             Self::ReadFile { path, source } => {
-                write!(f, "failed to read fixture file {}: {source}", path.display())
+                write!(
+                    f,
+                    "failed to read fixture file {}: {source}",
+                    path.display()
+                )
             }
             Self::ParseJson { path, source } => {
-                write!(f, "failed to parse JSON fixture file {}: {source}", path.display())
+                write!(
+                    f,
+                    "failed to parse JSON fixture file {}: {source}",
+                    path.display()
+                )
             }
             Self::ParseClock { path, source } => {
-                write!(f, "failed to parse fixture clock {}: {source}", path.display())
+                write!(
+                    f,
+                    "failed to parse fixture clock {}: {source}",
+                    path.display()
+                )
             }
             Self::ParseSeed { path, source } => {
-                write!(f, "failed to parse fixture seed {}: {source}", path.display())
+                write!(
+                    f,
+                    "failed to parse fixture seed {}: {source}",
+                    path.display()
+                )
             }
         }
     }

@@ -1,0 +1,11 @@
+{
+  "ability_name": "prepare_meeting",
+  "scenario_id": "bundle10-prepare-meeting-multi-attendee-known-account",
+  "expected": {
+    "category": "transform",
+    "composes": ["get_entity_context"],
+    "subject": { "kind": "account", "id": "acct-b10-known" },
+    "source_asof_reachable": ["2026-05-05T11:20:00Z"],
+    "temporal_scope": ["state"]
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "ability_name": "prepare_meeting",
+  "input_json": {
+    "schema_version": 1,
+    "meeting_id": "meeting-b11-stale-glean",
+    "depth": 2,
+    "include_open_loops": true,
+    "context": {
+      "meeting": {
+        "id": "meeting-b11-stale-glean",
+        "title": "Stale Account Check-in",
+        "starts_at": "2026-05-08T13:00:00Z",
+        "ends_at": "2026-05-08T13:30:00Z",
+        "attendees": [
+          {
+            "name": "Taylor Tran",
+            "email": "taylor@stale-account.example.com",
+            "person_id": "person-b11-taylor",
+            "account_id": "acct-b11-stale",
+            "domain": "stale-account.example.com"
+          }
+        ]
+      },
+      "evidence": [
+        {
+          "id": "src-b11-stale-glean",
+          "subject": { "kind": "account", "id": "acct-b11-stale" },
+          "claim_type": "meeting_topic",
+          "text": "Stale Account Example may still be blocked by the 2025 implementation risk.",
+          "source_asof": "2025-03-01T10:00:00Z",
+          "observed_at": "2025-03-01T10:00:00Z",
+          "data_source": "glean",
+          "lifecycle": "active",
+          "confidence": 0.82,
+          "temporal_scope": "state",
+          "sensitivity": "internal"
+        }
+      ],
+      "entity_contexts": [
+        {
+          "subject": { "kind": "account", "id": "acct-b11-stale" },
+          "display_name": "Stale Account Example"
+        }
+      ]
+    }
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

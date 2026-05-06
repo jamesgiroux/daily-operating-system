@@ -1,0 +1,29 @@
+{
+  "meeting": {
+    "id": "meeting-b5-first-person",
+    "title": "Intro with Riley Rivera",
+    "starts_at": "2026-05-06T15:00:00Z",
+    "ends_at": "2026-05-06T15:30:00Z",
+    "attendees": [
+      {
+        "name": "Riley Rivera",
+        "email": "riley@first-person.example.com",
+        "person_id": "person-b5-riley",
+        "domain": "first-person.example.com"
+      }
+    ]
+  },
+  "topics": [],
+  "attendee_context": [
+    {
+      "attendee": "Riley Rivera",
+      "context": "Riley Rivera is new to the workspace and asked for a concise first-call agenda.",
+      "subject": { "kind": "person", "id": "person-b5-riley" },
+      "temporal_scope": "state"
+    }
+  ],
+  "open_loops": [],
+  "what_changed_since_last": [],
+  "suggested_outcomes": [],
+  "schema_version": 1
+}

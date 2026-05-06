@@ -80,10 +80,7 @@ impl HarnessReport {
         let mut bundle_status: BTreeMap<u32, bool> = BTreeMap::new();
         for summary in &self.fixtures {
             let category = category_label(summary.category).to_string();
-            let category_summary = self
-                .category_counts
-                .entry(category)
-                .or_default();
+            let category_summary = self.category_counts.entry(category).or_default();
             category_summary.total += 1;
             if summary.passed {
                 category_summary.passed += 1;
@@ -160,7 +157,12 @@ fn empty_category_counts() -> HashMap<String, CategorySummary> {
         AbilityCategory::Publish,
     ]
     .into_iter()
-    .map(|category| (category_label(category).to_string(), CategorySummary::default()))
+    .map(|category| {
+        (
+            category_label(category).to_string(),
+            CategorySummary::default(),
+        )
+    })
     .collect()
 }
 

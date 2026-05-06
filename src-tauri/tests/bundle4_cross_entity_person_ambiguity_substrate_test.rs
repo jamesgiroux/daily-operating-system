@@ -41,7 +41,10 @@ fn cross_entity_person_ambiguity_fixture_rejects_account_b_project_bleed() {
     assert_eq!(rejected_project_ids, ["proj-test-b-1", "proj-test-b-2"]);
 
     let rejected = &expected_state["rejected_claims"][0];
-    assert_eq!(rejected["claim_id"], "claim-test-provider-person-context-bleed");
+    assert_eq!(
+        rejected["claim_id"],
+        "claim-test-provider-person-context-bleed"
+    );
     assert_eq!(rejected["created"], false);
     assert_eq!(rejected["requested_entity_ref"]["id"], "acct-test-1");
     assert_eq!(rejected["origin_entity_ref"]["id"], "acct-test-2");
@@ -78,10 +81,8 @@ fn cross_entity_person_ambiguity_fixture_rejects_account_b_project_bleed() {
         "Account A should have zero claims pointing at Account B project subjects: {leaked_project_claims:?}"
     );
 
-    for (claim_id, expected_score) in [
-        ("claim-test-b-proj-1", 0.92),
-        ("claim-test-b-proj-2", 0.91),
-    ] {
+    for (claim_id, expected_score) in [("claim-test-b-proj-1", 0.92), ("claim-test-b-proj-2", 0.91)]
+    {
         let account_b_claim = claim_by_id(actual_state, claim_id);
         assert_eq!(account_b_claim["subject_ref"]["kind"], "project");
         assert_eq!(account_b_claim["metadata"]["account_id"], "acct-test-2");

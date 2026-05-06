@@ -1,0 +1,12 @@
+{
+  "ability_name": "get_entity_context",
+  "input_json": {
+    "schema_version": 1,
+    "entity_type": "account",
+    "entity_id": "dos287-target-example",
+    "depth": "standard"
+  },
+  "actor": "user",
+  "mode": "evaluate",
+  "dry_run": false
+}

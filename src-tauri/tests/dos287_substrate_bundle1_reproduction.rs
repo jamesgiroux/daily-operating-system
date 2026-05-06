@@ -1,8 +1,8 @@
 use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::provenance::SubjectRef;
 use dailyos_lib::abilities::trust::{
-    compile_trust, CrossEntityCoherenceInput, FreshnessContext, TrustComputation, TrustConfig,
-    SourceLifecycleState, TrustContext, TrustFactorInputs, UserFeedbackSignal,
+    compile_trust, CrossEntityCoherenceInput, FreshnessContext, SourceLifecycleState,
+    TrustComputation, TrustConfig, TrustContext, TrustFactorInputs, UserFeedbackSignal,
 };
 use dailyos_lib::db::claims::{
     ClaimSensitivity, ClaimState, ClaimVerificationState, IntelligenceClaim, SurfacingState,
@@ -281,7 +281,8 @@ fn cross_entity_coherence_factor(db: &ActionDb, claim_text: &str) -> f64 {
     assert!(
         portfolio_footprints
             .iter()
-            .any(|footprint| footprint.subject == SubjectRef::Account(FOREIGN_ACCOUNT_ID.to_string())),
+            .any(|footprint| footprint.subject
+                == SubjectRef::Account(FOREIGN_ACCOUNT_ID.to_string())),
         "bundle-1 fixture must include adjacent account in portfolio footprints"
     );
 

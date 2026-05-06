@@ -30,7 +30,10 @@ fn temporal_scope_violation_fixture_preserves_closed_scope_baseline_score() {
     assert_eq!(expected_claim["temporal_scope"], "closed");
     assert_eq!(expected_claim["trust_score_before"], 0.76);
     assert_eq!(expected_claim["trust_score_changed"], false);
-    assert_eq!(expected_claim["trust_score"], expected_claim["trust_score_before"]);
+    assert_eq!(
+        expected_claim["trust_score"],
+        expected_claim["trust_score_before"]
+    );
     assert_trust_score_at_least(expected_claim, 0.7);
     assert_eq!(
         expected_claim["metadata"]["post_closure_refresh_rejected"],

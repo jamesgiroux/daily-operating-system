@@ -27,6 +27,8 @@
 //! - DB plumbing — `with_transaction_async` lands in a follow-up phase
 //!   once the mutator migration starts.
 
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
 
 use chrono::{DateTime, Utc};
@@ -38,6 +40,7 @@ use crate::services::external_replay::{
     AuthScopeId, ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
     ReplayResponse, RequestKey,
 };
+use crate::types::EntityContextEntry;
 
 const DEFAULT_EVALUATE_AUTH_SCOPE_ID: &str = "test-tenant-default";
 
@@ -279,9 +282,9 @@ impl GleanClientHandle {
         account_id: &str,
     ) -> Result<GleanAccountFacts, ExternalClientError> {
         match &self.mode {
-            GleanClientMode::Live(_) => Err(ExternalClientError::LiveNotYetWired {
-                client: "glean",
-            }),
+            GleanClientMode::Live(_) => {
+                Err(ExternalClientError::LiveNotYetWired { client: "glean" })
+            }
             GleanClientMode::Replay(client) => client.fetch_account_facts(account_id),
         }
     }
@@ -387,9 +390,7 @@ impl SlackClientHandle {
         T: DeserializeOwned,
     {
         match &self.mode {
-            SlackClientMode::Live => Err(ExternalClientError::LiveNotYetWired {
-                client: "slack",
-            }),
+            SlackClientMode::Live => Err(ExternalClientError::LiveNotYetWired { client: "slack" }),
             SlackClientMode::Replay(client) => client.replay_json(method, url, body),
         }
     }
@@ -474,9 +475,7 @@ impl GmailClientHandle {
         T: DeserializeOwned,
     {
         match &self.mode {
-            GmailClientMode::Live => Err(ExternalClientError::LiveNotYetWired {
-                client: "gmail",
-            }),
+            GmailClientMode::Live => Err(ExternalClientError::LiveNotYetWired { client: "gmail" }),
             GmailClientMode::Replay(client) => client.replay_json(method, url, body),
         }
     }
@@ -555,9 +554,9 @@ impl SalesforceClientHandle {
         account_id: &str,
     ) -> Result<SalesforceAccountRecord, ExternalClientError> {
         match &self.mode {
-            SalesforceClientMode::Live => Err(ExternalClientError::LiveNotYetWired {
-                client: "redacted",
-            }),
+            SalesforceClientMode::Live => {
+                Err(ExternalClientError::LiveNotYetWired { client: "redacted" })
+            }
             SalesforceClientMode::Replay(client) => client.fetch_account(account_id),
         }
     }
@@ -640,9 +639,8 @@ fn decode_replay_json<T>(
 where
     T: DeserializeOwned,
 {
-    serde_json::from_slice(&response.body).map_err(|source| {
-        ExternalClientError::ReplayResponseDecode { client, source }
-    })
+    serde_json::from_slice(&response.body)
+        .map_err(|source| ExternalClientError::ReplayResponseDecode { client, source })
 }
 
 fn replay_request_key(
@@ -775,7 +773,21 @@ pub struct ServiceContext<'a> {
     pub rng: &'a dyn SeededRng,
     pub actor: &'a str,
     pub external: &'a ExternalClients,
+    entity_context_reader: Option<Arc<dyn EntityContextReadHandle>>,
     pub(in crate::services) tx: Option<TxHandle>,
+}
+
+pub type EntityContextReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<EntityContextEntry>, String>> + Send + 'a>>;
+
+/// Narrow read handle for DOS-218. This keeps the ability on `AbilityContext`
+/// while avoiding `AppState` or raw database handles in ability code.
+pub trait EntityContextReadHandle: Send + Sync {
+    fn read_entity_context_entries<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+    ) -> EntityContextReadFuture<'a>;
 }
 
 /// Transaction handle (private). Becomes a `TxCtx` for closures inside
@@ -847,6 +859,7 @@ impl<'a> ServiceContext<'a> {
             rng,
             actor: "system",
             external,
+            entity_context_reader: None,
             tx: None,
         }
     }
@@ -865,6 +878,7 @@ impl<'a> ServiceContext<'a> {
             rng,
             actor: "system",
             external,
+            entity_context_reader: None,
             tx: None,
         }
     }
@@ -894,6 +908,7 @@ impl<'a> ServiceContext<'a> {
             rng,
             actor: "system",
             external,
+            entity_context_reader: None,
             tx: None,
         }
     }
@@ -908,6 +923,31 @@ impl<'a> ServiceContext<'a> {
     pub fn with_actor(mut self, actor: &'a str) -> Self {
         self.actor = actor;
         self
+    }
+
+    pub fn with_entity_context_reader(mut self, reader: Arc<dyn EntityContextReadHandle>) -> Self {
+        self.entity_context_reader = Some(reader);
+        self
+    }
+
+    pub async fn read_entity_context_entries(
+        &self,
+        entity_type: String,
+        entity_id: String,
+    ) -> Result<Vec<EntityContextEntry>, String> {
+        if let Some(reader) = &self.entity_context_reader {
+            return reader
+                .read_entity_context_entries(entity_type, entity_id)
+                .await;
+        }
+
+        tokio::task::spawn_blocking(move || {
+            let db = crate::db::ActionDb::open()
+                .map_err(|error| format!("Database unavailable: {error}"))?;
+            read_entity_context_entries_from_db(&db, &entity_type, &entity_id)
+        })
+        .await
+        .map_err(|error| format!("Entity context read task failed: {error}"))?
     }
 
     /// Test-only `Live` constructor.
@@ -943,6 +983,61 @@ impl<'a> ServiceContext<'a> {
     }
 }
 
+impl EntityContextReadHandle for crate::db_service::PooledConnection {
+    fn read_entity_context_entries<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+    ) -> EntityContextReadFuture<'a> {
+        let reader = self.clone();
+        Box::pin(async move {
+            let entries = reader
+                .call(move |conn| {
+                    let db = crate::db::ActionDb::from_conn(conn);
+                    read_entity_context_entries_from_db(db, &entity_type, &entity_id)
+                        .map_err(rusqlite::Error::InvalidParameterName)
+                })
+                .await
+                .map_err(|error| format!("DB read error: {error}"))?;
+            Ok(entries)
+        })
+    }
+}
+
+fn read_entity_context_entries_from_db(
+    db: &crate::db::ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<Vec<EntityContextEntry>, String> {
+    let conn = db.conn_ref();
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, entity_type, entity_id, title, content, created_at, updated_at
+             FROM entity_context_entries
+             WHERE entity_type = ?1 AND entity_id = ?2
+             ORDER BY created_at DESC",
+        )
+        .map_err(|error| format!("Failed to prepare entity context query: {error}"))?;
+
+    let entries = stmt
+        .query_map(rusqlite::params![entity_type, entity_id], |row| {
+            Ok(EntityContextEntry {
+                id: row.get("id")?,
+                entity_type: row.get("entity_type")?,
+                entity_id: row.get("entity_id")?,
+                title: row.get("title")?,
+                content: row.get("content")?,
+                created_at: row.get("created_at")?,
+                updated_at: row.get("updated_at")?,
+            })
+        })
+        .map_err(|error| format!("Failed to query entity context entries: {error}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| format!("Failed to map entity context entries: {error}"))?;
+
+    Ok(entries)
+}
+
 fn default_evaluate_external_clients() -> &'static ExternalClients {
     static DEFAULT_CLIENTS: OnceLock<ExternalClients> = OnceLock::new();
 
@@ -956,7 +1051,10 @@ fn default_evaluate_external_clients() -> &'static ExternalClients {
         )
         .expect("empty default external replay fixture must load");
 
-        ExternalClients::from_replay(Arc::new(fixture), DEFAULT_EVALUATE_AUTH_SCOPE_ID.to_string())
+        ExternalClients::from_replay(
+            Arc::new(fixture),
+            DEFAULT_EVALUATE_AUTH_SCOPE_ID.to_string(),
+        )
     })
 }
 
@@ -1185,10 +1283,7 @@ mod tests {
 
         assert_eq!(ctx.mode, ExecutionMode::Evaluate);
         assert!(ctx.external.is_replay_mode());
-        assert!(matches!(
-            err,
-            ExternalClientError::ReplayFixtureMissing(_)
-        ));
+        assert!(matches!(err, ExternalClientError::ReplayFixtureMissing(_)));
     }
 
     #[test]
@@ -1252,11 +1347,7 @@ mod tests {
         let client = GmailClientHandle::default();
 
         let err = client
-            .replay_json::<serde_json::Value>(
-                "GET",
-                "https://gmail.example.com/api/messages",
-                b"",
-            )
+            .replay_json::<serde_json::Value>("GET", "https://gmail.example.com/api/messages", b"")
             .unwrap_err();
 
         assert_live_not_yet_wired(err, "gmail");
@@ -1283,10 +1374,7 @@ mod tests {
         );
         let clients = replay_external(fixture, "auth-scope-test-1");
 
-        let response = clients
-            .glean
-            .fetch_account_facts("acct-test-1")
-            .unwrap();
+        let response = clients.glean.fetch_account_facts("acct-test-1").unwrap();
 
         assert_eq!(
             response,
@@ -1353,8 +1441,7 @@ mod tests {
         let fixture = Arc::new(fixture);
         let scoped_clients =
             ExternalClients::from_replay(fixture.clone(), "auth-scope-test-1".to_string());
-        let other_clients =
-            ExternalClients::from_replay(fixture, "auth-scope-test-2".to_string());
+        let other_clients = ExternalClients::from_replay(fixture, "auth-scope-test-2".to_string());
 
         let scoped_response = scoped_clients
             .glean
