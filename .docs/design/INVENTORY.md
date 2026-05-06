@@ -79,7 +79,7 @@ the strict surface manifest until source routing exists.
 
 | Surface | File | Target route | JTBD | State | Reference | Spec | Notes |
 |---|---|---|---|---|---|---|---|
-| DailyBriefingDSpine | Proposed DailyBriefing redesign | `/` candidate | Explore the D-spine schedule-as-spine redesign using the current DailyBriefing reference foundation. | `proposed reference` | `briefing-d-spine.html` | `surfaces/DailyBriefingDSpine.md` | Built from `DayStrip`, `DayChart`, `MeetingSpineItem`, `InferredActionSelector`, and current DailyBriefing chrome. |
+| DailyBriefingRedesign | Proposed DailyBriefing redesign | `/` candidate | Explore the Daily Briefing redesign schedule-as-spine redesign using the current DailyBriefing reference foundation. | `proposed reference` | `briefing-redesign.html` | `surfaces/DailyBriefingRedesign.md` | Built from `DayStrip`, `DayChart`, `MeetingSpineItem`, `InferredActionSelector`, and current DailyBriefing chrome. |
 
 ## Full-screen non-route surfaces
 

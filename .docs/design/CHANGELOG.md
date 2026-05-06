@@ -109,7 +109,7 @@ Format:
 
 - **Tokens** (9 specs): `color`, `typography`, `spacing`, `motion`, `layout`, `radius`, `shadows`, `glass`, `z-index`. Color spec includes named surface/entity color aliases for account, project, person, action, and self.
 - **Primitives** (7 specs): `Pill` (canonical), `TrustBandBadge` (proposed, new per v1.4.0 substrate), `IntelligenceQualityBadge` (canonical, existing), `FreshnessIndicator` (proposed, new), `ProvenanceTag` (canonical, existing), `EntityChip` (canonical, post-DOS-357), `TypeBadge` (canonical).
-- **Patterns** (11 specs): `FolioBar`, `FloatingNavIsland` (dual-pill production component, the canonical local-nav pattern per D2), `AtmosphereLayer`, `MarginGrid`, `ChapterHeading` (5 chrome/layout); `Lead`, `DayChart`, `MeetingSpineItem`, `EntityPortraitCard`, `ThreadMark`, `AskAnythingDock` (6 D-spine briefing patterns).
+- **Patterns** (11 specs): `FolioBar`, `FloatingNavIsland` (dual-pill production component, the canonical local-nav pattern per D2), `AtmosphereLayer`, `MarginGrid`, `ChapterHeading` (5 chrome/layout); `Lead`, `DayChart`, `MeetingSpineItem`, `EntityPortraitCard`, `ThreadMark`, `AskAnythingDock` (6 Daily Briefing redesign briefing patterns).
 - **Surfaces** (1 spec): `DailyBriefing` — first canonical surface spec, documents chapter inventory for FloatingNavIsland adoption.
 - Tier README indexes for tokens, primitives, patterns, surfaces.
 - Production token reconciliation (DOS-357): `src/styles/design-tokens.css` regains entity color aliases; explicit entity-type-to-color maps in `meeting-entity-chips.tsx` + `email-entity-chip.tsx` migrated to use them (also fixes `--color-sky-larkspur` typo).
@@ -118,7 +118,7 @@ Format:
 
 - Wave 1 closes the v1.4.3 (Briefing) substrate prep. v1.4.3 implementation can begin against these specs.
 - Trust band CSS tokens (`--color-trust-{likely-current,use-with-caution,needs-verification}` plus `8`, `10`, `12`, `15` alpha aliases) are shipped in runtime CSS and documented in `tokens/color.md`.
-- Local-nav decision: `FloatingNavIsland` (production dual-pill) is canonical. `SectionTabbar` remains rejected per D2; `DayStrip` is now represented only as a proposed `DailyBriefingDSpine` exception pending v1.4.0 review.
+- Local-nav decision: `FloatingNavIsland` (production dual-pill) is canonical. `SectionTabbar` remains rejected per D2; `DayStrip` is now represented only as a proposed `DailyBriefingRedesign` exception pending v1.4.0 review.
 - 16 Linear issues (DOS-353 through DOS-361) track the remaining waves and cross-cutting work.
 
 ---

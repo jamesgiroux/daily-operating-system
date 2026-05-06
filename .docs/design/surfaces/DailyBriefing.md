@@ -48,7 +48,7 @@ Local pill renders these via `FloatingNavIsland`'s chapters contract; click smoo
 
 **No `DayStrip` in shipped DailyBriefing** — the current routed surface keeps
 `FloatingNavIsland` as the local-nav contract. The proposed
-`DailyBriefingDSpine` reference now carries `DayStrip` as an explicit v1.4.0
+`DailyBriefingRedesign` reference now carries `DayStrip` as an explicit v1.4.0
 candidate exception; it must not be treated as shipped until route cutover.
 
 ## Patterns consumed
@@ -73,7 +73,7 @@ Proposed only:
 ## Primitives consumed
 
 - `Pill` (status pills, prep states)
-- `IntelligenceQualityBadge` (per-meeting prep state — replacing the local `prep-state` chip from D-spine)
+- `IntelligenceQualityBadge` (per-meeting prep state — replacing the local `prep-state` chip from Daily Briefing redesign)
 - `EntityChip` (entity references inside content)
 - `HealthBadge`
 - `FolioRefreshButton`

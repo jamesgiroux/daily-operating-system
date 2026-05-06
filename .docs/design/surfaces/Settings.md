@@ -46,7 +46,7 @@ In reading order:
 
 Local pill renders these via FloatingNavIsland's chapters contract; click smooth-scrolls. Active chapter highlights via scroll-spy (IntersectionObserver, per mockup `app.jsx`).
 
-**No `SectionTabbar`** — D-spine and Settings mockups proposed a distinct numbered scroll-spy tab bar; rejected per D2. The numbered labels (`01 You / 02 Connectors / …`) live in the chapter labels, rendered by FloatingNavIsland's local pill.
+**No `SectionTabbar`** — Daily Briefing redesign and Settings mockups proposed a distinct numbered scroll-spy tab bar; rejected per D2. The numbered labels (`01 You / 02 Connectors / …`) live in the chapter labels, rendered by FloatingNavIsland's local pill.
 
 ## Patterns consumed
 

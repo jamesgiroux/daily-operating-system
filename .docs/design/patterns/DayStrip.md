@@ -12,12 +12,12 @@
 ## Job
 
 Provide day-to-day briefing navigation directly below `FolioBar`: previous day,
-current day, next day. In the D-spine direction, this is the proposed replacement
+current day, next day. In the Daily Briefing redesign direction, this is the proposed replacement
 for a separate Weekly Forecast surface.
 
 ## When to use it
 
-- DailyBriefing D-spine reference candidate.
+- DailyBriefing Daily Briefing redesign reference candidate.
 - DailyBriefing route only if the v1.4.0 redesign explicitly adopts day-scoped
   navigation.
 
@@ -39,9 +39,9 @@ for a separate Weekly Forecast surface.
 
 ## Source
 
-- **Mockup substrate:** `/Users/jamesgiroux/Downloads/dailyos-design-system 2/project/mockups/briefing/variations/D-spine.html`
+- **Mockup substrate:** `/Users/jamesgiroux/Downloads/dailyos-design-system 2/project/mockups/briefing/variations/Daily Briefing redesign.html`
 - **Reference styles:** `.docs/design/reference/_shared/styles/DayStrip.module.css`
 
 ## Surfaces that consume it
 
-- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
+- `DailyBriefingRedesign` proposed reference surface (`.docs/design/reference/surfaces/briefing-redesign.html`)

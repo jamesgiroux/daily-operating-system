@@ -18,7 +18,7 @@ The right-margin "Dynamic Island" navigation pattern. Two pills displayed simult
 
 The pills merge visually where they overlap (shared edge loses border-radius). The local pill aligns vertically so its top matches the active icon in the global pill (with overflow protection).
 
-This is the **canonical local-nav pattern for DailyOS** per design system D2 (synthesis). Surfaces that need in-page navigation provide `chapters`; they do not invent new local-nav patterns unless a surface spec explicitly marks a proposed exception, as `DailyBriefingDSpine` does for `DayStrip`.
+This is the **canonical local-nav pattern for DailyOS** per design system D2 (synthesis). Surfaces that need in-page navigation provide `chapters`; they do not invent new local-nav patterns unless a surface spec explicitly marks a proposed exception, as `DailyBriefingRedesign` does for `DayStrip`.
 
 ## When to use it
 
@@ -118,7 +118,7 @@ Every stable surface. Each surface defines its `chapters` inventory:
 
 ## Naming notes
 
-`FloatingNavIsland` — keeps the existing component name and the "Dynamic Island" metaphor. **Do not** rename to `Sidebar`, `Nav`, `LocalNav`, etc. The mockups invented `DayStrip` (D-spine) and `SectionTabbar` (Settings) as alternatives; `SectionTabbar` remains rejected, while `DayStrip` is now a proposed D-spine exception pending v1.4.0 review.
+`FloatingNavIsland` — keeps the existing component name and the "Dynamic Island" metaphor. **Do not** rename to `Sidebar`, `Nav`, `LocalNav`, etc. The mockups invented `DayStrip` (Daily Briefing redesign) and `SectionTabbar` (Settings) as alternatives; `SectionTabbar` remains rejected, while `DayStrip` is now a proposed Daily Briefing redesign exception pending v1.4.0 review.
 
 ## History
 

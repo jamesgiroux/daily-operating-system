@@ -15,7 +15,7 @@ Visual at-a-glance shape of the day — hour-tick row + colored horizontal bars 
 
 ## When to use it
 
-- No shipped routed use today. This remains a D-spine prototype pattern until the product approves the day-shape treatment.
+- No shipped routed use today. This remains a Daily Briefing redesign prototype pattern until the product approves the day-shape treatment.
 - Roadmap target: DailyBriefing's "Today" section above the meeting list, if the day-shape treatment lands.
 - Potential extension: any surface that needs to render a single-day timeline (e.g., a meeting's day-in-context view)
 
@@ -57,7 +57,7 @@ tooltip with meeting title and time.
 
 - **Default** — full chart with legend
 - **No legend** — chart only (compact)
-- **Configurable height** — `chartHeight` 70-160px (used by D-spine TweaksPanel)
+- **Configurable height** — `chartHeight` 70-160px (used by Daily Briefing redesign TweaksPanel)
 
 ## Tokens consumed
 
@@ -90,13 +90,13 @@ tooltip with meeting title and time.
 
 ## Source
 
-- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.day-chart`, `.day-bars`, `.bar`, `.now-line`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/Daily Briefing redesign.html` (`.day-chart`, `.day-bars`, `.bar`, `.now-line`)
 - **Code:** `src/components/dashboard/DayChart.tsx` exists, but is not consumed by shipped routed UI.
 
 ## Surfaces that consume it
 
-- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
-- No shipped routed consumers. D-spine prototype only until the redesign is approved.
+- `DailyBriefingRedesign` proposed reference surface (`.docs/design/reference/surfaces/briefing-redesign.html`)
+- No shipped routed consumers. Daily Briefing redesign prototype only until the redesign is approved.
 
 ## Naming notes
 
@@ -104,5 +104,5 @@ tooltip with meeting title and time.
 
 ## History
 
-- 2026-05-02 — Proposed pattern for v1.4.3 from D-spine mockup.
+- 2026-05-02 — Proposed pattern for v1.4.3 from Daily Briefing redesign mockup.
 - 2026-05-06 — Bar text moved to hover/focus tooltips to prevent clipped labels.

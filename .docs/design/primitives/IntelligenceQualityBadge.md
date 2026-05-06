@@ -17,7 +17,7 @@ Render the **completeness** of intelligence on an entity (account, project, pers
 
 - On entity surfaces (account / project / person hero, briefing meeting items) to signal how complete the AI-derived intelligence is
 - When the user benefits from knowing whether to expect a thin or rich set of signals
-- D-spine briefing's `prep-state` chip consumes this primitive (variants align)
+- Daily Briefing redesign briefing's `prep-state` chip consumes this primitive (variants align)
 
 ## When NOT to use it
 
@@ -32,7 +32,7 @@ Render the **completeness** of intelligence on an entity (account, project, pers
 - `quality="ready"` — sufficient data for normal-density output
 - `quality="fresh"` — recently enriched; full-density output
 
-D-spine adds two related labels that map to the same primitive:
+Daily Briefing redesign adds two related labels that map to the same primitive:
 - `building` ↔ `developing` (in-progress generation)
 - `captured` ↔ `ready` (raw input has been captured but not yet enriched)
 - `new` is an additional signal — first-touch; treat as `sparse` or new variant TBD
@@ -64,7 +64,7 @@ Quality dot color (per `_shared/primitives.css`):
 - **Code:** `src/components/entity/IntelligenceQualityBadge.tsx`
 - **CSS:** `src/components/entity/IntelligenceQualityBadge.module.css`
 - **Mockup substrate (compatible):** `_shared/primitives.css` `.hero-eyebrow .quality-dot`
-- **D-spine `prep-state` consumer:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` lines 683-702
+- **Daily Briefing redesign `prep-state` consumer:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/Daily Briefing redesign.html` lines 683-702
 
 ## Surfaces that consume it
 
@@ -72,10 +72,10 @@ DailyBriefing (per-meeting prep state), AccountDetail (hero quality dot), Projec
 
 ## Naming notes
 
-Existing primitive in `src/`. Confirmed in synthesis D5 — keep this name; do not rename to `QualityBadge`. D-spine's `prep-state` chip is the intended consumer (drop the local CSS, render `IntelligenceQualityBadge` instead).
+Existing primitive in `src/`. Confirmed in synthesis D5 — keep this name; do not rename to `QualityBadge`. Daily Briefing redesign's `prep-state` chip is the intended consumer (drop the local CSS, render `IntelligenceQualityBadge` instead).
 
 ## History
 
 - 2026-05-02 — Documented as canonical (existing src/ primitive).
 - Audit 04 — surfaced as the existing primitive most components touch for completeness signaling.
-- Audit 03 — D-spine `prep-state` consolidation candidate.
+- Audit 03 — Daily Briefing redesign `prep-state` consolidation candidate.

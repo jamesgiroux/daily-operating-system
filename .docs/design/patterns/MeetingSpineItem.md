@@ -15,8 +15,8 @@ Render a single meeting as a magazine-article entry in DailyBriefing's Today sec
 
 ## When to use it
 
-- DailyBriefing D-spine reference candidate (`reference/surfaces/briefing-d-spine.html`)
-- DailyBriefing's Today section, if the D-spine redesign is approved for the routed surface
+- DailyBriefing Daily Briefing redesign reference candidate (`reference/surfaces/briefing-redesign.html`)
+- DailyBriefing's Today section, if the Daily Briefing redesign redesign is approved for the routed surface
 - Potential extension: any surface that lists meetings with full editorial context (Week view, search results)
 
 ## When NOT to use it
@@ -84,22 +84,22 @@ Footer changes per prep state:
 
 ## Source
 
-- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.meeting`, `.meeting-time`, `.meeting-eyebrow`, `.meeting-title`, `.meeting-context`, `.meeting-foot`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/Daily Briefing redesign.html` (`.meeting`, `.meeting-time`, `.meeting-eyebrow`, `.meeting-title`, `.meeting-context`, `.meeting-foot`)
 - **Code:** `src/components/dashboard/MeetingSpineItem.tsx` (available for the proposed cutover; not yet consumed by routed DailyBriefing)
 - **Styles:** `src/components/dashboard/MeetingSpineItem.module.css`
 - **Reference mirror:** `.docs/design/reference/_shared/styles/MeetingSpineItem.module.css`
 
 ## Surfaces that consume it
 
-- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
+- `DailyBriefingRedesign` proposed reference surface (`.docs/design/reference/surfaces/briefing-redesign.html`)
 - No shipped routed consumer yet. Routed DailyBriefing still uses `BriefingMeetingCard` + `MeetingCard`.
 
 ## Naming notes
 
-`MeetingSpineItem` — refers to its role as the "spine" of the briefing (D-spine = "schedule as spine" mockup direction). The existing `MeetingRow` primitive (`src/components/shared/MeetingRow.tsx`) is for compact rows; this is the editorial-density variant.
+`MeetingSpineItem` — refers to its role as the "spine" of the briefing (Daily Briefing redesign = "schedule as spine" mockup direction). The existing `MeetingRow` primitive (`src/components/shared/MeetingRow.tsx`) is for compact rows; this is the editorial-density variant.
 
 ## History
 
-- 2026-05-02 — Proposed pattern for v1.4.3 from D-spine mockup.
-- 2026-05-06 — Source component, CSS module, reference mirror, and D-spine reference surface added. Remains proposed until the routed DailyBriefing rollout lands; production requires a release tag.
+- 2026-05-02 — Proposed pattern for v1.4.3 from Daily Briefing redesign mockup.
+- 2026-05-06 — Source component, CSS module, reference mirror, and Daily Briefing redesign reference surface added. Remains proposed until the routed DailyBriefing rollout lands; production requires a release tag.
 - 2026-05-06 — State tag moved into the time column, ThreadMark removed, and identity colors aligned to account/person/partner/project/internal semantics.

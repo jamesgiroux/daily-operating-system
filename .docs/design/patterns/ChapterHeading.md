@@ -21,7 +21,7 @@ Section opener for editorial surfaces — a heavy horizontal rule, a serif title
 ## When NOT to use it
 
 - Sub-section headings within a chapter (use simpler heading-without-rule pattern, or eyebrow + title only)
-- Briefing's section headings — D-spine uses `.section-heading` (mono uppercase eyebrow + serif summary), reconcile if these consolidate; current Wave 1 spec keeps D-spine's variant separate
+- Briefing's section headings — Daily Briefing redesign uses `.section-heading` (mono uppercase eyebrow + serif summary), reconcile if these consolidate; current Wave 1 spec keeps Daily Briefing redesign's variant separate
 
 ## Composition
 
@@ -73,9 +73,9 @@ AccountDetail (Health, Context, Work chapters), ProjectDetail, PersonDetail, Mee
 
 ## Naming notes
 
-`ChapterHeading` — keeps the editorial / publishing metaphor (chapter > section). D-spine briefing uses a separate `.section-heading` (mono uppercase eyebrow) + `.section-summary` (serif paragraph) treatment for its sections — those are NOT this pattern; they're a briefing-specific composition. Reconciliation is a Wave 1 follow-up.
+`ChapterHeading` — keeps the editorial / publishing metaphor (chapter > section). Daily Briefing redesign briefing uses a separate `.section-heading` (mono uppercase eyebrow) + `.section-summary` (serif paragraph) treatment for its sections — those are NOT this pattern; they're a briefing-specific composition. Reconciliation is a Wave 1 follow-up.
 
 ## History
 
 - 2026-05-02 — Promoted to canonical from existing `src/components/editorial/ChapterHeading.tsx` + mockup `_shared/.chapter`.
-- Audit 03 — surfaced reconciliation question with D-spine `.section-heading`.
+- Audit 03 — surfaced reconciliation question with Daily Briefing redesign `.section-heading`.

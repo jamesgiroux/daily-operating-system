@@ -17,7 +17,7 @@ turning the row into a heavy CTA.
 
 ## When to use it
 
-- Watch rows in DailyBriefing D-spine.
+- Watch rows in DailyBriefing Daily Briefing redesign.
 - Future lightweight recommendation rows where the user should be able to choose
   an alternate handling.
 
@@ -35,9 +35,9 @@ turning the row into a heavy CTA.
 
 ## Source
 
-- **Mockup substrate:** `/Users/jamesgiroux/Downloads/dailyos-design-system 2/project/mockups/briefing/variations/D-spine.html`
+- **Mockup substrate:** `/Users/jamesgiroux/Downloads/dailyos-design-system 2/project/mockups/briefing/variations/Daily Briefing redesign.html`
 - **Reference styles:** `.docs/design/reference/_shared/styles/InferredActionSelector.module.css`
 
 ## Surfaces that consume it
 
-- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
+- `DailyBriefingRedesign` proposed reference surface (`.docs/design/reference/surfaces/briefing-redesign.html`)

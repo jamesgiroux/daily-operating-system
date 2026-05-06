@@ -58,11 +58,11 @@ Composes `Pill` (visual base) + leading icon (lucide: Building2 / FolderKanban /
 
 ## Surfaces that consume it
 
-DailyBriefing (D-spine `.entity-chip`), AccountDetail (related entities), MeetingDetail (attendees / linked entities), email/meeting workflows.
+DailyBriefing (Daily Briefing redesign `.entity-chip`), AccountDetail (related entities), MeetingDetail (attendees / linked entities), email/meeting workflows.
 
 ## Naming notes
 
-D-spine mockup uses class `.entity-chip`. Production has `EntityChip.tsx`, with meeting and email wrappers composing it for workflow-specific behavior.
+Daily Briefing redesign mockup uses class `.entity-chip`. Production has `EntityChip.tsx`, with meeting and email wrappers composing it for workflow-specific behavior.
 
 ## History
 

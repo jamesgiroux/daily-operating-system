@@ -60,7 +60,7 @@ The `.sharp` inline highlight (subtle turmeric underline gradient) marks the mos
 
 ## Source
 
-- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.lead`, `.lead-sentence`, `.lead-eyebrow`)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/Daily Briefing redesign.html` (`.lead`, `.lead-sentence`, `.lead-eyebrow`)
 - **Roadmap target:** `src/components/dashboard/Lead.tsx` (not shipped yet)
 
 ## Surfaces that consume it
@@ -74,4 +74,4 @@ No shipped routed consumers. DailyBriefing has a local hero treatment today. Pot
 ## History
 
 - 2026-05-06 — Removed the pricing-memo blocker sentence from the sharp variant.
-- 2026-05-02 — Proposed pattern for v1.4.3 from D-spine mockup.
+- 2026-05-02 — Proposed pattern for v1.4.3 from Daily Briefing redesign mockup.

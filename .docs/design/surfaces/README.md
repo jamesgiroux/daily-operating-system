@@ -7,7 +7,7 @@ Full screens. The user-visible products built on top of patterns and primitives.
 | Canonical name | Current src name | Status | Spec |
 |---|---|---|---|
 | [`DailyBriefing`](./DailyBriefing.md) | `DashboardPage` inline in `src/router.tsx` + `src/components/dashboard/DailyBriefing.tsx` | Canonical shipped + roadmap split | ✓ Reconciled (2026-05-05) |
-| [`DailyBriefingDSpine`](./DailyBriefingDSpine.md) | Proposed reference only (`reference/surfaces/briefing-d-spine.html`) | v1.4.0 redesign candidate | Proposed (2026-05-06) |
+| [`DailyBriefingRedesign`](./DailyBriefingRedesign.md) | Proposed reference only (`reference/surfaces/briefing-redesign.html`) | v1.4.0 redesign candidate | Proposed (2026-05-06) |
 | [`Settings`](./Settings.md) | `src/pages/SettingsPage.tsx` + `src/features/settings-ui/*` | Canonical shipped + roadmap split | ✓ Reconciled (2026-05-05) |
 | [`MeetingDetail`](./MeetingDetail.md) | `src/pages/MeetingDetailPage.tsx` | Canonical shipped + extraction targets | ✓ Reconciled (2026-05-05) |
 | [`AccountDetailPage`](./AccountDetailPage.md) | `src/pages/AccountDetailPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
@@ -46,7 +46,7 @@ Each surface gets one `.md` file with:
 
 - **Surface specs are the contract for what the surface is.** Implementation in `src/` should match. If they disagree, the spec wins (or the spec gets updated, deliberately).
 - **A surface re-implementing a pattern is a smell.** Either the pattern is missing a variant, or the surface is wrong, or the pattern is wrong. Resolve, don't paper over.
-- **Surfaces provide chapters to `FloatingNavIsland`.** Per D2, surfaces do not invent local nav patterns unless a surface spec calls out an explicit proposed exception, as `DailyBriefingDSpine` now does for `DayStrip`.
+- **Surfaces provide chapters to `FloatingNavIsland`.** Per D2, surfaces do not invent local nav patterns unless a surface spec calls out an explicit proposed exception, as `DailyBriefingRedesign` now does for `DayStrip`.
 - **Don't duplicate the figma/mockup here.** Link to it. The spec is the contract; the mockup is a reference.
 
 ## Surface-internal components

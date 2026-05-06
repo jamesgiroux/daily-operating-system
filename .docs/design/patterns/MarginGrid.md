@@ -16,7 +16,7 @@ Two-column section layout: a thin left margin label (mono uppercase) + a wide ri
 ## When to use it
 
 - Section-level layout on any editorial surface where chapters or sections benefit from a consistent left-margin label
-- Heaviest user: D-spine briefing (every section uses this)
+- Heaviest user: Daily Briefing redesign briefing (every section uses this)
 - Also used by AccountDetail's `MarginSection` editorial component
 
 ## When NOT to use it
@@ -72,7 +72,7 @@ Production form:
 
 ## Source
 
-- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.margin-section`); also reused by D-spine as `.margin-grid` (slightly different class name, same shape)
+- **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/surfaces/_shared/primitives.css` (`.margin-section`); also reused by Daily Briefing redesign as `.margin-grid` (slightly different class name, same shape)
 - **Code:** existing in `src/components/editorial/MarginSection.tsx` — Wave 1 reconciles the two class names
 
 ## Surfaces that consume it
@@ -81,7 +81,7 @@ DailyBriefing (every section), AccountDetail (some chapters), ProjectDetail, Per
 
 ## Naming notes
 
-D-spine uses `.margin-grid`; production uses `.margin-section`. Wave 1 picks one canonical name. Recommend `MarginGrid` (matches grid layout terminology). The production CSS class can stay `.margin-section` for backward compat or rename per Wave 1.
+Daily Briefing redesign uses `.margin-grid`; production uses `.margin-section`. Wave 1 picks one canonical name. Recommend `MarginGrid` (matches grid layout terminology). The production CSS class can stay `.margin-section` for backward compat or rename per Wave 1.
 
 ## History
 
