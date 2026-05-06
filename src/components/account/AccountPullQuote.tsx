@@ -1,5 +1,6 @@
 import type { EntityIntelligence } from "@/types";
 import { formatRelativeDate } from "@/lib/utils";
+import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
 
 import styles from "@/pages/AccountDetailEditorial.module.css";
 
@@ -27,6 +28,9 @@ export function AccountPullQuote({ intelligence, variant = "default", freshnessF
     })();
 
   if (!quote) return null;
+  const quoteClaim = intelligence.executiveAssessmentRenderPolicy
+    ? { text: quote, policy: intelligence.executiveAssessmentRenderPolicy }
+    : null;
 
   if (variant === "thesis") {
     const metaParts: string[] = [];
@@ -40,7 +44,11 @@ export function AccountPullQuote({ intelligence, variant = "default", freshnessF
           <span aria-hidden className={styles.pullquoteMark}>
             &ldquo;
           </span>
-          {quote}
+          {quoteClaim ? (
+            <ClaimTextRenderer value={quoteClaim} surface="tauri_entity_detail" />
+          ) : (
+            quote
+          )}
           <span aria-hidden className={styles.pullquoteMark}>
             &rdquo;
           </span>
@@ -67,7 +75,11 @@ export function AccountPullQuote({ intelligence, variant = "default", freshnessF
   return (
     <div className={`editorial-reveal-slow ${styles.pullQuote}`}>
       <blockquote className={styles.pullQuoteText}>
-        {quote}
+        {quoteClaim ? (
+          <ClaimTextRenderer value={quoteClaim} surface="tauri_entity_detail" />
+        ) : (
+          quote
+        )}
       </blockquote>
       <cite className={styles.pullQuoteAttribution}>From the executive assessment</cite>
     </div>

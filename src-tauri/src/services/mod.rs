@@ -26,6 +26,7 @@ pub mod mutations;
 pub mod people;
 pub mod projects;
 pub mod reports;
+pub mod sensitivity;
 pub mod settings;
 pub mod signals;
 pub mod source_asof_backfill;

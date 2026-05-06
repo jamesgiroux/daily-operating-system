@@ -933,6 +933,8 @@ pub struct IntelligenceJson {
     /// Prose assessment: account situation / project status / relationship brief.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub executive_assessment: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub executive_assessment_render_policy: Option<serde_json::Value>,
 
     /// Concise editorial pull quote for visual storytelling.
     /// One impactful sentence — the single thing a reader should remember.
@@ -1315,6 +1317,10 @@ fn is_true(v: &bool) -> bool {
 #[serde(rename_all = "camelCase")]
 pub struct IntelRisk {
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_policy: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(default = "default_urgency")]
@@ -1349,6 +1355,10 @@ pub(crate) fn default_urgency() -> String {
 #[serde(rename_all = "camelCase")]
 pub struct IntelWin {
     pub text: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_policy: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1382,6 +1392,10 @@ pub struct StakeholderInsight {
     pub assessment: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub engagement: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_policy: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     /// Deterministic link to a Person entity (reconciliation).
@@ -1416,6 +1430,10 @@ pub struct ValueItem {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub date: Option<String>,
     pub statement: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_policy: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1444,6 +1462,10 @@ pub struct MeetingReadiness {
 pub struct CompanyContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub render_policy: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub claim_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub industry: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -1934,6 +1956,7 @@ pub fn migrate_company_overview_to_intelligence(
     }
 
     let intel = IntelligenceJson {
+        executive_assessment_render_policy: None,
         version: 1,
         entity_id: account.id.clone(),
         entity_type: "account".to_string(),
@@ -1942,6 +1965,8 @@ pub fn migrate_company_overview_to_intelligence(
             .clone()
             .unwrap_or_else(|| Utc::now().to_rfc3339()),
         company_context: Some(CompanyContext {
+            render_policy: None,
+            claim_id: None,
             description: overview.description.clone(),
             industry: overview.industry.clone(),
             size: overview.size.clone(),
@@ -2085,6 +2110,7 @@ impl ActionDb {
                 });
 
             let mut intel = IntelligenceJson {
+                executive_assessment_render_policy: None,
                 version: 1,
                 entity_id: row.get(0)?,
                 entity_type: row.get(1)?,
@@ -2775,6 +2801,7 @@ mod tests {
 
     fn sample_intel() -> IntelligenceJson {
         IntelligenceJson {
+            executive_assessment_render_policy: None,
             version: 1,
             entity_id: "acme-corp".to_string(),
             entity_type: "account".to_string(),
@@ -2792,6 +2819,8 @@ mod tests {
                 "Acme is in a strong position with steady renewal trajectory.".to_string(),
             ),
             risks: vec![IntelRisk {
+                render_policy: None,
+                claim_id: None,
                 text: "Champion leaving in Q2".to_string(),
                 source: Some("qbr-notes.md".to_string()),
                 urgency: "critical".to_string(),
@@ -2802,6 +2831,8 @@ mod tests {
                 discrepancy: None,
             }],
             recent_wins: vec![IntelWin {
+                render_policy: None,
+                claim_id: None,
                 text: "Expanded to 3 new teams".to_string(),
                 source: Some("capture".to_string()),
                 impact: Some("20% seat growth".to_string()),
@@ -2814,6 +2845,8 @@ mod tests {
                 unknowns: vec!["Budget for next year".to_string()],
             }),
             stakeholder_insights: vec![StakeholderInsight {
+                render_policy: None,
+                claim_id: None,
                 name: "Alice VP".to_string(),
                 role: Some("VP Engineering".to_string()),
                 assessment: Some("Strong advocate, drives adoption.".to_string()),
@@ -2827,6 +2860,8 @@ mod tests {
                 ..Default::default()
             }],
             value_delivered: vec![ValueItem {
+                render_policy: None,
+                claim_id: None,
                 date: Some("2026-01-15".to_string()),
                 statement: "Reduced onboarding time by 40%".to_string(),
                 source: Some("qbr-deck.pdf".to_string()),
@@ -2843,6 +2878,8 @@ mod tests {
                 ],
             }),
             company_context: Some(CompanyContext {
+                render_policy: None,
+                claim_id: None,
                 description: Some("Enterprise SaaS platform.".to_string()),
                 industry: Some("Technology".to_string()),
                 size: Some("500-1000".to_string()),
@@ -3093,6 +3130,8 @@ mod tests {
         // Update the assessment
         intel.executive_assessment = Some("Updated assessment.".to_string());
         intel.risks.push(IntelRisk {
+            render_policy: None,
+            claim_id: None,
             text: "New risk".to_string(),
             source: None,
             urgency: "watch".to_string(),
@@ -3309,6 +3348,7 @@ mod tests {
     #[test]
     fn test_format_intelligence_markdown_full() {
         let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             version: 1,
             entity_id: "acme".to_string(),
             entity_type: "account".to_string(),
@@ -3317,6 +3357,8 @@ mod tests {
             source_manifest: vec![],
             executive_assessment: Some("Acme is in strong position for renewal.".to_string()),
             risks: vec![IntelRisk {
+                render_policy: None,
+                claim_id: None,
                 text: "Budget uncertainty for Q3".to_string(),
                 source: Some("QBR notes".to_string()),
                 urgency: "critical".to_string(),
@@ -3327,6 +3369,8 @@ mod tests {
                 discrepancy: None,
             }],
             recent_wins: vec![IntelWin {
+                render_policy: None,
+                claim_id: None,
                 text: "Expanded to 3 teams".to_string(),
                 source: Some("capture".to_string()),
                 impact: Some("20% seat growth".to_string()),
@@ -3339,6 +3383,8 @@ mod tests {
                 unknowns: vec!["FY budget".to_string()],
             }),
             stakeholder_insights: vec![StakeholderInsight {
+                render_policy: None,
+                claim_id: None,
                 name: "Alice Chen".to_string(),
                 role: Some("VP Engineering".to_string()),
                 assessment: Some("Strong advocate.".to_string()),
@@ -3352,6 +3398,8 @@ mod tests {
                 ..Default::default()
             }],
             value_delivered: vec![ValueItem {
+                render_policy: None,
+                claim_id: None,
                 date: Some("2026-01-15".to_string()),
                 statement: "Reduced onboarding time by 40%".to_string(),
                 source: Some("QBR".to_string()),
@@ -3368,6 +3416,8 @@ mod tests {
                 ],
             }),
             company_context: Some(CompanyContext {
+                render_policy: None,
+                claim_id: None,
                 description: Some("Enterprise SaaS platform".to_string()),
                 industry: Some("Technology".to_string()),
                 size: Some("500-1000".to_string()),
@@ -3435,6 +3485,7 @@ mod tests {
     #[test]
     fn test_format_intelligence_markdown_partial() {
         let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             executive_assessment: Some("Situation looks good.".to_string()),
             enriched_at: "2026-02-09T10:00:00Z".to_string(),
             ..Default::default()

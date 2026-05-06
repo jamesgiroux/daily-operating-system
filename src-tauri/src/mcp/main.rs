@@ -27,6 +27,7 @@ use dailyos_lib::bridges::tauri::TauriAbilityBridge;
 use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::embeddings::EmbeddingModel;
+use dailyos_lib::services::sensitivity::{renderable_claim_text, RenderActor, RenderSurface};
 use dailyos_lib::state::load_config;
 use dailyos_lib::types::Config;
 
@@ -236,11 +237,14 @@ impl DailyOsMcp {
                         let meetings = db
                             .get_upcoming_meetings_for_account(&acct.id, 5)
                             .unwrap_or_default();
-                        let intel = db
-                            .get_entity_intelligence(&acct.id)
-                            .ok()
-                            .flatten()
-                            .and_then(|i| i.executive_assessment);
+                        let intel = match mcp_entity_summary(&db, "account", &acct.id) {
+                            Some(summary) => summary,
+                            None => db
+                                .get_entity_intelligence(&acct.id)
+                                .ok()
+                                .flatten()
+                                .and_then(|i| i.executive_assessment),
+                        };
 
                         result = Some(build_entity_result(
                             &acct.id,
@@ -266,11 +270,14 @@ impl DailyOsMcp {
                     if proj.id == params.query || proj.name.to_lowercase().contains(&query_lower) {
                         let actions = db.get_project_actions(&proj.id).unwrap_or_default();
                         let meetings = db.get_meetings_for_project(&proj.id, 5).unwrap_or_default();
-                        let intel = db
-                            .get_entity_intelligence(&proj.id)
-                            .ok()
-                            .flatten()
-                            .and_then(|i| i.executive_assessment);
+                        let intel = match mcp_entity_summary(&db, "project", &proj.id) {
+                            Some(summary) => summary,
+                            None => db
+                                .get_entity_intelligence(&proj.id)
+                                .ok()
+                                .flatten()
+                                .and_then(|i| i.executive_assessment),
+                        };
 
                         result = Some(build_entity_result(
                             &proj.id,
@@ -297,11 +304,14 @@ impl DailyOsMcp {
                         || person.name.to_lowercase().contains(&query_lower)
                         || person.email.to_lowercase().contains(&query_lower)
                     {
-                        let intel = db
-                            .get_entity_intelligence(&person.id)
-                            .ok()
-                            .flatten()
-                            .and_then(|i| i.executive_assessment);
+                        let intel = match mcp_entity_summary(&db, "person", &person.id) {
+                            Some(summary) => summary,
+                            None => db
+                                .get_entity_intelligence(&person.id)
+                                .ok()
+                                .flatten()
+                                .and_then(|i| i.executive_assessment),
+                        };
                         result = Some(EntityResult {
                             id: person.id.clone(),
                             name: person.name.clone(),
@@ -887,6 +897,50 @@ fn resolve_entity_id(db: &ActionDb, query: &str) -> Option<String> {
     }
 
     None
+}
+
+fn mcp_entity_summary(db: &ActionDb, entity_type: &str, entity_id: &str) -> Option<Option<String>> {
+    let subject_ref = serde_json::json!({
+        "kind": entity_type,
+        "id": entity_id,
+    })
+    .to_string();
+    let claims =
+        dailyos_lib::services::claims::load_claims_active(db, &subject_ref, Some("entity_summary"))
+            .ok()?;
+    if claims.is_empty() {
+        return None;
+    }
+
+    let actor = RenderActor::agent("agent:mcp");
+    Some(claims.into_iter().find_map(|claim| {
+        let text = claim
+            .metadata_json
+            .as_deref()
+            .and_then(|metadata| {
+                serde_json::from_str::<serde_json::Value>(metadata)
+                    .ok()?
+                    .get("legacy_projection_value")
+                    .cloned()
+            })
+            .and_then(|value| {
+                value.as_str().map(str::to_string).or_else(|| {
+                    value
+                        .get("text")
+                        .and_then(|text| text.as_str())
+                        .map(str::to_string)
+                })
+            })
+            .unwrap_or_else(|| claim.text.clone()); // dos412-render-policy-covered: helper passes this through renderable_claim_text below.
+        renderable_claim_text(&claim, RenderSurface::McpTool, &actor).map(|rendered| {
+            if rendered.policy.kind == dailyos_lib::services::sensitivity::RenderPolicyKind::Render
+            {
+                text
+            } else {
+                rendered.text
+            }
+        })
+    }))
 }
 
 fn read_json_file(path: &std::path::Path) -> Option<serde_json::Value> {

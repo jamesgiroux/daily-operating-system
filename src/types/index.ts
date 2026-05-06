@@ -68,6 +68,55 @@ export interface FeatureFlags {
   glean_discovery_enabled: boolean;
 }
 
+export type ClaimSensitivity = "public" | "internal" | "confidential" | "user_only";
+
+export type RenderSurface =
+  | "tauri_entity_detail"
+  | "tauri_briefing_prep"
+  | "tauri_meeting_detail"
+  | "tauri_email_summary"
+  | "tauri_provenance"
+  | "tauri_report"
+  | "tauri_chat"
+  | "mcp_tool"
+  | "mcp_tool_detail"
+  | "p2_publication"
+  | "log_structured"
+  | "push_notification";
+
+export type RenderPolicyKind = "render" | "redacted" | "drop";
+
+export type RedactionAffordance =
+  | {
+      kind: "confidential_click_to_reveal";
+      claim_id?: string;
+      claimId?: string;
+      label: string;
+      audit_required?: boolean;
+      auditRequired?: boolean;
+    }
+  | {
+      kind: "confidential_hidden";
+      label: string;
+    }
+  | {
+      kind: "user_only_hidden";
+      label: string;
+    };
+
+export interface RenderPolicy {
+  kind: RenderPolicyKind;
+  sensitivity: ClaimSensitivity;
+  surface: RenderSurface;
+  claimId?: string;
+  affordance?: RedactionAffordance | null;
+}
+
+export interface RenderableClaimText {
+  text: string;
+  policy: RenderPolicy;
+}
+
 export interface DatabaseRecoveryStatus {
   required: boolean;
   reason: string;
@@ -2354,6 +2403,7 @@ export interface EntityIntelligence {
   sourceFileCount: number;
   sourceManifest: SourceManifestEntry[];
   executiveAssessment?: string;
+  executiveAssessmentRenderPolicy?: RenderPolicy;
   /** Concise editorial pull quote — one impactful sentence. */
   pullQuote?: string;
   risks: IntelRisk[];
@@ -2372,7 +2422,7 @@ export interface EntityIntelligence {
   /**  org-health baseline payload (when available). */
   orgHealth?: OrgHealthData | null;
   /** Value delivered to the account. */
-  valueDelivered?: Array<{ date?: string; statement: string; source?: string; impact?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
+  valueDelivered?: Array<{ date?: string; statement: string; renderPolicy?: RenderPolicy; claimId?: string; source?: string; impact?: string; itemSource?: ItemSource; discrepancy?: boolean }> | null;
   /** Success metrics / KPIs tracked for this entity. */
   successMetrics?: Array<{ name: string; target?: string; current?: string; status?: string; owner?: string }> | null;
   /** Open commitments (promises made to/from the account). */
@@ -2457,6 +2507,8 @@ export interface ItemSource {
 
 export interface IntelRisk {
   text: string;
+  renderPolicy?: RenderPolicy;
+  claimId?: string;
   source?: string;
   urgency: string;
   /** Punchy 1-liner headline for the triage card (≤80 chars). */
@@ -2473,6 +2525,8 @@ export interface IntelRisk {
 
 export interface IntelWin {
   text: string;
+  renderPolicy?: RenderPolicy;
+  claimId?: string;
   source?: string;
   impact?: string;
   /** Structured source attribution with confidence. */
@@ -2492,6 +2546,8 @@ export interface StakeholderInsight {
   role?: string;
   assessment?: string;
   engagement?: string;
+  renderPolicy?: RenderPolicy;
+  claimId?: string;
   source?: string;
   /** Deterministic link to a Person entity (reconciliation). */
   personId?: string;
@@ -2522,6 +2578,8 @@ export interface IntelMeetingReadiness {
 
 export interface IntelCompanyContext {
   description?: string;
+  renderPolicy?: RenderPolicy;
+  claimId?: string;
   industry?: string;
   size?: string;
   headquarters?: string;

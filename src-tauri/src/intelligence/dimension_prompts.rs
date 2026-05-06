@@ -1049,6 +1049,8 @@ mod tests {
     fn merge_core_assessment_only_touches_core_fields() {
         let mut existing = empty_intel();
         existing.stakeholder_insights = vec![super::super::io::StakeholderInsight {
+            render_policy: None,
+            claim_id: None,
             name: "Alice".to_string(),
             role: Some("VP".to_string()),
             assessment: None,
@@ -1065,6 +1067,8 @@ mod tests {
         let mut partial = empty_intel();
         partial.executive_assessment = Some("Looking good".to_string());
         partial.risks = vec![super::super::io::IntelRisk {
+            render_policy: None,
+            claim_id: None,
             text: "Budget cut risk".to_string(),
             source: None,
             urgency: "watch".to_string(),
@@ -1102,6 +1106,8 @@ mod tests {
 
         let mut partial = empty_intel();
         partial.stakeholder_insights = vec![super::super::io::StakeholderInsight {
+            render_policy: None,
+            claim_id: None,
             name: "Bob".to_string(),
             role: Some("CTO".to_string()),
             assessment: Some("Engaged".to_string()),
@@ -1170,6 +1176,8 @@ mod tests {
     fn merge_strategic_context_only_touches_strategic_fields() {
         let mut existing = empty_intel();
         existing.risks = vec![super::super::io::IntelRisk {
+            render_policy: None,
+            claim_id: None,
             text: "Keep me".to_string(),
             source: None,
             urgency: "watch".to_string(),
@@ -1182,6 +1190,8 @@ mod tests {
 
         let mut partial = empty_intel();
         partial.company_context = Some(super::super::io::CompanyContext {
+            render_policy: None,
+            claim_id: None,
             description: Some("SaaS company".to_string()),
             industry: Some("Technology".to_string()),
             size: None,
@@ -1216,6 +1226,8 @@ mod tests {
 
         let mut partial = empty_intel();
         partial.value_delivered = vec![super::super::io::ValueItem {
+            render_policy: None,
+            claim_id: None,
             date: Some("2026-03-01".to_string()),
             statement: "Saved $50K".to_string(),
             source: None,
@@ -1236,6 +1248,8 @@ mod tests {
         let mut existing = empty_intel();
         existing.executive_assessment = Some("Keep me".to_string());
         existing.value_delivered = vec![super::super::io::ValueItem {
+            render_policy: None,
+            claim_id: None,
             date: None,
             statement: "Keep me".to_string(),
             source: None,
@@ -1269,6 +1283,8 @@ mod tests {
         let mut existing = empty_intel();
         existing.executive_assessment = Some("Existing".to_string());
         existing.risks = vec![super::super::io::IntelRisk {
+            render_policy: None,
+            claim_id: None,
             text: "Existing risk".to_string(),
             source: None,
             urgency: "critical".to_string(),
@@ -1770,6 +1786,8 @@ mod eval_tests {
     fn eval_merge_core_assessment_preserves_unrelated_fields() {
         let mut existing = empty_intel();
         existing.stakeholder_insights = vec![super::super::io::StakeholderInsight {
+            render_policy: None,
+            claim_id: None,
             name: "Alice".to_string(),
             role: Some("VP".to_string()),
             assessment: None,
@@ -1790,6 +1808,8 @@ mod eval_tests {
         let mut partial = empty_intel();
         partial.executive_assessment = Some("Updated assessment".to_string());
         partial.risks = vec![super::super::io::IntelRisk {
+            render_policy: None,
+            claim_id: None,
             text: "New risk identified".to_string(),
             source: Some("meeting".to_string()),
             urgency: "critical".to_string(),
@@ -1800,6 +1820,8 @@ mod eval_tests {
             discrepancy: None,
         }];
         partial.recent_wins = vec![super::super::io::IntelWin {
+            render_policy: None,
+            claim_id: None,
             text: "New win".to_string(),
             source: None,
             impact: Some("high".to_string()),
@@ -1835,6 +1857,8 @@ mod eval_tests {
         let mut existing = empty_intel();
         existing.executive_assessment = Some("Existing assessment".to_string());
         existing.risks = vec![super::super::io::IntelRisk {
+            render_policy: None,
+            claim_id: None,
             text: "Existing risk".to_string(),
             source: None,
             urgency: "watch".to_string(),
@@ -1883,6 +1907,8 @@ mod eval_tests {
         let mut p1 = empty_intel();
         p1.executive_assessment = Some("Assessment".to_string());
         p1.risks = vec![super::super::io::IntelRisk {
+            render_policy: None,
+            claim_id: None,
             text: "Risk 1".to_string(),
             source: None,
             urgency: "watch".to_string(),
@@ -1897,6 +1923,8 @@ mod eval_tests {
         // Merge stakeholder_champion
         let mut p2 = empty_intel();
         p2.stakeholder_insights = vec![super::super::io::StakeholderInsight {
+            render_policy: None,
+            claim_id: None,
             name: "Bob".to_string(),
             role: Some("CTO".to_string()),
             assessment: None,

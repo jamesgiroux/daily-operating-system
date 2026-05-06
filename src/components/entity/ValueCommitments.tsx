@@ -16,6 +16,7 @@ import type { EntityIntelligence } from "@/types";
 import { IntelligenceCorrection } from "@/components/ui/IntelligenceCorrection";
 import { useEntitySuppressions } from "@/hooks/useEntitySuppressions";
 import { ProvenanceTag } from "@/components/ui/ProvenanceTag";
+import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
 import css from "./ValueCommitments.module.css";
 
 interface ValueCommitmentsProps {
@@ -125,7 +126,12 @@ export function ValueCommitments({
                   <span className={`${css.impactTag} ${impactTagClass(kind)}`}>
                     {impactTagLabel(kind)}
                   </span>
-                  <div className={css.valueHeadline}>{item.statement}</div>
+                  <div className={css.valueHeadline}>
+                    <ClaimTextRenderer
+                      value={item.renderPolicy ? { text: item.statement, policy: item.renderPolicy } : item.statement}
+                      surface="tauri_entity_detail"
+                    />
+                  </div>
                   {sourceBits.length > 0 && (
                     <div className={css.valueSource}>{sourceBits.join(" · ")}</div>
                   )}

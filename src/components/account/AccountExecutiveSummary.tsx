@@ -6,6 +6,7 @@
  */
 import { useState } from "react";
 import type { EntityIntelligence } from "@/types";
+import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
 import styles from "./AccountExecutiveSummary.module.css";
 
 interface Props {
@@ -25,9 +26,21 @@ export function AccountExecutiveSummary({ intelligence }: Props) {
 
   return (
     <div className={`editorial-reveal ${styles.summary}`}>
-      {narrative.split("\n\n").map((p, i) => (
-        <p key={i} className={i === 0 ? styles.paragraph : styles.paragraphSpaced}>{p}</p>
-      ))}
+      {intelligence?.executiveAssessmentRenderPolicy ? (
+        <p className={styles.paragraph}>
+          <ClaimTextRenderer
+            value={{
+              text: narrative,
+              policy: intelligence.executiveAssessmentRenderPolicy,
+            }}
+            surface="tauri_entity_detail"
+          />
+        </p>
+      ) : (
+        narrative.split("\n\n").map((p, i) => (
+          <p key={i} className={i === 0 ? styles.paragraph : styles.paragraphSpaced}>{p}</p>
+        ))
+      )}
       {narrativeTruncated && (
         <button onClick={() => setShowFullLede(true)} className={styles.readMore}>
           Read more

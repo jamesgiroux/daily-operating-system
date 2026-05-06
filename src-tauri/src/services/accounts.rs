@@ -1624,6 +1624,14 @@ pub fn build_account_detail_result(
                 None => true,
             }
         });
+        crate::services::sensitivity::apply_entity_intelligence_render_policy(
+            db,
+            "account",
+            &account_id,
+            intel,
+            crate::services::sensitivity::RenderSurface::TauriEntityDetail,
+            &crate::services::sensitivity::RenderActor::user("user", Some("user")),
+        );
     }
 
     let open_actions = db

@@ -2218,6 +2218,8 @@ pub async fn mark_commitment_done(
             intel
                 .value_delivered
                 .push(crate::intelligence::io::ValueItem {
+                    render_policy: None,
+                    claim_id: None,
                     date: Some(now.clone()),
                     statement: commitment.description.clone(),
                     source: commitment.source.clone(),
@@ -2450,6 +2452,7 @@ mod mutation_smoke_tests {
 
     fn make_glean_signal_intel(entity_id: &str) -> IntelligenceJson {
         IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: entity_id.to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T01:00:00Z".to_string(),
@@ -2629,6 +2632,7 @@ mod mutation_smoke_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let input = make_enrichment_input(entity_id, dir.path());
         let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: entity_id.to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T01:00:00Z".to_string(),
@@ -2719,6 +2723,7 @@ mod mutation_smoke_tests {
         db.upsert_account(&account).unwrap();
 
         let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-intel".to_string(),
             entity_type: "account".to_string(),
             enriched_at: chrono::Utc::now().to_rfc3339(),
@@ -2767,11 +2772,14 @@ mod mutation_smoke_tests {
 
         let dir = tempfile::tempdir().expect("tempdir");
         let old_intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-stakeholder-rollback".to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T00:00:00Z".to_string(),
             executive_assessment: Some("old stakeholder state".to_string()),
             stakeholder_insights: vec![StakeholderInsight {
+                render_policy: None,
+                claim_id: None,
                 name: "Old Owner".to_string(),
                 role: Some("buyer".to_string()),
                 ..Default::default()
@@ -2801,6 +2809,8 @@ mod mutation_smoke_tests {
         let new_intel = crate::intelligence::apply_stakeholders_update_in_memory(
             old_intel.clone(),
             vec![StakeholderInsight {
+                render_policy: None,
+                claim_id: None,
                 name: "New Owner".to_string(),
                 role: Some("champion".to_string()),
                 ..Default::default()
@@ -2864,6 +2874,7 @@ mod mutation_smoke_tests {
 
         let dir = tempfile::tempdir().expect("tempdir");
         let old_intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-enrich-rollback".to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T00:00:00Z".to_string(),
@@ -2887,6 +2898,7 @@ mod mutation_smoke_tests {
             .expect("install rollback trigger");
 
         let new_intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-enrich-rollback".to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T01:00:00Z".to_string(),
@@ -2958,6 +2970,7 @@ mod mutation_smoke_tests {
 
         let dir = tempfile::tempdir().expect("tempdir");
         let prior = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-compose-rollback".to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T00:00:00Z".to_string(),
@@ -2982,12 +2995,15 @@ mod mutation_smoke_tests {
 
         let input = make_enrichment_input("acc-compose-rollback", dir.path());
         let incoming = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-compose-rollback".to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T01:00:00Z".to_string(),
             executive_assessment: Some("new compose state".to_string()),
             stakeholder_insights: vec![
                 StakeholderInsight {
+                    render_policy: None,
+                    claim_id: None,
                     name: "Existing Buyer".to_string(),
                     person_id: Some("p-compose-rollback".to_string()),
                     role: Some("technical champion".to_string()),
@@ -2996,6 +3012,8 @@ mod mutation_smoke_tests {
                     ..Default::default()
                 },
                 StakeholderInsight {
+                    render_policy: None,
+                    claim_id: None,
                     name: "New Buyer".to_string(),
                     role: Some("economic buyer".to_string()),
                     engagement: Some("engaged".to_string()),
@@ -3003,6 +3021,8 @@ mod mutation_smoke_tests {
                 },
             ],
             risks: vec![IntelRisk {
+                render_policy: None,
+                claim_id: None,
                 text: "Rollback malformed risk".to_string(),
                 item_source: Some(ItemSource {
                     source: "pty_synthesis".to_string(),
@@ -3164,6 +3184,7 @@ mod mutation_smoke_tests {
 
         let dir = tempfile::tempdir().expect("tempdir");
         let prior = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-side-write-fails".to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T00:00:00Z".to_string(),
@@ -3185,11 +3206,14 @@ mod mutation_smoke_tests {
 
         let input = make_enrichment_input("acc-side-write-fails", dir.path());
         let incoming = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-side-write-fails".to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T01:00:00Z".to_string(),
             executive_assessment: Some("new state that must not persist".to_string()),
             stakeholder_insights: vec![StakeholderInsight {
+                render_policy: None,
+                claim_id: None,
                 name: "Blocked Buyer".to_string(),
                 role: Some("economic buyer".to_string()),
                 engagement: Some("engaged".to_string()),
@@ -3281,6 +3305,7 @@ mod mutation_smoke_tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let input = make_enrichment_input("acc-manual-parity", dir.path());
         let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-manual-parity".to_string(),
             entity_type: "account".to_string(),
             enriched_at: "2026-05-03T01:00:00Z".to_string(),
@@ -3396,6 +3421,7 @@ mod mutation_smoke_tests {
 
         // Seed minimal intelligence so recompute has something to work with
         let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acc-health".to_string(),
             entity_type: "account".to_string(),
             enriched_at: chrono::Utc::now().to_rfc3339(),
@@ -4140,7 +4166,7 @@ mod live_acceptance_tests {
             .expect("previous DB read failed");
         let previous_file = previous_db.clone();
 
-        let contradictory = IntelligenceJson {
+        let contradictory = IntelligenceJson { executive_assessment_render_policy: None,
             version: 1,
             entity_id: entity_id.clone(),
             entity_type: entity_type.clone(),
@@ -4149,7 +4175,7 @@ mod live_acceptance_tests {
                 "{} has never appeared in a recorded meeting and no new progress signals since the prior assessment.",
                 stakeholder
             )),
-            risks: vec![IntelRisk {
+            risks: vec![IntelRisk { render_policy: None, claim_id: None,
                 text: format!(
                     "{} has never appeared in a recorded meeting.",
                     stakeholder
@@ -4223,6 +4249,7 @@ mod live_acceptance_tests {
         );
 
         let clean = IntelligenceJson {
+            executive_assessment_render_policy: None,
             version: 1,
             entity_id: entity_id.clone(),
             entity_type: entity_type.clone(),
@@ -4350,6 +4377,7 @@ mod live_acceptance_tests {
         );
 
         let contradictory = IntelligenceJson {
+            executive_assessment_render_policy: None,
             version: 1,
             entity_id: entity_id.clone(),
             entity_type: "account".to_string(),
@@ -4394,6 +4422,7 @@ mod live_acceptance_tests {
         // structured health write/read + legacy compatibility
         // ---------------------------------------------------------------------
         let structured = IntelligenceJson {
+            executive_assessment_render_policy: None,
             version: 1,
             entity_id: "wave1-i503-structured".to_string(),
             entity_type: "account".to_string(),

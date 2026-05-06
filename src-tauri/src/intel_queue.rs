@@ -4438,6 +4438,7 @@ mod tests {
 
     fn trust_intel(entity_id: &str) -> IntelligenceJson {
         IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: entity_id.to_string(),
             entity_type: "account".to_string(),
             enriched_at: TRUST_TS.to_string(),
@@ -5045,16 +5046,20 @@ mod tests {
     #[test]
     fn test_merge_missing_core_fields_preserves_existing_assessment() {
         let mut fresh = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acme-corp".to_string(),
             entity_type: "account".to_string(),
             executive_assessment: None,
             ..Default::default()
         };
         let existing = IntelligenceJson {
+            executive_assessment_render_policy: None,
             entity_id: "acme-corp".to_string(),
             entity_type: "account".to_string(),
             executive_assessment: Some("Prior narrative".to_string()),
             risks: vec![crate::intelligence::IntelRisk {
+                render_policy: None,
+                claim_id: None,
                 text: "Renewal owner unresolved".to_string(),
                 source: None,
                 urgency: "high".to_string(),
@@ -5079,6 +5084,7 @@ mod tests {
     #[test]
     fn test_is_sparse_intelligence_detects_non_sparse_when_assessment_present() {
         let intel = IntelligenceJson {
+            executive_assessment_render_policy: None,
             executive_assessment: Some("Non-empty summary".to_string()),
             ..Default::default()
         };

@@ -8,6 +8,7 @@ import { formatRelativeDate as formatRelativeDateShort } from "@/lib/utils";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { EditableText } from "@/components/ui/EditableText";
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
+import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
 import styles from "./ProjectHero.module.css";
 
 interface ProjectHeroProps {
@@ -93,7 +94,17 @@ export function ProjectHero({
       {/* Lede from intelligence */}
       {lede && (
         <p className={styles.lede}>
-          {lede}
+          {intelligence?.executiveAssessmentRenderPolicy ? (
+            <ClaimTextRenderer
+              value={{
+                text: lede,
+                policy: intelligence.executiveAssessmentRenderPolicy,
+              }}
+              surface="tauri_entity_detail"
+            />
+          ) : (
+            lede
+          )}
           {ledeTruncated && (
             <button
               onClick={() => setShowFullLede(true)}

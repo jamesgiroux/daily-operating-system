@@ -3129,6 +3129,8 @@ fn try_parse_json_response(
     });
 
     let company_context = ai_resp.company_context.map(|cc| CompanyContext {
+        render_policy: None,
+        claim_id: None,
         description: cc.description,
         industry: cc.industry,
         size: cc.size,
@@ -3152,6 +3154,7 @@ fn try_parse_json_response(
     });
 
     Some(IntelligenceJson {
+        executive_assessment_render_policy: None,
         version: 1,
         entity_id: entity_id.to_string(),
         entity_type: entity_type.to_string(),
@@ -3164,6 +3167,8 @@ fn try_parse_json_response(
             .risks
             .into_iter()
             .map(|r| IntelRisk {
+                render_policy: None,
+                claim_id: None,
                 text: r.text,
                 source: r.source,
                 urgency: r.urgency,
@@ -3178,6 +3183,8 @@ fn try_parse_json_response(
             .recent_wins
             .into_iter()
             .map(|w| IntelWin {
+                render_policy: None,
+                claim_id: None,
                 text: w.text,
                 source: w.source,
                 impact: w.impact,
@@ -3190,6 +3197,8 @@ fn try_parse_json_response(
             .stakeholder_insights
             .into_iter()
             .map(|s| StakeholderInsight {
+                render_policy: None,
+                claim_id: None,
                 name: s.name,
                 role: s.role,
                 assessment: s.assessment,
@@ -3208,6 +3217,8 @@ fn try_parse_json_response(
             .value_delivered
             .into_iter()
             .map(|v| ValueItem {
+                render_policy: None,
+                claim_id: None,
                 date: v.date,
                 statement: v.statement,
                 source: v.source,
@@ -3319,6 +3330,7 @@ fn parse_pipe_delimited_response(
         .ok_or("No INTELLIGENCE block or JSON found in response")?;
 
     let mut intel = IntelligenceJson {
+        executive_assessment_render_policy: None,
         version: 1,
         entity_id: entity_id.to_string(),
         entity_type: entity_type.to_string(),
@@ -3375,6 +3387,8 @@ fn parse_pipe_delimited_response(
             readiness.prep_items.push(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_DESCRIPTION:") {
             let ctx = intel.company_context.get_or_insert(CompanyContext {
+                render_policy: None,
+                claim_id: None,
                 description: None,
                 industry: None,
                 size: None,
@@ -3384,6 +3398,8 @@ fn parse_pipe_delimited_response(
             ctx.description = Some(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_INDUSTRY:") {
             let ctx = intel.company_context.get_or_insert(CompanyContext {
+                render_policy: None,
+                claim_id: None,
                 description: None,
                 industry: None,
                 size: None,
@@ -3393,6 +3409,8 @@ fn parse_pipe_delimited_response(
             ctx.industry = Some(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_SIZE:") {
             let ctx = intel.company_context.get_or_insert(CompanyContext {
+                render_policy: None,
+                claim_id: None,
                 description: None,
                 industry: None,
                 size: None,
@@ -3402,6 +3420,8 @@ fn parse_pipe_delimited_response(
             ctx.size = Some(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_HQ:") {
             let ctx = intel.company_context.get_or_insert(CompanyContext {
+                render_policy: None,
+                claim_id: None,
                 description: None,
                 industry: None,
                 size: None,
@@ -3411,6 +3431,8 @@ fn parse_pipe_delimited_response(
             ctx.headquarters = Some(rest.trim().to_string());
         } else if let Some(rest) = trimmed.strip_prefix("COMPANY_CONTEXT:") {
             let ctx = intel.company_context.get_or_insert(CompanyContext {
+                render_policy: None,
+                claim_id: None,
                 description: None,
                 industry: None,
                 size: None,
@@ -3495,6 +3517,8 @@ fn parse_risk_line(rest: &str) -> Option<IntelRisk> {
     let urgency = find_pipe_field(&parts, "URGENCY").unwrap_or_else(|| "watch".to_string());
 
     Some(IntelRisk {
+        render_policy: None,
+        claim_id: None,
         text,
         source,
         urgency,
@@ -3517,6 +3541,8 @@ fn parse_win_line(rest: &str) -> Option<IntelWin> {
     let impact = find_pipe_field(&parts, "IMPACT");
 
     Some(IntelWin {
+        render_policy: None,
+        claim_id: None,
         text,
         source,
         impact,
@@ -3537,6 +3563,8 @@ fn parse_stakeholder_line(rest: &str) -> Option<StakeholderInsight> {
     let engagement = find_pipe_field(&parts, "ENGAGEMENT");
 
     Some(StakeholderInsight {
+        render_policy: None,
+        claim_id: None,
         name,
         role,
         assessment,
@@ -3565,6 +3593,8 @@ fn parse_value_line(rest: &str) -> Option<ValueItem> {
     let impact = find_pipe_field(&parts, "IMPACT");
 
     Some(ValueItem {
+        render_policy: None,
+        claim_id: None,
         date,
         statement,
         source,

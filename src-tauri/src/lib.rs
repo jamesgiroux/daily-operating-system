@@ -604,6 +604,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Abilities
             commands::invoke_ability,
+            // DOS-412 sensitivity reveal audit
+            commands::reveal_sensitive_claim_text,
             // Core
             commands::get_config,
             commands::reload_configuration,

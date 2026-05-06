@@ -136,7 +136,17 @@ pub async fn get_project_detail(
                 .unwrap_or_default();
             let notes = project.notes.clone();
             // Intelligence from DB only — no filesystem fallback.
-            let intelligence = db.get_entity_intelligence(&project_id).ok().flatten();
+            let mut intelligence = db.get_entity_intelligence(&project_id).ok().flatten();
+            if let Some(ref mut intel) = intelligence {
+                crate::services::sensitivity::apply_entity_intelligence_render_policy(
+                    db,
+                    "project",
+                    &project_id,
+                    intel,
+                    crate::services::sensitivity::RenderSurface::TauriEntityDetail,
+                    &crate::services::sensitivity::RenderActor::user("user", Some("user")),
+                );
+            }
 
             let open_actions = db
                 .get_project_actions(&project_id)

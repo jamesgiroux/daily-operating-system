@@ -312,8 +312,19 @@ pub async fn get_person_detail(
                 .list_recent_email_signals_for_entity(&person_id, 12)
                 .unwrap_or_default();
 
-            // Load intelligence from DB
-            let intelligence = db.get_entity_intelligence(&person_id).ok().flatten();
+            // Load intelligence from DB, then re-apply output-side claim rendering
+            // policy so the legacy projection cache cannot leak private claims.
+            let mut intelligence = db.get_entity_intelligence(&person_id).ok().flatten();
+            if let Some(ref mut intel) = intelligence {
+                crate::services::sensitivity::apply_entity_intelligence_render_policy(
+                    db,
+                    "person",
+                    &person_id,
+                    intel,
+                    crate::services::sensitivity::RenderSurface::TauriEntityDetail,
+                    &crate::services::sensitivity::RenderActor::user("user", Some("user")),
+                );
+            }
 
             let open_actions = db
                 .get_person_actions(&person_id)

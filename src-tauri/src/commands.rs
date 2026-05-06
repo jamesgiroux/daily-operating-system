@@ -37,6 +37,7 @@ mod integrations;
 mod people_entities;
 mod planning_reports;
 mod projects_data;
+mod sensitivity;
 mod success_plans;
 mod workspace;
 
@@ -49,6 +50,7 @@ pub use integrations::*;
 pub use people_entities::*;
 pub use planning_reports::*;
 pub use projects_data::*;
+pub use sensitivity::*;
 pub use success_plans::*;
 pub use workspace::*;
 

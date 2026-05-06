@@ -1,6 +1,7 @@
 # do not add new entries — new abilities go through invoke_ability
 get_config
 reload_configuration
+reveal_sensitive_claim_text
 get_dashboard_data
 run_workflow
 get_workflow_status

@@ -693,6 +693,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 141,
         sql: include_str!("migrations/141_user_note_claim_type_backfill.sql"),
     },
+    // DOS-412: audited click-to-reveal records for Confidential claim text.
+    Migration {
+        version: 142,
+        sql: include_str!("migrations/142_sensitivity_reveal_audit.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

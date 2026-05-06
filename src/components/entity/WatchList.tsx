@@ -7,10 +7,11 @@
  */
 import { useState } from "react";
 import { X } from "lucide-react";
-import type { EntityIntelligence } from "@/types";
+import type { EntityIntelligence, RenderableClaimText } from "@/types";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { EditableText } from "@/components/ui/EditableText";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
 import s from "./WatchList.module.css";
 
 interface WatchListProps {
@@ -37,6 +38,7 @@ function SectionCard({ type, children }: { type: "risk" | "win" | "unknown"; chi
 
 interface WatchItemProps {
   text: string;
+  claimText?: RenderableClaimText;
   onTextChange?: (value: string) => void;
   onDismiss?: () => void;
   badge?: { text: string; color: string } | null;
@@ -44,7 +46,7 @@ interface WatchItemProps {
   onFeedback?: (type: "positive" | "negative") => void;
 }
 
-function WatchItem({ text, onTextChange, onDismiss, badge, feedbackValue, onFeedback }: WatchItemProps) {
+function WatchItem({ text, claimText, onTextChange, onDismiss, badge, feedbackValue, onFeedback }: WatchItemProps) {
   const hasActions = !!onDismiss || !!onFeedback;
   const badgeClass = badge
     ? badge.color === "terracotta" ? s.badgeTerracotta
@@ -55,7 +57,11 @@ function WatchItem({ text, onTextChange, onDismiss, badge, feedbackValue, onFeed
   return (
     <div className={s.itemRow}>
       <div className={s.itemText}>
-        {onTextChange ? (
+        {claimText ? (
+          <p className={s.itemTextContent}>
+            <ClaimTextRenderer value={claimText} surface="tauri_entity_detail" />
+          </p>
+        ) : onTextChange ? (
           <EditableText
             value={text}
             onChange={onTextChange}
@@ -136,6 +142,7 @@ export function WatchList({
             <WatchItem
               key={`risk-${i}`}
               text={r.text}
+              claimText={r.renderPolicy ? { text: r.text, policy: r.renderPolicy } : undefined}
               onTextChange={onUpdateField ? (v) => onUpdateField(`risks[${i}].text`, v) : undefined}
               onDismiss={onUpdateField ? () => onUpdateField(`risks[${i}].text`, "") : undefined}
               badge={urgencyBadge(r.urgency)}
@@ -157,6 +164,7 @@ export function WatchList({
             <WatchItem
               key={`win-${i}`}
               text={w.text}
+              claimText={w.renderPolicy ? { text: w.text, policy: w.renderPolicy } : undefined}
               onTextChange={onUpdateField ? (v) => onUpdateField(`recentWins[${i}].text`, v) : undefined}
               onDismiss={onUpdateField ? () => onUpdateField(`recentWins[${i}].text`, "") : undefined}
               badge={null}

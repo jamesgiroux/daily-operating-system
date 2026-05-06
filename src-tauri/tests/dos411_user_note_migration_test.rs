@@ -17,7 +17,7 @@ fn seed_legacy_entry(conn: &Connection, id: &str, title: &str, content: &str) {
 }
 
 fn make_migration_141_pending(conn: &Connection) {
-    conn.execute("DELETE FROM schema_version WHERE version = 141", [])
+    conn.execute("DELETE FROM schema_version WHERE version >= 141", [])
         .expect("make migration 141 pending");
 }
 
@@ -50,7 +50,10 @@ fn user_note_backfill_is_idempotent_and_freezes_legacy_writes() {
     make_migration_141_pending(&conn);
     let applied =
         dailyos_lib::migration_test_api::run_migrations(&conn).expect("apply migration 141");
-    assert_eq!(applied, 1);
+    assert!(
+        applied >= 1,
+        "expected migration 141 window to apply at least one migration"
+    );
 
     let claim_count: i64 = conn
         .query_row(
