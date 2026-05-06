@@ -2,6 +2,19 @@
 
 ## Revision history
 - v1 (2026-05-01) - initial L0 draft.
+- v2 (2026-05-05) - reconciled against W4 cycle-3 through cycle-20 closure work.
+
+## Post-W4 reconciliation notes (v2)
+
+- Trust reads now flow through `TrustInput<T>` with indeterminate reasons in `intel_queue` (`src-tauri/src/intel_queue.rs:2800-2838`, `src-tauri/src/intel_queue.rs:2978-3024`), and trust factor inputs expose `read_state_indeterminate` (`src-tauri/src/abilities/trust/types.rs:118-124`); prepare-meeting synthesis claims must preserve read-failure reasons when composing child trust factors.
+- `IndeterminateReadState` is a first-class gate (`src-tauri/src/abilities/trust/types.rs:77-83`), and `evaluate_trust_gates` pushes it whenever read state is indeterminate (`src-tauri/src/abilities/trust/mod.rs:266-273`), capping even strong evidence to `NeedsVerification` (`src-tauri/src/abilities/trust/mod.rs:1098-1114`).
+- `emit_signal_and_propagate` is atomic around source insert, derived inserts, derivation links, and meeting fanout via `db.with_transaction` (`src-tauri/src/signals/bus.rs:246-269`, `src-tauri/src/signals/bus.rs:295-305`); prep flows must choose parent-transaction composition deliberately.
+- Service signal helpers now include best-effort `emit_or_log` and `emit_and_propagate_or_log` wrappers (`src-tauri/src/services/signals.rs:117-147`, `src-tauri/src/services/signals.rs:149-174`), which fit prep-orchestrator callouts that should warn-log rather than fail the parent operation.
+- `LifecycleReviewOutcome` makes confirm/correct an explicit state machine with applied, already-reviewed, and stale-drift outcomes (`src-tauri/src/services/accounts.rs:991-1015`, `src-tauri/src/services/accounts.rs:1051-1066`, `src-tauri/src/services/accounts.rs:1125-1219`); Transform-exposed user correction flows should follow this pattern.
+- Production claim readers filter on both lifecycle axes: `claim_state = 'active' AND surfacing_state = 'active'` (`src-tauri/src/services/claims.rs:1837-1848`).
+- The current bundle fixture loader expects `tests/fixtures/bundle-{n}` (`src-tauri/tests/harness/bundle_helpers.rs:20-28`) and discovers `bundle-` directories with metadata (`src-tauri/tests/harness/loader.rs:147-179`); checked-in metadata exists for bundles 2, 3, 4, 6, 7, and 8 (`src-tauri/tests/fixtures/bundle-2/metadata.json:2`, `src-tauri/tests/fixtures/bundle-3/metadata.json:2`, `src-tauri/tests/fixtures/bundle-4/metadata.json:2`, `src-tauri/tests/fixtures/bundle-6/metadata.json:2`, `src-tauri/tests/fixtures/bundle-7/metadata.json:2`, `src-tauri/tests/fixtures/bundle-8/metadata.json:2`), but `src-tauri/tests/fixtures/bundle-5` is absent, so the DOS-219 PR must add bundle-5 for prepare-meeting parity.
+- `generate_callouts` now returns `(Vec<BriefingCallout>, GenerateCalloutsOutcome)` and surfaces degraded generation states (`src-tauri/src/signals/callouts.rs:89-116`, `src-tauri/src/signals/callouts.rs:125-134`, `src-tauri/src/signals/callouts.rs:260-266`); Transform composition must thread the outcome.
+- Tauri confirmation uses server-issued `ConfirmationToken`s (`src-tauri/src/bridges/types.rs:55-70`) plus consume-once storage (`src-tauri/src/bridges/types.rs:147-151`, `src-tauri/src/bridges/types.rs:445-458`, `src-tauri/src/bridges/tauri.rs:59-76`, `src-tauri/src/bridges/tauri.rs:172-186`); `category=Transform` with persisted side effects may trigger confirmation unless policy avoids publish semantics.
 
 ## 1. Contract restated
 
@@ -105,3 +118,4 @@ Wave gate artifact: W5 proof bundle with `cargo clippy -- -D warnings && cargo t
 3. Claim type names: are `meeting_topic`, `meeting_event_note`, `attendee_context`, `meeting_change_marker`, `suggested_outcome`, and `meeting_readiness` the final DOS-300 canonical strings?
 4. Context seed read: is reading operational `meetings`/`meeting_entities` metadata acceptable under "reads claims only", or must Tauri/worker pass a trusted `MeetingSummarySeed` into the ability?
 5. Targeted repair budget: should the first implementation allow one repair pass per invalid item, or should DOS-216 `quality.toml` own the exact repair fanout limit?
+7. Should `prepare_meeting` be category `Transform` with `may_publish=false` to avoid the confirmation flow on every meeting prep call?

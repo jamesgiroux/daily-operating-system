@@ -3,6 +3,17 @@
 ## Revision history
 
 - v1 (2026-05-01) — initial L0 draft.
+- v2 (2026-05-05) — reconciled against W4 cycle-3 through cycle-20 closure work.
+
+## Post-W4 reconciliation notes (v2)
+
+- Cycle-9 trust input composition has landed as `TrustInput<T>` in the recompute path: it carries both the value and an `indeterminate_reason`, then `collect_trust_input` aggregates reasons into `TrustFactorInputs.read_state_indeterminate` (`src-tauri/src/intel_queue.rs:2800-2838`, `src-tauri/src/intel_queue.rs:2851-2899`, `src-tauri/src/abilities/trust/types.rs:118-124`). DOS-218 trust-factor reads should compose through that shape rather than bool/tuple fallbacks.
+- `IndeterminateReadState` is now a hard trust gate for failed upstream reads: the gate kind documents read failures (`src-tauri/src/abilities/trust/types.rs:77-83`), `evaluate_trust_gates` emits it when `read_state_indeterminate` is true (`src-tauri/src/abilities/trust/mod.rs:266-273`), and `compile_trust` caps any triggered gate to `TrustBand::NeedsVerification` regardless of factor weights (`src-tauri/src/abilities/trust/mod.rs:102-113`).
+- `emit_signal_and_propagate` is now atomic through `db.with_transaction`; the source signal, derived signals, derivation links, and meeting fanout share a rollback boundary (`src-tauri/src/signals/bus.rs:243-269`, `src-tauri/src/signals/bus.rs:295-305`). Any DOS-218 parent-transaction composition should account for that boundary instead of assuming propagation can partly commit.
+- Service signal callsites now have explicit best-effort wrappers: `emit_or_log` and `emit_and_propagate_or_log` warn-log failures instead of silently dropping `Result`s (`src-tauri/src/services/signals.rs:117-147`, `src-tauri/src/services/signals.rs:149-179`). Read ability work should avoid signals, but service-adjacent examples should use these wrappers when emission is intentionally non-blocking.
+- Production active-claim lifecycle filtering is `claim_state='active' AND surfacing_state='active'`, not `superseded_at IS NULL` as the Linear ticket text says (`src-tauri/src/services/claims.rs:1837-1848`).
+- The committed eval fixture set currently discovers bundles 2, 3, 4, 6, 7, and 8 only (`src-tauri/tests/harness.rs:37-58`), with discovery keyed to checked-in `bundle-*` directories containing `metadata.json` (`src-tauri/tests/harness/loader.rs:128-179`). Bundle 1 is still a standalone DOS-287 reproduction test, not a harness fixture (`src-tauri/tests/dos287_substrate_bundle1_reproduction.rs:1-18`).
+- `abilities/common/` does not exist in the shipped tree; `abilities/` is still flat with `claims`, `feedback`, `provenance`, `registry`, `threads`, `tracer`, and `trust` modules (`src-tauri/src/abilities/mod.rs:1-9`). Keep DOS-218 helpers local unless a shared module is added by a later coordinated change.
 
 ## 1. Contract restated
 
@@ -102,3 +113,4 @@ Wave merge-gate artifact: `cargo test get_entity_context`, `cargo test --test ha
 4. Sensitivity: is ADR-0125 `Internal` sufficient for all entity context entries, or should person/stakeholder notes be `Confidential` even if that prevents MCP/default-agent exposure?
 5. Timestamp semantics: for edited notes, should `source_asof` be `updated_at` for current content as this plan proposes, or should provenance preserve original `created_at` plus a separate current-version timestamp?
 6. Claims-only future: if entity context entries must eventually become `intelligence_claims`, which issue owns backfill/projection from `entity_context_entries` into claim rows without breaking the current note CRUD surface?
+7. Schema lifecycle wording: Linear says `superseded_at IS NULL`, but production schema uses `claim_state` plus `surfacing_state`; should the ticket text be amended, or should DOS-218 use a compatibility helper?
