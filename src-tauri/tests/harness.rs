@@ -12,9 +12,11 @@ use std::{
 };
 
 use base64::Engine;
+use dailyos_lib::abilities::prepare_meeting::{prepare_meeting, PrepareMeetingInput};
 use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
 use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
+    NOOP_ABILITY_TRACER,
 };
 use dailyos_lib::intelligence::provider::{
     canonical_prompt_hash, CanonicalPromptRequest, FingerprintMetadata, IntelligenceProvider,
@@ -105,6 +107,39 @@ fn prepare_meeting_bundle5_parity_fixture_is_byte_identical() {
         .expect("bundle-5 expected output fixture reads");
 
     assert_eq!(legacy, expected);
+}
+
+#[test]
+fn prepare_meeting_public_fixtures_execute_without_private_context() {
+    for bundle in [5, 9, 10, 11, 12, 13] {
+        let fixture = bundle_fixture(bundle);
+        assert!(
+            fixture.inputs_json["input_json"].get("context").is_none(),
+            "bundle-{bundle} must not pass private prepare_meeting context"
+        );
+
+        let prepared = prepare_fixture_for_run(&fixture)
+            .unwrap_or_else(|error| panic!("bundle-{bundle} should prepare: {error}"));
+        let services = prepared.service_context();
+        let input: PrepareMeetingInput =
+            serde_json::from_value(fixture.inputs_json["input_json"].clone())
+                .unwrap_or_else(|error| panic!("bundle-{bundle} input parses: {error}"));
+        let ctx = AbilityContext::new(
+            &services,
+            &prepared.provider,
+            &NOOP_ABILITY_TRACER,
+            Actor::User,
+            None,
+        );
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .expect("tokio runtime");
+        let output = runtime
+            .block_on(prepare_meeting(&ctx, input))
+            .unwrap_or_else(|error| panic!("bundle-{bundle} should execute: {error:?}"));
+        assert_eq!(output.data().schema_version.0, 1);
+    }
 }
 
 #[test]

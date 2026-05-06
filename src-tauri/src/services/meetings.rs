@@ -2,13 +2,18 @@
 // Business logic for meeting intelligence assembly and entity operations.
 
 use chrono::TimeZone;
+use rusqlite::OptionalExtension;
 use std::collections::{HashMap, HashSet};
 use std::path::Path;
 use tauri::Emitter;
 
 use crate::commands::{MeetingHistoryDetail, MeetingSearchResult, PrepContext};
+use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
 use crate::db::ActionDb;
-use crate::services::context::ServiceContext;
+use crate::services::context::{
+    PrepareMeetingAttendeeSnapshot, PrepareMeetingContextSnapshot, PrepareMeetingSnapshot,
+    PrepareMeetingSubjectSnapshot, ServiceContext,
+};
 use crate::state::AppState;
 use crate::types::{CapturedOutcome, IntelligenceQuality, MeetingIntelligence};
 
@@ -97,6 +102,409 @@ pub fn clear_meeting_prep_frozen(
         .map_err(|e| format!("signal emit failed: {e}"))?;
         Ok(())
     })
+}
+
+/// Claim-backed context snapshot for the `prepare_meeting` Transform ability.
+///
+/// The ability layer stays on `AbilityContext`; this service owns the DB reads
+/// needed to turn a meeting ID into meeting metadata, attendees, scoped subjects,
+/// and active evidence claims.
+pub fn load_prepare_meeting_context_snapshot(
+    db: &ActionDb,
+    meeting_id: &str,
+) -> Result<PrepareMeetingContextSnapshot, String> {
+    let meeting = load_prepare_meeting_snapshot(db, meeting_id)?;
+    let mut attendees = load_prepare_meeting_attendees(db, &meeting)?;
+    let mut subjects = load_prepare_meeting_subjects(db, meeting_id)?;
+
+    attach_single_account_to_attendees(&mut attendees, &subjects);
+    for attendee in &attendees {
+        if let Some(person_id) = attendee.person_id.as_deref() {
+            push_prepare_meeting_subject(
+                &mut subjects,
+                "person",
+                person_id,
+                attendee.name.as_str(),
+            );
+        }
+        if let Some(account_id) = attendee.account_id.as_deref() {
+            let display_name = account_display_name(account_id, &subjects)
+                .or_else(|| attendee.domain.clone())
+                .unwrap_or_else(|| account_id.to_string());
+            push_prepare_meeting_subject(&mut subjects, "account", account_id, &display_name);
+        }
+    }
+
+    let claims = load_prepare_meeting_claims(db, meeting_id, &subjects)?;
+    Ok(PrepareMeetingContextSnapshot {
+        meeting,
+        attendees,
+        subjects,
+        claims,
+    })
+}
+
+fn load_prepare_meeting_snapshot(
+    db: &ActionDb,
+    meeting_id: &str,
+) -> Result<PrepareMeetingSnapshot, String> {
+    if !object_exists(db, "meetings")? {
+        return Err(format!("meeting `{meeting_id}` not found"));
+    }
+
+    db.conn_ref()
+        .query_row(
+            "SELECT id, title, start_time, end_time, attendees
+             FROM meetings
+             WHERE id = ?1
+             LIMIT 1",
+            rusqlite::params![meeting_id],
+            |row| {
+                Ok(PrepareMeetingSnapshot {
+                    id: row.get(0)?,
+                    title: row.get(1)?,
+                    starts_at: non_empty_optional(row.get::<_, Option<String>>(2)?),
+                    ends_at: non_empty_optional(row.get::<_, Option<String>>(3)?),
+                    attendees_raw: non_empty_optional(row.get::<_, Option<String>>(4)?),
+                })
+            },
+        )
+        .optional()
+        .map_err(|error| format!("read meeting `{meeting_id}`: {error}"))?
+        .ok_or_else(|| format!("meeting `{meeting_id}` not found"))
+}
+
+fn load_prepare_meeting_attendees(
+    db: &ActionDb,
+    meeting: &PrepareMeetingSnapshot,
+) -> Result<Vec<PrepareMeetingAttendeeSnapshot>, String> {
+    let mut attendees = Vec::new();
+    let mut seen_emails = HashSet::new();
+
+    if object_exists(db, "meeting_attendees")? && object_exists(db, "people")? {
+        let mut statement = db
+            .conn_ref()
+            .prepare(
+                "SELECT p.id, p.email, p.name
+                 FROM people p
+                 JOIN meeting_attendees ma ON ma.person_id = p.id
+                 WHERE ma.meeting_id = ?1
+                 ORDER BY p.name ASC",
+            )
+            .map_err(|error| format!("prepare meeting attendees read: {error}"))?;
+        let rows = statement
+            .query_map(rusqlite::params![meeting.id], |row| {
+                let email = row.get::<_, String>(1)?;
+                Ok(PrepareMeetingAttendeeSnapshot {
+                    name: row.get(2)?,
+                    domain: domain_from_email(&email),
+                    email: Some(email),
+                    person_id: Some(row.get(0)?),
+                    account_id: None,
+                })
+            })
+            .map_err(|error| format!("read meeting attendees: {error}"))?;
+
+        for row in rows {
+            let attendee = row.map_err(|error| format!("map meeting attendee: {error}"))?;
+            if let Some(email) = attendee.email.as_deref() {
+                seen_emails.insert(email.to_ascii_lowercase());
+            }
+            attendees.push(attendee);
+        }
+    }
+
+    for email in parse_attendee_emails(meeting.attendees_raw.as_deref()) {
+        if !seen_emails.insert(email.to_ascii_lowercase()) {
+            continue;
+        }
+        attendees.push(PrepareMeetingAttendeeSnapshot {
+            name: display_name_from_email(&email),
+            domain: domain_from_email(&email),
+            email: Some(email),
+            person_id: None,
+            account_id: None,
+        });
+    }
+
+    Ok(attendees)
+}
+
+fn load_prepare_meeting_subjects(
+    db: &ActionDb,
+    meeting_id: &str,
+) -> Result<Vec<PrepareMeetingSubjectSnapshot>, String> {
+    let mut subjects = Vec::new();
+
+    if object_exists(db, "linked_entities")? {
+        let mut statement = db
+            .conn_ref()
+            .prepare(
+                "SELECT lr.entity_type, lr.entity_id,
+                        COALESCE(e.name, lr.entity_id) AS display_name
+                 FROM linked_entities lr
+                 LEFT JOIN entities e
+                      ON e.id = lr.entity_id AND e.entity_type = lr.entity_type
+                 WHERE lr.owner_type = 'meeting'
+                   AND lr.owner_id = ?1
+                   AND lr.entity_type IN ('account', 'project', 'person')
+                 ORDER BY CASE lr.role WHEN 'primary' THEN 0
+                                       WHEN 'related' THEN 1
+                                       ELSE 2 END,
+                          display_name ASC",
+            )
+            .map_err(|error| format!("prepare linked entity read: {error}"))?;
+        let rows = statement
+            .query_map(rusqlite::params![meeting_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|error| format!("read linked entities: {error}"))?;
+        for row in rows {
+            let (kind, id, display_name) =
+                row.map_err(|error| format!("map linked entity: {error}"))?;
+            push_prepare_meeting_subject(&mut subjects, &kind, &id, &display_name);
+        }
+    }
+
+    if object_exists(db, "meeting_entities")? {
+        let display_join = if object_exists(db, "entities")? {
+            "COALESCE(e.name, me.entity_id)"
+        } else {
+            "me.entity_id"
+        };
+        let sql = if object_exists(db, "entities")? {
+            format!(
+                "SELECT me.entity_type, me.entity_id, {display_join} AS display_name
+                 FROM meeting_entities me
+                 LEFT JOIN entities e
+                      ON e.id = me.entity_id AND e.entity_type = me.entity_type
+                 WHERE me.meeting_id = ?1
+                   AND me.entity_type IN ('account', 'project', 'person')
+                 ORDER BY COALESCE(me.is_primary, 0) DESC,
+                          COALESCE(me.confidence, 0.0) DESC,
+                          display_name ASC"
+            )
+        } else {
+            format!(
+                "SELECT me.entity_type, me.entity_id, {display_join} AS display_name
+                 FROM meeting_entities me
+                 WHERE me.meeting_id = ?1
+                   AND me.entity_type IN ('account', 'project', 'person')
+                 ORDER BY COALESCE(me.is_primary, 0) DESC,
+                          COALESCE(me.confidence, 0.0) DESC,
+                          display_name ASC"
+            )
+        };
+        let mut statement = db
+            .conn_ref()
+            .prepare(&sql)
+            .map_err(|error| format!("prepare meeting entity read: {error}"))?;
+        let rows = statement
+            .query_map(rusqlite::params![meeting_id], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                ))
+            })
+            .map_err(|error| format!("read meeting entities: {error}"))?;
+        for row in rows {
+            let (kind, id, display_name) =
+                row.map_err(|error| format!("map meeting entity: {error}"))?;
+            push_prepare_meeting_subject(&mut subjects, &kind, &id, &display_name);
+        }
+    }
+
+    Ok(subjects)
+}
+
+fn load_prepare_meeting_claims(
+    db: &ActionDb,
+    meeting_id: &str,
+    subjects: &[PrepareMeetingSubjectSnapshot],
+) -> Result<Vec<crate::db::claims::IntelligenceClaim>, String> {
+    if !object_exists(db, "intelligence_claims")? {
+        return Ok(Vec::new());
+    }
+
+    let mut claims = Vec::new();
+    let mut seen = HashSet::new();
+    let mut subject_refs = Vec::new();
+    subject_refs.push(subject_ref_json("meeting", meeting_id)?);
+    for subject in subjects {
+        subject_refs.push(subject_ref_json(&subject.kind, &subject.id)?);
+    }
+
+    for subject_ref in subject_refs {
+        for claim in crate::services::claims::load_claims_active(db, &subject_ref, None)
+            .map_err(|error| format!("load active claims for {subject_ref}: {error}"))?
+        {
+            if seen.insert(claim.id.clone()) {
+                claims.push(claim);
+            }
+        }
+    }
+
+    for claim in crate::services::claims::load_claims_active_by_source_ref(db, meeting_id)
+        .map_err(|error| format!("load active claims for source_ref {meeting_id}: {error}"))?
+    {
+        if seen.insert(claim.id.clone()) {
+            claims.push(claim);
+        }
+    }
+
+    claims.sort_by(|left, right| left.id.cmp(&right.id));
+    Ok(claims)
+}
+
+fn attach_single_account_to_attendees(
+    attendees: &mut [PrepareMeetingAttendeeSnapshot],
+    subjects: &[PrepareMeetingSubjectSnapshot],
+) {
+    let accounts = subjects
+        .iter()
+        .filter(|subject| subject.kind == "account")
+        .collect::<Vec<_>>();
+    let [account] = accounts.as_slice() else {
+        return;
+    };
+
+    for attendee in attendees {
+        if attendee.account_id.is_none() {
+            attendee.account_id = Some(account.id.clone());
+        }
+    }
+}
+
+fn account_display_name(
+    account_id: &str,
+    subjects: &[PrepareMeetingSubjectSnapshot],
+) -> Option<String> {
+    subjects
+        .iter()
+        .find(|subject| subject.kind == "account" && subject.id == account_id)
+        .map(|subject| subject.display_name.clone())
+}
+
+fn push_prepare_meeting_subject(
+    subjects: &mut Vec<PrepareMeetingSubjectSnapshot>,
+    kind: &str,
+    id: &str,
+    display_name: &str,
+) {
+    if !matches!(kind, "account" | "person" | "project") || id.trim().is_empty() {
+        return;
+    }
+    if let Some(existing) = subjects
+        .iter_mut()
+        .find(|subject| subject.kind == kind && subject.id == id)
+    {
+        if existing.display_name == existing.id && !display_name.trim().is_empty() {
+            existing.display_name = display_name.to_string();
+        }
+        return;
+    }
+
+    subjects.push(PrepareMeetingSubjectSnapshot {
+        kind: kind.to_string(),
+        id: id.to_string(),
+        display_name: if display_name.trim().is_empty() {
+            id.to_string()
+        } else {
+            display_name.to_string()
+        },
+    });
+}
+
+fn parse_attendee_emails(raw: Option<&str>) -> Vec<String> {
+    let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) else {
+        return Vec::new();
+    };
+    if let Ok(values) = serde_json::from_str::<Vec<String>>(raw) {
+        return values
+            .into_iter()
+            .map(|email| email.trim().to_ascii_lowercase())
+            .filter(|email| email.contains('@'))
+            .collect();
+    }
+
+    raw.split(',')
+        .map(|email| email.trim().to_ascii_lowercase())
+        .filter(|email| email.contains('@'))
+        .collect()
+}
+
+fn domain_from_email(email: &str) -> Option<String> {
+    email
+        .split_once('@')
+        .map(|(_, domain)| domain.trim().to_ascii_lowercase())
+        .filter(|domain| !domain.is_empty())
+}
+
+fn display_name_from_email(email: &str) -> String {
+    email
+        .split_once('@')
+        .map(|(local, _)| {
+            local
+                .split(['.', '_', '-'])
+                .filter(|part| !part.is_empty())
+                .map(|part| {
+                    let mut chars = part.chars();
+                    match chars.next() {
+                        Some(first) => first.to_uppercase().collect::<String>() + chars.as_str(),
+                        None => String::new(),
+                    }
+                })
+                .collect::<Vec<_>>()
+                .join(" ")
+        })
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or_else(|| email.to_string())
+}
+
+fn non_empty_optional(value: Option<String>) -> Option<String> {
+    value.and_then(|value| {
+        let trimmed = value.trim();
+        if trimmed.is_empty() {
+            None
+        } else {
+            Some(trimmed.to_string())
+        }
+    })
+}
+
+fn object_exists(db: &ActionDb, name: &str) -> Result<bool, String> {
+    db.conn_ref()
+        .query_row(
+            "SELECT EXISTS(
+                 SELECT 1 FROM sqlite_master
+                 WHERE name = ?1 AND type IN ('table', 'view')
+             )",
+            rusqlite::params![name],
+            |row| row.get::<_, i64>(0),
+        )
+        .map(|exists| exists != 0)
+        .map_err(|error| format!("check sqlite object {name}: {error}"))
+}
+
+fn subject_ref_json(kind: &str, id: &str) -> Result<String, String> {
+    let subject = match kind {
+        "account" => ClaimSubjectRef::Account { id: id.to_string() },
+        "meeting" => ClaimSubjectRef::Meeting { id: id.to_string() },
+        "person" => ClaimSubjectRef::Person { id: id.to_string() },
+        "project" => ClaimSubjectRef::Project { id: id.to_string() },
+        other => {
+            return Err(format!(
+                "unsupported prepare_meeting subject kind `{other}`"
+            ))
+        }
+    };
+    crate::services::claims::canonical_subject_ref(&subject)
+        .map_err(|error| format!("canonical subject_ref: {error}"))
 }
 
 /// Hydrate attendee context by matching calendar attendee emails to person entities.

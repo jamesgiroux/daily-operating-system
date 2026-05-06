@@ -3,17 +3,28 @@
   "scenario_id": "bundle10-prepare-meeting-multi-attendee-known-account",
   "invariant": "A multi-attendee meeting with a known account can attribute account-level topics to the shared account inferred from attendee domains.",
   "expected_render_policy": "show-with-warnings",
-  "surfaces_exercised": ["prepare_meeting", "multi-attendee-known-account"],
-  "source_lifecycle_refs": ["src-b10-account-plan", "ctx-b10-account"],
+  "surfaces_exercised": [
+    "prepare_meeting",
+    "multi-attendee-known-account"
+  ],
+  "source_lifecycle_refs": [
+    "src-b10-account-plan",
+    "ctx-b10-account"
+  ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "bundle-10-prepare-meeting-prompt-v1",
+  "prompt_fingerprint_baseline": "4aa83be35eedd0f64ed0cb20afc38c4bd0a12e9fc06121afcc221087cb903d68",
   "prompt_template_version": "1.0.0",
-  "completion_text_hash": "fixture-provider-replay-not-pinned",
-  "trust_factors_dominant": ["subject_fit", "source_time", "composition"],
+  "completion_text_hash": "939188a290d551db004ab289695a5cd8312c023958ef0820ef006eede985baa3",
+  "trust_factors_dominant": [
+    "subject_fit",
+    "source_time",
+    "composition"
+  ],
   "pass_fail_definition": "PASS = account-level topic is attributed to acct-b10-known and source_asof is preserved through direct and composed provenance. FAIL = topic is attached to a person, meeting, or unrelated account.",
   "fixture_design_notes": {
-    "state_sql": "Seeds one account context row for get_entity_context composition.",
-    "expected_output": "MeetingBrief topics section covers a multi-attendee known-account meeting."
+    "state_sql": "Seeds meetings, attendees, linked subjects, and intelligence_claims rows consumed by the public prepare_meeting context builder.",
+    "expected_output": "MeetingBrief topics section covers a multi-attendee known-account meeting.",
+    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key for this claim-backed fixture."
   }
 }

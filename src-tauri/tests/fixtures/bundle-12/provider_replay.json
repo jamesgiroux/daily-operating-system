@@ -1,4 +1,9 @@
 {
   "version": 1,
-  "fixtures": []
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "39856db038f3962fd9f0ebb17b13ab53f5be7a8deea73ccbc035be813ce668a1",
+      "completion": "{\n  \"topics\": [],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
+    }
+  ]
 }

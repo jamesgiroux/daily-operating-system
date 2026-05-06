@@ -3,17 +3,27 @@
   "scenario_id": "bundle11-prepare-meeting-stale-glean",
   "invariant": "A meeting brief with stale Glean evidence marks stale source provenance and does not render stale claims as current facts.",
   "expected_render_policy": "show-with-warnings",
-  "surfaces_exercised": ["prepare_meeting", "stale-glean"],
-  "source_lifecycle_refs": ["src-b11-stale-glean", "ctx-b11-stale-account"],
+  "surfaces_exercised": [
+    "prepare_meeting",
+    "stale-glean"
+  ],
+  "source_lifecycle_refs": [
+    "src-b11-stale-glean",
+    "ctx-b11-stale-account"
+  ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "bundle-11-prepare-meeting-prompt-v1",
+  "prompt_fingerprint_baseline": "f73e0d5d630797861fe70464d2e250fb701b1cde309769601b6a3153d34aa406",
   "prompt_template_version": "1.0.0",
-  "completion_text_hash": "fixture-provider-replay-not-pinned",
-  "trust_factors_dominant": ["source_time", "subject_fit"],
+  "completion_text_hash": "f05eb9916d75c2f118b81d86865fbd1190e3f979b3d5155c25291330ff7af4e8",
+  "trust_factors_dominant": [
+    "source_time",
+    "subject_fit"
+  ],
   "pass_fail_definition": "PASS = stale Glean evidence is either omitted from rendered facts or carries SourceStale warning with lowered evidence weight; source_asof remains visible in provenance. FAIL = stale evidence is rendered as a current state fact without warning.",
   "fixture_design_notes": {
-    "state_sql": "Seeds a stale account context row older than the W5-B stale-source window.",
-    "expected_output": "Empty brief sections are intentional because stale evidence should not become a current fact."
+    "state_sql": "Seeds meetings, attendees, linked subjects, and intelligence_claims rows consumed by the public prepare_meeting context builder.",
+    "expected_output": "Empty brief sections are intentional because stale evidence should not become a current fact.",
+    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key for this claim-backed fixture."
   }
 }

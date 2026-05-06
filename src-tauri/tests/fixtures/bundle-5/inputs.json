@@ -4,44 +4,7 @@
     "schema_version": 1,
     "meeting_id": "meeting-b5-first-person",
     "depth": 1,
-    "include_open_loops": true,
-    "context": {
-      "meeting": {
-        "id": "meeting-b5-first-person",
-        "title": "Intro with Riley Rivera",
-        "starts_at": "2026-05-06T15:00:00Z",
-        "ends_at": "2026-05-06T15:30:00Z",
-        "attendees": [
-          {
-            "name": "Riley Rivera",
-            "email": "riley@first-person.example.com",
-            "person_id": "person-b5-riley",
-            "domain": "first-person.example.com"
-          }
-        ]
-      },
-      "evidence": [
-        {
-          "id": "src-b5-intro-note",
-          "subject": { "kind": "person", "id": "person-b5-riley" },
-          "claim_type": "attendee_context",
-          "text": "Riley Rivera is new to the workspace and asked for a concise first-call agenda.",
-          "source_asof": "2026-05-05T15:30:00Z",
-          "observed_at": "2026-05-05T15:30:00Z",
-          "data_source": "user",
-          "lifecycle": "active",
-          "confidence": 0.92,
-          "temporal_scope": "state",
-          "sensitivity": "internal"
-        }
-      ],
-      "entity_contexts": [
-        {
-          "subject": { "kind": "person", "id": "person-b5-riley" },
-          "display_name": "Riley Rivera"
-        }
-      ]
-    }
+    "include_open_loops": true
   },
   "actor": "user",
   "mode": "evaluate",

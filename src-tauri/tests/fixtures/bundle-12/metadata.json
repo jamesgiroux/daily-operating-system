@@ -3,17 +3,27 @@
   "scenario_id": "bundle12-prepare-meeting-revoked-source",
   "invariant": "Revoked source evidence is masked end-to-end and cannot render as a meeting-prep fact.",
   "expected_render_policy": "show-with-warnings",
-  "surfaces_exercised": ["prepare_meeting", "revoked-source"],
-  "source_lifecycle_refs": ["src-b12-revoked", "ctx-b12-revoked-account"],
+  "surfaces_exercised": [
+    "prepare_meeting",
+    "revoked-source"
+  ],
+  "source_lifecycle_refs": [
+    "src-b12-revoked",
+    "ctx-b12-revoked-account"
+  ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "bundle-12-prepare-meeting-prompt-v1",
+  "prompt_fingerprint_baseline": "54b149c7f81cd2bbb188e090b8d99410cea12ccdcd08931068d8944174505493",
   "prompt_template_version": "1.0.0",
-  "completion_text_hash": "fixture-provider-replay-not-pinned",
-  "trust_factors_dominant": ["source_lifecycle", "subject_fit"],
+  "completion_text_hash": "f05eb9916d75c2f118b81d86865fbd1190e3f979b3d5155c25291330ff7af4e8",
+  "trust_factors_dominant": [
+    "source_lifecycle",
+    "subject_fit"
+  ],
   "pass_fail_definition": "PASS = revoked source evidence produces a masked provenance warning and no rendered MeetingBrief fact. FAIL = revoked evidence appears in topics, attendee_context, open_loops, change markers, or suggested outcomes.",
   "fixture_design_notes": {
-    "state_sql": "Seeds child account context while the direct evidence source is revoked.",
-    "expected_output": "All brief content sections are empty because the only direct evidence is revoked."
+    "state_sql": "Seeds meetings, attendees, linked subjects, and intelligence_claims rows consumed by the public prepare_meeting context builder.",
+    "expected_output": "All brief content sections are empty because the only direct evidence is revoked.",
+    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key for this claim-backed fixture."
   }
 }

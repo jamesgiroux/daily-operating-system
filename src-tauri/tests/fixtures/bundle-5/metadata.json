@@ -3,18 +3,29 @@
   "scenario_id": "bundle5-prepare-meeting-first-person-parity",
   "invariant": "The prepare_meeting Transform ability can produce the same first-person meeting brief shape before cutover without touching existing prepare paths.",
   "expected_render_policy": "show-with-warnings",
-  "surfaces_exercised": ["prepare_meeting", "prepare-meeting-parity", "first-meeting-person"],
-  "source_lifecycle_refs": ["src-b5-intro-note", "ctx-b5-person-first"],
+  "surfaces_exercised": [
+    "prepare_meeting",
+    "prepare-meeting-parity",
+    "first-meeting-person"
+  ],
+  "source_lifecycle_refs": [
+    "src-b5-intro-note",
+    "ctx-b5-person-first"
+  ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "bundle-5-prepare-meeting-prompt-v1",
+  "prompt_fingerprint_baseline": "ba412f6c309ff049cf80075bb34e38803e4dd0c6db01b2ffe050b87669eabbff",
   "prompt_template_version": "1.0.0",
-  "completion_text_hash": "fixture-provider-replay-not-pinned",
-  "trust_factors_dominant": ["subject_fit", "source_time", "composition"],
+  "completion_text_hash": "a98a7c3b4ed1a0919aeb04472c8af0b982658fe454de753e0aa454a52c4bc90b",
+  "trust_factors_dominant": [
+    "subject_fit",
+    "source_time",
+    "composition"
+  ],
   "pass_fail_definition": "PASS = prepare_meeting emits MeetingBrief with schema_version 1, attributes Riley context to person-b5-riley, composes get_entity_context, and does not invoke legacy prepare mutation paths. FAIL = output shape drifts, attribution is missing, or legacy prepare state changes.",
   "fixture_design_notes": {
-    "state_sql": "Seeds one person entity_context_entries row so child get_entity_context provenance can propagate source_asof through composition.",
-    "provider_replay": "Intentionally empty until the Stage 4 harness replay hash is pinned; unit coverage exercises live synthesis behavior.",
+    "state_sql": "Seeds meetings, attendees, linked subjects, and intelligence_claims rows consumed by the public prepare_meeting context builder.",
+    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key for this claim-backed fixture.",
     "expected_output": "MeetingBrief shape from Linear DOS-219 for a first meeting with a person.",
     "expected_provenance": "Contract-level provenance expectations for W5-B: prompt fingerprint, get_entity_context composition, source_asof reachability, and state temporal scope."
   }

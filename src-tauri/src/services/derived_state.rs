@@ -1006,6 +1006,7 @@ fn json_company_context_from_claims(claims: &[&IntelligenceClaim]) -> Option<Str
 /// stay as direct cache writes during the dual-read window, but this module owns
 /// the SQL so callers do not write projection targets from unrelated services.
 pub fn upsert_entity_intelligence_legacy_snapshot(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> Result<(), rusqlite::Error> {
@@ -1087,7 +1088,7 @@ pub fn upsert_entity_intelligence_legacy_snapshot(
         upsert_entity_health_legacy_projection(db, &intel.entity_id, &intel.entity_type, health)?;
     }
 
-    let side_effect_outcome = emit_enrichment_side_effect_signals(db, intel);
+    let side_effect_outcome = emit_enrichment_side_effect_signals(ctx, db, intel);
     if side_effect_outcome.is_degraded() {
         log::warn!(
             "derived_state: enrichment side-effect signals degraded for {}/{} — {} signal(s) dropped after snapshot commit; downstream callouts may be incomplete",
@@ -1207,12 +1208,14 @@ impl EnrichmentSideEffectOutcome {
 }
 
 fn emit_enrichment_side_effect_signals(
+    ctx: &ServiceContext<'_>,
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
 ) -> EnrichmentSideEffectOutcome {
     let mut dropped: u32 = 0;
     let mut try_emit = |signal_type: &str, value: &str, confidence: f64| {
-        if let Err(e) = crate::signals::bus::emit_signal(
+        if let Err(e) = crate::services::signals::emit(
+            ctx,
             db,
             &intel.entity_type,
             &intel.entity_id,

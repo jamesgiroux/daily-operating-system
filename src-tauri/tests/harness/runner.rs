@@ -10,15 +10,24 @@ use crate::harness::scoring::{
 };
 use crate::harness::types::{AbilityCategory, EvalFixture, FixtureRef};
 use base64::Engine;
+use dailyos_lib::abilities::feedback::ClaimVerificationState;
 use dailyos_lib::abilities::Actor;
 use dailyos_lib::abilities::NoopAbilityTracer;
 use dailyos_lib::bridges::eval::{EvalAbilityBridge, EvalAbilityDeps, EvalFixtureServices};
+use dailyos_lib::db::claims::{
+    ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
+};
+use dailyos_lib::db::ActionDb;
 use dailyos_lib::intelligence::provider::{
     Completion, FingerprintMetadata, ModelName, ProviderKind, ReplayProvider,
 };
 #[cfg(feature = "harness-hermetic")]
 use dailyos_lib::services::context::validate_harness_hermetic_db_path;
-use dailyos_lib::services::context::{EntityContextReadFuture, EntityContextReadHandle};
+use dailyos_lib::services::context::{
+    EntityContextClaimReadFuture, EntityContextClaimReadHandle, EntityContextReadFuture,
+    EntityContextReadHandle, PrepareMeetingContextReadFuture, PrepareMeetingContextReadHandle,
+    PrepareMeetingContextSnapshot,
+};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::external_replay::JsonExternalReplayFixture;
 use dailyos_lib::types::EntityContextEntry;
@@ -123,15 +132,27 @@ pub(crate) struct PreparedFixtureRun {
     pub external_clients: ExternalClients,
     pub provider: ReplayProvider,
     pub entity_context_rows: Vec<EntityContextEntry>,
+    pub entity_context_claims: Vec<IntelligenceClaim>,
+    pub prepare_meeting_context: Option<PrepareMeetingContextSnapshot>,
 }
 
 impl PreparedFixtureRun {
     pub fn service_context(&self) -> ServiceContext<'_> {
-        ServiceContext::new_evaluate(&self.clock, &self.rng, &self.external_clients)
+        let services = ServiceContext::new_evaluate(&self.clock, &self.rng, &self.external_clients)
             .with_actor("eval_fixture")
             .with_entity_context_reader(Arc::new(FixtureEntityContextReader {
                 rows: self.entity_context_rows.clone(),
             }))
+            .with_entity_context_claim_reader(Arc::new(FixtureEntityContextClaimReader {
+                claims: self.entity_context_claims.clone(),
+            }));
+        if let Some(snapshot) = self.prepare_meeting_context.as_ref().cloned() {
+            services.with_prepare_meeting_context_reader(Arc::new(
+                FixturePrepareMeetingContextReader { snapshot },
+            ))
+        } else {
+            services
+        }
     }
 }
 
@@ -187,15 +208,27 @@ struct PreparedFixtureServices<'run> {
     rng: &'run SeedableRng,
     external_clients: &'run ExternalClients,
     entity_context_rows: &'run [EntityContextEntry],
+    entity_context_claims: &'run [IntelligenceClaim],
+    prepare_meeting_context: &'run Option<PrepareMeetingContextSnapshot>,
 }
 
 impl EvalFixtureServices for PreparedFixtureServices<'_> {
     fn service_context(&self) -> ServiceContext<'_> {
-        ServiceContext::new_evaluate(self.clock, self.rng, self.external_clients)
+        let services = ServiceContext::new_evaluate(self.clock, self.rng, self.external_clients)
             .with_actor("eval_fixture")
             .with_entity_context_reader(Arc::new(FixtureEntityContextReader {
                 rows: self.entity_context_rows.to_vec(),
             }))
+            .with_entity_context_claim_reader(Arc::new(FixtureEntityContextClaimReader {
+                claims: self.entity_context_claims.to_vec(),
+            }));
+        if let Some(snapshot) = self.prepare_meeting_context.clone() {
+            services.with_prepare_meeting_context_reader(Arc::new(
+                FixturePrepareMeetingContextReader { snapshot },
+            ))
+        } else {
+            services
+        }
     }
 }
 
@@ -221,6 +254,55 @@ impl EntityContextReadHandle for FixtureEntityContextReader {
     }
 }
 
+#[derive(Clone)]
+struct FixtureEntityContextClaimReader {
+    claims: Vec<IntelligenceClaim>,
+}
+
+impl EntityContextClaimReadHandle for FixtureEntityContextClaimReader {
+    fn read_entity_context_claims<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        _depth: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        Box::pin(async move {
+            let mut claims = self
+                .claims
+                .iter()
+                .filter(|claim| {
+                    claim.claim_state == ClaimState::Active
+                        && claim.surfacing_state == SurfacingState::Active
+                        && claim_subject_matches(claim, &entity_type, &entity_id)
+                })
+                .cloned()
+                .collect::<Vec<_>>();
+            claims.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+            Ok(claims)
+        })
+    }
+}
+
+#[derive(Clone)]
+struct FixturePrepareMeetingContextReader {
+    snapshot: PrepareMeetingContextSnapshot,
+}
+
+impl PrepareMeetingContextReadHandle for FixturePrepareMeetingContextReader {
+    fn read_prepare_meeting_context<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> PrepareMeetingContextReadFuture<'a> {
+        Box::pin(async move {
+            if self.snapshot.meeting.id == meeting_id {
+                Ok(self.snapshot.clone())
+            } else {
+                Err(format!("fixture meeting `{meeting_id}` not seeded"))
+            }
+        })
+    }
+}
+
 /// Run a single fixture: build evaluate context from fixture clock/seed/replay,
 /// load state.sql into in-memory SQLite, invoke ability, capture output.
 pub fn run_fixture(deps: &RunnerDeps, fixture: &EvalFixture) -> Result<RunResult, RunError> {
@@ -232,6 +314,8 @@ pub fn run_fixture(deps: &RunnerDeps, fixture: &EvalFixture) -> Result<RunResult
         rng: &prepared.rng,
         external_clients: &prepared.external_clients,
         entity_context_rows: &prepared.entity_context_rows,
+        entity_context_claims: &prepared.entity_context_claims,
+        prepare_meeting_context: &prepared.prepare_meeting_context,
     };
     let eval_bridge = EvalAbilityBridge::new(
         deps.registry.as_ref(),
@@ -269,6 +353,8 @@ pub(crate) fn prepare_fixture_for_run(
     conn.execute_batch(&fixture.state_sql)
         .map_err(|error| RunError::StateSqlFailed(error.to_string()))?;
     let entity_context_rows = capture_entity_context_rows(&conn)?;
+    let entity_context_claims = capture_intelligence_claim_rows(&conn)?;
+    let prepare_meeting_context = capture_prepare_meeting_context(&conn, fixture)?;
 
     let clock = FixedClock::new(fixture.clock);
     let rng = SeedableRng::new(fixture.seed);
@@ -288,6 +374,8 @@ pub(crate) fn prepare_fixture_for_run(
         external_clients,
         provider,
         entity_context_rows,
+        entity_context_claims,
+        prepare_meeting_context,
     })
 }
 
@@ -581,6 +669,103 @@ fn capture_entity_context_rows(conn: &Connection) -> Result<Vec<EntityContextEnt
     rows.collect::<Result<Vec<_>, _>>().map_err(sql_error)
 }
 
+fn capture_intelligence_claim_rows(conn: &Connection) -> Result<Vec<IntelligenceClaim>, RunError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Ok(Vec::new());
+    }
+
+    let mut statement = conn
+        .prepare(
+            "SELECT id, subject_ref, claim_type, field_path, topic_key, text, dedup_key,
+                    item_hash, actor, data_source, source_ref, source_asof, observed_at,
+                    created_at, provenance_json, metadata_json, claim_state, surfacing_state,
+                    demotion_reason, reactivated_at, retraction_reason, expires_at,
+                    superseded_by, trust_score, trust_computed_at, trust_version, thread_id,
+                    temporal_scope, sensitivity, verification_state, verification_reason,
+                    needs_user_decision_at
+             FROM intelligence_claims
+             ORDER BY created_at DESC, id",
+        )
+        .map_err(sql_error)?;
+    let mut rows = statement.query([]).map_err(sql_error)?;
+    let mut claims = Vec::new();
+
+    while let Some(row) = rows.next().map_err(sql_error)? {
+        let claim_state = parse_claim_state(&row.get::<_, String>(16).map_err(sql_error)?)?;
+        let surfacing_state = parse_surfacing_state(&row.get::<_, String>(17).map_err(sql_error)?)?;
+        let temporal_scope = parse_temporal_scope(&row.get::<_, String>(27).map_err(sql_error)?)?;
+        let sensitivity = parse_claim_sensitivity(&row.get::<_, String>(28).map_err(sql_error)?)?;
+        let verification_state =
+            parse_verification_state(&row.get::<_, String>(29).map_err(sql_error)?)?;
+
+        claims.push(IntelligenceClaim {
+            id: row.get(0).map_err(sql_error)?,
+            subject_ref: row.get(1).map_err(sql_error)?,
+            claim_type: row.get(2).map_err(sql_error)?,
+            field_path: row.get(3).map_err(sql_error)?,
+            topic_key: row.get(4).map_err(sql_error)?,
+            text: row.get(5).map_err(sql_error)?,
+            dedup_key: row.get(6).map_err(sql_error)?,
+            item_hash: row.get(7).map_err(sql_error)?,
+            actor: row.get(8).map_err(sql_error)?,
+            data_source: row.get(9).map_err(sql_error)?,
+            source_ref: row.get(10).map_err(sql_error)?,
+            source_asof: row.get(11).map_err(sql_error)?,
+            observed_at: row.get(12).map_err(sql_error)?,
+            created_at: row.get(13).map_err(sql_error)?,
+            provenance_json: row.get(14).map_err(sql_error)?,
+            metadata_json: row.get(15).map_err(sql_error)?,
+            claim_state,
+            surfacing_state,
+            demotion_reason: row.get(18).map_err(sql_error)?,
+            reactivated_at: row.get(19).map_err(sql_error)?,
+            retraction_reason: row.get(20).map_err(sql_error)?,
+            expires_at: row.get(21).map_err(sql_error)?,
+            superseded_by: row.get(22).map_err(sql_error)?,
+            trust_score: row.get(23).map_err(sql_error)?,
+            trust_computed_at: row.get(24).map_err(sql_error)?,
+            trust_version: row.get(25).map_err(sql_error)?,
+            thread_id: row.get(26).map_err(sql_error)?,
+            temporal_scope,
+            sensitivity,
+            verification_state,
+            verification_reason: row.get(30).map_err(sql_error)?,
+            needs_user_decision_at: row.get(31).map_err(sql_error)?,
+        });
+    }
+
+    Ok(claims)
+}
+
+fn capture_prepare_meeting_context(
+    conn: &Connection,
+    fixture: &EvalFixture,
+) -> Result<Option<PrepareMeetingContextSnapshot>, RunError> {
+    if fixture
+        .inputs_json
+        .get("ability_name")
+        .and_then(Value::as_str)
+        != Some("prepare_meeting")
+    {
+        return Ok(None);
+    }
+
+    let meeting_id = fixture
+        .inputs_json
+        .get("input_json")
+        .and_then(|input| input.get("meeting_id"))
+        .and_then(Value::as_str)
+        .ok_or_else(|| {
+            RunError::InvocationFailed(
+                "prepare_meeting fixture input_json.meeting_id must be a string".to_string(),
+            )
+        })?;
+    let db = ActionDb::from_conn(conn);
+    dailyos_lib::services::meetings::load_prepare_meeting_context_snapshot(db, meeting_id)
+        .map(Some)
+        .map_err(RunError::StateSqlFailed)
+}
+
 fn capture_intelligence_claims(conn: &Connection) -> Result<Vec<Value>, RunError> {
     if !table_exists(conn, "intelligence_claims")? {
         return Ok(Vec::new());
@@ -697,6 +882,75 @@ fn table_exists(conn: &Connection, table: &str) -> Result<bool, RunError> {
         )
         .map_err(sql_error)?;
     Ok(count > 0)
+}
+
+fn claim_subject_matches(claim: &IntelligenceClaim, entity_type: &str, entity_id: &str) -> bool {
+    serde_json::from_str::<Value>(&claim.subject_ref)
+        .ok()
+        .and_then(|subject| {
+            Some((
+                subject.get("kind")?.as_str()?.to_ascii_lowercase(),
+                subject.get("id")?.as_str()?.to_string(),
+            ))
+        })
+        .is_some_and(|(kind, id)| kind == entity_type && id == entity_id)
+}
+
+fn parse_claim_state(value: &str) -> Result<ClaimState, RunError> {
+    match value {
+        "active" => Ok(ClaimState::Active),
+        "dormant" => Ok(ClaimState::Dormant),
+        "tombstoned" => Ok(ClaimState::Tombstoned),
+        "withdrawn" => Ok(ClaimState::Withdrawn),
+        other => Err(RunError::StateSqlFailed(format!(
+            "invalid claim_state `{other}`"
+        ))),
+    }
+}
+
+fn parse_surfacing_state(value: &str) -> Result<SurfacingState, RunError> {
+    match value {
+        "active" => Ok(SurfacingState::Active),
+        "dormant" => Ok(SurfacingState::Dormant),
+        other => Err(RunError::StateSqlFailed(format!(
+            "invalid surfacing_state `{other}`"
+        ))),
+    }
+}
+
+fn parse_temporal_scope(value: &str) -> Result<TemporalScope, RunError> {
+    match value {
+        "state" => Ok(TemporalScope::State),
+        "point_in_time" => Ok(TemporalScope::PointInTime),
+        "trend" => Ok(TemporalScope::Trend),
+        "closed" => Ok(TemporalScope::Closed),
+        other => Err(RunError::StateSqlFailed(format!(
+            "invalid temporal_scope `{other}`"
+        ))),
+    }
+}
+
+fn parse_claim_sensitivity(value: &str) -> Result<ClaimSensitivity, RunError> {
+    match value {
+        "public" => Ok(ClaimSensitivity::Public),
+        "internal" => Ok(ClaimSensitivity::Internal),
+        "confidential" => Ok(ClaimSensitivity::Confidential),
+        "user_only" => Ok(ClaimSensitivity::UserOnly),
+        other => Err(RunError::StateSqlFailed(format!(
+            "invalid sensitivity `{other}`"
+        ))),
+    }
+}
+
+fn parse_verification_state(value: &str) -> Result<ClaimVerificationState, RunError> {
+    match value {
+        "active" => Ok(ClaimVerificationState::Active),
+        "contested" => Ok(ClaimVerificationState::Contested),
+        "needs_user_decision" => Ok(ClaimVerificationState::NeedsUserDecision),
+        other => Err(RunError::StateSqlFailed(format!(
+            "invalid verification_state `{other}`"
+        ))),
+    }
 }
 
 fn insert_text(object: &mut Map<String, Value>, key: &str, value: String) {

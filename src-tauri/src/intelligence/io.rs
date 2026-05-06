@@ -2023,8 +2023,10 @@ impl ActionDb {
                 "agent:legacy_intelligence_upsert",
                 "legacy_intelligence_upsert",
             )?;
-            crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(tx, intel)
-                .map_err(|e| e.to_string())?;
+            crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(
+                &ctx, tx, intel,
+            )
+            .map_err(|e| e.to_string())?;
             Ok(())
         })
         .map_err(|e| rusqlite::Error::ToSqlConversionFailure(Box::new(std::io::Error::other(e))))

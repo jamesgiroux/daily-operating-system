@@ -4,52 +4,7 @@
     "schema_version": 1,
     "meeting_id": "meeting-b10-known-account",
     "depth": 2,
-    "include_open_loops": true,
-    "context": {
-      "meeting": {
-        "id": "meeting-b10-known-account",
-        "title": "Known Account Expansion Review",
-        "starts_at": "2026-05-07T14:00:00Z",
-        "ends_at": "2026-05-07T14:45:00Z",
-        "attendees": [
-          {
-            "name": "Sam Silva",
-            "email": "sam@known-account.example.com",
-            "person_id": "person-b10-sam",
-            "account_id": "acct-b10-known",
-            "domain": "known-account.example.com"
-          },
-          {
-            "name": "Devon Diaz",
-            "email": "devon@known-account.example.com",
-            "person_id": "person-b10-devon",
-            "account_id": "acct-b10-known",
-            "domain": "known-account.example.com"
-          }
-        ]
-      },
-      "evidence": [
-        {
-          "id": "src-b10-account-plan",
-          "subject": { "kind": "account", "id": "acct-b10-known" },
-          "claim_type": "meeting_topic",
-          "text": "Known Account Example wants the meeting to decide whether integration expansion should proceed this quarter.",
-          "source_asof": "2026-05-05T11:20:00Z",
-          "observed_at": "2026-05-05T11:20:00Z",
-          "data_source": "glean",
-          "lifecycle": "active",
-          "confidence": 0.88,
-          "temporal_scope": "state",
-          "sensitivity": "internal"
-        }
-      ],
-      "entity_contexts": [
-        {
-          "subject": { "kind": "account", "id": "acct-b10-known" },
-          "display_name": "Known Account Example"
-        }
-      ]
-    }
+    "include_open_loops": true
   },
   "actor": "user",
   "mode": "evaluate",

@@ -1,4 +1,9 @@
 {
   "version": 1,
-  "fixtures": []
+  "fixtures": [
+    {
+      "canonical_prompt_hash": "29a7b456eee35783a62895803fc49956170861780aa6d2ae9162b17d7c68979a",
+      "completion": "{\n  \"topics\": [\n    {\n      \"title\": \"Target rollout decision\",\n      \"detail\": \"Target Example wants to confirm rollout owner and next decision.\",\n      \"subject\": {\n        \"kind\": \"account\",\n        \"id\": \"dos287-target-example\"\n      },\n      \"source_ids\": [\n        \"src-b13-target\"\n      ],\n      \"confidence\": 0.94\n    },\n    {\n      \"title\": \"Adjacent escalation\",\n      \"detail\": \"Adjacent Example has an unrelated infrastructure escalation.\",\n      \"subject\": {\n        \"kind\": \"meeting\",\n        \"id\": \"meeting-b13-subject-bleed\"\n      },\n      \"source_ids\": [\n        \"src-b13-adjacent\"\n      ],\n      \"confidence\": 0.91\n    }\n  ],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
+    }
+  ]
 }

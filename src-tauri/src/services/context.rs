@@ -776,6 +776,7 @@ pub struct ServiceContext<'a> {
     pub external: &'a ExternalClients,
     entity_context_reader: Option<Arc<dyn EntityContextReadHandle>>,
     entity_context_claim_reader: Option<Arc<dyn EntityContextClaimReadHandle>>,
+    prepare_meeting_context_reader: Option<Arc<dyn PrepareMeetingContextReadHandle>>,
     pub(in crate::services) tx: Option<TxHandle>,
 }
 
@@ -804,6 +805,52 @@ pub trait EntityContextClaimReadHandle: Send + Sync {
         entity_id: String,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a>;
+}
+
+#[derive(Debug, Clone, PartialEq)]
+pub struct PrepareMeetingContextSnapshot {
+    pub meeting: PrepareMeetingSnapshot,
+    pub attendees: Vec<PrepareMeetingAttendeeSnapshot>,
+    pub subjects: Vec<PrepareMeetingSubjectSnapshot>,
+    pub claims: Vec<IntelligenceClaim>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrepareMeetingSnapshot {
+    pub id: String,
+    pub title: String,
+    pub starts_at: Option<String>,
+    pub ends_at: Option<String>,
+    pub attendees_raw: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrepareMeetingAttendeeSnapshot {
+    pub name: String,
+    pub email: Option<String>,
+    pub person_id: Option<String>,
+    pub account_id: Option<String>,
+    pub domain: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PrepareMeetingSubjectSnapshot {
+    pub kind: String,
+    pub id: String,
+    pub display_name: String,
+}
+
+pub type PrepareMeetingContextReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<PrepareMeetingContextSnapshot, String>> + Send + 'a>>;
+
+/// Narrow read handle for claim-backed meeting brief context assembly.
+/// Production reads route through `services::meetings`; tests and the eval
+/// harness inject a fixture snapshot built from their isolated SQLite state.
+pub trait PrepareMeetingContextReadHandle: Send + Sync {
+    fn read_prepare_meeting_context<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> PrepareMeetingContextReadFuture<'a>;
 }
 
 /// Transaction handle (private). Becomes a `TxCtx` for closures inside
@@ -877,6 +924,7 @@ impl<'a> ServiceContext<'a> {
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
+            prepare_meeting_context_reader: None,
             tx: None,
         }
     }
@@ -897,6 +945,7 @@ impl<'a> ServiceContext<'a> {
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
+            prepare_meeting_context_reader: None,
             tx: None,
         }
     }
@@ -928,6 +977,7 @@ impl<'a> ServiceContext<'a> {
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
+            prepare_meeting_context_reader: None,
             tx: None,
         }
     }
@@ -955,6 +1005,31 @@ impl<'a> ServiceContext<'a> {
     ) -> Self {
         self.entity_context_claim_reader = Some(reader);
         self
+    }
+
+    pub fn with_prepare_meeting_context_reader(
+        mut self,
+        reader: Arc<dyn PrepareMeetingContextReadHandle>,
+    ) -> Self {
+        self.prepare_meeting_context_reader = Some(reader);
+        self
+    }
+
+    pub async fn read_prepare_meeting_context(
+        &self,
+        meeting_id: String,
+    ) -> Result<PrepareMeetingContextSnapshot, String> {
+        if let Some(reader) = &self.prepare_meeting_context_reader {
+            return reader.read_prepare_meeting_context(meeting_id).await;
+        }
+
+        tokio::task::spawn_blocking(move || {
+            let db = crate::db::ActionDb::open()
+                .map_err(|error| format!("Database unavailable: {error}"))?;
+            crate::services::meetings::load_prepare_meeting_context_snapshot(&db, &meeting_id)
+        })
+        .await
+        .map_err(|error| format!("prepare_meeting context read task failed: {error}"))?
     }
 
     pub async fn read_entity_context_claims(

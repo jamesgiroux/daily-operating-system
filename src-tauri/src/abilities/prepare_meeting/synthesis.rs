@@ -18,8 +18,10 @@ use crate::abilities::provenance::{
 use crate::abilities::{metadata_for_claim_type, AbilityCategory};
 use crate::abilities::{AbilityContext, AbilityError, AbilityErrorKind, AbilityResult};
 use crate::abilities::{Actor as RegistryActor, ClaimType};
-use crate::db::claims::{ClaimSensitivity, TemporalScope};
+use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
+use crate::db::claims::{ClaimSensitivity, IntelligenceClaim, TemporalScope};
 use crate::intelligence::provider::{ModelTier, ProviderError};
+use crate::services::context::PrepareMeetingContextSnapshot;
 use crate::types::EntityContextEntry;
 
 const ABILITY_NAME: &str = "prepare_meeting";
@@ -186,10 +188,10 @@ pub async fn build_meeting_brief(
     ctx: &AbilityContext<'_>,
     input: PrepareMeetingInput,
 ) -> AbilityResult<MeetingBrief> {
-    let context = input
-        .context
-        .clone()
-        .unwrap_or_else(|| MeetingBriefContext::from_meeting_id(&input.meeting_id));
+    let context = match input.context.clone() {
+        Some(context) => context,
+        None => MeetingBriefContext::from_meeting_id(ctx, &input.meeting_id).await?,
+    };
     build_meeting_brief_from_context(ctx, input, context).await
 }
 
@@ -355,17 +357,110 @@ impl<'a> PromptContext<'a> {
 }
 
 impl MeetingBriefContext {
-    fn from_meeting_id(meeting_id: &str) -> Self {
-        Self {
-            meeting: MeetingSummary {
-                id: meeting_id.to_string(),
-                title: format!("Meeting {meeting_id}"),
-                starts_at: None,
-                ends_at: None,
-                attendees: Vec::new(),
-            },
-            evidence: Vec::new(),
-            entity_contexts: Vec::new(),
+    async fn from_meeting_id(
+        ctx: &AbilityContext<'_>,
+        meeting_id: &str,
+    ) -> Result<Self, AbilityError> {
+        let snapshot = ctx
+            .services()
+            .read_prepare_meeting_context(meeting_id.to_string())
+            .await
+            .map_err(|error| AbilityError {
+                kind: AbilityErrorKind::HardError("prepare_meeting_context_read".into()),
+                message: error,
+            })?;
+        Self::from_snapshot(snapshot)
+    }
+
+    fn from_snapshot(snapshot: PrepareMeetingContextSnapshot) -> Result<Self, AbilityError> {
+        let meeting = MeetingSummary {
+            id: snapshot.meeting.id,
+            title: snapshot.meeting.title,
+            starts_at: snapshot.meeting.starts_at,
+            ends_at: snapshot.meeting.ends_at,
+            attendees: snapshot
+                .attendees
+                .into_iter()
+                .map(|attendee| MeetingAttendee {
+                    name: attendee.name,
+                    email: attendee.email,
+                    person_id: attendee.person_id,
+                    account_id: attendee.account_id,
+                    domain: attendee.domain,
+                })
+                .collect(),
+        };
+        let evidence = snapshot
+            .claims
+            .iter()
+            .map(evidence_from_claim)
+            .collect::<Result<Vec<_>, _>>()?;
+        let entity_contexts = snapshot
+            .subjects
+            .into_iter()
+            .map(|subject| EntityContextSeed {
+                subject: BriefSubjectRef {
+                    kind: subject.kind,
+                    id: subject.id,
+                },
+                display_name: subject.display_name,
+            })
+            .collect();
+
+        Ok(Self {
+            meeting,
+            evidence,
+            entity_contexts,
+        })
+    }
+}
+
+fn evidence_from_claim(claim: &IntelligenceClaim) -> Result<EvidenceSource, AbilityError> {
+    let subject = brief_subject_from_claim(claim)?;
+    Ok(EvidenceSource {
+        id: claim.id.clone(),
+        subject,
+        claim_type: claim.claim_type.clone(),
+        text: claim.text.clone(),
+        source_asof: claim.source_asof.clone(),
+        observed_at: if claim.observed_at.trim().is_empty() {
+            claim.created_at.clone()
+        } else {
+            claim.observed_at.clone()
+        },
+        data_source: claim.data_source.clone(),
+        lifecycle: "active".into(),
+        confidence: claim.trust_score.unwrap_or(0.8).clamp(0.0, 1.0) as f32,
+        temporal_scope: temporal_scope_name(&claim.temporal_scope).into(),
+        sensitivity: sensitivity_name(&claim.sensitivity).into(),
+    })
+}
+
+fn brief_subject_from_claim(claim: &IntelligenceClaim) -> Result<BriefSubjectRef, AbilityError> {
+    let value: serde_json::Value = serde_json::from_str(&claim.subject_ref).map_err(|error| {
+        validation_error(format!(
+            "prepare_meeting claim `{}` has invalid subject_ref JSON: {error}",
+            claim.id
+        ))
+    })?;
+    match crate::services::claims::subject_ref_from_json(&value).map_err(|error| {
+        validation_error(format!(
+            "prepare_meeting claim `{}` has invalid subject_ref: {error}",
+            claim.id
+        ))
+    })? {
+        ClaimSubjectRef::Account { id } => Ok(BriefSubjectRef::account(&id)),
+        ClaimSubjectRef::Meeting { id } => Ok(BriefSubjectRef::meeting(&id)),
+        ClaimSubjectRef::Person { id } => Ok(BriefSubjectRef::person(&id)),
+        ClaimSubjectRef::Project { id } => Ok(BriefSubjectRef {
+            kind: "project".into(),
+            id,
+        }),
+        ClaimSubjectRef::Email { .. } | ClaimSubjectRef::Multi(_) | ClaimSubjectRef::Global => {
+            Err(validation_error(format!(
+                "prepare_meeting claim `{}` has unsupported subject_ref",
+                claim.id
+            )))
         }
     }
 }
@@ -474,6 +569,7 @@ struct BriefAssembler<'a> {
     source_by_id: BTreeMap<String, EvidenceSource>,
     child_ref_by_subject: BTreeMap<String, CompositionId>,
     subject_catalog: SubjectCatalog,
+    meeting_scope_source_subjects: BTreeSet<String>,
 }
 
 impl<'a> BriefAssembler<'a> {
@@ -491,6 +587,7 @@ impl<'a> BriefAssembler<'a> {
             .map(|source| (source.id.clone(), source))
             .collect();
         let subject_catalog = SubjectCatalog::new(&context);
+        let meeting_scope_source_subjects = meeting_scope_source_subjects(&context);
         Self {
             ctx,
             schema_version,
@@ -501,6 +598,7 @@ impl<'a> BriefAssembler<'a> {
             source_by_id,
             child_ref_by_subject: BTreeMap::new(),
             subject_catalog,
+            meeting_scope_source_subjects,
         }
     }
 
@@ -788,7 +886,11 @@ impl<'a> BriefAssembler<'a> {
                 });
                 return Ok(None);
             }
-            if !source_subject_allowed(&candidate.subject, &source.subject) {
+            if !source_subject_allowed(
+                &candidate.subject,
+                &source.subject,
+                &self.meeting_scope_source_subjects,
+            ) {
                 self.add_subject_ambiguous_warning(builder, section_path)?;
                 return Ok(None);
             }
@@ -838,7 +940,11 @@ impl<'a> BriefAssembler<'a> {
                 });
                 return Ok(false);
             }
-            if !source_subject_allowed(&candidate.subject, &source.subject) {
+            if !source_subject_allowed(
+                &candidate.subject,
+                &source.subject,
+                &self.meeting_scope_source_subjects,
+            ) {
                 self.add_subject_ambiguous_warning(builder, section_path)?;
                 return Ok(false);
             }
@@ -1180,8 +1286,30 @@ impl BriefSubjectRef {
     }
 }
 
-fn source_subject_allowed(candidate: &BriefSubjectRef, source: &BriefSubjectRef) -> bool {
-    candidate.kind == "meeting" || candidate.key() == source.key()
+fn source_subject_allowed(
+    candidate: &BriefSubjectRef,
+    source: &BriefSubjectRef,
+    meeting_scope_source_subjects: &BTreeSet<String>,
+) -> bool {
+    if candidate.key() == source.key() {
+        return true;
+    }
+
+    candidate.kind == "meeting" && meeting_scope_source_subjects.contains(&source.key())
+}
+
+fn meeting_scope_source_subjects(context: &MeetingBriefContext) -> BTreeSet<String> {
+    let mut subjects = BTreeSet::new();
+    subjects.insert(BriefSubjectRef::meeting(&context.meeting.id).key());
+    for attendee in &context.meeting.attendees {
+        if let Some(person_id) = attendee.person_id.as_deref() {
+            subjects.insert(BriefSubjectRef::person(person_id).key());
+        }
+        if let Some(account_id) = attendee.account_id.as_deref() {
+            subjects.insert(BriefSubjectRef::account(account_id).key());
+        }
+    }
+    subjects
 }
 
 fn envelope_subject(subjects: Vec<SubjectRef>) -> SubjectAttribution {
@@ -1389,8 +1517,7 @@ fn default_sensitivity_name() -> String {
     "internal".into()
 }
 
-#[allow(dead_code)]
-fn _temporal_scope_name(scope: &TemporalScope) -> &'static str {
+fn temporal_scope_name(scope: &TemporalScope) -> &'static str {
     match scope {
         TemporalScope::State => "state",
         TemporalScope::PointInTime => "point_in_time",
@@ -1407,12 +1534,17 @@ mod tests {
     use chrono::TimeZone;
 
     use super::*;
+    use crate::abilities::feedback::ClaimVerificationState;
     use crate::abilities::{Actor, NOOP_ABILITY_TRACER};
+    use crate::db::claims::{ClaimState, SurfacingState};
     use crate::intelligence::provider::{
         Completion, FingerprintMetadata, IntelligenceProvider, ModelName, PromptInput, ProviderKind,
     };
     use crate::services::context::{
-        EntityContextReadFuture, EntityContextReadHandle, FixedClock, SeedableRng, ServiceContext,
+        EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock,
+        PrepareMeetingAttendeeSnapshot, PrepareMeetingContextReadFuture,
+        PrepareMeetingContextReadHandle, PrepareMeetingContextSnapshot, PrepareMeetingSnapshot,
+        PrepareMeetingSubjectSnapshot, SeedableRng, ServiceContext,
     };
 
     struct StaticProvider {
@@ -1447,23 +1579,52 @@ mod tests {
     }
 
     #[derive(Clone)]
-    struct FixtureEntityContextReader {
-        rows: Vec<EntityContextEntry>,
+    struct FixtureEntityContextClaimReader {
+        claims: Vec<IntelligenceClaim>,
     }
 
-    impl EntityContextReadHandle for FixtureEntityContextReader {
-        fn read_entity_context_entries<'a>(
+    impl EntityContextClaimReadHandle for FixtureEntityContextClaimReader {
+        fn read_entity_context_claims<'a>(
             &'a self,
             entity_type: String,
             entity_id: String,
-        ) -> EntityContextReadFuture<'a> {
+            _depth: usize,
+        ) -> EntityContextClaimReadFuture<'a> {
             Box::pin(async move {
                 Ok(self
-                    .rows
+                    .claims
                     .iter()
-                    .filter(|row| row.entity_type == entity_type && row.entity_id == entity_id)
+                    .filter(|claim| {
+                        claim.claim_state == ClaimState::Active
+                            && claim.surfacing_state == SurfacingState::Active
+                            && brief_subject_from_claim(claim)
+                                .map(|subject| {
+                                    subject.kind == entity_type && subject.id == entity_id
+                                })
+                                .unwrap_or(false)
+                    })
                     .cloned()
                     .collect())
+            })
+        }
+    }
+
+    #[derive(Clone)]
+    struct FixturePrepareMeetingContextReader {
+        snapshot: PrepareMeetingContextSnapshot,
+    }
+
+    impl PrepareMeetingContextReadHandle for FixturePrepareMeetingContextReader {
+        fn read_prepare_meeting_context<'a>(
+            &'a self,
+            meeting_id: String,
+        ) -> PrepareMeetingContextReadFuture<'a> {
+            Box::pin(async move {
+                if self.snapshot.meeting.id == meeting_id {
+                    Ok(self.snapshot.clone())
+                } else {
+                    Err(format!("fixture meeting `{meeting_id}` not seeded"))
+                }
             })
         }
     }
@@ -1472,29 +1633,39 @@ mod tests {
         clock: FixedClock,
         rng: SeedableRng,
         provider: Arc<StaticProvider>,
-        reader: Arc<FixtureEntityContextReader>,
+        claim_reader: Arc<FixtureEntityContextClaimReader>,
+        meeting_context_reader: Arc<FixturePrepareMeetingContextReader>,
     }
 
     impl Harness {
         fn new(completion: serde_json::Value) -> Self {
+            let snapshot =
+                fixture_meeting_snapshot("meeting-1", Vec::new(), Vec::new(), Vec::new());
             Self {
                 clock: FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap()),
                 rng: SeedableRng::new(219),
                 provider: Arc::new(StaticProvider {
                     completion: completion.to_string(),
                 }),
-                reader: Arc::new(FixtureEntityContextReader { rows: Vec::new() }),
+                claim_reader: Arc::new(FixtureEntityContextClaimReader { claims: Vec::new() }),
+                meeting_context_reader: Arc::new(FixturePrepareMeetingContextReader { snapshot }),
             }
         }
 
-        fn with_rows(mut self, rows: Vec<EntityContextEntry>) -> Self {
-            self.reader = Arc::new(FixtureEntityContextReader { rows });
+        fn with_claims(mut self, claims: Vec<IntelligenceClaim>) -> Self {
+            self.claim_reader = Arc::new(FixtureEntityContextClaimReader { claims });
+            self
+        }
+
+        fn with_meeting_context(mut self, snapshot: PrepareMeetingContextSnapshot) -> Self {
+            self.meeting_context_reader = Arc::new(FixturePrepareMeetingContextReader { snapshot });
             self
         }
 
         async fn run(&self, input: PrepareMeetingInput) -> AbilityResult<MeetingBrief> {
             let services = ServiceContext::new_evaluate_default(&self.clock, &self.rng)
-                .with_entity_context_reader(self.reader.clone());
+                .with_entity_context_claim_reader(self.claim_reader.clone())
+                .with_prepare_meeting_context_reader(self.meeting_context_reader.clone());
             let ctx = AbilityContext::new(
                 &services,
                 self.provider.as_ref(),
@@ -1532,6 +1703,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn prepare_meeting_public_path_builds_live_context_from_claims() {
+        let claim = fixture_claim(
+            "claim-live-riley",
+            "person",
+            "person-riley",
+            "Riley asked to keep the agenda focused on onboarding risks.",
+            "2026-05-05T15:30:00Z",
+            Some("2026-05-05T15:30:00Z"),
+        );
+        let snapshot = fixture_meeting_snapshot(
+            "meeting-live",
+            vec![PrepareMeetingAttendeeSnapshot {
+                name: "Riley Rivera".into(),
+                email: Some("riley@example.com".into()),
+                person_id: Some("person-riley".into()),
+                account_id: None,
+                domain: Some("example.com".into()),
+            }],
+            vec![PrepareMeetingSubjectSnapshot {
+                kind: "person".into(),
+                id: "person-riley".into(),
+                display_name: "Riley Rivera".into(),
+            }],
+            vec![claim.clone()],
+        );
+        let harness = Harness::new(serde_json::json!({
+            "topics": [],
+            "attendee_context": [{
+                "attendee": "Riley Rivera",
+                "context": "Riley asked to keep the agenda focused on onboarding risks.",
+                "subject": {"kind": "person", "id": "person-riley"},
+                "source_ids": ["claim-live-riley"],
+                "confidence": 0.9
+            }],
+            "open_loops": [],
+            "what_changed_since_last": [],
+            "suggested_outcomes": []
+        }))
+        .with_claims(vec![claim])
+        .with_meeting_context(snapshot);
+
+        let output = harness.run(public_input("meeting-live")).await.unwrap();
+
+        assert_eq!(output.data().meeting.id, "meeting-live");
+        assert_eq!(output.data().meeting.attendees.len(), 1);
+        assert_eq!(output.data().attendee_context.len(), 1);
+        assert_eq!(output.provenance().children.len(), 1);
+    }
+
+    #[tokio::test]
     async fn prepare_meeting_source_asof_from_child_composition_is_reachable() {
         let harness = Harness::new(serde_json::json!({
             "topics": [],
@@ -1546,12 +1767,13 @@ mod tests {
             "what_changed_since_last": [],
             "suggested_outcomes": []
         }))
-        .with_rows(vec![fixture_entry(
-            "entry-person-alex",
+        .with_claims(vec![fixture_claim(
+            "claim-person-alex",
             "person",
             "person-alex",
+            "Alex owns the rollout path.",
             "2026-04-28T12:00:00Z",
-            "2026-04-28T12:00:00Z",
+            Some("2026-04-28T12:00:00Z"),
         )]);
         let mut input = input_with_source("meeting-1", "src-person");
         let context = input.context.as_mut().unwrap();
@@ -1592,6 +1814,42 @@ mod tests {
             attendee_for_account("B Owner", "owner-b@shared.example.com", "acct-b"),
         ];
         context.evidence[0].subject = BriefSubjectRef::account("acct-b");
+
+        let output = harness.run(input).await.unwrap();
+
+        assert!(output.data().topics.is_empty());
+        assert!(output.provenance().warnings.iter().any(|warning| {
+            matches!(
+                warning,
+                ProvenanceWarning::SubjectFitQualified { status, .. }
+                    if status == "SubjectAmbiguous"
+            )
+        }));
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_meeting_subject_blocks_adjacent_account_source() {
+        let harness = Harness::new(serde_json::json!({
+            "topics": [{
+                "title": "Adjacent account escalation",
+                "detail": "This source belongs to the adjacent account.",
+                "subject": {"kind": "meeting", "id": "meeting-1"},
+                "source_ids": ["src-adjacent"],
+                "confidence": 0.91
+            }],
+            "attendee_context": [],
+            "open_loops": [],
+            "what_changed_since_last": [],
+            "suggested_outcomes": []
+        }));
+        let mut input = input_with_source("meeting-1", "src-adjacent");
+        let context = input.context.as_mut().unwrap();
+        context.meeting.attendees = vec![attendee_for_account(
+            "Target Owner",
+            "owner@target.example.com",
+            "acct-target",
+        )];
+        context.evidence[0].subject = BriefSubjectRef::account("acct-adjacent");
 
         let output = harness.run(input).await.unwrap();
 
@@ -1711,21 +1969,81 @@ mod tests {
         }
     }
 
-    fn fixture_entry(
+    fn public_input(meeting_id: &str) -> PrepareMeetingInput {
+        PrepareMeetingInput {
+            meeting_id: meeting_id.into(),
+            depth: 2,
+            include_open_loops: true,
+            schema_version: SchemaVersion(1),
+            context: None,
+        }
+    }
+
+    fn fixture_meeting_snapshot(
+        meeting_id: &str,
+        attendees: Vec<PrepareMeetingAttendeeSnapshot>,
+        subjects: Vec<PrepareMeetingSubjectSnapshot>,
+        claims: Vec<IntelligenceClaim>,
+    ) -> PrepareMeetingContextSnapshot {
+        PrepareMeetingContextSnapshot {
+            meeting: PrepareMeetingSnapshot {
+                id: meeting_id.into(),
+                title: "Synthetic planning meeting".into(),
+                starts_at: Some("2026-05-06T15:00:00Z".into()),
+                ends_at: Some("2026-05-06T15:30:00Z".into()),
+                attendees_raw: None,
+            },
+            attendees,
+            subjects,
+            claims,
+        }
+    }
+
+    fn fixture_claim(
         id: &str,
         entity_type: &str,
         entity_id: &str,
+        text: &str,
         created_at: &str,
-        updated_at: &str,
-    ) -> EntityContextEntry {
-        EntityContextEntry {
+        source_asof: Option<&str>,
+    ) -> IntelligenceClaim {
+        IntelligenceClaim {
             id: id.to_string(),
-            entity_type: entity_type.to_string(),
-            entity_id: entity_id.to_string(),
-            title: format!("title-{id}"),
-            content: format!("content-{id}"),
+            subject_ref: serde_json::json!({
+                "kind": entity_type,
+                "id": entity_id,
+            })
+            .to_string(),
+            claim_type: "entity_summary".to_string(),
+            field_path: Some("summary".to_string()),
+            topic_key: None,
+            text: text.to_string(),
+            dedup_key: format!("dedup-{id}"),
+            item_hash: Some(format!("hash-{id}")),
+            actor: "agent:test".to_string(),
+            data_source: "user".to_string(),
+            source_ref: Some(format!("source-{id}")),
+            source_asof: source_asof.map(str::to_string),
+            observed_at: created_at.to_string(),
             created_at: created_at.to_string(),
-            updated_at: updated_at.to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            claim_state: ClaimState::Active,
+            surfacing_state: SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score: None,
+            trust_computed_at: None,
+            trust_version: None,
+            thread_id: None,
+            temporal_scope: TemporalScope::State,
+            sensitivity: ClaimSensitivity::Internal,
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
         }
     }
 }

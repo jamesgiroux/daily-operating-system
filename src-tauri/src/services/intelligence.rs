@@ -906,7 +906,7 @@ pub(crate) fn upsert_assessment_from_enrichment_in_active_transaction(
         "agent:intelligence",
         "ai_enrichment",
     )?;
-    crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(tx, &intel)
+    crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(ctx, tx, &intel)
         .map_err(|e| e.to_string())?;
     crate::services::signals::emit_and_propagate(
         ctx,
@@ -976,7 +976,7 @@ pub fn upsert_assessment_snapshot(
             "agent:intel_queue",
             "ai_enrichment_progressive",
         )?;
-        crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(tx, intel)
+        crate::services::derived_state::upsert_entity_intelligence_legacy_snapshot(ctx, tx, intel)
             .map_err(|e| e.to_string())?;
 
         // Path 2c: Store domains from Glean enrichment (if present).

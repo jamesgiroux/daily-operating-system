@@ -3,17 +3,28 @@
   "scenario_id": "bundle9-prepare-meeting-recurring-one-on-one",
   "invariant": "A recurring one-on-one brief keeps prior open loops as state claims attributed to the person, not to a neighboring account or the meeting as a whole.",
   "expected_render_policy": "show-with-warnings",
-  "surfaces_exercised": ["prepare_meeting", "recurring-one-on-one"],
-  "source_lifecycle_refs": ["src-b9-prior-action", "ctx-b9-one-on-one"],
+  "surfaces_exercised": [
+    "prepare_meeting",
+    "recurring-one-on-one"
+  ],
+  "source_lifecycle_refs": [
+    "src-b9-prior-action",
+    "ctx-b9-one-on-one"
+  ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "bundle-9-prepare-meeting-prompt-v1",
+  "prompt_fingerprint_baseline": "01cd8f7c5300cbb57d7b40107d0803b98b8adeda6a19a616217b73048d3876c9",
   "prompt_template_version": "1.0.0",
-  "completion_text_hash": "fixture-provider-replay-not-pinned",
-  "trust_factors_dominant": ["subject_fit", "source_time", "composition"],
+  "completion_text_hash": "a8c89b7b8e6aefbea1c618224cfee59a309468beeb1a477652844dbacad4de56",
+  "trust_factors_dominant": [
+    "subject_fit",
+    "source_time",
+    "composition"
+  ],
   "pass_fail_definition": "PASS = open loop stays attributed to person-b9-morgan with state temporal scope and composed source_asof remains reachable. FAIL = open loop is attributed to another subject or loses composed provenance.",
   "fixture_design_notes": {
-    "state_sql": "Seeds recurring one-on-one context for the person child ability.",
-    "expected_output": "MeetingBrief open_loops section exercises recurring 1:1 continuity."
+    "state_sql": "Seeds meetings, attendees, linked subjects, and intelligence_claims rows consumed by the public prepare_meeting context builder.",
+    "expected_output": "MeetingBrief open_loops section exercises recurring 1:1 continuity.",
+    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key for this claim-backed fixture."
   }
 }

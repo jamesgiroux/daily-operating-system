@@ -1848,6 +1848,31 @@ pub fn load_claims_active(
     )
 }
 
+/// Default reader by source reference: active + surfaced claims only.
+///
+/// This supports meeting-scoped context assembly where the source event is the
+/// meeting, but the asserted subject may be an attendee, account, or a nearby
+/// account that still needs subject-fit gating downstream.
+pub fn load_claims_active_by_source_ref(
+    db: &ActionDb,
+    source_ref: &str,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let sql = format!(
+        "SELECT {CLAIM_COLUMNS} FROM intelligence_claims
+         WHERE source_ref = ?1
+           AND claim_state = 'active'
+           AND surfacing_state = 'active'
+         ORDER BY created_at DESC"
+    );
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let mut rows = stmt.query(params![source_ref])?;
+    let mut claims = Vec::new();
+    while let Some(row) = rows.next()? {
+        claims.push(read_claim_row(row)?);
+    }
+    Ok(claims)
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct EntityContextSubject {
     kind: &'static str,

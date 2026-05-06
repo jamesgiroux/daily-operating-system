@@ -6,16 +6,16 @@
     "ends_at": "2026-05-07T14:45:00Z",
     "attendees": [
       {
-        "name": "Sam Silva",
-        "email": "sam@known-account.example.com",
-        "person_id": "person-b10-sam",
+        "name": "Devon Diaz",
+        "email": "devon@known-account.example.com",
+        "person_id": "person-b10-devon",
         "account_id": "acct-b10-known",
         "domain": "known-account.example.com"
       },
       {
-        "name": "Devon Diaz",
-        "email": "devon@known-account.example.com",
-        "person_id": "person-b10-devon",
+        "name": "Sam Silva",
+        "email": "sam@known-account.example.com",
+        "person_id": "person-b10-sam",
         "account_id": "acct-b10-known",
         "domain": "known-account.example.com"
       }
@@ -25,7 +25,10 @@
     {
       "title": "Expansion decision",
       "detail": "Known Account Example wants the meeting to decide whether integration expansion should proceed this quarter.",
-      "subject": { "kind": "account", "id": "acct-b10-known" },
+      "subject": {
+        "kind": "account",
+        "id": "acct-b10-known"
+      },
       "temporal_scope": "state"
     }
   ],

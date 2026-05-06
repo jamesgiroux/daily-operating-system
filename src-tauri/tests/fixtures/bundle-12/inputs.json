@@ -4,45 +4,7 @@
     "schema_version": 1,
     "meeting_id": "meeting-b12-revoked-source",
     "depth": 2,
-    "include_open_loops": true,
-    "context": {
-      "meeting": {
-        "id": "meeting-b12-revoked-source",
-        "title": "Revoked Source Review",
-        "starts_at": "2026-05-09T15:00:00Z",
-        "ends_at": "2026-05-09T15:30:00Z",
-        "attendees": [
-          {
-            "name": "Casey Chen",
-            "email": "casey@revoked-source.example.com",
-            "person_id": "person-b12-casey",
-            "account_id": "acct-b12-revoked",
-            "domain": "revoked-source.example.com"
-          }
-        ]
-      },
-      "evidence": [
-        {
-          "id": "src-b12-revoked",
-          "subject": { "kind": "account", "id": "acct-b12-revoked" },
-          "claim_type": "meeting_topic",
-          "text": "Revoked Account Example is ready to approve the launch.",
-          "source_asof": "2026-05-04T09:30:00Z",
-          "observed_at": "2026-05-04T09:30:00Z",
-          "data_source": "glean",
-          "lifecycle": "revoked",
-          "confidence": 0.93,
-          "temporal_scope": "state",
-          "sensitivity": "internal"
-        }
-      ],
-      "entity_contexts": [
-        {
-          "subject": { "kind": "account", "id": "acct-b12-revoked" },
-          "display_name": "Revoked Account Example"
-        }
-      ]
-    }
+    "include_open_loops": true
   },
   "actor": "user",
   "mode": "evaluate",

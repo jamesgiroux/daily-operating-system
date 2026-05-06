@@ -10,7 +10,7 @@
         "email": "alex@target.example.com",
         "person_id": "person-b13-alex",
         "account_id": "dos287-target-example",
-        "domain": "target.example.org"
+        "domain": "target.example.com"
       }
     ]
   },
@@ -18,7 +18,10 @@
     {
       "title": "Target rollout decision",
       "detail": "Target Example wants to confirm rollout owner and next decision.",
-      "subject": { "kind": "account", "id": "dos287-target-example" },
+      "subject": {
+        "kind": "account",
+        "id": "dos287-target-example"
+      },
       "temporal_scope": "state"
     }
   ],
