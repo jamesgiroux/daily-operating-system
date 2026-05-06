@@ -1,5 +1,7 @@
 # EntityPortraitCard
 
+> Archived 2026-05-06. This was a D-spine prototype card and is not part of the active reference directory after What's Moving moved back to existing briefing row vocabulary.
+
 **Tier:** pattern
 **Status:** proposed
 **Owner:** James
@@ -91,8 +93,9 @@ CSS grid 200px aside | 1fr main; min-height 220px.
 
 ## Surfaces that consume it
 
-- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
-- No shipped routed consumers. D-spine prototype only until the redesign is approved.
+- No shipped routed consumers.
+- Not currently used in `DailyBriefingDSpine`; the current reference iteration
+  reuses the existing briefing attention-row vocabulary for What's Moving.
 
 ## Naming notes
 

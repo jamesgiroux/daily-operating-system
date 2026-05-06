@@ -46,7 +46,10 @@ In the shipped source, reading order is:
 
 Local pill renders these via `FloatingNavIsland`'s chapters contract; click smooth-scrolls to the section. Active chapter highlights via scroll-spy.
 
-**No `DayStrip`** — D-spine mockup invents `DayStrip` (Yesterday / Today / Tomorrow) that "replaces nav island"; this proposal is **rejected** per D2. App-level navigation must remain present on briefing — it's the user's home base. If time-scoped nav (Yesterday / Today / Tomorrow) becomes a real product need, it surfaces as a separate pattern with its own justification, not as an implicit replacement.
+**No `DayStrip` in shipped DailyBriefing** — the current routed surface keeps
+`FloatingNavIsland` as the local-nav contract. The proposed
+`DailyBriefingDSpine` reference now carries `DayStrip` as an explicit v1.4.0
+candidate exception; it must not be treated as shipped until route cutover.
 
 ## Patterns consumed
 
@@ -62,11 +65,10 @@ Local pill renders these via `FloatingNavIsland`'s chapters contract; click smoo
 Proposed only:
 
 - `Lead`
+- `DayStrip`
 - `DayChart`
 - `MeetingSpineItem`
-- `EntityPortraitCard`
-- `ThreadMark`
-- `AskAnythingDock`
+- `InferredActionSelector`
 
 ## Primitives consumed
 

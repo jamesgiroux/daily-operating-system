@@ -3,7 +3,7 @@
 **Tier:** pattern
 **Status:** integrated
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-06
 **`data-ds-name`:** `MarginGrid`
 **`data-ds-spec`:** `patterns/MarginGrid.md`
 **Variants:** default; `label-count` for "N items" sub-label
@@ -33,7 +33,7 @@ CSS Grid with two columns:
 - Right column: `1fr`, min-width 0, content
 - Gap: 32px
 
-Optional `margin-label-count` sub-label inside the label column ("4 meetings", "3 entities", "anything").
+Optional `margin-label-count` sub-label inside the label column ("4 meetings", "3 changes", "anything").
 
 ## Variants
 
@@ -85,4 +85,5 @@ D-spine uses `.margin-grid`; production uses `.margin-section`. Wave 1 picks one
 
 ## History
 
+- 2026-05-06 — Replaced entity-count example with user-facing change-count language.
 - 2026-05-02 — Promoted to canonical from mockup `_shared/.margin-section` + production `MarginSection`.

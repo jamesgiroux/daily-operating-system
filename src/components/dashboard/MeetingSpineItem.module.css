@@ -42,6 +42,31 @@
   text-transform: uppercase;
 }
 
+.stateTag {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.stateTagNow {
+  color: var(--color-spice-turmeric);
+}
+
+.stateTagUpcoming {
+  color: var(--color-garden-rosemary);
+}
+
+.stateTagPast,
+.stateTagCancelled {
+  color: var(--color-text-tertiary);
+}
+
 .eyebrow {
   display: flex;
   align-items: center;
@@ -187,22 +212,21 @@
   --meeting-spine-accent: var(--color-garden-larkspur);
 }
 
-.warn {
-  --meeting-spine-accent: var(--color-spice-terracotta);
+.partner,
+.project {
+  --meeting-spine-accent: var(--color-garden-olive);
 }
 
 .inProgress {
   margin-inline: calc(var(--space-md) * -1);
   padding-inline: var(--space-md);
   border-radius: var(--radius-editorial-sm);
-  background:
-    linear-gradient(90deg, var(--color-spice-turmeric-10), transparent 72%),
-    var(--color-paper-warm-white);
+  background: linear-gradient(90deg, var(--color-spice-turmeric-10), transparent 80%);
   border-bottom-color: var(--color-spice-turmeric-18);
 }
 
 .inProgress .time {
-  color: var(--color-spice-terracotta);
+  color: var(--color-spice-turmeric);
 }
 
 .past {

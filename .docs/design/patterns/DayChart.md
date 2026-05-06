@@ -3,7 +3,7 @@
 **Tier:** pattern
 **Status:** proposed
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-06
 **`data-ds-name`:** `DayChart`
 **`data-ds-spec`:** `patterns/DayChart.md`
 **Variants:** default; legend optional; `chartHeight` configurable (70-160px)
@@ -33,20 +33,25 @@ Visual at-a-glance shape of the day — hour-tick row + colored horizontal bars 
    Each bar:
      - Absolutely positioned by left% (start time) + width% (duration)
      - Colored by meeting type:
-       - customer (turmeric) / customer.warn (terracotta)
-       - internal (linen + heavy border)
-       - oo (one-on-one — larkspur)
-       - cancel (diagonal stripes, dashed border)
-     - Past meetings: opacity 0.45
+      - customer (turmeric)
+      - partner (olive)
+      - internal (linen + heavy border)
+      - oo (one-on-one — larkspur)
+      - cancel (diagonal stripes, dashed border)
+     - Past meetings: muted by a warm-white overlay; do not set opacity on
+       the bar container because hover/focus tooltips must remain fully
+       opaque.
      - Now meeting: 2px terracotta outline + soft glow shadow
-     - Bar content: serif title (small) + mono time
+     - Bar content is visually silent by default; details move to hover/focus
+       tooltip because narrow blocks truncate labels.
    NOW line:
      - Vertical 2px terracotta line spanning bar height + 10px above/below
      - "NOW · 10:18" label above
      - Dot at bottom
 ```
 
-Hover interaction: subtle Y translate + box-shadow on bars.
+Hover/focus interaction: subtle Y translate + box-shadow on bars, plus a
+tooltip with meeting title and time.
 
 ## Variants
 
@@ -56,10 +61,10 @@ Hover interaction: subtle Y translate + box-shadow on bars.
 
 ## Tokens consumed
 
-- `--font-mono` (ticks, legend, bar times, NOW label)
-- `--font-serif` (bar titles)
+- `--font-mono` (ticks, legend, tooltips, NOW label)
 - `--color-spice-turmeric` (customer bars, swatch)
-- `--color-spice-terracotta` (warn / NOW line / now-bar outline)
+- `--color-spice-terracotta` (NOW line / now-bar outline)
+- `--color-garden-olive` (partner bars, swatch)
 - `--color-paper-linen` + `--color-rule-heavy` (internal bars)
 - `--color-garden-larkspur` (1:1 bars)
 - `--color-desk-charcoal-4` (cancel stripes)
@@ -73,8 +78,8 @@ Hover interaction: subtle Y translate + box-shadow on bars.
 <DayChart
   hours={["7 AM", "8", "9", "10", "11", "12 PM", "1", "2", "3", "4", "5"]}
   meetings={[
-    { id: "1", type: "internal", state: "past", startPct: 18, durationPct: 5, title: "Eng standup", time: "9:00 · 30M" },
-    { id: "2", type: "customer", state: "now", startPct: 27, durationPct: 7, title: "Acme Renewal", time: "10:00 · 45M" },
+    { id: "1", type: "internal", state: "past", startPct: 18, durationPct: 5, title: "Eng standup", time: "9:00 · 30M", tooltip: "Eng standup · 9:00 · 30m" },
+    { id: "2", type: "customer", state: "now", startPct: 27, durationPct: 7, title: "Acme Renewal", time: "10:00 · 45M", tooltip: "Acme renewal · 10:00 · 45m" },
     // ...
   ]}
   nowPosition={30}
@@ -100,3 +105,4 @@ Hover interaction: subtle Y translate + box-shadow on bars.
 ## History
 
 - 2026-05-02 — Proposed pattern for v1.4.3 from D-spine mockup.
+- 2026-05-06 — Bar text moved to hover/focus tooltips to prevent clipped labels.

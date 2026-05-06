@@ -3,7 +3,7 @@
 **Tier:** pattern
 **Status:** integrated
 **Owner:** James
-**Last updated:** 2026-05-05
+**Last updated:** 2026-05-06
 **`data-ds-name`:** `FolioBar`
 **`data-ds-spec`:** `patterns/FolioBar.md`
 **Variants:** action sets driven by `data-folio-actions` (refresh, search, reports, tools, status-dot); `mark="pulsing"` for live status
@@ -30,7 +30,9 @@ Three regions in a horizontal flex:
 
 - **Left:** brand mark (asterisk, optionally pulsing for "live" status) + surface label (`data-folio-label`) + optional breadcrumbs (`data-folio-crumbs`, `>`-separated)
 - **Center:** optional status text (`data-folio-status`) — italic mono, e.g., "Auto-saved · just now" or center timestamp like "THU · APR 23 · LIVE"
-- **Right:** action set per `data-folio-actions` csv — combinations of `refresh`, `search` (⌘K), `reports`, `tools`, `status-dot`
+- **Right:** readiness stats and action set per `data-folio-actions` csv —
+  combinations of `refresh`, `search` (⌘K), `reports`, `tools`, `status-dot`.
+  Readiness text is chrome copy and uses `--font-mono`.
 
 Frosted glass background via `--frosted-glass-background` + `backdrop-filter: blur(12px)`.
 
@@ -46,7 +48,7 @@ Frosted glass background via `--frosted-glass-background` + `backdrop-filter: bl
 - `--frosted-glass-background`
 - `--backdrop-blur` (`blur(12px)`)
 - `--folio-height`, `--folio-padding-*`
-- `--font-mark` (asterisk), `--font-mono` (label, status, action labels)
+- `--font-mark` (asterisk), `--font-mono` (label, status, readiness, action labels)
 - `--color-spice-turmeric` (brand mark, accent action border)
 - `--color-text-tertiary` (label, status, default action color)
 - `--color-rule-light` (bottom border)

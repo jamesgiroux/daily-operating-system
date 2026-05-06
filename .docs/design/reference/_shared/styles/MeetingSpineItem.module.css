@@ -42,6 +42,31 @@
   text-transform: uppercase;
 }
 
+.MeetingSpineItem_stateTag {
+  display: block;
+  margin-top: 2px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0;
+  line-height: 1.35;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.MeetingSpineItem_stateTagNow {
+  color: var(--color-spice-turmeric);
+}
+
+.MeetingSpineItem_stateTagUpcoming {
+  color: var(--color-garden-rosemary);
+}
+
+.MeetingSpineItem_stateTagPast,
+.MeetingSpineItem_stateTagCancelled {
+  color: var(--color-text-tertiary);
+}
+
 .MeetingSpineItem_eyebrow {
   display: flex;
   align-items: center;
@@ -187,22 +212,21 @@
   --meeting-spine-accent: var(--color-garden-larkspur);
 }
 
-.MeetingSpineItem_warn {
-  --meeting-spine-accent: var(--color-spice-terracotta);
+.MeetingSpineItem_partner,
+.MeetingSpineItem_project {
+  --meeting-spine-accent: var(--color-garden-olive);
 }
 
 .MeetingSpineItem_inProgress {
   margin-inline: calc(var(--space-md) * -1);
   padding-inline: var(--space-md);
   border-radius: var(--radius-editorial-sm);
-  background:
-    linear-gradient(90deg, var(--color-spice-turmeric-10), transparent 72%),
-    var(--color-paper-warm-white);
+  background: linear-gradient(90deg, var(--color-spice-turmeric-10), transparent 80%);
   border-bottom-color: var(--color-spice-turmeric-18);
 }
 
 .MeetingSpineItem_inProgress .MeetingSpineItem_time {
-  color: var(--color-spice-terracotta);
+  color: var(--color-spice-turmeric);
 }
 
 .MeetingSpineItem_past {

@@ -2,7 +2,7 @@ import clsx from "clsx";
 import type { ComponentPropsWithoutRef, CSSProperties } from "react";
 import styles from "./DayChart.module.css";
 
-export type DayChartMeetingType = "customer" | "customer.warn" | "internal" | "oo" | "cancel";
+export type DayChartMeetingType = "customer" | "partner" | "internal" | "oo" | "cancel";
 export type DayChartMeetingState = "past" | "now" | "upcoming" | "cancelled";
 
 export interface DayChartMeeting {
@@ -13,13 +13,13 @@ export interface DayChartMeeting {
   durationPct: number;
   title: string;
   time: string;
-  warn?: boolean;
+  tooltip?: string;
   ariaLabel?: string;
 }
 
 export interface DayChartLegendItem {
   label: string;
-  tone: "customer" | "warn" | "oo" | "internal";
+  tone: "customer" | "partner" | "oo" | "internal";
 }
 
 export interface DayChartProps extends ComponentPropsWithoutRef<"section"> {
@@ -38,21 +38,21 @@ const DEFAULT_HOURS = ["7 AM", "8", "9", "10", "11", "12 PM", "1", "2", "3", "4"
 
 const DEFAULT_LEGEND: DayChartLegendItem[] = [
   { label: "Customer", tone: "customer" },
-  { label: "At risk", tone: "warn" },
+  { label: "Partner", tone: "partner" },
   { label: "1:1", tone: "oo" },
   { label: "Internal", tone: "internal" },
 ];
 
 const LEGEND_SWATCH_CLASS: Record<DayChartLegendItem["tone"], string> = {
   customer: styles.swatchCustomer,
-  warn: styles.swatchWarn,
+  partner: styles.swatchPartner,
   oo: styles.swatchOo,
   internal: styles.swatchInternal,
 };
 
 const MEETING_TYPE_CLASS: Record<DayChartMeetingType, string> = {
   customer: styles.customer,
-  "customer.warn": styles.customer,
+  partner: styles.partner,
   internal: styles.internal,
   oo: styles.oo,
   cancel: styles.cancel,
@@ -135,11 +135,9 @@ export function DayChart({
           const isNow = meeting.state === "now";
           const isPast = meeting.state === "past";
           const isCancelled = meeting.state === "cancelled" || meeting.type === "cancel";
-          const isWarn = meeting.warn || meeting.type === "customer.warn";
           const classes = clsx(
             styles.bar,
             MEETING_TYPE_CLASS[meeting.type],
-            isWarn && styles.warn,
             isPast && styles.past,
             isNow && styles.nowBar,
             isCancelled && styles.cancel,
@@ -162,6 +160,7 @@ export function DayChart({
                 key={meeting.id}
                 role="listitem"
                 aria-label={meeting.ariaLabel ?? `${meeting.title}, ${meeting.time}`}
+                data-tooltip={meeting.tooltip ?? `${meeting.title} · ${meeting.time}`}
                 onClick={() => onMeetingClick(meeting)}
               >
                 {content}
@@ -175,7 +174,9 @@ export function DayChart({
               style={barStyle(meeting)}
               key={meeting.id}
               role="listitem"
+              tabIndex={0}
               aria-label={meeting.ariaLabel ?? `${meeting.title}, ${meeting.time}`}
+              data-tooltip={meeting.tooltip ?? `${meeting.title} · ${meeting.time}`}
             >
               {content}
             </div>

@@ -3,7 +3,7 @@
 **Tier:** pattern
 **Status:** proposed
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-06
 **`data-ds-name`:** `Lead`
 **`data-ds-spec`:** `patterns/Lead.md`
 **Variants:** `register="calm" | "sharp" | "quiet"`; optional inline `.sharp` highlight marker
@@ -36,7 +36,7 @@ The single-sentence headline that opens DailyBriefing — large serif type that 
 ## Variants
 
 - **calm** — observational summary ("Four meetings today, two with customers. Light afternoon after 2:00.")
-- **sharp** — calls out the one thing that matters ("The Acme renewal at 10:00 is the one to nail — the pricing memo still hasn't gone.")
+- **sharp** — calls out the one thing that matters ("The Acme renewal at 10:00 is the one to nail — legal needs the final terms before the MSA review.")
 - **quiet** — light-day register ("A quiet day — one customer call, two internal syncs. Room to think.")
 
 The `.sharp` inline highlight (subtle turmeric underline gradient) marks the most-important clause and survives across all registers.
@@ -52,7 +52,7 @@ The `.sharp` inline highlight (subtle turmeric underline gradient) marks the mos
 ```tsx
 <Lead
   eyebrow="Today, Thursday April 23"
-  sentence="Four meetings today, two with customers — the Acme renewal at 10:00 is the one to nail; the pricing memo still hasn't gone."
+  sentence="Four meetings today, two with customers — the Acme renewal at 10:00 is the one to nail; legal needs the final terms before the MSA review."
   sharpClause="the Acme renewal at 10:00 is the one to nail"
   register="sharp"
 />
@@ -73,4 +73,5 @@ No shipped routed consumers. DailyBriefing has a local hero treatment today. Pot
 
 ## History
 
+- 2026-05-06 — Removed the pricing-memo blocker sentence from the sharp variant.
 - 2026-05-02 — Proposed pattern for v1.4.3 from D-spine mockup.

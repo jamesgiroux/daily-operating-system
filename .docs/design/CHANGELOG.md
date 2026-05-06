@@ -118,7 +118,7 @@ Format:
 
 - Wave 1 closes the v1.4.3 (Briefing) substrate prep. v1.4.3 implementation can begin against these specs.
 - Trust band CSS tokens (`--color-trust-{likely-current,use-with-caution,needs-verification}` plus `8`, `10`, `12`, `15` alpha aliases) are shipped in runtime CSS and documented in `tokens/color.md`.
-- Local-nav decision: `FloatingNavIsland` (production dual-pill) is canonical. Mockup `DayStrip` and `SectionTabbar` are rejected per D2; surfaces provide chapters to FloatingNavIsland instead.
+- Local-nav decision: `FloatingNavIsland` (production dual-pill) is canonical. `SectionTabbar` remains rejected per D2; `DayStrip` is now represented only as a proposed `DailyBriefingDSpine` exception pending v1.4.0 review.
 - 16 Linear issues (DOS-353 through DOS-361) track the remaining waves and cross-cutting work.
 
 ---

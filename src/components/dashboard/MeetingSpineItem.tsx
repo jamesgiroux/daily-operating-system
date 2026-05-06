@@ -1,16 +1,14 @@
 import clsx from "clsx";
 import type { ComponentPropsWithoutRef, ReactNode } from "react";
-import {
-  MeetingStatusPill,
-  type MeetingStatusState,
-} from "@/components/meeting/MeetingStatusPill";
 import { Pill, type PillTone } from "@/components/ui/Pill";
-import { ThreadMark } from "@/components/ui/ThreadMark";
 import type { MeetingType } from "@/types";
 import styles from "./MeetingSpineItem.module.css";
 
 export type MeetingSpineState = "past" | "in-progress" | "upcoming" | "cancelled";
-export type MeetingSpineType = Extract<MeetingType, "customer" | "internal" | "one_on_one">;
+export type MeetingSpineType =
+  | Extract<MeetingType, "customer" | "internal" | "one_on_one">
+  | "partner"
+  | "project";
 export type MeetingSpinePrepState = "ready" | "building" | "needs" | "captured" | "none";
 
 export interface MeetingSpineItemProps
@@ -30,8 +28,6 @@ export interface MeetingSpineItemProps
   briefingLabel?: ReactNode;
   createLabel?: ReactNode;
   onCreateBriefing?: () => void;
-  threadMarkContext?: string;
-  threadId?: string;
   statusLabel?: ReactNode;
   showStatus?: boolean;
 }
@@ -40,6 +36,8 @@ const TYPE_CLASS: Record<MeetingSpineType, string> = {
   customer: styles.customer,
   internal: styles.internal,
   one_on_one: styles.oneOnOne,
+  partner: styles.partner,
+  project: styles.project,
 };
 
 const STATE_CLASS: Record<MeetingSpineState, string | undefined> = {
@@ -64,10 +62,6 @@ const DEFAULT_PREP_LABEL: Record<MeetingSpinePrepState, string> = {
   captured: "Notes captured",
   none: "No prep",
 };
-
-function statusState(state: MeetingSpineState): MeetingStatusState {
-  return state;
-}
 
 function defaultStatusLabel(state: MeetingSpineState): ReactNode {
   if (state === "in-progress") return "Now";
@@ -103,16 +97,15 @@ export function MeetingSpineItem({
   briefingLabel = "Read full briefing",
   createLabel = "Create briefing",
   onCreateBriefing,
-  threadMarkContext,
-  threadId,
   statusLabel,
-  showStatus = true,
+  showStatus,
   className,
   ...rest
 }: MeetingSpineItemProps) {
   const hasCreateAction = prepState === "needs" && onCreateBriefing;
+  const resolvedShowStatus = showStatus ?? state === "in-progress";
   const hasFooter =
-    attendees || prepState !== "none" || briefingUrl || hasCreateAction || threadMarkContext;
+    attendees || prepState !== "none" || briefingUrl || hasCreateAction;
 
   return (
     <article
@@ -120,7 +113,6 @@ export function MeetingSpineItem({
         styles.item,
         TYPE_CLASS[type],
         STATE_CLASS[state],
-        warn && styles.warn,
         className,
       )}
       data-ds-name="MeetingSpineItem"
@@ -128,11 +120,25 @@ export function MeetingSpineItem({
       data-ds-spec="patterns/MeetingSpineItem.md"
       data-state={state}
       data-type={type}
+      data-warn={warn ? "true" : undefined}
       {...rest}
     >
       <div className={styles.timeColumn}>
         <span className={styles.time}>{time}</span>
         {duration ? <span className={styles.duration}>{duration}</span> : null}
+        {resolvedShowStatus ? (
+          <span
+            className={clsx(
+              styles.stateTag,
+              state === "in-progress" && styles.stateTagNow,
+              state === "upcoming" && styles.stateTagUpcoming,
+              state === "past" && styles.stateTagPast,
+              state === "cancelled" && styles.stateTagCancelled,
+            )}
+          >
+            {statusLabel ?? defaultStatusLabel(state)}
+          </span>
+        ) : null}
       </div>
 
       <div className={styles.body}>
@@ -144,11 +150,6 @@ export function MeetingSpineItem({
 
         <div className={styles.titleRow}>
           {renderTitle(title, state === "cancelled" ? undefined : briefingUrl)}
-          {showStatus ? (
-            <MeetingStatusPill state={statusState(state)} size="compact">
-              {statusLabel ?? defaultStatusLabel(state)}
-            </MeetingStatusPill>
-          ) : null}
         </div>
 
         {context ? <p className={styles.context}>{context}</p> : null}
@@ -156,7 +157,7 @@ export function MeetingSpineItem({
         {hasFooter ? (
           <div className={styles.footer}>
             {attendees ? <span>{attendees}</span> : null}
-            {attendees && (prepState !== "none" || briefingUrl || hasCreateAction || threadMarkContext) ? (
+            {attendees && (prepState !== "none" || briefingUrl || hasCreateAction) ? (
               <span className={styles.separator} aria-hidden="true" />
             ) : null}
             {prepState !== "none" ? (
@@ -173,9 +174,6 @@ export function MeetingSpineItem({
               <button className={styles.createButton} type="button" onClick={onCreateBriefing}>
                 {createLabel}
               </button>
-            ) : null}
-            {threadMarkContext ? (
-              <ThreadMark context={threadMarkContext} threadId={threadId} persistent />
             ) : null}
           </div>
         ) : null}

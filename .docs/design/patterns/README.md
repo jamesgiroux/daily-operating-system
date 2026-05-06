@@ -22,14 +22,13 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`MarginGrid`](./MarginGrid.md) | integrated | Two-column section layout (margin label + content) | DailyBriefing, AccountDetail |
 | [`ChapterHeading`](./ChapterHeading.md) | integrated | Section opener (heavy rule + serif title + epigraph) | AccountDetail, ProjectDetail, etc. |
 | [`Lead`](./Lead.md) | proposed | Single-sentence editorial headline | DailyBriefing |
+| [`DayStrip`](./DayStrip.md) | proposed | Previous/current/next briefing-day navigation under FolioBar | DailyBriefing D-spine reference candidate |
 | [`DayChart`](./DayChart.md) | proposed | Visual day shape (hour ticks + bars + NOW line) | D-spine prototype only |
 | [`MeetingSpineItem`](./MeetingSpineItem.md) | proposed | Magazine-style meeting list entry | DailyBriefing D-spine reference candidate; source component exists but is not routed |
 | [`MeetingCard`](./MeetingCard.md) | integrated | Shared schedule/timeline meeting row | DailyBriefing, WeekPage |
 | [`BriefingMeetingCard`](./BriefingMeetingCard.md) | integrated | Expandable briefing schedule row with prep details | DailyBriefing |
 | [`DailyBriefingAttentionSection`](./DailyBriefingAttentionSection.md) | integrated | Priority/action/email/lifecycle section used in the briefing | DailyBriefing |
-| [`EntityPortraitCard`](./EntityPortraitCard.md) | proposed | Color-banded entity portrait with thread | D-spine prototype only |
-| [`ThreadMark`](./ThreadMark.md) | proposed | Universal "talk about this" hover affordance | D-spine prototype only |
-| [`AskAnythingDock`](./AskAnythingDock.md) | proposed | Multi-line conversational dock | D-spine prototype only |
+| [`InferredActionSelector`](./InferredActionSelector.md) | proposed | Suggested action with a dropdown of alternatives | DailyBriefing D-spine reference candidate |
 
 ### Wave 2 (v1.4.4 trust UI, 0.2.0)
 

@@ -6,12 +6,12 @@
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `MeetingSpineItem`
 **`data-ds-spec`:** `patterns/MeetingSpineItem.md`
-**Variants:** state (`past | in-progress | upcoming | cancelled`); type (`customer | internal | one_on_one`); modifier (`warn`)
+**Variants:** state (`past | in-progress | upcoming | cancelled`); type (`customer | partner | project | internal | one_on_one`)
 **Design system version introduced:** 0.1.0
 
 ## Job
 
-Render a single meeting as a magazine-article entry in DailyBriefing's Today section: time on the left, body on the right with entity eyebrow, serif title, italic context line, and a footer with attendees + prep state + briefing action. State-aware (past / now / upcoming / cancelled).
+Render a single meeting as a magazine-article entry in DailyBriefing's Today section: time on the left, body on the right with account/person/partner/project/internal identity, serif title, italic context line, and a footer with attendees + prep state + briefing action. State-aware (past / now / upcoming / cancelled).
 
 ## When to use it
 
@@ -32,10 +32,10 @@ Two-column grid: 88px time column | 1fr body.
 **Time column** (right-aligned):
 - Time (mono 18px)
 - Duration (mono 10px uppercase, e.g., "45M" or "30M · ENDED")
-- Optional state tag (mono 9.5px uppercase): `Now` (terracotta), `Up next` (rosemary)
+- Optional state tag under duration (mono 9.5px uppercase): `Now` (turmeric), `Up next` (rosemary)
 
 **Body**:
-- Entity eyebrow (mono uppercase 10px) — colored glyph dot + entity name + horizontal rule. Color per type: customer=turmeric (or terracotta if `warn`), internal=tertiary, one_on_one=larkspur
+- Identity eyebrow (mono uppercase 10px) — colored glyph dot + name/type + horizontal rule. Color per type: customer=turmeric, one_on_one=larkspur, partner/project=olive, internal=tertiary
 - Title (serif 26px, weight 400) — links to meeting detail; on hover: turmeric
 - Context (serif italic 16px) — the "what this is actually about" line, optional
 - Footer (mono 11px) — attendees · prep state pill · briefing link OR create button (per state)
@@ -43,10 +43,10 @@ Two-column grid: 88px time column | 1fr body.
 ## Variants
 
 - **`past`** — opacity 0.5; smaller title (22px)
-- **`in-progress`** — terracotta-tinted background gradient; time in terracotta
+- **`in-progress`** — turmeric-tinted background gradient to transparent; time and `Now` tag in turmeric
 - **`upcoming`** — default
 - **`cancelled`** — opacity 0.4; title strikethrough
-- **`customer.warn`** — entity eyebrow shifts to terracotta (signals risk on this account)
+- **`partner`** — olive identity for partner meetings.
 
 Footer changes per prep state:
 - `ready` (sage) — "Notes captured" / "Briefing fresh" + briefing link
@@ -55,9 +55,10 @@ Footer changes per prep state:
 
 ## Tokens consumed
 
-- `--font-mono` (time, duration, eyebrow, footer)
+- `--font-mono` (time, duration, state tag, eyebrow, footer)
 - `--font-serif` (title), `--font-serif italic` (context)
-- `--color-spice-turmeric` (customer eyebrow), `--color-spice-terracotta` (warn, in-progress, NOW), `--color-garden-larkspur` (one_on_one), `--color-text-tertiary` (internal)
+- `--color-spice-turmeric` (customer eyebrow, in-progress, NOW), `--color-garden-larkspur` (one_on_one), `--color-garden-olive` (partner/project), `--color-text-tertiary` (internal)
+- `--color-spice-terracotta` (needs prep)
 - `--color-garden-rosemary` (Up next, ready prep state)
 - `--color-spice-saffron` (building prep state)
 - `--color-rule-light` (item bottom border)
@@ -73,7 +74,7 @@ Footer changes per prep state:
   type="customer"
   entityName="Acme Corp - Renewal"
   title="Acme renewal - pricing and tier 3"
-  context="Decisions on tier 3 pricing. Jen wants the adjusted memo before legal goes deep on MSA."
+  context="Decisions on tier 3 pricing. Legal needs final terms language before the MSA review."
   attendees="Jen Park, Dan Mitchell, +2"
   prepState="ready"
   prepLabel="Briefing fresh"
@@ -101,3 +102,4 @@ Footer changes per prep state:
 
 - 2026-05-02 — Proposed pattern for v1.4.3 from D-spine mockup.
 - 2026-05-06 — Source component, CSS module, reference mirror, and D-spine reference surface added. Remains proposed until the routed DailyBriefing rollout lands; production requires a release tag.
+- 2026-05-06 — State tag moved into the time column, ThreadMark removed, and identity colors aligned to account/person/partner/project/internal semantics.

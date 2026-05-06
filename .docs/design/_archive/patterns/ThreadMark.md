@@ -1,5 +1,7 @@
 # ThreadMark
 
+> Archived 2026-05-06. This was a D-spine prototype affordance and is not part of the active reference directory after the Talk affordance was removed.
+
 **Tier:** pattern
 **Status:** proposed
 **Owner:** James
@@ -75,7 +77,10 @@ CSS pattern: a `.thread-mark` button inside any addressable line; parent line `:
 
 ## Surfaces that consume it
 
-DailyBriefing (canonical — used in `WatchListRow`, `EntityThreadList`, `MeetingSpineItem` foot, etc.). Cross-version: should propagate to AccountDetail / ProjectDetail / PersonDetail / MeetingDetail anywhere there are addressable lines.
+No current `DailyBriefingDSpine` usage; the talk affordance was removed from
+the current iteration. Cross-version: may propagate to AccountDetail /
+ProjectDetail / PersonDetail / MeetingDetail anywhere there are addressable
+lines once the conversational layer is ready.
 
 ## Naming notes
 

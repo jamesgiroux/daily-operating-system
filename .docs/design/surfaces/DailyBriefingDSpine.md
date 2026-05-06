@@ -21,15 +21,15 @@ whether and how the D-spine redesign rolls into v1.4.0.
 
 ## Layout regions
 
-1. **FolioBar / FloatingNavIsland / AtmosphereLayer** - unchanged app chrome.
-2. **Lead** - DailyBriefing editorial hero treatment, not the standalone raw
-   D-spine day strip.
+1. **FolioBar / DayStrip / FloatingNavIsland / AtmosphereLayer** - app chrome
+   plus proposed previous/current/next briefing-day navigation under FolioBar.
+2. **Lead** - DailyBriefing editorial hero treatment without the extra date
+   eyebrow or focus primitive.
 3. **Today** - `DayChart` plus the new `MeetingSpineItem` stack.
-4. **Moving** - `EntityPortraitCard` stack for account/person movement.
-5. **Watch** - built from current briefing priority-row vocabulary and `Pill`
-   actions until a dedicated watch pattern is approved.
-6. **Ask** - `AskAnythingDock` with `ThreadMark` context affordances.
-7. **FinisMarker** - editorial close.
+4. **Moving** - current briefing attention-row vocabulary for account/person
+   changes; no decorative card glyphs.
+5. **Watch** - quiet rows with `InferredActionSelector` dropdowns.
+6. **FinisMarker** - editorial close.
 
 ## Local nav approach
 
@@ -39,45 +39,36 @@ The surface provides chapters to `FloatingNavIsland`:
 - `schedule`
 - `moving`
 - `watch`
-- `ask`
 
-**No DayStrip.** The D-spine mockup has a day strip that replaces the app nav.
-DailyBriefing has already rejected that direction in `DailyBriefing.md`; this
-reference keeps FolioBar and FloatingNavIsland as the canonical chrome.
+`DayStrip` is included as a proposed D-spine-specific navigation candidate. It
+does not remove global app navigation in the reference, but it is the intended
+replacement for a separate Weekly Forecast route if the v1.4.0 redesign ships;
+the reference hides the `This Week` nav item for this surface.
 
 ## Patterns consumed
 
 - `FolioBar`
+- `DayStrip`
 - `FloatingNavIsland`
 - `AtmosphereLayer`
 - `MarginGrid`
 - `Lead` (surface-local current DailyBriefing hero treatment)
 - `DayChart`
 - `MeetingSpineItem`
-- `EntityPortraitCard`
 - `DailyBriefingAttentionSection` (watch section substrate)
-- `ThreadMark`
-- `AskAnythingDock`
+- `InferredActionSelector`
 - `FinisMarker`
 
 ## Primitives consumed
 
 - `Pill`
-- `MeetingStatusPill`
-- `EntityChip` (available for entity references in the next iteration)
-- `IntelligenceQualityBadge` (available if briefing quality labels are restored)
-- `HealthBadge` (available if the schedule keeps compact health scores)
 
 ## Source alignment
 
 Existing source-backed patterns reused:
 
 - `src/components/dashboard/DayChart.tsx`
-- `src/components/dashboard/EntityPortraitCard.tsx`
-- `src/components/dashboard/AskAnythingDock.tsx`
-- `src/components/ui/ThreadMark.tsx`
 - `src/components/ui/Pill.tsx`
-- `src/components/meeting/MeetingStatusPill.tsx`
 
 New source-backed pattern added for this reference:
 
@@ -96,14 +87,18 @@ Current shipped DailyBriefing remains:
 - Reference QA at desktop and mobile widths.
 - Inspector overlay shows all major primitives/patterns and the proposed
   `DailyBriefingDSpine` surface tag.
-- No new local nav pattern; FloatingNavIsland remains the chrome.
+- DayStrip must be reviewed as a deliberate exception to the previous
+  FloatingNavIsland-only local-nav stance before route cutover.
 - No production route switch until a v1.4.0 implementation plan clears the
   user-facing surface review gate.
 - If the redesign ships, routed DailyBriefing must either consume the extracted
-  `MeetingSpineItem`/`DayChart`/`EntityPortraitCard` components or deliberately
-  document why a local implementation is required.
+  `MeetingSpineItem`/`DayChart` patterns or deliberately document why a local
+  implementation is required.
 
 ## History
 
 - 2026-05-06 - Reference candidate added from the D-spine mockup using current
   DailyBriefing reference structure and existing design-system components.
+- 2026-05-06 - Iteration removed Ask/ThreadMark, added DayStrip, moved
+  MeetingSpineItem state tags into the time rail, switched DayChart labels to
+  tooltips, and simplified Moving/Watch.

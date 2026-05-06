@@ -46,7 +46,7 @@ Each surface gets one `.md` file with:
 
 - **Surface specs are the contract for what the surface is.** Implementation in `src/` should match. If they disagree, the spec wins (or the spec gets updated, deliberately).
 - **A surface re-implementing a pattern is a smell.** Either the pattern is missing a variant, or the surface is wrong, or the pattern is wrong. Resolve, don't paper over.
-- **Surfaces provide chapters to `FloatingNavIsland`.** Per D2, surfaces do not invent local nav patterns. Their chapter inventory lives in their surface spec.
+- **Surfaces provide chapters to `FloatingNavIsland`.** Per D2, surfaces do not invent local nav patterns unless a surface spec calls out an explicit proposed exception, as `DailyBriefingDSpine` now does for `DayStrip`.
 - **Don't duplicate the figma/mockup here.** Link to it. The spec is the contract; the mockup is a reference.
 
 ## Surface-internal components

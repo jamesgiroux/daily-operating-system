@@ -34,8 +34,8 @@
   background: var(--color-spice-turmeric);
 }
 
-.DayChart_swatchWarn {
-  background: var(--color-spice-terracotta);
+.DayChart_swatchPartner {
+  background: var(--color-garden-olive);
 }
 
 .DayChart_swatchOo {
@@ -89,13 +89,13 @@
   top: 14px;
   height: calc(100% - 28px);
   min-width: 24px;
-  padding: 10px 12px;
+  padding: 0;
   border: 0;
   border-radius: 2px;
   display: flex;
   flex-direction: column;
   justify-content: space-between;
-  overflow: hidden;
+  overflow: visible;
   text-align: left;
   font: inherit;
   cursor: default;
@@ -120,8 +120,46 @@
   outline-offset: 2px;
 }
 
+.DayChart_bar::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 10px);
+  z-index: 8;
+  width: max-content;
+  max-width: 220px;
+  padding: 7px 9px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-warm-white);
+  box-shadow: var(--shadow-lg);
+  color: var(--color-text-primary);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0;
+  line-height: 1.35;
+  opacity: 0;
+  pointer-events: none;
+  text-transform: none;
+  transform: translate(-50%, 4px);
+  transition: opacity var(--transition-fast), transform var(--transition-fast);
+  white-space: normal;
+}
+
+.DayChart_bar:hover::after,
+.DayChart_bar:focus-visible::after {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+
 .DayChart_barTitle {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   min-width: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   overflow: hidden;
   font-family: var(--font-serif);
   font-size: 13.5px;
@@ -133,7 +171,12 @@
 }
 
 .DayChart_barTime {
+  position: absolute;
+  width: 1px;
+  height: 1px;
   min-width: 0;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
   overflow: hidden;
   font-family: var(--font-mono);
   font-size: 9.5px;
@@ -151,12 +194,12 @@
   color: var(--color-desk-charcoal);
 }
 
-.DayChart_warn {
-  background: var(--color-spice-terracotta);
+.DayChart_partner {
+  background: var(--color-garden-olive);
   color: var(--color-paper-warm-white);
 }
 
-.DayChart_warn .DayChart_barTime {
+.DayChart_partner .DayChart_barTime {
   opacity: 0.86;
 }
 
@@ -186,7 +229,17 @@
 }
 
 .DayChart_past {
-  opacity: 0.45;
+  color: var(--color-text-tertiary);
+}
+
+.DayChart_past::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--color-paper-warm-white);
+  opacity: 0.55;
+  pointer-events: none;
 }
 
 .DayChart_nowBar {

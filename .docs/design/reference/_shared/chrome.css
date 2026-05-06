@@ -25,6 +25,12 @@ body { min-height: 100vh; }
 button { font: inherit; color: inherit; cursor: pointer; }
 a { color: inherit; }
 
+.FolioBar_folioReadiness,
+.FolioBar_folioStat {
+  font-family: var(--font-mono);
+  letter-spacing: 0;
+}
+
 /* Page container — mirrors MagazinePageLayout.module.css .pageContainer
    (already provided by the linked module); this fallback covers surfaces
    that wrap content in <main class="page"> rather than the module class. */
