@@ -41,9 +41,41 @@ Policy legend:
 | Push/tray notifications | `src/hooks/useNotifications.ts`, Tauri notification plugin, background enrichment events | event payloads from sync/enrichment/meeting processors | notification title/body, meeting/enrichment summaries | Render public only | Drop text; use generic status | Drop | Drop | Mostly status-only today | Keep private claim-derived text out of notification payloads |
 | Audit/log/export controls | `src-tauri/src/audit.rs`, `src-tauri/src/audit_log.rs`, privacy export commands | raw AI output audit files, structured audit JSONL, data export | raw outputs may contain claim-like language | Drop from structured logs | Drop | Drop | Drop | Existing raw AI audit stores full output in workspace `_audit` | New sensitivity reveal audit stores IDs only; no claim text in structured logs |
 
+## MCP Ability Data Rendering
+
+Cycle-2 Track EE closes the MCP registry ability response gap at the bridge
+boundary. `src-tauri/src/bridges/types.rs` now renders `AbilityResponseJson.data`
+for `BridgeSurface::McpTool`/`McpToolDetail` before the response is returned;
+Tauri, worker, and eval surfaces continue to receive the raw ability payload.
+
+Design choice: **B, generic claim-id tagged walker**. Descriptor-declared paths
+would require extending `AbilityDescriptor` and the `#[ability]` macro while
+still leaving the bridge without sensitivity metadata for each path. The
+generic walker is less invasive because it can consume the existing
+`RenderableClaimText`-style shape: `text` plus `claim_id`/`claimId` and
+`sensitivity`, or `text` plus `policy.claimId`/`policy.sensitivity`.
+
+MCP behavior is fail-closed:
+
+- Tagged Public and Internal claim text renders through
+  `render_policy_for_surface(..., RenderSurface::McpTool, agent:mcp)`.
+- Tagged Confidential and UserOnly claim text is dropped; MCP cannot perform
+  an audited click-to-reveal.
+- Untagged narrative/text-shaped leaves such as `text`, `content`, `summary`,
+  `description`, `detail`, `context`, `title`, `snippet`, `outcome`, and
+  `rationale` are removed from MCP ability data. Identifiers and enum-like
+  metadata are preserved.
+
+Regression coverage lives in
+`src-tauri/tests/dos412_mcp_ability_data_redaction_test.rs`: a synthetic
+Agent/User ability returns Public, Internal, Confidential, and UserOnly tagged
+claim text plus one untagged summary. MCP keeps only Public/Internal and drops
+the untagged/private text; Tauri returns all four sensitivities unchanged per
+cycle-6 semantics.
+
 Implementation notes:
 
-- `get_entity_context` is intentionally excluded from new integration because cycle-6/7 already enforce the Agent sensitivity gate there.
+- `get_entity_context`'s cycle-6/7 Agent sensitivity gate remains unchanged; the MCP bridge-level data renderer is additive and does not replace that source filter.
 - `services/claims.rs::claim_allowed_for_prompt_input` remains the immutable prompt-input boundary.
 - DOS-288 ownership validator and DOS-320 `FieldAttribution.trust_band` stay separate. DOS-412 render policy is an additional annotation, not a trust-band replacement.
 - Unknown sensitivity values or unknown surfaces fail closed as Drop.

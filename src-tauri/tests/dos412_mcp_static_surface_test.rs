@@ -1,7 +1,8 @@
 use dailyos_lib::db::claims::ClaimSensitivity;
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::sensitivity::{
-    render_mcp_static_json_for_surface, render_mcp_static_text_for_surface, McpStaticTextContext,
+    render_mcp_static_json_for_surface, render_mcp_static_text_for_surface, McpStaticTextClass,
+    RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
 };
 use rusqlite::{params, Connection};
 use serde_json::json;
@@ -44,7 +45,31 @@ CREATE TABLE intelligence_claims (
 "#;
 
 #[test]
-fn get_briefing_static_json_applies_mcp_policy_to_briefing_actions_emails_schedule() {
+fn claim_carriers_apply_mcp_policy_to_exact_projection_text() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let values = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_summary",
+        "entity summary",
+    );
+
+    assert_eq!(
+        render_claim_text(db, &values.public),
+        Some("entity summary public example.com".to_string())
+    );
+    assert_eq!(
+        render_claim_text(db, &values.internal),
+        Some("entity summary internal example.com".to_string())
+    );
+    assert_eq!(render_claim_text(db, &values.confidential), None);
+    assert_eq!(render_claim_text(db, &values.user_only), None);
+}
+
+#[test]
+fn get_briefing_static_json_keeps_allowlisted_metadata_and_drops_unbacked_text() {
     let conn = fixture_conn();
     let db = ActionDb::from_conn(&conn);
     let values = seed_policy_claims(
@@ -58,24 +83,38 @@ fn get_briefing_static_json_applies_mcp_policy_to_briefing_actions_emails_schedu
     let rendered = render_mcp_static_json_for_surface(
         db,
         json!({
-            "schedule": [values.public, values.confidential],
-            "actions": [{"title": values.internal}, {"title": values.user_only}],
-            "emails": [{"snippet": values.confidential}],
-            "briefing": {"narrative": values.public}
+            "schedule": [{
+                "title": "Roadmap review example.com",
+                "start_time": "2026-05-06T10:00:00Z",
+                "summary": values.confidential.text
+            }],
+            "actions": [{
+                "title": values.internal.text,
+                "priority": "P1"
+            }],
+            "emails": [{
+                "subject": values.public.text,
+                "snippet": values.confidential.text
+            }],
+            "briefing": {
+                "narrative": values.public.text
+            }
         }),
-        &[],
+        &test_briefing_static_text_class,
     )
-    .expect("briefing JSON renders with private leaves dropped");
+    .expect("briefing JSON renders with disallowed leaves dropped");
 
     let serialized = rendered.to_string();
-    assert!(serialized.contains("briefing public example.com"));
-    assert!(serialized.contains("briefing internal example.com"));
+    assert!(serialized.contains("Roadmap review example.com"));
+    assert!(serialized.contains("2026-05-06T10:00:00Z"));
+    assert!(serialized.contains("P1"));
+    assert!(!serialized.contains("briefing public example.com"));
+    assert!(!serialized.contains("briefing internal example.com"));
     assert!(!serialized.contains("briefing confidential example.com"));
-    assert!(!serialized.contains("briefing user only example.com"));
 }
 
 #[test]
-fn query_entity_static_fields_apply_mcp_policy_to_summary_and_action_titles() {
+fn query_entity_claim_summary_uses_claim_metadata_not_string_identity() {
     let conn = fixture_conn();
     let db = ActionDb::from_conn(&conn);
     let summaries = seed_policy_claims(
@@ -86,28 +125,18 @@ fn query_entity_static_fields_apply_mcp_policy_to_summary_and_action_titles() {
         "entity summary",
     );
     let actions = seed_policy_claims(&conn, "account", "acct-example", "open_loop", "action item");
-    let summary_context = [McpStaticTextContext::new(
-        "account",
-        "acct-example",
-        &["entity_summary"],
-    )];
-    let action_context = [McpStaticTextContext::new(
-        "account",
-        "acct-example",
-        &["open_loop"],
-    )];
-
     let open_actions = [
-        render_mcp_static_text_for_surface(db, &actions.public, &action_context),
-        render_mcp_static_text_for_surface(db, &actions.internal, &action_context),
-        render_mcp_static_text_for_surface(db, &actions.confidential, &action_context),
-        render_mcp_static_text_for_surface(db, &actions.user_only, &action_context),
+        render_claim_text(db, &actions.public),
+        render_claim_text(db, &actions.internal),
+        render_claim_text(db, &actions.confidential),
+        render_claim_text(db, &actions.user_only),
     ]
     .into_iter()
     .flatten()
     .collect::<Vec<_>>();
+
     let response = json!({
-        "intelligence_summary": render_mcp_static_text_for_surface(db, &summaries.public, &summary_context),
+        "intelligence_summary": render_claim_text(db, &summaries.public),
         "open_actions": open_actions
     });
 
@@ -120,7 +149,7 @@ fn query_entity_static_fields_apply_mcp_policy_to_summary_and_action_titles() {
 }
 
 #[test]
-fn search_meetings_static_fields_apply_mcp_policy_to_transcript_and_prep_snippets() {
+fn search_meetings_static_fields_allow_metadata_and_drop_generated_snippets() {
     let conn = fixture_conn();
     let db = ActionDb::from_conn(&conn);
     let transcript = seed_policy_claims(
@@ -131,70 +160,76 @@ fn search_meetings_static_fields_apply_mcp_policy_to_transcript_and_prep_snippet
         "transcript",
     );
     let prep = seed_policy_claims(&conn, "account", "acct-example", "entity_summary", "prep");
-    let contexts = [
-        McpStaticTextContext::new("meeting", "mtg-example", &["meeting_event_note"]),
-        McpStaticTextContext::new("account", "acct-example", &["entity_summary"]),
-    ];
 
-    let results = [
-        render_mcp_static_text_for_surface(db, &transcript.public, &contexts),
-        render_mcp_static_text_for_surface(db, &transcript.internal, &contexts),
-        render_mcp_static_text_for_surface(db, &transcript.confidential, &contexts),
-        render_mcp_static_text_for_surface(db, &transcript.user_only, &contexts),
-        render_mcp_static_text_for_surface(db, &prep.public, &contexts),
-        render_mcp_static_text_for_surface(db, &prep.confidential, &contexts),
-    ]
-    .into_iter()
-    .flatten()
-    .collect::<Vec<_>>();
-    let response = json!({ "results": results });
+    let rendered = json!({
+        "title": render_static_text(db, "Pipeline review example.com", McpStaticTextClass::MeetingTitle),
+        "account_name": render_static_text(db, "Example Account example.com", McpStaticTextClass::AccountName),
+        "summary": render_static_text(db, transcript.public.text, McpStaticTextClass::MeetingSummary),
+        "prep": render_static_text(db, prep.public.text, McpStaticTextClass::MeetingPrepSummary),
+    });
 
-    let serialized = response.to_string();
-    assert!(serialized.contains("transcript public example.com"));
-    assert!(serialized.contains("transcript internal example.com"));
-    assert!(serialized.contains("prep public example.com"));
-    assert!(!serialized.contains("transcript confidential example.com"));
-    assert!(!serialized.contains("transcript user only example.com"));
-    assert!(!serialized.contains("prep confidential example.com"));
+    let serialized = rendered.to_string();
+    assert!(serialized.contains("Pipeline review example.com"));
+    assert!(serialized.contains("Example Account example.com"));
+    assert!(!serialized.contains("transcript public example.com"));
+    assert!(!serialized.contains("prep public example.com"));
 }
 
 #[test]
-fn search_content_static_chunks_apply_mcp_policy_to_semantic_excerpts() {
+fn search_content_static_chunks_drop_without_claim_metadata() {
     let conn = fixture_conn();
     let db = ActionDb::from_conn(&conn);
     let chunks = seed_policy_claims(&conn, "account", "acct-example", "entity_risk", "chunk");
 
     assert_eq!(
-        render_mcp_static_text_for_surface(db, &chunks.public, &[]),
-        Some(chunks.public.clone())
+        render_static_text(db, "renewal-notes.md", McpStaticTextClass::ContentFilename),
+        Some("renewal-notes.md".to_string())
     );
     assert_eq!(
-        render_mcp_static_text_for_surface(db, &chunks.internal, &[]),
-        Some(chunks.internal.clone())
-    );
-    assert_eq!(
-        render_mcp_static_text_for_surface(
-            db,
-            &format!("excerpt start {} excerpt end", chunks.confidential),
-            &[]
-        ),
+        render_static_text(db, chunks.public.text, McpStaticTextClass::ContentChunk),
         None
     );
     assert_eq!(
-        render_mcp_static_text_for_surface(
+        render_static_text(db, chunks.internal.text, McpStaticTextClass::ContentChunk),
+        None
+    );
+}
+
+#[test]
+fn paraphrased_confidential_claim_text_in_static_mcp_dto_is_dropped() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let chunks = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_risk",
+        "renewal blocker",
+    );
+    let paraphrased_private_snippet = "renewal blocker private issue summarized example.com";
+
+    assert_ne!(paraphrased_private_snippet, chunks.confidential.text);
+    assert_eq!(
+        render_static_text(
             db,
-            &format!("excerpt start {} excerpt end", chunks.user_only),
-            &[]
+            paraphrased_private_snippet,
+            McpStaticTextClass::ContentChunk
         ),
         None
     );
 }
 
+struct PolicyValue {
+    id: String,
+    text: String,
+    sensitivity: ClaimSensitivity,
+}
+
 struct PolicyValues {
-    public: String,
-    internal: String,
-    confidential: String,
-    user_only: String,
+    public: PolicyValue,
+    internal: PolicyValue,
+    confidential: PolicyValue,
+    user_only: PolicyValue,
 }
 
 fn fixture_conn() -> Connection {
@@ -202,6 +237,43 @@ fn fixture_conn() -> Connection {
     conn.execute_batch(CLAIMS_SCHEMA)
         .expect("create claims table");
     conn
+}
+
+fn render_claim_text(db: &ActionDb, value: &PolicyValue) -> Option<String> {
+    render_mcp_static_text_for_surface(
+        db,
+        RenderableMcpText::Claim(RenderableMcpClaimText {
+            text: value.text.clone(),
+            claim_id: value.id.clone(),
+            sensitivity: value.sensitivity.clone(),
+        }),
+    )
+}
+
+fn render_static_text(
+    db: &ActionDb,
+    text: impl Into<String>,
+    surface_class: McpStaticTextClass,
+) -> Option<String> {
+    render_mcp_static_text_for_surface(
+        db,
+        RenderableMcpText::Static(RenderableMcpStaticText::new(text, surface_class)),
+    )
+}
+
+fn test_briefing_static_text_class(path: &[String], _text: &str) -> Option<McpStaticTextClass> {
+    let root = path.first().map(String::as_str)?;
+    let leaf = path.last().map(String::as_str)?;
+    match (root, leaf) {
+        ("schedule", "title") => Some(McpStaticTextClass::MeetingTitle),
+        ("schedule", "start_time") => Some(McpStaticTextClass::DateTime),
+        ("actions", "priority") => Some(McpStaticTextClass::ActionPriority),
+        ("actions", "title") => Some(McpStaticTextClass::ActionTitle),
+        ("emails", "subject") => Some(McpStaticTextClass::EmailSubject),
+        ("emails", "snippet") => Some(McpStaticTextClass::EmailSnippet),
+        ("briefing", "narrative") => Some(McpStaticTextClass::BriefingNarrative),
+        _ => None,
+    }
 }
 
 fn seed_policy_claims(
@@ -216,44 +288,39 @@ fn seed_policy_claims(
     let confidential = format!("{label} confidential example.com");
     let user_only = format!("{label} user only example.com");
 
-    seed_claim(
-        conn,
-        subject_kind,
-        subject_id,
-        claim_type,
-        ClaimSensitivity::Public,
-        &public,
-    );
-    seed_claim(
-        conn,
-        subject_kind,
-        subject_id,
-        claim_type,
-        ClaimSensitivity::Internal,
-        &internal,
-    );
-    seed_claim(
-        conn,
-        subject_kind,
-        subject_id,
-        claim_type,
-        ClaimSensitivity::Confidential,
-        &confidential,
-    );
-    seed_claim(
-        conn,
-        subject_kind,
-        subject_id,
-        claim_type,
-        ClaimSensitivity::UserOnly,
-        &user_only,
-    );
-
     PolicyValues {
-        public,
-        internal,
-        confidential,
-        user_only,
+        public: seed_claim(
+            conn,
+            subject_kind,
+            subject_id,
+            claim_type,
+            ClaimSensitivity::Public,
+            &public,
+        ),
+        internal: seed_claim(
+            conn,
+            subject_kind,
+            subject_id,
+            claim_type,
+            ClaimSensitivity::Internal,
+            &internal,
+        ),
+        confidential: seed_claim(
+            conn,
+            subject_kind,
+            subject_id,
+            claim_type,
+            ClaimSensitivity::Confidential,
+            &confidential,
+        ),
+        user_only: seed_claim(
+            conn,
+            subject_kind,
+            subject_id,
+            claim_type,
+            ClaimSensitivity::UserOnly,
+            &user_only,
+        ),
     }
 }
 
@@ -264,7 +331,7 @@ fn seed_claim(
     claim_type: &str,
     sensitivity: ClaimSensitivity,
     text: &str,
-) {
+) -> PolicyValue {
     let sensitivity_name = match sensitivity {
         ClaimSensitivity::Public => "public",
         ClaimSensitivity::Internal => "internal",
@@ -296,4 +363,10 @@ fn seed_claim(
         ],
     )
     .expect("insert claim fixture");
+
+    PolicyValue {
+        id,
+        text: text.to_string(),
+        sensitivity,
+    }
 }

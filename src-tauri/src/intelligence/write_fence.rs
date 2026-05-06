@@ -241,9 +241,19 @@ pub fn fenced_write_intelligence_json(
 mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
+    use std::sync::{Mutex, MutexGuard};
+
+    static WRITE_FENCE_TEST_MUTEX: Mutex<()> = Mutex::new(());
+
+    fn write_fence_test_guard() -> MutexGuard<'static, ()> {
+        WRITE_FENCE_TEST_MUTEX
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
 
     #[test]
     fn capture_reads_initial_epoch_one() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let cycle = FenceCycle::capture(&db).expect("capture");
         assert_eq!(cycle.captured_epoch(), 1);
@@ -251,6 +261,7 @@ mod tests {
 
     #[test]
     fn recheck_succeeds_when_epoch_unchanged() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let cycle = FenceCycle::capture(&db).expect("capture");
         assert!(cycle.recheck(&db).is_ok());
@@ -258,6 +269,7 @@ mod tests {
 
     #[test]
     fn recheck_fails_when_epoch_advanced() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let cycle = FenceCycle::capture(&db).expect("capture");
         let new_value = bump_schema_epoch(&db).expect("bump");
@@ -273,6 +285,7 @@ mod tests {
 
     #[test]
     fn fenced_write_rejects_when_epoch_advanced() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let cycle = FenceCycle::capture(&db).expect("capture");
         bump_schema_epoch(&db).expect("bump");
@@ -296,6 +309,7 @@ mod tests {
 
     #[test]
     fn fenced_write_succeeds_when_epoch_unchanged() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let cycle = FenceCycle::capture(&db).expect("capture");
 
@@ -311,6 +325,7 @@ mod tests {
 
     #[test]
     fn bump_increments_epoch() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         assert_eq!(bump_schema_epoch(&db).expect("bump 1"), 2);
         assert_eq!(bump_schema_epoch(&db).expect("bump 2"), 3);
@@ -319,6 +334,7 @@ mod tests {
     #[test]
     #[ignore = "global static IN_FLIGHT_CYCLES makes count assertions flaky in parallel test runs"]
     fn capture_registers_in_flight_then_drop_unregisters() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let baseline = in_flight_cycle_count();
         {
@@ -331,6 +347,7 @@ mod tests {
 
     #[test]
     fn drain_with_timeout_empty_returns_ok_zero() {
+        let _guard = write_fence_test_guard();
         // No in-flight handles in this test scope; drain should return
         // immediately with Ok(0). (Other tests may have active handles
         // but the snapshot is sampled at call time.)
@@ -346,6 +363,7 @@ mod tests {
 
     #[test]
     fn drain_with_timeout_nonzero_returns_err() {
+        let _guard = write_fence_test_guard();
         let db = test_db();
         let _cycle = FenceCycle::capture(&db).expect("capture");
         // Cycle is held; drain with a small timeout must return Err.
@@ -368,6 +386,7 @@ mod tests {
 
     #[test]
     fn suite_p_baseline_fence_cycle_capture() {
+        let _guard = write_fence_test_guard();
         // W1 baseline: typical median ~5-15µs. Bound: 200µs.
         let db = test_db();
         for _ in 0..50 {
@@ -390,6 +409,7 @@ mod tests {
 
     #[test]
     fn suite_p_baseline_fenced_write_intelligence_json() {
+        let _guard = write_fence_test_guard();
         // W1 baseline: typical median 1-5ms (file write dominates). Bound: 25ms.
         let db = test_db();
         let intel = IntelligenceJson {
@@ -423,6 +443,7 @@ mod tests {
 
     #[test]
     fn dos311_substrate_migration_sequence_end_to_end() {
+        let _guard = write_fence_test_guard();
         // The migration sequence shape is pre-flight → bump → drain →
         // backfill → requeue → reconcile → resume. This test exercises the
         // substrate primitives owned by this module:
@@ -509,6 +530,7 @@ mod tests {
 
     #[test]
     fn dos311_force_abort_drain_completes_within_timeout() {
+        let _guard = write_fence_test_guard();
         // Force-abort path: simulate a stuck worker and verify migration
         // drain completes cleanly.
         //

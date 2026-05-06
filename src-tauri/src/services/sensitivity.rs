@@ -167,21 +167,68 @@ pub struct RenderableClaimText {
     pub policy: RenderPolicy,
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct McpStaticTextContext<'a> {
-    pub subject_kind: &'a str,
-    pub subject_id: &'a str,
-    pub claim_types: &'a [&'a str],
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderableMcpClaimText {
+    pub text: String,
+    pub claim_id: String,
+    pub sensitivity: ClaimSensitivity,
 }
 
-impl<'a> McpStaticTextContext<'a> {
-    pub fn new(subject_kind: &'a str, subject_id: &'a str, claim_types: &'a [&'a str]) -> Self {
+impl RenderableMcpClaimText {
+    pub fn from_claim_value(claim: &IntelligenceClaim, text: impl Into<String>) -> Self {
         Self {
-            subject_kind,
-            subject_id,
-            claim_types,
+            text: text.into(),
+            claim_id: claim.id.clone(),
+            sensitivity: claim.sensitivity.clone(),
         }
     }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum McpStaticTextClass {
+    AccountName,
+    ProjectName,
+    PersonName,
+    MeetingTitle,
+    MeetingType,
+    EntityType,
+    EntityHealth,
+    EntityStatus,
+    EntityLifecycle,
+    DateTime,
+    ContentFilename,
+    ContentRelativePath,
+    ContentType,
+    ActionPriority,
+    ActionTitle,
+    BriefingNarrative,
+    EmailSubject,
+    EmailSnippet,
+    MeetingSummary,
+    MeetingPrepSummary,
+    ContentChunk,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderableMcpStaticText {
+    pub text: String,
+    pub surface_class: McpStaticTextClass,
+}
+
+impl RenderableMcpStaticText {
+    pub fn new(text: impl Into<String>, surface_class: McpStaticTextClass) -> Self {
+        Self {
+            text: text.into(),
+            surface_class,
+        }
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum RenderableMcpText {
+    Claim(RenderableMcpClaimText),
+    Static(RenderableMcpStaticText),
 }
 
 pub fn render_policy_for_surface(
@@ -278,54 +325,328 @@ pub fn renderable_from_decision(
     }
 }
 
+/// Render a text leaf from a static MCP DTO.
+///
+/// This is intentionally fail-closed. Claim-derived text must arrive with a
+/// durable `claim_id`; the claim is reloaded and its stored sensitivity is used
+/// for the MCP policy decision. Non-claim metadata must arrive with an explicit
+/// `McpStaticTextClass`, and only classes in the allowlist render. Paraphrased,
+/// truncated, summarized, or otherwise generated text without claim metadata is
+/// not upgraded to synthetic Internal text. It drops.
 pub fn render_mcp_static_text_for_surface(
     db: &ActionDb,
-    value: &str,
-    contexts: &[McpStaticTextContext<'_>],
+    value: RenderableMcpText,
+) -> Option<String> {
+    match value {
+        RenderableMcpText::Claim(text) => render_mcp_claim_text_for_surface(db, text),
+        RenderableMcpText::Static(text) => render_mcp_non_claim_static_text_for_surface(text),
+    }
+}
+
+pub fn render_mcp_static_json_for_surface<F>(
+    db: &ActionDb,
+    value: serde_json::Value,
+    classify_static_text: &F,
+) -> Option<serde_json::Value>
+where
+    F: Fn(&[String], &str) -> Option<McpStaticTextClass>,
+{
+    let mut path = Vec::new();
+    render_mcp_static_json_at_path(db, value, &mut path, classify_static_text)
+}
+
+fn render_mcp_claim_text_for_surface(
+    db: &ActionDb,
+    value: RenderableMcpClaimText,
 ) -> Option<String> {
     let actor = RenderActor::agent("agent:mcp");
-    let claims = load_mcp_static_claims(db, contexts);
-    for claim in claims
-        .iter()
-        .filter(|claim| mcp_claim_matches_value(claim, value))
-    {
-        match render_policy_for_surface(claim, RenderSurface::McpTool, &actor) {
-            RenderDecision::Render => {}
-            RenderDecision::RenderRedacted { .. } | RenderDecision::Drop => return None,
-        }
+    let claim = crate::services::claims::load_claim_by_id(db.conn_ref(), &value.claim_id)
+        .ok()
+        .flatten()?;
+    if claim.sensitivity != value.sensitivity {
+        return None;
     }
-
-    let synthetic = minimal_policy_claim(ClaimSensitivity::Internal, "agent:legacy_projection");
-    renderable_claim_text_with_value(&synthetic, value, RenderSurface::McpTool, &actor)
+    renderable_claim_text_with_value(&claim, &value.text, RenderSurface::McpTool, &actor)
         .map(|rendered| rendered.text)
 }
 
-pub fn render_mcp_static_json_for_surface(
+fn render_mcp_non_claim_static_text_for_surface(value: RenderableMcpStaticText) -> Option<String> {
+    if is_mcp_non_claim_static_text_allowlisted(value.surface_class) {
+        Some(value.text)
+    } else {
+        None
+    }
+}
+
+fn is_mcp_non_claim_static_text_allowlisted(surface_class: McpStaticTextClass) -> bool {
+    matches!(
+        surface_class,
+        McpStaticTextClass::AccountName
+            | McpStaticTextClass::ProjectName
+            | McpStaticTextClass::PersonName
+            | McpStaticTextClass::MeetingTitle
+            | McpStaticTextClass::MeetingType
+            | McpStaticTextClass::EntityType
+            | McpStaticTextClass::EntityHealth
+            | McpStaticTextClass::EntityStatus
+            | McpStaticTextClass::EntityLifecycle
+            | McpStaticTextClass::DateTime
+            | McpStaticTextClass::ContentFilename
+            | McpStaticTextClass::ContentRelativePath
+            | McpStaticTextClass::ContentType
+            | McpStaticTextClass::ActionPriority
+    )
+}
+
+fn render_mcp_static_json_at_path<F>(
     db: &ActionDb,
     value: serde_json::Value,
-    contexts: &[McpStaticTextContext<'_>],
-) -> Option<serde_json::Value> {
+    path: &mut Vec<String>,
+    classify_static_text: &F,
+) -> Option<serde_json::Value>
+where
+    F: Fn(&[String], &str) -> Option<McpStaticTextClass>,
+{
     match value {
         serde_json::Value::String(text) => {
-            render_mcp_static_text_for_surface(db, &text, contexts).map(serde_json::Value::String)
+            let surface_class = classify_static_text(path, &text)?;
+            render_mcp_static_text_for_surface(
+                db,
+                RenderableMcpText::Static(RenderableMcpStaticText::new(text, surface_class)),
+            )
+            .map(serde_json::Value::String)
         }
         serde_json::Value::Array(items) => Some(serde_json::Value::Array(
             items
                 .into_iter()
-                .filter_map(|item| render_mcp_static_json_for_surface(db, item, contexts))
+                .filter_map(|item| {
+                    render_mcp_static_json_at_path(db, item, path, classify_static_text)
+                })
                 .collect(),
         )),
         serde_json::Value::Object(object) => {
             let mut rendered = serde_json::Map::new();
             for (key, value) in object {
-                if let Some(value) = render_mcp_static_json_for_surface(db, value, contexts) {
+                path.push(key.clone());
+                if let Some(value) =
+                    render_mcp_static_json_at_path(db, value, path, classify_static_text)
+                {
                     rendered.insert(key, value);
                 }
+                path.pop();
             }
             Some(serde_json::Value::Object(rendered))
         }
         other => Some(other),
     }
+}
+
+/// Render claim-derived ability `data` for the MCP tool surface.
+///
+/// DOS-412 Track EE intentionally uses design B: a generic JSON walker that
+/// recognizes tagged claim text instead of descriptor-declared JSON paths.
+/// This is less invasive for the current ability registry because existing
+/// descriptors and the `#[ability]` macro do not carry output-path metadata,
+/// while the sensitivity module already owns a `RenderableClaimText` policy
+/// shape. Ability outputs that emit claim text to MCP must tag that text with
+/// claim metadata (`text` plus `claim_id`/`claimId` and `sensitivity`, or the
+/// existing `text` plus `policy.claimId`/`policy.sensitivity` shape). Tagged
+/// leaves are rendered through `render_policy_for_surface(..., McpTool, ...)`;
+/// untagged narrative/text-shaped leaves fail closed and are removed.
+pub fn render_mcp_ability_data_for_surface(value: serde_json::Value) -> serde_json::Value {
+    render_mcp_ability_data_value(value, None).unwrap_or(serde_json::Value::Null)
+}
+
+#[derive(Debug, Clone)]
+struct TaggedMcpClaimText {
+    text: String,
+    claim_id: String,
+    sensitivity: ClaimSensitivity,
+    originating_actor: String,
+}
+
+enum TaggedMcpClaimTextMatch {
+    NotTagged,
+    Malformed,
+    Tagged(TaggedMcpClaimText),
+}
+
+fn render_mcp_ability_data_value(
+    value: serde_json::Value,
+    key: Option<&str>,
+) -> Option<serde_json::Value> {
+    match value {
+        serde_json::Value::Object(object) => match tagged_mcp_claim_text(&object) {
+            TaggedMcpClaimTextMatch::Tagged(tagged) => render_tagged_mcp_claim_text(object, tagged),
+            TaggedMcpClaimTextMatch::Malformed => None,
+            TaggedMcpClaimTextMatch::NotTagged => {
+                let mut rendered = serde_json::Map::new();
+                for (key, value) in object {
+                    if let Some(value) = render_mcp_ability_data_value(value, Some(&key)) {
+                        rendered.insert(key, value);
+                    }
+                }
+                Some(serde_json::Value::Object(rendered))
+            }
+        },
+        serde_json::Value::Array(values) => Some(serde_json::Value::Array(
+            values
+                .into_iter()
+                .filter_map(|value| render_mcp_ability_data_value(value, None))
+                .collect(),
+        )),
+        serde_json::Value::String(text) => {
+            if key.is_some_and(is_mcp_ability_claim_text_field) {
+                None
+            } else {
+                Some(serde_json::Value::String(text))
+            }
+        }
+        other => Some(other),
+    }
+}
+
+fn tagged_mcp_claim_text(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> TaggedMcpClaimTextMatch {
+    if !object.contains_key("text") {
+        return TaggedMcpClaimTextMatch::NotTagged;
+    }
+
+    let has_claim_tag = claim_id_from_mcp_claim_text_object(object).is_some()
+        || object.get("policy").is_some()
+        || object.get("renderPolicy").is_some()
+        || object.get("sensitivity").is_some();
+    if !has_claim_tag {
+        return TaggedMcpClaimTextMatch::NotTagged;
+    }
+
+    let Some(text) = object
+        .get("text")
+        .and_then(serde_json::Value::as_str)
+        .map(str::to_string)
+    else {
+        return TaggedMcpClaimTextMatch::Malformed;
+    };
+    let Some(claim_id) = claim_id_from_mcp_claim_text_object(object) else {
+        return TaggedMcpClaimTextMatch::Malformed;
+    };
+    let Some(sensitivity) = sensitivity_from_mcp_claim_text_object(object) else {
+        return TaggedMcpClaimTextMatch::Malformed;
+    };
+    let originating_actor =
+        string_field(object, &["originating_actor", "originatingActor", "actor"])
+            .unwrap_or_else(|| "user".to_string());
+
+    TaggedMcpClaimTextMatch::Tagged(TaggedMcpClaimText {
+        text,
+        claim_id,
+        sensitivity,
+        originating_actor,
+    })
+}
+
+fn render_tagged_mcp_claim_text(
+    mut object: serde_json::Map<String, serde_json::Value>,
+    tagged: TaggedMcpClaimText,
+) -> Option<serde_json::Value> {
+    let actor = RenderActor::agent("agent:mcp");
+    let mut claim = minimal_policy_claim(tagged.sensitivity, &tagged.originating_actor);
+    claim.id = tagged.claim_id;
+    claim.text = tagged.text.clone();
+
+    let decision = render_policy_for_surface(&claim, RenderSurface::McpTool, &actor);
+    let rendered =
+        renderable_from_decision(&claim, &tagged.text, RenderSurface::McpTool, decision)?;
+    object.insert("text".to_string(), serde_json::Value::String(rendered.text));
+    object.insert(
+        "policy".to_string(),
+        serde_json::to_value(rendered.policy).unwrap_or(serde_json::Value::Null),
+    );
+    object.remove("renderPolicy");
+    Some(serde_json::Value::Object(object))
+}
+
+fn claim_id_from_mcp_claim_text_object(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    string_field(object, &["claim_id", "claimId"])
+        .or_else(|| policy_string_field(object, &["claim_id", "claimId"]))
+}
+
+fn sensitivity_from_mcp_claim_text_object(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<ClaimSensitivity> {
+    object
+        .get("sensitivity")
+        .and_then(claim_sensitivity_from_value)
+        .or_else(|| {
+            object
+                .get("policy")
+                .and_then(|policy| policy.get("sensitivity"))
+                .and_then(claim_sensitivity_from_value)
+        })
+        .or_else(|| {
+            object
+                .get("renderPolicy")
+                .and_then(|policy| policy.get("sensitivity"))
+                .and_then(claim_sensitivity_from_value)
+        })
+}
+
+fn string_field(
+    object: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+) -> Option<String> {
+    keys.iter()
+        .find_map(|key| object.get(*key).and_then(serde_json::Value::as_str))
+        .map(str::to_string)
+}
+
+fn policy_string_field(
+    object: &serde_json::Map<String, serde_json::Value>,
+    keys: &[&str],
+) -> Option<String> {
+    object
+        .get("policy")
+        .or_else(|| object.get("renderPolicy"))
+        .and_then(serde_json::Value::as_object)
+        .and_then(|policy| string_field(policy, keys))
+}
+
+fn claim_sensitivity_from_value(value: &serde_json::Value) -> Option<ClaimSensitivity> {
+    let text = value.as_str()?;
+    match text.trim().to_ascii_lowercase().replace('-', "_").as_str() {
+        "public" => Some(ClaimSensitivity::Public),
+        "internal" => Some(ClaimSensitivity::Internal),
+        "confidential" => Some(ClaimSensitivity::Confidential),
+        "user_only" | "useronly" => Some(ClaimSensitivity::UserOnly),
+        _ => None,
+    }
+}
+
+fn is_mcp_ability_claim_text_field(key: &str) -> bool {
+    matches!(
+        key,
+        "briefing"
+            | "content"
+            | "context"
+            | "description"
+            | "detail"
+            | "emails"
+            | "intelligenceSummary"
+            | "intelligence_summary"
+            | "meetingContext"
+            | "openActions"
+            | "open_actions"
+            | "outcome"
+            | "rationale"
+            | "schedule"
+            | "snippet"
+            | "summary"
+            | "text"
+            | "title"
+    )
 }
 
 pub fn record_sensitivity_reveal(
@@ -673,94 +994,6 @@ fn claim_projection_text(claim: &IntelligenceClaim) -> String {
         }
     }
     claim.text.clone()
-}
-
-fn load_mcp_static_claims(
-    db: &ActionDb,
-    contexts: &[McpStaticTextContext<'_>],
-) -> Vec<IntelligenceClaim> {
-    let mut claims = Vec::new();
-    let mut seen = std::collections::HashSet::new();
-
-    if contexts.is_empty() {
-        let Ok(mut stmt) = db.conn_ref().prepare(
-            "SELECT id FROM intelligence_claims
-             WHERE claim_state = 'active'
-               AND surfacing_state = 'active'
-             ORDER BY created_at DESC",
-        ) else {
-            return claims;
-        };
-        let Ok(ids) = stmt.query_map([], |row| row.get::<_, String>(0)) else {
-            return claims;
-        };
-        for id in ids.flatten() {
-            if !seen.insert(id.clone()) {
-                continue;
-            }
-            if let Ok(Some(claim)) = crate::services::claims::load_claim_by_id(db.conn_ref(), &id) {
-                claims.push(claim);
-            }
-        }
-        return claims;
-    }
-
-    for context in contexts {
-        let subject_ref = serde_json::json!({
-            "kind": context.subject_kind,
-            "id": context.subject_id,
-        })
-        .to_string();
-
-        if context.claim_types.is_empty() {
-            if let Ok(loaded) = crate::services::claims::load_claims_active(db, &subject_ref, None)
-            {
-                for claim in loaded {
-                    if seen.insert(claim.id.clone()) {
-                        claims.push(claim);
-                    }
-                }
-            }
-            continue;
-        }
-
-        for claim_type in context.claim_types {
-            if let Ok(loaded) =
-                crate::services::claims::load_claims_active(db, &subject_ref, Some(claim_type))
-            {
-                for claim in loaded {
-                    if seen.insert(claim.id.clone()) {
-                        claims.push(claim);
-                    }
-                }
-            }
-        }
-    }
-
-    claims
-}
-
-fn mcp_claim_matches_value(claim: &IntelligenceClaim, value: &str) -> bool {
-    let projection = claim_projection_text(claim);
-    text_values_overlap(value, &claim.text) || text_values_overlap(value, &projection)
-}
-
-fn text_values_overlap(value: &str, claim_text: &str) -> bool {
-    let value = value.trim();
-    let claim_text = claim_text.trim();
-    if value.is_empty() || claim_text.is_empty() {
-        return false;
-    }
-    if value.eq_ignore_ascii_case(claim_text) {
-        return true;
-    }
-    if claim_text.len() < 12 {
-        return false;
-    }
-
-    let value = value.to_ascii_lowercase();
-    let claim_text = claim_text.to_ascii_lowercase();
-    value.contains(&claim_text)
 }
 
 fn minimal_policy_claim(sensitivity: ClaimSensitivity, actor: &str) -> IntelligenceClaim {

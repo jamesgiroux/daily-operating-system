@@ -17,6 +17,7 @@ use crate::intelligence::provider::{
     ProviderKind,
 };
 use crate::services::context::{ExecutionMode, ServiceContext};
+use crate::services::sensitivity::render_mcp_ability_data_for_surface;
 use crate::state::ContextSnapshot;
 
 pub const BRIDGE_PROVENANCE_DETAIL_BYTE_CAP: usize = 10 * 1024;
@@ -561,7 +562,7 @@ fn ability_response_from_output_json(
         ability_name,
         ability_version,
         schema_version,
-        data,
+        data: render_ability_data(surface, data),
         rendered_provenance: render_provenance(surface, provenance),
         diagnostics,
     })
@@ -581,6 +582,15 @@ fn render_provenance(surface: BridgeSurface, provenance: serde_json::Value) -> R
         BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => provenance,
     };
     RenderedProvenance::new(surface, value)
+}
+
+fn render_ability_data(surface: BridgeSurface, data: serde_json::Value) -> serde_json::Value {
+    match surface {
+        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
+            render_mcp_ability_data_for_surface(data)
+        }
+        BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => data,
+    }
 }
 
 pub(crate) fn surface_error(error: AbilityInvokeError) -> BridgeSurfaceError {

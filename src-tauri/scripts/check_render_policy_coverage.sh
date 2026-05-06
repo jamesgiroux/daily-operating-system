@@ -9,6 +9,68 @@ if ! rg -n "render_policy_for_surface" src-tauri/src/services/sensitivity.rs >/d
   exit 1
 fi
 
+if ! rg -n "render_mcp_ability_data_for_surface" src-tauri/src/services/sensitivity.rs >/dev/null; then
+  echo "DOS-412 MCP ability data redactor missing from src-tauri/src/services/sensitivity.rs" >&2
+  exit 1
+fi
+
+if ! rg -n "render_mcp_ability_data_for_surface" src-tauri/src/bridges/types.rs >/dev/null; then
+  echo "DOS-412 MCP ability data redactor is not wired through src-tauri/src/bridges/types.rs" >&2
+  exit 1
+fi
+
+ability_redactor_violations="$(
+  python3 - <<'PY'
+from pathlib import Path
+import re
+
+bridge = Path("src-tauri/src/bridges/types.rs").read_text()
+service = Path("src-tauri/src/services/sensitivity.rs").read_text()
+
+violations = []
+if "fn render_ability_data(" not in bridge:
+    violations.append("src-tauri/src/bridges/types.rs: missing render_ability_data bridge hook")
+if "render_ability_data(surface, data)" not in bridge:
+    violations.append("src-tauri/src/bridges/types.rs: AbilityResponseJson.data is not built from render_ability_data(surface, data)")
+if not re.search(r"BridgeSurface::McpTool\s*\|\s*BridgeSurface::McpToolDetail\s*=>\s*\{?\s*render_mcp_ability_data_for_surface", bridge, re.S):
+    violations.append("src-tauri/src/bridges/types.rs: MCP surfaces do not call render_mcp_ability_data_for_surface")
+if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval\s*=>\s*data", bridge):
+    violations.append("src-tauri/src/bridges/types.rs: non-MCP surfaces must pass ability data through unchanged")
+if "Tagged Public and Internal claim text" not in service and "generic JSON walker" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks design-B fail-closed documentation")
+
+agent_abilities = []
+for path in Path("src-tauri/src/abilities").rglob("*.rs"):
+    text = path.read_text()
+    for match in re.finditer(r"#\[ability\((.*?)\)\]", text, re.S):
+        block = match.group(1)
+        name = re.search(r'name\s*=\s*"([^"]+)"', block)
+        actors = re.search(r"allowed_actors\s*=\s*\[([^\]]*)\]", block, re.S)
+        if actors and re.search(r"\bAgent\b", actors.group(1)):
+            agent_abilities.append((str(path), name.group(1) if name else "<unknown>"))
+
+if agent_abilities and "render_mcp_ability_data_for_surface(data)" not in bridge:
+    for path, name in agent_abilities:
+        violations.append(f"{path}: Agent-allowed ability `{name}` would bypass the MCP ability data redactor")
+
+print("\n".join(violations))
+PY
+)"
+
+if [[ -n "$ability_redactor_violations" ]]; then
+  cat >&2 <<'MSG'
+DOS-412 MCP ability data coverage failed.
+
+Every Agent-allowed registry ability reaches MCP through the bridge-level
+render_mcp_ability_data_for_surface hook. Tauri/worker/eval surfaces must stay
+raw.
+
+Violations:
+MSG
+  echo "$ability_redactor_violations" >&2
+  exit 1
+fi
+
 violations="$(
   rg -n --pcre2 \
     "(claim\\.text|SELECT\\s+[^;]*\\btext\\b[^;]*\\bFROM\\s+intelligence_claims|source\\.text|source_text)" \
@@ -118,7 +180,8 @@ for pattern, label in raw_sensitive_patterns:
     for match in re.finditer(pattern, source):
         line_no = source.count("\n", 0, match.start()) + 1
         line = lines[line_no - 1].strip()
-        if any(marker in line for marker in allowed_markers):
+        surrounding = "\n".join(lines[max(0, line_no - 8):min(len(lines), line_no + 8)])
+        if any(marker in surrounding for marker in allowed_markers):
             continue
         if (
             "SELECT " in line
