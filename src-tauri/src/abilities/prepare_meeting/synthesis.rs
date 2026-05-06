@@ -9,12 +9,14 @@ use crate::abilities::get_entity_context::{
     get_entity_context, ContextDepth, GetEntityContextInput,
 };
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
+use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
     AbilityExecutionMode, AbilityVersion, CompositionId, Confidence, DataSource, FieldAttribution,
     FieldPath, GleanDownstream, MaskReason, MeetingId, ProvenanceBuilder, ProvenanceBuilderConfig,
     ProvenanceWarning, SchemaVersion, SourceAttribution, SourceIdentifier, SourceRef,
     SubjectAttribution, SubjectBindingKind, SubjectFitAssessment, SubjectRef,
 };
+use crate::abilities::trust::TrustBand;
 use crate::abilities::{metadata_for_claim_type, AbilityCategory};
 use crate::abilities::{AbilityContext, AbilityError, AbilityErrorKind, AbilityResult};
 use crate::abilities::{Actor as RegistryActor, ClaimType};
@@ -99,6 +101,9 @@ pub struct EvidenceSource {
     pub lifecycle: String,
     #[serde(default = "default_confidence")]
     pub confidence: f32,
+    #[serde(skip)]
+    #[schemars(skip)]
+    pub trust_band: Option<TrustBand>,
     #[serde(default = "default_temporal_scope_name")]
     pub temporal_scope: String,
     #[serde(default = "default_sensitivity_name")]
@@ -481,6 +486,7 @@ fn evidence_from_claim(claim: &IntelligenceClaim) -> Result<EvidenceSource, Abil
         data_source: claim.data_source.clone(),
         lifecycle: "active".into(),
         confidence: claim.trust_score.unwrap_or(0.8).clamp(0.0, 1.0) as f32,
+        trust_band: Some(claim_trust_band_from_score(claim.trust_score)),
         temporal_scope: temporal_scope_name(&claim.temporal_scope).into(),
         sensitivity: sensitivity_name(&claim.sensitivity).into(),
     })
@@ -1029,6 +1035,9 @@ impl<'a> BriefAssembler<'a> {
             message: error.to_string(),
         })?;
         let index = builder.add_source(source);
+        if let Some(trust_band) = evidence.trust_band {
+            builder.set_source_trust_band(index, trust_band);
+        }
         if let Some(age) = age {
             if age.num_days() > STALE_SOURCE_DAYS {
                 builder.add_warning(ProvenanceWarning::SourceStale {
@@ -2704,6 +2713,7 @@ mod tests {
                     data_source: "glean".into(),
                     lifecycle: "active".into(),
                     confidence: 0.9,
+                    trust_band: None,
                     temporal_scope: "state".into(),
                     sensitivity: "internal".into(),
                 }],

@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 use super::envelope::CompositionId;
 use super::source::SourceIndex;
 use super::subject::SubjectAttribution;
+use crate::abilities::trust::TrustBand;
 
 #[derive(
     Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize, JsonSchema,
@@ -155,6 +156,8 @@ pub struct FieldAttribution {
     pub source_refs: Vec<SourceRef>,
     pub confidence: Confidence,
     pub explanation: Option<SanitizedExplanation>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trust_band: Option<TrustBand>,
 }
 
 impl FieldAttribution {
@@ -172,6 +175,7 @@ impl FieldAttribution {
             source_refs,
             confidence,
             explanation,
+            trust_band: None,
         })
     }
 
@@ -182,6 +186,7 @@ impl FieldAttribution {
             source_refs: vec![SourceRef::Source { source_index }],
             confidence: Confidence::implicit(),
             explanation: None,
+            trust_band: None,
         }
     }
 
@@ -244,6 +249,7 @@ impl FieldAttribution {
             source_refs: Vec::new(),
             confidence: Confidence::implicit(),
             explanation: None,
+            trust_band: None,
         }
     }
 

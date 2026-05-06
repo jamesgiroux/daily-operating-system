@@ -12,8 +12,9 @@ use super::envelope::{
 use super::field::{FieldAttribution, FieldAttributionError, FieldPath, SourceRef};
 use super::source::{SourceAttribution, SourceIndex};
 use super::subject::{SubjectAttribution, SubjectFitStatus};
-use super::trust::TrustAssessment;
+use super::trust::{most_cautious_trust_band, TrustAssessment};
 use crate::abilities::registry::AbilityCategory;
+use crate::abilities::trust::TrustBand;
 
 pub const SOFT_PROVENANCE_BUDGET_BYTES: usize = 100 * 1024;
 pub const HARD_PROVENANCE_BUDGET_BYTES: usize = 1024 * 1024;
@@ -57,6 +58,7 @@ impl ProvenanceBuilderConfig {
 pub struct ProvenanceBuilder {
     config: ProvenanceBuilderConfig,
     sources: Vec<SourceAttribution>,
+    source_trust_bands: BTreeMap<SourceIndex, TrustBand>,
     children: Vec<ComposedProvenance>,
     field_attributions: BTreeMap<FieldPath, FieldAttribution>,
     subtree_attributions: BTreeMap<FieldPath, FieldAttribution>,
@@ -71,6 +73,7 @@ impl ProvenanceBuilder {
         Self {
             config,
             sources: Vec::new(),
+            source_trust_bands: BTreeMap::new(),
             children: Vec::new(),
             field_attributions: BTreeMap::new(),
             subtree_attributions: BTreeMap::new(),
@@ -112,6 +115,15 @@ impl ProvenanceBuilder {
         }
         self.sources.push(source);
         index
+    }
+
+    pub fn set_source_trust_band(
+        &mut self,
+        source_index: SourceIndex,
+        trust_band: TrustBand,
+    ) -> &mut Self {
+        self.source_trust_bands.insert(source_index, trust_band);
+        self
     }
 
     pub fn compose(
@@ -179,6 +191,7 @@ impl ProvenanceBuilder {
         self.apply_subtree_attributions(&serialized)?;
         self.validate_leaf_coverage(&serialized)?;
         self.validate_field_attributions(&subject)?;
+        self.apply_field_trust_bands();
 
         let trust = TrustAssessment::compute(
             &self.sources,
@@ -305,6 +318,67 @@ impl ProvenanceBuilder {
         }
 
         Ok(())
+    }
+
+    fn apply_field_trust_bands(&mut self) {
+        let trust_bands = self
+            .field_attributions
+            .iter()
+            .map(|(field_path, attribution)| {
+                (
+                    field_path.clone(),
+                    self.trust_band_for_attribution(attribution),
+                )
+            })
+            .collect::<BTreeMap<_, _>>();
+
+        for (field_path, trust_band) in trust_bands {
+            if let Some(attribution) = self.field_attributions.get_mut(&field_path) {
+                attribution.trust_band = trust_band;
+            }
+        }
+    }
+
+    fn trust_band_for_attribution(&self, attribution: &FieldAttribution) -> Option<TrustBand> {
+        let mut bands = Vec::new();
+
+        for source_ref in &attribution.source_refs {
+            match source_ref {
+                SourceRef::Source { source_index } => {
+                    bands.push(*self.source_trust_bands.get(source_index)?);
+                }
+                SourceRef::Child {
+                    composition_id,
+                    field_path,
+                } => {
+                    let child = self
+                        .children
+                        .iter()
+                        .find(|child| &child.composition_id == composition_id)?;
+                    bands.extend(child_trust_bands_for_ref(&child.provenance, field_path)?);
+                }
+            }
+        }
+
+        most_cautious_trust_band(bands)
+    }
+}
+
+fn child_trust_bands_for_ref(
+    provenance: &Provenance,
+    field_path: &FieldPath,
+) -> Option<Vec<TrustBand>> {
+    let mut bands = Vec::new();
+    for (candidate_path, attribution) in &provenance.field_attributions {
+        if field_path.covers(candidate_path) {
+            bands.push(attribution.trust_band?);
+        }
+    }
+
+    if bands.is_empty() {
+        None
+    } else {
+        Some(bands)
     }
 }
 

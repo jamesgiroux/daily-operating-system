@@ -173,11 +173,13 @@ pub struct AbilityResponseJson {
     pub diagnostics: serde_json::Value,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Error, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum BridgeSurfaceError {
     #[error("ability unavailable")]
     AbilityUnavailable,
+    #[error("ownership validation failed: {0}")]
+    Ownership(#[from] crate::abilities::provenance::OwnershipError),
 }
 
 #[derive(Debug, Error)]

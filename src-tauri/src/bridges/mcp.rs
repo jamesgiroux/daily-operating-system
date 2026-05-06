@@ -390,7 +390,7 @@ fn json_content<T: serde::Serialize>(value: T) -> Content {
 }
 
 fn mcp_error_from_bridge_surface_error(error: BridgeSurfaceError) -> McpError {
-    let data = serde_json::to_value(error)
+    let data = serde_json::to_value(&error)
         .unwrap_or_else(|_| serde_json::Value::String("ability_unavailable".to_string()));
     McpError::invalid_params(error.to_string(), Some(data))
 }

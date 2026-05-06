@@ -2,6 +2,7 @@ use std::sync::Arc;
 
 use tauri::State;
 
+use crate::abilities::provenance::{validate_serialized_subject_ownership, OwnershipPolicy};
 use crate::abilities::AbilityRegistry;
 use crate::bridges::tauri::TauriAbilityBridge;
 use crate::bridges::{AbilityResponseJson, BridgeSurfaceError, ConfirmationToken};
@@ -21,7 +22,7 @@ pub async fn invoke_ability(
 
     let registry =
         AbilityRegistry::global_checked().map_err(|_| BridgeSurfaceError::AbilityUnavailable)?;
-    TauriAbilityBridge::new(registry)
+    let response = TauriAbilityBridge::new(registry)
         .invoke(
             state.inner().as_ref(),
             &ability_name,
@@ -29,5 +30,13 @@ pub async fn invoke_ability(
             dry_run,
             confirmation.as_ref(),
         )
-        .await
+        .await?;
+    validate_serialized_subject_ownership(
+        response.data.clone(),
+        response.rendered_provenance.value.clone(),
+        response.diagnostics.clone(),
+        &[],
+        OwnershipPolicy::confident(),
+    )?;
+    Ok(response)
 }

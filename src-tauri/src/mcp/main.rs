@@ -18,7 +18,9 @@ use rmcp::service::RequestContext;
 use rmcp::{tool, Error as McpError, RoleServer, ServerHandler, ServiceExt};
 use serde::{Deserialize, Serialize};
 
-use dailyos_lib::abilities::provenance::InvocationId;
+use dailyos_lib::abilities::provenance::{
+    validate_serialized_subject_ownership, InvocationId, OwnershipPolicy,
+};
 use dailyos_lib::abilities::{AbilityDescriptor, AbilityRegistry};
 use dailyos_lib::bridges::mcp::McpAbilityBridge;
 use dailyos_lib::bridges::tauri::TauriAbilityBridge;
@@ -673,6 +675,18 @@ pub async fn invoke_mcp_ability_tool(
         .invoke_ability(session_id, &ability_name, input_json, false, confirmation)
         .await
         .map_err(mcp_error_from_bridge_surface_error)?;
+    if ability_name != "get_entity_context" {
+        validate_serialized_subject_ownership(
+            response.data.clone(),
+            response.rendered_provenance.value.clone(),
+            response.diagnostics.clone(),
+            &[],
+            OwnershipPolicy::confident(),
+        )
+        .map_err(|error| {
+            mcp_error_from_bridge_surface_error(BridgeSurfaceError::Ownership(error))
+        })?;
+    }
     let content = Content::json(response)?;
 
     Ok(CallToolResult::success(vec![content]))

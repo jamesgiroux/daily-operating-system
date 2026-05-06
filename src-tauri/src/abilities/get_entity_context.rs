@@ -3,6 +3,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
+use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
     AbilityExecutionMode, AbilityVersion, ChunkId, ContextEntryId, DataSource, DocumentId,
     EntityId, FieldAttribution, FieldPath, GleanDownstream, MeetingId, ProvenanceBuilder,
@@ -88,6 +89,7 @@ pub async fn get_entity_context(
             &entry.entity_id,
         )?);
         let source_index = builder.add_source(source_for_claim(ctx, claim, entry)?);
+        builder.set_source_trust_band(source_index, claim_trust_band_from_score(claim.trust_score));
         builder
             .attribute_subtree(
                 FieldPath::new(format!("/{index}")).map_err(field_error)?,

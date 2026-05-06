@@ -8,12 +8,40 @@ use super::field::{DerivationKind, FieldAttribution, FieldPath, SourceRef};
 use super::source::{DataSource, EntityId, SourceAttribution, SourceIndex};
 use super::CompositionId;
 use crate::abilities::registry::AbilityCategory;
+use crate::abilities::trust::{TrustBand, TrustConfig};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 pub struct TrustAssessment {
     pub effective: EffectiveTrust,
     pub contributions: Vec<TrustContribution>,
     pub contains_stored_synthesis: bool,
+}
+
+pub fn claim_trust_band_from_score(trust_score: Option<f64>) -> TrustBand {
+    let Some(score) = trust_score.filter(|score| score.is_finite()) else {
+        return TrustBand::Unscored;
+    };
+    let config = TrustConfig::default();
+    if score >= config.likely_current_min {
+        TrustBand::LikelyCurrent
+    } else if score >= config.use_with_caution_min {
+        TrustBand::UseWithCaution
+    } else {
+        TrustBand::NeedsVerification
+    }
+}
+
+pub fn most_cautious_trust_band(bands: impl IntoIterator<Item = TrustBand>) -> Option<TrustBand> {
+    bands.into_iter().min_by_key(|band| trust_band_rank(*band))
+}
+
+fn trust_band_rank(band: TrustBand) -> u8 {
+    match band {
+        TrustBand::Unscored => 0,
+        TrustBand::NeedsVerification => 1,
+        TrustBand::UseWithCaution => 2,
+        TrustBand::LikelyCurrent => 3,
+    }
 }
 
 impl TrustAssessment {
