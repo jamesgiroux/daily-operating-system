@@ -1152,29 +1152,29 @@ fn review_lifecycle_change(
                 corrected_stage,
                 notes,
             } => {
-                let transition = LifecycleTransitionCandidate {
-                    new_lifecycle: corrected_lifecycle,
-                    renewal_stage: corrected_stage,
-                    source: "user_correction".to_string(),
-                    confidence: 1.0,
-                    evidence: notes,
-                    completion_trigger: None,
-                };
-                apply_lifecycle_transition(ctx, tx_db, engine, &change.account_id, &transition)?;
-                // Restore contract_end if the auto-detector rolled it.
-                // apply_lifecycle_transition's contract-end logic only rolls
-                // FORWARD on detected renewal; it has no path back. When the
-                // user corrects an auto-applied roll, we restore the
-                // pre-auto-detection date so renewal timing and downstream
-                // health/alerts stay tied to the actual contract, not a
-                // false-active rollover.
-                if change.previous_contract_end != change.new_contract_end {
+                // Restore contract_end FIRST, before apply_lifecycle_transition,
+                // so health recompute + lifecycle signal emission inside that
+                // helper observe the corrected (restored) date. Otherwise the
+                // committed account would carry the restored date but the
+                // emitted signals + health_json + entity_quality would
+                // reflect the rolled date — exactly the corruption this
+                // restore is meant to prevent.
+                //
+                // Restoration ONLY fires when the user is rejecting the
+                // auto-detected lifecycle (corrected_lifecycle differs from
+                // change.new_lifecycle). When the user accepts the lifecycle
+                // but only corrects stage/notes, the rolled-forward
+                // contract_end is still valid for the active renewal.
+                let user_rejects_auto_lifecycle =
+                    normalized_lifecycle(&corrected_lifecycle)
+                        != normalized_lifecycle(&change.new_lifecycle);
+                if user_rejects_auto_lifecycle
+                    && change.previous_contract_end != change.new_contract_end
+                {
                     if let Some(restored) = change.previous_contract_end.as_deref() {
                         tx_db
                             .update_account_field(&change.account_id, "contract_end", restored)
-                            .map_err(|e| {
-                                format!("contract_end restore failed: {e}")
-                            })?;
+                            .map_err(|e| format!("contract_end restore failed: {e}"))?;
                         tx_db
                             .set_account_field_provenance(
                                 &change.account_id,
@@ -1187,6 +1187,16 @@ fn review_lifecycle_change(
                             })?;
                     }
                 }
+
+                let transition = LifecycleTransitionCandidate {
+                    new_lifecycle: corrected_lifecycle,
+                    renewal_stage: corrected_stage,
+                    source: "user_correction".to_string(),
+                    confidence: 1.0,
+                    evidence: notes,
+                    completion_trigger: None,
+                };
+                apply_lifecycle_transition(ctx, tx_db, engine, &change.account_id, &transition)?;
                 tx_db
                     .upsert_signal_weight(
                         &change.source,
