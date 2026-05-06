@@ -27,6 +27,7 @@
 //! - DB plumbing — `with_transaction_async` lands in a follow-up phase
 //!   once the mutator migration starts.
 
+use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
 use std::sync::{Arc, OnceLock};
@@ -72,6 +73,12 @@ impl ExecutionMode {
     /// True iff this mode permits live mutations.
     pub fn permits_writes(self) -> bool {
         matches!(self, ExecutionMode::Live)
+    }
+}
+
+impl fmt::Display for ExecutionMode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.write_str(self.as_str())
     }
 }
 
@@ -694,6 +701,12 @@ pub enum ServiceError {
     #[error("nested transactions forbidden — caller must not invoke with_transaction inside a transaction body")]
     NestedTransactionsForbidden,
 
+    #[error("{mode} mode requires an injected fixture reader for {reader}; refusing to read from live workspace DB")]
+    FixtureReaderRequired {
+        mode: ExecutionMode,
+        reader: &'static str,
+    },
+
     #[error("database error: {0}")]
     Db(String),
 
@@ -1024,6 +1037,8 @@ impl<'a> ServiceContext<'a> {
             return reader.read_prepare_meeting_context(meeting_id).await;
         }
 
+        self.require_live_workspace_read("prepare_meeting_context_reader")?;
+
         tokio::task::spawn_blocking(move || {
             let db = crate::db::ActionDb::open()
                 .map_err(|error| format!("Database unavailable: {error}"))?;
@@ -1044,6 +1059,8 @@ impl<'a> ServiceContext<'a> {
                 .read_entity_context_claims(entity_type, entity_id, depth)
                 .await;
         }
+
+        self.require_live_workspace_read("entity_context_claim_reader")?;
 
         tokio::task::spawn_blocking(move || {
             let db = crate::db::ActionDb::open()
@@ -1084,6 +1101,8 @@ impl<'a> ServiceContext<'a> {
                 .await;
         }
 
+        self.require_live_workspace_read("entity_context_reader")?;
+
         tokio::task::spawn_blocking(move || {
             let db = crate::db::ActionDb::open()
                 .map_err(|error| format!("Database unavailable: {error}"))?;
@@ -1122,6 +1141,18 @@ impl<'a> ServiceContext<'a> {
             Ok(())
         } else {
             Err(ServiceError::WriteBlockedByMode(self.mode))
+        }
+    }
+
+    fn require_live_workspace_read(&self, reader: &'static str) -> Result<(), String> {
+        if self.mode == ExecutionMode::Live {
+            Ok(())
+        } else {
+            Err(ServiceError::FixtureReaderRequired {
+                mode: self.mode,
+                reader,
+            }
+            .to_string())
         }
     }
 }

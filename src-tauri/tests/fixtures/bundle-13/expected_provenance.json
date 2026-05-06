@@ -5,7 +5,7 @@
     "category": "transform",
     "allowed_subject": { "kind": "account", "id": "dos287-target-example" },
     "blocked_subject": { "kind": "account", "id": "dos287-adjacent-example" },
-    "warnings": ["SubjectAmbiguous"],
-    "source_asof_reachable": ["2026-05-05T09:30:00Z", "2026-05-05T10:30:00Z"]
+    "filtered_prompt_evidence_ids": ["src-b13-adjacent"],
+    "source_asof_reachable": ["2026-05-05T09:30:00Z"]
   }
 }

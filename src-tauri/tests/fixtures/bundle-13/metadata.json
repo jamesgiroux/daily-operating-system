@@ -1,7 +1,7 @@
 {
   "bundle": 13,
   "scenario_id": "bundle13-prepare-meeting-subject-bleed-from-bundle1",
-  "invariant": "The prepare_meeting subject-bleed gate uses the DOS-218 bundle-1 target and adjacent account pattern so claims about Account B cannot be attributed to Account A.",
+  "invariant": "The prepare_meeting prompt-input gate uses the DOS-218 bundle-1 target and adjacent account pattern so source_ref-matched claims about Account B never enter Account A prompt evidence.",
   "expected_render_policy": "show-with-warnings",
   "surfaces_exercised": [
     "prepare_meeting",
@@ -16,19 +16,19 @@
   ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "c62559659dc62b34a2b26050e5884cd352afb76b51d13cdca53d8140fe04d42b",
+  "prompt_fingerprint_baseline": "30429afe30cb0bde4963fda49cabc41b9a2a55f2ac91e1c12b5ce697ca598831",
   "prompt_template_version": "1.0.0",
-  "completion_text_hash": "c9155aa2ed38a5b93847d5451204aa04e03f1534187ee73cf0533892d788f7cb",
+  "completion_text_hash": "a14ec3349776f2afdc1078c01d92040bb434ccc6b40473751e70f0ce42e7bdae",
   "trust_factors_dominant": [
     "subject_fit",
     "composition",
     "source_time"
   ],
-  "pass_fail_definition": "PASS = Account B source evidence is either omitted or rendered only as SubjectAmbiguous warning, including when the provider emits Account B as both candidate subject and source subject. FAIL = src-b13-adjacent can produce a rendered fact.",
+  "pass_fail_definition": "PASS = src-b13-adjacent is absent from canonical prepare_meeting PromptContext.evidence even though its source_ref is the meeting id. FAIL = src-b13-adjacent crosses the provider boundary.",
   "fixture_design_notes": {
     "state_sql": "Seeds meetings, attendees, linked subjects, and intelligence_claims rows consumed by the public prepare_meeting context builder.",
     "expected_output": "Only Target Example content is allowed in rendered MeetingBrief sections.",
-    "expected_provenance": "Records the allowed and blocked subjects plus source_asof values that must remain reachable through direct and composed provenance.",
-    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key and includes a direct adjacent-account candidate/source pair."
+    "expected_provenance": "Records the allowed target subject and the blocked adjacent subject that must be filtered before provider input.",
+    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key after adjacent source_ref evidence is filtered from prompt input."
   }
 }

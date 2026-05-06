@@ -8,9 +8,10 @@ use std::{
     path::{Path, PathBuf},
     pin::Pin,
     process::{Command, Output},
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
+use async_trait::async_trait;
 use base64::Engine;
 use dailyos_lib::abilities::prepare_meeting::{prepare_meeting, prompts, PrepareMeetingInput};
 use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
@@ -19,8 +20,8 @@ use dailyos_lib::abilities::{
     NOOP_ABILITY_TRACER,
 };
 use dailyos_lib::intelligence::provider::{
-    canonical_prompt_hash, CanonicalPromptRequest, FingerprintMetadata, IntelligenceProvider,
-    ModelName, ModelTier, PromptInput, ProviderError, ProviderKind,
+    canonical_prompt_hash, CanonicalPromptRequest, Completion, FingerprintMetadata,
+    IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError, ProviderKind,
 };
 use dailyos_lib::services::context::{
     ExecutionMode, ExternalClientError, GleanAccountFacts, GleanClientHandle, SeedableRng,
@@ -172,6 +173,63 @@ fn prepare_meeting_public_fixtures_execute_without_private_context() {
             );
         }
     }
+}
+
+#[test]
+fn prepare_meeting_bundle13_filters_adjacent_source_ref_claim_from_prompt_input() {
+    let fixture = bundle_fixture(13);
+    let prepared = prepare_fixture_for_run(&fixture).expect("bundle-13 should prepare");
+    let completion = fixture.provider_replay["fixtures"][0]["completion"]
+        .as_str()
+        .expect("bundle-13 completion text")
+        .to_string();
+    let provider = PromptCaptureProvider::new(completion);
+    let services = prepared.service_context();
+    let input: PrepareMeetingInput =
+        serde_json::from_value(fixture.inputs_json["input_json"].clone())
+            .expect("bundle-13 input parses");
+    let ctx = AbilityContext::new(
+        &services,
+        &provider,
+        &NOOP_ABILITY_TRACER,
+        Actor::User,
+        None,
+    );
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+
+    runtime
+        .block_on(prepare_meeting(&ctx, input))
+        .expect("bundle-13 should execute");
+    let prompt = provider.captured_prompt();
+    let canonical_inputs = prompt
+        .canonical_json_inputs
+        .expect("prepare_meeting prompt has canonical JSON inputs");
+    let evidence = canonical_inputs
+        .pointer("/context/evidence")
+        .and_then(serde_json::Value::as_array)
+        .expect("canonical prompt context evidence array");
+
+    assert!(
+        evidence
+            .iter()
+            .any(|source| source["id"].as_str() == Some("src-b13-target")),
+        "target-account source must remain in prompt evidence"
+    );
+    assert!(
+        evidence
+            .iter()
+            .all(|source| source["id"].as_str() != Some("src-b13-adjacent")),
+        "adjacent source_ref-matched claim must not enter prompt evidence"
+    );
+    assert!(
+        !serde_json::to_string(&canonical_inputs)
+            .expect("canonical prompt inputs serialize")
+            .contains("Adjacent Example has an unrelated infrastructure escalation"),
+        "adjacent claim text must not cross the provider boundary"
+    );
 }
 
 #[test]
@@ -1721,6 +1779,51 @@ fn complete_replay_provider(
     runtime
         .block_on(provider.complete(prompt, ModelTier::Synthesis))
         .map(|completion| completion.text)
+}
+
+struct PromptCaptureProvider {
+    completion: String,
+    prompt: Mutex<Option<PromptInput>>,
+}
+
+impl PromptCaptureProvider {
+    fn new(completion: String) -> Self {
+        Self {
+            completion,
+            prompt: Mutex::new(None),
+        }
+    }
+
+    fn captured_prompt(&self) -> PromptInput {
+        self.prompt
+            .lock()
+            .expect("prompt capture mutex")
+            .clone()
+            .expect("provider captured a prompt")
+    }
+}
+
+#[async_trait]
+impl IntelligenceProvider for PromptCaptureProvider {
+    async fn complete(
+        &self,
+        prompt: PromptInput,
+        _tier: ModelTier,
+    ) -> Result<Completion, ProviderError> {
+        *self.prompt.lock().expect("prompt capture mutex") = Some(prompt);
+        Ok(Completion {
+            text: self.completion.clone(),
+            fingerprint_metadata: FingerprintMetadata::default(),
+        })
+    }
+
+    fn provider_kind(&self) -> ProviderKind {
+        ProviderKind::Other("prompt_capture")
+    }
+
+    fn current_model(&self, _tier: ModelTier) -> ModelName {
+        ModelName::new("prompt-capture")
+    }
 }
 
 fn run_fixture_anonymization_lint_for_root(fixture_root: &Path) -> Output {

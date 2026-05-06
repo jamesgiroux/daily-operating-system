@@ -338,6 +338,7 @@ fn load_prepare_meeting_claims(
     for subject in subjects {
         subject_refs.push(subject_ref_json(&subject.kind, &subject.id)?);
     }
+    let allowed_source_subject_refs = subject_refs.iter().cloned().collect::<HashSet<_>>();
 
     for subject_ref in subject_refs {
         for claim in crate::services::claims::load_claims_active(db, &subject_ref, None)
@@ -352,6 +353,12 @@ fn load_prepare_meeting_claims(
     for claim in crate::services::claims::load_claims_active_by_source_ref(db, meeting_id)
         .map_err(|error| format!("load active claims for source_ref {meeting_id}: {error}"))?
     {
+        let Some(subject_ref) = canonical_claim_subject_ref(&claim) else {
+            continue;
+        };
+        if !allowed_source_subject_refs.contains(&subject_ref) {
+            continue;
+        }
         if seen.insert(claim.id.clone()) {
             claims.push(claim);
         }
@@ -359,6 +366,12 @@ fn load_prepare_meeting_claims(
 
     claims.sort_by(|left, right| left.id.cmp(&right.id));
     Ok(claims)
+}
+
+fn canonical_claim_subject_ref(claim: &crate::db::claims::IntelligenceClaim) -> Option<String> {
+    let value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref).ok()?;
+    let subject = crate::services::claims::subject_ref_from_json(&value).ok()?;
+    crate::services::claims::canonical_subject_ref(&subject).ok()
 }
 
 fn attach_single_account_to_attendees(

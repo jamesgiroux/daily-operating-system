@@ -2,8 +2,8 @@
   "version": 1,
   "fixtures": [
     {
-      "canonical_prompt_hash": "c62559659dc62b34a2b26050e5884cd352afb76b51d13cdca53d8140fe04d42b",
-      "completion": "{\n  \"topics\": [\n    {\n      \"title\": \"Target rollout decision\",\n      \"detail\": \"Target Example wants to confirm rollout owner and next decision.\",\n      \"subject\": {\n        \"kind\": \"account\",\n        \"id\": \"dos287-target-example\"\n      },\n      \"source_ids\": [\n        \"src-b13-target\"\n      ],\n      \"confidence\": 0.94\n    },\n    {\n      \"title\": \"Adjacent escalation\",\n      \"detail\": \"Adjacent Example has an unrelated infrastructure escalation.\",\n      \"subject\": {\n        \"kind\": \"account\",\n        \"id\": \"dos287-adjacent-example\"\n      },\n      \"source_ids\": [\n        \"src-b13-adjacent\"\n      ],\n      \"confidence\": 0.91\n    }\n  ],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
+      "canonical_prompt_hash": "30429afe30cb0bde4963fda49cabc41b9a2a55f2ac91e1c12b5ce697ca598831",
+      "completion": "{\n  \"topics\": [\n    {\n      \"title\": \"Target rollout decision\",\n      \"detail\": \"Target Example wants to confirm rollout owner and next decision.\",\n      \"subject\": {\n        \"kind\": \"account\",\n        \"id\": \"dos287-target-example\"\n      },\n      \"source_ids\": [\n        \"src-b13-target\"\n      ],\n      \"confidence\": 0.94\n    }\n  ],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
     }
   ]
 }
