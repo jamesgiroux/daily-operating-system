@@ -1,3 +1,5 @@
+#![cfg(feature = "test-harness")]
+
 use std::sync::{Arc, Mutex};
 
 use chrono::{TimeZone, Utc};

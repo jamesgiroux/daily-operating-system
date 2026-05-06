@@ -281,8 +281,14 @@ impl DbService {
 
     /// Unencrypted variant used by test harnesses that need `AppState`
     /// without touching the user's encrypted DailyOS database or Keychain.
+    #[cfg(feature = "test-harness")]
     #[doc(hidden)]
     pub async fn open_at_unencrypted_for_tests(path: PathBuf) -> Result<Arc<Self>, DbError> {
+        Self::open_at_unencrypted_test_impl(path).await
+    }
+
+    #[cfg(any(test, feature = "test-harness"))]
+    async fn open_at_unencrypted_test_impl(path: PathBuf) -> Result<Arc<Self>, DbError> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
@@ -330,7 +336,7 @@ impl DbService {
     /// Unencrypted variant used only by unit tests.
     #[cfg(test)]
     pub async fn open_at_unencrypted(path: PathBuf) -> Result<Arc<Self>, DbError> {
-        Self::open_at_unencrypted_for_tests(path).await
+        Self::open_at_unencrypted_test_impl(path).await
     }
 
     /// Open a fresh encrypted connection through the writer thread so SQLCipher

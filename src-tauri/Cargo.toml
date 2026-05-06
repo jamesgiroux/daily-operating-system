@@ -102,6 +102,9 @@ trybuild = "1"
 [features]
 experimental = []
 harness-hermetic = []
+# Enables public helpers used only by integration tests. This must stay out of
+# default/release builds; src/lib.rs also rejects release builds with it enabled.
+test-harness = []
 mcp = ["dep:anyhow"]
 
 [[bin]]

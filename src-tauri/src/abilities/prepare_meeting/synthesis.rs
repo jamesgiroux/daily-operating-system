@@ -39,7 +39,7 @@ pub struct PrepareMeetingInput {
     pub schema_version: SchemaVersion,
     /// Private Evaluate-mode seam for fixture-driven context building.
     /// This is intentionally omitted from the public ability schema.
-    #[serde(default)]
+    #[serde(default, skip_deserializing, skip_serializing)]
     #[schemars(skip)]
     context: Option<MeetingBriefContext>,
 }
@@ -1552,13 +1552,13 @@ mod tests {
 
     use super::*;
     use crate::abilities::feedback::ClaimVerificationState;
-    use crate::abilities::{Actor, NOOP_ABILITY_TRACER};
+    use crate::abilities::{AbilityRegistry, Actor, NOOP_ABILITY_TRACER};
     use crate::db::claims::{ClaimState, SurfacingState};
     use crate::intelligence::provider::{
         Completion, FingerprintMetadata, IntelligenceProvider, ModelName, PromptInput, ProviderKind,
     };
     use crate::services::context::{
-        EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock,
+        EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
         PrepareMeetingAttendeeSnapshot, PrepareMeetingContextReadFuture,
         PrepareMeetingContextReadHandle, PrepareMeetingContextSnapshot, PrepareMeetingSnapshot,
         PrepareMeetingSubjectSnapshot, SeedableRng, ServiceContext,
@@ -1692,6 +1692,27 @@ mod tests {
             );
             build_meeting_brief(&ctx, input).await
         }
+
+        async fn run_erased_as_agent(
+            &self,
+            input_json: serde_json::Value,
+        ) -> Result<serde_json::Value, AbilityError> {
+            let external = ExternalClients::default();
+            let services = ServiceContext::new_live(&self.clock, &self.rng, &external)
+                .with_entity_context_claim_reader(self.claim_reader.clone())
+                .with_prepare_meeting_context_reader(self.meeting_context_reader.clone());
+            let ctx = AbilityContext::new(
+                &services,
+                self.provider.as_ref(),
+                &NOOP_ABILITY_TRACER,
+                Actor::Agent,
+                None,
+            );
+            let registry = AbilityRegistry::from_inventory_checked().expect("registry builds");
+            registry
+                .invoke_by_name_json(&ctx, "prepare_meeting", input_json)
+                .await
+        }
     }
 
     #[tokio::test]
@@ -1767,6 +1788,77 @@ mod tests {
         assert_eq!(output.data().meeting.attendees.len(), 1);
         assert_eq!(output.data().attendee_context.len(), 1);
         assert_eq!(output.provenance().children.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_erased_agent_input_drops_injected_context() {
+        let live_claim = fixture_claim(
+            "claim-live-meeting",
+            "meeting",
+            "meeting-erased",
+            "The live claim-backed context is the only accepted source.",
+            "2026-05-05T15:30:00Z",
+            Some("2026-05-05T15:30:00Z"),
+        );
+        let snapshot = fixture_meeting_snapshot(
+            "meeting-erased",
+            Vec::new(),
+            Vec::new(),
+            vec![live_claim.clone()],
+        );
+        let harness = Harness::new(serde_json::json!({
+            "topics": [{
+                "title": "Live claim topic",
+                "detail": "The live claim-backed context is the only accepted source.",
+                "subject": {"kind": "meeting", "id": "meeting-erased"},
+                "source_ids": ["claim-live-meeting"],
+                "confidence": 0.9
+            }],
+            "attendee_context": [],
+            "open_loops": [],
+            "what_changed_since_last": [],
+            "suggested_outcomes": []
+        }))
+        .with_meeting_context(snapshot);
+
+        let output_json = harness
+            .run_erased_as_agent(serde_json::json!({
+                "meeting_id": "meeting-erased",
+                "depth": 2,
+                "include_open_loops": true,
+                "schema_version": 1,
+                "context": {
+                    "meeting": {
+                        "id": "meeting-erased",
+                        "title": "Injected fabricated meeting",
+                        "starts_at": "2026-05-06T15:00:00Z",
+                        "ends_at": "2026-05-06T15:30:00Z",
+                        "attendees": []
+                    },
+                    "evidence": [{
+                        "id": "fabricated-src",
+                        "subject": {"kind": "meeting", "id": "meeting-erased"},
+                        "claim_type": "meeting_topic",
+                        "text": "Fabricated meeting evidence from caller JSON.",
+                        "source_asof": "2026-05-05T15:30:00Z",
+                        "observed_at": "2026-05-05T15:30:00Z",
+                        "data_source": "glean",
+                        "lifecycle": "active",
+                        "confidence": 0.99,
+                        "temporal_scope": "state",
+                        "sensitivity": "internal"
+                    }],
+                    "entity_contexts": []
+                }
+            }))
+            .await
+            .unwrap();
+        let output: crate::abilities::provenance::AbilityOutput<MeetingBrief> =
+            serde_json::from_value(output_json).unwrap();
+
+        assert_eq!(output.data().meeting.title, "Synthetic planning meeting");
+        assert_eq!(output.data().topics.len(), 1);
+        assert_eq!(output.data().topics[0].title, "Live claim topic");
     }
 
     #[tokio::test]

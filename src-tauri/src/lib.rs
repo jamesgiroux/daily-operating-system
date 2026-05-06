@@ -5,6 +5,11 @@
 // Devtools mock data uses large tuple types for seed fixtures.
 #![allow(clippy::type_complexity)]
 
+#[cfg(all(feature = "test-harness", not(debug_assertions)))]
+compile_error!(
+    "the test-harness feature exposes test-only APIs and must not be enabled in release builds"
+);
+
 pub mod abilities;
 pub mod accounts;
 pub mod action_status;
@@ -42,6 +47,7 @@ pub mod gravatar;
 pub mod helpers;
 mod hygiene;
 mod intel_queue;
+#[cfg(feature = "test-harness")]
 #[doc(hidden)]
 pub mod substrate_test_api {
     pub use crate::intel_queue::{EnrichmentInput, PreparedEnrichment};
@@ -54,6 +60,7 @@ pub mod substrate_test_api {
         crate::intel_queue::compose_enrichment_intelligence_payload(db, input, intel, None)
     }
 }
+#[cfg(feature = "test-harness")]
 #[doc(hidden)]
 pub mod command_test_api {
     pub use crate::commands::{create_entity_context_entry, get_entity_context_entries};
