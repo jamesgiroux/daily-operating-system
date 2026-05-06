@@ -5,6 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 use chrono::{Datelike, NaiveDate, Utc};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::commands::{
@@ -1005,7 +1006,8 @@ enum LifecycleReviewAction {
 /// already-reviewed (idempotent retry), or stale (drift between change row
 /// and current account state). Callers can map each to a UX outcome instead
 /// of relying on side-effect presence to detect what happened.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum LifecycleReviewOutcome {
     Applied,
     AlreadyReviewed,
@@ -1073,21 +1075,19 @@ fn review_lifecycle_change(
             .map_err(|e| e.to_string())?;
         let current_contract_end = account_now.contract_end.clone();
 
-        let (expected_lifecycle, expected_stage, expected_contract_end, contract_end_anchored) =
-            match &action {
-                LifecycleReviewAction::Confirm => (
-                    Some(normalized_lifecycle(&change.new_lifecycle)),
-                    change.new_stage.clone(),
-                    change.new_contract_end.clone(),
-                    true,
-                ),
-                LifecycleReviewAction::Correct { .. } => (
-                    change.previous_lifecycle.as_deref().map(normalized_lifecycle),
-                    change.previous_stage.clone(),
-                    None,
-                    false,
-                ),
-            };
+        // Both Confirm and Correct anchor to change.new_*: by the time the
+        // user sees the review card, apply_lifecycle_transition has already
+        // moved the account to new_*. Drift means a manual edit happened
+        // after the auto-detection landed. Confirm rewards the source iff
+        // current matches new_*; Correct overrides new_* with the
+        // user-specified target. Anchoring Correct to previous_* would
+        // false-positive on every legitimate correction.
+        let (expected_lifecycle, expected_stage, expected_contract_end, contract_end_anchored) = (
+            Some(normalized_lifecycle(&change.new_lifecycle)),
+            change.new_stage.clone(),
+            change.new_contract_end.clone(),
+            true,
+        );
 
         let drift_lifecycle = current_lifecycle != expected_lifecycle;
         let drift_stage = current_stage != expected_stage;
@@ -1166,8 +1166,8 @@ pub fn confirm_lifecycle_change(
     db: &ActionDb,
     engine: &PropagationEngine,
     change_id: i64,
-) -> Result<(), String> {
-    review_lifecycle_change(ctx, db, engine, change_id, LifecycleReviewAction::Confirm).map(|_| ())
+) -> Result<LifecycleReviewOutcome, String> {
+    review_lifecycle_change(ctx, db, engine, change_id, LifecycleReviewAction::Confirm)
 }
 
 // ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
@@ -1254,7 +1254,7 @@ pub fn correct_lifecycle_change(
     corrected_lifecycle: &str,
     corrected_stage: Option<&str>,
     notes: Option<&str>,
-) -> Result<(), String> {
+) -> Result<LifecycleReviewOutcome, String> {
     review_lifecycle_change(
         ctx,
         db,
@@ -1266,7 +1266,6 @@ pub fn correct_lifecycle_change(
             notes: notes.map(str::to_string),
         },
     )
-    .map(|_| ())
 }
 
 // ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
@@ -5073,7 +5072,11 @@ mod tests {
         let engine = PropagationEngine::default();
 
         let mut account = make_account("acc-correct", "Correct Corp");
-        account.lifecycle = Some("renewing".to_string());
+        // In production apply_lifecycle_transition has already moved the
+        // account to new_lifecycle BEFORE the change row lands; the cycle-17
+        // drift guard anchors Correct on change.new_*, so the test fixture
+        // must reflect the post-auto-transition state.
+        account.lifecycle = Some("active".to_string());
         db.upsert_account(&account).expect("upsert");
 
         // Insert a pending lifecycle change

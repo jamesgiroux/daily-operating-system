@@ -505,9 +505,10 @@ pub async fn confirm_lifecycle_change(
     change_id: i64,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    use crate::services::accounts::LifecycleReviewOutcome;
     let app_state = state.inner().clone();
     let state_for_ctx = app_state.clone();
-    state
+    let outcome = state
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::confirm_lifecycle_change(
@@ -517,7 +518,13 @@ pub async fn confirm_lifecycle_change(
                 change_id,
             )
         })
-        .await
+        .await?;
+    match outcome {
+        LifecycleReviewOutcome::Applied | LifecycleReviewOutcome::AlreadyReviewed => Ok(()),
+        LifecycleReviewOutcome::StaleDrift => Err(format!(
+            "Lifecycle change {change_id} is stale — account state has drifted from the auto-detected transition. Refresh the account to see current state."
+        )),
+    }
 }
 
 #[tauri::command]
@@ -556,9 +563,10 @@ pub async fn correct_lifecycle_change(
     notes: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<(), String> {
+    use crate::services::accounts::LifecycleReviewOutcome;
     let app_state = state.inner().clone();
     let state_for_ctx = app_state.clone();
-    state
+    let outcome = state
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
             crate::services::accounts::correct_lifecycle_change(
@@ -571,7 +579,13 @@ pub async fn correct_lifecycle_change(
                 notes.as_deref(),
             )
         })
-        .await
+        .await?;
+    match outcome {
+        LifecycleReviewOutcome::Applied | LifecycleReviewOutcome::AlreadyReviewed => Ok(()),
+        LifecycleReviewOutcome::StaleDrift => Err(format!(
+            "Lifecycle change {change_id} is stale — account state has drifted from the auto-detected transition. Refresh the account to see current state."
+        )),
+    }
 }
 
 #[tauri::command]
