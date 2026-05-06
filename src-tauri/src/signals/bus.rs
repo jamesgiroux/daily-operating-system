@@ -242,6 +242,19 @@ pub fn emit_signal_in_active_tx(
 
 /// Emit a signal and run propagation rules, returning the original signal ID
 /// and any derived signal IDs.
+///
+/// Atomic via `db.with_transaction`: the source signal insert, every derived
+/// signal insert, every derivation link, and the meeting-fanout writes share
+/// a single rollback boundary. Without this wrapper, a propagation failure
+/// after the source signal already committed would leave durable orphan
+/// signals that retries cannot deduplicate (each retry mints a fresh UUID),
+/// which the cycle-11 review flagged as a real partial-state hazard.
+///
+/// Meeting fanout is best-effort by design — it is a denormalized write to
+/// a join table and a failure there is not load-bearing for the source
+/// signal. We log but do NOT abort the transaction on meeting-fanout
+/// errors, matching the pre-existing behavior; only the upstream
+/// emit/propagation errors trigger rollback.
 #[allow(clippy::too_many_arguments)]
 pub fn emit_signal_and_propagate(
     db: &ActionDb,
@@ -253,39 +266,43 @@ pub fn emit_signal_and_propagate(
     value: Option<&str>,
     confidence: f64,
 ) -> Result<(String, Vec<String>), DbError> {
-    let id = emit_signal(
-        db,
-        entity_type,
-        entity_id,
-        signal_type,
-        source,
-        value,
-        confidence,
-    )?;
+    db.with_transaction(|tx_db| {
+        let id = emit_signal(
+            tx_db,
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            value,
+            confidence,
+        )
+        .map_err(|e| e.to_string())?;
 
-    // Read back the signal for propagation
-    let signal = SignalEvent {
-        id: id.clone(),
-        entity_type: entity_type.to_string(),
-        entity_id: entity_id.to_string(),
-        signal_type: signal_type.to_string(),
-        source: source.to_string(),
-        value: value.map(|s| s.to_string()),
-        confidence,
-        decay_half_life_days: default_half_life(source),
-        created_at: Utc::now().to_rfc3339(),
-        superseded_by: None,
-        source_context: None,
-    };
+        let signal = SignalEvent {
+            id: id.clone(),
+            entity_type: entity_type.to_string(),
+            entity_id: entity_id.to_string(),
+            signal_type: signal_type.to_string(),
+            source: source.to_string(),
+            value: value.map(|s| s.to_string()),
+            confidence,
+            decay_half_life_days: default_half_life(source),
+            created_at: Utc::now().to_rfc3339(),
+            superseded_by: None,
+            source_context: None,
+        };
 
-    let derived_ids = engine.propagate(db, &signal)?;
+        let derived_ids = engine
+            .propagate(tx_db, &signal)
+            .map_err(|e| e.to_string())?;
 
-    // Propagate signal to linked meetings (ADR-0081 Phase 4A)
-    if let Err(e) = propagate_signal_to_meetings(db, entity_id) {
-        log::warn!("Failed to propagate signal to meetings: {}", e);
-    }
+        if let Err(e) = propagate_signal_to_meetings(tx_db, entity_id) {
+            log::warn!("Failed to propagate signal to meetings: {}", e);
+        }
 
-    Ok((id, derived_ids))
+        Ok((id, derived_ids))
+    })
+    .map_err(DbError::Migration)
 }
 
 /// Emit a signal, propagate, AND evaluate for self-healing re-enrichment.

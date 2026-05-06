@@ -987,38 +987,79 @@ pub fn refresh_lifecycle_states_for_dashboard(
     Ok(refreshed)
 }
 
-pub fn confirm_lifecycle_change(
+/// User-review action against an automatically-generated lifecycle change.
+/// Confirm rewards the auto-detection source; Correct overrides with a
+/// user-specified target lifecycle/stage and penalizes the source.
+#[derive(Debug, Clone)]
+enum LifecycleReviewAction {
+    Confirm,
+    Correct {
+        corrected_lifecycle: String,
+        corrected_stage: Option<String>,
+        notes: Option<String>,
+    },
+}
+
+/// Explicit outcome of a lifecycle review. Surfaces the three terminal
+/// states the cycle 13-16 review loop iteratively pinned down — applied,
+/// already-reviewed (idempotent retry), or stale (drift between change row
+/// and current account state). Callers can map each to a UX outcome instead
+/// of relying on side-effect presence to detect what happened.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LifecycleReviewOutcome {
+    Applied,
+    AlreadyReviewed,
+    StaleDrift,
+}
+
+/// Single source of truth for the lifecycle-review state machine. Both
+/// confirm_lifecycle_change and correct_lifecycle_change delegate here with
+/// the action-specific parameters; invariants (pending claim → drift guard
+/// → side effects) are enforced once, in order, inside one transaction.
+fn review_lifecycle_change(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     engine: &PropagationEngine,
     change_id: i64,
-) -> Result<(), String> {
+    action: LifecycleReviewAction,
+) -> Result<LifecycleReviewOutcome, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let change = db
         .get_lifecycle_change(change_id)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| format!("Lifecycle change not found: {change_id}"))?;
-    // Wrap response + source-weight + signal emission in one transaction so
-    // a failure in any step rolls back ALL durable state. The conditional
-    // response setter ALSO makes the operation idempotent: a duplicate
-    // command (double-click, retry-after-success) sees rows=0, skips the
-    // side effects, and returns Ok with the existing committed state.
+
+    let response_label = match &action {
+        LifecycleReviewAction::Confirm => "confirmed",
+        LifecycleReviewAction::Correct { .. } => "corrected",
+    };
+    let response_notes: Option<String> = match &action {
+        LifecycleReviewAction::Correct { notes, .. } => notes.clone(),
+        LifecycleReviewAction::Confirm => None,
+    };
+
     db.with_transaction(|tx_db| {
+        // Invariant 1: row must be pending. Atomically claim it; rows=0 is a
+        // duplicate review and we no-op without side effects.
         let rows = tx_db
-            .set_lifecycle_change_response_if_pending(change_id, "confirmed", None)
+            .set_lifecycle_change_response_if_pending(
+                change_id,
+                response_label,
+                response_notes.as_deref(),
+            )
             .map_err(|e| e.to_string())?;
         if rows == 0 {
             log::info!(
-                "confirm_lifecycle_change: change_id={change_id} already reviewed; idempotent no-op"
+                "review_lifecycle_change: change_id={change_id} already reviewed; idempotent no-op"
             );
-            return Ok(());
+            return Ok(LifecycleReviewOutcome::AlreadyReviewed);
         }
-        // Drift guard symmetric to correct_lifecycle_change. The "Looks good"
-        // confirmation should only reward the source if the account is still
-        // in the state the change row reported as new_*. A manual edit or
-        // subsequent transition between auto-detection and user click would
-        // otherwise have us bless a stale source and emit a confirmation
-        // signal that doesn't match current account reality.
+
+        // Invariant 2: account state must match the anchor for this action.
+        // Confirm anchors on change.new_* (the post-transition state the auto
+        // detector recorded); Correct anchors on change.previous_* (the
+        // pre-transition state the user is correcting from). Drift means a
+        // manual edit happened in between and the review is stale.
         let account_now = tx_db
             .get_account(&change.account_id)
             .map_err(|e| e.to_string())?
@@ -1027,51 +1068,106 @@ pub fn confirm_lifecycle_change(
             .lifecycle
             .as_deref()
             .map(normalized_lifecycle);
-        let expected_lifecycle = Some(normalized_lifecycle(&change.new_lifecycle));
         let current_stage = tx_db
             .get_account_renewal_stage(&change.account_id)
             .map_err(|e| e.to_string())?;
-        let expected_stage = change.new_stage.clone();
         let current_contract_end = account_now.contract_end.clone();
-        let expected_contract_end = change.new_contract_end.clone();
-        if current_lifecycle != expected_lifecycle
-            || current_stage != expected_stage
-            || current_contract_end != expected_contract_end
-        {
+
+        let (expected_lifecycle, expected_stage, expected_contract_end, contract_end_anchored) =
+            match &action {
+                LifecycleReviewAction::Confirm => (
+                    Some(normalized_lifecycle(&change.new_lifecycle)),
+                    change.new_stage.clone(),
+                    change.new_contract_end.clone(),
+                    true,
+                ),
+                LifecycleReviewAction::Correct { .. } => (
+                    change.previous_lifecycle.as_deref().map(normalized_lifecycle),
+                    change.previous_stage.clone(),
+                    None,
+                    false,
+                ),
+            };
+
+        let drift_lifecycle = current_lifecycle != expected_lifecycle;
+        let drift_stage = current_stage != expected_stage;
+        let drift_contract_end =
+            contract_end_anchored && current_contract_end != expected_contract_end;
+        if drift_lifecycle || drift_stage || drift_contract_end {
             log::warn!(
-                "confirm_lifecycle_change: change_id={change_id} stale — account state drifted from change.new_* (lifecycle {:?}/{:?}, stage {:?}/{:?}, contract_end {:?}/{:?}); marking reviewed but skipping source-weight reward + confirmation signal",
+                "review_lifecycle_change: change_id={change_id} stale — drift detected (action={:?}, lifecycle expected={:?} actual={:?}, stage expected={:?} actual={:?}, contract_end expected={:?} actual={:?}); row marked reviewed, side effects skipped",
+                action,
                 expected_lifecycle,
                 current_lifecycle,
                 expected_stage,
                 current_stage,
                 expected_contract_end,
-                current_contract_end
+                current_contract_end,
             );
-            return Ok(());
+            return Ok(LifecycleReviewOutcome::StaleDrift);
         }
-        tx_db
-            .upsert_signal_weight(
-                &change.source,
-                "account",
-                "lifecycle_transition",
-                1.0,
-                0.0,
-            )
-            .map_err(|e| format!("upsert_signal_weight failed: {e}"))?;
-        crate::services::signals::emit_and_propagate(
-            ctx,
-            tx_db,
-            engine,
-            "account",
-            &change.account_id,
-            "lifecycle_change_confirmed",
-            "user_feedback",
-            Some(&format!("{{\"change_id\":{change_id}}}")),
-            0.95,
-        )
-        .map_err(|e| format!("signal emit failed: {e}"))?;
-        Ok(())
+
+        // Invariant 3: side effects only when invariants 1+2 hold.
+        match action {
+            LifecycleReviewAction::Confirm => {
+                tx_db
+                    .upsert_signal_weight(
+                        &change.source,
+                        "account",
+                        "lifecycle_transition",
+                        1.0,
+                        0.0,
+                    )
+                    .map_err(|e| format!("upsert_signal_weight failed: {e}"))?;
+                crate::services::signals::emit_and_propagate(
+                    ctx,
+                    tx_db,
+                    engine,
+                    "account",
+                    &change.account_id,
+                    "lifecycle_change_confirmed",
+                    "user_feedback",
+                    Some(&format!("{{\"change_id\":{change_id}}}")),
+                    0.95,
+                )
+                .map_err(|e| format!("signal emit failed: {e}"))?;
+            }
+            LifecycleReviewAction::Correct {
+                corrected_lifecycle,
+                corrected_stage,
+                notes,
+            } => {
+                let transition = LifecycleTransitionCandidate {
+                    new_lifecycle: corrected_lifecycle,
+                    renewal_stage: corrected_stage,
+                    source: "user_correction".to_string(),
+                    confidence: 1.0,
+                    evidence: notes,
+                    completion_trigger: None,
+                };
+                apply_lifecycle_transition(ctx, tx_db, engine, &change.account_id, &transition)?;
+                tx_db
+                    .upsert_signal_weight(
+                        &change.source,
+                        "account",
+                        "lifecycle_transition",
+                        0.0,
+                        1.0,
+                    )
+                    .map_err(|e| format!("upsert_signal_weight failed: {e}"))?;
+            }
+        }
+        Ok(LifecycleReviewOutcome::Applied)
     })
+}
+
+pub fn confirm_lifecycle_change(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    change_id: i64,
+) -> Result<(), String> {
+    review_lifecycle_change(ctx, db, engine, change_id, LifecycleReviewAction::Confirm).map(|_| ())
 }
 
 // ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
@@ -1159,75 +1255,18 @@ pub fn correct_lifecycle_change(
     corrected_stage: Option<&str>,
     notes: Option<&str>,
 ) -> Result<(), String> {
-    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    let change = db
-        .get_lifecycle_change(change_id)
-        .map_err(|e| e.to_string())?
-        .ok_or_else(|| format!("Lifecycle change not found: {change_id}"))?;
-    let transition = LifecycleTransitionCandidate {
-        new_lifecycle: corrected_lifecycle.to_string(),
-        renewal_stage: corrected_stage.map(str::to_string),
-        source: "user_correction".to_string(),
-        confidence: 1.0,
-        evidence: notes.map(str::to_string),
-        completion_trigger: None,
-    };
-    // Outer transaction wraps the whole correction flow. Pending-row claim
-    // runs FIRST. Then we re-read account state inside the same txn to
-    // detect drift: a manual lifecycle edit between auto-generation of the
-    // change row and submission of this correction would otherwise have
-    // apply_lifecycle_transition clobber the user's manual edit. If the
-    // current lifecycle/stage no longer matches what the change row
-    // recorded as its previous_*, mark the row reviewed (already done by
-    // the pending claim) but skip the transition + source-weight penalty.
-    db.with_transaction(|tx_db| {
-        let rows = tx_db
-            .set_lifecycle_change_response_if_pending(change_id, "corrected", notes)
-            .map_err(|e| e.to_string())?;
-        if rows == 0 {
-            log::info!(
-                "correct_lifecycle_change: change_id={change_id} already reviewed; idempotent no-op"
-            );
-            return Ok(());
-        }
-        let account_now = tx_db
-            .get_account(&change.account_id)
-            .map_err(|e| e.to_string())?
-            .ok_or_else(|| format!("Account not found: {}", change.account_id))?;
-        let current_lifecycle = account_now
-            .lifecycle
-            .as_deref()
-            .map(normalized_lifecycle);
-        let expected_lifecycle = change
-            .previous_lifecycle
-            .as_deref()
-            .map(normalized_lifecycle);
-        let current_stage = tx_db
-            .get_account_renewal_stage(&change.account_id)
-            .map_err(|e| e.to_string())?;
-        let expected_stage = change.previous_stage.clone();
-        if current_lifecycle != expected_lifecycle || current_stage != expected_stage {
-            log::warn!(
-                "correct_lifecycle_change: change_id={change_id} stale — account lifecycle/stage drifted from {:?}/{:?} to {:?}/{:?}; marking reviewed but skipping transition",
-                expected_lifecycle,
-                expected_stage,
-                current_lifecycle,
-                current_stage
-            );
-            return Ok(());
-        }
-        apply_lifecycle_transition(ctx, tx_db, engine, &change.account_id, &transition)?;
-        tx_db
-            .upsert_signal_weight(
-                &change.source,
-                "account",
-                "lifecycle_transition",
-                0.0,
-                1.0,
-            )
-            .map_err(|e| format!("upsert_signal_weight failed: {e}"))?;
-        Ok(())
-    })
+    review_lifecycle_change(
+        ctx,
+        db,
+        engine,
+        change_id,
+        LifecycleReviewAction::Correct {
+            corrected_lifecycle: corrected_lifecycle.to_string(),
+            corrected_stage: corrected_stage.map(str::to_string),
+            notes: notes.map(str::to_string),
+        },
+    )
+    .map(|_| ())
 }
 
 // ServiceContext+ adds 1 arg; refactor to request struct deferred to W3.
