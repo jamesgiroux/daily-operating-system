@@ -56,16 +56,24 @@ pub struct FactorEvidence {
 #[serde(rename_all = "snake_case", tag = "kind")]
 pub enum ConfidenceCaveat {
     FewSources,
-    StaleSource { source: String, age_days: f64 },
+    StaleSource {
+        source: String,
+        age_days: f64,
+    },
     UnresolvedContradiction,
     InsufficientSignalDensity,
     UnknownTimestamp,
-    CrossEntityReferences { hit_count: usize },
+    CrossEntityReferences {
+        hit_count: usize,
+    },
     /// A pre-aggregation gate fired and capped the score below
     /// use_with_caution_min. Equal-weight geometric mean would otherwise dilute
     /// hard-policy factors (a single 0.0 across 10 factors is only ~0.741),
     /// so blockers run as gates instead of weighted contributions.
-    TrustGateTriggered { gate: TrustGateKind, detail: String },
+    TrustGateTriggered {
+        gate: TrustGateKind,
+        detail: String,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]

@@ -417,9 +417,7 @@ impl std::fmt::Display for SchemaClosureError {
 
 impl std::error::Error for SchemaClosureError {}
 
-pub fn validate_schema_closure(
-    schema: &serde_json::Value,
-) -> Result<(), SchemaClosureError> {
+pub fn validate_schema_closure(schema: &serde_json::Value) -> Result<(), SchemaClosureError> {
     validate_schema_closure_for_ability(UNKNOWN_SCHEMA_ABILITY, schema)
 }
 
@@ -483,18 +481,15 @@ fn close_schema_objects_at(schema: &mut serde_json::Value) {
 }
 
 fn is_object_schema(object: &serde_json::Map<String, serde_json::Value>) -> bool {
-    has_object_type(object)
-        || (object.get("type").is_none() && object.contains_key("properties"))
+    has_object_type(object) || (object.get("type").is_none() && object.contains_key("properties"))
 }
 
 fn has_object_type(object: &serde_json::Map<String, serde_json::Value>) -> bool {
     match object.get("type") {
         Some(serde_json::Value::String(schema_type)) => schema_type == "object",
-        Some(serde_json::Value::Array(schema_types)) => {
-            schema_types
-                .iter()
-                .any(|schema_type| schema_type.as_str() == Some("object"))
-        }
+        Some(serde_json::Value::Array(schema_types)) => schema_types
+            .iter()
+            .any(|schema_type| schema_type.as_str() == Some("object")),
         _ => false,
     }
 }
@@ -1082,9 +1077,7 @@ mod tests {
     use super::*;
     use crate::abilities::tracer::{AbilityTracer, SpanHandle};
     use crate::bridges::BridgeActor;
-    use crate::intelligence::provider::{
-        ModelName, ModelTier, ProviderKind, ReplayProvider,
-    };
+    use crate::intelligence::provider::{ModelName, ModelTier, ProviderKind, ReplayProvider};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
     use chrono::TimeZone;
     use std::sync::Mutex;
@@ -1402,7 +1395,10 @@ mod tests {
     #[should_panic(expected = "schema closure")]
     fn registry_build_panics_on_descriptor_without_additional_properties_false() {
         let result = AbilityRegistry::from_descriptors_checked(vec![with_input_schema(
-            descriptor("open_schema_without_additional_properties_false", AbilityCategory::Read),
+            descriptor(
+                "open_schema_without_additional_properties_false",
+                AbilityCategory::Read,
+            ),
             open_object_schema,
         )]);
 
@@ -1425,7 +1421,10 @@ mod tests {
         ctx.tracer
             .record_event(&span, "provider_visible", serde_json::json!({}));
 
-        assert_eq!(ctx.provider.provider_kind(), ProviderKind::Other("registry-fixture"));
+        assert_eq!(
+            ctx.provider.provider_kind(),
+            ProviderKind::Other("registry-fixture")
+        );
         assert_eq!(
             ctx.provider.current_model(ModelTier::Synthesis).as_str(),
             "registry-model"
@@ -1450,7 +1449,10 @@ mod tests {
 
         assert_eq!(ctx.actor, Actor::Agent);
         assert_eq!(ctx.mode(), ExecutionMode::Live);
-        assert_eq!(ctx.provider.provider_kind(), ProviderKind::Other("registry-fixture"));
+        assert_eq!(
+            ctx.provider.provider_kind(),
+            ProviderKind::Other("registry-fixture")
+        );
     }
 
     #[test]

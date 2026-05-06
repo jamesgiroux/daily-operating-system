@@ -68,7 +68,7 @@ pub fn source_base_weight(source: &str) -> f64 {
         // /ADR-0100: Tiered Glean source confidence
         "glean_crm" | "glean_REDACTED" => 0.9, // REDACTED — system of record
         "glean_zendesk" | "glean_support" => 0.85, // Zendesk — ticket data is factual
-        "glean_gong" => 0.8,                     // Gong — recorded calls, AI summaries synthesized
+        "glean_gong" => 0.8,                   // Gong — recorded calls, AI summaries synthesized
         "glean" | "glean_search" | "glean_org" => 0.7,
         "glean_chat" | "glean_synthesis" => 0.7, // Glean AI synthesis — same tier as PTY
         "glean_slack" => 0.5,                    // Slack — context signal, noisy
@@ -90,7 +90,7 @@ pub fn default_half_life(source: &str) -> i32 {
         // /ADR-0100: Tiered Glean half-lives
         "glean_crm" | "glean_REDACTED" => 90, // CRM data refreshes on enrichment cycle
         "glean_zendesk" | "glean_support" => 30, // Support health is dynamic
-        "glean_gong" => 60,                     // Call patterns are stable-ish
+        "glean_gong" => 60,                   // Call patterns are stable-ish
         "glean" | "glean_search" | "glean_org" => 60,
         "glean_chat" | "glean_synthesis" => 60, // AI synthesis stable
         "glean_slack" => 14,                    // Slack context decays fast

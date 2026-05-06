@@ -139,6 +139,38 @@ fn prepare_meeting_public_fixtures_execute_without_private_context() {
             .block_on(prepare_meeting(&ctx, input))
             .unwrap_or_else(|error| panic!("bundle-{bundle} should execute: {error:?}"));
         assert_eq!(output.data().schema_version.0, 1);
+        let expected_prompt_hash = fixture.provider_replay["fixtures"][0]["canonical_prompt_hash"]
+            .as_str()
+            .unwrap_or_else(|| panic!("bundle-{bundle} provider replay has canonical hash"));
+        let actual_prompt_hash = output
+            .provenance()
+            .prompt_fingerprint
+            .as_ref()
+            .unwrap_or_else(|| panic!("bundle-{bundle} emits prompt fingerprint"))
+            .canonical_prompt_hash
+            .0
+            .as_str();
+        assert_eq!(
+            actual_prompt_hash, expected_prompt_hash,
+            "bundle-{bundle} provenance canonical_prompt_hash must match replay key"
+        );
+        if bundle == 13 {
+            let brief = output.data();
+            assert!(
+                brief
+                    .topics
+                    .iter()
+                    .all(|topic| topic.subject.id != "dos287-adjacent-example"),
+                "bundle-13 must reject direct adjacent-account subject/source bleed"
+            );
+            assert!(
+                brief
+                    .topics
+                    .iter()
+                    .any(|topic| topic.subject.id == "dos287-target-example"),
+                "bundle-13 must retain the in-scope target account topic"
+            );
+        }
     }
 }
 

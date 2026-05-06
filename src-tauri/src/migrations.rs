@@ -930,8 +930,7 @@ fn create_backup_via_api(
                 }
             }
             Ok(rusqlite::backup::StepResult::Done) => break,
-            Ok(rusqlite::backup::StepResult::Busy)
-            | Ok(rusqlite::backup::StepResult::Locked) => {
+            Ok(rusqlite::backup::StepResult::Busy) | Ok(rusqlite::backup::StepResult::Locked) => {
                 busy_retries += 1;
                 if busy_retries >= MAX_BUSY_RETRIES {
                     return Err(format!(
@@ -2649,7 +2648,10 @@ mod tests {
              VALUES ('c-closed-pre', 'a-pre', 'fact', 'should fail', 'd-closed', 'system', 'manual', '2026-05-05', '{}', 'closed')",
             [],
         );
-        assert!(rejected.is_err(), "v139 schema must reject temporal_scope='closed'");
+        assert!(
+            rejected.is_err(),
+            "v139 schema must reject temporal_scope='closed'"
+        );
 
         let migration_140 = MIGRATIONS
             .iter()

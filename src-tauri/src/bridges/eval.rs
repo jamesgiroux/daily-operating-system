@@ -74,13 +74,12 @@ mod tests {
 
     use super::*;
     use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+    use crate::abilities::SpanHandle;
     use crate::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, Actor,
     };
-    use crate::abilities::SpanHandle;
     use crate::intelligence::provider::{
-        Completion, ModelName, ModelTier, PromptInput, ProviderError, ProviderKind,
-        ReplayProvider,
+        Completion, ModelName, ModelTier, PromptInput, ProviderError, ProviderKind, ReplayProvider,
     };
     use crate::services::context::{FixedClock, SeedableRng};
 
@@ -157,11 +156,8 @@ mod tests {
     ) -> ErasedFuture<'a> {
         Box::pin(async move {
             let span = ctx.tracer.start_span("eval_context_echo");
-            ctx.tracer.record_event(
-                &span,
-                "ability_context_seen",
-                json!({ "surface": "eval" }),
-            );
+            ctx.tracer
+                .record_event(&span, "ability_context_seen", json!({ "surface": "eval" }));
             Ok(envelope_json(
                 ctx,
                 json!({
@@ -324,10 +320,8 @@ mod tests {
         )])
         .unwrap();
         let fixture_services = FixtureServices::new();
-        let provider = ReplayProvider::from_prompt_pairs([(
-            "eval replay prompt",
-            "fixture completion",
-        )]);
+        let provider =
+            ReplayProvider::from_prompt_pairs([("eval replay prompt", "fixture completion")]);
         let tracer = FixtureTracer::default();
         let bridge = EvalAbilityBridge::new(
             &registry,

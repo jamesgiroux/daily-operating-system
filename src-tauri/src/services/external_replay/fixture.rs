@@ -38,7 +38,9 @@ pub enum FixtureLoadError {
         #[source]
         source: serde_json::Error,
     },
-    #[error("external replay fixture {fixture_path} has unsupported version {version}; expected 1")]
+    #[error(
+        "external replay fixture {fixture_path} has unsupported version {version}; expected 1"
+    )]
     InvalidVersion { fixture_path: String, version: u64 },
     #[error(
         "external replay fixture {fixture_path} has invalid request_key_hex `{request_key_hex}`: {source}"
@@ -103,13 +105,12 @@ impl JsonExternalReplayFixture {
             });
         }
 
-        let value =
-            serde_json::from_str::<serde_json::Value>(&content).map_err(|source| {
-                FixtureLoadError::Parse {
-                    fixture_path: fixture_path.clone(),
-                    source,
-                }
-            })?;
+        let value = serde_json::from_str::<serde_json::Value>(&content).map_err(|source| {
+            FixtureLoadError::Parse {
+                fixture_path: fixture_path.clone(),
+                source,
+            }
+        })?;
         Self::from_json_value(&value, &fixture_path)
     }
 
@@ -117,12 +118,13 @@ impl JsonExternalReplayFixture {
         value: &serde_json::Value,
         fixture_path: &str,
     ) -> Result<Self, FixtureLoadError> {
-        let raw_fixture = serde_json::from_value::<RawFixtureFile>(value.clone()).map_err(
-            |source| FixtureLoadError::Parse {
-                fixture_path: fixture_path.to_string(),
-                source,
-            },
-        )?;
+        let raw_fixture =
+            serde_json::from_value::<RawFixtureFile>(value.clone()).map_err(|source| {
+                FixtureLoadError::Parse {
+                    fixture_path: fixture_path.to_string(),
+                    source,
+                }
+            })?;
 
         if raw_fixture.version != 1 {
             return Err(FixtureLoadError::InvalidVersion {

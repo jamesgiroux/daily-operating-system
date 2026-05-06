@@ -1291,11 +1291,16 @@ fn source_subject_allowed(
     source: &BriefSubjectRef,
     meeting_scope_source_subjects: &BTreeSet<String>,
 ) -> bool {
-    if candidate.key() == source.key() {
+    let source_key = source.key();
+    if !meeting_scope_source_subjects.contains(&source_key) {
+        return false;
+    }
+
+    if candidate.key() == source_key {
         return true;
     }
 
-    candidate.kind == "meeting" && meeting_scope_source_subjects.contains(&source.key())
+    candidate.kind == "meeting"
 }
 
 fn meeting_scope_source_subjects(context: &MeetingBriefContext) -> BTreeSet<String> {
@@ -1834,6 +1839,42 @@ mod tests {
                 "title": "Adjacent account escalation",
                 "detail": "This source belongs to the adjacent account.",
                 "subject": {"kind": "meeting", "id": "meeting-1"},
+                "source_ids": ["src-adjacent"],
+                "confidence": 0.91
+            }],
+            "attendee_context": [],
+            "open_loops": [],
+            "what_changed_since_last": [],
+            "suggested_outcomes": []
+        }));
+        let mut input = input_with_source("meeting-1", "src-adjacent");
+        let context = input.context.as_mut().unwrap();
+        context.meeting.attendees = vec![attendee_for_account(
+            "Target Owner",
+            "owner@target.example.com",
+            "acct-target",
+        )];
+        context.evidence[0].subject = BriefSubjectRef::account("acct-adjacent");
+
+        let output = harness.run(input).await.unwrap();
+
+        assert!(output.data().topics.is_empty());
+        assert!(output.provenance().warnings.iter().any(|warning| {
+            matches!(
+                warning,
+                ProvenanceWarning::SubjectFitQualified { status, .. }
+                    if status == "SubjectAmbiguous"
+            )
+        }));
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_blocks_direct_adjacent_account_subject_source() {
+        let harness = Harness::new(serde_json::json!({
+            "topics": [{
+                "title": "Adjacent account escalation",
+                "detail": "This source and candidate both belong to the adjacent account.",
+                "subject": {"kind": "account", "id": "acct-adjacent"},
                 "source_ids": ["src-adjacent"],
                 "confidence": 0.91
             }],

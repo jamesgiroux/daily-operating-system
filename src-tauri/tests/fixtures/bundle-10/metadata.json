@@ -13,7 +13,7 @@
   ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "4aa83be35eedd0f64ed0cb20afc38c4bd0a12e9fc06121afcc221087cb903d68",
+  "prompt_fingerprint_baseline": "c53cf8f6696cb581de1c7296dbd9ce1e4d3b8151e30b3b8dfe72775763d79c17",
   "prompt_template_version": "1.0.0",
   "completion_text_hash": "939188a290d551db004ab289695a5cd8312c023958ef0820ef006eede985baa3",
   "trust_factors_dominant": [

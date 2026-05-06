@@ -1506,12 +1506,7 @@ fn promote_glean_facts_to_accounts(
     if let Some(ref classification) = intel.product_classification {
         if !classification.products.is_empty() {
             let count_str = classification.products.len().to_string();
-            promote_fact!(
-                "active_subscription_count",
-                &count_str,
-                "REDACTED",
-                "fact"
-            );
+            promote_fact!("active_subscription_count", &count_str, "REDACTED", "fact");
 
             // Primary product = highest-ARR product, or first product if no ARR data
             let primary = classification

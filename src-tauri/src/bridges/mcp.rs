@@ -2,8 +2,8 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use crate::abilities::provenance::InvocationId;
-use crate::abilities::{AbilityTracer, NoopAbilityTracer};
 use crate::abilities::{AbilityDescriptor, AbilityRegistry, Actor};
+use crate::abilities::{AbilityTracer, NoopAbilityTracer};
 use crate::bridges::tauri::TauriAbilityBridge;
 use crate::bridges::types::{
     confirmation_args_hash, invoke_registry_json, surface_error, BridgeNoopIntelligenceProvider,
@@ -12,10 +12,10 @@ use crate::bridges::{
     AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
     InvocationContext, McpSessionId, RenderedProvenance,
 };
+use crate::intelligence::provider::IntelligenceProvider;
 use crate::services::context::{
     ExecutionMode, ExternalClients, ServiceContext, SystemClock, SystemRng,
 };
-use crate::intelligence::provider::IntelligenceProvider;
 use rmcp::model::{CallToolResult, Content};
 use rmcp::Error as McpError;
 
@@ -289,9 +289,9 @@ impl<'registry> McpAbilityBridge<'registry> {
                     RenderedProvenance::new(BridgeSurface::McpToolDetail, provenance.value);
                 CallToolResult::success(vec![json_content(detail)])
             }
-            None => CallToolResult::error(vec![json_content(
-                BridgeSurfaceError::AbilityUnavailable,
-            )]),
+            None => {
+                CallToolResult::error(vec![json_content(BridgeSurfaceError::AbilityUnavailable)])
+            }
         }
     }
 
@@ -954,13 +954,8 @@ mod tests {
             serde_json::from_value(tool_result_json(&request_result)).unwrap();
 
         let unknown = invoke_error_bytes(&mcp_bridge, "unknown", json!({}), None).await;
-        let mismatch = invoke_error_bytes(
-            &mcp_bridge,
-            "agent_confirmed",
-            later_call,
-            Some(token),
-        )
-        .await;
+        let mismatch =
+            invoke_error_bytes(&mcp_bridge, "agent_confirmed", later_call, Some(token)).await;
         let missing =
             invoke_error_bytes(&mcp_bridge, "agent_confirmed", issued_for.clone(), None).await;
         let expired_token = token_for(
@@ -995,8 +990,7 @@ mod tests {
         let bridge = McpAbilityBridge::new(&registry);
 
         let unknown = invoke_error_bytes(&bridge, "unknown", json!({}), None).await;
-        let missing =
-            invoke_error_bytes(&bridge, "agent_confirmed", json!({}), None).await;
+        let missing = invoke_error_bytes(&bridge, "agent_confirmed", json!({}), None).await;
 
         assert_eq!(missing, unknown);
     }
@@ -1078,11 +1072,7 @@ mod tests {
 
         let registry = registry_with_abilities(vec![]);
         let first_process_bridge = McpAbilityBridge::new(&registry);
-        first_process_bridge.insert_provenance(
-            first_process_session,
-            invocation(1),
-            rendered(1),
-        );
+        first_process_bridge.insert_provenance(first_process_session, invocation(1), rendered(1));
         let restarted_bridge = McpAbilityBridge::new(&registry);
 
         assert_eq!(
@@ -1106,13 +1096,7 @@ mod tests {
         let session = session(1);
 
         let response = bridge
-            .invoke_ability(
-                session,
-                "agent_internal_provenance",
-                json!({}),
-                false,
-                None,
-            )
+            .invoke_ability(session, "agent_internal_provenance", json!({}), false, None)
             .await
             .unwrap();
         let detail = bridge
@@ -1126,7 +1110,10 @@ mod tests {
             assert!(rendered.get("prompt_hash").is_none());
             assert!(rendered.get("seed").is_none());
             assert!(rendered.get("children").is_none());
-            assert_eq!(rendered["invocation_id"], "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa");
+            assert_eq!(
+                rendered["invocation_id"],
+                "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
+            );
         }
     }
 

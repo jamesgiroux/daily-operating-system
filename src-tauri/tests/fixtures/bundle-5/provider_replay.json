@@ -2,7 +2,7 @@
   "version": 1,
   "fixtures": [
     {
-      "canonical_prompt_hash": "e71434f934ba9c1ff87ef5e15485594f502aed5512f494fb434b1a2d008e9180",
+      "canonical_prompt_hash": "8e3df786d021cbd821d062388f34c29fe23f4b71bab8590e4cf5d3e79b99fbc9",
       "completion": "{\n  \"topics\": [],\n  \"attendee_context\": [\n    {\n      \"attendee\": \"Riley Rivera\",\n      \"context\": \"Riley Rivera is new to the workspace and asked for a concise first-call agenda.\",\n      \"subject\": {\n        \"kind\": \"person\",\n        \"id\": \"person-b5-riley\"\n      },\n      \"source_ids\": [\n        \"src-b5-intro-note\"\n      ],\n      \"confidence\": 0.92\n    }\n  ],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
     }
   ]

@@ -187,13 +187,9 @@ impl ConfirmationAttestationState {
         request: UserAttestationRequest,
     ) -> tokio::sync::oneshot::Receiver<AttestationDecision> {
         let (decision, receiver) = tokio::sync::oneshot::channel();
-        self.requests.lock().insert(
-            request.request_id,
-            PendingAttestation {
-                request,
-                decision,
-            },
-        );
+        self.requests
+            .lock()
+            .insert(request.request_id, PendingAttestation { request, decision });
         receiver
     }
 

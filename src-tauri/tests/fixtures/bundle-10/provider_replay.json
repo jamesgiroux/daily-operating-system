@@ -2,7 +2,7 @@
   "version": 1,
   "fixtures": [
     {
-      "canonical_prompt_hash": "1039a5576bf3384de8ba8866b3db92579f4707f27d85bbbe0dba381898cf1058",
+      "canonical_prompt_hash": "c53cf8f6696cb581de1c7296dbd9ce1e4d3b8151e30b3b8dfe72775763d79c17",
       "completion": "{\n  \"topics\": [\n    {\n      \"title\": \"Expansion decision\",\n      \"detail\": \"Known Account Example wants the meeting to decide whether integration expansion should proceed this quarter.\",\n      \"subject\": {\n        \"kind\": \"account\",\n        \"id\": \"acct-b10-known\"\n      },\n      \"source_ids\": [\n        \"src-b10-account-plan\"\n      ],\n      \"confidence\": 0.88\n    }\n  ],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
     }
   ]

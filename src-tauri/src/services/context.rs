@@ -36,6 +36,7 @@ use http::HeaderMap;
 use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 
+use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
 use crate::db::claims::IntelligenceClaim;
 use crate::services::external_replay::{
     AuthScopeId, ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
@@ -1059,6 +1060,19 @@ impl<'a> ServiceContext<'a> {
         .map_err(|error| format!("Entity context claim read task failed: {error}"))?
     }
 
+    pub async fn read_entity_context_claim_entries(
+        &self,
+        entity_type: String,
+        entity_id: String,
+        depth: usize,
+    ) -> Result<Vec<EntityContextEntry>, String> {
+        self.read_entity_context_claims(entity_type, entity_id, depth)
+            .await?
+            .into_iter()
+            .map(entity_context_entry_for_claim)
+            .collect()
+    }
+
     pub async fn read_entity_context_entries(
         &self,
         entity_type: String,
@@ -1109,6 +1123,52 @@ impl<'a> ServiceContext<'a> {
         } else {
             Err(ServiceError::WriteBlockedByMode(self.mode))
         }
+    }
+}
+
+fn entity_context_entry_for_claim(claim: IntelligenceClaim) -> Result<EntityContextEntry, String> {
+    let value: serde_json::Value = serde_json::from_str(&claim.subject_ref)
+        .map_err(|error| format!("Invalid entity context claim subject_ref JSON: {error}"))?;
+    let (entity_type, entity_id) = match crate::services::claims::subject_ref_from_json(&value)
+        .map_err(|error| format!("Invalid entity context claim subject_ref: {error}"))?
+    {
+        ClaimSubjectRef::Account { id } => ("account".to_string(), id),
+        ClaimSubjectRef::Meeting { id } => ("meeting".to_string(), id),
+        ClaimSubjectRef::Person { id } => ("person".to_string(), id),
+        ClaimSubjectRef::Project { id } => ("project".to_string(), id),
+        ClaimSubjectRef::Email { .. } | ClaimSubjectRef::Multi(_) | ClaimSubjectRef::Global => {
+            return Err(format!(
+                "Claim `{}` has unsupported entity context subject",
+                claim.id
+            ));
+        }
+    };
+
+    let updated_at = claim
+        .reactivated_at
+        .clone()
+        .unwrap_or_else(|| claim.created_at.clone());
+    let title = title_for_entity_context_claim(&claim);
+
+    Ok(EntityContextEntry {
+        id: claim.id,
+        entity_type,
+        entity_id,
+        title,
+        content: claim.text,
+        created_at: claim.created_at,
+        updated_at,
+    })
+}
+
+fn title_for_entity_context_claim(claim: &IntelligenceClaim) -> String {
+    match claim
+        .field_path
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        Some(field_path) => format!("{}: {field_path}", claim.claim_type),
+        None => claim.claim_type.clone(),
     }
 }
 

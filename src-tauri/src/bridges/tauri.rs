@@ -85,10 +85,7 @@ pub struct TauriAbilityBridge<'registry> {
 
 impl<'registry> TauriAbilityBridge<'registry> {
     pub fn new(registry: &'registry AbilityRegistry) -> Self {
-        Self::new_with_attestation_host(
-            registry,
-            Arc::new(PendingUserAttestationHost),
-        )
+        Self::new_with_attestation_host(registry, Arc::new(PendingUserAttestationHost))
     }
 
     pub fn new_with_attestation_host(
@@ -269,8 +266,8 @@ mod tests {
     use crate::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor,
     };
-    use crate::bridges::{confirmation_args_hash, AttestationDecision};
     use crate::bridges::types::{BridgeRejectReason, PRE_DISPATCH_RESOLUTION_ORDER};
+    use crate::bridges::{confirmation_args_hash, AttestationDecision};
     use crate::intelligence::provider::{
         Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
         ProviderKind,
@@ -329,10 +326,18 @@ mod tests {
         _input: serde_json::Value,
     ) -> ErasedFuture<'a> {
         Box::pin(async move {
-            let before = ctx.provider.current_model(ModelTier::Synthesis).as_str().to_string();
+            let before = ctx
+                .provider
+                .current_model(ModelTier::Synthesis)
+                .as_str()
+                .to_string();
             PROVIDER_SNAPSHOT_STARTED.notify_one();
             PROVIDER_SNAPSHOT_RELEASE.notified().await;
-            let after = ctx.provider.current_model(ModelTier::Synthesis).as_str().to_string();
+            let after = ctx
+                .provider
+                .current_model(ModelTier::Synthesis)
+                .as_str()
+                .to_string();
             Ok(envelope_json(
                 ctx,
                 json!({
@@ -347,9 +352,7 @@ mod tests {
         _ctx: &'a AbilityContext<'a>,
         _input: serde_json::Value,
     ) -> ErasedFuture<'a> {
-        Box::pin(async move {
-            panic!("schema-invalid bridge input reached ability dispatch")
-        })
+        Box::pin(async move { panic!("schema-invalid bridge input reached ability dispatch") })
     }
 
     fn leaking_error_erased<'a>(
@@ -549,13 +552,7 @@ mod tests {
     #[test]
     fn confirmation_token_scoped_to_actor_ability_args_hash_ttl() {
         let input = json!({ "subject": "dailyos" });
-        let token = confirmation_token(
-            BridgeActor::Agent,
-            "agent_write",
-            &input,
-            issued_at(),
-            300,
-        );
+        let token = confirmation_token(BridgeActor::Agent, "agent_write", &input, issued_at(), 300);
 
         assert_eq!(token.actor, BridgeActor::Agent);
         assert_eq!(token.ability, "agent_write");
@@ -568,13 +565,7 @@ mod tests {
     #[test]
     fn confirmation_token_matches_returns_true_for_matching_triple_and_unexpired() {
         let input = json!({ "subject": "dailyos" });
-        let token = confirmation_token(
-            BridgeActor::Agent,
-            "agent_write",
-            &input,
-            issued_at(),
-            300,
-        );
+        let token = confirmation_token(BridgeActor::Agent, "agent_write", &input, issued_at(), 300);
         let args_hash = confirmation_args_hash(&input);
 
         assert!(token.matches(&BridgeActor::Agent, "agent_write", &args_hash));
@@ -634,7 +625,10 @@ mod tests {
         let result = tokio::time::timeout(Duration::from_millis(25), &mut issue).await;
 
         assert!(result.is_err());
-        assert_eq!(state.pending_confirmation_attestation_requests(), vec![request]);
+        assert_eq!(
+            state.pending_confirmation_attestation_requests(),
+            vec![request]
+        );
     }
 
     #[tokio::test]
@@ -709,7 +703,10 @@ mod tests {
             .unwrap()
             .unwrap_err();
 
-        assert_eq!(serde_json::to_vec(&err).unwrap(), br#""ability_unavailable""#);
+        assert_eq!(
+            serde_json::to_vec(&err).unwrap(),
+            br#""ability_unavailable""#
+        );
         assert!(state.pending_attestations().is_empty());
     }
 
@@ -779,7 +776,10 @@ mod tests {
             .await
             .unwrap_err();
 
-        assert_eq!(serde_json::to_vec(&err).unwrap(), br#""ability_unavailable""#);
+        assert_eq!(
+            serde_json::to_vec(&err).unwrap(),
+            br#""ability_unavailable""#
+        );
         assert!(bridge.rate_limits.lock().is_empty());
     }
 
@@ -887,8 +887,12 @@ mod tests {
             provider_snapshot_erased,
         )]);
         let state = AppState::new();
-        let first_provider = Arc::new(FixtureProvider { model: "first-model" });
-        let second_provider = Arc::new(FixtureProvider { model: "second-model" });
+        let first_provider = Arc::new(FixtureProvider {
+            model: "first-model",
+        });
+        let second_provider = Arc::new(FixtureProvider {
+            model: "second-model",
+        });
         state.swap_intelligence_provider(Some(first_provider));
         let bridge = TauriAbilityBridge::new(&registry);
 
@@ -990,7 +994,10 @@ mod tests {
         assert_eq!(response.schema_version, 1);
         assert_eq!(response.data["actor"], "User");
         assert_eq!(response.data["mode"], "live");
-        assert_eq!(response.rendered_provenance.surface, BridgeSurface::TauriApp);
+        assert_eq!(
+            response.rendered_provenance.surface,
+            BridgeSurface::TauriApp
+        );
         assert_eq!(response.rendered_provenance.value["actor"], "User");
     }
 
@@ -1223,7 +1230,10 @@ mod tests {
             .unwrap_err();
 
         assert_eq!(err, BridgeSurfaceError::AbilityUnavailable);
-        assert_eq!(serde_json::to_vec(&err).unwrap(), br#""ability_unavailable""#);
+        assert_eq!(
+            serde_json::to_vec(&err).unwrap(),
+            br#""ability_unavailable""#
+        );
     }
 
     #[tokio::test]

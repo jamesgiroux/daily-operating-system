@@ -938,7 +938,13 @@ mod tests {
                 "SELECT role, source, graph_version FROM linked_entities_raw \
                  WHERE owner_id = 'mtg-test' AND entity_id = 'acct-a'",
                 [],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .expect("read after dismiss");
         assert_eq!(row.1, "user_dismissed");
@@ -955,7 +961,13 @@ mod tests {
                 "SELECT role, source, graph_version FROM linked_entities_raw \
                  WHERE owner_id = 'mtg-test' AND entity_id = 'acct-a'",
                 [],
-                |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?, r.get::<_, i64>(2)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, String>(0)?,
+                        r.get::<_, String>(1)?,
+                        r.get::<_, i64>(2)?,
+                    ))
+                },
             )
             .expect("read after recompute");
         assert_eq!(after.1, "user_dismissed", "source must stay user_dismissed");

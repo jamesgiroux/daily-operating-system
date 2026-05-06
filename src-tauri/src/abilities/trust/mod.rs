@@ -10,8 +10,8 @@ pub mod types;
 
 use factors::{
     contradiction_penalty, corroboration_weight, cross_entity_coherence, freshness_weight,
-    internal_consistency, sensitivity_aware_filtering, source_lifecycle_weight,
-    source_reliability, subject_fit_confidence, user_feedback_weight,
+    internal_consistency, sensitivity_aware_filtering, source_lifecycle_weight, source_reliability,
+    subject_fit_confidence, user_feedback_weight,
 };
 
 pub use config::{TrustConfig, TrustConfigError, TrustFactorWeights};
@@ -397,7 +397,12 @@ fn confidence_evidence(
         score: outcome.score,
         band_label: band_label(outcome.band).to_string(),
         factor_breakdown,
-        caveats: caveats(claim, ctx, extras.cross_entity_hit_count, extras.triggered_gates),
+        caveats: caveats(
+            claim,
+            ctx,
+            extras.cross_entity_hit_count,
+            extras.triggered_gates,
+        ),
     }
 }
 
@@ -577,10 +582,7 @@ mod tests {
         }
     }
 
-    fn factor_evidence<'a>(
-        computation: &'a TrustComputation,
-        name: &str,
-    ) -> &'a FactorEvidence {
+    fn factor_evidence<'a>(computation: &'a TrustComputation, name: &str) -> &'a FactorEvidence {
         computation
             .evidence
             .factor_breakdown
@@ -746,12 +748,30 @@ mod tests {
     fn source_reliability_aggregated_dominates_5_weak_with_1_strong_contradiction() {
         let input = SourceReliabilityInput {
             corroborators: vec![
-                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-                CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-                CorroboratorWeight { evidence_weight: 1.0, confirms: false },
+                CorroboratorWeight {
+                    evidence_weight: 0.2,
+                    confirms: true,
+                },
+                CorroboratorWeight {
+                    evidence_weight: 0.2,
+                    confirms: true,
+                },
+                CorroboratorWeight {
+                    evidence_weight: 0.2,
+                    confirms: true,
+                },
+                CorroboratorWeight {
+                    evidence_weight: 0.2,
+                    confirms: true,
+                },
+                CorroboratorWeight {
+                    evidence_weight: 0.2,
+                    confirms: true,
+                },
+                CorroboratorWeight {
+                    evidence_weight: 1.0,
+                    confirms: false,
+                },
             ],
         };
 
@@ -771,8 +791,14 @@ mod tests {
     fn source_reliability_aggregated_clamps_to_one_with_all_strong_confirms() {
         let input = SourceReliabilityInput {
             corroborators: vec![
-                CorroboratorWeight { evidence_weight: 1.0, confirms: true },
-                CorroboratorWeight { evidence_weight: 1.0, confirms: true },
+                CorroboratorWeight {
+                    evidence_weight: 1.0,
+                    confirms: true,
+                },
+                CorroboratorWeight {
+                    evidence_weight: 1.0,
+                    confirms: true,
+                },
             ],
         };
 
@@ -784,8 +810,14 @@ mod tests {
         let mut ctx = test_context();
         ctx.factor_inputs.source_reliability = 1.0;
         ctx.factor_inputs.source_reliability_corroborators = vec![
-            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-            CorroboratorWeight { evidence_weight: 1.0, confirms: false },
+            CorroboratorWeight {
+                evidence_weight: 0.2,
+                confirms: true,
+            },
+            CorroboratorWeight {
+                evidence_weight: 1.0,
+                confirms: false,
+            },
         ];
 
         assert_close(source_reliability(&ctx.factor_inputs), 1.0 / 6.0);
@@ -1105,9 +1137,18 @@ mod tests {
         let mut ctx = test_context();
         ctx.factor_inputs.read_state_indeterminate = true;
         ctx.factor_inputs.source_reliability_corroborators = vec![
-            CorroboratorWeight { evidence_weight: 1.0, confirms: true },
-            CorroboratorWeight { evidence_weight: 1.0, confirms: true },
-            CorroboratorWeight { evidence_weight: 1.0, confirms: true },
+            CorroboratorWeight {
+                evidence_weight: 1.0,
+                confirms: true,
+            },
+            CorroboratorWeight {
+                evidence_weight: 1.0,
+                confirms: true,
+            },
+            CorroboratorWeight {
+                evidence_weight: 1.0,
+                confirms: true,
+            },
         ];
 
         let computation = compile_trust(&claim, ctx).unwrap();
@@ -1135,13 +1176,34 @@ mod tests {
         let claim = test_claim();
         let mut ctx = test_context();
         ctx.factor_inputs.source_reliability_corroborators = vec![
-            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-            CorroboratorWeight { evidence_weight: 0.2, confirms: true },
-            CorroboratorWeight { evidence_weight: 1.0, confirms: false },
-            CorroboratorWeight { evidence_weight: 1.0, confirms: false },
+            CorroboratorWeight {
+                evidence_weight: 0.2,
+                confirms: true,
+            },
+            CorroboratorWeight {
+                evidence_weight: 0.2,
+                confirms: true,
+            },
+            CorroboratorWeight {
+                evidence_weight: 0.2,
+                confirms: true,
+            },
+            CorroboratorWeight {
+                evidence_weight: 0.2,
+                confirms: true,
+            },
+            CorroboratorWeight {
+                evidence_weight: 0.2,
+                confirms: true,
+            },
+            CorroboratorWeight {
+                evidence_weight: 1.0,
+                confirms: false,
+            },
+            CorroboratorWeight {
+                evidence_weight: 1.0,
+                confirms: false,
+            },
         ];
 
         let computation = compile_trust(&claim, ctx).unwrap();

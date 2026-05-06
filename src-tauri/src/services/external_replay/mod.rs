@@ -22,8 +22,8 @@
 //! }
 //! ```
 
-mod key;
 mod fixture;
+mod key;
 
 pub use fixture::{FixtureLoadError, JsonExternalReplayFixture};
 pub use key::{AuthScopeId, AuthScopeIdError, RequestKey, RequestKeyHexError};
@@ -53,7 +53,6 @@ impl ExternalReplayFixtureMissing {
             url_redacted: key::redact_url(url),
         }
     }
-
 }
 
 pub trait ExternalReplayFixture: Send + Sync {
@@ -74,8 +73,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        AuthScopeId, AuthScopeIdError, ExternalReplayFixture, ExternalReplayFixtureMissing, FixtureLoadError,
-        JsonExternalReplayFixture, RequestKey, ReplayResponse,
+        AuthScopeId, AuthScopeIdError, ExternalReplayFixture, ExternalReplayFixtureMissing,
+        FixtureLoadError, JsonExternalReplayFixture, ReplayResponse, RequestKey,
     };
 
     fn headers(pairs: &[(&str, &str)]) -> HeaderMap {

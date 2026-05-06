@@ -1239,7 +1239,11 @@ pub async fn get_entity_context_entries(
     entity_id: String,
     state: State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::types::EntityContextEntry>, String> {
-    crate::services::entity_context::get_entries(&entity_type, &entity_id, &state).await
+    state
+        .live_service_context()
+        .with_actor("user")
+        .read_entity_context_claim_entries(entity_type, entity_id, 1)
+        .await
 }
 
 /// Create a new entity context entry.

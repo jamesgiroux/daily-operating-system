@@ -300,22 +300,14 @@ pub fn submit_intelligence_correction(
     if let Some(ref source) = prior_source {
         let field_category = field_to_signal_category(field);
         let weight_result = match action {
-            CorrectionAction::Confirmed => Some(db.upsert_signal_weight(
-                source,
-                entity_type,
-                &field_category,
-                1.0,
-                0.0,
-            )),
+            CorrectionAction::Confirmed => {
+                Some(db.upsert_signal_weight(source, entity_type, &field_category, 1.0, 0.0))
+            }
             CorrectionAction::Rejected
             | CorrectionAction::Corrected
-            | CorrectionAction::Dismissed => Some(db.upsert_signal_weight(
-                source,
-                entity_type,
-                &field_category,
-                0.0,
-                1.0,
-            )),
+            | CorrectionAction::Dismissed => {
+                Some(db.upsert_signal_weight(source, entity_type, &field_category, 0.0, 1.0))
+            }
             CorrectionAction::Annotated => None,
         };
         if let Some(Err(e)) = weight_result {

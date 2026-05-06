@@ -1,13 +1,13 @@
 use std::collections::{HashMap, VecDeque};
 
-use chrono::{DateTime, Utc};
 use async_trait::async_trait;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::abilities::tracer::{AbilityTracer, SpanHandle};
 use crate::abilities::provenance::InvocationId;
+use crate::abilities::tracer::{AbilityTracer, SpanHandle};
 use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
     AbilityError, AbilityRegistry, Actor,
@@ -67,12 +67,7 @@ impl ConfirmationToken {
         now.signed_duration_since(self.issued_at).num_seconds() >= self.ttl_seconds as i64
     }
 
-    pub fn matches(
-        &self,
-        actor: &BridgeActor,
-        ability: &str,
-        args_hash: &[u8; 32],
-    ) -> bool {
+    pub fn matches(&self, actor: &BridgeActor, ability: &str, args_hash: &[u8; 32]) -> bool {
         &self.actor == actor && self.ability == ability && &self.args_hash == args_hash
     }
 }
@@ -366,8 +361,7 @@ fn write_canonical_json(value: &serde_json::Value, out: &mut Vec<u8>) {
         | serde_json::Value::Number(_)
         | serde_json::Value::String(_) => {
             out.extend(
-                serde_json::to_vec(value)
-                    .expect("serializing a serde_json scalar should not fail"),
+                serde_json::to_vec(value).expect("serializing a serde_json scalar should not fail"),
             );
         }
         serde_json::Value::Array(values) => {
@@ -581,9 +575,7 @@ fn parse_invocation_id(provenance: &serde_json::Value) -> Result<InvocationId, A
 
 fn render_provenance(surface: BridgeSurface, provenance: serde_json::Value) -> RenderedProvenance {
     let value = match surface {
-        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
-            redact_mcp_provenance(provenance)
-        }
+        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => redact_mcp_provenance(provenance),
         BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => provenance,
     };
     RenderedProvenance::new(surface, value)
@@ -776,9 +768,9 @@ fn schema_is_object_like(schema_object: &serde_json::Map<String, serde_json::Val
 fn schema_type_contains(schema_type: Option<&serde_json::Value>, expected: &str) -> bool {
     match schema_type {
         Some(serde_json::Value::String(value)) => value == expected,
-        Some(serde_json::Value::Array(values)) => values
-            .iter()
-            .any(|value| value.as_str() == Some(expected)),
+        Some(serde_json::Value::Array(values)) => {
+            values.iter().any(|value| value.as_str() == Some(expected))
+        }
         _ => false,
     }
 }
@@ -1056,10 +1048,7 @@ mod tests {
         }
 
         fn record_event(&self, _span: &SpanHandle, name: &str, fields: serde_json::Value) {
-            self.events
-                .lock()
-                .unwrap()
-                .push((name.to_string(), fields));
+            self.events.lock().unwrap().push((name.to_string(), fields));
         }
     }
 
@@ -1135,7 +1124,10 @@ mod tests {
         let events = tracer.events.lock().unwrap();
         assert_eq!(events.len(), 4);
         for (_, fields) in events.iter() {
-            assert_eq!(fields.get("actor").and_then(serde_json::Value::as_str), Some("user"));
+            assert_eq!(
+                fields.get("actor").and_then(serde_json::Value::as_str),
+                Some("user")
+            );
             assert_eq!(
                 fields
                     .get("ability_name")

@@ -16,7 +16,7 @@
   ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "79a46c6922027071056f3edb7e9c9819b15654e99c0879592b39d94d5bd64611",
+  "prompt_fingerprint_baseline": "c62559659dc62b34a2b26050e5884cd352afb76b51d13cdca53d8140fe04d42b",
   "prompt_template_version": "1.0.0",
   "completion_text_hash": "c9155aa2ed38a5b93847d5451204aa04e03f1534187ee73cf0533892d788f7cb",
   "trust_factors_dominant": [
@@ -24,11 +24,11 @@
     "composition",
     "source_time"
   ],
-  "pass_fail_definition": "PASS = Account B source evidence is either omitted or rendered only as SubjectAmbiguous warning and never as a fact attributed to Account A. FAIL = src-b13-adjacent can produce an account fact for dos287-target-example.",
+  "pass_fail_definition": "PASS = Account B source evidence is either omitted or rendered only as SubjectAmbiguous warning, including when the provider emits Account B as both candidate subject and source subject. FAIL = src-b13-adjacent can produce a rendered fact.",
   "fixture_design_notes": {
     "state_sql": "Seeds meetings, attendees, linked subjects, and intelligence_claims rows consumed by the public prepare_meeting context builder.",
     "expected_output": "Only Target Example content is allowed in rendered MeetingBrief sections.",
     "expected_provenance": "Records the allowed and blocked subjects plus source_asof values that must remain reachable through direct and composed provenance.",
-    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key for this claim-backed fixture."
+    "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key and includes a direct adjacent-account candidate/source pair."
   }
 }

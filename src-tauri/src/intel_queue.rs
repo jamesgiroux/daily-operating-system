@@ -2629,31 +2629,32 @@ fn run_finalize_trust_recompute(
     }
 
     let ctx = state.live_service_context();
-    let extraction_context = match crate::services::trust_extraction::build_account_extraction_context(
-        db,
-        &input.entity_type,
-        &input.entity_id,
-    ) {
-        Ok(context) => context,
-        Err(e) => {
-            log::warn!(
-                "TrustRecompute: extractor context error on {}:{}: {}",
-                input.entity_type,
-                input.entity_id,
-                e
-            );
-            for claim in claims {
-                record_trust_recompute_pipeline_failure(
-                    &ctx,
-                    db,
-                    input,
-                    "extractor_error",
-                    Some(&format!("claim_id={} error={e}", claim.id)),
+    let extraction_context =
+        match crate::services::trust_extraction::build_account_extraction_context(
+            db,
+            &input.entity_type,
+            &input.entity_id,
+        ) {
+            Ok(context) => context,
+            Err(e) => {
+                log::warn!(
+                    "TrustRecompute: extractor context error on {}:{}: {}",
+                    input.entity_type,
+                    input.entity_id,
+                    e
                 );
+                for claim in claims {
+                    record_trust_recompute_pipeline_failure(
+                        &ctx,
+                        db,
+                        input,
+                        "extractor_error",
+                        Some(&format!("claim_id={} error={e}", claim.id)),
+                    );
+                }
+                return Ok(());
             }
-            return Ok(());
-        }
-    };
+        };
 
     for claim in claims {
         let subject = match trust_subject_from_claim_json(&claim.subject_ref) {
@@ -2783,13 +2784,7 @@ fn run_finalize_trust_recompute(
                         trust_version,
                     );
                 }
-                emit_confidence_evidence_signals(
-                    &ctx,
-                    db,
-                    input,
-                    &claim.id,
-                    &computation.evidence,
-                );
+                emit_confidence_evidence_signals(&ctx, db, input, &claim.id, &computation.evidence);
             }
         }
     }
@@ -2848,8 +2843,10 @@ fn build_trust_context_for_claim(
 ) -> (crate::abilities::trust::TrustContext, Vec<&'static str>) {
     let mut indeterminate_reasons: Vec<&'static str> = Vec::new();
 
-    let feedback_signal =
-        collect_trust_input(trust_feedback_signal_for_claim(db, &claim.id), &mut indeterminate_reasons);
+    let feedback_signal = collect_trust_input(
+        trust_feedback_signal_for_claim(db, &claim.id),
+        &mut indeterminate_reasons,
+    );
     let corroborators = collect_trust_input(
         source_reliability_corroborators_for_claim(db, &claim.id),
         &mut indeterminate_reasons,
@@ -2870,10 +2867,14 @@ fn build_trust_context_for_claim(
         freshness_context_for_claim(ctx.clock.now(), claim),
         &mut indeterminate_reasons,
     );
-    let source_lifecycle =
-        collect_trust_input(source_lifecycle_for_claim(claim), &mut indeterminate_reasons);
-    let internal_consistency =
-        collect_trust_input(internal_consistency_for_claim(claim), &mut indeterminate_reasons);
+    let source_lifecycle = collect_trust_input(
+        source_lifecycle_for_claim(claim),
+        &mut indeterminate_reasons,
+    );
+    let internal_consistency = collect_trust_input(
+        internal_consistency_for_claim(claim),
+        &mut indeterminate_reasons,
+    );
     let read_state_indeterminate = !indeterminate_reasons.is_empty();
     if read_state_indeterminate {
         log::warn!(
@@ -3088,11 +3089,7 @@ fn source_lifecycle_for_claim(
             indeterminate = Some("source_lifecycle_unknown_value");
             crate::abilities::trust::SourceLifecycleState::Active
         }
-        None if matches!(
-            &claim.claim_state,
-            crate::db::claims::ClaimState::Withdrawn
-        ) =>
-        {
+        None if matches!(&claim.claim_state, crate::db::claims::ClaimState::Withdrawn) => {
             crate::abilities::trust::SourceLifecycleState::Withdrawn
         }
         None => crate::abilities::trust::SourceLifecycleState::Active,
@@ -3143,10 +3140,7 @@ fn freshness_context_for_claim(
                 };
             }
             Err(e) => {
-                log::warn!(
-                    "TrustRecompute: malformed {label} on {}: {e}",
-                    claim.id
-                );
+                log::warn!("TrustRecompute: malformed {label} on {}: {e}", claim.id);
                 indeterminate = Some("freshness_fallback_malformed");
             }
         }
@@ -3247,7 +3241,9 @@ fn source_reliability_corroborators_for_claim(
                 Ok(rows) => {
                     for row in rows {
                         match row {
-                            Ok(strength) if strength.is_finite() && (0.0..=1.0).contains(&strength) => {
+                            Ok(strength)
+                                if strength.is_finite() && (0.0..=1.0).contains(&strength) =>
+                            {
                                 out.push(crate::abilities::trust::CorroboratorWeight {
                                     evidence_weight: strength,
                                     confirms: true,
@@ -3290,9 +3286,7 @@ fn source_reliability_corroborators_for_claim(
             }
         }
         Err(e) => {
-            log::warn!(
-                "TrustRecompute: failed to prepare corroboration query for {claim_id}: {e}"
-            );
+            log::warn!("TrustRecompute: failed to prepare corroboration query for {claim_id}: {e}");
             indeterminate = Some("corroborators_prepare_failed");
         }
     }
@@ -3315,9 +3309,7 @@ fn source_reliability_corroborators_for_claim(
             }
         }
         Err(e) => {
-            log::warn!(
-                "TrustRecompute: failed to count contradictions for {claim_id}: {e}"
-            );
+            log::warn!("TrustRecompute: failed to count contradictions for {claim_id}: {e}");
             indeterminate = Some("corroborators_contradiction_count_failed");
         }
     }
@@ -3432,7 +3424,9 @@ fn trust_feedback_signal_for_claim(
         match row {
             Ok(value) => {
                 let signal = match value.as_str() {
-                    "confirm_current" => Some(crate::abilities::trust::UserFeedbackSignal::Confirmed),
+                    "confirm_current" => {
+                        Some(crate::abilities::trust::UserFeedbackSignal::Confirmed)
+                    }
                     "mark_false" => Some(crate::abilities::trust::UserFeedbackSignal::Retracted),
                     "wrong_subject" => {
                         Some(crate::abilities::trust::UserFeedbackSignal::WrongSubject)
@@ -4378,8 +4372,8 @@ mod tests {
         db: &crate::db::ActionDb,
         account_id: &str,
     ) -> crate::db::claims::IntelligenceClaim {
-        let subject_ref = claim_subject_ref_json_for_entity("account", account_id)
-            .expect("account subject ref");
+        let subject_ref =
+            claim_subject_ref_json_for_entity("account", account_id).expect("account subject ref");
         let mut claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
             .expect("load active trust claims");
         assert_eq!(claims.len(), 1, "expected one active trust claim");
@@ -4406,11 +4400,7 @@ mod tests {
         });
     }
 
-    fn seed_claim_feedback(
-        db: &crate::db::ActionDb,
-        claim_id: &str,
-        action: FeedbackAction,
-    ) {
+    fn seed_claim_feedback(db: &crate::db::ActionDb, claim_id: &str, action: FeedbackAction) {
         with_trust_ctx(|ctx| {
             record_claim_feedback(
                 ctx,
@@ -4454,11 +4444,7 @@ mod tests {
         }
     }
 
-    fn run_trust_finalize(
-        db: &crate::db::ActionDb,
-        account_id: &str,
-        mode: FinalizeMode,
-    ) {
+    fn run_trust_finalize(db: &crate::db::ActionDb, account_id: &str, mode: FinalizeMode) {
         let state = Arc::new(AppState::new());
         let dir = tempfile::tempdir().expect("tempdir");
         let input = trust_input(account_id, dir.path());
@@ -4601,7 +4587,10 @@ mod tests {
 
         let (strength, reason) = corroboration_strength_for_claim(&db, &claim_id).into_parts();
         assert_float_close(strength, 0.75);
-        assert!(reason.is_none(), "clean read should report no indeterminate reason");
+        assert!(
+            reason.is_none(),
+            "clean read should report no indeterminate reason"
+        );
     }
 
     #[test]
@@ -5553,8 +5542,12 @@ mod tests {
         let confirming: Vec<_> = corroborators.iter().filter(|c| c.confirms).collect();
         let contradicting: Vec<_> = corroborators.iter().filter(|c| !c.confirms).collect();
         assert_eq!(confirming.len(), 2, "two corroboration rows must surface");
-        assert!(confirming.iter().any(|c| (c.evidence_weight - 0.7).abs() < 1e-9));
-        assert!(confirming.iter().any(|c| (c.evidence_weight - 0.4).abs() < 1e-9));
+        assert!(confirming
+            .iter()
+            .any(|c| (c.evidence_weight - 0.7).abs() < 1e-9));
+        assert!(confirming
+            .iter()
+            .any(|c| (c.evidence_weight - 0.4).abs() < 1e-9));
         assert_eq!(
             contradicting.len(),
             1,
