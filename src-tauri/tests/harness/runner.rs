@@ -13,7 +13,9 @@ use base64::Engine;
 use dailyos_lib::abilities::Actor;
 use dailyos_lib::abilities::NoopAbilityTracer;
 use dailyos_lib::bridges::eval::{EvalAbilityBridge, EvalAbilityDeps, EvalFixtureServices};
-use dailyos_lib::intelligence::provider::{Completion, FingerprintMetadata, ReplayProvider};
+use dailyos_lib::intelligence::provider::{
+    Completion, FingerprintMetadata, ModelName, ProviderKind, ReplayProvider,
+};
 #[cfg(feature = "harness-hermetic")]
 use dailyos_lib::services::context::validate_harness_hermetic_db_path;
 use dailyos_lib::services::context::{EntityContextReadFuture, EntityContextReadHandle};
@@ -320,13 +322,21 @@ fn replay_provider_from_fixture(value: &Value) -> Result<ReplayProvider, RunErro
 
     let mut completions = HashMap::with_capacity(fixtures.len());
     for fixture in fixtures {
+        if fixture.get("prompt_replay_hash").is_some()
+            && fixture.get("canonical_prompt_hash").is_none()
+        {
+            return Err(RunError::ProviderReplayInvalid(
+                "provider_replay fixture uses legacy prompt_replay_hash without canonical_prompt_hash"
+                    .to_string(),
+            ));
+        }
         let replay_key = fixture
-            .get("prompt_replay_hash")
+            .get("canonical_prompt_hash")
             .and_then(Value::as_str)
             .or_else(|| fixture.get("request_key_hex").and_then(Value::as_str))
             .ok_or_else(|| {
                 RunError::ProviderReplayInvalid(
-                    "provider_replay fixture is not keyed by prompt_replay_hash or request_key_hex"
+                    "provider_replay fixture is not keyed by canonical_prompt_hash or request_key_hex"
                         .to_string(),
                 )
             })?;
@@ -341,7 +351,11 @@ fn replay_provider_from_fixture(value: &Value) -> Result<ReplayProvider, RunErro
         );
     }
 
-    Ok(ReplayProvider::new(completions))
+    let metadata = replay_fingerprint_metadata(value)?;
+    Ok(ReplayProvider::new(completions)
+        .with_provider_kind(metadata.provider)
+        .with_model_for_tier(dailyos_lib::pty::ModelTier::Synthesis, metadata.model)
+        .with_sampling(metadata.temperature, metadata.top_p, metadata.seed))
 }
 
 fn completion_text(fixture: &Value) -> Result<String, RunError> {
@@ -381,6 +395,58 @@ fn response_body_text(fixture: &Value) -> Result<String, RunError> {
     String::from_utf8(body).map_err(|error| {
         RunError::ProviderReplayInvalid(format!("provider_replay body UTF-8: {error}"))
     })
+}
+
+fn replay_fingerprint_metadata(value: &Value) -> Result<FingerprintMetadata, RunError> {
+    let default = FingerprintMetadata::default();
+    let provider = value
+        .get("provider")
+        .and_then(Value::as_str)
+        .map(provider_kind_from_str)
+        .unwrap_or_else(|| default.provider.clone());
+    let model = value
+        .get("model")
+        .and_then(Value::as_str)
+        .map(ModelName::new)
+        .unwrap_or_else(|| default.model.clone());
+    let temperature = optional_f32_field(value, "temperature")?.unwrap_or(default.temperature);
+    let top_p = optional_f32_field(value, "top_p")?.or(default.top_p);
+    let seed = value.get("seed").and_then(Value::as_u64).or(default.seed);
+
+    Ok(FingerprintMetadata {
+        provider,
+        model,
+        temperature,
+        top_p,
+        seed,
+        tokens_input: None,
+        tokens_output: None,
+        provider_completion_id: None,
+    })
+}
+
+fn provider_kind_from_str(provider: &str) -> ProviderKind {
+    match provider {
+        "claude_code" => ProviderKind::ClaudeCode,
+        "ollama" => ProviderKind::Ollama,
+        "openai" => ProviderKind::OpenAI,
+        "replay" => ProviderKind::Other("replay"),
+        "glean" => ProviderKind::Other("glean"),
+        _ => ProviderKind::Other("fixture"),
+    }
+}
+
+fn optional_f32_field(value: &Value, field: &str) -> Result<Option<f32>, RunError> {
+    value
+        .get(field)
+        .map(|value| {
+            value.as_f64().map(|number| number as f32).ok_or_else(|| {
+                RunError::ProviderReplayInvalid(format!(
+                    "provider_replay {field} must be a finite number"
+                ))
+            })
+        })
+        .transpose()
 }
 
 struct InvocationEnvelope {

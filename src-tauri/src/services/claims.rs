@@ -15,7 +15,7 @@
 //! D3 owns the 9-mechanism backfill. D4 routes existing dismissal callers
 //! through `commit_claim`. D5 owns reconcile_post_migration.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
 
 use parking_lot::Mutex;
@@ -1848,6 +1848,171 @@ pub fn load_claims_active(
     )
 }
 
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct EntityContextSubject {
+    kind: &'static str,
+    id: String,
+}
+
+/// Entity-context reader: active + surfaced claims for the requested subject
+/// and, when depth permits, its account/project hierarchy neighbors.
+///
+/// `depth` is level-based: 1 means only the requested entity, 2 adds
+/// immediate related subjects, and so on. Claim row filtering stays routed
+/// through `load_claims_active`, preserving the
+/// `claim_state='active' AND surfacing_state='active'` contract.
+pub fn load_entity_context_claims_active(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    depth: usize,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let root = entity_context_subject(entity_type, entity_id)?;
+    let subjects = entity_context_subjects_within_depth(db, root, depth.max(1))?;
+    let mut seen_claims = HashSet::new();
+    let mut claims = Vec::new();
+
+    for subject in subjects {
+        let subject_ref = entity_context_subject_ref_json(&subject);
+        for claim in load_claims_active(db, &subject_ref, None)? {
+            if seen_claims.insert(claim.id.clone()) {
+                claims.push(claim);
+            }
+        }
+    }
+
+    claims.sort_by(|left, right| right.created_at.cmp(&left.created_at));
+    Ok(claims)
+}
+
+fn entity_context_subject(
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<EntityContextSubject, ClaimError> {
+    let id = entity_id.trim();
+    if id.is_empty() {
+        return Err(ClaimError::SubjectRef("missing id/entity_id".to_string()));
+    }
+
+    let kind = match entity_type
+        .trim()
+        .trim_end_matches('s')
+        .to_ascii_lowercase()
+        .as_str()
+    {
+        "account" => "account",
+        "meeting" => "meeting",
+        "person" => "person",
+        "project" => "project",
+        other => {
+            return Err(ClaimError::SubjectRef(format!(
+                "unsupported entity context subject kind '{other}'"
+            )))
+        }
+    };
+
+    Ok(EntityContextSubject {
+        kind,
+        id: id.to_string(),
+    })
+}
+
+fn entity_context_subject_ref_json(subject: &EntityContextSubject) -> String {
+    serde_json::json!({
+        "kind": subject.kind,
+        "id": subject.id,
+    })
+    .to_string()
+}
+
+fn entity_context_subjects_within_depth(
+    db: &ActionDb,
+    root: EntityContextSubject,
+    depth: usize,
+) -> Result<Vec<EntityContextSubject>, ClaimError> {
+    let mut ordered = Vec::new();
+    let mut seen = HashSet::new();
+    let mut queue = VecDeque::from([(root, 1usize)]);
+
+    while let Some((subject, level)) = queue.pop_front() {
+        if !seen.insert(subject.clone()) {
+            continue;
+        }
+
+        ordered.push(subject.clone());
+
+        if level >= depth {
+            continue;
+        }
+
+        for related in entity_context_related_subjects(db, &subject)? {
+            if !seen.contains(&related) {
+                queue.push_back((related, level + 1));
+            }
+        }
+    }
+
+    Ok(ordered)
+}
+
+fn entity_context_related_subjects(
+    db: &ActionDb,
+    subject: &EntityContextSubject,
+) -> Result<Vec<EntityContextSubject>, ClaimError> {
+    let mut related = Vec::new();
+
+    match subject.kind {
+        "account" => {
+            if let Some(account) = db.get_account(&subject.id)? {
+                if let Some(parent_id) = account.parent_id.filter(|id| !id.trim().is_empty()) {
+                    related.push(EntityContextSubject {
+                        kind: "account",
+                        id: parent_id,
+                    });
+                }
+            }
+
+            related.extend(
+                db.get_child_accounts(&subject.id)?
+                    .into_iter()
+                    .map(|account| EntityContextSubject {
+                        kind: "account",
+                        id: account.id,
+                    }),
+            );
+        }
+        "project" => {
+            if let Some(project) = db.get_project(&subject.id)? {
+                if let Some(parent_id) = project.parent_id.filter(|id| !id.trim().is_empty()) {
+                    related.push(EntityContextSubject {
+                        kind: "project",
+                        id: parent_id,
+                    });
+                }
+            }
+
+            related.extend(
+                db.get_child_projects(&subject.id)?
+                    .into_iter()
+                    .map(|project| EntityContextSubject {
+                        kind: "project",
+                        id: project.id,
+                    }),
+            );
+        }
+        "meeting" | "person" => {}
+        _ => {}
+    }
+
+    related.sort_by(|left, right| {
+        left.kind
+            .cmp(right.kind)
+            .then_with(|| left.id.cmp(&right.id))
+    });
+    related.dedup();
+    Ok(related)
+}
+
 /// History-aware reader: active + dormant claims, excluding tombstoned and
 /// withdrawn rows.
 pub fn load_claims_including_dormant(
@@ -2476,11 +2641,9 @@ mod tests {
             return 0.0;
         }
 
-        1.0 - strengths
-            .iter()
-            .fold(1.0, |miss_probability, strength| {
-                miss_probability * (1.0 - strength)
-            })
+        1.0 - strengths.iter().fold(1.0, |miss_probability, strength| {
+            miss_probability * (1.0 - strength)
+        })
     }
 
     #[test]

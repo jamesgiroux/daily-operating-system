@@ -17,7 +17,8 @@ use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
 use dailyos_lib::intelligence::provider::{
-    prompt_replay_hash, IntelligenceProvider, ModelTier, PromptInput, ProviderError,
+    canonical_prompt_hash, CanonicalPromptRequest, FingerprintMetadata, IntelligenceProvider,
+    ModelTier, PromptInput, ProviderError,
 };
 use dailyos_lib::services::context::{
     ExecutionMode, ExternalClientError, GleanAccountFacts, GleanClientHandle, SeedableRng,
@@ -276,17 +277,21 @@ fn runner_loads_external_replay_fixture_into_external_clients() {
 }
 
 #[test]
-fn harness_loads_provider_replay_by_prompt_hash() {
+fn harness_loads_provider_replay_by_canonical_prompt_hash() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     write_minimal_fixture(temp_dir.path(), true);
     let prompt = PromptInput::new("provider replay prompt");
-    let replay_hash = prompt_replay_hash(&prompt);
+    let fingerprint_metadata = FingerprintMetadata::default();
+    let replay_hash = canonical_prompt_hash(CanonicalPromptRequest {
+        prompt: &prompt,
+        fingerprint_metadata: &fingerprint_metadata,
+    });
     write_json(
         &temp_dir.path().join("provider_replay.json"),
         json!({
             "version": 1,
             "fixtures": [{
-                "prompt_replay_hash": replay_hash,
+                "canonical_prompt_hash": replay_hash,
                 "completion": { "text": "fixture completion" }
             }]
         }),
@@ -301,13 +306,48 @@ fn harness_loads_provider_replay_by_prompt_hash() {
 }
 
 #[test]
+fn harness_rejects_provider_replay_with_only_legacy_prompt_hash() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    write_json(
+        &temp_dir.path().join("provider_replay.json"),
+        json!({
+            "version": 1,
+            "fixtures": [{
+                "prompt_replay_hash": "legacy-only",
+                "completion": { "text": "fixture completion" }
+            }]
+        }),
+    );
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+    let error = match prepare_fixture_for_run(&fixture) {
+        Ok(_) => panic!("legacy-only provider replay hash should fail"),
+        Err(error) => error,
+    };
+
+    match error {
+        RunError::ProviderReplayInvalid(message) => {
+            assert!(
+                message.contains("legacy prompt_replay_hash"),
+                "unexpected ProviderReplayInvalid message: {message}"
+            );
+        }
+        other => panic!("expected ProviderReplayInvalid, got {other:?}"),
+    }
+}
+
+#[test]
 fn harness_replay_provider_missing_hash_is_hard_failure() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     write_minimal_fixture(temp_dir.path(), true);
     let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
     let prepared = prepare_fixture_for_run(&fixture).expect("fixture prepares");
     let prompt = PromptInput::new("provider replay prompt not present");
-    let expected_hash = prompt_replay_hash(&prompt);
+    let fingerprint_metadata = FingerprintMetadata::default();
+    let expected_hash = canonical_prompt_hash(CanonicalPromptRequest {
+        prompt: &prompt,
+        fingerprint_metadata: &fingerprint_metadata,
+    });
 
     let Err(error) = complete_replay_provider(&prepared.provider, prompt) else {
         panic!("missing replay hash should fail closed");
@@ -325,7 +365,10 @@ fn harness_replay_provider_missing_hash_is_hard_failure() {
 fn runner_reports_malformed_provider_replay_as_provider_replay_invalid() {
     let temp_dir = tempfile::tempdir().expect("tempdir");
     write_minimal_fixture(temp_dir.path(), true);
-    write_json(&temp_dir.path().join("provider_replay.json"), json!({"version": 1}));
+    write_json(
+        &temp_dir.path().join("provider_replay.json"),
+        json!({"version": 1}),
+    );
     let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
     let error = match prepare_fixture_for_run(&fixture) {
         Ok(_) => panic!("malformed provider replay should fail"),
@@ -815,9 +858,7 @@ fn diff_rendered_documented_as_incomplete_with_todo_marker() {
     .expect("read scoring source");
 
     assert!(scoring_source.contains("Known incomplete"));
-    assert!(scoring_source.contains(
-        "TODO: replace with ADR-0108 actor renderer when W5/W6 lands"
-    ));
+    assert!(scoring_source.contains("TODO: replace with ADR-0108 actor renderer when W5/W6 lands"));
 }
 
 #[test]
@@ -966,7 +1007,10 @@ fn classifier_skips_provider_drift_when_baseline_completion_text_hash_absent() {
     let mut current = baseline.clone();
     current.completion_text_hash = Some("completion-current".to_string());
 
-    assert_eq!(RegressionClassifier.classify(&baseline, &current, &[]), None);
+    assert_eq!(
+        RegressionClassifier.classify(&baseline, &current, &[]),
+        None
+    );
 }
 
 #[test]

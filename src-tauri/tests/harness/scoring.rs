@@ -17,6 +17,14 @@ pub struct ScoreResult {
     pub passed: bool,
     pub diffs: Vec<Diff>,
     pub continuous_score: Option<f64>,
+    pub dimension_scores: Option<TransformDimensionScores>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct TransformDimensionScores {
+    pub relevance: f64,
+    pub faithfulness: f64,
+    pub attribution_completeness: f64,
 }
 
 #[derive(Debug, Clone, PartialEq)]
@@ -62,6 +70,7 @@ impl CategoryScorer for ReadScorer {
             passed: diffs.is_empty(),
             diffs,
             continuous_score: None,
+            dimension_scores: None,
         }
     }
 }
@@ -78,14 +87,23 @@ impl CategoryScorer for TransformScorer {
             actual.actual_state.as_ref(),
         ));
 
-        let match_counts = transform_match_counts(expected, actual);
-        let continuous_score = match_counts.score();
+        let match_scores = transform_match_scores(expected, actual);
+        let blocking_diff_count = diffs
+            .iter()
+            .filter(|diff| is_blocking_transform_diff(diff))
+            .count();
+        let continuous_score = match_scores.continuous_score;
 
         ScoreResult {
             category: AbilityCategory::Transform,
-            passed: continuous_score >= self.threshold,
+            passed: continuous_score >= self.threshold
+                && blocking_diff_count == 0
+                && match_scores.dimensions.relevance >= 0.85
+                && match_scores.dimensions.faithfulness >= 0.90
+                && match_scores.dimensions.attribution_completeness >= 0.95,
             diffs,
             continuous_score: Some(continuous_score),
+            dimension_scores: Some(match_scores.dimensions),
         }
     }
 }
@@ -104,6 +122,7 @@ impl CategoryScorer for MaintenanceScorer {
             passed: diffs.is_empty(),
             diffs,
             continuous_score: None,
+            dimension_scores: None,
         }
     }
 }
@@ -121,6 +140,7 @@ impl CategoryScorer for PublishScorer {
             passed: diffs.is_empty(),
             diffs,
             continuous_score: None,
+            dimension_scores: None,
         }
     }
 }
@@ -234,17 +254,50 @@ impl MatchCounts {
     }
 }
 
-fn transform_match_counts(expected: &ExpectedArtifacts, actual: &RunResult) -> MatchCounts {
-    let mut counts = match_counts(&expected.output, &actual.actual_output, "");
-    counts.add(match_expected_provenance(
-        expected,
-        &actual.actual_provenance,
-    ));
-    counts.add(match_expected_state(
-        expected.state.as_ref(),
-        actual.actual_state.as_ref(),
-    ));
-    counts
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct TransformMatchScores {
+    continuous_score: f64,
+    dimensions: TransformDimensionScores,
+}
+
+fn transform_match_scores(
+    expected: &ExpectedArtifacts,
+    actual: &RunResult,
+) -> TransformMatchScores {
+    let output_counts = match_counts(&expected.output, &actual.actual_output, "");
+    let provenance_counts = match_expected_provenance(expected, &actual.actual_provenance);
+    let state_counts = match_expected_state(expected.state.as_ref(), actual.actual_state.as_ref());
+
+    let mut faithfulness_counts = output_counts;
+    faithfulness_counts.add(state_counts);
+
+    let mut all_counts = faithfulness_counts;
+    all_counts.add(provenance_counts);
+
+    TransformMatchScores {
+        continuous_score: all_counts.score(),
+        dimensions: TransformDimensionScores {
+            relevance: output_counts.score(),
+            faithfulness: faithfulness_counts.score(),
+            attribution_completeness: provenance_counts.score(),
+        },
+    }
+}
+
+fn is_blocking_transform_diff(diff: &Diff) -> bool {
+    matches!(
+        diff.kind,
+        DiffKind::ProvenanceMismatch | DiffKind::SourceWarning
+    ) || is_attribution_path(&diff.path)
+}
+
+fn is_attribution_path(path: &str) -> bool {
+    path.split('/').any(|segment| {
+        let segment = segment.to_ascii_lowercase();
+        segment.contains("attribution")
+            || segment == "attribution_completeness"
+            || segment == "attributioncompleteness"
+    })
 }
 
 fn match_expected_provenance(expected: &ExpectedArtifacts, actual: &Value) -> MatchCounts {
@@ -629,4 +682,133 @@ fn pointer_path(parent: &str, key: &str) -> String {
 
 fn escape_json_pointer_segment(segment: &str) -> String {
     segment.replace('~', "~0").replace('/', "~1")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn expected_artifacts(
+        output: Value,
+        provenance: Value,
+        state: Option<Value>,
+    ) -> ExpectedArtifacts {
+        ExpectedArtifacts {
+            output,
+            provenance,
+            state,
+            expected_render_policy: "show-public-only".to_string(),
+        }
+    }
+
+    fn run_result(output: Value, provenance: Value, state: Option<Value>) -> RunResult {
+        RunResult {
+            actual_output: output,
+            actual_provenance: provenance,
+            actual_state: state,
+            diagnostics: Vec::new(),
+        }
+    }
+
+    fn wide_output(mismatches: usize) -> (Value, Value) {
+        let mut expected = Map::new();
+        let mut actual = Map::new();
+        for index in 0..10 {
+            let key = format!("field_{index}");
+            expected.insert(key.clone(), json!(format!("value-{index}")));
+            let value = if index < mismatches {
+                format!("actual-{index}")
+            } else {
+                format!("value-{index}")
+            };
+            actual.insert(key, json!(value));
+        }
+        (Value::Object(expected), Value::Object(actual))
+    }
+
+    fn high_leaf_provenance_with_one_attribution_diff() -> (Value, Value) {
+        let mut expected_stable = Map::new();
+        let mut actual_stable = Map::new();
+        for index in 0..40 {
+            let key = format!("stable_{index}");
+            expected_stable.insert(key.clone(), json!(format!("source-{index}")));
+            actual_stable.insert(key, json!(format!("source-{index}")));
+        }
+
+        (
+            json!({
+                "source_attribution": {
+                    "summary": "expected-source"
+                },
+                "stable": expected_stable
+            }),
+            json!({
+                "source_attribution": {
+                    "summary": "actual-source"
+                },
+                "stable": actual_stable
+            }),
+        )
+    }
+
+    #[test]
+    fn transform_scorer_attribution_diff_fails_even_with_high_leaf_score() {
+        let (expected_output, actual_output) = wide_output(0);
+        let (expected_provenance, actual_provenance) =
+            high_leaf_provenance_with_one_attribution_diff();
+        let expected = expected_artifacts(expected_output, expected_provenance, None);
+        let actual = run_result(actual_output, actual_provenance, None);
+
+        let score = TransformScorer { threshold: 0.8 }.score(&expected, &actual);
+
+        assert!(!score.passed);
+        assert!(score.continuous_score.expect("continuous score") >= 0.8);
+        let dimensions = score.dimension_scores.expect("dimension scores");
+        assert!(dimensions.attribution_completeness >= 0.95);
+        assert!(score.diffs.iter().any(|diff| {
+            diff.kind == DiffKind::ProvenanceMismatch && diff.path == "/source_attribution/summary"
+        }));
+    }
+
+    #[test]
+    fn transform_scorer_relevance_below_dimension_threshold_fails() {
+        let (expected_output, actual_output) = wide_output(2);
+        let expected = expected_artifacts(expected_output, json!({}), None);
+        let actual = run_result(actual_output, json!({}), None);
+
+        let score = TransformScorer { threshold: 0.8 }.score(&expected, &actual);
+
+        assert!(!score.passed);
+        assert_eq!(score.continuous_score, Some(0.8));
+        let dimensions = score.dimension_scores.expect("dimension scores");
+        assert!(dimensions.relevance < 0.85);
+    }
+
+    #[test]
+    fn transform_scorer_clean_fixture_passes() {
+        let expected = expected_artifacts(
+            json!({"summary": "stable", "actions": ["one", "two"]}),
+            json!({"sources": [{"id": "source-1"}]}),
+            None,
+        );
+        let actual = run_result(
+            json!({"summary": "stable", "actions": ["one", "two"]}),
+            json!({"sources": [{"id": "source-1"}]}),
+            None,
+        );
+
+        let score = TransformScorer { threshold: 0.8 }.score(&expected, &actual);
+
+        assert!(score.passed, "{:?}", score.diffs);
+        assert_eq!(score.continuous_score, Some(1.0));
+        assert_eq!(
+            score.dimension_scores,
+            Some(TransformDimensionScores {
+                relevance: 1.0,
+                faithfulness: 1.0,
+                attribution_completeness: 1.0,
+            })
+        );
+    }
 }

@@ -4,13 +4,16 @@ use serde::{Deserialize, Serialize};
 
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::{
-    AbilityExecutionMode, AbilityVersion, ContextEntryId, DataSource, FieldAttribution, FieldPath,
-    ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion, SourceAttribution, SourceIdentifier,
+    AbilityExecutionMode, AbilityVersion, ChunkId, ContextEntryId, DataSource, DocumentId,
+    EntityId, FieldAttribution, FieldPath, GleanDownstream, MeetingId, ProvenanceBuilder,
+    ProvenanceBuilderConfig, SchemaVersion, SourceAttribution, SourceIdentifier, SourceName,
     SubjectAttribution, SubjectRef,
 };
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult,
 };
+use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
+use crate::db::claims::IntelligenceClaim;
 use crate::types::EntityContextEntry;
 
 const ABILITY_NAME: &str = "get_entity_context";
@@ -37,7 +40,7 @@ pub struct GetEntityContextInput {
     category = Read,
     version = "1.0.0",
     schema_version = 1,
-    allowed_actors = [User, System],
+    allowed_actors = [User, Agent, System],
     allowed_modes = [Live, Evaluate],
     requires_confirmation = false,
     may_publish = false,
@@ -51,27 +54,25 @@ pub async fn get_entity_context(
 ) -> AbilityResult<Vec<EntityContextEntry>> {
     validate_schema_version(input.schema_version)?;
     let subject_ref = subject_ref_for(&input.entity_type, &input.entity_id)?;
-    let subject = SubjectAttribution::direct_confident(subject_ref);
-    let mut entries = ctx
+    let subject = SubjectAttribution::direct_confident(subject_ref.clone());
+    let claims = ctx
         .services()
-        .read_entity_context_entries(input.entity_type.clone(), input.entity_id.clone())
+        .read_entity_context_claims(
+            input.entity_type.clone(),
+            input.entity_id.clone(),
+            input.depth.levels(),
+        )
         .await
-        .map_err(|error| hard_error("entity context read failed", error))?;
-    entries.sort_by(|left, right| right.created_at.cmp(&left.created_at));
-
-    for entry in &entries {
-        if entry.entity_type != input.entity_type || entry.entity_id != input.entity_id {
-            return Err(validation_error(format!(
-                "entity context entry `{}` does not belong to requested subject",
-                entry.id
-            )));
-        }
-    }
+        .map_err(|error| hard_error("entity context claim read failed", error))?;
+    let entries = claims
+        .iter()
+        .map(entry_for_claim)
+        .collect::<Result<Vec<_>, _>>()?;
 
     let mut builder = ProvenanceBuilder::new(provenance_config(ctx, input.schema_version));
-    builder.set_subject(subject.clone());
+    builder.set_subject(envelope_subject(subject_ref, &entries)?);
 
-    if entries.is_empty() {
+    if claims.is_empty() {
         builder
             .attribute(
                 FieldPath::root(),
@@ -80,12 +81,16 @@ pub async fn get_entity_context(
             .map_err(provenance_error)?;
     }
 
-    for (index, entry) in entries.iter().enumerate() {
-        let source_index = builder.add_source(source_for_entry(ctx, entry)?);
+    for (index, (claim, entry)) in claims.iter().zip(entries.iter()).enumerate() {
+        let entry_subject = SubjectAttribution::direct_confident(subject_ref_for(
+            &entry.entity_type,
+            &entry.entity_id,
+        )?);
+        let source_index = builder.add_source(source_for_claim(ctx, claim, entry)?);
         builder
             .attribute_subtree(
                 FieldPath::new(format!("/{index}")).map_err(field_error)?,
-                FieldAttribution::direct(subject.clone(), source_index),
+                FieldAttribution::direct(entry_subject, source_index),
             )
             .map_err(provenance_error)?;
     }
@@ -103,6 +108,16 @@ fn validate_schema_version(schema_version: u32) -> Result<(), AbilityError> {
     }
 }
 
+impl ContextDepth {
+    fn levels(&self) -> usize {
+        match self {
+            Self::Shallow => 1,
+            Self::Standard => 2,
+            Self::Deep => 3,
+        }
+    }
+}
+
 fn subject_ref_for(entity_type: &str, entity_id: &str) -> Result<SubjectRef, AbilityError> {
     if entity_id.trim().is_empty() {
         return Err(validation_error("entity_id must be non-empty"));
@@ -117,6 +132,26 @@ fn subject_ref_for(entity_type: &str, entity_id: &str) -> Result<SubjectRef, Abi
             "unsupported entity_type `{other}` for `{ABILITY_NAME}`"
         ))),
     }
+}
+
+fn envelope_subject(
+    root: SubjectRef,
+    entries: &[EntityContextEntry],
+) -> Result<SubjectAttribution, AbilityError> {
+    let mut subjects = vec![root];
+    for entry in entries {
+        let subject = subject_ref_for(&entry.entity_type, &entry.entity_id)?;
+        if !subjects.iter().any(|existing| existing == &subject) {
+            subjects.push(subject);
+        }
+    }
+
+    let subject = if subjects.len() == 1 {
+        subjects.into_iter().next().expect("one subject")
+    } else {
+        SubjectRef::Multi(subjects)
+    };
+    Ok(SubjectAttribution::direct_confident(subject))
 }
 
 fn provenance_config(ctx: &AbilityContext<'_>, schema_version: u32) -> ProvenanceBuilderConfig {
@@ -146,17 +181,62 @@ fn provenance_actor(actor: crate::abilities::Actor) -> crate::abilities::provena
     }
 }
 
-fn source_for_entry(
+fn entry_for_claim(claim: &IntelligenceClaim) -> Result<EntityContextEntry, AbilityError> {
+    let (entity_type, entity_id) = claim_subject_identity(claim)?;
+    Ok(EntityContextEntry {
+        id: claim.id.clone(),
+        entity_type,
+        entity_id,
+        title: title_for_claim(claim),
+        content: claim.text.clone(),
+        created_at: claim.created_at.clone(),
+        updated_at: claim
+            .reactivated_at
+            .clone()
+            .unwrap_or_else(|| claim.created_at.clone()),
+    })
+}
+
+fn claim_subject_identity(claim: &IntelligenceClaim) -> Result<(String, String), AbilityError> {
+    let value: serde_json::Value = serde_json::from_str(&claim.subject_ref)
+        .map_err(|error| validation_error(format!("invalid claim subject_ref JSON: {error}")))?;
+    match crate::services::claims::subject_ref_from_json(&value)
+        .map_err(|error| validation_error(format!("invalid claim subject_ref: {error}")))?
+    {
+        ClaimSubjectRef::Account { id } => Ok(("account".to_string(), id)),
+        ClaimSubjectRef::Meeting { id } => Ok(("meeting".to_string(), id)),
+        ClaimSubjectRef::Person { id } => Ok(("person".to_string(), id)),
+        ClaimSubjectRef::Project { id } => Ok(("project".to_string(), id)),
+        ClaimSubjectRef::Email { .. } | ClaimSubjectRef::Multi(_) | ClaimSubjectRef::Global => {
+            Err(validation_error(format!(
+                "claim `{}` has unsupported entity context subject",
+                claim.id
+            )))
+        }
+    }
+}
+
+fn title_for_claim(claim: &IntelligenceClaim) -> String {
+    match claim
+        .field_path
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        Some(field_path) => format!("{}: {field_path}", claim.claim_type),
+        None => claim.claim_type.clone(),
+    }
+}
+
+fn source_for_claim(
     ctx: &AbilityContext<'_>,
+    claim: &IntelligenceClaim,
     entry: &EntityContextEntry,
 ) -> Result<SourceAttribution, AbilityError> {
     let now = ctx.services().clock.now();
-    let (observed_at, source_asof) = parsed_entry_timestamp(entry, now);
+    let (observed_at, source_asof) = parsed_claim_timestamp(claim, now);
     SourceAttribution::new(
-        DataSource::User,
-        vec![SourceIdentifier::UserEntry {
-            entry_id: ContextEntryId::new(entry.id.clone()),
-        }],
+        data_source_for_claim(&claim.data_source),
+        vec![source_identifier_for_claim(claim, entry)],
         observed_at,
         source_asof,
         1.0,
@@ -165,24 +245,84 @@ fn source_for_entry(
     .map_err(|error| validation_error(format!("invalid source attribution: {error}")))
 }
 
-fn parsed_entry_timestamp(
+fn data_source_for_claim(value: &str) -> DataSource {
+    match value.trim().to_ascii_lowercase().as_str() {
+        "user" | "human" => DataSource::User,
+        "google" => DataSource::Google,
+        "glean" => DataSource::Glean {
+            downstream: GleanDownstream::Documents,
+        },
+        "ai" | "agent" => DataSource::Ai,
+        "local_enrichment" => DataSource::LocalEnrichment,
+        "legacy_unattributed" => DataSource::LegacyUnattributed,
+        other => DataSource::Other(SourceName::new(other)),
+    }
+}
+
+fn source_identifier_for_claim(
+    claim: &IntelligenceClaim,
     entry: &EntityContextEntry,
+) -> SourceIdentifier {
+    let source_ref = claim
+        .source_ref
+        .as_deref()
+        .filter(|value| !value.trim().is_empty());
+    match claim.data_source.trim().to_ascii_lowercase().as_str() {
+        "google" => SourceIdentifier::Meeting {
+            meeting_id: MeetingId::new(source_ref.unwrap_or(&claim.id).to_string()),
+        },
+        "glean" => SourceIdentifier::Document {
+            document_id: DocumentId::new(source_ref.unwrap_or(&claim.id).to_string()),
+            chunk_id: claim
+                .thread_id
+                .as_ref()
+                .map(|thread_id| ChunkId::new(thread_id.clone())),
+        },
+        "user" | "human" => SourceIdentifier::UserEntry {
+            entry_id: ContextEntryId::new(source_ref.unwrap_or(&claim.id).to_string()),
+        },
+        _ => SourceIdentifier::Entity {
+            entity_id: EntityId::new(entry.entity_id.clone()),
+            field: Some(
+                claim
+                    .field_path
+                    .clone()
+                    .unwrap_or_else(|| claim.claim_type.clone()),
+            ),
+        },
+    }
+}
+
+fn parsed_claim_timestamp(
+    claim: &IntelligenceClaim,
     now: chrono::DateTime<chrono::Utc>,
 ) -> (
     chrono::DateTime<chrono::Utc>,
     Option<chrono::DateTime<chrono::Utc>>,
 ) {
-    for candidate in [entry.updated_at.as_str(), entry.created_at.as_str()] {
+    let source_asof = parse_claim_timestamp(claim.source_asof.as_deref(), now);
+    for candidate in [claim.observed_at.as_str(), claim.created_at.as_str()] {
         match parse_source_timestamp(Some(candidate), now, None) {
             SourceTimestampStatus::Accepted(parsed)
             | SourceTimestampStatus::Implausible { parsed, .. } => {
-                return (parsed, Some(parsed));
+                return (parsed, source_asof);
             }
             SourceTimestampStatus::Malformed(_) | SourceTimestampStatus::Missing => {}
         }
     }
 
-    (now, None)
+    (now, source_asof)
+}
+
+fn parse_claim_timestamp(
+    candidate: Option<&str>,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Option<chrono::DateTime<chrono::Utc>> {
+    match parse_source_timestamp(candidate, now, None) {
+        SourceTimestampStatus::Accepted(parsed)
+        | SourceTimestampStatus::Implausible { parsed, .. } => Some(parsed),
+        SourceTimestampStatus::Malformed(_) | SourceTimestampStatus::Missing => None,
+    }
 }
 
 fn validation_error(message: impl Into<String>) -> AbilityError {

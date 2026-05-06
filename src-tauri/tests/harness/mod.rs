@@ -26,6 +26,7 @@ pub use runner::{run_fixture, run_harness_suite, RunError, RunnerDeps};
 #[allow(unused_imports)]
 pub use scoring::{
     canonical_json_eq, diff_internal_provenance, diff_rendered_provenance, CategoryScorer, Diff,
-    DiffKind, MaintenanceScorer, PublishScorer, ReadScorer, ScoreResult, TransformScorer,
+    DiffKind, MaintenanceScorer, PublishScorer, ReadScorer, ScoreResult, TransformDimensionScores,
+    TransformScorer,
 };
 pub use types::*;

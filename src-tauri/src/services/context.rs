@@ -36,6 +36,7 @@ use http::HeaderMap;
 use parking_lot::Mutex;
 use serde::de::DeserializeOwned;
 
+use crate::db::claims::IntelligenceClaim;
 use crate::services::external_replay::{
     AuthScopeId, ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
     ReplayResponse, RequestKey,
@@ -774,6 +775,7 @@ pub struct ServiceContext<'a> {
     pub actor: &'a str,
     pub external: &'a ExternalClients,
     entity_context_reader: Option<Arc<dyn EntityContextReadHandle>>,
+    entity_context_claim_reader: Option<Arc<dyn EntityContextClaimReadHandle>>,
     pub(in crate::services) tx: Option<TxHandle>,
 }
 
@@ -788,6 +790,20 @@ pub trait EntityContextReadHandle: Send + Sync {
         entity_type: String,
         entity_id: String,
     ) -> EntityContextReadFuture<'a>;
+}
+
+pub type EntityContextClaimReadFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<Vec<IntelligenceClaim>, String>> + Send + 'a>>;
+
+/// Claims-backed read handle for DOS-218. Tests can inject this without
+/// exposing raw database handles to ability code.
+pub trait EntityContextClaimReadHandle: Send + Sync {
+    fn read_entity_context_claims<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        depth: usize,
+    ) -> EntityContextClaimReadFuture<'a>;
 }
 
 /// Transaction handle (private). Becomes a `TxCtx` for closures inside
@@ -860,6 +876,7 @@ impl<'a> ServiceContext<'a> {
             actor: "system",
             external,
             entity_context_reader: None,
+            entity_context_claim_reader: None,
             tx: None,
         }
     }
@@ -879,6 +896,7 @@ impl<'a> ServiceContext<'a> {
             actor: "system",
             external,
             entity_context_reader: None,
+            entity_context_claim_reader: None,
             tx: None,
         }
     }
@@ -909,6 +927,7 @@ impl<'a> ServiceContext<'a> {
             actor: "system",
             external,
             entity_context_reader: None,
+            entity_context_claim_reader: None,
             tx: None,
         }
     }
@@ -928,6 +947,41 @@ impl<'a> ServiceContext<'a> {
     pub fn with_entity_context_reader(mut self, reader: Arc<dyn EntityContextReadHandle>) -> Self {
         self.entity_context_reader = Some(reader);
         self
+    }
+
+    pub fn with_entity_context_claim_reader(
+        mut self,
+        reader: Arc<dyn EntityContextClaimReadHandle>,
+    ) -> Self {
+        self.entity_context_claim_reader = Some(reader);
+        self
+    }
+
+    pub async fn read_entity_context_claims(
+        &self,
+        entity_type: String,
+        entity_id: String,
+        depth: usize,
+    ) -> Result<Vec<IntelligenceClaim>, String> {
+        if let Some(reader) = &self.entity_context_claim_reader {
+            return reader
+                .read_entity_context_claims(entity_type, entity_id, depth)
+                .await;
+        }
+
+        tokio::task::spawn_blocking(move || {
+            let db = crate::db::ActionDb::open()
+                .map_err(|error| format!("Database unavailable: {error}"))?;
+            crate::services::claims::load_entity_context_claims_active(
+                &db,
+                &entity_type,
+                &entity_id,
+                depth,
+            )
+            .map_err(|error| format!("Entity context claim read failed: {error}"))
+        })
+        .await
+        .map_err(|error| format!("Entity context claim read task failed: {error}"))?
     }
 
     pub async fn read_entity_context_entries(

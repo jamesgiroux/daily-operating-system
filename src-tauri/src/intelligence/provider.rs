@@ -21,9 +21,11 @@
 //! on next dequeue"). When `AbilityContext` lands those callers migrate
 //! to `select_provider(ability_ctx, tier)`.
 
+use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
+use serde_json::{Map, Value};
 
 pub use crate::pty::ModelTier;
 
@@ -130,15 +132,17 @@ pub struct Completion {
 /// `text` is the rendered prompt the provider executes. `workspace` is
 /// the optional working directory for PTY-style providers (Claude Code
 /// requires a workspace; HTTP-style providers ignore it).
-/// `template_id` and `template_hash` are forward-looking hooks
-/// will populate when production prompt fingerprinting lands; W2-B
-/// callers may leave them `None`.
+/// `template_id`, `template_version`, `template_hash`, and
+/// `canonical_json_inputs` preserve the ADR-0106 split between the prompt
+/// template bytes and the structured inputs used to render them.
 #[derive(Debug, Clone, Default)]
 pub struct PromptInput {
     pub text: String,
     pub workspace: Option<std::path::PathBuf>,
     pub template_id: Option<String>,
+    pub template_version: Option<String>,
     pub template_hash: Option<String>,
+    pub canonical_json_inputs: Option<Value>,
 }
 
 impl PromptInput {
@@ -147,12 +151,31 @@ impl PromptInput {
             text: text.into(),
             workspace: None,
             template_id: None,
+            template_version: None,
             template_hash: None,
+            canonical_json_inputs: None,
         }
     }
 
     pub fn with_workspace(mut self, ws: impl Into<std::path::PathBuf>) -> Self {
         self.workspace = Some(ws.into());
+        self
+    }
+
+    pub fn with_template(
+        mut self,
+        id: impl Into<String>,
+        version: impl Into<String>,
+        template_hash: impl Into<String>,
+    ) -> Self {
+        self.template_id = Some(id.into());
+        self.template_version = Some(version.into());
+        self.template_hash = Some(template_hash.into());
+        self
+    }
+
+    pub fn with_canonical_json_inputs(mut self, inputs: Value) -> Self {
+        self.canonical_json_inputs = Some(canonicalize_json_value(&inputs));
         self
     }
 }
@@ -239,11 +262,11 @@ pub trait IntelligenceProvider: Send + Sync {
     fn current_model(&self, tier: ModelTier) -> ModelName;
 }
 
-/// Stable hash of a prompt's text used for `ReplayProvider` lookups.
+/// Legacy W2 replay hash.
 ///
-/// Replay mode uses a SHA-256 of the rendered prompt text. Production
-/// fingerprinting can later include template id + parameter values; this
-/// hook intentionally stays text-only for replay fixtures.
+/// Kept only so old regression tests can prove this field is rejected as a
+/// canonical replay/provenance key. New replay fixtures and lookup paths must
+/// use `canonical_prompt_hash`.
 pub fn prompt_replay_hash(prompt: &PromptInput) -> String {
     use sha2::{Digest, Sha256};
     let mut hasher = Sha256::new();
@@ -255,16 +278,160 @@ pub fn prompt_replay_hash(prompt: &PromptInput) -> String {
     hex::encode(hasher.finalize())
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct CanonicalPromptRequest<'a> {
+    pub prompt: &'a PromptInput,
+    pub fingerprint_metadata: &'a FingerprintMetadata,
+}
+
+/// ADR-0106 canonical prompt hash shared by provenance and replay lookup.
+///
+/// The hash is intentionally computed from separated fields, not from a single
+/// rendered prompt string: template identity/version, canonicalized template
+/// bytes hash, canonical JSON inputs, provider, model, temperature, top_p, and
+/// seed. Ad-hoc prompts without template metadata are treated as a synthetic
+/// `adhoc` template whose bytes are the rendered prompt text.
+pub fn canonical_prompt_hash(request: CanonicalPromptRequest<'_>) -> String {
+    use sha2::{Digest, Sha256};
+
+    let canonical = canonical_prompt_request_value(request);
+    let canonical = canonical_json_string(&canonical);
+    let mut hasher = Sha256::new();
+    hasher.update(canonical.as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+pub fn canonical_template_hash(template_bytes: &str) -> String {
+    use sha2::{Digest, Sha256};
+
+    let mut hasher = Sha256::new();
+    hasher.update(canonical_prompt_text(template_bytes).as_bytes());
+    hex::encode(hasher.finalize())
+}
+
+fn canonical_prompt_request_value(request: CanonicalPromptRequest<'_>) -> Value {
+    let prompt = request.prompt;
+    let meta = request.fingerprint_metadata;
+    let template_hash = prompt
+        .template_hash
+        .clone()
+        .unwrap_or_else(|| canonical_template_hash(&prompt.text));
+    let inputs = prompt
+        .canonical_json_inputs
+        .as_ref()
+        .map(canonicalize_json_value)
+        .unwrap_or(Value::Null);
+
+    let mut object = Map::new();
+    object.insert(
+        "schema".to_string(),
+        Value::String("adr-0106-canonical-prompt-v1".to_string()),
+    );
+    object.insert(
+        "template_id".to_string(),
+        Value::String(
+            prompt
+                .template_id
+                .clone()
+                .unwrap_or_else(|| "adhoc".to_string()),
+        ),
+    );
+    object.insert(
+        "template_version".to_string(),
+        Value::String(
+            prompt
+                .template_version
+                .clone()
+                .unwrap_or_else(|| "unversioned".to_string()),
+        ),
+    );
+    object.insert("template_hash".to_string(), Value::String(template_hash));
+    object.insert("canonical_json_inputs".to_string(), inputs);
+    object.insert(
+        "provider".to_string(),
+        Value::String(meta.provider.as_str().to_string()),
+    );
+    object.insert(
+        "model".to_string(),
+        Value::String(meta.model.as_str().to_string()),
+    );
+    object.insert(
+        "temperature".to_string(),
+        Value::String(canonical_f32(meta.temperature)),
+    );
+    object.insert(
+        "top_p".to_string(),
+        meta.top_p
+            .map(canonical_f32)
+            .map(Value::String)
+            .unwrap_or(Value::Null),
+    );
+    object.insert(
+        "seed".to_string(),
+        meta.seed.map(Value::from).unwrap_or(Value::Null),
+    );
+
+    Value::Object(object)
+}
+
+fn canonical_prompt_text(text: &str) -> String {
+    text.lines()
+        .map(str::trim_end)
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
+fn canonicalize_json_value(value: &Value) -> Value {
+    match value {
+        Value::Array(values) => Value::Array(values.iter().map(canonicalize_json_value).collect()),
+        Value::Object(object) => {
+            let sorted = object
+                .iter()
+                .map(|(key, value)| (key.clone(), canonicalize_json_value(value)))
+                .collect::<BTreeMap<_, _>>();
+            Value::Object(sorted.into_iter().collect())
+        }
+        other => other.clone(),
+    }
+}
+
+fn canonical_json_string(value: &Value) -> String {
+    serde_json::to_string(&canonicalize_json_value(value))
+        .unwrap_or_else(|error| format!("{{\"canonicalization_error\":\"{error}\"}}"))
+}
+
+fn canonical_f32(value: f32) -> String {
+    if !value.is_finite() {
+        return value.to_string();
+    }
+
+    let mut formatted = format!("{value:.8}");
+    while formatted.contains('.') && formatted.ends_with('0') {
+        formatted.pop();
+    }
+    if formatted.ends_with('.') {
+        formatted.pop();
+    }
+    if formatted == "-0" {
+        "0".to_string()
+    } else {
+        formatted
+    }
+}
+
 /// In-memory replay provider for tests + `Evaluate` mode.
 ///
 /// Stores `(hash, completion)` pairs supplied at construction. On
-/// `complete()`, hashes the incoming `PromptInput.text` and looks it up;
+/// `complete()`, computes the ADR-0106 canonical prompt hash and looks it up;
 /// returns `ProviderError::ReplayFixtureMissing` if absent — never falls
 /// through to a live path.
 pub struct ReplayProvider {
     fixtures: std::collections::HashMap<String, Completion>,
     provider_kind: ProviderKind,
     model_for_tier: std::collections::HashMap<ModelTier, ModelName>,
+    temperature: f32,
+    top_p: Option<f32>,
+    seed: Option<u64>,
 }
 
 impl ReplayProvider {
@@ -274,11 +441,14 @@ impl ReplayProvider {
             fixtures,
             provider_kind: ProviderKind::Other("replay"),
             model_for_tier: std::collections::HashMap::new(),
+            temperature: 0.0,
+            top_p: None,
+            seed: None,
         }
     }
 
     /// Convenience: build a replay provider from `(prompt_text → text)` pairs,
-    /// hashing each prompt with `prompt_replay_hash`.
+    /// hashing each prompt with the canonical ADR-0106 replay key.
     pub fn from_prompt_pairs<I, P, T>(pairs: I) -> Self
     where
         I: IntoIterator<Item = (P, T)>,
@@ -288,7 +458,10 @@ impl ReplayProvider {
         let mut fixtures = std::collections::HashMap::new();
         for (prompt_text, completion_text) in pairs {
             let p = PromptInput::new(prompt_text);
-            let key = prompt_replay_hash(&p);
+            let key = canonical_prompt_hash(CanonicalPromptRequest {
+                prompt: &p,
+                fingerprint_metadata: &FingerprintMetadata::default(),
+            });
             fixtures.insert(
                 key,
                 Completion {
@@ -305,9 +478,34 @@ impl ReplayProvider {
         self
     }
 
+    pub fn with_sampling(
+        mut self,
+        temperature: f32,
+        top_p: Option<f32>,
+        seed: Option<u64>,
+    ) -> Self {
+        self.temperature = temperature;
+        self.top_p = top_p;
+        self.seed = seed;
+        self
+    }
+
     pub fn with_model_for_tier(mut self, tier: ModelTier, model: ModelName) -> Self {
         self.model_for_tier.insert(tier, model);
         self
+    }
+
+    fn fingerprint_metadata_for_tier(&self, tier: ModelTier) -> FingerprintMetadata {
+        FingerprintMetadata {
+            provider: self.provider_kind.clone(),
+            model: self.current_model(tier),
+            temperature: self.temperature,
+            top_p: self.top_p,
+            seed: self.seed,
+            tokens_input: None,
+            tokens_output: None,
+            provider_completion_id: None,
+        }
     }
 }
 
@@ -316,9 +514,13 @@ impl IntelligenceProvider for ReplayProvider {
     async fn complete(
         &self,
         prompt: PromptInput,
-        _tier: ModelTier,
+        tier: ModelTier,
     ) -> Result<Completion, ProviderError> {
-        let key = prompt_replay_hash(&prompt);
+        let metadata = self.fingerprint_metadata_for_tier(tier);
+        let key = canonical_prompt_hash(CanonicalPromptRequest {
+            prompt: &prompt,
+            fingerprint_metadata: &metadata,
+        });
         self.fixtures
             .get(&key)
             .cloned()
@@ -450,7 +652,10 @@ mod tests {
         for i in 0..32u32 {
             let p = PromptInput::new(format!("prompt-{i}"));
             fixtures.insert(
-                prompt_replay_hash(&p),
+                canonical_prompt_hash(CanonicalPromptRequest {
+                    prompt: &p,
+                    fingerprint_metadata: &FingerprintMetadata::default(),
+                }),
                 fixture_completion(&format!("r-{i}")),
             );
         }
@@ -470,14 +675,55 @@ mod tests {
     }
 
     #[test]
-    fn prompt_replay_hash_is_stable_for_same_text() {
+    fn canonical_prompt_hash_is_stable_for_same_text() {
         let a = PromptInput::new("same prompt");
         let b = PromptInput::new("same prompt");
-        assert_eq!(prompt_replay_hash(&a), prompt_replay_hash(&b));
+        let meta = FingerprintMetadata::default();
+        assert_eq!(
+            canonical_prompt_hash(CanonicalPromptRequest {
+                prompt: &a,
+                fingerprint_metadata: &meta,
+            }),
+            canonical_prompt_hash(CanonicalPromptRequest {
+                prompt: &b,
+                fingerprint_metadata: &meta,
+            })
+        );
     }
 
     #[test]
-    fn prompt_replay_hash_distinguishes_template_id() {
+    fn canonical_prompt_hash_distinguishes_adr_0106_fields() {
+        let template_hash = canonical_template_hash("Hello {{name}}\n");
+        let a = PromptInput::new("Hello Ada")
+            .with_template("greeting", "1.0.0", template_hash.clone())
+            .with_canonical_json_inputs(serde_json::json!({"name": "Ada"}));
+        let b = PromptInput::new("Hello Ada")
+            .with_template("greeting", "1.0.1", template_hash)
+            .with_canonical_json_inputs(serde_json::json!({"name": "Ada"}));
+        let meta = FingerprintMetadata {
+            provider: ProviderKind::ClaudeCode,
+            model: ModelName::new("claude-test"),
+            temperature: 1.0,
+            top_p: Some(0.9),
+            seed: Some(7),
+            tokens_input: None,
+            tokens_output: None,
+            provider_completion_id: None,
+        };
+        assert_ne!(
+            canonical_prompt_hash(CanonicalPromptRequest {
+                prompt: &a,
+                fingerprint_metadata: &meta,
+            }),
+            canonical_prompt_hash(CanonicalPromptRequest {
+                prompt: &b,
+                fingerprint_metadata: &meta,
+            })
+        );
+    }
+
+    #[test]
+    fn prompt_replay_hash_remains_legacy_text_template_id_only() {
         let mut a = PromptInput::new("text");
         let mut b = PromptInput::new("text");
         a.template_id = Some("v1".to_string());
