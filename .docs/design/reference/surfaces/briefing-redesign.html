@@ -147,6 +147,75 @@
       white-space: nowrap;
     }
 
+    /* Provisional reference styling — final lives in MovingRow / SignalDot / PredictionsSection / TrustBandBadge specs (W1). */
+    .dspine-moving-stats {
+      justify-self: end;
+      display: grid;
+      gap: 4px;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      color: var(--color-text-tertiary);
+      white-space: nowrap;
+    }
+    .ProvenanceStat_row { display: grid; grid-template-columns: 80px auto; gap: var(--space-sm); }
+    .ProvenanceStat_label { color: var(--color-text-tertiary); }
+    .ProvenanceStat_value { color: var(--color-text-secondary); font-weight: 600; }
+    .ProvenanceStat_up { color: var(--color-garden-sage); }
+    .ProvenanceStat_down { color: var(--color-spice-terracotta); }
+
+    /* SignalDot — 8 kind colors. Replaces inline t-mtg/t-act/t-mail/t-life. */
+    .dspine-signal-feed {
+      list-style: none; margin: 8px 0 0; padding: 0;
+      display: grid; gap: 4px;
+    }
+    .SignalDot_item {
+      display: grid;
+      grid-template-columns: 12px 70px 1fr;
+      gap: var(--space-sm);
+      align-items: baseline;
+      font-family: var(--font-sans); font-size: 13px; line-height: 1.4;
+      color: var(--color-text-secondary);
+    }
+    .SignalDot_item.SignalDot_overdue { color: var(--color-spice-terracotta); }
+    .SignalDot_dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
+    .SignalDot_meeting        { background: var(--color-garden-larkspur); }
+    .SignalDot_action         { background: var(--color-spice-turmeric); }
+    .SignalDot_email          { background: var(--color-garden-olive); }
+    .SignalDot_lifecycle      { background: var(--color-spice-saffron); }
+    .SignalDot_gong-call      { background: var(--color-spice-terracotta); }
+    .SignalDot_zendesk-ticket { background: var(--color-text-tertiary); }
+    .SignalDot_slack-thread   { background: var(--color-garden-eucalyptus); }
+    .SignalDot_linear-issue   { background: var(--color-garden-rosemary); }
+    .SignalDot_when {
+      font-family: var(--font-mono); font-size: 11px; font-weight: 600;
+      color: var(--color-text-tertiary); text-transform: uppercase;
+    }
+    .SignalDot_what em { font-style: italic; color: var(--color-text-secondary); }
+
+    /* PredictionsSection — minimal collapsed default, list when expanded. */
+    .PredictionsSection_collapsed {
+      display: inline-flex; align-items: center; gap: var(--space-sm);
+      background: none; border: none; padding: 4px 0; cursor: pointer;
+      font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary);
+    }
+    .PredictionsSection_expandHint {
+      font-family: var(--font-mono); font-size: 11px;
+      color: var(--color-text-tertiary); text-transform: uppercase;
+    }
+    .PredictionsSection_list { display: grid; gap: var(--space-md); margin-top: var(--space-md); }
+    .PredictionsSection_item { display: grid; gap: 4px; padding: var(--space-md) 0; border-bottom: 1px solid var(--color-rule-light); }
+    .PredictionsSection_text { font-family: var(--font-serif); font-size: 17px; line-height: 1.5; color: var(--color-text-primary); margin: 0; }
+    .PredictionsSection_meta { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); display: flex; gap: var(--space-sm); align-items: baseline; flex-wrap: wrap; }
+    .PredictionsSection_separator { color: var(--color-rule-heavy); }
+    .PredictionsSection_basis { color: inherit; border-bottom: 1px dotted currentColor; text-decoration: none; }
+
+    /* TrustBandBadge — provisional. Final lives in primitives/TrustBandBadge.md. */
+    .TrustBand_band { display: inline-block; font-family: var(--font-mono); font-size: 10px; padding: 2px 8px; border-radius: 9999px; letter-spacing: 0.06em; text-transform: uppercase; }
+    .TrustBand_likely_current { background: color-mix(in srgb, var(--color-garden-sage) 15%, transparent); color: var(--color-garden-sage); }
+    .TrustBand_use_with_caution { background: color-mix(in srgb, var(--color-spice-turmeric) 15%, transparent); color: var(--color-spice-turmeric); }
+    .TrustBand_needs_verification { background: color-mix(in srgb, var(--color-spice-terracotta) 15%, transparent); color: var(--color-spice-terracotta); }
+    .TrustBand_unscored { background: color-mix(in srgb, var(--color-text-tertiary) 10%, transparent); color: var(--color-text-tertiary); }
+
     .dspine-watch-list {
       display: grid;
       gap: 0;
@@ -248,7 +317,7 @@
   data-folio-date="THURSDAY, APRIL 23, 2026"
   data-folio-readiness="3 briefings ready,sage|1 needs prep,terracotta"
   data-folio-actions="refresh"
-  data-chapters="lead:alignleft:Lead|schedule:calendar:Today|moving:activity:Moving|watch:eye:Watch">
+  data-chapters="lead:alignleft:Lead|schedule:calendar:Today|predictions:lightbulb:Predictions|moving:activity:Moving|watch:eye:Watch">
 
 <div class="MagazinePageLayout_magazinePage">
 <nav class="DayStrip_strip" aria-label="Briefing days" data-ds-tier="pattern" data-ds-name="DayStrip" data-ds-spec="patterns/DayStrip.md">
@@ -463,43 +532,100 @@
     </div>
   </section>
 
+  <!-- Predictions (D4.d) — minimal default with expand. Pattern: PredictionsSection. -->
+  <section id="predictions" class="editorial-briefing_prioritiesSection" data-ds-tier="pattern" data-ds-name="PredictionsSection" data-ds-spec="patterns/PredictionsSection.md" data-ds-state="proposed">
+    <div class="editorial-briefing_marginGrid" data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
+      <div class="editorial-briefing_marginLabel">
+        Predictions
+        <span class="editorial-briefing_marginLabelCount">3 today</span>
+      </div>
+      <div class="editorial-briefing_marginContent">
+        <div class="editorial-briefing_sectionRule"></div>
+        <button class="PredictionsSection_collapsed" type="button" aria-expanded="false" aria-controls="predictions-list">
+          <span class="PredictionsSection_collapsedLabel">3 predictions today</span>
+          <span class="PredictionsSection_expandHint">expand</span>
+        </button>
+        <div class="PredictionsSection_list" id="predictions-list" hidden>
+          <article class="PredictionsSection_item">
+            <p class="PredictionsSection_text">Northwind QBR likely raises pricing pushback once Kevin sees the renewal terms.</p>
+            <div class="PredictionsSection_meta">
+              <span class="PredictionsSection_confidence">72% confidence</span>
+              <span class="PredictionsSection_separator" aria-hidden="true">·</span>
+              <span class="PredictionsSection_source">via predict_meeting_friction</span>
+              <span class="PredictionsSection_separator" aria-hidden="true">·</span>
+              <a class="PredictionsSection_basis" href="claim.html">basis</a>
+            </div>
+            <span class="TrustBand_band TrustBand_likely_current" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md">Likely current</span>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
   <section id="moving" class="editorial-briefing_prioritiesSection">
     <div class="editorial-briefing_marginGrid" data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
       <div class="editorial-briefing_marginLabel">
         Moving
-        <span class="editorial-briefing_marginLabelCount">3 changes</span>
+        <span class="editorial-briefing_marginLabelCount">3 entities</span>
       </div>
       <div class="editorial-briefing_marginContent">
         <div class="editorial-briefing_sectionRule"></div>
         <h2 class="dspine-section-heading">What's moving</h2>
-        <p class="dspine-section-summary">Accounts and people where overnight changes alter how today should be read.</p>
+        <p class="dspine-section-summary">Entities where signals shifted overnight. Sorted by change magnitude.</p>
 
-        <div class="dspine-moving-list" data-ds-tier="pattern" data-ds-name="DailyBriefingAttentionSection" data-ds-spec="patterns/DailyBriefingAttentionSection.md" data-ds-variant="moving">
+        <div class="dspine-moving-list" data-ds-tier="pattern" data-ds-name="MovingRow" data-ds-spec="patterns/MovingRow.md" data-ds-variant="signal-feed">
           <article class="dspine-moving-row" data-kind="customer">
-            <div class="dspine-moving-name">Acme Corp</div>
+            <div class="dspine-moving-name">Acme Corp <span class="Pill_pill Pill_compact Pill_sage" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Renewing ↑</span></div>
             <div class="dspine-moving-copy">
-              <div class="dspine-moving-title">Renewal moved forward</div>
-              <p class="dspine-moving-context">Legal review is starting, so the 10:00 meeting needs clean terms language and a clear owner before procurement joins.</p>
+              <p class="dspine-moving-context">Legal review is starting; pricing memo due in 2h chains today's calls.</p>
+              <ul class="dspine-signal-feed" data-ds-tier="primitive" data-ds-name="SignalDot" data-ds-spec="primitives/SignalDot.md">
+                <li class="SignalDot_item"><span class="SignalDot_dot SignalDot_meeting" aria-hidden="true"></span><span class="SignalDot_when">10:00</span><span class="SignalDot_what">Pricing alignment <em>— in progress</em></span></li>
+                <li class="SignalDot_item SignalDot_overdue"><span class="SignalDot_dot SignalDot_action" aria-hidden="true"></span><span class="SignalDot_when">2d</span><span class="SignalDot_what">Send pricing memo to Jen <em>— overdue</em></span></li>
+                <li class="SignalDot_item"><span class="SignalDot_dot SignalDot_email" aria-hidden="true"></span><span class="SignalDot_when">3h ago</span><span class="SignalDot_what">Legal flagged 3 MSA clauses</span></li>
+                <li class="SignalDot_item"><span class="SignalDot_dot SignalDot_lifecycle" aria-hidden="true"></span><span class="SignalDot_when">New</span><span class="SignalDot_what">Moving to <em>renewing</em></span></li>
+              </ul>
             </div>
-            <div class="dspine-moving-meta">Health 71 +3</div>
+            <div class="dspine-moving-stats">
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Health</span><span class="ProvenanceStat_value ProvenanceStat_up">71 +3</span></div>
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Stage</span><span class="ProvenanceStat_value">Renewal</span></div>
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Confidence</span><span class="ProvenanceStat_value">82%</span></div>
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Owner</span><span class="ProvenanceStat_value">You</span></div>
+            </div>
           </article>
 
           <article class="dspine-moving-row" data-kind="customer">
-            <div class="dspine-moving-name">Northwind</div>
+            <div class="dspine-moving-name">Northwind <span class="Pill_pill Pill_compact Pill_terracotta" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">At Risk ↓</span></div>
             <div class="dspine-moving-copy">
-              <div class="dspine-moving-title">QBR risk increased</div>
-              <p class="dspine-moving-context">The exec sponsor left, Kevin is replacing her, and the 2:00 QBR is still unbriefed.</p>
+              <p class="dspine-moving-context">Exec sponsor departed; Kevin is replacing her and you're walking into the 2:00 QBR cold.</p>
+              <ul class="dspine-signal-feed" data-ds-tier="primitive" data-ds-name="SignalDot" data-ds-spec="primitives/SignalDot.md">
+                <li class="SignalDot_item"><span class="SignalDot_dot SignalDot_meeting" aria-hidden="true"></span><span class="SignalDot_when">2:00</span><span class="SignalDot_what">QBR <em>— not briefed</em></span></li>
+                <li class="SignalDot_item SignalDot_overdue"><span class="SignalDot_dot SignalDot_zendesk-ticket" aria-hidden="true"></span><span class="SignalDot_when">2d</span><span class="SignalDot_what">Review last 30 days of support tickets</span></li>
+                <li class="SignalDot_item"><span class="SignalDot_dot SignalDot_email" aria-hidden="true"></span><span class="SignalDot_when">Overnight</span><span class="SignalDot_what">Kevin Otieno wants a re-intro</span></li>
+                <li class="SignalDot_item"><span class="SignalDot_dot SignalDot_lifecycle" aria-hidden="true"></span><span class="SignalDot_when">New</span><span class="SignalDot_what">Moving to <em>at_risk</em></span></li>
+              </ul>
             </div>
-            <div class="dspine-moving-meta">Health 58 -16</div>
+            <div class="dspine-moving-stats">
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Health</span><span class="ProvenanceStat_value ProvenanceStat_down">58 −16</span></div>
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Stage</span><span class="ProvenanceStat_value">Active</span></div>
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Confidence</span><span class="ProvenanceStat_value">74%</span></div>
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Last touch</span><span class="ProvenanceStat_value">38d</span></div>
+            </div>
           </article>
 
           <article class="dspine-moving-row" data-kind="person">
-            <div class="dspine-moving-name">Priya Raman</div>
+            <div class="dspine-moving-name">Priya Raman <span class="Pill_pill Pill_compact Pill_neutral" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Direct Report</span></div>
             <div class="dspine-moving-copy">
-              <div class="dspine-moving-title">Meeting load is the point</div>
-              <p class="dspine-moving-context">Two declined Thursday invites overnight make the 11:30 one-on-one more important than the forecast narrative.</p>
+              <p class="dspine-moving-context">Two declined Thursday invites overnight make the 11:30 1:1 more important than the forecast narrative.</p>
+              <ul class="dspine-signal-feed" data-ds-tier="primitive" data-ds-name="SignalDot" data-ds-spec="primitives/SignalDot.md">
+                <li class="SignalDot_item"><span class="SignalDot_dot SignalDot_meeting" aria-hidden="true"></span><span class="SignalDot_when">11:30</span><span class="SignalDot_what">1:1 <em>— make space for it</em></span></li>
+                <li class="SignalDot_item"><span class="SignalDot_dot SignalDot_slack-thread" aria-hidden="true"></span><span class="SignalDot_when">Last night</span><span class="SignalDot_what">Asked about the Q2 narrative draft</span></li>
+              </ul>
             </div>
-            <div class="dspine-moving-meta">2 moved</div>
+            <div class="dspine-moving-stats">
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Tenure</span><span class="ProvenanceStat_value">2y 4m</span></div>
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Last 1:1</span><span class="ProvenanceStat_value">7d</span></div>
+              <div class="ProvenanceStat_row"><span class="ProvenanceStat_label">Mtgs moved</span><span class="ProvenanceStat_value ProvenanceStat_down">2 ↑</span></div>
+            </div>
           </article>
         </div>
       </div>
