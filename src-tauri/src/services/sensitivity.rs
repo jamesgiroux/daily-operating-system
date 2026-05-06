@@ -167,6 +167,23 @@ pub struct RenderableClaimText {
     pub policy: RenderPolicy,
 }
 
+#[derive(Debug, Clone, Copy)]
+pub struct McpStaticTextContext<'a> {
+    pub subject_kind: &'a str,
+    pub subject_id: &'a str,
+    pub claim_types: &'a [&'a str],
+}
+
+impl<'a> McpStaticTextContext<'a> {
+    pub fn new(subject_kind: &'a str, subject_id: &'a str, claim_types: &'a [&'a str]) -> Self {
+        Self {
+            subject_kind,
+            subject_id,
+            claim_types,
+        }
+    }
+}
+
 pub fn render_policy_for_surface(
     claim: &IntelligenceClaim,
     surface: RenderSurface,
@@ -258,6 +275,56 @@ pub fn renderable_from_decision(
             },
         }),
         RenderDecision::Drop => None,
+    }
+}
+
+pub fn render_mcp_static_text_for_surface(
+    db: &ActionDb,
+    value: &str,
+    contexts: &[McpStaticTextContext<'_>],
+) -> Option<String> {
+    let actor = RenderActor::agent("agent:mcp");
+    let claims = load_mcp_static_claims(db, contexts);
+    for claim in claims
+        .iter()
+        .filter(|claim| mcp_claim_matches_value(claim, value))
+    {
+        match render_policy_for_surface(claim, RenderSurface::McpTool, &actor) {
+            RenderDecision::Render => {}
+            RenderDecision::RenderRedacted { .. } | RenderDecision::Drop => return None,
+        }
+    }
+
+    let synthetic = minimal_policy_claim(ClaimSensitivity::Internal, "agent:legacy_projection");
+    renderable_claim_text_with_value(&synthetic, value, RenderSurface::McpTool, &actor)
+        .map(|rendered| rendered.text)
+}
+
+pub fn render_mcp_static_json_for_surface(
+    db: &ActionDb,
+    value: serde_json::Value,
+    contexts: &[McpStaticTextContext<'_>],
+) -> Option<serde_json::Value> {
+    match value {
+        serde_json::Value::String(text) => {
+            render_mcp_static_text_for_surface(db, &text, contexts).map(serde_json::Value::String)
+        }
+        serde_json::Value::Array(items) => Some(serde_json::Value::Array(
+            items
+                .into_iter()
+                .filter_map(|item| render_mcp_static_json_for_surface(db, item, contexts))
+                .collect(),
+        )),
+        serde_json::Value::Object(object) => {
+            let mut rendered = serde_json::Map::new();
+            for (key, value) in object {
+                if let Some(value) = render_mcp_static_json_for_surface(db, value, contexts) {
+                    rendered.insert(key, value);
+                }
+            }
+            Some(serde_json::Value::Object(rendered))
+        }
+        other => Some(other),
     }
 }
 
@@ -606,6 +673,94 @@ fn claim_projection_text(claim: &IntelligenceClaim) -> String {
         }
     }
     claim.text.clone()
+}
+
+fn load_mcp_static_claims(
+    db: &ActionDb,
+    contexts: &[McpStaticTextContext<'_>],
+) -> Vec<IntelligenceClaim> {
+    let mut claims = Vec::new();
+    let mut seen = std::collections::HashSet::new();
+
+    if contexts.is_empty() {
+        let Ok(mut stmt) = db.conn_ref().prepare(
+            "SELECT id FROM intelligence_claims
+             WHERE claim_state = 'active'
+               AND surfacing_state = 'active'
+             ORDER BY created_at DESC",
+        ) else {
+            return claims;
+        };
+        let Ok(ids) = stmt.query_map([], |row| row.get::<_, String>(0)) else {
+            return claims;
+        };
+        for id in ids.flatten() {
+            if !seen.insert(id.clone()) {
+                continue;
+            }
+            if let Ok(Some(claim)) = crate::services::claims::load_claim_by_id(db.conn_ref(), &id) {
+                claims.push(claim);
+            }
+        }
+        return claims;
+    }
+
+    for context in contexts {
+        let subject_ref = serde_json::json!({
+            "kind": context.subject_kind,
+            "id": context.subject_id,
+        })
+        .to_string();
+
+        if context.claim_types.is_empty() {
+            if let Ok(loaded) = crate::services::claims::load_claims_active(db, &subject_ref, None)
+            {
+                for claim in loaded {
+                    if seen.insert(claim.id.clone()) {
+                        claims.push(claim);
+                    }
+                }
+            }
+            continue;
+        }
+
+        for claim_type in context.claim_types {
+            if let Ok(loaded) =
+                crate::services::claims::load_claims_active(db, &subject_ref, Some(claim_type))
+            {
+                for claim in loaded {
+                    if seen.insert(claim.id.clone()) {
+                        claims.push(claim);
+                    }
+                }
+            }
+        }
+    }
+
+    claims
+}
+
+fn mcp_claim_matches_value(claim: &IntelligenceClaim, value: &str) -> bool {
+    let projection = claim_projection_text(claim);
+    text_values_overlap(value, &claim.text) || text_values_overlap(value, &projection)
+}
+
+fn text_values_overlap(value: &str, claim_text: &str) -> bool {
+    let value = value.trim();
+    let claim_text = claim_text.trim();
+    if value.is_empty() || claim_text.is_empty() {
+        return false;
+    }
+    if value.eq_ignore_ascii_case(claim_text) {
+        return true;
+    }
+    if claim_text.len() < 12 {
+        return false;
+    }
+
+    let value = value.to_ascii_lowercase();
+    let claim_text = claim_text.to_ascii_lowercase();
+    value.contains(&claim_text)
 }
 
 fn minimal_policy_claim(sensitivity: ClaimSensitivity, actor: &str) -> IntelligenceClaim {
