@@ -145,6 +145,21 @@
   --color-trust-needs-verification-15: var(--color-spice-terracotta-15);
 
   /* ─────────────────────────────────────────────────────────────────────────
+     SIGNAL KIND — Daily Briefing Moving signal feed (per DOS-413)
+     SignalDot primitive consumes these. Some share paint with semantic
+     entity tokens deliberately — signals appear only in the Moving feed,
+     never on entity surfaces, so no cross-surface collision renders.
+     ───────────────────────────────────────────────────────────────────────── */
+  --color-signal-meeting:        var(--color-garden-larkspur);
+  --color-signal-action:         var(--color-spice-saffron);
+  --color-signal-email:          var(--color-garden-sage);
+  --color-signal-lifecycle:      var(--color-spice-turmeric);
+  --color-signal-gong-call:      var(--color-spice-terracotta);
+  --color-signal-zendesk-ticket: var(--color-text-tertiary);
+  --color-signal-slack-thread:   var(--color-garden-eucalyptus);
+  --color-signal-linear-issue:   var(--color-garden-olive);
+
+  /* ─────────────────────────────────────────────────────────────────────────
      OPACITY VARIANTS — Tinted backgrounds, borders, hover states
      ───────────────────────────────────────────────────────────────────────── */
   --color-spice-turmeric-8: rgba(201, 162, 39, 0.08);

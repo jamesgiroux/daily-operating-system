@@ -20,6 +20,9 @@
   <link rel="stylesheet" href="../_shared/styles/MeetingSpineItem.module.css">
   <link rel="stylesheet" href="../_shared/styles/InferredActionSelector.module.css">
   <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+  <link rel="stylesheet" href="../_shared/styles/SignalDot.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ProvenanceStat.module.css">
+  <link rel="stylesheet" href="../_shared/styles/PredictionsSection.module.css">
   <link rel="stylesheet" href="../_shared/styles/ui-button.css">
   <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
 
@@ -147,74 +150,20 @@
       white-space: nowrap;
     }
 
-    /* Provisional reference styling — final lives in MovingRow / SignalDot / PredictionsSection / TrustBandBadge specs (W1). */
+    /* Layout-only — for the Moving row's right column. SignalDot, ProvenanceStat,
+       PredictionsSection canonical module CSS now ships at _shared/styles/. */
     .dspine-moving-stats {
       justify-self: end;
       display: grid;
       gap: 4px;
-      font-family: var(--font-mono);
-      font-size: 11px;
-      color: var(--color-text-tertiary);
-      white-space: nowrap;
     }
-    .ProvenanceStat_row { display: grid; grid-template-columns: 80px auto; gap: var(--space-sm); }
-    .ProvenanceStat_label { color: var(--color-text-tertiary); }
-    .ProvenanceStat_value { color: var(--color-text-secondary); font-weight: 600; }
-    .ProvenanceStat_up { color: var(--color-garden-sage); }
-    .ProvenanceStat_down { color: var(--color-spice-terracotta); }
-
-    /* SignalDot — 8 kind colors. Replaces inline t-mtg/t-act/t-mail/t-life. */
     .dspine-signal-feed {
-      list-style: none; margin: 8px 0 0; padding: 0;
-      display: grid; gap: 4px;
-    }
-    .SignalDot_item {
+      list-style: none;
+      margin: 8px 0 0;
+      padding: 0;
       display: grid;
-      grid-template-columns: 12px 70px 1fr;
-      gap: var(--space-sm);
-      align-items: baseline;
-      font-family: var(--font-sans); font-size: 13px; line-height: 1.4;
-      color: var(--color-text-secondary);
+      gap: 4px;
     }
-    .SignalDot_item.SignalDot_overdue { color: var(--color-spice-terracotta); }
-    .SignalDot_dot { width: 8px; height: 8px; border-radius: 50%; align-self: center; }
-    .SignalDot_meeting        { background: var(--color-garden-larkspur); }
-    .SignalDot_action         { background: var(--color-spice-turmeric); }
-    .SignalDot_email          { background: var(--color-garden-olive); }
-    .SignalDot_lifecycle      { background: var(--color-spice-saffron); }
-    .SignalDot_gong-call      { background: var(--color-spice-terracotta); }
-    .SignalDot_zendesk-ticket { background: var(--color-text-tertiary); }
-    .SignalDot_slack-thread   { background: var(--color-garden-eucalyptus); }
-    .SignalDot_linear-issue   { background: var(--color-garden-rosemary); }
-    .SignalDot_when {
-      font-family: var(--font-mono); font-size: 11px; font-weight: 600;
-      color: var(--color-text-tertiary); text-transform: uppercase;
-    }
-    .SignalDot_what em { font-style: italic; color: var(--color-text-secondary); }
-
-    /* PredictionsSection — minimal collapsed default, list when expanded. */
-    .PredictionsSection_collapsed {
-      display: inline-flex; align-items: center; gap: var(--space-sm);
-      background: none; border: none; padding: 4px 0; cursor: pointer;
-      font-family: var(--font-sans); font-size: 14px; color: var(--color-text-primary);
-    }
-    .PredictionsSection_expandHint {
-      font-family: var(--font-mono); font-size: 11px;
-      color: var(--color-text-tertiary); text-transform: uppercase;
-    }
-    .PredictionsSection_list { display: grid; gap: var(--space-md); margin-top: var(--space-md); }
-    .PredictionsSection_item { display: grid; gap: 4px; padding: var(--space-md) 0; border-bottom: 1px solid var(--color-rule-light); }
-    .PredictionsSection_text { font-family: var(--font-serif); font-size: 17px; line-height: 1.5; color: var(--color-text-primary); margin: 0; }
-    .PredictionsSection_meta { font-family: var(--font-mono); font-size: 11px; color: var(--color-text-tertiary); display: flex; gap: var(--space-sm); align-items: baseline; flex-wrap: wrap; }
-    .PredictionsSection_separator { color: var(--color-rule-heavy); }
-    .PredictionsSection_basis { color: inherit; border-bottom: 1px dotted currentColor; text-decoration: none; }
-
-    /* TrustBandBadge — provisional. Final lives in primitives/TrustBandBadge.md. */
-    .TrustBand_band { display: inline-block; font-family: var(--font-mono); font-size: 10px; padding: 2px 8px; border-radius: 9999px; letter-spacing: 0.06em; text-transform: uppercase; }
-    .TrustBand_likely_current { background: color-mix(in srgb, var(--color-garden-sage) 15%, transparent); color: var(--color-garden-sage); }
-    .TrustBand_use_with_caution { background: color-mix(in srgb, var(--color-spice-turmeric) 15%, transparent); color: var(--color-spice-turmeric); }
-    .TrustBand_needs_verification { background: color-mix(in srgb, var(--color-spice-terracotta) 15%, transparent); color: var(--color-spice-terracotta); }
-    .TrustBand_unscored { background: color-mix(in srgb, var(--color-text-tertiary) 10%, transparent); color: var(--color-text-tertiary); }
 
     .dspine-watch-list {
       display: grid;

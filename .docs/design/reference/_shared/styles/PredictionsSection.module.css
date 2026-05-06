@@ -1,0 +1,69 @@
+/* PredictionsSection — pattern (proposed status, owner: DOS-425 ships TSX in W3).
+   Default render is a single-line collapsed state; clicking the trigger expands
+   inline to show the predictions list. UI state only — payload is eager-loaded
+   per ADR-0109 rationale. */
+
+.PredictionsSection_collapsed {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+  background: none;
+  border: none;
+  padding: 4px 0;
+  cursor: pointer;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  color: var(--color-text-primary);
+}
+
+.PredictionsSection_collapsedLabel {
+  /* Service-rendered. No view-side composition. */
+}
+
+.PredictionsSection_expandHint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+}
+
+.PredictionsSection_list {
+  display: grid;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.PredictionsSection_item {
+  display: grid;
+  gap: 4px;
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+}
+
+.PredictionsSection_text {
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+  margin: 0;
+}
+
+.PredictionsSection_meta {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  display: flex;
+  gap: var(--space-sm);
+  align-items: baseline;
+  flex-wrap: wrap;
+}
+
+.PredictionsSection_separator {
+  color: var(--color-rule-heavy);
+}
+
+.PredictionsSection_basis {
+  color: inherit;
+  border-bottom: 1px dotted currentColor;
+  text-decoration: none;
+}

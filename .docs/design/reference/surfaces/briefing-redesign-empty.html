@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daily Briefing — Empty (Connect Google) · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+
+  <style>
+    /* Provisional empty-state styling. Final lives in BriefingEmptyState pattern (W1). */
+    .briefing-empty {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: var(--space-5xl) 0;
+    }
+    .briefing-empty-eyebrow {
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.12em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+      margin: 0 0 var(--space-md);
+    }
+    .briefing-empty-headline {
+      font-family: var(--font-serif);
+      font-size: 36px;
+      font-weight: 400;
+      line-height: 1.2;
+      color: var(--color-text-primary);
+      margin: 0;
+    }
+    .briefing-empty-lede {
+      margin-top: var(--space-lg);
+      font-family: var(--font-serif);
+      font-size: 19px;
+      font-style: italic;
+      font-weight: 300;
+      line-height: 1.5;
+      color: var(--color-text-secondary);
+    }
+    .briefing-empty-checklist {
+      margin-top: var(--space-2xl);
+      list-style: none;
+      padding: 0;
+      display: grid;
+      gap: var(--space-md);
+    }
+    .briefing-empty-checklist li {
+      display: grid;
+      grid-template-columns: 24px 1fr;
+      gap: var(--space-md);
+      align-items: baseline;
+    }
+    .briefing-empty-checklist .check {
+      font-family: var(--font-mono);
+      font-size: 14px;
+      color: var(--color-text-tertiary);
+    }
+    .briefing-empty-checklist .label {
+      font-family: var(--font-sans);
+      font-size: 14px;
+      color: var(--color-text-secondary);
+    }
+    .briefing-empty-actions {
+      margin-top: var(--space-2xl);
+    }
+  </style>
+</head>
+<body
+  data-folio-label="Daily Briefing"
+  data-folio-crumbs="Reference > Surfaces > Daily Briefing > Empty"
+  data-tint="turmeric"
+  data-active-page="today"
+  data-nav-base=".">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div
+  data-ds-tier="surface"
+  data-ds-name="DailyBriefingRedesign"
+  data-ds-spec="surfaces/DailyBriefingRedesign.md"
+  data-ds-state="empty"
+  data-empty-reason="googleAuth"
+>
+  <section class="briefing-empty">
+    <p class="briefing-empty-eyebrow">Daily Briefing</p>
+    <h1 class="briefing-empty-headline">Your day, when DailyOS can read it.</h1>
+    <p class="briefing-empty-lede">
+      The briefing is a synthesis of meetings, signals, and changes from the last 24 hours. To shape one, DailyOS needs a calendar to read.
+    </p>
+    <ul class="briefing-empty-checklist">
+      <li><span class="check">○</span><span class="label">Connect Google to bring in your calendar and email signals.</span></li>
+      <li><span class="check">○</span><span class="label">Optional: Glean for cross-tool signals (Gong, Zendesk, Slack, Linear).</span></li>
+      <li><span class="check">○</span><span class="label">Optional: Claude Code to enable AI prep on each meeting.</span></li>
+    </ul>
+    <div class="briefing-empty-actions">
+      <button type="button" class="ui-button ui-button-default ui-button-lg">Connect Google</button>
+    </div>
+  </section>
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

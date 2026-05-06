@@ -1,0 +1,87 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daily Briefing — Loading · DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+
+  <style>
+    /* Provisional loading-state styling. Final lives in BriefingLoadingState pattern (W1). */
+    .briefing-loading {
+      max-width: 640px;
+      margin: 0 auto;
+      padding: var(--space-5xl) 0;
+      text-align: center;
+    }
+    .briefing-loading-headline {
+      font-family: var(--font-serif);
+      font-size: 32px;
+      font-weight: 300;
+      font-style: italic;
+      color: var(--color-text-tertiary);
+      line-height: 1.3;
+    }
+    .briefing-loading-pulse {
+      margin-top: var(--space-xl);
+      display: inline-block;
+      width: 8px;
+      height: 8px;
+      border-radius: 50%;
+      background: var(--color-spice-turmeric);
+      animation: briefing-loading-pulse 1.4s ease-in-out infinite;
+    }
+    @keyframes briefing-loading-pulse {
+      0%, 100% { opacity: 0.3; transform: scale(0.8); }
+      50%      { opacity: 1.0; transform: scale(1.2); }
+    }
+    .briefing-loading-hint {
+      margin-top: var(--space-md);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+    }
+  </style>
+</head>
+<body
+  data-folio-label="Daily Briefing"
+  data-folio-crumbs="Reference > Surfaces > Daily Briefing > Loading"
+  data-tint="turmeric"
+  data-active-page="today"
+  data-nav-base="."
+  data-folio-mark="pulsing">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div
+  data-ds-tier="surface"
+  data-ds-name="DailyBriefingRedesign"
+  data-ds-spec="surfaces/DailyBriefingRedesign.md"
+  data-ds-state="loading"
+>
+  <section class="briefing-loading">
+    <h1 class="briefing-loading-headline">Reading your day…</h1>
+    <span class="briefing-loading-pulse" aria-hidden="true"></span>
+    <p class="briefing-loading-hint">Gathering today's signals</p>
+  </section>
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

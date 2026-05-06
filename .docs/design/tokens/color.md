@@ -99,6 +99,21 @@ Each trust band also ships alpha aliases at `8`, `10`, `12`, and `15`, mapped to
 - `--color-trust-use-with-caution-{8,10,12,15}` → `--color-spice-saffron-{8,10,12,15}`
 - `--color-trust-needs-verification-{8,10,12,15}` → `--color-spice-terracotta-{8,10,12,15}`
 
+### Signal kind — Daily Briefing Moving signal feed (per DOS-413)
+
+Eight aliases for the SignalDot primitive's signal-source taxonomy. Each maps a `SignalDotKind` enum value to a paint family. Some share paint with semantic entity tokens — this is **deliberate**: signals appear only in the Moving signal feed (a row-level decoration), never on entity surfaces, so no cross-surface collision is rendered to the user.
+
+Use these tokens in `SignalDot.module.css` only. Do not reference them from entity surfaces.
+
+- `--color-signal-meeting`        → `--color-garden-larkspur` (shared paint with `--color-person`; signal context, not entity context)
+- `--color-signal-action`         → `--color-spice-saffron`
+- `--color-signal-email`          → `--color-garden-sage` (shared paint with `--color-trust-likely-current`; signal context)
+- `--color-signal-lifecycle`      → `--color-spice-turmeric`
+- `--color-signal-gong-call`      → `--color-spice-terracotta`
+- `--color-signal-zendesk-ticket` → `--color-text-tertiary`
+- `--color-signal-slack-thread`   → `--color-garden-eucalyptus` (shared paint with `--color-self`; signal context)
+- `--color-signal-linear-issue`   → `--color-garden-olive` (shared paint with `--color-project`; signal context)
+
 ### Tint variants
 
 Tint variants are available only where runtime defines them; not every accent family has every percentage stop. Use the existing named token instead of raw `rgba()`, and add a token only when the tint is load-bearing across consumers. Examples:

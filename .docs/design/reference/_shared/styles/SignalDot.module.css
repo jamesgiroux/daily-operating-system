@@ -1,0 +1,61 @@
+/* SignalDot — primitive (proposed status, owner: DOS-422 ships TSX in W1).
+   Renders a typedot + when + what triplet for the Moving signal feed.
+   Token mapping lives in tokens/color.md → "Signal kind" section.
+   Final source-of-truth: src/components/dashboard/SignalDot.module.css (W1).
+   This mirror is provisional until W1 lands the TSX + auto-sync from src/. */
+
+.SignalDot_item {
+  display: grid;
+  grid-template-columns: 12px 70px 1fr;
+  gap: var(--space-sm);
+  align-items: baseline;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--color-text-secondary);
+}
+
+.SignalDot_item.SignalDot_overdue {
+  color: var(--color-spice-terracotta);
+}
+
+.SignalDot_dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  align-self: center;
+}
+
+.SignalDot_meeting        { background: var(--color-signal-meeting); }
+.SignalDot_action         { background: var(--color-signal-action); }
+.SignalDot_email          { background: var(--color-signal-email); }
+.SignalDot_lifecycle      { background: var(--color-signal-lifecycle); }
+.SignalDot_gong-call      { background: var(--color-signal-gong-call); }
+.SignalDot_zendesk-ticket { background: var(--color-signal-zendesk-ticket); }
+.SignalDot_slack-thread   { background: var(--color-signal-slack-thread); }
+.SignalDot_linear-issue   { background: var(--color-signal-linear-issue); }
+
+.SignalDot_when {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+}
+
+.SignalDot_what em {
+  font-style: italic;
+  color: var(--color-text-secondary);
+}
+
+/* Correction state (DOS-411 wire-in via DOS-428).
+   Visual: ring around the dot for corrected, dashed for contested. */
+.SignalDot_corrected .SignalDot_dot {
+  outline: 2px solid var(--color-garden-sage);
+  outline-offset: 2px;
+}
+
+.SignalDot_contested .SignalDot_dot {
+  outline: 2px dashed var(--color-spice-terracotta);
+  outline-offset: 2px;
+}

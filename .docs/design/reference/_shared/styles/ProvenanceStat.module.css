@@ -1,0 +1,35 @@
+/* ProvenanceStat — primitive (proposed status, owner: ships in W1 alongside
+   MovingRow). Renders a label + value pair with optional trend indicator.
+   Composed in MovingRow's right column for stacked Health / Stage / Confidence /
+   Owner / Last touch / Tenure rows. */
+
+.ProvenanceStat_row {
+  display: grid;
+  grid-template-columns: 80px auto;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.ProvenanceStat_label {
+  color: var(--color-text-tertiary);
+}
+
+.ProvenanceStat_value {
+  color: var(--color-text-secondary);
+  font-weight: 600;
+}
+
+.ProvenanceStat_up {
+  color: var(--color-garden-sage);
+}
+
+.ProvenanceStat_down {
+  color: var(--color-spice-terracotta);
+}
+
+.ProvenanceStat_flat {
+  color: var(--color-text-tertiary);
+}
