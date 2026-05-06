@@ -139,3 +139,62 @@ Gate artifact: `pnpm test -- TrustBandIndicator ContextEntryList BriefingMeeting
 2. Is W6-D still intended to ship in W6 if the only current Tauri entity-context UI path is legacy and unscored?
 3. For `prepare_meeting`, should W6-D compute bands from existing `claim.trust_score`/`EvidenceSource.confidence`, or is that prohibited because it would duplicate Trust Compiler semantics in TypeScript?
 4. Should the "Show all evidence" UI wait for DOS-412's output-sensitivity policy so Confidential/UserOnly behavior is consistent across non-W5 surfaces?
+
+
+## Revision history
+
+- v3 (2026-05-06) — appended decision section after no-deferrals call on the wave. Open questions from v2 are answered below; v1 + v2 content above is intentionally left intact.
+
+## v3 decisions (no-deferrals)
+
+The wave moves to no-deferrals. DOS-320 ships in W6, including the backend per-field trust-band shape that v2 reconciliation correctly identified as missing. DOS-411 (Tauri claim-backed lifecycle) is now a W6 dependency rather than a v1.4.1 follow-up, which unblocks the entity-context UI consuming the ability bridge.
+
+Decisions on the v2 open questions:
+
+1. **Backend ships per-field trust-band data on `RenderedProvenance.value.field_attributions`.** New field: `FieldAttribution.trust_band: Option<TrustBand>`. Computed at ability-output finalize time as the *minimum (most cautious)* `TrustBand` across the source claims that contributed to that field, looked up via `source_refs`. Rationale: a field synthesized from N claims should be no more trusted than its weakest source. The minimum is the conservative aggregate.
+
+2. **W5 ability outputs route through `invoke_ability` for the entity-context UI.** This is unblocked by DOS-411 landing the claim-backed Tauri lifecycle. The `useEntityContextEntries` hook switches from `"get_entity_context_entries"` to invoking the `get_entity_context` ability through the Tauri bridge envelope. Legacy fallback for any pre-DOS-411 data path renders `unscored` and is never hidden.
+
+3. **DOS-320 owns the render layer; backend prompt partitioning stays with DOS-287/W5.** The Linear ticket text mentioned backend behaviors that overlap with W5 work; W5 already enforces those (cycle-7 sensitivity gate, cycle-2/3/5/6 subject-bleed gates). DOS-320 is the user-visible consumption layer.
+
+4. **User-authored entity context rows render `likely_current` when fresh, age into bands per the freshness factor.** User notes are direct user attribution; the trust pipeline applies normal decay to them. A note created today is `likely_current`; one from a year ago drops to `use_with_caution` or `needs_verification` per the same thresholds as system claims. This is consistent with DOS-411's user_note claim type semantics.
+
+5. **Empty-state date = newest `source_asof` from the rendered provenance source summaries.** Falls back to `observed_at` for claims without source_asof. The frontend reads from rendered provenance, not from raw claim row timestamps, because the bridge has already redacted what the surface should not see.
+
+6. **One "Show all evidence" toggle per surface, persisted per-session.** Long meeting briefs would benefit from per-section toggles, but per-surface keeps the affordance simple for v1.4.0; per-section can be a v1.4.x UX iteration. Persistence is session-scoped (in-memory state, not localStorage) so default-off is the next-session experience.
+
+### Backend scope (v3 expansion beyond v1)
+
+v1 plan was frontend-only. v3 adds backend work because v2 found the trust-band shape doesn't exist:
+
+- `src-tauri/src/abilities/provenance/field.rs` — `FieldAttribution` gains `trust_band: Option<TrustBand>` field with serde
+- `src-tauri/src/abilities/provenance/builder.rs` — `ProvenanceBuilder::finalize()` computes per-field trust band at finalize time by looking up source claims and taking min(TrustBand)
+- `src-tauri/src/abilities/provenance/trust.rs` — helper for the min-band aggregation logic
+- `src-tauri/src/bridges/types.rs` — bridge envelope passes the new field through unchanged (it's already in `rendered_provenance.value`)
+- Per-field trust-band tests in `src-tauri/tests/dos320_per_field_trust_band_test.rs` exercising bundles 1, 5, 13
+
+### Frontend scope (v1 plan, refined)
+
+- `src/components/ui/TrustBandIndicator.tsx` — visible text + lucide icon, ARIA per v1
+- `src/components/ui/TrustBandIndicator.module.css` — design tokens per v1
+- `src/lib/trust-band.ts` — typed `TrustBandWire`, partition helpers; reads from `field_attributions[path].trust_band` per the v3 backend shape
+- `src/types/index.ts` — `AbilityResponseJson<T>`, `RenderedProvenanceSummary`, `RenderedFieldAttribution` (extended with `trust_band`), `TrustAnnotated<T>` per v1
+- `src/hooks/useEntityContextEntries.ts` — switches to `invoke_ability("get_entity_context", ...)` (depends on DOS-411 landing first)
+- `src/components/entity/ContextEntryList.tsx` — Background `<details>` for `use_with_caution`, hidden `needs_verification` with show-all toggle
+- `src/components/dashboard/BriefingMeetingCard.tsx` — same band-aware partition for prep grid
+- `src/pages/MeetingDetailPage.tsx` — band-aware partition for full meeting prep sections
+
+### Dependencies and ordering
+
+1. DOS-411 (claim-backed Tauri lifecycle) lands first.
+2. DOS-320 backend (per-field trust band) lands second.
+3. DOS-320 frontend lands third, consuming both.
+4. DOS-281 release gate verifies the full path through bundles 1, 5, 13.
+
+### Acceptance addendum
+
+- `cargo clippy --no-default-features -- -D warnings` clean
+- `cargo test --no-default-features --tests` passes including `dos320_per_field_trust_band_test.rs`
+- `pnpm test` passes including `TrustBandIndicator` + partition logic tests
+- Manual smoke: bundle 5 prep flow shows likely_current items in main body, use_with_caution in collapsed Background, needs_verification hidden with show-all toggle revealing them; entity context entries from a real seeded workspace render with bands
+- Accessibility audit clean: keyboard navigation through TrustBandIndicator + show-all toggle works; screen reader announces band semantics correctly

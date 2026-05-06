@@ -184,3 +184,36 @@ Wave merge-gate artifact: `cargo test --test dos283_bundle_fixtures_test`, `carg
 2. If richer coverage is still required, should the missing correction-resurrection cases live in `bundle-5`, or should bundle 3 remain the canonical resurrection fixture and W6-C aggregate across bundle 3 plus bundle 5?
 3. Should W6-A add a README/manual dev-load script now, or leave manual workspace loading to DOS-281's release-gate/manual evidence path?
 4. Should bundle 1 be upgraded from legacy `entity_context_entries` parity to claim-backed `get_entity_context` coverage before DOS-411, or would that recreate the W5 cycle-3 Tauri read/write split problem?
+
+
+## Revision history
+
+- v3 (2026-05-06) — appended decision section after no-deferrals call on the wave. Open questions from v2 are answered below; v1 + v2 content above is intentionally left intact.
+
+## v3 decisions (no-deferrals)
+
+The wave moves to no-deferrals. Bundle 1 and bundle 5 are patched up to the original DOS-283 scenario list rather than accepted-with-caveats. Decisions on the v2 open questions:
+
+1. **Bundle 1 gains the missing rows.** Specifically: (a) cross-account renewal meeting against the parent account that legitimately touches the same-domain sibling account, (b) six paraphrases of one account claim collapsed through `claim_corroborations`, (c) trust-band diversity (one `likely_current`, one `use_with_caution`, one `needs_verification` claim against the target account), (d) a wrong-subject tombstone (`WrongSubject` per-subject feedback against a claim that originally landed on the wrong account). Existing bundle-1 invariants (parity, exclusion of adjacent-account note, source attribution ordering) are preserved.
+
+2. **Bundle 5 gains the correction-resurrection scenario stack.** Specifically: (a) wrong-subject tombstone against a claim that mistakenly landed on the meeting attendee, (b) user-edited superseding claim that takes precedence over the original, (c) duplicate/paraphrase pair collapsed through `claim_corroborations`, (d) expired/dormant claim that must NOT resurrect during meeting refresh, (e) a double-refresh resurrection scenario where running the prep flow twice in sequence does not reactivate the dormant claim. Existing first-person parity invariants are preserved.
+
+3. **Bundle 3 stays the canonical resurrection fixture for the broad case.** Bundle 5 now covers correction-resurrection in the meeting-prep path specifically; bundle 3 continues to cover the broader stale-source resurrection invariant. The release gate aggregates across both where the invariant requires multiple angles.
+
+4. **No new bundle directories are created.** The hyphenated `bundle-N` paths are canonical; no `bundles/bundle_1` tree is introduced. Bundle README is added at `src-tauri/tests/fixtures/bundle-README.md` documenting the per-bundle scenario list, the manifest fields, and the invariant each bundle proves.
+
+5. **Manual dev-load script lives under DOS-281, not here.** DOS-283 ships the bundle product; DOS-281 owns the manual evidence path. Cross-reference each other.
+
+6. **Bundle 1 stays on the legacy `entity_context_entries` shape during patching, but DOS-411 will migrate it to claim-backed shape as part of its lifecycle.** The cycle-3 lesson holds: do not cut over the bundle 1 shape ahead of DOS-411 landing the full read+write substrate. Coordination point: DOS-411 lands first, then DOS-283 regenerates the canonical hashes for any bundle-1 fixtures that depended on the legacy shape.
+
+### Provider replay regeneration
+
+Patching the bundles changes the canonical prompt input for any bundle that drives `prepare_meeting`. Affected: bundle-5 (gains new claims that flow into the prompt). `provider_replay.json` and `expected_provenance.json` regenerated per the cycle-7 Track Q approach: run the harness, capture the new canonical_prompt_hash from replay-miss errors, update fixture, rerun.
+
+### Acceptance addendum
+
+- All bundle-1 v3 scenarios assertable by `cargo test --no-default-features prepare_meeting` and the harness fixture suite
+- All bundle-5 v3 scenarios assertable by the same
+- Bundle-1 and bundle-5 metadata.json `expected_render_policy` updated to reflect the new claim mix
+- `bundle-README.md` committed at `src-tauri/tests/fixtures/bundle-README.md`
+- `loader_loads_all_committed_bundles` passes (the corpus stays at bundles 1-13)

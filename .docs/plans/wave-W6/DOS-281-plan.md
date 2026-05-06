@@ -161,3 +161,41 @@ Wave merge-gate artifact: `pnpm release-gate -- --mode hermetic --bundle bundle_
 3. Should the release gate invoke `cargo test --test harness`/specific tests as subprocesses, or link the harness runner into a new binary API despite the harness currently living under `src-tauri/tests/harness/*`?
 4. What is the canonical output path: repo-root `target/eval/harness-report.json`, `src-tauri/target/eval/harness-report.json`, or a release-gate-owned `src-tauri/target/release-gate/evidence.json` that embeds/points at harness reports?
 5. Should manual dogfood evidence explicitly exclude DOS-411/DOS-412 verification, or include "known out-of-scope" attestations so the v1.4.0 release proof is honest about those follow-ups?
+
+
+## Revision history
+
+- v3 (2026-05-06) — appended decision section after no-deferrals call on the wave. Open questions from v2 are answered below; v1 + v2 content above is intentionally left intact.
+
+## v3 decisions (no-deferrals)
+
+The wave moves to no-deferrals. DOS-411 and DOS-412 are now part of W6, not v1.4.1 follow-ups. Decisions on the v2 open questions:
+
+1. **Mandatory bundle list = 1, 5, 13.** Bundle 13 is the shipped `prepare_meeting` direct subject-bleed regression; excluding it means a green release gate that cannot prove the central W5-B safety property. Bundles 2-4 and 6-8 stay tracked-but-not-blocking per Suite E. Bundles 9-12 stay tracked.
+
+2. **DOS-283 patches existing bundles.** Bundles 1 and 5 get patched up to the original DOS-283 scenario list (cross-account renewal meeting, six paraphrases, trust-band diversity, wrong-subject tombstones, correction resurrection, expired/dormant resurrection) before DOS-281 ships. The release gate aggregates per invariant across the corpus where that makes the assertion stronger, but bundles 1 and 5 individually meet their named contracts.
+
+3. **DOS-281 invokes the harness in-process.** Link the harness runner via a small library API rather than spawning `cargo test` subprocesses. This means refactoring `src-tauri/tests/harness/*` to a library + thin test driver, exposing `run_harness_suite(...)` from the library, and importing it into `src-tauri/src/bin/release_gate.rs`. Subprocess invocation is rejected because evidence aggregation needs structured outputs the test harness already produces in-memory; reparsing JSON files written by a subprocess is fragile.
+
+4. **Canonical evidence path = `src-tauri/target/release-gate/evidence.json` and `evidence.md`.** Harness reports remain at `src-tauri/target/eval/harness-report.json` and are embedded by reference inside `evidence.json`. The release-gate output is the single artifact a release pipeline uploads.
+
+5. **Manual dogfood evidence verifies DOS-411 + DOS-412 are landed and green.** Both tickets are now W6 mandatory; manual evidence cannot ship with "known out-of-scope" attestations against them. Manual mode confirms claim-backed Tauri lifecycle (DOS-411) and ADR-0108 sensitivity rendering (DOS-412) work end-to-end on a dev workspace.
+
+6. **W6-B hook = `dos288_bleed_detection_test` + `dos288_ownership_validator_test` selectors.** DOS-288 ships a callable production validator (`abilities/provenance/ownership.rs`) per its v3 decision; the release gate runs the integration test selectors and asserts both pass.
+
+### Updated mandatory bundle list
+
+Mandatory at gate: bundle-1, bundle-5, bundle-13. Bundle-1 covers cross-entity ambiguity + canonicalization rejection (post-DOS-283 patch). Bundle-5 covers correction-resurrection and tombstone non-resurrection (post-DOS-283 patch). Bundle-13 covers `prepare_meeting` direct subject-bleed rejection.
+
+Tracked, non-blocking unless they expose a bundle-1/5/13 invariant: bundle-2, bundle-3, bundle-4, bundle-6, bundle-7, bundle-8, bundle-9, bundle-10, bundle-11, bundle-12.
+
+### Updated dependency graph
+
+DOS-281 now depends on:
+- DOS-283 v3 (bundles 1+5 patched)
+- DOS-288 v3 (production ownership validator)
+- DOS-320 v3 (per-field trust-band shape on bridge envelope)
+- DOS-411 v1 (Tauri claim-backed lifecycle)
+- DOS-412 v1 (ADR-0108 sensitivity rendering helper)
+
+All five must land before the release gate goes green. The gate verifies each.

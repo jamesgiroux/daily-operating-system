@@ -155,3 +155,53 @@ Wave artifact: `cargo test --test dos288_bleed_detection`, `cargo test ownership
 2. Should the release gate consume W6-B by `cargo test --test dos288_bleed_detection`, by parsing a `dos288/bleed-report.json`, or by calling a non-test Rust function?
 3. Should W6-B block only confident rendered ability output, or also legacy Tauri/derived-state surfaces that bypass `AbilityOutput<T>` until DOS-411/DOS-412?
 4. If bundle 1 stays narrow, should W6-B use bundle 13 as the concrete prepare-meeting bleed fixture and record the original bundle-1 rich rows as a W6-A gap?
+
+
+## Revision history
+
+- v3 (2026-05-06) — appended decision section after no-deferrals call on the wave. Open questions from v2 are answered below; v1 + v2 content above is intentionally left intact.
+
+## v3 decisions (no-deferrals)
+
+The wave moves to no-deferrals. DOS-288 ships a production callable validator at `abilities/provenance/ownership.rs`, not a test-only assertion suite. The substrate primitives (subject fit, ProvenanceBuilder finalize rejection, cross_entity_coherence, prompt-input sensitivity gate) all already exist; DOS-288 composes them into a single callable contract that any production rendering surface must pass before showing claim-attached content as confident.
+
+Decisions on the v2 open questions:
+
+1. **Production `ownership.rs` API ships.** The Linear ticket contract was a callable gate ("Every rendered claim, summary, talking point, action, risk, health reason, stakeholder insight, and briefing section must pass a content ownership check before it is shown as attached to an entity or meeting"). Test-only enforcement is rejected because:
+   - It does not satisfy the ticket text.
+   - Future abilities written outside the existing harness pattern would not get the gate automatically.
+   - The cycle-7 lesson is that one centralized helper called everywhere is the right shape; this is the same shape applied to the ownership invariant.
+
+2. **Implementation composes existing primitives, does not re-implement.** `validate_subject_ownership(output, rendered_paths, policy)` calls into:
+   - `ProvenanceBuilder::finalize` outcomes (already enforces non-confident envelope/field subject rejection)
+   - The cycle-7 `services::claims::claim_allowed_for_prompt_input` helper (already centralizes Public/Internal sensitivity policy)
+   - `crate::abilities::trust::cross_entity_coherence(input, config)` for cross-subject canonical merge / foreign-domain checks
+   - `SubjectAttribution` competing-subject + subject-fit data already attached to provenance
+
+   The validator is the assembly, not new logic. Drift risk is mitigated the cycle-7 way: integration regression that exercises every primitive through the validator with a hostile input.
+
+3. **Wired into render-side surfaces, not just tests.** `validate_subject_ownership` is called from every Tauri command and MCP tool that emits claim-attached confident output. Failure path: command returns `OwnershipError` with structured reason; UI renders an error state, not the data. This makes ownership a runtime-enforced invariant on top of substrate-time enforcement, the same way DOS-412 makes sensitivity rendering a runtime-enforced invariant.
+
+4. **Release gate consumes `cargo test --test dos288_bleed_detection`.** That test exercises bundles 1, 8, 13 through the validator with the production code path active and asserts ownership errors / clean passes per fixture invariant. DOS-281 references this selector explicitly.
+
+5. **Block confident rendered output broadly.** Every confident-render code path (Tauri commands returning entity-attached text, MCP tool responses, callout generation) goes through the validator. Legacy Tauri surfaces are migrated to the validator as part of DOS-411 (which already migrates them to the claim-backed substrate); coordination point with DOS-411.
+
+6. **Bundle 13 is the canonical prepare-meeting bleed fixture.** Bundle 1 stays as the canonical entity-context bleed fixture. Bundle 8 stays as the canonical sensitivity-leak fixture. The integration test exercises all three.
+
+### File scope (v3)
+
+New / modified:
+- `src-tauri/src/abilities/provenance/ownership.rs` (new) — the validator API
+- `src-tauri/src/abilities/provenance/mod.rs` — register the new module
+- `src-tauri/src/commands/*.rs` — call sites for confident-render Tauri commands
+- `src-tauri/src/mcp/main.rs` — call sites for MCP tools other than `get_entity_context`
+- `src-tauri/tests/dos288_bleed_detection_test.rs` (new) — integration test exercising bundles 1, 8, 13
+- `src-tauri/tests/dos288_ownership_validator_test.rs` (new) — unit tests on the validator composition
+- `src-tauri/scripts/check_ownership_validator_coverage.sh` (new) — lint blocking confident-render code paths that bypass the validator
+
+### Acceptance addendum
+
+- `cargo clippy --no-default-features -- -D warnings` clean
+- `cargo test --no-default-features --tests` passes including the two new test files
+- `bash src-tauri/scripts/check_ownership_validator_coverage.sh` passes (no bypassing call paths)
+- The validator API is documented in `src-tauri/src/abilities/provenance/ownership.rs` doc comments referencing the ticket contract and ADR-0102
