@@ -94,7 +94,8 @@ Receives context seeded by `ThreadMark` clicks (via global event or context prov
 
 ## Surfaces that consume it
 
-No shipped routed consumers. D-spine prototype only. Cross-version: possible foundation for v1.4.6 (Proactive Intelligence) once that version's scope is settled.
+- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
+- No shipped routed consumers. D-spine prototype only. Cross-version: possible foundation for v1.4.6 (Proactive Intelligence) once that version's scope is settled.
 
 ## Naming notes
 

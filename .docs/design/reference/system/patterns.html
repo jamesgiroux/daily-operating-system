@@ -45,6 +45,7 @@
 <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
 <link rel="stylesheet" href="../_shared/styles/DailyBriefing.module.css">
 <link rel="stylesheet" href="../_shared/styles/DayChart.module.css">
+<link rel="stylesheet" href="../_shared/styles/MeetingSpineItem.module.css">
 <link rel="stylesheet" href="../_shared/styles/AskAnythingDock.module.css">
 <link rel="stylesheet" href="../_shared/styles/EntityPortraitCard.module.css">
 <link rel="stylesheet" href="../_shared/styles/ThreadMark.module.css">
@@ -951,19 +952,33 @@
           <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MeetingSpineItem</h3></div>
           <a class="ds-spec-link" href="../../patterns/MeetingSpineItem.md">Spec</a>
         </div>
-        <p class="ds-composition"><strong>Composes:</strong> time column, entity row body, status pill, title, and context subtitle.</p>
+        <p class="ds-composition"><strong>Composes:</strong> time column, entity eyebrow, MeetingStatusPill, Pill, ThreadMark, title, context, and briefing action.</p>
         <div class="ds-variants"><span>past</span><span>in progress</span><span>upcoming</span><span>cancelled</span></div>
         <div class="ds-demo" data-ds-name="MeetingSpineItem" data-ds-tier="pattern" data-ds-spec="patterns/MeetingSpineItem.md">
-          <div class="editorial-briefing_scheduleRows">
-            <article class="editorial-briefing_scheduleRow editorial-briefing_scheduleRowCustomer editorial-briefing_scheduleRowActive editorial-briefing_scheduleRowExpandable">
-              <time class="editorial-briefing_scheduleTime">10:00<span class="editorial-briefing_scheduleTimeDuration">45m</span></time>
-              <div class="editorial-briefing_scheduleContent">
-                <div class="editorial-briefing_scheduleTitleRow">
-                  <h4 class="editorial-briefing_scheduleTitle">Acme renewal, pricing and tier 3</h4>
-                  <span class="Pill_pill Pill_compact Pill_neutral MeetingStatusPill_status MeetingStatusPill_inProgress"><span class="Pill_dot" aria-hidden="true"></span>Now</span>
-                  <span class="editorial-briefing_expandHint">prep</span>
+          <div>
+            <article class="MeetingSpineItem_item MeetingSpineItem_customer MeetingSpineItem_inProgress" data-state="in-progress" data-type="customer">
+              <div class="MeetingSpineItem_timeColumn">
+                <span class="MeetingSpineItem_time">10:00</span>
+                <span class="MeetingSpineItem_duration">45m</span>
+              </div>
+              <div class="MeetingSpineItem_body">
+                <div class="MeetingSpineItem_eyebrow">
+                  <span class="MeetingSpineItem_glyph" aria-hidden="true"></span>
+                  <span class="MeetingSpineItem_entityName">Acme Corp &middot; Renewal</span>
+                  <span class="MeetingSpineItem_rule" aria-hidden="true"></span>
                 </div>
-                <div class="editorial-briefing_scheduleSubtitle">Jen wants the adjusted memo before legal goes deep on MSA.</div>
+                <div class="MeetingSpineItem_titleRow">
+                  <h4 class="MeetingSpineItem_title"><a class="MeetingSpineItem_titleLink" href="../surfaces/meeting.html">Acme renewal - pricing and tier 3</a></h4>
+                  <span class="Pill_pill Pill_compact Pill_turmeric MeetingStatusPill_status MeetingStatusPill_inProgress" data-ds-tier="primitive" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md"><span class="Pill_dot" aria-hidden="true"></span>Now</span>
+                </div>
+                <p class="MeetingSpineItem_context">Jen wants the adjusted memo before legal goes deep on MSA; that memo is still the blocker for everything else today.</p>
+                <div class="MeetingSpineItem_footer">
+                  <span>Jen Park, Dan Mitchell, +2</span>
+                  <span class="MeetingSpineItem_separator" aria-hidden="true"></span>
+                  <span class="Pill_pill Pill_compact Pill_sage" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md"><span class="Pill_dot" aria-hidden="true"></span>Briefing fresh</span>
+                  <a class="MeetingSpineItem_briefingLink" href="../surfaces/meeting.html">Read full briefing &rarr;</a>
+                  <button class="ThreadMark_threadMark ThreadMark_persistent" type="button">talk</button>
+                </div>
               </div>
             </article>
           </div>

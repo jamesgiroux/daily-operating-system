@@ -91,7 +91,8 @@ CSS grid 200px aside | 1fr main; min-height 220px.
 
 ## Surfaces that consume it
 
-No shipped routed consumers. D-spine prototype only.
+- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
+- No shipped routed consumers. D-spine prototype only until the redesign is approved.
 
 ## Naming notes
 

@@ -3,10 +3,10 @@
 **Tier:** pattern
 **Status:** proposed
 **Owner:** James
-**Last updated:** 2026-05-02
+**Last updated:** 2026-05-06
 **`data-ds-name`:** `MeetingSpineItem`
 **`data-ds-spec`:** `patterns/MeetingSpineItem.md`
-**Variants:** state (`past | in_progress | upcoming | cancelled`); type (`customer | internal | one_on_one`); modifier (`warn`)
+**Variants:** state (`past | in-progress | upcoming | cancelled`); type (`customer | internal | one_on_one`); modifier (`warn`)
 **Design system version introduced:** 0.1.0
 
 ## Job
@@ -15,7 +15,8 @@ Render a single meeting as a magazine-article entry in DailyBriefing's Today sec
 
 ## When to use it
 
-- DailyBriefing's Today section (canonical home)
+- DailyBriefing D-spine reference candidate (`reference/surfaces/briefing-d-spine.html`)
+- DailyBriefing's Today section, if the D-spine redesign is approved for the routed surface
 - Potential extension: any surface that lists meetings with full editorial context (Week view, search results)
 
 ## When NOT to use it
@@ -42,7 +43,7 @@ Two-column grid: 88px time column | 1fr body.
 ## Variants
 
 - **`past`** — opacity 0.5; smaller title (22px)
-- **`in_progress`** — terracotta-tinted background gradient; time in terracotta
+- **`in-progress`** — terracotta-tinted background gradient; time in terracotta
 - **`upcoming`** — default
 - **`cancelled`** — opacity 0.4; title strikethrough
 - **`customer.warn`** — entity eyebrow shifts to terracotta (signals risk on this account)
@@ -68,11 +69,11 @@ Footer changes per prep state:
 <MeetingSpineItem
   time="10:00"
   duration="45m"
-  state="in_progress"
+  state="in-progress"
   type="customer"
-  entityName="Acme Corp · Renewal"
-  title="Acme renewal — pricing & tier 3"
-  context="Decisions on tier 3 pricing. Jen wants the adjusted memo before legal goes deep on MSA — it still hasn't gone, and that's the blocker for everything else today."
+  entityName="Acme Corp - Renewal"
+  title="Acme renewal - pricing and tier 3"
+  context="Decisions on tier 3 pricing. Jen wants the adjusted memo before legal goes deep on MSA."
   attendees="Jen Park, Dan Mitchell, +2"
   prepState="ready"
   prepLabel="Briefing fresh"
@@ -83,11 +84,14 @@ Footer changes per prep state:
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/D-spine.html` (`.meeting`, `.meeting-time`, `.meeting-eyebrow`, `.meeting-title`, `.meeting-context`, `.meeting-foot`)
-- **Roadmap target:** `src/components/dashboard/MeetingSpineItem.tsx` (not shipped yet)
+- **Code:** `src/components/dashboard/MeetingSpineItem.tsx` (available for the proposed cutover; not yet consumed by routed DailyBriefing)
+- **Styles:** `src/components/dashboard/MeetingSpineItem.module.css`
+- **Reference mirror:** `.docs/design/reference/_shared/styles/MeetingSpineItem.module.css`
 
 ## Surfaces that consume it
 
-DailyBriefing (canonical, Today section).
+- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
+- No shipped routed consumer yet. Routed DailyBriefing still uses `BriefingMeetingCard` + `MeetingCard`.
 
 ## Naming notes
 
@@ -96,3 +100,4 @@ DailyBriefing (canonical, Today section).
 ## History
 
 - 2026-05-02 — Proposed pattern for v1.4.3 from D-spine mockup.
+- 2026-05-06 — Source component, CSS module, reference mirror, and D-spine reference surface added. Remains proposed until the routed DailyBriefing rollout lands; production requires a release tag.

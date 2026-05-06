@@ -1,0 +1,586 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Daily Briefing D-spine &middot; DailyOS Reference</title>
+
+  <link rel="stylesheet" href="../_shared/fonts.css">
+  <link rel="stylesheet" href="../_shared/styles/design-tokens.css">
+
+  <link rel="stylesheet" href="../_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
+
+  <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
+  <link rel="stylesheet" href="../_shared/styles/DailyBriefing.module.css">
+  <link rel="stylesheet" href="../_shared/styles/DayChart.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MeetingSpineItem.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityPortraitCard.module.css">
+  <link rel="stylesheet" href="../_shared/styles/AskAnythingDock.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ThreadMark.module.css">
+  <link rel="stylesheet" href="../_shared/styles/MeetingStatusPill.module.css">
+  <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+  <link rel="stylesheet" href="../_shared/styles/EntityChip.module.css">
+  <link rel="stylesheet" href="../_shared/styles/IntelligenceQualityBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/HealthBadge.module.css">
+  <link rel="stylesheet" href="../_shared/styles/ui-button.css">
+  <link rel="stylesheet" href="../_shared/styles/tailwind-shims.css">
+
+  <link rel="stylesheet" href="../_shared/chrome.css">
+  <link rel="stylesheet" href="../_shared/inspector.css">
+
+  <style>
+    .dspine-lead-eyebrow {
+      margin: 0 0 var(--space-sm);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 0.08em;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+    }
+
+    .dspine-sharp {
+      color: var(--color-spice-turmeric);
+    }
+
+    .dspine-section-heading {
+      margin: 0;
+      font-family: var(--font-serif);
+      font-size: 32px;
+      font-weight: 400;
+      letter-spacing: 0;
+      line-height: 1.15;
+      color: var(--color-text-primary);
+    }
+
+    .dspine-section-summary {
+      max-width: 660px;
+      margin: var(--space-xs) 0 var(--space-lg);
+      font-family: var(--font-serif);
+      font-size: 16px;
+      font-style: italic;
+      font-weight: 300;
+      letter-spacing: 0;
+      line-height: 1.5;
+      color: var(--color-text-secondary);
+    }
+
+    .dspine-stack {
+      display: grid;
+      gap: 0;
+    }
+
+    .dspine-moving-stack {
+      display: grid;
+      gap: var(--space-lg);
+    }
+
+    .dspine-watch-list {
+      display: grid;
+      gap: 0;
+      margin-top: var(--space-md);
+    }
+
+    .dspine-watch-row {
+      display: grid;
+      grid-template-columns: minmax(100px, 0.24fr) minmax(0, 1fr) auto auto;
+      gap: var(--space-md);
+      align-items: center;
+      padding: var(--space-md) 0;
+      border-bottom: 1px solid var(--color-rule-light);
+    }
+
+    .dspine-watch-row:last-child {
+      border-bottom: none;
+    }
+
+    .dspine-watch-who {
+      min-width: 0;
+      font-family: var(--font-mono);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0;
+      text-transform: uppercase;
+      color: var(--color-text-tertiary);
+    }
+
+    .dspine-watch-what {
+      min-width: 0;
+      font-family: var(--font-serif);
+      font-size: 16px;
+      font-style: italic;
+      font-weight: 300;
+      letter-spacing: 0;
+      line-height: 1.45;
+      color: var(--color-text-secondary);
+    }
+
+    .dspine-watch-quiet {
+      color: var(--color-text-tertiary);
+    }
+
+    .dspine-end {
+      display: flex;
+      justify-content: space-between;
+      gap: var(--space-md);
+      padding: var(--space-lg) 0 var(--space-3xl);
+      border-top: 1px solid var(--color-rule-light);
+      font-family: var(--font-mono);
+      font-size: 11px;
+      letter-spacing: 0;
+      color: var(--color-text-tertiary);
+    }
+
+    @media (max-width: 720px) {
+      .FolioBar_folio {
+        padding-left: 16px;
+        padding-right: 12px;
+      }
+
+      .FolioBar_folioCenter,
+      .FolioBar_folioReadiness,
+      .FolioBar_folioActions {
+        display: none;
+      }
+
+      .MagazinePageLayout_pageContainer {
+        padding-right: 140px;
+      }
+
+      .editorial-briefing_heroHeadline {
+        font-size: 38px;
+      }
+
+      .editorial-briefing_focusCapacity,
+      .editorial-briefing_focusText {
+        max-width: 100%;
+      }
+
+      .dspine-section-heading {
+        font-size: 26px;
+      }
+
+      .dspine-watch-row {
+        grid-template-columns: 1fr;
+        gap: var(--space-xs);
+      }
+
+      .dspine-end {
+        flex-direction: column;
+      }
+    }
+  </style>
+</head>
+<body
+  data-folio-label="Daily Briefing D-spine"
+  data-folio-crumbs="Reference > Surfaces > Daily Briefing D-spine"
+  data-tint="turmeric"
+  data-active-page="today"
+  data-nav-base="."
+  data-folio-date="THURSDAY, APRIL 23, 2026"
+  data-folio-readiness="3 briefings ready,sage|1 needs prep,terracotta"
+  data-folio-actions="refresh"
+  data-chapters="lead:alignleft:Lead|schedule:calendar:Today|moving:activity:Moving|watch:eye:Watch|ask:lightbulb:Ask">
+
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+
+<div
+  data-ds-tier="surface"
+  data-ds-name="DailyBriefingDSpine"
+  data-ds-spec="surfaces/DailyBriefingDSpine.md"
+  data-ds-state="proposed"
+>
+  <section id="lead" class="editorial-briefing_hero" data-ds-tier="pattern" data-ds-name="Lead" data-ds-spec="patterns/Lead.md" data-ds-state="proposed">
+    <p class="dspine-lead-eyebrow">Today, Thursday April 23</p>
+    <h1 class="editorial-briefing_heroHeadline">Four meetings today, two with customers. <span class="dspine-sharp">The Acme renewal at 10:00 is the one to nail.</span></h1>
+    <div class="editorial-briefing_focusCapacity">
+      3h available &middot; 2 deep work blocks &middot; light afternoon after 2:00
+    </div>
+    <div class="editorial-briefing_focusBlock">
+      <div class="editorial-briefing_focusText">
+        The pricing memo still has not gone. Everything else for Acme today chains to that one send.
+      </div>
+    </div>
+  </section>
+
+  <section id="schedule" class="editorial-briefing_scheduleSection">
+    <div class="editorial-briefing_marginGrid" data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
+      <div class="editorial-briefing_marginLabel">
+        Today
+        <span class="editorial-briefing_marginLabelCount">6 meetings</span>
+      </div>
+      <div class="editorial-briefing_marginContent">
+        <div class="editorial-briefing_sectionRule"></div>
+        <h2 class="dspine-section-heading">Today's schedule</h2>
+        <p class="dspine-section-summary">2 customer &middot; 2 internal &middot; 1 personal &middot; 1 cancelled. The day is shaped around one renewal and one cold QBR.</p>
+
+        <section class="DayChart_dayChart" style="--day-chart-height: 118px; --day-chart-hour-count: 11; --day-chart-grid-column-count: 10;" aria-label="Shape of the day" data-ds-tier="pattern" data-ds-name="DayChart" data-ds-spec="patterns/DayChart.md">
+          <div class="DayChart_legend" aria-label="Meeting type legend">
+            <span class="DayChart_legendItem"><span class="DayChart_swatch DayChart_swatchCustomer" aria-hidden="true"></span>Customer</span>
+            <span class="DayChart_legendItem"><span class="DayChart_swatch DayChart_swatchWarn" aria-hidden="true"></span>At risk</span>
+            <span class="DayChart_legendItem"><span class="DayChart_swatch DayChart_swatchOo" aria-hidden="true"></span>1:1</span>
+            <span class="DayChart_legendItem"><span class="DayChart_swatch DayChart_swatchInternal" aria-hidden="true"></span>Internal</span>
+          </div>
+          <div class="DayChart_hourTicks" aria-hidden="true">
+            <span class="DayChart_hourTick">7 AM</span>
+            <span class="DayChart_hourTick">8</span>
+            <span class="DayChart_hourTick">9</span>
+            <span class="DayChart_hourTick">10</span>
+            <span class="DayChart_hourTick">11</span>
+            <span class="DayChart_hourTick DayChart_hourTickMuted">12 PM</span>
+            <span class="DayChart_hourTick">1</span>
+            <span class="DayChart_hourTick">2</span>
+            <span class="DayChart_hourTick">3</span>
+            <span class="DayChart_hourTick">4</span>
+            <span class="DayChart_hourTick">5</span>
+          </div>
+          <div class="DayChart_bars" role="list" aria-label="Meetings plotted across the workday">
+            <div class="DayChart_bar DayChart_internal DayChart_past" style="left:18.18%; width:4.55%;" role="listitem" aria-label="Engineering standup, 9:00 for 30 minutes">
+              <span class="DayChart_barTitle">Eng standup</span>
+              <span class="DayChart_barTime">9:00 &middot; 30M</span>
+            </div>
+            <div class="DayChart_bar DayChart_customer DayChart_nowBar" style="left:27.27%; width:6.82%;" role="listitem" aria-label="Acme renewal, 10:00 for 45 minutes">
+              <span class="DayChart_barTitle">Acme Renewal</span>
+              <span class="DayChart_barTime">10:00 &middot; 45M</span>
+            </div>
+            <div class="DayChart_bar DayChart_oo" style="left:40.9%; width:4.55%;" role="listitem" aria-label="One on one with Priya, 11:30 for 30 minutes">
+              <span class="DayChart_barTitle">1:1 Priya</span>
+              <span class="DayChart_barTime">11:30 &middot; 30M</span>
+            </div>
+            <div class="DayChart_bar DayChart_customer DayChart_warn" style="left:63.63%; width:9.09%;" role="listitem" aria-label="Northwind QBR, 2:00 for 60 minutes">
+              <span class="DayChart_barTitle">Northwind QBR</span>
+              <span class="DayChart_barTime">2:00 &middot; 60M</span>
+            </div>
+            <div class="DayChart_bar DayChart_internal" style="left:81.81%; width:4.55%;" role="listitem" aria-label="Q2 forecast review, 4:00 for 30 minutes">
+              <span class="DayChart_barTitle">Forecast review</span>
+              <span class="DayChart_barTime">4:00 &middot; 30M</span>
+            </div>
+            <div class="DayChart_bar DayChart_cancel" style="left:86.36%; width:4.55%;" role="listitem" aria-label="Globex intro cancelled">
+              <span class="DayChart_barTitle">Globex intro</span>
+              <span class="DayChart_barTime">Cancelled</span>
+            </div>
+            <span class="DayChart_nowLine" style="left:30%;" data-now-label="NOW" aria-hidden="true"></span>
+          </div>
+        </section>
+
+        <div class="dspine-stack">
+          <article class="MeetingSpineItem_item MeetingSpineItem_internal MeetingSpineItem_past" data-ds-tier="pattern" data-ds-name="MeetingSpineItem" data-ds-spec="patterns/MeetingSpineItem.md" data-ds-variant="past">
+            <div class="MeetingSpineItem_timeColumn">
+              <span class="MeetingSpineItem_time">9:00</span>
+              <span class="MeetingSpineItem_duration">30m &middot; ended</span>
+            </div>
+            <div class="MeetingSpineItem_body">
+              <div class="MeetingSpineItem_eyebrow"><span class="MeetingSpineItem_glyph" aria-hidden="true"></span><span class="MeetingSpineItem_entityName">Internal &middot; Engineering</span><span class="MeetingSpineItem_rule" aria-hidden="true"></span></div>
+              <div class="MeetingSpineItem_titleRow">
+                <h3 class="MeetingSpineItem_title"><a class="MeetingSpineItem_titleLink" href="meeting.html">Eng standup</a></h3>
+                <span class="Pill_pill Pill_compact Pill_neutral MeetingStatusPill_status MeetingStatusPill_past" data-ds-tier="primitive" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md"><span class="Pill_dot" aria-hidden="true"></span>Ended</span>
+              </div>
+              <p class="MeetingSpineItem_context">Routine. Mira flagged the auth migration is a day late; nothing for you to do unless 4 PM forecast moves.</p>
+              <div class="MeetingSpineItem_footer">
+                <span>5 attendees</span>
+                <span class="MeetingSpineItem_separator" aria-hidden="true"></span>
+                <span class="Pill_pill Pill_compact Pill_eucalyptus" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md"><span class="Pill_dot" aria-hidden="true"></span>Notes captured</span>
+                <a class="MeetingSpineItem_briefingLink" href="meeting.html">Notes &amp; actions &rarr;</a>
+                <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="MeetingSpineItem_item MeetingSpineItem_customer MeetingSpineItem_inProgress" data-ds-tier="pattern" data-ds-name="MeetingSpineItem" data-ds-spec="patterns/MeetingSpineItem.md" data-ds-variant="in-progress">
+            <div class="MeetingSpineItem_timeColumn">
+              <span class="MeetingSpineItem_time">10:00</span>
+              <span class="MeetingSpineItem_duration">45m</span>
+            </div>
+            <div class="MeetingSpineItem_body">
+              <div class="MeetingSpineItem_eyebrow"><span class="MeetingSpineItem_glyph" aria-hidden="true"></span><span class="MeetingSpineItem_entityName">Acme Corp &middot; Renewal</span><span class="MeetingSpineItem_rule" aria-hidden="true"></span></div>
+              <div class="MeetingSpineItem_titleRow">
+                <h3 class="MeetingSpineItem_title"><a class="MeetingSpineItem_titleLink" href="meeting.html">Acme renewal - pricing and tier 3</a></h3>
+                <span class="Pill_pill Pill_compact Pill_turmeric MeetingStatusPill_status MeetingStatusPill_inProgress" data-ds-tier="primitive" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md"><span class="Pill_dot" aria-hidden="true"></span>Now</span>
+              </div>
+              <p class="MeetingSpineItem_context">Decisions on tier 3 pricing. Jen wants the adjusted memo before legal goes deep on MSA; it still has not gone, and that is the blocker today.</p>
+              <div class="MeetingSpineItem_footer">
+                <span>Jen Park, Dan Mitchell, +2</span>
+                <span class="MeetingSpineItem_separator" aria-hidden="true"></span>
+                <span class="Pill_pill Pill_compact Pill_sage" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md"><span class="Pill_dot" aria-hidden="true"></span>Briefing fresh</span>
+                <a class="MeetingSpineItem_briefingLink" href="meeting.html">Read full briefing &rarr;</a>
+                <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="MeetingSpineItem_item MeetingSpineItem_oneOnOne" data-ds-tier="pattern" data-ds-name="MeetingSpineItem" data-ds-spec="patterns/MeetingSpineItem.md" data-ds-variant="upcoming-one_on_one">
+            <div class="MeetingSpineItem_timeColumn">
+              <span class="MeetingSpineItem_time">11:30</span>
+              <span class="MeetingSpineItem_duration">30m</span>
+            </div>
+            <div class="MeetingSpineItem_body">
+              <div class="MeetingSpineItem_eyebrow"><span class="MeetingSpineItem_glyph" aria-hidden="true"></span><span class="MeetingSpineItem_entityName">Priya Raman &middot; 1:1</span><span class="MeetingSpineItem_rule" aria-hidden="true"></span></div>
+              <div class="MeetingSpineItem_titleRow">
+                <h3 class="MeetingSpineItem_title"><a class="MeetingSpineItem_titleLink" href="meeting.html">1:1 with Priya</a></h3>
+                <span class="Pill_pill Pill_compact Pill_sage MeetingStatusPill_status MeetingStatusPill_upcoming" data-ds-tier="primitive" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md"><span class="Pill_dot" aria-hidden="true"></span>Up next</span>
+              </div>
+              <p class="MeetingSpineItem_context">She declined two Thursday invites overnight. Expect the conversation to be about meeting load before it is about the Q2 narrative.</p>
+              <div class="MeetingSpineItem_footer">
+                <span>2 attendees</span>
+                <span class="MeetingSpineItem_separator" aria-hidden="true"></span>
+                <span class="Pill_pill Pill_compact Pill_sage" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md"><span class="Pill_dot" aria-hidden="true"></span>Ready</span>
+                <a class="MeetingSpineItem_briefingLink" href="meeting.html">Read full briefing &rarr;</a>
+                <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="MeetingSpineItem_item MeetingSpineItem_customer MeetingSpineItem_warn" data-ds-tier="pattern" data-ds-name="MeetingSpineItem" data-ds-spec="patterns/MeetingSpineItem.md" data-ds-variant="warn-needs-prep">
+            <div class="MeetingSpineItem_timeColumn">
+              <span class="MeetingSpineItem_time">2:00</span>
+              <span class="MeetingSpineItem_duration">60m</span>
+            </div>
+            <div class="MeetingSpineItem_body">
+              <div class="MeetingSpineItem_eyebrow"><span class="MeetingSpineItem_glyph" aria-hidden="true"></span><span class="MeetingSpineItem_entityName">Northwind Traders &middot; QBR</span><span class="MeetingSpineItem_rule" aria-hidden="true"></span></div>
+              <div class="MeetingSpineItem_titleRow">
+                <h3 class="MeetingSpineItem_title"><a class="MeetingSpineItem_titleLink" href="meeting.html">Northwind QBR</a></h3>
+                <span class="Pill_pill Pill_compact Pill_sage MeetingStatusPill_status MeetingStatusPill_upcoming" data-ds-tier="primitive" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md"><span class="Pill_dot" aria-hidden="true"></span>Upcoming</span>
+              </div>
+              <p class="MeetingSpineItem_context">First touch since Amy left. Kevin is replacing her and you have not briefed in. Health dropped 16 points in 30 days.</p>
+              <div class="MeetingSpineItem_footer">
+                <span>Maya Cole, Kevin Otieno, +4</span>
+                <span class="MeetingSpineItem_separator" aria-hidden="true"></span>
+                <span class="Pill_pill Pill_compact Pill_terracotta" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md"><span class="Pill_dot" aria-hidden="true"></span>No briefing yet</span>
+                <button class="MeetingSpineItem_createButton" type="button">Create briefing</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="MeetingSpineItem_item MeetingSpineItem_internal" data-ds-tier="pattern" data-ds-name="MeetingSpineItem" data-ds-spec="patterns/MeetingSpineItem.md" data-ds-variant="building">
+            <div class="MeetingSpineItem_timeColumn">
+              <span class="MeetingSpineItem_time">4:00</span>
+              <span class="MeetingSpineItem_duration">30m</span>
+            </div>
+            <div class="MeetingSpineItem_body">
+              <div class="MeetingSpineItem_eyebrow"><span class="MeetingSpineItem_glyph" aria-hidden="true"></span><span class="MeetingSpineItem_entityName">Internal &middot; Revenue</span><span class="MeetingSpineItem_rule" aria-hidden="true"></span></div>
+              <div class="MeetingSpineItem_titleRow">
+                <h3 class="MeetingSpineItem_title"><a class="MeetingSpineItem_titleLink" href="meeting.html">Q2 forecast review</a></h3>
+                <span class="Pill_pill Pill_compact Pill_sage MeetingStatusPill_status MeetingStatusPill_upcoming" data-ds-tier="primitive" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md"><span class="Pill_dot" aria-hidden="true"></span>Upcoming</span>
+              </div>
+              <p class="MeetingSpineItem_context">Acme outcome lands here either way. If tier 3 holds, the Q2 number gets easier; if it does not, this becomes a different conversation.</p>
+              <div class="MeetingSpineItem_footer">
+                <span>3 attendees</span>
+                <span class="MeetingSpineItem_separator" aria-hidden="true"></span>
+                <span class="Pill_pill Pill_compact Pill_turmeric" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md"><span class="Pill_dot" aria-hidden="true"></span>Briefing building</span>
+                <a class="MeetingSpineItem_briefingLink" href="meeting.html">Read full briefing &rarr;</a>
+                <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+              </div>
+            </div>
+          </article>
+
+          <article class="MeetingSpineItem_item MeetingSpineItem_customer MeetingSpineItem_cancelled" data-ds-tier="pattern" data-ds-name="MeetingSpineItem" data-ds-spec="patterns/MeetingSpineItem.md" data-ds-variant="cancelled">
+            <div class="MeetingSpineItem_timeColumn">
+              <span class="MeetingSpineItem_time">4:30</span>
+              <span class="MeetingSpineItem_duration">cancelled</span>
+            </div>
+            <div class="MeetingSpineItem_body">
+              <div class="MeetingSpineItem_eyebrow"><span class="MeetingSpineItem_glyph" aria-hidden="true"></span><span class="MeetingSpineItem_entityName">Globex Inc</span><span class="MeetingSpineItem_rule" aria-hidden="true"></span></div>
+              <div class="MeetingSpineItem_titleRow">
+                <h3 class="MeetingSpineItem_title">Globex intro call</h3>
+                <span class="Pill_pill Pill_compact Pill_terracotta MeetingStatusPill_status MeetingStatusPill_cancelled" data-ds-tier="primitive" data-ds-name="MeetingStatusPill" data-ds-spec="primitives/MeetingStatusPill.md"><span class="Pill_dot" aria-hidden="true"></span>Cancelled</span>
+              </div>
+              <p class="MeetingSpineItem_context">Maria pushed to Q3. Reason given was budget; tracked under Watch.</p>
+            </div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="moving" class="editorial-briefing_prioritiesSection">
+    <div class="editorial-briefing_marginGrid" data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
+      <div class="editorial-briefing_marginLabel">
+        Moving
+        <span class="editorial-briefing_marginLabelCount">3 entities</span>
+      </div>
+      <div class="editorial-briefing_marginContent">
+        <div class="editorial-briefing_sectionRule"></div>
+        <h2 class="dspine-section-heading">What's moving</h2>
+        <p class="dspine-section-summary">Entities where signals shifted overnight. Sorted by how much the day depends on them.</p>
+
+        <div class="dspine-moving-stack">
+          <article class="EntityPortraitCard_card EntityPortraitCard_accentTurmeric" data-entity-type="account" data-ds-tier="pattern" data-ds-name="EntityPortraitCard" data-ds-spec="patterns/EntityPortraitCard.md">
+            <aside class="EntityPortraitCard_aside" aria-label="Acme Corp summary">
+              <div>
+                <div class="EntityPortraitCard_stateLabel">Renewing</div>
+                <h3 class="EntityPortraitCard_name">Acme Corp</h3>
+              </div>
+              <dl class="EntityPortraitCard_asideStats">
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Health</dt><dd class="EntityPortraitCard_statValue EntityPortraitCard_directionUp">71 +3</dd></div>
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Stage</dt><dd class="EntityPortraitCard_statValue">Renewal</dd></div>
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Owner</dt><dd class="EntityPortraitCard_statValue">You</dd></div>
+              </dl>
+            </aside>
+            <div class="EntityPortraitCard_main">
+              <span class="EntityPortraitCard_glyph" aria-hidden="true">&ldquo;</span>
+              <p class="EntityPortraitCard_lede">Legal review is starting. The adjusted pricing memo goes to Jen in two hours; everything else for Acme chains to that one send.</p>
+              <ul class="EntityPortraitCard_thread">
+                <li class="EntityPortraitCard_threadItem" data-addressable="true"><span class="EntityPortraitCard_typeDot EntityPortraitCard_eventMeeting" aria-hidden="true"></span><span class="EntityPortraitCard_when">10:00</span><span class="EntityPortraitCard_what">Pricing alignment in progress.</span><button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button></li>
+                <li class="EntityPortraitCard_threadItem EntityPortraitCard_overdue" data-addressable="true"><span class="EntityPortraitCard_typeDot EntityPortraitCard_eventAction" aria-hidden="true"></span><span class="EntityPortraitCard_when">2d</span><span class="EntityPortraitCard_what">Send adjusted pricing memo to Jen.</span><button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button></li>
+                <li class="EntityPortraitCard_threadItem"><span class="EntityPortraitCard_typeDot EntityPortraitCard_eventLifecycle" aria-hidden="true"></span><span class="EntityPortraitCard_when">New</span><span class="EntityPortraitCard_what">Moving to renewing; confirm or fix.</span></li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="EntityPortraitCard_card EntityPortraitCard_accentTerracotta" data-entity-type="account" data-ds-tier="pattern" data-ds-name="EntityPortraitCard" data-ds-spec="patterns/EntityPortraitCard.md">
+            <aside class="EntityPortraitCard_aside" aria-label="Northwind Traders summary">
+              <div>
+                <div class="EntityPortraitCard_stateLabel">At risk</div>
+                <h3 class="EntityPortraitCard_name">Northwind</h3>
+              </div>
+              <dl class="EntityPortraitCard_asideStats">
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Health</dt><dd class="EntityPortraitCard_statValue EntityPortraitCard_directionDown">58 -16</dd></div>
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Last touch</dt><dd class="EntityPortraitCard_statValue">38d</dd></div>
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Next</dt><dd class="EntityPortraitCard_statValue">2 PM</dd></div>
+              </dl>
+            </aside>
+            <div class="EntityPortraitCard_main">
+              <span class="EntityPortraitCard_glyph" aria-hidden="true">!</span>
+              <p class="EntityPortraitCard_lede">Exec sponsor departed. No response on the March check-in. The 2 PM QBR is your re-entry, and the briefing is not ready.</p>
+              <ul class="EntityPortraitCard_thread">
+                <li class="EntityPortraitCard_threadItem" data-addressable="true"><span class="EntityPortraitCard_typeDot EntityPortraitCard_eventMeeting" aria-hidden="true"></span><span class="EntityPortraitCard_when">2:00</span><span class="EntityPortraitCard_what">QBR not briefed.</span><button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button></li>
+                <li class="EntityPortraitCard_threadItem EntityPortraitCard_overdue"><span class="EntityPortraitCard_typeDot EntityPortraitCard_eventAction" aria-hidden="true"></span><span class="EntityPortraitCard_when">2d</span><span class="EntityPortraitCard_what">Review last 30 days of support tickets.</span></li>
+                <li class="EntityPortraitCard_threadItem"><span class="EntityPortraitCard_typeDot EntityPortraitCard_eventMail" aria-hidden="true"></span><span class="EntityPortraitCard_when">Overnight</span><span class="EntityPortraitCard_what">Kevin Otieno asked for a re-intro.</span></li>
+              </ul>
+            </div>
+          </article>
+
+          <article class="EntityPortraitCard_card EntityPortraitCard_accentLarkspur" data-entity-type="person" data-ds-tier="pattern" data-ds-name="EntityPortraitCard" data-ds-spec="patterns/EntityPortraitCard.md">
+            <aside class="EntityPortraitCard_aside" aria-label="Priya Raman summary">
+              <div>
+                <div class="EntityPortraitCard_stateLabel">Direct report</div>
+                <h3 class="EntityPortraitCard_name">Priya Raman</h3>
+              </div>
+              <dl class="EntityPortraitCard_asideStats">
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Tenure</dt><dd class="EntityPortraitCard_statValue">2y 4m</dd></div>
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Last 1:1</dt><dd class="EntityPortraitCard_statValue">7d</dd></div>
+                <div class="EntityPortraitCard_statRow"><dt class="EntityPortraitCard_statLabel">Moved</dt><dd class="EntityPortraitCard_statValue EntityPortraitCard_directionDown">2</dd></div>
+              </dl>
+            </aside>
+            <div class="EntityPortraitCard_main">
+              <span class="EntityPortraitCard_glyph" aria-hidden="true">P</span>
+              <p class="EntityPortraitCard_lede">Two declined Thursday invites overnight. She wants to talk about the moves at 11:30 before doing them.</p>
+              <ul class="EntityPortraitCard_thread">
+                <li class="EntityPortraitCard_threadItem" data-addressable="true"><span class="EntityPortraitCard_typeDot EntityPortraitCard_eventMeeting" aria-hidden="true"></span><span class="EntityPortraitCard_when">11:30</span><span class="EntityPortraitCard_what">1:1; make space for it.</span><button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button></li>
+                <li class="EntityPortraitCard_threadItem"><span class="EntityPortraitCard_typeDot EntityPortraitCard_eventMail" aria-hidden="true"></span><span class="EntityPortraitCard_when">Last night</span><span class="EntityPortraitCard_what">Asked about the Q2 narrative draft.</span></li>
+              </ul>
+            </div>
+          </article>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="watch" class="editorial-briefing_prioritiesSection" data-ds-tier="pattern" data-ds-name="DailyBriefingAttentionSection" data-ds-spec="patterns/DailyBriefingAttentionSection.md" data-ds-variant="watch">
+    <div class="editorial-briefing_marginGrid" data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
+      <div class="editorial-briefing_marginLabel">
+        Watch
+        <span class="editorial-briefing_marginLabelCount">5 quiet</span>
+      </div>
+      <div class="editorial-briefing_marginContent">
+        <div class="editorial-briefing_sectionRule"></div>
+        <h2 class="dspine-section-heading">Watch</h2>
+        <p class="dspine-section-summary">Tracked, not asking for action today. Uses briefing priority-row vocabulary until a dedicated watch pattern is approved.</p>
+
+        <div class="dspine-watch-list">
+          <div class="dspine-watch-row">
+            <span class="dspine-watch-who">Globex Inc</span>
+            <span class="dspine-watch-what">Pushing intro to Q3; not dead. Maria is reviewing budget.</span>
+            <button class="Pill_pill Pill_compact Pill_neutral Pill_interactive" type="button" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Snooze to Q3</button>
+            <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+          </div>
+          <div class="dspine-watch-row">
+            <span class="dspine-watch-who">Acme stakeholder</span>
+            <span class="dspine-watch-what">VP Eng Sara Wu was added to the renewal thread and has not engaged yet.</span>
+            <button class="Pill_pill Pill_compact Pill_turmeric Pill_interactive" type="button" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Add to 10:00 call</button>
+            <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+          </div>
+          <div class="dspine-watch-row">
+            <span class="dspine-watch-who">James Lee</span>
+            <span class="dspine-watch-what">Asked about DailyOS and wants to dig into onboarding.</span>
+            <button class="Pill_pill Pill_compact Pill_neutral Pill_interactive" type="button" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md">Add to Monday 1:1</button>
+            <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+          </div>
+          <div class="dspine-watch-row">
+            <span class="dspine-watch-who">Internal pricing</span>
+            <span class="dspine-watch-what">New tier 3 deck is circulating; affects four accounts.</span>
+            <span class="dspine-watch-quiet">Parked</span>
+            <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+          </div>
+          <div class="dspine-watch-row">
+            <span class="dspine-watch-who">Personal</span>
+            <span class="dspine-watch-what">Travel itinerary for next week's Northwind onsite is still unconfirmed.</span>
+            <span class="dspine-watch-quiet">Parked</span>
+            <button class="ThreadMark_threadMark ThreadMark_persistent" type="button" data-ds-tier="pattern" data-ds-name="ThreadMark" data-ds-spec="patterns/ThreadMark.md">talk</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section id="ask" class="editorial-briefing_prioritiesSection">
+    <div class="editorial-briefing_marginGrid" data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
+      <div class="editorial-briefing_marginLabel">
+        Ask
+        <span class="editorial-briefing_marginLabelCount">anything</span>
+      </div>
+      <div class="editorial-briefing_marginContent">
+        <form class="AskAnythingDock_dock AskAnythingDock_inline" data-ds-tier="pattern" data-ds-name="AskAnythingDock" data-ds-spec="patterns/AskAnythingDock.md" data-placement="inline">
+          <div class="AskAnythingDock_inputRow">
+            <span class="AskAnythingDock_glyph" aria-hidden="true">?</span>
+            <input class="AskAnythingDock_input" type="text" placeholder="What did Sara say about tier 3 last quarter?" aria-label="Ask anything" />
+            <kbd class="AskAnythingDock_kbd">Cmd K</kbd>
+          </div>
+          <div class="AskAnythingDock_suggestions" aria-label="Suggested questions">
+            <button class="AskAnythingDock_chip" type="button">What's slipping on Acme this week?</button>
+            <button class="AskAnythingDock_chip" type="button">Show me Northwind's last 5 emails</button>
+            <button class="AskAnythingDock_chip" type="button">Remind me about James Monday</button>
+            <button class="AskAnythingDock_chip" type="button">Who's quiet that I should check on?</button>
+          </div>
+          <div class="AskAnythingDock_scope">
+            <div class="AskAnythingDock_scopeLeft">
+              <span class="AskAnythingDock_scopeSources"><span class="AskAnythingDock_scopeDot" aria-hidden="true"></span>Mail &middot; Calendar &middot; Notes &middot; CRM &middot; Slack</span>
+              <span class="AskAnythingDock_scopeDivider">Since Jan 1, 2024</span>
+            </div>
+            <span class="AskAnythingDock_scopeWrite">Writes back to briefing</span>
+          </div>
+        </form>
+      </div>
+    </div>
+  </section>
+
+  <div class="editorial-briefing_marginGrid">
+    <div class="editorial-briefing_marginLabel"></div>
+    <div class="editorial-briefing_marginContent">
+      <div class="dspine-end">
+        <span>End of briefing &middot; Thursday April 23</span>
+        <span>Next refresh in 2m &middot; live</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="finis-marker" data-ds-tier="pattern" data-ds-name="FinisMarker" data-ds-spec="patterns/FinisMarker.md">
+    <div class="finis-marker-marks">
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="18" height="18" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg>
+    </div>
+  </div>
+</div>
+
+</main>
+</div>
+
+<script src="../_shared/chrome.js"></script>
+<script src="../_shared/inspector.js"></script>
+</body>
+</html>

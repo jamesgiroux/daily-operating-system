@@ -6,8 +6,8 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 
 ## Status vocabulary
 
-- **proposed** — WIP, prototype, roadmap, or source-only work that is not integrated into routed app UI.
-- **integrated** — real app code exists and is used in the actual product, including shared components, page-local classes, or extracted components.
+- **proposed** — WIP, prototype, roadmap, reference-only, or source-only work that is not yet used by routed app UI.
+- **integrated** — real app code exists and is used in the product, including shared components, page-local classes, or extracted components.
 - **production** — integrated and included in a tagged release. Move a pattern here only after the release tag exists.
 
 ## Index
@@ -23,7 +23,7 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`ChapterHeading`](./ChapterHeading.md) | integrated | Section opener (heavy rule + serif title + epigraph) | AccountDetail, ProjectDetail, etc. |
 | [`Lead`](./Lead.md) | proposed | Single-sentence editorial headline | DailyBriefing |
 | [`DayChart`](./DayChart.md) | proposed | Visual day shape (hour ticks + bars + NOW line) | D-spine prototype only |
-| [`MeetingSpineItem`](./MeetingSpineItem.md) | proposed | Magazine-style meeting list entry | DailyBriefing |
+| [`MeetingSpineItem`](./MeetingSpineItem.md) | proposed | Magazine-style meeting list entry | DailyBriefing D-spine reference candidate; source component exists but is not routed |
 | [`MeetingCard`](./MeetingCard.md) | integrated | Shared schedule/timeline meeting row | DailyBriefing, WeekPage |
 | [`BriefingMeetingCard`](./BriefingMeetingCard.md) | integrated | Expandable briefing schedule row with prep details | DailyBriefing |
 | [`DailyBriefingAttentionSection`](./DailyBriefingAttentionSection.md) | integrated | Priority/action/email/lifecycle section used in the briefing | DailyBriefing |

@@ -90,7 +90,8 @@ Hover interaction: subtle Y translate + box-shadow on bars.
 
 ## Surfaces that consume it
 
-No shipped routed consumers. D-spine prototype only.
+- `DailyBriefingDSpine` proposed reference surface (`.docs/design/reference/surfaces/briefing-d-spine.html`)
+- No shipped routed consumers. D-spine prototype only until the redesign is approved.
 
 ## Naming notes
 

@@ -72,6 +72,15 @@ A surface can hold multiple states (e.g. `spec+referenced`).
 | WeekPage | `src/pages/WeekPage.tsx` | `/week` | Understand the upcoming week's meeting load and briefing readiness. | `referenced+spec` | `week.html` | `surfaces/WeekPage.md` | — | — |
 | WeeklyImpactPage | `src/pages/WeeklyImpactPage.tsx` | `/me/reports/weekly_impact` | Generate and edit a weekly impact report — work moved, wins, watch items, next week. | `referenced+spec` | `reports/weekly-impact.html` | `surfaces/WeeklyImpactPage.md` | — | Dedicated report spec added during the parity pass. |
 
+## Proposed release-candidate references
+
+These are iteration references, not routed parity entries. Do not add them to
+the strict surface manifest until source routing exists.
+
+| Surface | File | Target route | JTBD | State | Reference | Spec | Notes |
+|---|---|---|---|---|---|---|---|
+| DailyBriefingDSpine | Proposed DailyBriefing redesign | `/` candidate | Explore the D-spine schedule-as-spine redesign using the current DailyBriefing reference foundation. | `proposed reference` | `briefing-d-spine.html` | `surfaces/DailyBriefingDSpine.md` | Built from `DayChart`, `MeetingSpineItem`, `EntityPortraitCard`, `ThreadMark`, `AskAnythingDock`, and current DailyBriefing chrome. |
+
 ## Full-screen non-route surfaces
 
 These render at app-shell scale, not inside a page container.
