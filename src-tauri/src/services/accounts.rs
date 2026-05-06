@@ -1014,6 +1014,14 @@ pub enum LifecycleReviewOutcome {
     StaleDrift,
 }
 
+/// Sentinel string used to roll back the transaction when drift is detected.
+/// review_lifecycle_change unwraps it back into Ok(LifecycleReviewOutcome::StaleDrift)
+/// AFTER the rollback so callers still see the typed outcome but no committed
+/// state lingers. Without this rollback, a stale review would commit the
+/// reviewed-row marker, and a retry would see AlreadyReviewed → Tauri Ok →
+/// false-success.
+const STALE_DRIFT_SENTINEL: &str = "__lifecycle_review_stale_drift_sentinel__";
+
 /// Single source of truth for the lifecycle-review state machine. Both
 /// confirm_lifecycle_change and correct_lifecycle_change delegate here with
 /// the action-specific parameters; invariants (pending claim → drift guard
@@ -1095,7 +1103,7 @@ fn review_lifecycle_change(
             contract_end_anchored && current_contract_end != expected_contract_end;
         if drift_lifecycle || drift_stage || drift_contract_end {
             log::warn!(
-                "review_lifecycle_change: change_id={change_id} stale — drift detected (action={:?}, lifecycle expected={:?} actual={:?}, stage expected={:?} actual={:?}, contract_end expected={:?} actual={:?}); row marked reviewed, side effects skipped",
+                "review_lifecycle_change: change_id={change_id} stale — drift detected (action={:?}, lifecycle expected={:?} actual={:?}, stage expected={:?} actual={:?}, contract_end expected={:?} actual={:?}); rolling back response claim",
                 action,
                 expected_lifecycle,
                 current_lifecycle,
@@ -1104,7 +1112,14 @@ fn review_lifecycle_change(
                 expected_contract_end,
                 current_contract_end,
             );
-            return Ok(LifecycleReviewOutcome::StaleDrift);
+            // Roll back via Err so the response_if_pending claim and any
+            // partial work undoes; the outer call site catches the
+            // sentinel and reports StaleDrift to callers without
+            // committing the reviewed marker — otherwise a retry would
+            // see rows=0, return AlreadyReviewed, and the Tauri command
+            // would map that to Ok and report false success on a stale
+            // review.
+            return Err(STALE_DRIFT_SENTINEL.to_string());
         }
 
         // Invariant 3: side effects only when invariants 1+2 hold.
@@ -1146,6 +1161,32 @@ fn review_lifecycle_change(
                     completion_trigger: None,
                 };
                 apply_lifecycle_transition(ctx, tx_db, engine, &change.account_id, &transition)?;
+                // Restore contract_end if the auto-detector rolled it.
+                // apply_lifecycle_transition's contract-end logic only rolls
+                // FORWARD on detected renewal; it has no path back. When the
+                // user corrects an auto-applied roll, we restore the
+                // pre-auto-detection date so renewal timing and downstream
+                // health/alerts stay tied to the actual contract, not a
+                // false-active rollover.
+                if change.previous_contract_end != change.new_contract_end {
+                    if let Some(restored) = change.previous_contract_end.as_deref() {
+                        tx_db
+                            .update_account_field(&change.account_id, "contract_end", restored)
+                            .map_err(|e| {
+                                format!("contract_end restore failed: {e}")
+                            })?;
+                        tx_db
+                            .set_account_field_provenance(
+                                &change.account_id,
+                                "contract_end",
+                                "user_correction",
+                                None,
+                            )
+                            .map_err(|e| {
+                                format!("contract_end provenance update failed: {e}")
+                            })?;
+                    }
+                }
                 tx_db
                     .upsert_signal_weight(
                         &change.source,
@@ -1158,6 +1199,13 @@ fn review_lifecycle_change(
             }
         }
         Ok(LifecycleReviewOutcome::Applied)
+    })
+    .or_else(|err| {
+        if err == STALE_DRIFT_SENTINEL {
+            Ok(LifecycleReviewOutcome::StaleDrift)
+        } else {
+            Err(err)
+        }
     })
 }
 
