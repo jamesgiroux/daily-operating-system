@@ -12,12 +12,15 @@ use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
     AbilityError, AbilityRegistry, Actor,
 };
+use crate::db::ActionDb;
 use crate::intelligence::provider::{
     Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
     ProviderKind,
 };
 use crate::services::context::{ExecutionMode, ServiceContext};
-use crate::services::sensitivity::render_mcp_ability_data_for_surface;
+use crate::services::sensitivity::{
+    render_mcp_ability_data_for_surface, render_mcp_ability_data_without_claim_lookup,
+};
 use crate::state::ContextSnapshot;
 
 pub const BRIDGE_PROVENANCE_DETAIL_BYTE_CAP: usize = 10 * 1024;
@@ -587,9 +590,22 @@ fn render_provenance(surface: BridgeSurface, provenance: serde_json::Value) -> R
 fn render_ability_data(surface: BridgeSurface, data: serde_json::Value) -> serde_json::Value {
     match surface {
         BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
-            render_mcp_ability_data_for_surface(data)
+            render_mcp_ability_data_with_authoritative_claims(data)
         }
         BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => data,
+    }
+}
+
+fn render_mcp_ability_data_with_authoritative_claims(data: serde_json::Value) -> serde_json::Value {
+    match ActionDb::open_readonly() {
+        Ok(db) => render_mcp_ability_data_for_surface(&db, data),
+        Err(error) => {
+            log::warn!(
+                target: "dailyos_lib::bridges::mcp_ability_data",
+                "MCP ability data claim lookup unavailable; tagged claim text will be dropped: {error}"
+            );
+            render_mcp_ability_data_without_claim_lookup(data)
+        }
     }
 }
 

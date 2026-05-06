@@ -443,18 +443,42 @@ where
 
 /// Render claim-derived ability `data` for the MCP tool surface.
 ///
-/// DOS-412 Track EE intentionally uses design B: a generic JSON walker that
-/// recognizes tagged claim text instead of descriptor-declared JSON paths.
-/// This is less invasive for the current ability registry because existing
-/// descriptors and the `#[ability]` macro do not carry output-path metadata,
-/// while the sensitivity module already owns a `RenderableClaimText` policy
-/// shape. Ability outputs that emit claim text to MCP must tag that text with
-/// claim metadata (`text` plus `claim_id`/`claimId` and `sensitivity`, or the
-/// existing `text` plus `policy.claimId`/`policy.sensitivity` shape). Tagged
-/// leaves are rendered through `render_policy_for_surface(..., McpTool, ...)`;
-/// untagged narrative/text-shaped leaves fail closed and are removed.
-pub fn render_mcp_ability_data_for_surface(value: serde_json::Value) -> serde_json::Value {
-    render_mcp_ability_data_value(value, None).unwrap_or(serde_json::Value::Null)
+/// DOS-412 Track FF keeps the generic tagged-claim JSON walker, but tagged
+/// carriers are authoritative and fail closed. The DTO's `sensitivity` is only
+/// a consistency check: the persisted claim is reloaded by `claim_id` through
+/// `load_claim_by_id`, and the stored sensitivity/actor drive
+/// `render_policy_for_surface(..., McpTool, ...)`. Missing claims, malformed
+/// tags, or DTO/stored sensitivity mismatches are dropped.
+///
+/// Tagged carrier objects use design A: render to a minimal safe object with
+/// only `text` and `policy`. Every sibling property is stripped by default so
+/// fields such as `source_text`, `sourceSummary`, `evidenceText`, `rawText`, or
+/// `quote` cannot leak beside an otherwise valid claim text wrapper.
+pub fn render_mcp_ability_data_for_surface(
+    db: &ActionDb,
+    value: serde_json::Value,
+) -> serde_json::Value {
+    render_mcp_ability_data_with_claim_lookup(value, &|claim_id| {
+        crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
+            .ok()
+            .flatten()
+    })
+}
+
+/// Render with no authoritative claim source. Non-claim metadata still walks
+/// through the fail-closed ability-data sanitizer, but every tagged claim
+/// carrier drops because persisted metadata cannot be verified.
+pub(crate) fn render_mcp_ability_data_without_claim_lookup(
+    value: serde_json::Value,
+) -> serde_json::Value {
+    render_mcp_ability_data_with_claim_lookup(value, &|_| None)
+}
+
+fn render_mcp_ability_data_with_claim_lookup(
+    value: serde_json::Value,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
+) -> serde_json::Value {
+    render_mcp_ability_data_value(value, None, load_claim).unwrap_or(serde_json::Value::Null)
 }
 
 #[derive(Debug, Clone)]
@@ -462,7 +486,6 @@ struct TaggedMcpClaimText {
     text: String,
     claim_id: String,
     sensitivity: ClaimSensitivity,
-    originating_actor: String,
 }
 
 enum TaggedMcpClaimTextMatch {
@@ -474,15 +497,20 @@ enum TaggedMcpClaimTextMatch {
 fn render_mcp_ability_data_value(
     value: serde_json::Value,
     key: Option<&str>,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
 ) -> Option<serde_json::Value> {
     match value {
         serde_json::Value::Object(object) => match tagged_mcp_claim_text(&object) {
-            TaggedMcpClaimTextMatch::Tagged(tagged) => render_tagged_mcp_claim_text(object, tagged),
+            TaggedMcpClaimTextMatch::Tagged(tagged) => {
+                render_tagged_mcp_claim_text(tagged, load_claim)
+            }
             TaggedMcpClaimTextMatch::Malformed => None,
             TaggedMcpClaimTextMatch::NotTagged => {
                 let mut rendered = serde_json::Map::new();
                 for (key, value) in object {
-                    if let Some(value) = render_mcp_ability_data_value(value, Some(&key)) {
+                    if let Some(value) =
+                        render_mcp_ability_data_value(value, Some(&key), load_claim)
+                    {
                         rendered.insert(key, value);
                     }
                 }
@@ -492,7 +520,7 @@ fn render_mcp_ability_data_value(
         serde_json::Value::Array(values) => Some(serde_json::Value::Array(
             values
                 .into_iter()
-                .filter_map(|value| render_mcp_ability_data_value(value, None))
+                .filter_map(|value| render_mcp_ability_data_value(value, None, load_claim))
                 .collect(),
         )),
         serde_json::Value::String(text) => {
@@ -534,36 +562,44 @@ fn tagged_mcp_claim_text(
     let Some(sensitivity) = sensitivity_from_mcp_claim_text_object(object) else {
         return TaggedMcpClaimTextMatch::Malformed;
     };
-    let originating_actor =
-        string_field(object, &["originating_actor", "originatingActor", "actor"])
-            .unwrap_or_else(|| "user".to_string());
-
     TaggedMcpClaimTextMatch::Tagged(TaggedMcpClaimText {
         text,
         claim_id,
         sensitivity,
-        originating_actor,
     })
 }
 
 fn render_tagged_mcp_claim_text(
-    mut object: serde_json::Map<String, serde_json::Value>,
     tagged: TaggedMcpClaimText,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
 ) -> Option<serde_json::Value> {
     let actor = RenderActor::agent("agent:mcp");
-    let mut claim = minimal_policy_claim(tagged.sensitivity, &tagged.originating_actor);
-    claim.id = tagged.claim_id;
-    claim.text = tagged.text.clone();
+    let claim = load_claim(&tagged.claim_id)?;
+
+    if claim.sensitivity != tagged.sensitivity {
+        log::warn!(
+            target: "dailyos_lib::services::sensitivity",
+            "MCP ability data claim sensitivity mismatch claim_id={} stored={:?} emitted={:?}; dropping tagged object",
+            tagged.claim_id,
+            claim.sensitivity,
+            tagged.sensitivity
+        );
+        return None;
+    }
 
     let decision = render_policy_for_surface(&claim, RenderSurface::McpTool, &actor);
     let rendered =
         renderable_from_decision(&claim, &tagged.text, RenderSurface::McpTool, decision)?;
+    safe_tagged_mcp_claim_text_object(rendered)
+}
+
+fn safe_tagged_mcp_claim_text_object(rendered: RenderableClaimText) -> Option<serde_json::Value> {
+    let mut object = serde_json::Map::new();
     object.insert("text".to_string(), serde_json::Value::String(rendered.text));
     object.insert(
         "policy".to_string(),
-        serde_json::to_value(rendered.policy).unwrap_or(serde_json::Value::Null),
+        serde_json::to_value(rendered.policy).ok()?,
     );
-    object.remove("renderPolicy");
     Some(serde_json::Value::Object(object))
 }
 
@@ -634,15 +670,24 @@ fn is_mcp_ability_claim_text_field(key: &str) -> bool {
             | "description"
             | "detail"
             | "emails"
+            | "evidenceText"
+            | "evidence_text"
             | "intelligenceSummary"
             | "intelligence_summary"
             | "meetingContext"
             | "openActions"
             | "open_actions"
             | "outcome"
+            | "quote"
+            | "rawText"
+            | "raw_text"
             | "rationale"
             | "schedule"
             | "snippet"
+            | "sourceSummary"
+            | "sourceText"
+            | "source_summary"
+            | "source_text"
             | "summary"
             | "text"
             | "title"

@@ -32,12 +32,58 @@ if "fn render_ability_data(" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: missing render_ability_data bridge hook")
 if "render_ability_data(surface, data)" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: AbilityResponseJson.data is not built from render_ability_data(surface, data)")
-if not re.search(r"BridgeSurface::McpTool\s*\|\s*BridgeSurface::McpToolDetail\s*=>\s*\{?\s*render_mcp_ability_data_for_surface", bridge, re.S):
-    violations.append("src-tauri/src/bridges/types.rs: MCP surfaces do not call render_mcp_ability_data_for_surface")
+if not re.search(r"BridgeSurface::McpTool\s*\|\s*BridgeSurface::McpToolDetail\s*=>\s*\{?\s*render_mcp_ability_data_with_authoritative_claims", bridge, re.S):
+    violations.append("src-tauri/src/bridges/types.rs: MCP surfaces do not call the authoritative ability-data redactor")
+if "ActionDb::open_readonly()" not in bridge or "render_mcp_ability_data_for_surface(&db, data)" not in bridge:
+    violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor does not pass an ActionDb into render_mcp_ability_data_for_surface")
+if "render_mcp_ability_data_without_claim_lookup(data)" not in bridge:
+    violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor lacks fail-closed no-claim-lookup fallback")
 if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval\s*=>\s*data", bridge):
     violations.append("src-tauri/src/bridges/types.rs: non-MCP surfaces must pass ability data through unchanged")
-if "Tagged Public and Internal claim text" not in service and "generic JSON walker" not in service:
-    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks design-B fail-closed documentation")
+if "Tagged carrier objects use design A" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks design-A fail-closed documentation")
+if "load_claim_by_id(db.conn_ref(), claim_id)" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor does not reload authoritative claims")
+if re.search(r"minimal_policy_claim\s*\(\s*tagged\.sensitivity", service):
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor still constructs synthetic policy claims from DTO sensitivity")
+if "claim.sensitivity != tagged.sensitivity" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor does not fail closed on DTO/stored sensitivity mismatch")
+
+def function_source(source: str, name: str) -> str:
+    marker = f"fn {name}"
+    start = source.find(marker)
+    if start == -1:
+        return ""
+    brace = source.find("{", start)
+    if brace == -1:
+        return source[start:]
+    depth = 0
+    for index in range(brace, len(source)):
+        char = source[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return source[start:index + 1]
+    return source[start:]
+
+tagged_renderer = function_source(service, "render_tagged_mcp_claim_text")
+if not tagged_renderer:
+    violations.append("src-tauri/src/services/sensitivity.rs: missing render_tagged_mcp_claim_text")
+else:
+    if re.search(r"\bobject\s*:", tagged_renderer) or "object.insert" in tagged_renderer:
+        violations.append("src-tauri/src/services/sensitivity.rs: tagged claim renderer mutates the original object instead of stripping siblings")
+    if "safe_tagged_mcp_claim_text_object(rendered)" not in tagged_renderer:
+        violations.append("src-tauri/src/services/sensitivity.rs: tagged claim renderer does not return the minimal safe allowlist object")
+
+safe_object = function_source(service, "safe_tagged_mcp_claim_text_object")
+if not safe_object:
+    violations.append("src-tauri/src/services/sensitivity.rs: missing minimal tagged-object allowlist helper")
+else:
+    for forbidden in ["source_text", "sourceSummary", "evidenceText", "rawText", "quote", "claim_id", "sensitivity", "originating_actor"]:
+        if f'"{forbidden}"' in safe_object:
+            violations.append(f"src-tauri/src/services/sensitivity.rs: minimal tagged-object allowlist preserves forbidden field `{forbidden}`")
 
 agent_abilities = []
 for path in Path("src-tauri/src/abilities").rglob("*.rs"):
@@ -49,7 +95,7 @@ for path in Path("src-tauri/src/abilities").rglob("*.rs"):
         if actors and re.search(r"\bAgent\b", actors.group(1)):
             agent_abilities.append((str(path), name.group(1) if name else "<unknown>"))
 
-if agent_abilities and "render_mcp_ability_data_for_surface(data)" not in bridge:
+if agent_abilities and "render_mcp_ability_data_with_authoritative_claims(data)" not in bridge:
     for path, name in agent_abilities:
         violations.append(f"{path}: Agent-allowed ability `{name}` would bypass the MCP ability data redactor")
 
