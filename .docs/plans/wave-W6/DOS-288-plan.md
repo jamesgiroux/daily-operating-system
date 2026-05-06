@@ -111,3 +111,47 @@ Wave artifact: `cargo test --test dos288_bleed_detection`, `cargo test ownership
 3. W4-A threshold: what exact `cross_entity_coherence` factor value maps to `NeedsVerification` vs `UseWithCaution`, and does W6-B assert the numeric value or only the resulting `TrustBand`?
 4. DOS-288 acceptance names `get_daily_readiness`, but current code has readiness fragments rather than a W5/W6 ability. Which owner supplies that fixture surface for W6, or is it deferred to W6-C release-gate aggregation?
 5. Lint mode scope: should suspected bleed be exposed only as eval/release-gate diagnostics, or does v1.4.0 need a user/devtools surface after W4-A removes `devtools_audit_cross_contamination`?
+
+## Revision history
+
+- v2 (2026-05-06) - appended post-W5 reconciliation notes. The v1 plan above is intentionally left intact.
+
+## v2 reconciliation notes (post-W5)
+
+### What already shipped
+
+- `src-tauri/src/abilities/provenance/` now exists with `builder.rs`, `envelope.rs`, `field.rs`, `source.rs`, `source_time.rs`, `subject.rs`, and `trust.rs`, but there is no `ownership.rs` module yet (`src-tauri/src/abilities/provenance/mod.rs:3-20`).
+- W3-B landed the final subject-attribution names as `SubjectRef`, `SubjectBindingKind`, `SubjectFitStatus::{Confident, Ambiguous, Blocked}`, `SubjectFitAssessment`, `CompetingSubject`, and `SubjectAttribution` (`src-tauri/src/abilities/provenance/subject.rs:6-41`, `:44-131`).
+- The provenance builder already rejects non-confident envelope subjects and non-confident field subjects at finalize time (`src-tauri/src/abilities/provenance/builder.rs:172-213`, `:253-284`). That covers the v1 "Ambiguous/Blocked finalization" concern for ability outputs using `ProvenanceBuilder`.
+- W4-A retired the legacy `intelligence::contamination` module. `src-tauri/src/intelligence/contamination.rs` is absent, `src-tauri/src/lib.rs:757` records the retired devtools audit/cleanup commands, and `src-tauri/tests/dos287_retired_contamination_module_test.rs:4-40` prevents the module, env var, and retired symbols from returning.
+- W4-A shipped `CrossEntityCoherenceInput`, `TargetFootprint`, `EntityFootprint`, `CrossEntityHit`, and `CrossEntityHitKind` in `abilities::trust` (`src-tauri/src/abilities/trust/types.rs:170-208`). The pure factor is `cross_entity_coherence(input, config)` and scores foreign domain, infrastructure ID, and company-name hits unless `cross_entity_context_expected` is true (`src-tauri/src/abilities/trust/factors.rs:158-181`, `:238-335`).
+- Trust compilation now includes a `cross_entity_coherence` factor and `sensitivity_aware_filtering` factor in the geometric score (`src-tauri/src/abilities/trust/mod.rs:37-130`). Default thresholds are `likely_current_min = 0.75`, `use_with_caution_min = 0.50`, and `cross_entity_hit_penalty = 0.55` (`src-tauri/src/abilities/trust/config.rs:23-36`).
+- Bundle-1 cross-entity bleed is already asserted at the trust-factor layer by `src-tauri/tests/dos287_substrate_bundle1_reproduction.rs:247-322`, which requires bleed content to score `<= 0.3` and clean content to score `>= 0.95`.
+- W5 added additional subject/sensitivity gates in `prepare_meeting`: `source_subject_allowed()` rejects source subjects outside meeting scope or mismatched with a candidate (`src-tauri/src/abilities/prepare_meeting/synthesis.rs:900-967`, `:1343-1379`), and ambiguous subjects are warning-only plus omitted from accepted items (`src-tauri/src/abilities/prepare_meeting/synthesis.rs:857-876`, `:1085-1094`).
+- W5 cycle-7 centralized prompt-input sensitivity policy in `services/claims.rs`: Public/Internal are allowed; Confidential/UserOnly are not (`src-tauri/src/services/claims.rs:620-637`). `get_entity_context` filters Agent reads through that helper (`src-tauri/src/abilities/get_entity_context.rs:168-181`), and `prepare_meeting` filters both snapshot claims and prebuilt evidence before prompt input (`src-tauri/src/abilities/prepare_meeting/synthesis.rs:437-465`, `:1494-1496`).
+
+### Path/API/shape changes v2 must absorb
+
+- The v1 path `src-tauri/src/abilities/provenance/ownership.rs` is now a viable module location because `abilities/provenance` exists, but it should compose with shipped `SubjectAttribution` and `ProvenanceBuilder` checks rather than re-define subject-fit semantics.
+- References to retiring `src-tauri/src/intelligence/contamination.rs` and the old `intel_queue.rs:2460-2554` detector are obsolete. The current `intel_queue.rs:2440-2570` range no longer calls contamination; trust recompute now builds `CrossEntityCoherenceInput` at `src-tauri/src/intel_queue.rs:2886-2909` and maps trust bands at `:3494-3538`.
+- The W6-B validator should import from `crate::abilities::trust::{CrossEntityCoherenceInput, TargetFootprint, EntityFootprint, TrustBand}` and `crate::abilities::provenance::{Provenance, FieldAttribution, SubjectAttribution, SubjectFitStatus}`. It should not call or resurrect any `intelligence::contamination` API.
+- The shipped sensitivity gate is prompt-input policy, not subject ownership. W6-B should compose with it by verifying ownership before/render-side confidence, while recognizing DOS-412 owns the broader output-side ADR-0108 sensitivity audit.
+
+### Reduced or remaining scope
+
+- Reduce W6-B from "create the missing structural substrate" to "prove existing substrate and add only the missing reusable eval assertion." Subject fit, field attribution, cross-entity coherence, contamination retirement, and prompt-input sensitivity gates already exist.
+- The likely remaining code scope is either a small pure `ownership.rs` validator plus tests, or a test-only/eval helper if W6-C only needs a suite selector. It should assert existing `ProvenanceBuilder` and `TrustCompiler` outcomes, not introduce a second production render gate.
+- Remaining evidence gaps: no `dos288_bleed_detection_test.rs`, no `ownership_validator_*` unit tests, and no `src-tauri/target/dos288/bleed-report.json` artifact exist yet.
+- Bundle 1 in its current form is narrower than the v1 integration-test list. The richer "same-domain accounts", "cross-account renewal meeting", "six paraphrases", and "wrong-link tombstone" rows are not in `src-tauri/tests/fixtures/bundle-1/state.sql`; W6-B may need either a bundle update or to target existing bundle 13 for direct prepare-meeting subject bleed.
+
+### New dependencies and follow-ups
+
+- DOS-411 matters only for Tauri legacy `entity_context_entries` surfaces. A W6-B ownership proof over ability outputs cannot claim coverage over the Tauri UI note path until DOS-411 migrates the write/read lifecycle.
+- DOS-412 owns full output-side sensitivity rendering. W6-B should not expand into render-surface sensitivity policy; it can point to the existing prompt-input gate and mark output audit as out of scope.
+
+### Open questions before implementation
+
+1. Does W6-B still need a new exported `ownership.rs` API, or is an integration suite over `ProvenanceBuilder`, `prepare_meeting`, and `compile_trust` enough for W6-C?
+2. Should the release gate consume W6-B by `cargo test --test dos288_bleed_detection`, by parsing a `dos288/bleed-report.json`, or by calling a non-test Rust function?
+3. Should W6-B block only confident rendered ability output, or also legacy Tauri/derived-state surfaces that bypass `AbilityOutput<T>` until DOS-411/DOS-412?
+4. If bundle 1 stays narrow, should W6-B use bundle 13 as the concrete prepare-meeting bleed fixture and record the original bundle-1 rich rows as a W6-A gap?

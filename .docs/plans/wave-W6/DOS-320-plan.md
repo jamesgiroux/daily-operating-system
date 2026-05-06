@@ -97,3 +97,45 @@ Gate artifact: `pnpm test -- TrustBandIndicator ContextEntryList BriefingMeeting
 4. For W5-A user-authored entity context rows, should valid direct user notes render as `likely_current` or `unscored` when the Trust Compiler did not score a claim row?
 5. What date should populate the empty state: newest `source_asof`, newest `observed_at`, newest row timestamp, or a W5-provided rendered provenance summary?
 6. Should "Show all evidence" be one per surface (this plan) or one per section/field group for long meeting briefs?
+
+## Revision history
+
+- v2 (2026-05-06) - appended post-W5 reconciliation notes. The v1 plan above is intentionally left intact.
+
+## v2 reconciliation notes (post-W5)
+
+### What already shipped
+
+- W4-C shipped the bridge envelope as `AbilityResponseJson { invocation_id, ability_name, ability_version, schema_version, data, rendered_provenance, diagnostics }` (`src-tauri/src/bridges/types.rs:149-174`). `rendered_provenance` is a wrapper with `{ surface, value }`, where `value` is the full provenance JSON for Tauri/Worker/Eval and MCP-redacted provenance for MCP surfaces (`src-tauri/src/bridges/types.rs:576-581`).
+- W5 ability output serialization still has provenance exactly once on the wrapper: `AbilityOutput<T>` serializes `data`, `provenance`, `ability_version`, and `diagnostics` (`src-tauri/src/abilities/provenance/envelope.rs:301-333`), and the bridge transforms `provenance` into `rendered_provenance` (`src-tauri/src/bridges/types.rs:535-565`).
+- `get_entity_context` landed as a Read ability returning `Vec<EntityContextEntry>` with provenance on the wrapper, not trust fields in each entry (`src-tauri/src/abilities/get_entity_context.rs:51-99`; `src/types/index.ts:3099-3107`). It now allows User, Agent, and System actors (`src-tauri/src/abilities/get_entity_context.rs:38-50`).
+- W5 cycle-6/7 sensitivity work means Agent `get_entity_context` filters claims to Public/Internal before returning data (`src-tauri/src/abilities/get_entity_context.rs:168-181`; `src-tauri/src/services/claims.rs:620-637`). User/Tauri ability calls do not get that Agent-only filter.
+- The Tauri UI hook still invokes legacy `"get_entity_context_entries"` and returns a naked `EntityContextEntry[]` (`src/hooks/useEntityContextEntries.ts:10-18`, `:71`). The command still reads the legacy `entity_context_entries` table (`src-tauri/src/commands/workspace.rs:1235-1243`; `src-tauri/src/services/context.rs:1093-1110`, `:1227-1259`). W5 cycle 3 intentionally rolled back the Tauri read cutover; DOS-411 now owns the write/read migration.
+- `prepare_meeting` landed as a Transform ability returning `MeetingBrief` sections (`src-tauri/src/abilities/prepare_meeting/mod.rs:14-31`; `src-tauri/src/abilities/prepare_meeting/synthesis.rs:115-185`). It carries evidence `confidence` and `sensitivity` internally (`src-tauri/src/abilities/prepare_meeting/synthesis.rs:88-105`, `:468-486`), filters prompt-input claims by sensitivity (`:437-465`, `:1494-1496`), and omits ambiguous/blocked source subjects before accepting items (`:900-967`).
+- W4-A shipped `TrustBand` serde strings and claim-level `TrustComputation.band` (`src-tauri/src/abilities/trust/types.rs:22-36`), with labels `likely_current`, `use_with_caution`, `needs_verification`, and `unscored` (`src-tauri/src/abilities/trust/mod.rs:447-454`). This exists at the Trust Compiler/claim recompute layer, not in W5 field attribution.
+
+### Path/API/shape changes v2 must absorb
+
+- The v1 assumption `rendered_provenance.field_attributions["/0/content"].trust_band` is wrong for the shipped bridge shape. The frontend path, if using the ability bridge, is `response.rendered_provenance.value.field_attributions["/0/content"]`; `FieldAttribution` has `subject`, `derivation`, `source_refs`, `confidence`, and `explanation`, but no `trust_band` (`src-tauri/src/abilities/provenance/field.rs:151-158`).
+- Top-level provenance has `trust: TrustAssessment`, but that is an `effective` trusted/untrusted classification with contributions, not the W4-A `TrustBand` enum (`src-tauri/src/abilities/provenance/envelope.rs:341-362`; `src-tauri/src/abilities/provenance/trust.rs:12-17`, `:104-120`).
+- `MeetingBrief` output items do not include trust bands (`src-tauri/src/abilities/prepare_meeting/synthesis.rs:115-185`), and source/candidate `confidence` is not equivalent to `TrustBand`.
+- Any frontend-only implementation can safely parse `AbilityResponseJson` and render provenance warnings/source freshness, but it cannot truthfully partition items by W4-A trust band until backend/bridge output exposes a per-field or per-item band.
+
+### Reduced or remaining scope
+
+- Reduce W6-D to an adapter/proof design unless the backend adds a per-field trust-band shape first. A frontend-only patch should default all legacy Tauri entity-context entries to `unscored` and must not hide them.
+- Do not cut over `useEntityContextEntries` to `invoke_ability("get_entity_context", ...)` as part of W6-D unless DOS-411 is also in scope. The current UI create/update/delete flow depends on legacy `entity_context_entries`, and W5 already proved a read-only cutover causes divergence.
+- For `prepare_meeting`, W6-D can test against bridge envelopes and provenance warnings, but "likely/current/caution/needs verification" partitioning needs a new source of truth: either `TrustComputation` attached to each claim-derived field, or a rendered-provenance summary added by Rust.
+- The backend prompt-input filtering part of DOS-320 is already substantially handled by W5 for `prepare_meeting` and Agent `get_entity_context`; output-side sensitivity rendering is tracked by DOS-412 and should not be silently absorbed into W6-D.
+
+### New dependencies and follow-ups
+
+- DOS-411 (`Tauri entity-context write cutover to claim-backed path`) blocks any W6-D strategy that replaces the shipping UI's legacy note read path with claim-backed ability reads.
+- DOS-412 (`ADR-0108 sensitivity-rendering audit across UI surfaces and MCP responses`) owns broad output-side sensitivity policy. W6-D may depend on its policy helper or explicitly stay limited to trust-band affordances for W5 ability proof surfaces.
+
+### Open questions before implementation
+
+1. Should Rust add per-field trust-band data to `rendered_provenance.value.field_attributions` before W6-D, or should W6-D defer trust partitioning and render only top-level provenance/warnings?
+2. Is W6-D still intended to ship in W6 if the only current Tauri entity-context UI path is legacy and unscored?
+3. For `prepare_meeting`, should W6-D compute bands from existing `claim.trust_score`/`EvidenceSource.confidence`, or is that prohibited because it would duplicate Trust Compiler semantics in TypeScript?
+4. Should the "Show all evidence" UI wait for DOS-412's output-sensitivity policy so Confidential/UserOnly behavior is consistent across non-W5 surfaces?

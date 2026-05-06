@@ -143,3 +143,44 @@ Wave merge-gate artifact: `cargo test --test dos283_bundle_fixtures_test`, `carg
 4. W4-B layout conflict: should global bundle dirs be consumed directly by the harness, or should W6-A also materialize ability-specific fixture wrappers under `src-tauri/tests/abilities/{ability}/fixtures/`?
 5. Expected provenance shape: DOS-211 still has open questions on exact `SubjectAttribution` fields and feedback contributions (`.docs/plans/wave-W3/DOS-211-plan.md:115-121`). Confirm before locking `expected_provenance.json`.
 6. Manual load script scope: should it support rollback/removal of namespace-prefixed fixture rows in dev workspaces, or is load-only safer for the first W6-A PR?
+
+## Revision history
+
+- v2 (2026-05-06) - appended post-W5 reconciliation notes. The v1 plan above is intentionally left intact.
+
+## v2 reconciliation notes (post-W5)
+
+### What already shipped
+
+- The canonical fixture path is now `src-tauri/tests/fixtures/bundle-{N}/`, not `src-tauri/tests/fixtures/bundles/bundle_N/`. The loader only recognizes hyphenated directory names via `bundle_label()` (`src-tauri/tests/harness/loader.rs:192-196`) and helper APIs build paths with `bundle-{bundle}` (`src-tauri/tests/harness/bundle_helpers.rs:20-29`).
+- The current committed corpus is bundle 1 through bundle 13. `loader_loads_all_committed_bundles` asserts the exact set `{1,2,3,4,5,6,7,8,9,10,11,12,13}` (`src-tauri/tests/harness.rs:40-63`). W5 proof specifically says W5 landed bundles 1, 5, and 9-13 at `6a191be3`; bundles 2-4 and 6-8 were already present from W4/DOS-384 (`.docs/plans/wave-W5/proof-bundle.md:11`).
+- The W4-B loader/harness file shape is shipped. Required files are `clock.txt`, `seed.txt`, `state.sql`, `inputs.json`, `provider_replay.json`, `external_replay.json`, `expected_output.json`, `expected_provenance.json`, and `metadata.json`; `expected_state.json` is optional (`src-tauri/tests/harness/loader.rs:11-23`, `:108-141`).
+- Bundle 1 exists and loads as `bundle1-entity-context-parity`. It covers `get_entity_context` parity for `dos287-target-example`, expected ordering, exclusion of a newer adjacent-account legacy note, direct user source attribution, and no provider/external calls (`src-tauri/tests/fixtures/bundle-1/metadata.json:2-18`; `src-tauri/tests/fixtures/bundle-1/state.sql:151-170`; `src-tauri/tests/fixtures/bundle-1/expected_output.json:1-20`).
+- Bundle 5 exists and loads as `bundle5-prepare-meeting-first-person-parity`. It covers a first-person `prepare_meeting` parity fixture with one meeting, one attendee, one `attendee_context` claim, pinned provider replay, source-asof reachability, and byte-identical legacy output (`src-tauri/tests/fixtures/bundle-5/metadata.json:2-31`; `src-tauri/tests/fixtures/bundle-5/state.sql:61-81`; `src-tauri/tests/harness.rs:102-111`).
+- Several DOS-283-adjacent scenarios exist outside bundle 1/5: bundle 3 covers stale-source resurrection plus prior user dismissal (`src-tauri/tests/fixtures/bundle-3/metadata.json:3-18`; `src-tauri/tests/bundle3_stale_source_resurrection_substrate_test.rs:15-89`); bundle 6 covers weak-source corroboration spam (`src-tauri/tests/fixtures/bundle-6/metadata.json:3-18`); bundle 8 covers sensitivity-class leakage (`src-tauri/tests/fixtures/bundle-8/metadata.json:3-18`; `src-tauri/tests/bundle8_sensitivity_class_leak_substrate_test.rs:15-107`); bundle 13 covers direct adjacent-account source-ref bleed in `prepare_meeting` (`src-tauri/tests/harness.rs:178-233`).
+
+### Path/API/shape changes v2 must absorb
+
+- Replace the v1 planned directories `src-tauri/tests/fixtures/bundles/bundle_1/` and `bundle_5/` with existing `src-tauri/tests/fixtures/bundle-1/` and `src-tauri/tests/fixtures/bundle-5/`.
+- Replace v1 sidecars `expected_claims.json` and `expected_render_policy.json` with the shipped W4-B shape: `expected_output.json`, `expected_provenance.json`, and optional `expected_state.json`. Render policy is now a `metadata.json.expected_render_policy` field (`src-tauri/tests/harness/types.rs:40-58`, `:73-79`), not a separate required file.
+- There is no committed `src-tauri/tests/fixtures/bundles/README.md`, no equivalent bundle README under `src-tauri/tests/fixtures/`, and no `load_dev_workspace.sh` found under `src-tauri/tests/fixtures`. A v2 implementation should not introduce the old `bundles/` root only to satisfy the draft path.
+- Bundle metadata is already the manifest row. Tests assert populated `scenario_id`, `invariant`, `expected_render_policy`, labels, and bundle number (`src-tauri/tests/harness.rs:235-251`).
+
+### Reduced or remaining scope
+
+- Do not create a parallel fixture tree or duplicate bundle 1/5. W6-A's reduced scope is to patch the existing hyphenated bundle directories and harness metadata if the ticket still needs richer Golden Daily Loop coverage.
+- Bundle 1 is not W6-A-complete against the original v1 scenario list. It has parent/target/adjacent accounts, domains, stakeholders, target notes, and an adjacent note, but it does not include a cross-account renewal meeting, same-domain sibling accounts, six paraphrases of one account claim, trust-band diversity, or a wrong-subject tombstone in bundle 1 (`src-tauri/tests/fixtures/bundle-1/state.sql:111-170`).
+- Bundle 5 is not W6-A-complete against the original correction-resurrection contract. It is a first-person meeting-prep parity fixture with a single active `attendee_context` claim and no wrong-subject tombstone, user-edited override, duplicate/paraphrase collapse, expired claim, or double-refresh resurrection scenario (`src-tauri/tests/fixtures/bundle-5/state.sql:61-81`; `src-tauri/tests/fixtures/bundle-5/metadata.json:3-31`).
+- If the product decision is that W6-A must only guarantee a working bundle product for W6-C, then the fixture product exists and loads. If the product decision is that DOS-283 specifically owns the full Golden Daily Loop adversarial bundle 1+5 content, a follow-up update is still needed in existing `bundle-1` and `bundle-5`, not new paths.
+
+### New dependencies and follow-ups
+
+- DOS-411 is related only if bundle 1 is expected to exercise Tauri UI create/update/delete behavior for user-created notes. Current Tauri UI still reads/writes legacy `entity_context_entries`; the claim-backed ability path is separate.
+- DOS-412 is related if W6-A adds sensitivity/rendering expectations. Current bundle 8 is substrate/render-policy evidence, but a full ADR-0108 output-surface audit is v1.4.1 scope.
+
+### Open questions before implementation
+
+1. Should W6-A still modify bundle 1 and bundle 5 to cover the full original DOS-283 scenario asks, or are the now-shipped W4/W5 bundles accepted as the W6 fixture product with caveats?
+2. If richer coverage is still required, should the missing correction-resurrection cases live in `bundle-5`, or should bundle 3 remain the canonical resurrection fixture and W6-C aggregate across bundle 3 plus bundle 5?
+3. Should W6-A add a README/manual dev-load script now, or leave manual workspace loading to DOS-281's release-gate/manual evidence path?
+4. Should bundle 1 be upgraded from legacy `entity_context_entries` parity to claim-backed `get_entity_context` coverage before DOS-411, or would that recreate the W5 cycle-3 Tauri read/write split problem?

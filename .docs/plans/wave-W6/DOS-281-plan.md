@@ -113,3 +113,51 @@ Wave merge-gate artifact: `pnpm release-gate -- --mode hermetic --bundle bundle_
 4. Confirm manual evidence storage: is a redacted JSON+Markdown artifact under `target/release-gate/` enough for the tag proof bundle, or should implementation add a committed `.docs/release-gate/manual-dogfood.md` template?
 5. Confirm exact Suite P budget for the full release-gate command. This plan proposes <=15s aggregation and <=60s golden harness subset warm, but `.docs/plans/v1.4.0-waves.md:171` leaves release-gate latency budget provisional.
 6. Confirm git SHA source for local manual runs: environment-only avoids running `git`, but local artifacts may show `git_sha = "unknown"` unless release tooling exports `DAILYOS_GIT_SHA`.
+
+## Revision history
+
+- v2 (2026-05-06) - appended post-W5 reconciliation notes. The v1 plan above is intentionally left intact.
+
+## v2 reconciliation notes (post-W5)
+
+### What already shipped
+
+- There is still no `src-tauri/src/bin/release_gate.rs`, no `release-gate` bin entry in `src-tauri/Cargo.toml`, and no `release-gate` script in `package.json` (`src-tauri/Cargo.toml:110-131`; `package.json:14-23`). DOS-281 remains an implementation ticket.
+- W2's provider seam is present as `IntelligenceProvider` (`src-tauri/src/intelligence/provider.rs:247-263`) with `ReplayProvider` failing closed on missing replay fixtures (`src-tauri/src/intelligence/provider.rs:426-540`). The AppState Arc bridge now stores context/provider/glean-provider Arcs in one `ContextProviderBundle` and exposes coherent `context_snapshot()` plus `set_context_mode_atomic()` (`src-tauri/src/state.rs:292-326`, `:1016-1032`, `:1116-1168`). The supplied hash `fe14839c` is not present in this checkout; current history shows the W2-B follow-up as `f48b5d55` / `23a56865`.
+- W3-B provenance and subject-fit are landed. `ProvenanceBuilder::finalize()` requires all output leaves to have field attribution and rejects non-confident envelope or field subjects (`src-tauri/src/abilities/provenance/builder.rs:165-213`, `:253-284`).
+- W4-A trust compiler is landed with `cross_entity_coherence` as a factor, and the old contamination module is retired. The retirement regression is `src-tauri/tests/dos287_retired_contamination_module_test.rs:4-40`; the bundle-1 trust reproduction asserts bleed <= 0.3 and clean >= 0.95 (`src-tauri/tests/dos287_substrate_bundle1_reproduction.rs:247-322`).
+- W4-B eval harness is landed under `src-tauri/tests/harness/*`. It discovers hyphenated `bundle-{N}` directories, loads the required file set, runs fixtures through `EvalAbilityBridge`, and can write `target/eval/harness-report.json` (`src-tauri/tests/harness/loader.rs:11-23`, `:144-196`; `src-tauri/tests/harness/runner.rs:89-126`; `src-tauri/tests/harness.rs:1599-1629`). No `target/eval/harness-report.json` or `src-tauri/target/eval/harness-report.json` exists in the working tree right now.
+- W4-C bridge APIs are landed. `EvalAbilityBridge::new(registry, EvalAbilityDeps { fixture_services, provider, tracer }).invoke_json(...)` is the eval path (`src-tauri/src/bridges/eval.rs:20-35`); bridge internals call `invoke_registry_json`, build `AbilityContext::from_bridge`, call `AbilityRegistry::invoke_by_name_json`, and return `AbilityResponseJson` (`src-tauri/src/bridges/types.rs:222-276`, `:535-565`).
+- W4/DOS-383 external replay is integrated into the harness via `JsonExternalReplayFixture` and `ExternalClients::from_replay` (`src-tauri/tests/harness/runner.rs:349-368`).
+- The current committed fixture corpus is `src-tauri/tests/fixtures/bundle-1` through `bundle-13`; `loader_loads_all_committed_bundles` asserts all 13 are present (`src-tauri/tests/harness.rs:40-63`). W5 proof says W5 itself landed bundles 1, 5, and 9-13 at `6a191be3` (`.docs/plans/wave-W5/proof-bundle.md:11`).
+- W5 shipped `get_entity_context` and `prepare_meeting` pilots. `get_entity_context` is a Read ability with User/Agent/System actors and Live/Evaluate modes (`src-tauri/src/abilities/get_entity_context.rs:38-99`). `prepare_meeting` is a Transform ability composing `get_entity_context` (`src-tauri/src/abilities/prepare_meeting/mod.rs:14-31`).
+- W5 cycle-7 prompt-channel sensitivity sweep is now the central production invariant DOS-281 should confirm: Public/Internal only at the prompt boundary (`src-tauri/src/services/claims.rs:620-637`), Agent `get_entity_context` filtering (`src-tauri/src/abilities/get_entity_context.rs:168-181`), and `prepare_meeting` sensitivity filtering across snapshot/prebuilt prompt channels (`src-tauri/src/abilities/prepare_meeting/synthesis.rs:437-465`, `:1494-1496`, `:2117-2314`).
+
+### Path/API/shape changes v2 must absorb
+
+- Replace all `bundle_1` / `bundle_5` defaults with `bundle-1` / `bundle-5` paths. The loader and helpers do not support underscore names.
+- Rebase the tracked bundle list. The v1 note "bundles 2-4 and 6-8 parsed if present" is now true in the current checkout; those bundles are present and should be tracked/non-blocking per Suite E. The W5 prepare-meeting expansion bundles 9-13 are also present and should be considered as additional tracked evidence, with bundle 13 especially relevant to prepare-meeting direct subject bleed.
+- Do not expect separate `expected_claims.json` / `expected_render_policy.json` files. Harness expected output/provenance/state shape is `expected_output.json`, `expected_provenance.json`, optional `expected_state.json`, plus render policy in metadata (`src-tauri/tests/harness/types.rs:40-58`, `:73-79`).
+- The release gate should consume `AbilityResponseJson.rendered_provenance.value`, not `rendered_provenance` as if it were the provenance object directly (`src-tauri/src/bridges/types.rs:149-174`, `:576-581`).
+- If DOS-281 records trust-band evidence, use W4-A `TrustComputation.band`/claim state or harness expected artifacts. W5 ability field attribution does not carry `trust_band` per field today.
+
+### Reduced or remaining scope
+
+- Implement only the release-gate binary/script/evidence aggregation. Do not build fixture paths, ownership substrate, trust-band UI, or Tauri write cutover inside DOS-281.
+- Mandatory hermetic bundles remain bundle 1 and bundle 5 for the v1.4.0 Golden Daily Loop, but the gate should also summarize present tracked bundles 2-4, 6-8, and 9-13. Treat failures in 2-4/6-8 per Suite E's non-blocking rule unless they reveal the same substrate invariant in bundle 1/5.
+- Consider bundle 13 a candidate tracked-or-mandatory adjunct for W5 `prepare_meeting` subject-bleed proof, because current bundle 5 is first-person parity, not wrong-subject tombstone/correction resurrection.
+- The W6-B hook is still unresolved. Until DOS-288 lands an API/test selector, DOS-281 can only depend on existing W4-A/W5 tests (`dos287_substrate_bundle1_reproduction`, `dos287_retired_contamination_module_test`, and harness bundle 13) or mark W6-B evidence missing.
+- Manual evidence mode should acknowledge that DOS-411 and DOS-412 are v1.4.1 follow-ups, not v1.4.0 release blockers: real-dev evidence should call out the legacy Tauri entity-context path and the limited output-side sensitivity audit.
+
+### New dependencies and follow-ups
+
+- DOS-411 (`Tauri entity-context write cutover to claim-backed path`) is out of W6 scope but must be named in real-dev release evidence if manual dogfood touches entity-context notes. Current Tauri UI still reads/writes legacy `entity_context_entries`.
+- DOS-412 (`ADR-0108 sensitivity-rendering audit across UI surfaces and MCP responses`) is out of W6 scope but should be named wherever release evidence discusses output rendering of Confidential/UserOnly claims. W5 only sealed prompt-input and Agent `get_entity_context` paths.
+
+### Open questions before implementation
+
+1. Should DOS-281 make only bundle 1 and bundle 5 mandatory, or add bundle 13 as mandatory because it is the shipped `prepare_meeting` direct subject-bleed regression?
+2. Should DOS-281 fail if the original DOS-283 bundle-5 wrong-subject tombstone scenario is absent, or should that absence be tracked as a W6-A gap while bundle 5 parity remains mandatory?
+3. Should the release gate invoke `cargo test --test harness`/specific tests as subprocesses, or link the harness runner into a new binary API despite the harness currently living under `src-tauri/tests/harness/*`?
+4. What is the canonical output path: repo-root `target/eval/harness-report.json`, `src-tauri/target/eval/harness-report.json`, or a release-gate-owned `src-tauri/target/release-gate/evidence.json` that embeds/points at harness reports?
+5. Should manual dogfood evidence explicitly exclude DOS-411/DOS-412 verification, or include "known out-of-scope" attestations so the v1.4.0 release proof is honest about those follow-ups?
