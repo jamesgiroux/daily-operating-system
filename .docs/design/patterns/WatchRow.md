@@ -22,6 +22,44 @@ Three columns, kind-dependent affordance in the right column:
 
 `grid-template-columns: minmax(110px, 0.22fr) minmax(0, 1fr) auto;`
 
+### Per-variant affordance anatomy
+
+**`suggestedAction`:**
+```
+[Globex Inc]   Pushing intro to Q3; not dead.   [Snooze to Q3 ▾]
+                                                 └─ menu opens inline
+```
+The affordance is the InferredActionSelector trigger button + dropdown. Click triggers `actions::snooze(actionId, until)` or `actions::dismiss(actionId)` based on selected option.
+
+**`openAction`:**
+```
+[Acme Corp]    Send revised pricing appendix.    [○]
+                                                  └─ click marks complete
+```
+The affordance is a circular check button (28px, 1px border, hover-fill turmeric). Click triggers `actions::mark_complete(actionId)`.
+
+**`parked`:**
+```
+[Internal]     New tier 3 deck circulating.      [Parked]
+```
+The affordance is a muted text label (mono 11px, tertiary color). Non-interactive.
+
+**`aging`:**
+```
+[Stark]        Old support thread, no movement.  [Restore] [Archive]
+```
+The affordance is a pair of small buttons (32px h, secondary tone). Click triggers `actions::restore(actionId)` or `actions::archive(actionId)`.
+
+### Mobile collapse (≤720px)
+
+Single-column stack:
+```
+[WHO]
+[What text]
+[Affordance]
+```
+All four variants follow the same collapse rule.
+
 ## Variants
 
 `kind` is the discriminator. Four variants:

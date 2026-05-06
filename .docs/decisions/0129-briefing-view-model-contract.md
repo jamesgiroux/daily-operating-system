@@ -101,8 +101,62 @@ Each service-rendered string field paired with typography register, length budge
 | `BriefingFolioViewModel.dateLabel` | mono uppercase 11px | "THURSDAY, APRIL 23, 2026" | mono cap date |
 | `BriefingDateViewModel.displayDate` | serif | "Thursday, April 23, 2026" | display |
 | `DayStripNeighbor.preview` | serif italic 14px, 300 weight | ≤80 chars | one-line glance |
+| `BriefingFolioViewModel.crumbs[]` | mono uppercase 11px, ` › ` separator | ≤4 segments, ≤24 chars per segment | breadcrumb |
+| `BriefingFolioViewModel.status` | mono italic 11px | ≤40 chars | terse status |
+| `Lead.focusBlock` | serif 16px | ≤2 sentences, ≤180 chars | optional secondary callout |
+| `Schedule.label` / `Moving.label` / `Watch.label` / `Predictions.label` | mono uppercase 11px | ≤16 chars | margin grid identity |
+| `ScheduleMeeting.title` | serif 18px | ≤60 chars | meeting title |
+| `ScheduleMeeting.eyebrow.entityName` | mono uppercase 11px | ≤24 chars | eyebrow entity |
+| `ScheduleMeeting.eyebrow.relationship` | mono uppercase 11px | ≤16 chars | eyebrow relationship |
+| `ScheduleMeeting.attendeeSummary` | sans 13px | ≤80 chars | "Jen Park, Dan Mitchell, +2" |
+| `IntelligenceQualityView.label` | mono uppercase 10px | ≤20 chars | "Briefing fresh", "Notes captured" |
+| `BriefingActionView.label` (link / create) | sans 13px | ≤32 chars | affordance label |
+| `MeetingTimeViewModel.startLabel` | mono 14px | ≤10 chars | "10:00 AM" |
+| `MeetingTimeViewModel.durationLabel` | mono 12px | ≤16 chars | "45m", "30m · ended" |
+| `PillView.label` | mono uppercase 10px | ≤20 chars | "Renewing ↑", "At Risk ↓" |
+| `ProvenanceStat.label` | mono 11px | ≤14 chars | "Health", "Last touch" |
+| `ProvenanceStat.value` | mono 11px, weight 600 | ≤16 chars | "71 +3", "82%" |
+| `ReadinessPair.label` | mono uppercase 11px | ≤24 chars | "3 briefings ready" |
+| `WatchRow.who` | mono uppercase 11px | ≤24 chars | entity name |
+| `WatchSuggestedActionRow.selector.triggerLabel` | sans 13px | ≤32 chars | "Snooze to Q3" |
+| `WatchSuggestedActionRow.selector.options[].label` | sans 13px | ≤48 chars | option text |
+| `WatchOpenActionRow.checkButtonLabel` | (a11y only) | ≤40 chars | "Mark complete" |
+| `WatchParkedRow.parkedLabel` | mono 11px, tertiary | ≤24 chars | "Parked", "Snoozed until Q3" |
+| `WatchAgingRow.ageLabel` | mono 11px | ≤24 chars | "Aging — 12 days" |
+| `WatchAgingOption.label` | sans 12px | ≤16 chars | "Restore" / "Archive" |
+| `DayChartViewModel.hourTicks[].label` | mono 10px | ≤8 chars | "9", "12 PM" |
+| `DayChartViewModel.legend[].label` | mono 10px | ≤16 chars | "Customer" |
+| `DayChartBarViewModel.title` | mono 11px | ≤24 chars | "Acme renewal" |
+| `DayChartBarViewModel.timeLabel` | mono 10px | ≤16 chars | "10:00 · 45M" |
+| `DayChartBarViewModel.tooltip` | (hover) | ≤80 chars | full sentence |
+| `DayChartViewModel.nowLine.label` | mono uppercase 10px | "NOW" | indicator |
+| `DayStripViewModel.current.label` | sans 14px | ≤16 chars | "Today" |
+| `DayStripViewModel.current.ariaLabel` | (a11y only) | ≤80 chars | "Today, Thursday April 23" |
+| `BriefingLoadState.error.message` | serif 28px | ≤16 words | error headline |
+| `BriefingLoadState.error.detailMessage` | serif italic 17px, 300 | ≤2 sentences, ≤180 chars | error detail |
+| `BriefingLoadState.empty.message` | serif italic 19px, 300 | ≤2 sentences, ≤180 chars | empty lede |
+| `BriefingLoadState.empty.checklistItems[].label` | sans 14px | ≤80 chars | one-line checklist item |
 
 Services that produce these fields must respect the budgets. The W2 service ticket plans must reference this table.
+
+**Enforcement (deferred to W2):** a fixture-driven length-budget assertion test (`pnpm test src/types/briefing.typography-budgets.test.ts`) validates per-field budgets against canonical fixtures. Tracked as a W2 follow-up so this ADR doesn't grow the test surface; W2 service tickets gate on it.
+
+## Auth-error vs empty-with-googleAuth disambiguation
+
+Two adjacent states distinguish "user has not connected" from "creds went stale during operation":
+
+- **`empty` + `googleAuth` (not authenticated)** → user has never connected Google, or has revoked. Renders BriefingEmptyState pattern with the connect-Google CTA.
+- **`error` + `code: dependency_failed` + `service: lead | schedule | predictions | moving | watch`** → creds expired mid-session, or a downstream signal source (Glean, Gong) is unreachable. Renders BriefingErrorState pattern with "Try again" + "Diagnostics" affordances.
+
+Services emit `empty` for "missing prerequisite" and `error` for "transient failure of an operation that should have worked." A forced reauth flow (creds detected stale) returns `error` with `code: dependency_failed` and `service: schedule` (or whichever section first detected the auth failure).
+
+## Future-tax follow-up
+
+Once W6 cutover removes the legacy `DailyBriefing.tsx`, evaluate whether `TrustAnnotated&lt;T&gt;` itself should tighten `trustBand` to required and absorb `TrustMixin`. Until then, the two coexist:
+- `TrustMixin` (this contract): `trustBand` required, used by all fact-bearing fields in `BriefingViewModel`.
+- `TrustAnnotated&lt;T&gt;` (existing in `src/types/index.ts:169`): `trustBand` optional, used by legacy types.
+
+If they converge, the type alias becomes `TrustMixin = TrustAnnotated&lt;{}&gt;` with the optionality tightened in one place.
 
 ## Consequences
 
@@ -126,7 +180,7 @@ Services that produce these fields must respect the budgets. The W2 service tick
 
 - Round 1: REJECT (3 reviewers unanimous) — fictional types, deferred sub-models, missing top-level slots, per-section state vs envelope.
 - Round 2: 3 of 4 APPROVE-WITH-REVISIONS, 1 REVISE — trust mixin inconsistency, partial-data semantics, missing fields (heading + countLabel + expandHint + whatSegments + urgency), token taxonomy collision, missing pattern stubs, inline CSS deferral.
-- Round 3: pending. Last permitted round per pacing rule before L6 escalation.
+- Round 3: 2 of 4 APPROVE-WITH-REVISIONS, 2 REVISE — all required fixes mechanical (no new design decisions). Per architect's explicit guidance, fixes applied inline as part of round-3 verdict (no round 4 needed). Closed mechanical fixes: ADR path typo, typography appendix completeness, mutation IDs (PredictionItem.id + WatchSuggestedActionRow/AgingRow.actionId), error.detailMessage + empty.checklistItems, mirror token sync, SignalDot camelCase class names, data-folio-mark loading-stub contradiction, threadAction nested-link rule (resolved as event-stop button), 3 state pattern stubs landed, ProvenanceStat truncation + WatchRow per-variant anatomy resolved.
 
 ## References
 

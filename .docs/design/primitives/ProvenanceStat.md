@@ -46,10 +46,11 @@ The trust mixin lets a stat carry its own per-field trust band (Health and Confi
 - Compose the value — service produces "71 +3" as a single rendered string. The view does not concatenate.
 - Render the trust band — `TrustBandBadge` is a separate primitive composed alongside if visible UI is needed (typical: ProvenanceStat does not render the band visually; it carries the trust metadata for analytics + downstream sensitivity decisions).
 
-## Open questions
+## Truncation + label kinds — resolved
 
-- Should the label have a max-width truncation? Reference fixture uses 80px which works for "Last touch" but breaks on longer label strings.
-- Should there be a `kind` discriminator (health/stage/confidence/owner) for analytics, or is `label` text-only?
+**Truncation:** label column is 80px; values that don't fit truncate via CSS `text-overflow: ellipsis`. Service-side budget is ≤14 characters per label (typography contract appendix). Long-tail label strings ("Mtgs moved" already at 10 chars; "Last touch" at 10) fit. If a future use needs longer labels, lift to 96px and update the typography contract.
+
+**Kind discriminator:** intentionally text-only. The `label` field is the discriminator. Analytics consumers join on `label` string — keeps the type simple, avoids enum-mismatch with services that produce open-ended stat sets per entity kind.
 
 ## Spec status
 

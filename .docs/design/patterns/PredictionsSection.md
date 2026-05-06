@@ -42,7 +42,7 @@ Each prediction item: text (serif 17px) + meta line (mono 11px, confidence + abi
 - **Collapsed** (default): single line, no payload visible.
 - **Expanded**: card list visible inline.
 
-The variant is UI state, not data state. Payload is eager-loaded (per ADR-0109 rationale: predictions count is small, payload size acceptable, expand intent is friction-free).
+The variant is UI state, not data state. Payload is eager-loaded (per ADR 0129 rationale: predictions count is small, payload size acceptable, expand intent is friction-free).
 
 ## Contract type
 

@@ -26,14 +26,14 @@
   align-self: center;
 }
 
-.SignalDot_meeting        { background: var(--color-signal-meeting); }
-.SignalDot_action         { background: var(--color-signal-action); }
-.SignalDot_email          { background: var(--color-signal-email); }
-.SignalDot_lifecycle      { background: var(--color-signal-lifecycle); }
-.SignalDot_gong-call      { background: var(--color-signal-gong-call); }
-.SignalDot_zendesk-ticket { background: var(--color-signal-zendesk-ticket); }
-.SignalDot_slack-thread   { background: var(--color-signal-slack-thread); }
-.SignalDot_linear-issue   { background: var(--color-signal-linear-issue); }
+.SignalDot_meeting       { background: var(--color-signal-meeting); }
+.SignalDot_action        { background: var(--color-signal-action); }
+.SignalDot_email         { background: var(--color-signal-email); }
+.SignalDot_lifecycle     { background: var(--color-signal-lifecycle); }
+.SignalDot_gongCall      { background: var(--color-signal-gong-call); }
+.SignalDot_zendeskTicket { background: var(--color-signal-zendesk-ticket); }
+.SignalDot_slackThread   { background: var(--color-signal-slack-thread); }
+.SignalDot_linearIssue   { background: var(--color-signal-linear-issue); }
 
 .SignalDot_when {
   font-family: var(--font-mono);

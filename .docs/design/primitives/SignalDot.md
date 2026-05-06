@@ -38,10 +38,10 @@ Eight signal sources, each with a dedicated token alias:
 ## Anatomy
 
 ```
-[•] [WHEN] [what — with optional <em>emphasis</em> spans]
+[•] [WHEN] [what — with optional <em>emphasis</em> spans]   [→ thread]?
 ```
 
-Three columns in CSS grid: `12px 70px 1fr`.
+Three columns in CSS grid: `12px 70px 1fr`. When `threadAction` is present, append a fourth `auto` column with a `<button>` (NOT a nested anchor — see MovingRow.md click-target section). The button stops event propagation so the parent MovingRow's row-level click navigates to the entity detail, while the thread button takes the user to the source thread.
 
 ## Contract type
 

@@ -27,7 +27,9 @@ Render one entity's "what's moving" row in the Daily Briefing Moving section. Th
 
 Three CSS grid columns: `minmax(120px, 0.2fr) minmax(0, 1fr) minmax(120px, auto)`.
 
-Whole row is a link to the entity detail page. Hover treatment matches the editorial-row hover (border-color shift, no transform).
+**Click target — resolved.** The whole row is the click target via a wrapping `<div>` with `role="link"` + `tabindex="0"` + click handler navigating to the entity detail page. **Not** a wrapping `<a>` — that would invalidate any nested interactive element. Inside the row, `MovingSignalViewModel.threadAction` (if present) is a separate `<button>` that stops event propagation; clicking the button performs the thread action without triggering the row navigation. This avoids invalid nested-anchor HTML.
+
+Hover treatment matches the editorial-row hover (border-color shift, no transform).
 
 ## Variants
 

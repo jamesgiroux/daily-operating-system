@@ -1,8 +1,34 @@
-# DOS-413 — BriefingViewModel contract — L0 plan (rev 3)
+# DOS-413 — BriefingViewModel contract — L0 plan (rev 3.1, APPROVED)
 
 **Wave:** W0 (single-ticket; blocks all of W1-W6)
-**Status:** Round 3 — addresses round-2 four-reviewer feedback (architect APPROVE-WITH-REVISIONS, codex challenge REVISE, codex independent REVISE, design-consultation APPROVE-WITH-REVISIONS)
-**Round-2 verdict files:** see commit history of this file
+**Status:** L0 closed. Round 3 came back 2 APPROVE-WITH-REVISIONS + 2 REVISE; all required fixes mechanical, applied inline per architect's authorization (no round 4 needed). Plan advances to L1 self-validation.
+**Round-3 verdicts:** see commit history; consolidated mechanical fixes applied in rev 3.1 commit.
+
+## Round-3 mechanical fixes applied (rev 3.1)
+
+- **Mirror token sync** — `--color-signal-*` aliases added to `.docs/design/reference/_shared/styles/design-tokens.css` (had been missed; reference HTML now resolves SignalDot vars correctly)
+- **Mutation IDs** — `PredictionItem.id`, `WatchSuggestedActionRow.actionId`, `WatchAgingRow.actionId` added (required for `predictions::ack`, `actions::snooze/dismiss/restore/archive` calls)
+- **State payload completeness** — `BriefingLoadState.error.detailMessage?` and `BriefingLoadState.empty.checklistItems?` added to cover the new state stub renders
+- **ADR path typo fixed** — three references to `decisions/0129-briefing-view-model-contract.md` (was wrongly `.docs/adr/decisions/0129-...md-...md`)
+- **ADR-0109 → 0129** in `PredictionsSection.md`
+- **SignalDot camelCase classes** — `gong-call` → `gongCall`, `zendesk-ticket` → `zendeskTicket`, `slack-thread` → `slackThread`, `linear-issue` → `linearIssue` (CSS Module convention)
+- **`data-folio-mark="pulsing"` dropped** from loading stub (markPulsing-dropped contradiction)
+- **threadAction rendering rule** clarified — event-stop button, not nested anchor (MovingRow.md + SignalDot.md)
+- **3 state pattern stubs** landed at proposed status: `BriefingLoadingState.md`, `BriefingErrorState.md`, `BriefingEmptyState.md`
+- **MovingRow click-target** resolved (whole row via `role="link"` + tabindex, not wrapping `<a>`)
+- **WatchRow per-variant anatomy** added (4 variants, ASCII anatomy each)
+- **ProvenanceStat truncation + label-kind discriminator** resolved
+- **Typography appendix expanded** in ADR 0129 (now exhaustive: ~50 fields covering crumbs, Lead.focusBlock, all section labels, ScheduleMeeting fields, IntelligenceQualityView, BriefingActionView, MeetingTimeViewModel, PillView, ProvenanceStat, ReadinessPair, all WatchRow variants, all DayChart fields, DayStrip current, all BriefingLoadState fields)
+- **ADR future-tax note** — fold TrustMixin into TrustAnnotated<T> post-W6
+- **ADR auth-error clarification** — `empty + googleAuth` vs `error + dependency_failed`
+- **`// service-capped at ≤10`** comment on `PredictionsViewModel.predictions`
+- **Mutation-verification clause** added to merge gate
+
+## Tracked as W2/audit follow-ups (not in W0)
+
+- Typography budget enforcement test (`pnpm test src/types/briefing.typography-budgets.test.ts`) → W2
+- Signal-token paint-sharing constraint audit → design-system audit
+- Open-action LifecycleMixin question → W2 substrate
 
 ## Round-2 findings addressed (21 items, all in scope per no-deferrals rule)
 
@@ -52,7 +78,7 @@ Acceptance criteria from ticket (round-3 interpretation):
 - [ ] One variant per section (Lead, Schedule, Predictions, Moving, Watch)
 - [ ] All states modeled — at the top-level envelope, not per-section. The ticket text says "loading / error / empty / cached-stale / present" but `cachedStale` is dropped (no infra exists); `freshness: DataFreshness` rides on `success`. The intent (every load condition representable) is satisfied.
 - [ ] No business logic in the type — pure shape
-- [ ] ADR landed at `.docs/adr/decisions/0129-briefing-view-model-contract.md-briefing-view-model-contract.md`
+- [ ] ADR landed at `.docs/decisions/0129-briefing-view-model-contract.md`
 
 Round-3 expansion (recorded here, not in the original ticket): W0 also lands token aliases, 5 design-system stub specs, 3 canonical module CSS files, 3 reference HTML state stubs, and a typography contract appendix in the ADR.
 
@@ -93,7 +119,7 @@ Round-3 expansion (recorded here, not in the original ticket): W0 also lands tok
 
 ### ADR
 
-- `.docs/adr/decisions/0129-briefing-view-model-contract.md-briefing-view-model-contract.md` — design note + typography contract appendix + ADR-noted decisions (eager predictions, service-owned routes, trust rollout policy)
+- `.docs/decisions/0129-briefing-view-model-contract.md` — design note + typography contract appendix + ADR-noted decisions (eager predictions, service-owned routes, trust rollout policy)
 
 ## 3. What I'm NOT building
 
@@ -188,18 +214,25 @@ export type BriefingSectionId =
   | "moving"
   | "watch";
 
+export interface BriefingEmptyChecklistItem {
+  label: string;                     // service-rendered
+  status?: "todo" | "done";          // optional checkmark state
+}
+
 export type BriefingLoadState =
   | { status: "loading" }
   | {
       status: "error";
-      message: string;
+      message: string;                        // primary headline
+      detailMessage?: string;                 // secondary detail sentence
       code?: BriefingErrorCode;
-      service?: BriefingSectionId;          // failing producer, when known
+      service?: BriefingSectionId;            // failing producer, when known
     }
   | {
       status: "empty";
       message: string;
       googleAuth?: GoogleAuthStatus;
+      checklistItems?: BriefingEmptyChecklistItem[];  // shown in empty state body
     }
   | {
       status: "success";
@@ -406,11 +439,14 @@ export interface PredictionsViewModel {
   expandHint: string;
   /** Numeric count — for type-narrowing and analytics. */
   count: number;
-  /** Eager-loaded — see decisions/0129-briefing-view-model-contract.md rationale. */
+  /** Eager-loaded — see decisions/0129-briefing-view-model-contract.md rationale.
+   *  Service-capped at ≤10 items. */
   predictions: PredictionItem[];
 }
 
 export interface PredictionItem extends TrustMixin {
+  /** Stable ID; required for predictions::ack(prediction_id). */
+  id: string;
   text: string;
   confidence: { value: number; label: string };
   abilitySource: { id: string; label: string };
@@ -503,6 +539,8 @@ interface WatchRowBase extends TrustMixin {
 /** Claim-bearing variants extend LifecycleMixin; non-claim variants don't. */
 export interface WatchSuggestedActionRow extends WatchRowBase, LifecycleMixin {
   kind: "suggestedAction";
+  /** Stable ID; required for actions::snooze(action_id), actions::dismiss(action_id), actions::add_to_meeting(action_id, meeting_id). */
+  actionId: string;
   selector: InferredActionSelectorViewModel;
 }
 
@@ -519,6 +557,8 @@ export interface WatchParkedRow extends WatchRowBase {
 
 export interface WatchAgingRow extends WatchRowBase {
   kind: "aging";
+  /** Stable ID; required for actions::restore(action_id) and actions::archive(action_id). */
+  actionId: string;
   ageLabel: string;
   since: string;
   options: WatchAgingOption[];
@@ -643,6 +683,8 @@ The W6 view-purity audit (DOS-438) reads off these conventions.
 - 3 canonical module CSS files land
 - Reference HTML drops inline CSS for those modules; links them
 - 3 state stubs land (loading, error, empty)
+- 3 state pattern stubs land at `proposed` status (BriefingLoadingState, BriefingErrorState, BriefingEmptyState)
+- W2 ticket bodies (DOS-414..419) updated with the mutation-verification clause: "L0 plan must list mutation commands consumed and confirm existence or include create-mutation work"
 
 ## L0 reviewer dispatch (round 3 — final per pacing rule)
 
