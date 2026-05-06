@@ -70,7 +70,7 @@ pub fn delete_person(
     delete_person_with_stakeholder_cache_rebuild(ctx, db, person_id)?;
 
     // Emit deletion signal
-    let _ = crate::services::signals::emit_and_propagate(
+    crate::services::signals::emit_and_propagate_or_log(
         ctx,
         db,
         &state.signals.engine,
@@ -372,8 +372,10 @@ pub fn update_person_field(
     db.update_person_field(person_id, field, value)
         .map_err(|e| e.to_string())?;
 
-    // Emit field update signal + self-healing evaluation
-    let _ = crate::services::signals::emit_propagate_and_evaluate(
+    // Emit field update signal + self-healing evaluation. Best-effort:
+    // failure should NOT roll back the field update but must warn so ops
+    // can detect lost self-healing triggers.
+    if let Err(e) = crate::services::signals::emit_propagate_and_evaluate(
         ctx,
         db,
         &state.signals.engine,
@@ -388,7 +390,11 @@ pub fn update_person_field(
         )),
         0.8,
         &state.intel_queue,
-    );
+    ) {
+        log::warn!(
+            "people: emit_propagate_and_evaluate dropped on person={person_id} field={field}: {e}"
+        );
+    }
 
     // Self-healing: record user correction for Clay-enrichable fields
     if matches!(field, "linkedin_url" | "role" | "organization" | "name") {
@@ -450,7 +456,7 @@ pub fn link_person_entity(
     })?;
 
     // Emit person linked signal
-    let _ = crate::services::signals::emit_and_propagate(
+    crate::services::signals::emit_and_propagate_or_log(
         ctx,
         db,
         &state.signals.engine,
@@ -490,7 +496,7 @@ pub fn unlink_person_entity(
     })?;
 
     // Emit person unlinked signal
-    let _ = crate::services::signals::emit_and_propagate(
+    crate::services::signals::emit_and_propagate_or_log(
         ctx,
         db,
         &state.signals.engine,
@@ -598,7 +604,7 @@ pub fn archive_person(
     } else {
         "entity_unarchived"
     };
-    let _ = crate::services::signals::emit_and_propagate(
+    crate::services::signals::emit_and_propagate_or_log(
         ctx,
         db,
         &state.signals.engine,

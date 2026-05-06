@@ -114,6 +114,70 @@ pub fn emit_and_propagate(
     .map_err(|e| e.to_string())
 }
 
+/// Best-effort wrapper around `emit` that warn-logs on failure rather than
+/// dropping the Result silently. Use from service-layer call sites where the
+/// emit is a side effect that should NOT fail the parent operation but where
+/// a silent drop would lose downstream propagation history. Replaces the
+/// `crate::services::signals::emit_or_log(...)` pattern.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_or_log(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) {
+    if let Err(e) = emit(
+        ctx,
+        db,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    ) {
+        log::warn!(
+            "services::signals::emit dropped {signal_type} on {entity_type}/{entity_id}: {e}"
+        );
+    }
+}
+
+/// Best-effort wrapper around `emit_and_propagate` that warn-logs on failure
+/// rather than dropping the Result. Replaces the
+/// `crate::services::signals::emit_and_propagate_or_log(...)` pattern.
+#[allow(clippy::too_many_arguments)]
+pub fn emit_and_propagate_or_log(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &PropagationEngine,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) {
+    if let Err(e) = emit_and_propagate(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+    ) {
+        log::warn!(
+            "services::signals::emit_and_propagate dropped {signal_type} on {entity_type}/{entity_id}: {e}"
+        );
+    }
+}
+
 /// Emit a signal, propagate, and evaluate for self-healing re-enrichment.
 // ServiceContext adds one arg; signal facade mirrors bus shape.
 #[allow(clippy::too_many_arguments)]

@@ -78,7 +78,7 @@ pub(crate) fn backfill_account_domain_from_person(
     }
 
     // Emit audit signal mirroring the C6 path.
-    let _ = crate::services::signals::emit(
+    crate::services::signals::emit_or_log(
         ctx,
         db,
         "account",
@@ -297,7 +297,7 @@ fn c6_backfill_account_domains(
                 discovered.len(),
                 account_id
             );
-            let _ = crate::services::signals::emit(
+            crate::services::signals::emit_or_log(
                 ctx,
                 db,
                 "account",

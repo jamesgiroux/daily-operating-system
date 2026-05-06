@@ -82,7 +82,7 @@ pub async fn create_entry(
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            let _ = crate::services::signals::emit_and_propagate(
+            crate::services::signals::emit_and_propagate_or_log(
                 &ctx,
                 db,
                 &engine,
@@ -166,7 +166,7 @@ pub async fn update_entry(
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            let _ = crate::services::signals::emit_and_propagate(
+            crate::services::signals::emit_and_propagate_or_log(
                 &ctx,
                 db,
                 &engine,
@@ -220,7 +220,7 @@ pub async fn delete_entry(
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            let _ = crate::services::signals::emit_and_propagate(
+            crate::services::signals::emit_and_propagate_or_log(
                 &ctx,
                 db,
                 &engine,

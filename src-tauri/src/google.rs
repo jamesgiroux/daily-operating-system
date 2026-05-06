@@ -869,7 +869,7 @@ fn populate_people_from_events(
                 // Emit person_created signal for hygiene feedback loop
                 if is_new {
                     let ctx = state.live_service_context();
-                    let _ = crate::services::signals::emit_and_propagate(
+                    crate::services::signals::emit_and_propagate_or_log(
                         &ctx,
                         &db,
                         &state.signals.engine,
@@ -963,7 +963,7 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
         }
         // Emit cancellation signal  with propagation
         let ctx = state.live_service_context();
-        let _ = crate::services::signals::emit_and_propagate(
+        crate::services::signals::emit_and_propagate_or_log(
             &ctx,
             &db,
             &state.signals.engine,

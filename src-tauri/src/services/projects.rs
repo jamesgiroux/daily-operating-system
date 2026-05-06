@@ -305,7 +305,7 @@ pub async fn update_project_field(
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            let _ = crate::services::signals::emit(
+            crate::services::signals::emit_or_log(
                 &ctx,
                 db,
                 "project",
@@ -417,7 +417,7 @@ pub async fn update_project_notes(
                 let rng = crate::services::context::SystemRng;
                 let ext = crate::services::context::ExternalClients::default();
                 let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-                let _ = crate::services::signals::emit(
+                crate::services::signals::emit_or_log(
                     &ctx,
                     db,
                     "project",
@@ -523,7 +523,7 @@ pub fn archive_project(
     } else {
         "entity_unarchived"
     };
-    let _ = crate::services::signals::emit(
+    crate::services::signals::emit_or_log(
         ctx,
         db,
         "project",

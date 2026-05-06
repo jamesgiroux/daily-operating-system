@@ -1329,7 +1329,7 @@ fn process_glean_contacts(
                 }
 
                 // Emit glean_contact_discovered signal
-                let _ = crate::services::signals::emit(
+                crate::services::signals::emit_or_log(
                     &ctx,
                     db,
                     "person",

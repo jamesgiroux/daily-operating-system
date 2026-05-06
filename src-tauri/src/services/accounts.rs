@@ -866,7 +866,7 @@ pub fn apply_lifecycle_transition(
                         "Noting milestone match '{}' for {} at confidence {:.2} (below 0.8 threshold)",
                         milestone_title, account_id, transition.confidence
                     );
-                    let _ = crate::services::signals::emit_and_propagate(
+                    crate::services::signals::emit_and_propagate_or_log(
             ctx,
                         tx,
                         engine,
@@ -924,7 +924,7 @@ pub fn ensure_account_lifecycle_state(
                 "{{\"stage\":\"{}\"}}",
                 inferred_stage.as_deref().unwrap_or("")
             );
-            let _ = crate::services::signals::emit_and_propagate(
+            crate::services::signals::emit_and_propagate_or_log(
                 ctx,
                 db,
                 engine,
@@ -2283,8 +2283,9 @@ pub fn resolve_triage_item(
     );
 
     // Best-effort signal emit — triage resolution is user-intent evidence
-    // the card was accurate + actioned. Failure should not rollback.
-    let _ = crate::services::signals::emit_propagate_and_evaluate(
+    // the card was accurate + actioned. Failure should not rollback the
+    // triage resolution itself but must surface to ops.
+    if let Err(e) = crate::services::signals::emit_propagate_and_evaluate(
         ctx,
         db,
         &state.signals.engine,
@@ -2298,7 +2299,11 @@ pub fn resolve_triage_item(
         )),
         0.8,
         &state.intel_queue,
-    );
+    ) {
+        log::warn!(
+            "accounts: triage-resolution emit_propagate_and_evaluate dropped on {entity_type}/{entity_id} triage_key={triage_key}: {e}"
+        );
+    }
     Ok(())
 }
 

@@ -120,7 +120,7 @@ fn backfill_domains_for_account_inner(
         .map_err(|e| format!("merge_account_domains for {account_id}: {e}"))?;
 
     for domain in &new_domains {
-        let _ = crate::services::signals::emit(
+        crate::services::signals::emit_or_log(
             ctx,
             db,
             "account",

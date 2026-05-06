@@ -479,7 +479,7 @@ pub async fn get_emails_enriched(
                         "{{\"normal_interval_days\":{:.1},\"days_since_last\":{:.0}}}",
                         acct.normal_interval_days, acct.days_since_last_email
                     );
-                    let _ = crate::services::signals::emit_and_propagate(
+                    crate::services::signals::emit_and_propagate_or_log(
                         &ctx,
                         db,
                         &engine,
@@ -1030,7 +1030,7 @@ pub fn update_email_entity(
 
     let etype = entity_type.unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
-    let _ = crate::services::signals::emit(
+    crate::services::signals::emit_or_log(
         ctx,
         db,
         etype,
@@ -1056,7 +1056,7 @@ pub fn dismiss_email_signal(
         .map_err(|e| e.to_string())?;
 
     if let Some((entity_id, entity_type, signal_type, email_id)) = context {
-        let _ = crate::services::signals::emit(
+        crate::services::signals::emit_or_log(
             ctx,
             db,
             &entity_type,
@@ -1088,7 +1088,7 @@ pub fn mark_reply_sent(
     // Emit engagement signal if the email is linked to an entity
     if let Some((entity_id, entity_type)) = entity_info {
         let engine = crate::signals::propagation::PropagationEngine::default();
-        let _ = crate::services::signals::emit_and_propagate(
+        crate::services::signals::emit_and_propagate_or_log(
             ctx,
             db,
             &engine,
@@ -1131,7 +1131,7 @@ pub async fn archive_email(
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
             let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            let _ = crate::services::signals::emit_and_propagate(
+            crate::services::signals::emit_and_propagate_or_log(
                 &ctx,
                 db,
                 &engine,
@@ -1241,7 +1241,7 @@ pub fn pin_email(
     let now_pinned = db.toggle_pin_email(email_id).map_err(|e| e.to_string())?;
     if now_pinned {
         let (entity_type, entity_id) = email_entity_context(db, email_id);
-        let _ = crate::services::signals::emit_and_propagate(
+        crate::services::signals::emit_and_propagate(
             ctx,
             db,
             engine,
@@ -1353,7 +1353,7 @@ pub fn promote_commitment_to_action(
 
     let sig_entity_type = entity_type.unwrap_or("email");
     let sig_entity_id = entity_id.unwrap_or(email_id);
-    let _ = crate::services::signals::emit_and_propagate(
+    crate::services::signals::emit_and_propagate_or_log(
         ctx,
         db,
         engine,
@@ -1396,7 +1396,7 @@ pub fn dismiss_gone_quiet(
     entity_id: &str,
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    let _ = crate::services::signals::emit_and_propagate(
+    crate::services::signals::emit_and_propagate(
         ctx,
         db,
         engine,
@@ -1471,7 +1471,7 @@ pub fn dismiss_email_item(
 
     let etype = entity_id.map(|_| "account").unwrap_or("email");
     let eid = entity_id.unwrap_or(email_id);
-    let _ = crate::services::signals::emit(
+    crate::services::signals::emit_or_log(
         ctx,
         db,
         etype,

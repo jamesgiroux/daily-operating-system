@@ -879,7 +879,7 @@ pub fn match_commitments_to_milestones(
                 }
 
                 // Emit signal
-                let _ = crate::services::signals::emit(
+                crate::services::signals::emit_or_log(
                     ctx,
                     db,
                     "account",
