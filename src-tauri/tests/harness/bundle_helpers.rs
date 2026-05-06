@@ -6,6 +6,7 @@ use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
 use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
+use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::context::ExecutionMode;
 use serde_json::{json, Value};
 
@@ -46,6 +47,18 @@ pub fn synthetic_runner_deps() -> RunnerDeps {
 pub fn run_with_synthetic_enrich_stub(fixture: &EvalFixture) -> Result<RunResult, RunError> {
     let deps = synthetic_runner_deps();
     run_fixture(&deps, fixture)
+}
+
+pub(crate) fn refresh_prepare_meeting_context_from_db(
+    prepared: &mut super::runner::PreparedFixtureRun,
+    meeting_id: &str,
+) -> Result<(), RunError> {
+    let db = ActionDb::from_conn(&prepared.conn);
+    prepared.prepare_meeting_context = Some(
+        dailyos_lib::services::meetings::load_prepare_meeting_context_snapshot(db, meeting_id)
+            .map_err(RunError::StateSqlFailed)?,
+    );
+    Ok(())
 }
 
 pub fn assert_eval_bridge_stub_invoked(result: &RunResult) {

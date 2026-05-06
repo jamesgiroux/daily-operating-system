@@ -27,6 +27,7 @@ use super::{
     SourceIdentifier, SourceIndex, SourceRef, SubjectAttribution, SubjectBindingKind,
     SubjectFitStatus, SubjectRef,
 };
+use crate::abilities::registry::{AbilityCategory, AbilityDescriptor};
 use crate::abilities::trust::factors::cross_entity_coherence;
 use crate::abilities::trust::{
     CrossEntityCoherenceInput, CrossEntityHitKind, EntityFootprint, TargetFootprint, TrustConfig,
@@ -48,6 +49,8 @@ pub struct OwnershipPolicy {
     #[serde(default = "default_true")]
     pub allow_user_confirmed_subject_override: bool,
     #[serde(default)]
+    pub reject_sources_outside_subject_scope: bool,
+    #[serde(default)]
     pub source_entity_links: Vec<SourceEntityLinkEvidence>,
     #[serde(default)]
     pub canonical_subject_groups: Vec<CanonicalSubjectGroup>,
@@ -62,6 +65,11 @@ impl OwnershipPolicy {
 
     pub fn requiring_entity_link_evidence(mut self) -> Self {
         self.require_entity_link_evidence = true;
+        self
+    }
+
+    pub fn rejecting_sources_outside_subject_scope(mut self) -> Self {
+        self.reject_sources_outside_subject_scope = true;
         self
     }
 
@@ -86,6 +94,7 @@ impl Default for OwnershipPolicy {
             trust_config: TrustConfig::default(),
             require_entity_link_evidence: false,
             allow_user_confirmed_subject_override: true,
+            reject_sources_outside_subject_scope: false,
             source_entity_links: Vec::new(),
             canonical_subject_groups: Vec::new(),
             prompt_input_claims: Vec::new(),
@@ -236,6 +245,47 @@ pub fn validate_serialized_subject_ownership(
         rendered_paths,
         policy,
     )
+}
+
+pub fn build_ownership_policy_for_invocation(
+    ability_meta: &AbilityDescriptor,
+    input_json: &Value,
+    response_provenance: &Value,
+) -> Result<OwnershipPolicy, OwnershipError> {
+    let provenance = serde_json::from_value::<Provenance>(response_provenance.clone())
+        .map_err(|_| OwnershipError::InvalidAbilityEnvelope)?;
+    let target_subject = target_subject_for_invocation(ability_meta, input_json)
+        .unwrap_or_else(|| provenance.subject.subject.clone());
+    let mut scope_subjects = vec![target_subject.clone()];
+    collect_provenance_subjects(&provenance, &mut scope_subjects);
+    let scope_subjects = distinct_subjects(&scope_subjects);
+    let related_subjects = scope_subjects
+        .iter()
+        .filter(|subject| !subject_matches(subject, &target_subject))
+        .cloned()
+        .collect::<Vec<_>>();
+    let target_footprint = TargetFootprint {
+        subject: target_subject,
+        names: Vec::new(),
+        domains: Vec::new(),
+        related_subjects: related_subjects.clone(),
+        allowed_aliases: Vec::new(),
+    };
+    let portfolio_footprints = related_subjects
+        .iter()
+        .cloned()
+        .map(entity_footprint_for_subject)
+        .collect::<Vec<_>>();
+
+    let mut policy =
+        OwnershipPolicy::confident().with_target_footprint(target_footprint, portfolio_footprints);
+    policy.require_entity_link_evidence = true;
+    policy.source_entity_links = source_entity_links_for_provenance(&provenance, &scope_subjects);
+    policy.canonical_subject_groups = canonical_subject_groups_for_provenance(&provenance);
+    if ability_meta.category == AbilityCategory::Transform {
+        policy.prompt_input_claims = prompt_input_claims_from_invocation(input_json);
+    }
+    Ok(policy)
 }
 
 fn validate_provenance_ownership(
@@ -440,7 +490,10 @@ fn resolve_source_refs(
                     &attribution.subject.subject,
                     policy,
                 );
-                if policy.require_entity_link_evidence && !entity_link_evidence {
+                if (policy.require_entity_link_evidence && !entity_link_evidence)
+                    || (policy.reject_sources_outside_subject_scope
+                        && !source_is_in_subject_scope(source, *source_index, policy))
+                {
                     return Err(OwnershipError::SourceRefWithoutEntityLinkEvidence {
                         field_path: field_path.clone(),
                         source_ref: OwnershipSourceRef::Source {
@@ -520,6 +573,71 @@ fn source_has_entity_link_evidence(
             .identifiers
             .iter()
             .any(|identifier| identifier_matches_subject(identifier, subject))
+}
+
+fn source_is_in_subject_scope(
+    source: &SourceAttribution,
+    source_index: SourceIndex,
+    policy: &OwnershipPolicy,
+) -> bool {
+    let Some(target_footprint) = policy.target_footprint.as_ref() else {
+        return true;
+    };
+
+    policy
+        .source_entity_links
+        .iter()
+        .filter(|link| link.source_index == source_index)
+        .any(|link| subject_is_in_policy_scope(&link.subject, policy))
+        || source
+            .identifiers
+            .iter()
+            .any(|identifier| identifier_is_in_policy_scope(identifier, target_footprint, policy))
+}
+
+fn subject_is_in_policy_scope(subject: &SubjectRef, policy: &OwnershipPolicy) -> bool {
+    let Some(target_footprint) = policy.target_footprint.as_ref() else {
+        return true;
+    };
+    subject_matches(subject, &target_footprint.subject)
+        || target_footprint
+            .related_subjects
+            .iter()
+            .any(|related| subject_matches(subject, related))
+        || policy
+            .portfolio_footprints
+            .iter()
+            .any(|footprint| subject_matches(subject, &footprint.subject))
+}
+
+fn identifier_is_in_policy_scope(
+    identifier: &SourceIdentifier,
+    target_footprint: &TargetFootprint,
+    policy: &OwnershipPolicy,
+) -> bool {
+    match identifier {
+        SourceIdentifier::Entity { entity_id, .. } => {
+            subject_contains_id(&target_footprint.subject, &entity_id.0)
+                || target_footprint
+                    .related_subjects
+                    .iter()
+                    .any(|subject| subject_contains_id(subject, &entity_id.0))
+                || policy
+                    .portfolio_footprints
+                    .iter()
+                    .any(|footprint| subject_contains_id(&footprint.subject, &entity_id.0))
+        }
+        SourceIdentifier::Meeting { meeting_id } => {
+            subject_is_in_policy_scope(&SubjectRef::Meeting(meeting_id.0.clone()), policy)
+        }
+        SourceIdentifier::Signal { .. }
+        | SourceIdentifier::EmailThread { .. }
+        | SourceIdentifier::Document { .. }
+        | SourceIdentifier::UserEntry { .. }
+        | SourceIdentifier::GleanAssessment { .. }
+        | SourceIdentifier::ProviderCompletion { .. }
+        | SourceIdentifier::OpaqueGleanSource { .. } => false,
+    }
 }
 
 fn identifier_matches_subject(identifier: &SourceIdentifier, subject: &SubjectRef) -> bool {
@@ -610,6 +728,302 @@ fn target_footprint_for_subject(subject: &SubjectRef) -> TargetFootprint {
         related_subjects: Vec::new(),
         allowed_aliases: Vec::new(),
     }
+}
+
+fn entity_footprint_for_subject(subject: SubjectRef) -> EntityFootprint {
+    EntityFootprint {
+        subject,
+        names: Vec::new(),
+        domains: Vec::new(),
+        infrastructure_ids: Vec::new(),
+    }
+}
+
+fn target_subject_for_invocation(
+    ability_meta: &AbilityDescriptor,
+    input_json: &Value,
+) -> Option<SubjectRef> {
+    match ability_meta.name {
+        "get_entity_context" => subject_from_entity_fields(input_json),
+        "prepare_meeting" => string_field(input_json, "meeting_id").map(SubjectRef::Meeting),
+        _ => subject_from_input_json(input_json),
+    }
+    .or_else(|| subject_from_input_json(input_json))
+}
+
+fn subject_from_input_json(input_json: &Value) -> Option<SubjectRef> {
+    ["subject_ref", "subject"]
+        .into_iter()
+        .find_map(|key| input_json.get(key).and_then(subject_from_json_value))
+        .or_else(|| subject_from_entity_fields(input_json))
+        .or_else(|| string_field(input_json, "account_id").map(SubjectRef::Account))
+        .or_else(|| string_field(input_json, "project_id").map(SubjectRef::Project))
+        .or_else(|| string_field(input_json, "person_id").map(SubjectRef::Person))
+        .or_else(|| string_field(input_json, "meeting_id").map(SubjectRef::Meeting))
+        .or_else(|| string_field(input_json, "user_id").map(SubjectRef::User))
+}
+
+fn subject_from_entity_fields(input_json: &Value) -> Option<SubjectRef> {
+    let entity_type = string_field(input_json, "entity_type")?;
+    let entity_id = string_field(input_json, "entity_id")?;
+    subject_from_kind_and_id(&entity_type, &entity_id)
+}
+
+fn subject_from_json_value(value: &Value) -> Option<SubjectRef> {
+    if let Ok(subject) = serde_json::from_value::<SubjectRef>(value.clone()) {
+        return Some(subject);
+    }
+    if let Some(raw) = value.as_str() {
+        if let Ok(json) = serde_json::from_str::<Value>(raw) {
+            return subject_from_json_value(&json);
+        }
+        return None;
+    }
+    let object = value.as_object()?;
+    let kind = object
+        .get("kind")
+        .or_else(|| object.get("type"))
+        .and_then(Value::as_str)?;
+    let id = object
+        .get("id")
+        .or_else(|| object.get("entity_id"))
+        .and_then(Value::as_str)?;
+    subject_from_kind_and_id(kind, id)
+}
+
+fn subject_from_kind_and_id(kind: &str, id: &str) -> Option<SubjectRef> {
+    if id.trim().is_empty() {
+        return None;
+    }
+    match kind.trim().to_ascii_lowercase().as_str() {
+        "account" | "accounts" => Some(SubjectRef::Account(id.to_string())),
+        "project" | "projects" => Some(SubjectRef::Project(id.to_string())),
+        "person" | "people" => Some(SubjectRef::Person(id.to_string())),
+        "meeting" | "meetings" => Some(SubjectRef::Meeting(id.to_string())),
+        "user" | "users" => Some(SubjectRef::User(id.to_string())),
+        "global" => Some(SubjectRef::Global),
+        _ => None,
+    }
+}
+
+fn string_field(value: &Value, key: &str) -> Option<String> {
+    value
+        .get(key)
+        .and_then(Value::as_str)
+        .filter(|value| !value.trim().is_empty())
+        .map(str::to_string)
+}
+
+fn collect_provenance_subjects(provenance: &Provenance, out: &mut Vec<SubjectRef>) {
+    collect_subject_ref_members(&provenance.subject.subject, out);
+    for attribution in provenance.field_attributions.values() {
+        collect_subject_ref_members(&attribution.subject.subject, out);
+    }
+    for child in &provenance.children {
+        collect_provenance_subjects(&child.provenance, out);
+    }
+}
+
+fn collect_subject_ref_members(subject: &SubjectRef, out: &mut Vec<SubjectRef>) {
+    match subject {
+        SubjectRef::Multi(subjects) => {
+            for subject in subjects {
+                collect_subject_ref_members(subject, out);
+            }
+        }
+        SubjectRef::Unknown | SubjectRef::Global => {}
+        subject => out.push(subject.clone()),
+    }
+}
+
+fn source_entity_links_for_provenance(
+    provenance: &Provenance,
+    scope_subjects: &[SubjectRef],
+) -> Vec<SourceEntityLinkEvidence> {
+    let mut links = Vec::new();
+    for (index, source) in provenance.sources.iter().enumerate() {
+        let source_index = SourceIndex(index);
+        let explicit_subjects = explicit_source_subjects(source, scope_subjects);
+        if explicit_subjects.is_empty() {
+            links.extend(
+                inferred_source_subjects(provenance, source_index)
+                    .into_iter()
+                    .map(|subject| SourceEntityLinkEvidence {
+                        source_index,
+                        subject,
+                    }),
+            );
+        } else {
+            links.extend(
+                explicit_subjects
+                    .into_iter()
+                    .map(|subject| SourceEntityLinkEvidence {
+                        source_index,
+                        subject,
+                    }),
+            );
+        }
+    }
+    dedupe_source_entity_links(links)
+}
+
+fn explicit_source_subjects(
+    source: &SourceAttribution,
+    scope_subjects: &[SubjectRef],
+) -> Vec<SubjectRef> {
+    let mut subjects = Vec::new();
+    for identifier in &source.identifiers {
+        match identifier {
+            SourceIdentifier::Entity { entity_id, .. } => {
+                let matching_subjects = scope_subjects
+                    .iter()
+                    .filter(|subject| subject_contains_id(subject, &entity_id.0))
+                    .cloned()
+                    .collect::<Vec<_>>();
+                if matching_subjects.is_empty() {
+                    subjects.push(SubjectRef::Account(entity_id.0.clone()));
+                } else {
+                    subjects.extend(matching_subjects);
+                }
+            }
+            SourceIdentifier::Meeting { meeting_id } => {
+                subjects.push(SubjectRef::Meeting(meeting_id.0.clone()));
+            }
+            SourceIdentifier::Signal { .. }
+            | SourceIdentifier::EmailThread { .. }
+            | SourceIdentifier::Document { .. }
+            | SourceIdentifier::UserEntry { .. }
+            | SourceIdentifier::GleanAssessment { .. }
+            | SourceIdentifier::ProviderCompletion { .. }
+            | SourceIdentifier::OpaqueGleanSource { .. } => {}
+        }
+    }
+    distinct_subjects(&subjects)
+}
+
+fn inferred_source_subjects(provenance: &Provenance, source_index: SourceIndex) -> Vec<SubjectRef> {
+    let subjects = provenance
+        .field_attributions
+        .values()
+        .filter(|attribution| {
+            attribution.source_refs.iter().any(|source_ref| {
+                matches!(
+                    source_ref,
+                    SourceRef::Source {
+                        source_index: candidate
+                    } if *candidate == source_index
+                )
+            })
+        })
+        .flat_map(|attribution| {
+            let mut subjects = Vec::new();
+            collect_subject_ref_members(&attribution.subject.subject, &mut subjects);
+            subjects
+        })
+        .collect::<Vec<_>>();
+    distinct_subjects(&subjects)
+}
+
+fn dedupe_source_entity_links(
+    links: Vec<SourceEntityLinkEvidence>,
+) -> Vec<SourceEntityLinkEvidence> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for link in links {
+        let key = serde_json::to_string(&link).unwrap_or_else(|_| format!("{link:?}"));
+        if seen.insert(key) {
+            out.push(link);
+        }
+    }
+    out
+}
+
+fn canonical_subject_groups_for_provenance(provenance: &Provenance) -> Vec<CanonicalSubjectGroup> {
+    let mut groups = Vec::new();
+    collect_canonical_subject_group(&provenance.subject, &mut groups);
+    for attribution in provenance.field_attributions.values() {
+        collect_canonical_subject_group(&attribution.subject, &mut groups);
+    }
+    for child in &provenance.children {
+        groups.extend(canonical_subject_groups_for_provenance(&child.provenance));
+    }
+    dedupe_canonical_subject_groups(groups)
+}
+
+fn collect_canonical_subject_group(
+    attribution: &SubjectAttribution,
+    groups: &mut Vec<CanonicalSubjectGroup>,
+) {
+    if attribution.competing_subjects.is_empty() {
+        return;
+    }
+    let mut subjects = Vec::new();
+    collect_subject_ref_members(&attribution.subject, &mut subjects);
+    for competing in &attribution.competing_subjects {
+        collect_subject_ref_members(&competing.subject, &mut subjects);
+    }
+    let subjects = distinct_subjects(&subjects);
+    if subjects.len() > 1 {
+        groups.push(CanonicalSubjectGroup {
+            subjects,
+            explicit_user_confirmed_merge: matches!(
+                attribution.binding,
+                SubjectBindingKind::UserConfirmed
+            ),
+        });
+    }
+}
+
+fn dedupe_canonical_subject_groups(
+    groups: Vec<CanonicalSubjectGroup>,
+) -> Vec<CanonicalSubjectGroup> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for group in groups {
+        let key = serde_json::to_string(&group).unwrap_or_else(|_| format!("{group:?}"));
+        if seen.insert(key) {
+            out.push(group);
+        }
+    }
+    out
+}
+
+fn prompt_input_claims_from_invocation(input_json: &Value) -> Vec<IntelligenceClaim> {
+    let mut claims = Vec::new();
+    collect_intelligence_claims(input_json, &mut claims);
+    dedupe_intelligence_claims(claims)
+}
+
+fn collect_intelligence_claims(value: &Value, claims: &mut Vec<IntelligenceClaim>) {
+    if let Ok(claim) = serde_json::from_value::<IntelligenceClaim>(value.clone()) {
+        claims.push(claim);
+        return;
+    }
+
+    match value {
+        Value::Array(values) => {
+            for value in values {
+                collect_intelligence_claims(value, claims);
+            }
+        }
+        Value::Object(object) => {
+            for value in object.values() {
+                collect_intelligence_claims(value, claims);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+fn dedupe_intelligence_claims(claims: Vec<IntelligenceClaim>) -> Vec<IntelligenceClaim> {
+    let mut seen = BTreeSet::new();
+    let mut out = Vec::new();
+    for claim in claims {
+        if seen.insert(claim.id.clone()) {
+            out.push(claim);
+        }
+    }
+    out
 }
 
 fn redacted_hash(value: &str) -> String {

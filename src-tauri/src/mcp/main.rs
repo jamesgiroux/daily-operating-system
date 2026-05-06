@@ -19,7 +19,7 @@ use rmcp::{tool, Error as McpError, RoleServer, ServerHandler, ServiceExt};
 use serde::{Deserialize, Serialize};
 
 use dailyos_lib::abilities::provenance::{
-    validate_serialized_subject_ownership, InvocationId, OwnershipPolicy,
+    build_ownership_policy_for_invocation, validate_serialized_subject_ownership, InvocationId,
 };
 use dailyos_lib::abilities::{AbilityDescriptor, AbilityRegistry};
 use dailyos_lib::bridges::mcp::McpAbilityBridge;
@@ -753,6 +753,7 @@ pub async fn invoke_mcp_ability_tool(
 ) -> Result<CallToolResult, McpError> {
     let ability_name = request.name.to_string();
     let input_json = serde_json::Value::Object(request.arguments.unwrap_or_default());
+    let input_for_policy = input_json.clone();
     let confirmation =
         ability_bridge.take_confirmation_token(session_id, &ability_name, &input_json);
     let response = ability_bridge
@@ -760,12 +761,29 @@ pub async fn invoke_mcp_ability_tool(
         .await
         .map_err(mcp_error_from_bridge_surface_error)?;
     if ability_name != "get_entity_context" {
+        let ability_meta = ability_bridge
+            .list_descriptors()
+            .iter()
+            .find(|descriptor| descriptor.name == ability_name)
+            .copied()
+            .ok_or_else(|| {
+                mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable)
+            })?;
+        let policy = build_ownership_policy_for_invocation(
+            ability_meta,
+            &input_for_policy,
+            &response.rendered_provenance.value,
+        )
+        .map_err(|error| {
+            mcp_error_from_bridge_surface_error(BridgeSurfaceError::Ownership(error))
+        })?
+        .rejecting_sources_outside_subject_scope();
         validate_serialized_subject_ownership(
             response.data.clone(),
             response.rendered_provenance.value.clone(),
             response.diagnostics.clone(),
             &[],
-            OwnershipPolicy::confident(),
+            policy,
         )
         .map_err(|error| {
             mcp_error_from_bridge_surface_error(BridgeSurfaceError::Ownership(error))
