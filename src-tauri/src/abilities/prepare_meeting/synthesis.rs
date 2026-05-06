@@ -452,10 +452,7 @@ fn brief_subject_from_claim(claim: &IntelligenceClaim) -> Result<BriefSubjectRef
         ClaimSubjectRef::Account { id } => Ok(BriefSubjectRef::account(&id)),
         ClaimSubjectRef::Meeting { id } => Ok(BriefSubjectRef::meeting(&id)),
         ClaimSubjectRef::Person { id } => Ok(BriefSubjectRef::person(&id)),
-        ClaimSubjectRef::Project { id } => Ok(BriefSubjectRef {
-            kind: "project".into(),
-            id,
-        }),
+        ClaimSubjectRef::Project { id } => Ok(BriefSubjectRef::project(&id)),
         ClaimSubjectRef::Email { .. } | ClaimSubjectRef::Multi(_) | ClaimSubjectRef::Global => {
             Err(validation_error(format!(
                 "prepare_meeting claim `{}` has unsupported subject_ref",
@@ -1263,6 +1260,13 @@ impl BriefSubjectRef {
         }
     }
 
+    fn project(id: &str) -> Self {
+        Self {
+            kind: "project".into(),
+            id: id.into(),
+        }
+    }
+
     fn unknown() -> Self {
         Self {
             kind: "unknown".into(),
@@ -1312,6 +1316,14 @@ fn meeting_scope_source_subjects(context: &MeetingBriefContext) -> BTreeSet<Stri
         }
         if let Some(account_id) = attendee.account_id.as_deref() {
             subjects.insert(BriefSubjectRef::account(account_id).key());
+        }
+    }
+    for entity_context in &context.entity_contexts {
+        if matches!(
+            entity_context.subject.kind.as_str(),
+            "account" | "person" | "project"
+        ) {
+            subjects.insert(entity_context.subject.key());
         }
     }
     subjects
@@ -1893,6 +1905,117 @@ mod tests {
         context.evidence[0].subject = BriefSubjectRef::account("acct-adjacent");
 
         let output = harness.run(input).await.unwrap();
+
+        assert!(output.data().topics.is_empty());
+        assert!(output.provenance().warnings.iter().any(|warning| {
+            matches!(
+                warning,
+                ProvenanceWarning::SubjectFitQualified { status, .. }
+                    if status == "SubjectAmbiguous"
+            )
+        }));
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_accepts_linked_project_source_subject() {
+        let claim = fixture_claim(
+            "claim-linked-project",
+            "project",
+            "proj-linked",
+            "The linked project milestone needs launch owner confirmation.",
+            "2026-05-05T16:00:00Z",
+            Some("2026-05-05T16:00:00Z"),
+        );
+        let snapshot = fixture_meeting_snapshot(
+            "meeting-linked-project",
+            vec![PrepareMeetingAttendeeSnapshot {
+                name: "Mina Example".into(),
+                email: Some("mina@example.com".into()),
+                person_id: Some("person-mina".into()),
+                account_id: None,
+                domain: Some("example.com".into()),
+            }],
+            vec![PrepareMeetingSubjectSnapshot {
+                kind: "project".into(),
+                id: "proj-linked".into(),
+                display_name: "Launch Project".into(),
+            }],
+            vec![claim.clone()],
+        );
+        let harness = Harness::new(serde_json::json!({
+            "topics": [{
+                "title": "Confirm launch owner",
+                "detail": "The linked project milestone needs launch owner confirmation.",
+                "subject": {"kind": "project", "id": "proj-linked"},
+                "source_ids": ["claim-linked-project"],
+                "confidence": 0.91
+            }],
+            "attendee_context": [],
+            "open_loops": [],
+            "what_changed_since_last": [],
+            "suggested_outcomes": []
+        }))
+        .with_claims(vec![claim])
+        .with_meeting_context(snapshot);
+
+        let output = harness
+            .run(public_input("meeting-linked-project"))
+            .await
+            .unwrap();
+
+        assert_eq!(output.data().topics.len(), 1);
+        assert_eq!(
+            output.data().topics[0].subject,
+            BriefSubjectRef::project("proj-linked")
+        );
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_blocks_unlinked_adjacent_project_source() {
+        let claim = fixture_claim(
+            "claim-adjacent-project",
+            "project",
+            "proj-adjacent",
+            "The adjacent project escalation does not belong in this meeting.",
+            "2026-05-05T16:00:00Z",
+            Some("2026-05-05T16:00:00Z"),
+        );
+        let snapshot = fixture_meeting_snapshot(
+            "meeting-linked-project",
+            vec![PrepareMeetingAttendeeSnapshot {
+                name: "Mina Example".into(),
+                email: Some("mina@example.com".into()),
+                person_id: Some("person-mina".into()),
+                account_id: None,
+                domain: Some("example.com".into()),
+            }],
+            vec![PrepareMeetingSubjectSnapshot {
+                kind: "project".into(),
+                id: "proj-linked".into(),
+                display_name: "Launch Project".into(),
+            }],
+            vec![claim.clone()],
+        );
+        let harness = Harness::new(serde_json::json!({
+            "topics": [{
+                "title": "Adjacent project escalation",
+                "detail": "The adjacent project escalation does not belong in this meeting.",
+                "subject": {"kind": "project", "id": "proj-adjacent"},
+                "source_ids": ["claim-adjacent-project"],
+                "confidence": 0.91
+            }],
+            "attendee_context": [],
+            "open_loops": [],
+            "what_changed_since_last": [],
+            "suggested_outcomes": []
+        }))
+        .with_claims(vec![claim])
+        .with_meeting_context(snapshot);
+
+        let output = harness
+            .run(public_input("meeting-linked-project"))
+            .await
+            .unwrap();
 
         assert!(output.data().topics.is_empty());
         assert!(output.provenance().warnings.iter().any(|warning| {

@@ -12,7 +12,7 @@ use std::{
 };
 
 use base64::Engine;
-use dailyos_lib::abilities::prepare_meeting::{prepare_meeting, PrepareMeetingInput};
+use dailyos_lib::abilities::prepare_meeting::{prepare_meeting, prompts, PrepareMeetingInput};
 use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
 use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
@@ -20,7 +20,7 @@ use dailyos_lib::abilities::{
 };
 use dailyos_lib::intelligence::provider::{
     canonical_prompt_hash, CanonicalPromptRequest, FingerprintMetadata, IntelligenceProvider,
-    ModelTier, PromptInput, ProviderError,
+    ModelName, ModelTier, PromptInput, ProviderError, ProviderKind,
 };
 use dailyos_lib::services::context::{
     ExecutionMode, ExternalClientError, GleanAccountFacts, GleanClientHandle, SeedableRng,
@@ -370,6 +370,59 @@ fn harness_loads_provider_replay_by_canonical_prompt_hash() {
         complete_replay_provider(&prepared.provider, prompt).expect("provider replay fixture hit");
 
     assert_eq!(completion, "fixture completion");
+}
+
+#[test]
+fn harness_replay_provenance_hash_uses_non_default_lookup_metadata() {
+    let temp_dir = tempfile::tempdir().expect("tempdir");
+    write_minimal_fixture(temp_dir.path(), true);
+    let rendered = prompts::render_prompt(r#"{"meeting_id":"meeting-non-default"}"#, 7);
+    let prompt = rendered.prompt_input();
+    let fingerprint_metadata = FingerprintMetadata {
+        provider: ProviderKind::OpenAI,
+        model: ModelName::new("gpt-replay-non-default"),
+        temperature: 0.42,
+        top_p: Some(0.91),
+        seed: Some(8_675_309),
+        tokens_input: None,
+        tokens_output: None,
+        provider_completion_id: None,
+    };
+    let replay_hash = canonical_prompt_hash(CanonicalPromptRequest {
+        prompt: &prompt,
+        fingerprint_metadata: &fingerprint_metadata,
+    });
+    write_json(
+        &temp_dir.path().join("provider_replay.json"),
+        json!({
+            "version": 1,
+            "provider": "openai",
+            "model": "gpt-replay-non-default",
+            "temperature": 0.42,
+            "top_p": 0.91,
+            "seed": 8675309,
+            "fixtures": [{
+                "canonical_prompt_hash": replay_hash.clone(),
+                "completion": { "text": "fixture completion" }
+            }]
+        }),
+    );
+    let fixture = load_fixture(temp_dir.path()).expect("fixture loads");
+    let prepared = prepare_fixture_for_run(&fixture).expect("fixture prepares");
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("tokio runtime");
+
+    let completion = runtime
+        .block_on(prepared.provider.complete(prompt, ModelTier::Synthesis))
+        .expect("provider replay fixture hit");
+    let fingerprint = prompts::fingerprint_from_completion(&completion, &rendered);
+
+    assert_eq!(completion.text, "fixture completion");
+    assert_eq!(fingerprint.provider, "openai");
+    assert_eq!(fingerprint.model.0, "gpt-replay-non-default");
+    assert_eq!(fingerprint.canonical_prompt_hash.0, replay_hash);
 }
 
 #[test]

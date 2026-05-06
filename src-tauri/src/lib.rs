@@ -54,6 +54,10 @@ pub mod substrate_test_api {
         crate::intel_queue::compose_enrichment_intelligence_payload(db, input, intel, None)
     }
 }
+#[doc(hidden)]
+pub mod command_test_api {
+    pub use crate::commands::{create_entity_context_entry, get_entity_context_entries};
+}
 pub mod intelligence;
 pub mod json_loader;
 mod latency;

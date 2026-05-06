@@ -279,9 +279,10 @@ impl DbService {
         }))
     }
 
-    /// Unencrypted variant used only by tests.
-    #[cfg(test)]
-    pub async fn open_at_unencrypted(path: PathBuf) -> Result<Arc<Self>, DbError> {
+    /// Unencrypted variant used by test harnesses that need `AppState`
+    /// without touching the user's encrypted DailyOS database or Keychain.
+    #[doc(hidden)]
+    pub async fn open_at_unencrypted_for_tests(path: PathBuf) -> Result<Arc<Self>, DbError> {
         if let Some(parent) = path.parent() {
             if !parent.exists() {
                 std::fs::create_dir_all(parent).map_err(DbError::CreateDir)?;
@@ -324,6 +325,12 @@ impl DbService {
             readers,
             read_idx: AtomicUsize::new(0),
         }))
+    }
+
+    /// Unencrypted variant used only by unit tests.
+    #[cfg(test)]
+    pub async fn open_at_unencrypted(path: PathBuf) -> Result<Arc<Self>, DbError> {
+        Self::open_at_unencrypted_for_tests(path).await
     }
 
     /// Open a fresh encrypted connection through the writer thread so SQLCipher
@@ -444,6 +451,13 @@ mod tests {
         }
     }
 
+    #[cfg(target_os = "macos")]
+    fn seed_sqlcipher_key_for_keychainless_tests() {
+        crate::db::encryption::set_cached_db_key_for_tests(
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+        );
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn dos_229_email_entity_update_visible_to_readers() {
         let dir = tempfile::tempdir().expect("tempdir");
@@ -542,6 +556,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn dos_229_sqlcipher_open_fresh_serialized_no_notadb() {
+        seed_sqlcipher_key_for_keychainless_tests();
+
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("fresh_open_fallback.db");
 
@@ -601,6 +617,8 @@ mod tests {
     #[cfg(target_os = "macos")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn open_fresh_serialized_initializes_schema_for_new_path() {
+        seed_sqlcipher_key_for_keychainless_tests();
+
         let dir = tempfile::tempdir().expect("tempdir");
         let service_path = dir.path().join("service.db");
         let fresh_path = dir.path().join("fresh_missing_schema.db");

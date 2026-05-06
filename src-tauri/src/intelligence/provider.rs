@@ -524,6 +524,10 @@ impl IntelligenceProvider for ReplayProvider {
         self.fixtures
             .get(&key)
             .cloned()
+            .map(|mut completion| {
+                completion.fingerprint_metadata = metadata;
+                completion
+            })
             .ok_or(ProviderError::ReplayFixtureMissing(key))
     }
 

@@ -11,7 +11,9 @@ use dailyos_lib::services::context::{
     EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
     SeedableRng, ServiceContext,
 };
+use dailyos_lib::state::AppState;
 use rusqlite::Connection;
+use tauri::Manager;
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
 const PROJECTION_STATUS_SQL: &str =
@@ -24,7 +26,6 @@ CREATE TABLE people (
     claim_version INTEGER NOT NULL DEFAULT 0
 );
 "#;
-
 struct SqliteClaimReader {
     conn: Mutex<Connection>,
 }
@@ -188,18 +189,64 @@ async fn workspace_entity_context_handler_filters_inactive_claim_rows() {
 }
 
 #[test]
-fn workspace_tauri_command_routes_entity_context_reads_through_claim_handler() {
+fn workspace_tauri_command_routes_entity_context_reads_through_legacy_handler_until_projection() {
     let source = std::fs::read_to_string(
         std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/commands/workspace.rs"),
     )
     .expect("read workspace command source");
 
     assert!(
-        source.contains(".read_entity_context_claim_entries("),
-        "get_entity_context_entries must route through the claim-backed handler"
+        source.contains("services::entity_context::get_entries(&entity_type, &entity_id, &state)"),
+        "get_entity_context_entries must route through the legacy reader until writes project to claims"
     );
     assert!(
-        !source.contains("services::entity_context::get_entries(&entity_type, &entity_id, &state)"),
-        "get_entity_context_entries must not call the legacy entity_context_entries reader"
+        !source.contains(".read_entity_context_claim_entries("),
+        "get_entity_context_entries must not use claim-backed reads while create/update/delete write legacy rows"
+    );
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn workspace_tauri_create_then_read_returns_created_entity_context_note() {
+    let temp_dir = tempfile::tempdir().expect("create isolated DB dir");
+    let db_service = dailyos_lib::db_service::DbService::open_at_unencrypted_for_tests(
+        temp_dir.path().join("entity-context-command.db"),
+    )
+    .await
+    .expect("open isolated DB service");
+    let state = Arc::new(AppState::test_with_db_service(db_service));
+    let app = tauri::test::mock_builder()
+        .manage(Arc::clone(&state))
+        .build(tauri::test::mock_context(tauri::test::noop_assets()))
+        .expect("build mock Tauri app");
+
+    let created = dailyos_lib::command_test_api::create_entity_context_entry(
+        "account".to_string(),
+        "account-track-h".to_string(),
+        "Renewal note".to_string(),
+        "Customer asked for renewal risk follow-up.".to_string(),
+        app.state::<Arc<AppState>>(),
+    )
+    .await
+    .expect("create entity context entry through Tauri command");
+
+    let entries = dailyos_lib::command_test_api::get_entity_context_entries(
+        "account".to_string(),
+        "account-track-h".to_string(),
+        app.state::<Arc<AppState>>(),
+    )
+    .await
+    .expect("read entity context entries through Tauri command");
+
+    let read_back = entries
+        .iter()
+        .find(|entry| entry.id == created.id)
+        .expect("created entry is visible to read command");
+
+    assert_eq!(read_back.entity_type, "account");
+    assert_eq!(read_back.entity_id, "account-track-h");
+    assert_eq!(read_back.title, "Renewal note");
+    assert_eq!(
+        read_back.content,
+        "Customer asked for renewal risk follow-up."
     );
 }

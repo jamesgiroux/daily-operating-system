@@ -862,6 +862,93 @@ impl AppState {
         }
     }
 
+    #[doc(hidden)]
+    pub fn test_with_db_service(db_service: Arc<crate::db_service::DbService>) -> Self {
+        let prep_queue = Arc::new(Mutex::new(Vec::new()));
+        let embedding_model = Arc::new(crate::embeddings::EmbeddingModel::new());
+        let local_provider = crate::context_provider::local::LocalContextProvider::new(
+            PathBuf::new(),
+            Arc::clone(&embedding_model),
+        );
+        let intel_queue_arc = Arc::new(crate::intel_queue::IntelligenceQueue::new());
+        let mut signal_engine = crate::signals::propagation::default_engine();
+        signal_engine.set_prep_queue(Arc::clone(&prep_queue));
+        signal_engine.set_intel_queue(Arc::clone(&intel_queue_arc));
+
+        let audit_path =
+            std::env::temp_dir().join(format!("dailyos-test-audit-{}.jsonl", uuid::Uuid::new_v4()));
+        let audit_logger = crate::audit_log::AuditLogger::new(audit_path);
+
+        Self {
+            config: RwLock::new(None),
+            workflow: WorkflowState {
+                status: RwLock::new(HashMap::new()),
+                history: Mutex::new(Vec::new()),
+                last_scheduled_run: RwLock::new(HashMap::new()),
+            },
+            db_service: tokio::sync::RwLock::new(Some(db_service)),
+            activity: Arc::new(crate::activity::ActivityMonitor::new()),
+            calendar: CalendarState {
+                google_auth: Mutex::new(GoogleAuthStatus::NotConfigured),
+                events: RwLock::new(Vec::new()),
+                week_cache: RwLock::new(None),
+            },
+            capture: CaptureState {
+                dismissed: Mutex::new(std::collections::HashSet::new()),
+                captured: Mutex::new(std::collections::HashSet::new()),
+                transcript_processed: Mutex::new(HashMap::new()),
+            },
+            intel_queue: intel_queue_arc,
+            health_recompute_debouncer: Arc::new(
+                crate::services::health_debouncer::HealthRecomputeDebouncer::new(),
+            ),
+            embedding_model,
+            embedding_queue: Arc::new(crate::processor::embeddings::EmbeddingQueue::new()),
+            clock: crate::services::context::SystemClock,
+            rng: crate::services::context::SystemRng,
+            external: crate::services::context::ExternalClients::default(),
+            hygiene: HygieneState {
+                report: Mutex::new(None),
+                scan_running: AtomicBool::new(false),
+                last_scan_at: Mutex::new(None),
+                next_scan_at: Mutex::new(None),
+                budget: HygieneBudget::unlimited(),
+                full_orphan_scan_done: AtomicBool::new(false),
+            },
+            pre_dev_workspace: Mutex::new(None),
+            signals: SignalState {
+                engine: Arc::new(signal_engine),
+                prep_invalidation_queue: prep_queue,
+            },
+            integrations: IntegrationState {
+                enrichment_wake: Arc::new(tokio::sync::Notify::new()),
+                quill_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                linear_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                email_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                granola_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                drive_poller_wake: Arc::new(tokio::sync::Notify::new()),
+                intel_queue_wake: Arc::new(tokio::sync::Notify::new()),
+                prep_queue_wake: Arc::new(tokio::sync::Notify::new()),
+                embedding_queue_wake: Arc::new(tokio::sync::Notify::new()),
+            },
+            lock_state: Mutex::new(AppLockState::default()),
+            confirmation_attestations: ConfirmationAttestationState::default(),
+            encryption_key_missing: AtomicBool::new(false),
+            database_recovery_status: Mutex::new(DatabaseRecoveryStatus::not_required()),
+            audit_log: Arc::new(Mutex::new(audit_logger)),
+            active_preset: RwLock::new(None),
+            merged_signal_config: RwLock::new(MergedSignalConfig::default()),
+            meeting_prep_queue: Arc::new(crate::meeting_prep_queue::MeetingPrepQueue::new()),
+            permits: ResourcePermits::new(),
+            context_state: RwLock::new(ContextProviderBundle {
+                context_provider: Arc::new(local_provider),
+                intelligence_provider: None,
+                glean_intelligence_provider: None,
+            }),
+            app_handle: RwLock::new(None),
+        }
+    }
+
     /// Get a snapshot of the merged signal config for the active preset.
     ///
     /// Returns the cached `MergedSignalConfig` — cheap clone, no recomputation.

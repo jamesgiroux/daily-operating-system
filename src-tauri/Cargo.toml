@@ -95,6 +95,7 @@ anyhow = { version = "1", optional = true }
 
 [dev-dependencies]
 filetime = "0.2.27"
+tauri = { version = "2", features = ["test"] }
 tracing-test = "0.2"
 trybuild = "1"
 

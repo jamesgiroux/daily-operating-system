@@ -33,6 +33,11 @@ pub fn was_migration_performed() -> bool {
 /// dialogs on first launch or after code-signing changes).
 static CACHED_KEY: OnceLock<String> = OnceLock::new();
 
+#[cfg(test)]
+pub(crate) fn set_cached_db_key_for_tests(hex_key: &str) {
+    let _ = CACHED_KEY.set(hex_key.to_string());
+}
+
 /// Retrieve the existing DB key from Keychain, or generate and store a new one
 /// if no database exists yet. The key is cached in memory after the first
 /// successful access — subsequent calls never touch the Keychain.
