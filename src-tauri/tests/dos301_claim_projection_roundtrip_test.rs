@@ -117,6 +117,7 @@ fn commit_claim_projects_entity_summary_to_legacy_reader() {
         &ctx,
         ActionDb::from_conn(&conn),
         ClaimProposal {
+            id: None,
             subject_ref,
             claim_type: "entity_summary".to_string(),
             field_path: Some("executiveAssessment".to_string()),
@@ -132,6 +133,7 @@ fn commit_claim_projects_entity_summary_to_legacy_reader() {
             thread_id: None,
             temporal_scope: None,
             sensitivity: None,
+            supersedes: None,
             tombstone: None,
         },
     )

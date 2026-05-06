@@ -292,6 +292,7 @@ fn claim_proposal(
 ) -> ClaimProposal {
     let observed_at = ctx.clock.now().to_rfc3339();
     ClaimProposal {
+        id: None,
         subject_ref: subject_ref(account_id),
         claim_type: "risk".to_string(),
         field_path: Some("risks".to_string()),
@@ -307,6 +308,7 @@ fn claim_proposal(
         thread_id: None,
         temporal_scope: Some(TemporalScope::State),
         sensitivity: Some(ClaimSensitivity::Internal),
+        supersedes: None,
         tombstone: is_dismissal.then(|| TombstoneSpec {
             retraction_reason: "user_removal".to_string(),
             expires_at: None,

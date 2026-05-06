@@ -1386,6 +1386,7 @@ mod tests {
 
     fn claim_proposal(claim_type: &str, text: &str) -> ClaimProposal {
         ClaimProposal {
+            id: None,
             subject_ref: "{\"kind\":\"account\",\"id\":\"acct-commit\"}".to_string(),
             claim_type: claim_type.to_string(),
             field_path: None,
@@ -1401,12 +1402,14 @@ mod tests {
             thread_id: None,
             temporal_scope: Some(TemporalScope::State),
             sensitivity: Some(ClaimSensitivity::Internal),
+            supersedes: None,
             tombstone: None,
         }
     }
 
     fn stakeholder_claim_proposal(person_id: &str, text: &str) -> ClaimProposal {
         ClaimProposal {
+            id: None,
             subject_ref: serde_json::json!({
                 "kind": "person",
                 "id": person_id,
@@ -1426,6 +1429,7 @@ mod tests {
             thread_id: None,
             temporal_scope: Some(TemporalScope::State),
             sensitivity: Some(ClaimSensitivity::Internal),
+            supersedes: None,
             tombstone: None,
         }
     }

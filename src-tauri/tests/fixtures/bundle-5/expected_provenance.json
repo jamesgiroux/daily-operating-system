@@ -1,11 +1,58 @@
 {
   "ability_name": "prepare_meeting",
-  "scenario_id": "bundle5-prepare-meeting-first-person-parity",
+  "scenario_id": "bundle5-prepare-meeting-correction-resurrection-parity",
   "expected": {
     "category": "transform",
     "composes": ["get_entity_context"],
     "prompt_template_id": "prepare_meeting_prep",
-    "source_asof_reachable": ["2026-05-05T15:30:00Z"],
-    "temporal_scope": ["state"]
+    "source_asof_reachable": [
+      "2026-05-05T15:30:00Z",
+      "2026-05-05T16:00:00Z",
+      "2026-05-05T16:20:00Z"
+    ],
+    "temporal_scope": ["state"],
+    "active_prompt_evidence": [
+      "src-b5-intro-note",
+      "src-b5-user-edited-preference",
+      "src-b5-agenda-dup-canonical"
+    ],
+    "suppressed_from_prompt_evidence": [
+      "src-b5-wrong-attendee-original",
+      "src-b5-original-preference",
+      "src-b5-expired-dormant-open-loop"
+    ],
+    "claim_lifecycle_assertions": [
+      {
+        "claim_id": "src-b5-wrong-attendee-original",
+        "claim_state": "tombstoned",
+        "surfacing_state": "dormant",
+        "feedback_id": "feedback-b5-wrong-subject-riley",
+        "feedback_type": "wrong_subject"
+      },
+      {
+        "claim_id": "src-b5-original-preference",
+        "claim_state": "dormant",
+        "surfacing_state": "dormant",
+        "superseded_by": "src-b5-user-edited-preference"
+      },
+      {
+        "claim_id": "src-b5-user-edited-preference",
+        "claim_state": "active",
+        "surfacing_state": "active",
+        "precedes": "src-b5-original-preference"
+      },
+      {
+        "claim_id": "src-b5-agenda-dup-canonical",
+        "corroboration_id": "corro-b5-agenda-paraphrase",
+        "collapsed_duplicate_count": 1
+      },
+      {
+        "claim_id": "src-b5-expired-dormant-open-loop",
+        "claim_state": "dormant",
+        "surfacing_state": "dormant",
+        "expires_at": "2026-05-02T00:00:00Z",
+        "double_refresh_expected": "do_not_reactivate"
+      }
+    ]
   }
 }

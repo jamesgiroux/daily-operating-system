@@ -79,6 +79,8 @@ pub enum CommitPolicyClass {
     Fork,
     /// Newer claims supersede older claims of the same meaning.
     Replace,
+    /// Each commit is an independent user-authored observation.
+    Append,
 }
 
 /// Subject kinds a claim may attach to. Matches the runtime
@@ -160,6 +162,7 @@ pub enum ClaimType {
     AttendeeContext,
     MeetingChangeMarker,
     SuggestedOutcome,
+    UserNote,
 }
 
 impl ClaimType {
@@ -254,6 +257,7 @@ pub const fn metadata_for_claim_type(kind: ClaimType) -> &'static ClaimTypeMetad
         ClaimType::AttendeeContext => &ATTENDEE_CONTEXT_META,
         ClaimType::MeetingChangeMarker => &MEETING_CHANGE_MARKER_META,
         ClaimType::SuggestedOutcome => &SUGGESTED_OUTCOME_META,
+        ClaimType::UserNote => &USER_NOTE_META,
     }
 }
 
@@ -651,6 +655,17 @@ claim_meta!(
     SUBJECTS_MEETING,
     ACTORS_AGENT
 );
+claim_meta!(
+    USER_NOTE_META,
+    UserNote,
+    "user_note",
+    State,
+    Internal,
+    Slow,
+    Append,
+    SUBJECTS_ANY_ENTITY,
+    ACTORS_USER_OR_SYSTEM
+);
 
 /// Closed registry of claim types for name-based traversal paths.
 /// `metadata_for_claim_type` is independently exhaustive; this slice
@@ -685,6 +700,7 @@ pub const CLAIM_TYPE_REGISTRY: &[&ClaimTypeMetadata] = &[
     &ATTENDEE_CONTEXT_META,
     &MEETING_CHANGE_MARKER_META,
     &SUGGESTED_OUTCOME_META,
+    &USER_NOTE_META,
 ];
 
 /// Look up a metadata row by canonical persisted name. Returns `None`
@@ -726,7 +742,8 @@ mod tests {
             | ClaimType::EntityCurrentState
             | ClaimType::EntityWin
             | ClaimType::ValueDelivered
-            | ClaimType::CompanyContext => FreshnessDecayClass::Slow,
+            | ClaimType::CompanyContext
+            | ClaimType::UserNote => FreshnessDecayClass::Slow,
             ClaimType::Risk
             | ClaimType::EntityRisk
             | ClaimType::StakeholderEngagement
@@ -772,6 +789,7 @@ mod tests {
             | ClaimType::MeetingEventNote
             | ClaimType::AttendeeContext
             | ClaimType::MeetingChangeMarker => CommitPolicyClass::Reinforce,
+            ClaimType::UserNote => CommitPolicyClass::Append,
         }
     }
 
@@ -838,6 +856,7 @@ mod tests {
             (ClaimType::AttendeeContext, "attendee_context"),
             (ClaimType::MeetingChangeMarker, "meeting_change_marker"),
             (ClaimType::SuggestedOutcome, "suggested_outcome"),
+            (ClaimType::UserNote, "user_note"),
         ];
         for (idx, (kind, expected)) in cases.iter().copied().enumerate() {
             let m = &CLAIM_TYPE_REGISTRY[idx];
@@ -979,6 +998,7 @@ mod tests {
             ClaimType::TriageSnooze,
             ClaimType::MeetingEntityDismissed,
             ClaimType::AccountFieldCorrection,
+            ClaimType::UserNote,
         ];
         for kind in user_or_system {
             let actors = metadata_for_claim_type(kind).allowed_actor_classes;

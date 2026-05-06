@@ -158,6 +158,7 @@ fn commit_projection_claim(
         ctx,
         db,
         crate::services::claims::ClaimProposal {
+            id: None,
             subject_ref: input.subject_ref.to_string(),
             claim_type: input.claim_type.to_string(),
             field_path: Some(input.field_path.to_string()),
@@ -173,6 +174,7 @@ fn commit_projection_claim(
             thread_id: None,
             temporal_scope: None,
             sensitivity: None,
+            supersedes: None,
             tombstone: None,
         },
     )

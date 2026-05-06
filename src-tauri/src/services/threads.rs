@@ -170,6 +170,7 @@ mod tests {
             ctx,
             db,
             ClaimProposal {
+                id: None,
                 subject_ref: r#"{"kind":"account","id":"acct-1"}"#.to_string(),
                 claim_type: "risk".to_string(),
                 field_path: Some("health.risk".to_string()),
@@ -185,6 +186,7 @@ mod tests {
                 thread_id: thread_id.map(|id| id.0.to_string()),
                 temporal_scope: Some(TemporalScope::State),
                 sensitivity: Some(ClaimSensitivity::Internal),
+                supersedes: None,
                 tombstone: None,
             },
         )

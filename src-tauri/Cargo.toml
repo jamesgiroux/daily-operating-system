@@ -34,7 +34,7 @@ cron = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
 portable-pty = "0.8"
-uuid = { version = "1", features = ["v4", "serde"] }
+uuid = { version = "1", features = ["v4", "v5", "serde"] }
 thiserror = "2"
 tokio = { version = "1", features = ["sync", "time", "process", "rt", "fs", "macros", "rt-multi-thread"] }
 log = "0.4"

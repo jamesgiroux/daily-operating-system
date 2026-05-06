@@ -58,6 +58,17 @@ CREATE TABLE claim_corroborations (
     last_reinforced_at TEXT NOT NULL, created_at TEXT NOT NULL
 );
 
+CREATE TABLE claim_feedback (
+    id TEXT PRIMARY KEY,
+    claim_id TEXT NOT NULL,
+    feedback_type TEXT NOT NULL,
+    actor TEXT NOT NULL,
+    actor_id TEXT,
+    payload_json TEXT,
+    submitted_at TEXT NOT NULL DEFAULT (CURRENT_TIMESTAMP),
+    applied_at TEXT
+);
+
 INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
 VALUES
     ('meeting-b5-first-person', 'Intro with Riley Rivera', 'external', '2026-05-06T15:00:00Z', '2026-05-06T15:30:00Z', '["riley@first-person.example.com"]', '2026-05-05T15:00:00Z');
@@ -78,4 +89,34 @@ INSERT INTO intelligence_claims (
     verification_state, verification_reason, needs_user_decision_at
 )
 VALUES
-    ('src-b5-intro-note', '{"id":"person-b5-riley","kind":"person"}', 'attendee_context', 'summary', NULL, 'Riley Rivera is new to the workspace and asked for a concise first-call agenda.', 'dedup-src-b5-intro-note', 'hash-src-b5-intro-note', 'agent:fixture', 'user', 'meeting-b5-first-person', '2026-05-05T15:30:00Z', '2026-05-05T15:30:00Z', '2026-05-05T15:30:00Z', '{}', NULL, 'active', 'active', NULL, NULL, NULL, NULL, NULL, 0.92, NULL, NULL, NULL, 'state', 'internal', 'active', NULL, NULL);
+    ('src-b5-intro-note', '{"id":"person-b5-riley","kind":"person"}', 'attendee_context', 'summary', NULL, 'Riley Rivera is new to the workspace and asked for a concise first-call agenda.', 'dedup-src-b5-intro-note', 'hash-src-b5-intro-note', 'agent:fixture', 'user', 'meeting-b5-first-person', '2026-05-05T15:30:00Z', '2026-05-05T15:30:00Z', '2026-05-05T15:30:00Z', '{}', '{"scenario":"first_person_parity"}', 'active', 'active', NULL, NULL, NULL, NULL, NULL, 0.92, NULL, NULL, NULL, 'state', 'internal', 'active', NULL, NULL),
+    ('src-b5-wrong-attendee-original', '{"id":"person-b5-riley","kind":"person"}', 'attendee_context', 'summary', NULL, 'Riley Rivera owns the renewal approval for Example Portfolio.', 'dedup-src-b5-wrong-attendee-original', 'hash-src-b5-wrong-attendee-original', 'agent:fixture', 'email', 'meeting-b5-first-person', '2026-05-05T14:00:00Z', '2026-05-05T14:00:00Z', '2026-05-05T14:00:00Z', '{}', '{"scenario":"wrong_subject_tombstone","corrected_to":{"kind":"account","id":"acct-b5-example-portfolio"}}', 'tombstoned', 'dormant', 'wrong_subject_feedback', NULL, 'wrong_subject', NULL, NULL, 0.21, NULL, NULL, NULL, 'state', 'internal', 'contested', 'wrong_subject', NULL),
+    ('src-b5-original-preference', '{"id":"person-b5-riley","kind":"person"}', 'attendee_context', 'summary', NULL, 'Riley prefers a broad discovery agenda.', 'dedup-src-b5-preference', 'hash-src-b5-original-preference', 'agent:fixture', 'email', 'meeting-b5-first-person', '2026-05-05T14:15:00Z', '2026-05-05T14:15:00Z', '2026-05-05T14:15:00Z', '{}', '{"scenario":"user_edited_supersession","superseded_by":"src-b5-user-edited-preference"}', 'dormant', 'dormant', 'user_edited_superseded', NULL, NULL, NULL, 'src-b5-user-edited-preference', 0.48, NULL, NULL, NULL, 'state', 'internal', 'active', NULL, NULL),
+    ('src-b5-user-edited-preference', '{"id":"person-b5-riley","kind":"person"}', 'attendee_context', 'summary', NULL, 'Riley Rivera asked to start with a written agenda and confirm next ownership.', 'dedup-src-b5-user-edited-preference', 'hash-src-b5-user-edited-preference', 'user:fixture', 'user', 'meeting-b5-first-person', '2026-05-05T16:00:00Z', '2026-05-05T16:00:00Z', '2026-05-05T16:00:00Z', '{}', '{"scenario":"user_edited_supersession","supersedes":"src-b5-original-preference"}', 'active', 'active', NULL, NULL, NULL, NULL, NULL, 0.96, NULL, NULL, NULL, 'state', 'internal', 'active', NULL, NULL),
+    ('src-b5-agenda-dup-canonical', '{"id":"person-b5-riley","kind":"person"}', 'attendee_context', 'summary', NULL, 'Riley wants onboarding steps summarized before follow-up.', 'dedup-src-b5-onboarding-summary', 'hash-src-b5-onboarding-summary', 'agent:fixture', 'transcript', 'meeting-b5-first-person', '2026-05-05T16:20:00Z', '2026-05-05T16:20:00Z', '2026-05-05T16:20:00Z', '{}', '{"scenario":"duplicate_paraphrase_collapsed","collapsed_pair":"corro-b5-agenda-paraphrase"}', 'active', 'active', NULL, NULL, NULL, NULL, NULL, 0.82, NULL, NULL, NULL, 'state', 'internal', 'active', NULL, NULL),
+    ('src-b5-expired-dormant-open-loop', '{"id":"meeting-b5-first-person","kind":"meeting"}', 'open_loop', 'follow_up', NULL, 'Send Riley the old onboarding checklist before the call.', 'dedup-src-b5-expired-dormant-open-loop', 'hash-src-b5-expired-dormant-open-loop', 'agent:fixture', 'email', 'meeting-b5-first-person', '2026-04-20T12:00:00Z', '2026-04-20T12:00:00Z', '2026-04-20T12:00:00Z', '{}', '{"scenario":"expired_dormant_no_resurrection","double_refresh_expected":"stays_dormant_after_two_prepare_meeting_runs"}', 'dormant', 'dormant', 'expired_before_meeting_refresh', NULL, 'expired', '2026-05-02T00:00:00Z', NULL, 0.35, NULL, NULL, NULL, 'state', 'internal', 'active', NULL, NULL);
+
+INSERT INTO claim_corroborations (
+    id, claim_id, data_source, source_asof, source_mechanism,
+    strength, reinforcement_count, last_reinforced_at, created_at
+)
+VALUES (
+    'corro-b5-agenda-paraphrase',
+    'src-b5-agenda-dup-canonical',
+    'email',
+    '2026-05-05T17:00:00Z',
+    'paraphrase_duplicate',
+    0.73,
+    1,
+    '2026-05-05T17:00:00Z',
+    '2026-05-05T17:00:00Z'
+);
+
+INSERT INTO claim_feedback (
+    id, claim_id, feedback_type, actor, actor_id, payload_json,
+    submitted_at, applied_at
+)
+VALUES
+    ('feedback-b5-wrong-subject-riley', 'src-b5-wrong-attendee-original', 'wrong_subject', 'user', NULL, '{"reason":"claim_belongs_to_account_not_attendee","corrected_subject":{"kind":"account","id":"acct-b5-example-portfolio"}}', '2026-05-05T14:30:00Z', '2026-05-05T14:30:00Z'),
+    ('feedback-b5-user-edit-preference', 'src-b5-original-preference', 'needs_nuance', 'user', NULL, '{"corrected_claim_id":"src-b5-user-edited-preference","reason":"user_edited_claim_takes_precedence"}', '2026-05-05T16:00:00Z', '2026-05-05T16:00:00Z'),
+    ('feedback-b5-expired-dormant-refresh-guard', 'src-b5-expired-dormant-open-loop', 'mark_outdated', 'user', NULL, '{"reason":"expired_before_meeting_refresh","double_refresh_expected":"do_not_reactivate"}', '2026-05-05T18:00:00Z', '2026-05-05T18:00:00Z');

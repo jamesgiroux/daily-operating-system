@@ -520,6 +520,7 @@ fn subject_ref_json(entity_type: &str, entity_id: &str) -> String {
 
 fn proposal(subject_ref: &str, text: &str, field_path: &str) -> ClaimProposal {
     ClaimProposal {
+        id: None,
         subject_ref: subject_ref.to_string(),
         claim_type: "risk".to_string(),
         field_path: Some(field_path.to_string()),
@@ -535,6 +536,7 @@ fn proposal(subject_ref: &str, text: &str, field_path: &str) -> ClaimProposal {
         thread_id: None,
         temporal_scope: Some(TemporalScope::State),
         sensitivity: Some(ClaimSensitivity::Internal),
+        supersedes: None,
         tombstone: None,
     }
 }

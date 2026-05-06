@@ -4328,6 +4328,7 @@ mod tests {
 
     fn trust_claim_proposal(account_id: &str, text: &str, data_source: &str) -> ClaimProposal {
         ClaimProposal {
+            id: None,
             subject_ref: serde_json::json!({ "kind": "account", "id": account_id }).to_string(),
             claim_type: "risk".to_string(),
             field_path: Some("health.risk".to_string()),
@@ -4343,6 +4344,7 @@ mod tests {
             thread_id: None,
             temporal_scope: Some(crate::db::claims::TemporalScope::State),
             sensitivity: Some(crate::db::claims::ClaimSensitivity::Internal),
+            supersedes: None,
             tombstone: None,
         }
     }

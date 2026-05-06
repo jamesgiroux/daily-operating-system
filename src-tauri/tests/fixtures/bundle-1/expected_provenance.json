@@ -487,5 +487,67 @@
       }
     },
     "warnings": []
+  },
+  "fixture_assertions": {
+    "v3_decision": "dos-283-v3-bundle-1-legacy-shape",
+    "legacy_output_preserved": [
+      "ctx-target-newer",
+      "ctx-target-older"
+    ],
+    "blocked_legacy_rows": [
+      "ctx-foreign"
+    ],
+    "cross_account_renewal_meeting": {
+      "meeting_id": "meeting-b1-parent-renewal",
+      "primary_subject": {
+        "kind": "account",
+        "id": "dos287-example-parent"
+      },
+      "legitimate_related_subjects": [
+        {
+          "kind": "account",
+          "id": "dos287-target-example"
+        },
+        {
+          "kind": "account",
+          "id": "dos287-sibling-example"
+        }
+      ],
+      "shared_domain": "subsidiary.example.com"
+    },
+    "corroboration_collapse": {
+      "claim_id": "claim-b1-renewal-owner-canonical",
+      "expected_corroboration_ids": [
+        "corro-b1-renewal-owner-p1",
+        "corro-b1-renewal-owner-p2",
+        "corro-b1-renewal-owner-p3",
+        "corro-b1-renewal-owner-p4",
+        "corro-b1-renewal-owner-p5",
+        "corro-b1-renewal-owner-p6"
+      ]
+    },
+    "trust_band_diversity": [
+      {
+        "claim_id": "claim-b1-renewal-owner-canonical",
+        "expected_trust_band": "likely_current"
+      },
+      {
+        "claim_id": "claim-b1-use-caution-support-stale",
+        "expected_trust_band": "use_with_caution"
+      },
+      {
+        "claim_id": "claim-b1-needs-verification-opaque",
+        "expected_trust_band": "needs_verification"
+      }
+    ],
+    "wrong_subject_tombstone": {
+      "claim_id": "claim-b1-wrong-parent-owner",
+      "feedback_id": "feedback-b1-wrong-subject-parent",
+      "feedback_type": "wrong_subject",
+      "corrected_subject": {
+        "kind": "account",
+        "id": "dos287-target-example"
+      }
+    }
   }
 }

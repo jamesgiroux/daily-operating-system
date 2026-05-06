@@ -18,13 +18,17 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
 
+use chrono::{DateTime, NaiveDateTime, Utc};
 use parking_lot::Mutex;
 use rusqlite::{params, OptionalExtension};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
-use crate::abilities::claims::{metadata_for_claim_type, ClaimActorClass};
+use crate::abilities::claims::{
+    metadata_for_claim_type, ClaimActorClass, ClaimType, CommitPolicyClass,
+};
 use crate::abilities::feedback::{
     compute_needs_nuance_trust_effect, feedback_semantics, transition_for_feedback,
     ClaimFeedbackMetadata, ClaimRenderPolicy, ClaimVerificationState, FeedbackAction, RepairAction,
@@ -49,6 +53,10 @@ use crate::services::context::ServiceContext;
 /// omitted scope/sensitivity values.
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 pub struct ClaimProposal {
+    /// Optional deterministic identity for migration/backfill callers.
+    /// Runtime writes leave this empty and receive a fresh UUID v4.
+    #[serde(default)]
+    pub id: Option<String>,
     pub subject_ref: String,
     pub claim_type: String,
     pub field_path: Option<String>,
@@ -64,6 +72,10 @@ pub struct ClaimProposal {
     pub thread_id: Option<String>,
     pub temporal_scope: Option<TemporalScope>,
     pub sensitivity: Option<ClaimSensitivity>,
+    /// Claim ID superseded by this commit. The old claim is made dormant
+    /// and linked to the new immutable claim in the same transaction.
+    #[serde(default)]
+    pub supersedes: Option<String>,
     /// If this commit is creating a tombstone, caller signals so via this
     /// enum + retraction_reason text.
     pub tombstone: Option<TombstoneSpec>,
@@ -133,6 +145,8 @@ pub enum ClaimError {
     InvalidFeedback(String),
     #[error("invalid actor: {0}")]
     InvalidActor(String),
+    #[error("invalid supersession: {0}")]
+    InvalidSupersession(String),
     #[error("actor class not allowed for claim_type {claim_type}: {actor}")]
     ActorClassNotAllowed { claim_type: String, actor: String },
     #[error("actor {actor} ({actor_class}) is not permitted to write claim_type {claim_type}")]
@@ -197,6 +211,39 @@ pub(crate) fn compute_dedup_key(
         claim_type,
         field_path.unwrap_or("")
     )
+}
+
+pub(crate) fn compute_user_note_dedup_key(
+    subject_ref_compact: &str,
+    actor: &str,
+    created_at: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(subject_ref_compact.as_bytes());
+    hasher.update(actor.as_bytes());
+    hasher.update(timestamp_millis_key(created_at).as_bytes());
+    format!("{:x}", hasher.finalize())
+}
+
+fn timestamp_millis_key(value: &str) -> String {
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        return String::new();
+    }
+
+    if let Ok(parsed) = DateTime::parse_from_rfc3339(trimmed) {
+        return parsed.timestamp_millis().to_string();
+    }
+
+    for format in ["%Y-%m-%d %H:%M:%S%.f", "%Y-%m-%dT%H:%M:%S%.f"] {
+        if let Ok(parsed) = NaiveDateTime::parse_from_str(trimmed, format) {
+            return DateTime::<Utc>::from_naive_utc_and_offset(parsed, Utc)
+                .timestamp_millis()
+                .to_string();
+        }
+    }
+
+    trimmed.to_string()
 }
 
 /// L2 cycle-1 fix #6: light canonicalization that catches the most
@@ -636,7 +683,7 @@ pub fn prompt_input_sensitivity_name_allowed(sensitivity: &str) -> bool {
     )
 }
 
-fn load_claim_by_id(
+pub fn load_claim_by_id(
     conn: &rusqlite::Connection,
     claim_id: &str,
 ) -> Result<Option<IntelligenceClaim>, ClaimError> {
@@ -1086,6 +1133,15 @@ fn lifecycle_update_for_feedback(
     }
 }
 
+fn initial_trust_score(kind: ClaimType) -> Option<f64> {
+    match kind {
+        // User-authored notes start in the likely_current band. They still
+        // flow through later trust recomputation like every other claim.
+        ClaimType::UserNote => Some(0.85),
+        _ => None,
+    }
+}
+
 // ---------------------------------------------------------------------------
 // commit_claim
 // ---------------------------------------------------------------------------
@@ -1184,17 +1240,25 @@ pub fn commit_claim(
         .clone()
         .unwrap_or_else(|| metadata.default_sensitivity.clone());
 
-    let canonical_text = canonicalize_for_dos280(&proposal.text);
+    let canonical_text = if matches!(kind, ClaimType::UserNote) {
+        proposal.text.clone()
+    } else {
+        canonicalize_for_dos280(&proposal.text)
+    };
     let computed_hash = item_hash(
         item_kind_for_claim_type(&proposal.claim_type),
         &canonical_text,
     );
-    let dedup_key = compute_dedup_key(
-        &computed_hash,
-        &subject_ref_compact,
-        &proposal.claim_type,
-        proposal.field_path.as_deref(),
-    );
+    let dedup_key = if matches!(kind, ClaimType::UserNote) {
+        compute_user_note_dedup_key(&subject_ref_compact, &proposal.actor, &proposal.observed_at)
+    } else {
+        compute_dedup_key(
+            &computed_hash,
+            &subject_ref_compact,
+            &proposal.claim_type,
+            proposal.field_path.as_deref(),
+        )
+    };
 
     let key = (
         subject_ref_compact.clone(),
@@ -1210,6 +1274,104 @@ pub fn commit_claim(
 
     with_claim_transaction(db, |tx| {
         let now = ctx.clock.now().to_rfc3339();
+        if proposal.tombstone.is_some() && proposal.supersedes.is_some() {
+            return Err(ClaimError::InvalidSupersession(
+                "tombstone commits cannot also supersede another claim".to_string(),
+            ));
+        }
+
+        if let Some(superseded_id) = proposal.supersedes.as_deref() {
+            let superseded = load_claim_by_id(tx.conn_ref(), superseded_id)?
+                .ok_or_else(|| ClaimError::UnknownClaimId(superseded_id.to_string()))?;
+            if superseded.claim_type != proposal.claim_type {
+                return Err(ClaimError::InvalidSupersession(format!(
+                    "claim {} has type {}, not {}",
+                    superseded.id, superseded.claim_type, proposal.claim_type
+                )));
+            }
+            if superseded.claim_state != ClaimState::Active
+                || superseded.surfacing_state != SurfacingState::Active
+            {
+                return Err(ClaimError::InvalidSupersession(format!(
+                    "claim {} is not active and surfaced",
+                    superseded.id
+                )));
+            }
+
+            let superseded_subject_value =
+                serde_json::from_str::<serde_json::Value>(&superseded.subject_ref)?;
+            let superseded_subject = subject_ref_from_json(&superseded_subject_value)?;
+            let superseded_subject_ref_compact = canonical_subject_ref(&superseded_subject)?;
+            if superseded_subject_ref_compact != subject_ref_compact {
+                return Err(ClaimError::InvalidSupersession(format!(
+                    "claim {} has a different subject_ref",
+                    superseded.id
+                )));
+            }
+
+            let new_id = proposal
+                .id
+                .clone()
+                .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+            let claim = IntelligenceClaim {
+                id: new_id.clone(),
+                subject_ref: subject_ref_compact.clone(),
+                claim_type: proposal.claim_type.clone(),
+                field_path: proposal.field_path.clone(),
+                topic_key: proposal.topic_key.clone(),
+                text: canonical_text.clone(),
+                dedup_key: dedup_key.clone(),
+                item_hash: Some(computed_hash.clone()),
+                actor: proposal.actor.clone(),
+                data_source: proposal.data_source.clone(),
+                source_ref: proposal.source_ref.clone(),
+                source_asof: proposal.source_asof.clone(),
+                observed_at: proposal.observed_at.clone(),
+                created_at: now.clone(),
+                provenance_json: proposal.provenance_json.clone(),
+                metadata_json: proposal.metadata_json.clone(),
+                claim_state: ClaimState::Active,
+                surfacing_state: SurfacingState::Active,
+                demotion_reason: None,
+                reactivated_at: None,
+                retraction_reason: None,
+                expires_at: None,
+                superseded_by: None,
+                trust_score: initial_trust_score(kind),
+                trust_computed_at: initial_trust_score(kind).map(|_| now.clone()),
+                trust_version: initial_trust_score(kind).map(|_| 1),
+                thread_id: proposal.thread_id.clone(),
+                temporal_scope: effective_temporal_scope.clone(),
+                sensitivity: effective_sensitivity.clone(),
+                verification_state: ClaimVerificationState::Active,
+                verification_reason: None,
+                needs_user_decision_at: None,
+            };
+            insert_claim_row(tx, &claim)?;
+            project_legacy_state_for_claim(ctx, tx, &claim)?;
+
+            tx.conn_ref().execute(
+                "UPDATE intelligence_claims
+                 SET claim_state = 'dormant',
+                     surfacing_state = 'dormant',
+                     demotion_reason = 'superseded',
+                     superseded_by = ?1
+                 WHERE id = ?2",
+                params![&new_id, superseded_id],
+            )?;
+
+            let contradiction_id = uuid::Uuid::new_v4().to_string();
+            tx.conn_ref().execute(
+                "INSERT INTO claim_contradictions \
+                 (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at) \
+                 VALUES (?1, ?2, ?3, 'supersession', ?4)",
+                params![&contradiction_id, superseded_id, &new_id, &now],
+            )?;
+
+            tx.bump_for_subject(&subject)?;
+            return Ok(CommittedClaim::Inserted { claim });
+        }
+
         if proposal.tombstone.is_none()
             && pre_gate_blocking_tombstone_exists(
                 tx.conn_ref(),
@@ -1230,7 +1392,9 @@ pub fn commit_claim(
         // through corroboration instead of inserting a duplicate row.
         // Tombstone proposals always insert (they intentionally
         // shadow the active claim).
-        if proposal.tombstone.is_none() {
+        if proposal.tombstone.is_none()
+            && !matches!(metadata.commit_policy_class, CommitPolicyClass::Append)
+        {
             if let Some(existing) = load_active_claim_by_dedup_key(tx.conn_ref(), &dedup_key)? {
                 let corroboration_id = corroborate_in_tx(
                     tx,
@@ -1261,7 +1425,10 @@ pub fn commit_claim(
                 proposal.field_path.as_deref(),
                 &canonical_text,
             )? {
-                let new_id = uuid::Uuid::new_v4().to_string();
+                let new_id = proposal
+                    .id
+                    .clone()
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
                 let contradicting = IntelligenceClaim {
                     id: new_id.clone(),
                     subject_ref: subject_ref_compact.clone(),
@@ -1286,9 +1453,9 @@ pub fn commit_claim(
                     retraction_reason: None,
                     expires_at: None,
                     superseded_by: None,
-                    trust_score: None,
-                    trust_computed_at: None,
-                    trust_version: None,
+                    trust_score: initial_trust_score(kind),
+                    trust_computed_at: initial_trust_score(kind).map(|_| now.clone()),
+                    trust_version: initial_trust_score(kind).map(|_| 1),
                     thread_id: proposal.thread_id.clone(),
                     temporal_scope: effective_temporal_scope.clone(),
                     sensitivity: effective_sensitivity.clone(),
@@ -1317,7 +1484,10 @@ pub fn commit_claim(
             }
         }
 
-        let id = uuid::Uuid::new_v4().to_string();
+        let id = proposal
+            .id
+            .clone()
+            .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
         let (claim_state, surfacing_state, retraction_reason, expires_at) =
             if let Some(tombstone) = &proposal.tombstone {
                 (
@@ -1343,7 +1513,7 @@ pub fn commit_claim(
             source_ref: proposal.source_ref.clone(),
             source_asof: proposal.source_asof.clone(),
             observed_at: proposal.observed_at.clone(),
-            created_at: now,
+            created_at: now.clone(),
             provenance_json: proposal.provenance_json.clone(),
             metadata_json: proposal.metadata_json.clone(),
             claim_state,
@@ -1353,9 +1523,9 @@ pub fn commit_claim(
             retraction_reason,
             expires_at,
             superseded_by: None,
-            trust_score: None,
-            trust_computed_at: None,
-            trust_version: None,
+            trust_score: initial_trust_score(kind),
+            trust_computed_at: initial_trust_score(kind).map(|_| now.clone()),
+            trust_version: initial_trust_score(kind).map(|_| 1),
             thread_id: proposal.thread_id.clone(),
             temporal_scope: effective_temporal_scope.clone(),
             sensitivity: effective_sensitivity.clone(),
@@ -1373,6 +1543,48 @@ pub fn commit_claim(
         } else {
             Ok(CommittedClaim::Inserted { claim })
         }
+    })
+}
+
+pub fn withdraw_claim(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    claim_id: &str,
+    reason: &str,
+) -> Result<IntelligenceClaim, ClaimError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| ClaimError::Mode(e.to_string()))?;
+
+    let reason = reason.trim();
+    if reason.is_empty() {
+        return Err(ClaimError::InvalidFeedback(
+            "withdrawal reason cannot be empty".to_string(),
+        ));
+    }
+
+    with_claim_transaction(db, |tx| {
+        let claim = load_claim_by_id(tx.conn_ref(), claim_id)?
+            .ok_or_else(|| ClaimError::UnknownClaimId(claim_id.to_string()))?;
+        let subject_value = serde_json::from_str::<serde_json::Value>(&claim.subject_ref)?;
+        let subject = subject_ref_from_json(&subject_value)?;
+
+        if claim.claim_state != ClaimState::Withdrawn
+            || claim.surfacing_state != SurfacingState::Dormant
+            || claim.retraction_reason.as_deref() != Some(reason)
+        {
+            tx.conn_ref().execute(
+                "UPDATE intelligence_claims
+                 SET claim_state = 'withdrawn',
+                     surfacing_state = 'dormant',
+                     retraction_reason = ?1
+                 WHERE id = ?2",
+                params![reason, claim_id],
+            )?;
+            tx.bump_for_subject(&subject)?;
+        }
+
+        load_claim_by_id(tx.conn_ref(), claim_id)?
+            .ok_or_else(|| ClaimError::UnknownClaimId(claim_id.to_string()))
     })
 }
 
@@ -2214,6 +2426,7 @@ pub fn shadow_write_tombstone_claim(
     let metadata_json = source_scope.map(|s| serde_json::json!({ "source_scope": s }).to_string());
 
     let proposal = ClaimProposal {
+        id: None,
         subject_ref,
         claim_type: claim_type.to_string(),
         field_path: field_path.map(|s| s.to_string()),
@@ -2229,6 +2442,7 @@ pub fn shadow_write_tombstone_claim(
         thread_id: None,
         temporal_scope: Some(TemporalScope::State),
         sensitivity: Some(ClaimSensitivity::Internal),
+        supersedes: None,
         tombstone: Some(TombstoneSpec {
             retraction_reason: "user_removal".to_string(),
             expires_at: expires_at.map(|s| s.to_string()),
@@ -2377,6 +2591,7 @@ mod tests {
 
     fn proposal(text: &str) -> ClaimProposal {
         ClaimProposal {
+            id: None,
             subject_ref: SUBJECT.to_string(),
             claim_type: "risk".to_string(),
             field_path: Some("health.risk".to_string()),
@@ -2392,6 +2607,7 @@ mod tests {
             thread_id: None,
             temporal_scope: Some(TemporalScope::State),
             sensitivity: Some(ClaimSensitivity::Internal),
+            supersedes: None,
             tombstone: None,
         }
     }

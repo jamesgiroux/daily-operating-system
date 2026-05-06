@@ -77,6 +77,7 @@ fn seed_claim(
         ctx,
         ActionDb::from_conn(conn),
         ClaimProposal {
+            id: None,
             subject_ref: subject_ref.to_string(),
             claim_type: "attendee_context".to_string(),
             field_path: Some(field_path.to_string()),
@@ -92,6 +93,7 @@ fn seed_claim(
             thread_id: None,
             temporal_scope: None,
             sensitivity: None,
+            supersedes: None,
             tombstone: None,
         },
     )
@@ -191,24 +193,30 @@ async fn workspace_entity_context_handler_filters_inactive_claim_rows() {
 }
 
 #[test]
-fn workspace_tauri_command_routes_entity_context_reads_through_legacy_handler_until_projection() {
+fn entity_context_service_no_longer_writes_legacy_table() {
     let source = std::fs::read_to_string(
-        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/commands/workspace.rs"),
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/services/entity_context.rs"),
     )
-    .expect("read workspace command source");
+    .expect("read entity context service source");
 
     assert!(
-        source.contains("services::entity_context::get_entries(&entity_type, &entity_id, &state)"),
-        "get_entity_context_entries must route through the legacy reader until writes project to claims"
+        source.contains("commit_claim("),
+        "entity context writes must route through commit_claim"
     );
     assert!(
-        !source.contains(".read_entity_context_claim_entries("),
-        "get_entity_context_entries must not use claim-backed reads while create/update/delete write legacy rows"
+        source.contains("withdraw_claim("),
+        "entity context deletes must route through withdraw_claim"
+    );
+    assert!(
+        !source.contains("INSERT INTO entity_context_entries")
+            && !source.contains("UPDATE entity_context_entries")
+            && !source.contains("DELETE FROM entity_context_entries"),
+        "entity context service must not write the legacy table"
     );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn workspace_tauri_create_then_read_returns_created_entity_context_note() {
+async fn workspace_tauri_create_edit_delete_read_roundtrip_uses_user_note_claims() {
     let temp_dir = tempfile::tempdir().expect("create isolated DB dir");
     let db_service = dailyos_lib::db_service::DbService::open_at_unencrypted_for_tests(
         temp_dir.path().join("entity-context-command.db"),
@@ -250,5 +258,59 @@ async fn workspace_tauri_create_then_read_returns_created_entity_context_note() 
     assert_eq!(
         read_back.content,
         "Customer asked for renewal risk follow-up."
+    );
+
+    dailyos_lib::command_test_api::update_entity_context_entry(
+        created.id.clone(),
+        "Renewal note edited".to_string(),
+        "Customer asked for renewal risk follow-up before Friday.".to_string(),
+        app.state::<Arc<AppState>>(),
+    )
+    .await
+    .expect("update entity context entry through Tauri command");
+
+    let entries_after_edit = dailyos_lib::command_test_api::get_entity_context_entries(
+        "account".to_string(),
+        "account-track-h".to_string(),
+        app.state::<Arc<AppState>>(),
+    )
+    .await
+    .expect("read entity context entries after edit");
+
+    assert!(
+        !entries_after_edit
+            .iter()
+            .any(|entry| entry.id == created.id),
+        "superseded note claim should be hidden from active reads"
+    );
+    let edited = entries_after_edit
+        .iter()
+        .find(|entry| entry.title == "Renewal note edited")
+        .expect("edited entry is visible after supersession");
+    assert_eq!(
+        edited.content,
+        "Customer asked for renewal risk follow-up before Friday."
+    );
+
+    dailyos_lib::command_test_api::delete_entity_context_entry(
+        edited.id.clone(),
+        app.state::<Arc<AppState>>(),
+    )
+    .await
+    .expect("delete entity context entry through Tauri command");
+
+    let entries_after_delete = dailyos_lib::command_test_api::get_entity_context_entries(
+        "account".to_string(),
+        "account-track-h".to_string(),
+        app.state::<Arc<AppState>>(),
+    )
+    .await
+    .expect("read entity context entries after delete");
+
+    assert!(
+        entries_after_delete
+            .iter()
+            .all(|entry| entry.id != edited.id && entry.id != created.id),
+        "withdrawn and superseded note claims should be hidden"
     );
 }

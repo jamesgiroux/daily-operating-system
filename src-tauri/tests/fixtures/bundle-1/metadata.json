@@ -1,20 +1,49 @@
 {
   "bundle": 1,
   "scenario_id": "bundle1-entity-context-parity",
-  "invariant": "The get_entity_context Read ability returns only user-authored context entries for the requested entity and preserves the legacy created_at descending order without merging sibling account context.",
-  "expected_render_policy": "show",
-  "surfaces_exercised": ["get-entity-context-read"],
-  "source_lifecycle_refs": ["ctx-target-newer", "ctx-target-older"],
+  "invariant": "The get_entity_context Read ability preserves legacy entity_context_entries parity for the requested account while the fixture also seeds the DOS-283 same-domain, cross-account renewal, paraphrase-corroboration, trust-band, and wrong-subject adversarial substrate rows for downstream gates.",
+  "expected_render_policy": "show-with-warnings",
+  "surfaces_exercised": [
+    "get-entity-context-read",
+    "same-domain-sibling-account",
+    "cross-account-renewal-meeting",
+    "paraphrase-corroboration-collapse",
+    "trust-band-diversity",
+    "wrong-subject-tombstone"
+  ],
+  "source_lifecycle_refs": [
+    "ctx-target-newer",
+    "ctx-target-older",
+    "ctx-foreign",
+    "meeting-b1-parent-renewal",
+    "claim-b1-renewal-owner-canonical",
+    "claim-b1-use-caution-support-stale",
+    "claim-b1-needs-verification-opaque",
+    "claim-b1-wrong-parent-owner",
+    "feedback-b1-wrong-subject-parent"
+  ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "bundle-1-get-entity-context-v1",
-  "trust_factors_dominant": ["subject_fit", "source_time"],
-  "pass_fail_definition": "PASS = output is byte-identical to the legacy entity_context_entries projection for dos287-target-example and excludes the adjacent account row. FAIL = foreign account notes appear, order changes, or source_asof/user provenance is missing.",
+  "prompt_fingerprint_baseline": "bundle-1-get-entity-context-v3-legacy",
+  "trust_factors_dominant": [
+    "subject_fit",
+    "source_time",
+    "corroboration",
+    "user_feedback_weight",
+    "source_lifecycle_weight"
+  ],
+  "pass_fail_definition": "PASS = output remains byte-identical to the legacy entity_context_entries projection for dos287-target-example, excludes adjacent/sibling account rows, and the seeded substrate rows expose six corroborations, three trust bands, the parent renewal meeting, and the WrongSubject tombstone for downstream fixture gates. FAIL = foreign account notes appear, order changes, source_asof/user provenance is missing, or any v3 substrate row is absent.",
   "fixture_design_notes": {
-    "state_sql": "Copies the DOS-287 bundle-1 reproduction seed pattern with parent, target, adjacent account, domains, stakeholders, and synthetic entity_context_entries. The adjacent account has a newer row that must not bleed into the target account read.",
+    "state_sql": "Copies the DOS-287 bundle-1 reproduction seed pattern with parent, target, adjacent account, domains, stakeholders, and synthetic entity_context_entries. Adds a same-domain sibling account, a parent-level renewal meeting that legitimately touches the target and sibling, claim_corroborations for six paraphrases of one target account claim, three target-account trust-band claims, and a WrongSubject feedback tombstone. Claim rows are marked dormant for legacy rendering so DOS-411 can cut over the read shape without changing the fixture path.",
     "provider_replay": "Empty because DOS-218 is a pure Read ability and makes no provider calls.",
     "external_replay": "Empty because DOS-218 is a pure Read ability and makes no external service calls.",
-    "expected_output": "The two target account context entries ordered by created_at DESC, matching the legacy command DTO shape.",
-    "expected_provenance": "Direct user source attribution for each returned row, direct subject attribution on every leaf, empty thread_ids, and no composed children."
+    "expected_output": "The two target account context entries ordered by created_at DESC, matching the legacy command DTO shape. It is intentionally unchanged until DOS-411 migrates bundle-1 reads to claim-backed context.",
+    "expected_provenance": "Direct user source attribution for each returned row plus fixture-level assertions for the v3 substrate rows.",
+    "v3_scenarios": [
+      "cross-account renewal meeting against the parent account with the same-domain sibling in scope",
+      "six paraphrases of the target renewal-owner claim collapsed through claim_corroborations",
+      "trust-band diversity against dos287-target-example: likely_current, use_with_caution, needs_verification",
+      "WrongSubject feedback tombstone for a renewal-owner claim that landed on the parent account"
+    ]
   }
 }

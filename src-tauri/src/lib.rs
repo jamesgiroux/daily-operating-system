@@ -63,7 +63,17 @@ pub mod substrate_test_api {
 #[cfg(feature = "test-harness")]
 #[doc(hidden)]
 pub mod command_test_api {
-    pub use crate::commands::{create_entity_context_entry, get_entity_context_entries};
+    pub use crate::commands::{
+        create_entity_context_entry, delete_entity_context_entry, get_entity_context_entries,
+        update_entity_context_entry,
+    };
+}
+#[cfg(feature = "test-harness")]
+#[doc(hidden)]
+pub mod migration_test_api {
+    pub fn run_migrations(conn: &rusqlite::Connection) -> Result<usize, String> {
+        crate::migrations::run_migrations(conn)
+    }
 }
 pub mod intelligence;
 pub mod json_loader;

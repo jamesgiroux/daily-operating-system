@@ -1,32 +1,54 @@
 {
   "bundle": 5,
-  "scenario_id": "bundle5-prepare-meeting-first-person-parity",
-  "invariant": "The prepare_meeting Transform ability can produce the same first-person meeting brief shape before cutover without touching existing prepare paths.",
+  "scenario_id": "bundle5-prepare-meeting-correction-resurrection-parity",
+  "invariant": "The prepare_meeting Transform ability preserves first-person meeting brief parity while correction-resurrection rows prove wrong-subject tombstones, user-edited supersession, duplicate corroboration collapse, and expired dormant claims do not leak back into meeting refresh.",
   "expected_render_policy": "show-with-warnings",
   "surfaces_exercised": [
     "prepare_meeting",
     "prepare-meeting-parity",
-    "first-meeting-person"
+    "first-meeting-person",
+    "wrong-subject-tombstone",
+    "user-edited-supersession",
+    "duplicate-paraphrase-corroboration",
+    "expired-dormant-no-resurrection",
+    "double-refresh-resurrection-guard"
   ],
   "source_lifecycle_refs": [
     "src-b5-intro-note",
+    "src-b5-wrong-attendee-original",
+    "feedback-b5-wrong-subject-riley",
+    "src-b5-original-preference",
+    "src-b5-user-edited-preference",
+    "src-b5-agenda-dup-canonical",
+    "corro-b5-agenda-paraphrase",
+    "src-b5-expired-dormant-open-loop",
+    "feedback-b5-expired-dormant-refresh-guard",
     "ctx-b5-person-first"
   ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "8e3df786d021cbd821d062388f34c29fe23f4b71bab8590e4cf5d3e79b99fbc9",
+  "prompt_fingerprint_baseline": "9592e589d1f462500307957d83ffdf1f3b725062aba193539acfa1138458a8f1",
   "prompt_template_version": "1.0.0",
-  "completion_text_hash": "a98a7c3b4ed1a0919aeb04472c8af0b982658fe454de753e0aa454a52c4bc90b",
+  "completion_text_hash": "a6491361f5be5f2fd2d87e007924d4ba422e9275674732cb93ca2fad5b6dc3c6",
   "trust_factors_dominant": [
     "subject_fit",
     "source_time",
-    "composition"
+    "composition",
+    "user_feedback_weight",
+    "corroboration"
   ],
-  "pass_fail_definition": "PASS = prepare_meeting emits MeetingBrief with schema_version 1, attributes Riley context to person-b5-riley, composes get_entity_context, and does not invoke legacy prepare mutation paths. FAIL = output shape drifts, attribution is missing, or legacy prepare state changes.",
+  "pass_fail_definition": "PASS = prepare_meeting emits MeetingBrief with schema_version 1, attributes only active Riley context to person-b5-riley, composes get_entity_context, suppresses the wrong-subject and expired dormant rows across repeated refreshes, and does not invoke legacy prepare mutation paths. FAIL = output shape drifts, attribution is missing, tombstoned/dormant content appears, or legacy prepare state changes.",
   "fixture_design_notes": {
-    "state_sql": "Seeds meetings, attendees, linked subjects, and intelligence_claims rows consumed by the public prepare_meeting context builder.",
+    "state_sql": "Seeds meetings, attendees, linked subjects, active intelligence_claims rows consumed by the public prepare_meeting context builder, and dormant/tombstoned correction-resurrection rows that load through the fixture state but must not enter prompt evidence.",
     "provider_replay": "Pinned to the live prepare_meeting Transform canonical replay key for this claim-backed fixture.",
-    "expected_output": "MeetingBrief shape from Linear DOS-219 for a first meeting with a person.",
-    "expected_provenance": "Contract-level provenance expectations for W5-B: prompt fingerprint, get_entity_context composition, source_asof reachability, and state temporal scope."
+    "expected_output": "MeetingBrief shape from Linear DOS-219 for a first meeting with a person, now including the active user-edited context and one canonical duplicate/paraphrase context while excluding tombstoned and expired dormant rows.",
+    "expected_provenance": "Contract-level provenance expectations for W5-B/W6-A: prompt fingerprint, get_entity_context composition, source_asof reachability, state temporal scope, active-only prompt input, and correction-resurrection suppression.",
+    "v3_scenarios": [
+      "WrongSubject tombstone against a claim that mistakenly landed on the meeting attendee",
+      "user-edited superseding claim takes precedence over the original dormant claim",
+      "duplicate/paraphrase pair collapsed through claim_corroborations",
+      "expired dormant open-loop claim does not resurrect during meeting refresh",
+      "running prepare_meeting twice with this fixture must leave the expired claim dormant"
+    ]
   }
 }

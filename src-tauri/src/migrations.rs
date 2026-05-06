@@ -687,6 +687,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 140,
         sql: include_str!("migrations/140_dos_287_temporal_scope_closed.sql"),
     },
+    // DOS-411: backfill legacy entity_context_entries into user_note claims
+    // and freeze the legacy table for rollback-only reads.
+    Migration {
+        version: 141,
+        sql: include_str!("migrations/141_user_note_claim_type_backfill.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -1188,6 +1194,48 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
     Ok(backup_path)
 }
 
+fn apply_migration_141_user_note_backfill(
+    conn: &Connection,
+    migration_sql: &str,
+) -> Result<(), String> {
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        tx.conn_ref()
+            .execute_batch(migration_sql)
+            .map_err(|e| format!("Migration v141 schema/freeze failed: {e}"))?;
+
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext)
+            .with_actor("user");
+
+        let legacy_rows = crate::services::entity_context::legacy_entity_context_entries(tx)?;
+        for legacy in legacy_rows {
+            let claim_id =
+                crate::services::entity_context::commit_backfilled_user_note(&ctx, tx, &legacy)?;
+            tx.conn_ref()
+                .execute(
+                    "INSERT OR IGNORE INTO legacy_user_note_migration_audit (
+                        legacy_entry_id, claim_id, entity_type, entity_id,
+                        legacy_created_at, legacy_updated_at, status
+                     ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, 'migrated')",
+                    rusqlite::params![
+                        &legacy.id,
+                        &claim_id,
+                        &legacy.entity_type,
+                        &legacy.entity_id,
+                        &legacy.created_at,
+                        &legacy.updated_at,
+                    ],
+                )
+                .map_err(|e| format!("Migration v141 audit insert failed: {e}"))?;
+        }
+
+        Ok(())
+    })
+}
+
 /// Run all pending migrations.
 ///
 /// Returns the number of migrations applied (0 if already up-to-date).
@@ -1259,7 +1307,13 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
 
     // Apply each pending migration in order
     for migration in &pending {
-        match conn.execute_batch(migration.sql) {
+        let apply_result = if migration.version == 141 {
+            apply_migration_141_user_note_backfill(conn, migration.sql)
+                .map_err(rusqlite::Error::InvalidParameterName)
+        } else {
+            conn.execute_batch(migration.sql)
+        };
+        match apply_result {
             Ok(()) => {}
             Err(e) => {
                 let msg = e.to_string();

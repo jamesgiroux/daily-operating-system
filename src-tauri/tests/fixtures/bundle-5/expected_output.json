@@ -20,6 +20,18 @@
       "context": "Riley Rivera is new to the workspace and asked for a concise first-call agenda.",
       "subject": { "kind": "person", "id": "person-b5-riley" },
       "temporal_scope": "state"
+    },
+    {
+      "attendee": "Riley Rivera",
+      "context": "Riley Rivera asked to start with a written agenda and confirm next ownership.",
+      "subject": { "kind": "person", "id": "person-b5-riley" },
+      "temporal_scope": "state"
+    },
+    {
+      "attendee": "Riley Rivera",
+      "context": "Riley wants onboarding steps summarized before follow-up.",
+      "subject": { "kind": "person", "id": "person-b5-riley" },
+      "temporal_scope": "state"
     }
   ],
   "open_loops": [],
