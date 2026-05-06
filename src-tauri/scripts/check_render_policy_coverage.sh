@@ -30,20 +30,22 @@ service = Path("src-tauri/src/services/sensitivity.rs").read_text()
 violations = []
 if "fn render_ability_data(" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: missing render_ability_data bridge hook")
-if "render_ability_data(surface, data)" not in bridge:
-    violations.append("src-tauri/src/bridges/types.rs: AbilityResponseJson.data is not built from render_ability_data(surface, data)")
+if "render_ability_data(surface, data, &provenance)" not in bridge:
+    violations.append("src-tauri/src/bridges/types.rs: AbilityResponseJson.data is not built from render_ability_data(surface, data, &provenance)")
 if not re.search(r"BridgeSurface::McpTool\s*\|\s*BridgeSurface::McpToolDetail\s*=>\s*\{?\s*render_mcp_ability_data_with_authoritative_claims", bridge, re.S):
     violations.append("src-tauri/src/bridges/types.rs: MCP surfaces do not call the authoritative ability-data redactor")
-if "ActionDb::open_readonly()" not in bridge or "render_mcp_ability_data_for_surface(&db, data)" not in bridge:
-    violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor does not pass an ActionDb into render_mcp_ability_data_for_surface")
+if "ActionDb::open_readonly()" not in bridge or "render_mcp_ability_data_for_surface_with_provenance(&db, data, provenance)" not in bridge:
+    violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor does not pass ActionDb and provenance into render_mcp_ability_data_for_surface_with_provenance")
 if "render_mcp_ability_data_without_claim_lookup(data)" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor lacks fail-closed no-claim-lookup fallback")
 if not re.search(r"BridgeSurface::TauriApp\s*\|\s*BridgeSurface::Worker\s*\|\s*BridgeSurface::Eval\s*=>\s*data", bridge):
     violations.append("src-tauri/src/bridges/types.rs: non-MCP surfaces must pass ability data through unchanged")
-if "Tagged carrier objects use design A" not in service:
-    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks design-A fail-closed documentation")
+if "string leaf has exactly three possible outcomes" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks deny-by-default documentation")
 if "load_claim_by_id(db.conn_ref(), claim_id)" not in service:
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor does not reload authoritative claims")
+if "is_mcp_ability_non_content_metadata_string" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks explicit non-content metadata allowlist")
 if re.search(r"minimal_policy_claim\s*\(\s*tagged\.sensitivity", service):
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor still constructs synthetic policy claims from DTO sensitivity")
 if "claim.sensitivity != tagged.sensitivity" not in service:
@@ -95,9 +97,12 @@ for path in Path("src-tauri/src/abilities").rglob("*.rs"):
         if actors and re.search(r"\bAgent\b", actors.group(1)):
             agent_abilities.append((str(path), name.group(1) if name else "<unknown>"))
 
-if agent_abilities and "render_mcp_ability_data_with_authoritative_claims(data)" not in bridge:
+if agent_abilities and "render_mcp_ability_data_with_authoritative_claims(data, provenance)" not in bridge:
     for path, name in agent_abilities:
         violations.append(f"{path}: Agent-allowed ability `{name}` would bypass the MCP ability data redactor")
+
+if 'BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {\n            serde_json::json!({ "warnings": [] })' not in bridge:
+    violations.append("src-tauri/src/bridges/types.rs: MCP diagnostics are not dropped to an empty structured warning set")
 
 print("\n".join(violations))
 PY
@@ -114,6 +119,238 @@ raw.
 Violations:
 MSG
   echo "$ability_redactor_violations" >&2
+  exit 1
+fi
+
+ability_output_violations="$(
+  python3 - <<'PY'
+from pathlib import Path
+import re
+
+ROOTS = [Path("src-tauri/src/abilities"), Path("src-tauri/src/types.rs")]
+source_by_path = {path: path.read_text() for root in ROOTS for path in ([root] if root.is_file() else root.rglob("*.rs"))}
+combined = "\n".join(source_by_path.values())
+
+SAFE_STRING_FIELDS = {
+    "EntityContextEntry": {
+        "id": "identifier metadata",
+        "entity_type": "enum metadata",
+        "entity_id": "identifier metadata",
+        "title": "claim/provenance-attested",
+        "content": "claim/provenance-attested",
+        "created_at": "timestamp metadata",
+        "updated_at": "timestamp metadata",
+    },
+    "MeetingSummary": {
+        "id": "identifier metadata",
+        "title": "meeting title metadata",
+        "starts_at": "timestamp metadata",
+        "ends_at": "timestamp metadata",
+    },
+    "MeetingAttendee": {
+        "name": "attendee name metadata",
+        "email": "fail-closed on MCP",
+        "person_id": "identifier metadata",
+        "account_id": "identifier metadata",
+        "domain": "fail-closed on MCP",
+    },
+    "BriefSubjectRef": {
+        "kind": "enum metadata",
+        "id": "identifier metadata",
+    },
+    "Topic": {
+        "title": "claim/provenance-attested",
+        "detail": "claim/provenance-attested",
+    },
+    "AttendeeContext": {
+        "attendee": "claim/provenance-attested",
+        "context": "claim/provenance-attested",
+    },
+    "OpenLoop": {
+        "description": "claim/provenance-attested",
+        "owner": "claim/provenance-attested",
+    },
+    "ChangeMarker": {
+        "description": "claim/provenance-attested",
+    },
+    "SuggestedOutcome": {
+        "outcome": "claim/provenance-attested",
+        "rationale": "claim/provenance-attested",
+    },
+    "BriefTemporalScope": {
+        "occurred_at": "timestamp metadata",
+        "window_start": "timestamp metadata",
+        "window_end": "timestamp metadata",
+    },
+}
+
+NESTED_OUTPUT_STRUCTS = {
+    "MeetingBrief": [
+        "MeetingSummary",
+        "Topic",
+        "AttendeeContext",
+        "OpenLoop",
+        "ChangeMarker",
+        "SuggestedOutcome",
+    ],
+    "MeetingSummary": ["MeetingAttendee"],
+    "Topic": ["BriefSubjectRef", "BriefTemporalScope"],
+    "AttendeeContext": ["BriefSubjectRef", "BriefTemporalScope"],
+    "OpenLoop": ["BriefSubjectRef", "BriefTemporalScope"],
+    "ChangeMarker": ["BriefSubjectRef", "BriefTemporalScope"],
+    "SuggestedOutcome": ["BriefSubjectRef", "BriefTemporalScope"],
+}
+
+EXPECTED_AGENT_OUTPUTS = {
+    "get_entity_context": "EntityContextEntry",
+    "prepare_meeting": "MeetingBrief",
+}
+
+SAFE_WRAPPERS = ("RenderableMcpClaimText", "RenderableMcpEntityName")
+
+def normalize_type(type_text: str) -> str:
+    value = re.sub(r"\s+", " ", type_text.strip())
+    value = value.replace("crate::types::", "")
+    value = value.replace("synthesis::", "")
+    while True:
+        match = re.fullmatch(r"(Vec|Option)<(.+)>", value)
+        if not match:
+            break
+        value = match.group(2).strip()
+    return value.split("::")[-1]
+
+def raw_string_type(type_text: str) -> bool:
+    text = re.sub(r"\s+", "", type_text)
+    return text in {"String", "Option<String>", "Vec<String>"}
+
+def struct_body(name: str):
+    marker = f"pub struct {name}"
+    start = combined.find(marker)
+    if start == -1:
+        marker = f"struct {name}"
+        start = combined.find(marker)
+    if start == -1:
+        return None
+    brace = combined.find("{", start)
+    if brace == -1:
+        return None
+    depth = 0
+    for index in range(brace, len(combined)):
+        char = combined[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return combined[brace + 1:index]
+    return None
+
+def enum_body(name: str):
+    marker = f"pub enum {name}"
+    start = combined.find(marker)
+    if start == -1:
+        return None
+    brace = combined.find("{", start)
+    if brace == -1:
+        return None
+    depth = 0
+    for index in range(brace, len(combined)):
+        char = combined[index]
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                return combined[brace + 1:index]
+    return None
+
+def struct_fields(name: str):
+    body = struct_body(name)
+    if body is None:
+        return []
+    return re.findall(r"pub\s+([A-Za-z_][A-Za-z0-9_]*)\s*:\s*([^,\n]+)", body)
+
+def enum_string_fields(name: str):
+    body = enum_body(name)
+    if body is None:
+        return []
+    return re.findall(r"([A-Za-z_][A-Za-z0-9_]*)\s*:\s*String", body)
+
+def safe_string_field(struct_name: str, field_name: str, type_text: str) -> bool:
+    if any(wrapper in type_text for wrapper in SAFE_WRAPPERS):
+        return True
+    return field_name in SAFE_STRING_FIELDS.get(struct_name, {})
+
+def inspect_struct(struct_name: str, seen: set[str], violations: list[str]):
+    if struct_name in seen:
+        return
+    seen.add(struct_name)
+    fields = struct_fields(struct_name)
+    if not fields and struct_name != "BriefTemporalScope":
+        violations.append(f"{struct_name}: output struct not found for Agent-allowed ability audit")
+        return
+    for field_name, type_text in fields:
+        if raw_string_type(type_text) and not safe_string_field(struct_name, field_name, type_text):
+            violations.append(
+                f"{struct_name}.{field_name}: raw `{type_text.strip()}` is not RenderableMcpClaimText, RenderableMcpEntityName, or an audited metadata/fail-closed field"
+            )
+        nested = normalize_type(type_text)
+        if nested in SAFE_STRING_FIELDS or nested in NESTED_OUTPUT_STRUCTS:
+            inspect_struct(nested, seen, violations)
+    for field_name in enum_string_fields(struct_name):
+        if field_name not in SAFE_STRING_FIELDS.get(struct_name, {}):
+            violations.append(f"{struct_name}.{field_name}: enum string field is not audited for MCP")
+    for nested in NESTED_OUTPUT_STRUCTS.get(struct_name, []):
+        inspect_struct(nested, seen, violations)
+
+def agent_ability_outputs():
+    outputs = {}
+    for path in Path("src-tauri/src/abilities").rglob("*.rs"):
+        text = path.read_text()
+        for match in re.finditer(r"#\[ability\((.*?)\)\]\s*pub\s+async\s+fn\s+([A-Za-z_][A-Za-z0-9_]*)", text, re.S):
+            block = match.group(1)
+            name_match = re.search(r'name\s*=\s*"([^"]+)"', block)
+            actors = re.search(r"allowed_actors\s*=\s*\[([^\]]*)\]", block, re.S)
+            if not actors or not re.search(r"\bAgent\b", actors.group(1)):
+                continue
+            signature = text[match.end(): text.find("{", match.end())]
+            output = re.search(r"->\s*AbilityResult<(.+)>\s*$", signature.strip(), re.S)
+            ability_name = name_match.group(1) if name_match else match.group(2)
+            outputs[ability_name] = normalize_type(output.group(1)) if output else "<unknown>"
+    return outputs
+
+violations = []
+outputs = agent_ability_outputs()
+if outputs != EXPECTED_AGENT_OUTPUTS:
+    violations.append(f"Agent-allowed ability output set changed: expected {EXPECTED_AGENT_OUTPUTS}, found {outputs}")
+
+for ability_name, output_type in outputs.items():
+    inspect_struct(output_type, set(), violations)
+
+synthetic_violations = []
+if safe_string_field("SyntheticAgentOutput", "text", "String"):
+    synthetic_violations.append("synthetic raw String text field unexpectedly passed")
+if not synthetic_violations:
+    synthetic_violations.append("SyntheticAgentOutput.text: raw `String` is not RenderableMcpClaimText, RenderableMcpEntityName, or an audited metadata/fail-closed field")
+if not any("SyntheticAgentOutput.text" in item for item in synthetic_violations):
+    violations.append("synthetic deny-by-default lint regression did not catch raw String text")
+
+print("\n".join(dict.fromkeys(violations)))
+PY
+)"
+
+if [[ -n "$ability_output_violations" ]]; then
+  cat >&2 <<'MSG'
+DOS-412 Agent ability output coverage failed.
+
+Every Agent-allowed ability output must have its string fields classified as
+claim/provenance-attested, RenderableMcpClaimText, RenderableMcpEntityName,
+explicit metadata, or fail-closed-on-MCP. New raw String text fields must fail
+this lint until audited.
+
+Violations:
+MSG
+  echo "$ability_output_violations" >&2
   exit 1
 fi
 

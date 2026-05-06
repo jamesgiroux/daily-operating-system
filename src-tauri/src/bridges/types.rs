@@ -19,7 +19,8 @@ use crate::intelligence::provider::{
 };
 use crate::services::context::{ExecutionMode, ServiceContext};
 use crate::services::sensitivity::{
-    render_mcp_ability_data_for_surface, render_mcp_ability_data_without_claim_lookup,
+    render_mcp_ability_data_for_surface_with_provenance,
+    render_mcp_ability_data_without_claim_lookup,
 };
 use crate::state::ContextSnapshot;
 
@@ -565,9 +566,9 @@ fn ability_response_from_output_json(
         ability_name,
         ability_version,
         schema_version,
-        data: render_ability_data(surface, data),
+        data: render_ability_data(surface, data, &provenance),
         rendered_provenance: render_provenance(surface, provenance),
-        diagnostics,
+        diagnostics: render_diagnostics(surface, diagnostics),
     })
 }
 
@@ -587,18 +588,25 @@ fn render_provenance(surface: BridgeSurface, provenance: serde_json::Value) -> R
     RenderedProvenance::new(surface, value)
 }
 
-fn render_ability_data(surface: BridgeSurface, data: serde_json::Value) -> serde_json::Value {
+fn render_ability_data(
+    surface: BridgeSurface,
+    data: serde_json::Value,
+    provenance: &serde_json::Value,
+) -> serde_json::Value {
     match surface {
         BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
-            render_mcp_ability_data_with_authoritative_claims(data)
+            render_mcp_ability_data_with_authoritative_claims(data, provenance)
         }
         BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => data,
     }
 }
 
-fn render_mcp_ability_data_with_authoritative_claims(data: serde_json::Value) -> serde_json::Value {
+fn render_mcp_ability_data_with_authoritative_claims(
+    data: serde_json::Value,
+    provenance: &serde_json::Value,
+) -> serde_json::Value {
     match ActionDb::open_readonly() {
-        Ok(db) => render_mcp_ability_data_for_surface(&db, data),
+        Ok(db) => render_mcp_ability_data_for_surface_with_provenance(&db, data, provenance),
         Err(error) => {
             log::warn!(
                 target: "dailyos_lib::bridges::mcp_ability_data",
@@ -606,6 +614,15 @@ fn render_mcp_ability_data_with_authoritative_claims(data: serde_json::Value) ->
             );
             render_mcp_ability_data_without_claim_lookup(data)
         }
+    }
+}
+
+fn render_diagnostics(surface: BridgeSurface, diagnostics: serde_json::Value) -> serde_json::Value {
+    match surface {
+        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
+            serde_json::json!({ "warnings": [] })
+        }
+        BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => diagnostics,
     }
 }
 

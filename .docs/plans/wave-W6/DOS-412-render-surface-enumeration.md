@@ -43,62 +43,55 @@ Policy legend:
 
 ## MCP Ability Data Rendering
 
-Cycle-3 Track FF closes the MCP registry ability response gap at the bridge
-boundary. `src-tauri/src/bridges/types.rs` now renders `AbilityResponseJson.data`
-for `BridgeSurface::McpTool`/`McpToolDetail` before the response is returned;
-Tauri, worker, and eval surfaces continue to receive the raw ability payload.
+Track GG replaces the prior named-field redaction model with a deny-by-default
+MCP ability-data boundary. `src-tauri/src/bridges/types.rs` renders
+`AbilityResponseJson.data` for `BridgeSurface::McpTool`/`McpToolDetail` before
+the response is returned. Tauri, worker, and eval surfaces continue to receive
+the raw ability payload.
 
-Design choice: **A for tagged carrier objects, on top of the generic
-claim-id tagged walker**. Descriptor-declared paths would require extending
-`AbilityDescriptor` and the `#[ability]` macro while still leaving the bridge
-without sensitivity metadata for each path. The generic walker remains the
-least invasive detector because it can consume the existing
-`RenderableClaimText`-style shape: `text` plus `claim_id`/`claimId` and
-`sensitivity`, or `text` plus `policy.claimId`/`policy.sensitivity`. Once a
-tagged carrier is detected, it renders to a new minimal object instead of
-mutating and returning the original DTO.
+The MCP walker in `src-tauri/src/services/sensitivity.rs` treats every string
+leaf as unsafe until one of three outcomes applies:
+
+- Claim text: a tagged carrier or bridge-provenance-attested field resolves to
+  a persisted claim, reloads authoritative sensitivity, and serializes as the
+  minimal `{ text, policy }` object.
+- Non-content metadata: explicit allowlist only for identifiers, enum-like
+  state, timestamps, meeting title, and meeting attendee names.
+- Drop: all other strings are omitted.
 
 Authoritative claim lookup is required. The bridge opens a read-only
-`ActionDb` for MCP ability data rendering and passes it into
-`render_mcp_ability_data_for_surface`. The redactor reloads
-`tagged.claim_id` with `services::claims::load_claim_by_id` and uses the
-persisted claim sensitivity and actor for the MCP policy decision. The DTO
-`sensitivity` is only a consistency check. Missing `claim_id`, claim lookup
-failure, claim not found, malformed sensitivity, or DTO/stored sensitivity
-mismatch all fail closed and drop the tagged carrier. Sensitivity mismatches
-are logged without claim text.
+`ActionDb` for MCP ability data rendering and passes raw provenance into
+`render_mcp_ability_data_for_surface_with_provenance`. Missing claim lookup,
+malformed tags, DTO/stored sensitivity mismatch, and un-attributed raw strings
+all fail closed. Tagged carrier surviving fields are allowlisted to `text` and
+`policy` only; siblings such as `source_text`, `sourceSummary`, `evidenceText`,
+`rawText`, `quote`, `claim_id`, `sensitivity`, and `originating_actor` are
+stripped.
 
-MCP behavior is fail-closed:
+Diagnostics are not content-safe. MCP responses replace diagnostics with
+`{ "warnings": [] }`; Tauri/worker/eval keep diagnostics unchanged.
 
-- Tagged Public and Internal claim text renders through
-  `render_policy_for_surface(..., RenderSurface::McpTool, agent:mcp)`.
-- Tagged Confidential and UserOnly claim text is dropped; MCP cannot perform
-  an audited click-to-reveal.
-- Tagged carrier surviving fields are explicitly allowlisted to `text` and
-  `policy` only. All original sibling properties are stripped, including
-  `source_text`, `sourceSummary`, `evidenceText`, `rawText`, `quote`,
-  `claim_id`, `sensitivity`, and `originating_actor`.
-- Untagged narrative/text-shaped leaves such as `text`, `content`, `summary`,
-  `description`, `detail`, `context`, `title`, `snippet`, `outcome`, and
-  `rationale` are removed from MCP ability data. Identifiers and enum-like
-  metadata are preserved.
+The Agent-allowed ability audit is committed at
+`.docs/plans/wave-W6/DOS-412-mcp-ability-data-enumeration.md`. Current
+Agent-allowed abilities are `get_entity_context` and `prepare_meeting`.
+`get_entity_context` keeps the cycle-6/7 Agent prompt-input sensitivity gate
+unchanged. `prepare_meeting` keeps the raw Tauri DTO and relies on field
+provenance at the MCP bridge to render Public/Internal claim text or drop it.
 
 Regression coverage lives in
-`src-tauri/tests/dos412_mcp_ability_data_redaction_test.rs`: a synthetic
-Agent/User ability returns Public, Internal, Confidential, and UserOnly tagged
-claim text plus one untagged summary. MCP keeps only Public/Internal and drops
-the untagged/private text; Tauri returns all four sensitivities unchanged per
-cycle-6 semantics. Additional regressions cover a stored Confidential claim
-whose DTO claims Internal sensitivity, plus tagged carriers attempting to leak
-private excerpts in `source_text`, `sourceSummary`, `evidenceText`, `rawText`,
-and `quote` siblings.
+`src-tauri/tests/dos412_mcp_ability_data_redaction_test.rs`: tagged carrier
+policy, top-level/nested/deep untagged string drops, explicit metadata
+allowlist, provenance-attested raw claim text, cycle-4 `open_loops[].owner`
+and `attendee_context[].attendee`, diagnostics drop on MCP only, DTO
+sensitivity downgrade, and tagged sibling stripping.
 
 Implementation notes:
 
-- `get_entity_context`'s cycle-6/7 Agent sensitivity gate remains unchanged; the MCP bridge-level data renderer is additive and does not replace that source filter.
-- `services/claims.rs::claim_allowed_for_prompt_input` remains the immutable prompt-input boundary.
-- DOS-288 ownership validator and DOS-320 `FieldAttribution.trust_band` stay separate. DOS-412 render policy is an additional annotation, not a trust-band replacement.
-- Unknown sensitivity values or unknown surfaces fail closed as Drop.
-- Unrecognized tagged-object siblings fail closed by omission; future MCP
-  metadata fields must be deliberately added to the allowlist rather than
-  inherited from ability DTOs.
+- `services/claims.rs::claim_allowed_for_prompt_input` remains the immutable
+  prompt-input boundary.
+- DOS-288 ownership validation and DOS-320 `FieldAttribution.trust_band` stay
+  separate. DOS-412 render policy is an output boundary.
+- Unknown sensitivity values, unknown surfaces, and unrecognized strings fail
+  closed as Drop.
+- Future MCP metadata fields must be deliberately added to the allowlist rather
+  than inherited from ability DTOs.

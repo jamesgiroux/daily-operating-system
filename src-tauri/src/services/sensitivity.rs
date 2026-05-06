@@ -167,7 +167,8 @@ pub struct RenderableClaimText {
     pub policy: RenderPolicy,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
 pub struct RenderableMcpClaimText {
     pub text: String,
     pub claim_id: String,
@@ -208,6 +209,22 @@ pub enum McpStaticTextClass {
     MeetingSummary,
     MeetingPrepSummary,
     ContentChunk,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub struct RenderableMcpEntityName {
+    pub name: String,
+    pub entity_id: String,
+}
+
+impl RenderableMcpEntityName {
+    pub fn new(name: impl Into<String>, entity_id: impl Into<String>) -> Self {
+        Self {
+            name: name.into(),
+            entity_id: entity_id.into(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -441,24 +458,46 @@ where
     }
 }
 
-/// Render claim-derived ability `data` for the MCP tool surface.
+/// Render ability `data` for the MCP tool surface.
 ///
-/// DOS-412 Track FF keeps the generic tagged-claim JSON walker, but tagged
-/// carriers are authoritative and fail closed. The DTO's `sensitivity` is only
-/// a consistency check: the persisted claim is reloaded by `claim_id` through
-/// `load_claim_by_id`, and the stored sensitivity/actor drive
-/// `render_policy_for_surface(..., McpTool, ...)`. Missing claims, malformed
-/// tags, or DTO/stored sensitivity mismatches are dropped.
+/// DOS-412 Track GG inverts the MCP output boundary to deny by default. Every
+/// string leaf has exactly three possible outcomes:
 ///
-/// Tagged carrier objects use design A: render to a minimal safe object with
-/// only `text` and `policy`. Every sibling property is stripped by default so
-/// fields such as `source_text`, `sourceSummary`, `evidenceText`, `rawText`, or
-/// `quote` cannot leak beside an otherwise valid claim text wrapper.
+/// 1. Claim text with authoritative metadata renders as the same minimal
+///    `{ text, policy }` object used by tagged carriers.
+/// 2. Explicit non-content metadata from the narrow key/path allowlist renders
+///    as a string.
+/// 3. Everything else drops by omission.
+///
+/// Tagged carrier objects remain authoritative and fail closed. The DTO's
+/// `sensitivity` is only a consistency check: the persisted claim is reloaded
+/// by `claim_id` through `load_claim_by_id`, and the stored sensitivity/actor
+/// drive `render_policy_for_surface(..., McpTool, ...)`. Missing claims,
+/// malformed tags, or DTO/stored sensitivity mismatches are dropped.
+///
+/// Untagged ability DTO strings can only render when the bridge supplies
+/// provenance whose field attribution resolves to persisted claims. This keeps
+/// Tauri DTOs unchanged while MCP still serializes claim-derived text through
+/// the tagged-carrier renderer. Unrecognized tagged-object siblings fail
+/// closed by omission; future MCP metadata fields must be deliberately added to
+/// the allowlist rather than inherited from ability DTOs.
 pub fn render_mcp_ability_data_for_surface(
     db: &ActionDb,
     value: serde_json::Value,
 ) -> serde_json::Value {
-    render_mcp_ability_data_with_claim_lookup(value, &|claim_id| {
+    render_mcp_ability_data_with_claim_lookup(value, None, &|claim_id| {
+        crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
+            .ok()
+            .flatten()
+    })
+}
+
+pub fn render_mcp_ability_data_for_surface_with_provenance(
+    db: &ActionDb,
+    value: serde_json::Value,
+    provenance: &serde_json::Value,
+) -> serde_json::Value {
+    render_mcp_ability_data_with_claim_lookup(value, Some(provenance), &|claim_id| {
         crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
             .ok()
             .flatten()
@@ -471,14 +510,17 @@ pub fn render_mcp_ability_data_for_surface(
 pub(crate) fn render_mcp_ability_data_without_claim_lookup(
     value: serde_json::Value,
 ) -> serde_json::Value {
-    render_mcp_ability_data_with_claim_lookup(value, &|_| None)
+    render_mcp_ability_data_with_claim_lookup(value, None, &|_| None)
 }
 
 fn render_mcp_ability_data_with_claim_lookup(
     value: serde_json::Value,
+    provenance: Option<&serde_json::Value>,
     load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
 ) -> serde_json::Value {
-    render_mcp_ability_data_value(value, None, load_claim).unwrap_or(serde_json::Value::Null)
+    let mut path = Vec::new();
+    render_mcp_ability_data_value(value, &mut path, None, provenance, load_claim)
+        .unwrap_or(serde_json::Value::Null)
 }
 
 #[derive(Debug, Clone)]
@@ -496,7 +538,9 @@ enum TaggedMcpClaimTextMatch {
 
 fn render_mcp_ability_data_value(
     value: serde_json::Value,
-    key: Option<&str>,
+    path: &mut Vec<String>,
+    claim_id_hint: Option<&str>,
+    provenance: Option<&serde_json::Value>,
     load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
 ) -> Option<serde_json::Value> {
     match value {
@@ -506,13 +550,25 @@ fn render_mcp_ability_data_value(
             }
             TaggedMcpClaimTextMatch::Malformed => None,
             TaggedMcpClaimTextMatch::NotTagged => {
+                if let Some(entity_name) = tagged_mcp_entity_name(&object) {
+                    return Some(entity_name);
+                }
+
+                let object_claim_id_hint = claim_id_hint_from_object(&object)
+                    .or_else(|| claim_id_hint.map(str::to_string));
                 let mut rendered = serde_json::Map::new();
                 for (key, value) in object {
-                    if let Some(value) =
-                        render_mcp_ability_data_value(value, Some(&key), load_claim)
-                    {
+                    path.push(key.clone());
+                    if let Some(value) = render_mcp_ability_data_value(
+                        value,
+                        path,
+                        object_claim_id_hint.as_deref(),
+                        provenance,
+                        load_claim,
+                    ) {
                         rendered.insert(key, value);
                     }
+                    path.pop();
                 }
                 Some(serde_json::Value::Object(rendered))
             }
@@ -520,18 +576,61 @@ fn render_mcp_ability_data_value(
         serde_json::Value::Array(values) => Some(serde_json::Value::Array(
             values
                 .into_iter()
-                .filter_map(|value| render_mcp_ability_data_value(value, None, load_claim))
+                .enumerate()
+                .filter_map(|(index, value)| {
+                    path.push(index.to_string());
+                    let rendered = render_mcp_ability_data_value(
+                        value,
+                        path,
+                        claim_id_hint,
+                        provenance,
+                        load_claim,
+                    );
+                    path.pop();
+                    rendered
+                })
                 .collect(),
         )),
         serde_json::Value::String(text) => {
-            if key.is_some_and(is_mcp_ability_claim_text_field) {
-                None
-            } else {
-                Some(serde_json::Value::String(text))
+            if is_mcp_ability_non_content_metadata_string(path) {
+                return Some(serde_json::Value::String(text));
             }
+
+            attested_mcp_claim_text_for_leaf(path, &text, claim_id_hint, provenance, load_claim)
+                .and_then(|tagged| render_tagged_mcp_claim_text(tagged, load_claim))
         }
         other => Some(other),
     }
+}
+
+fn tagged_mcp_entity_name(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<serde_json::Value> {
+    if !(object.contains_key("name")
+        && (object.contains_key("entity_id") || object.contains_key("entityId")))
+    {
+        return None;
+    }
+
+    let name = object.get("name")?.as_str()?.trim();
+    if name.is_empty() {
+        return None;
+    }
+    let entity_id = string_field(object, &["entity_id", "entityId"])?;
+    if entity_id.trim().is_empty() {
+        return None;
+    }
+
+    let mut rendered = serde_json::Map::new();
+    rendered.insert(
+        "name".to_string(),
+        serde_json::Value::String(name.to_string()),
+    );
+    rendered.insert(
+        "entity_id".to_string(),
+        serde_json::Value::String(entity_id),
+    );
+    Some(serde_json::Value::Object(rendered))
 }
 
 fn tagged_mcp_claim_text(
@@ -661,37 +760,361 @@ fn claim_sensitivity_from_value(value: &serde_json::Value) -> Option<ClaimSensit
     }
 }
 
-fn is_mcp_ability_claim_text_field(key: &str) -> bool {
-    matches!(
+fn claim_id_hint_from_object(
+    object: &serde_json::Map<String, serde_json::Value>,
+) -> Option<String> {
+    let carries_claim_text = [
+        "content",
+        "context",
+        "description",
+        "detail",
+        "outcome",
+        "rationale",
+        "summary",
+        "text",
+        "title",
+    ]
+    .iter()
+    .any(|key| object.get(*key).is_some_and(serde_json::Value::is_string));
+    if !carries_claim_text {
+        return None;
+    }
+
+    string_field(object, &["claim_id", "claimId", "id"])
+}
+
+fn attested_mcp_claim_text_for_leaf(
+    path: &[String],
+    text: &str,
+    claim_id_hint: Option<&str>,
+    provenance: Option<&serde_json::Value>,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
+) -> Option<TaggedMcpClaimText> {
+    provenance_claim_for_path(path, provenance, load_claim)
+        .or_else(|| claim_id_hint.and_then(load_claim))
+        .map(|claim| TaggedMcpClaimText {
+            text: text.to_string(),
+            claim_id: claim.id,
+            sensitivity: claim.sensitivity,
+        })
+}
+
+fn provenance_claim_for_path(
+    path: &[String],
+    provenance: Option<&serde_json::Value>,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
+) -> Option<IntelligenceClaim> {
+    let provenance = provenance?;
+    let field_attributions = provenance.get("field_attributions")?.as_object()?;
+    let pointer = json_pointer_from_path(path);
+    let (_field_path, attribution) = field_attributions
+        .iter()
+        .filter(|(field_path, attribution)| {
+            field_path_covers(field_path, &pointer)
+                && attribution
+                    .get("source_refs")
+                    .and_then(serde_json::Value::as_array)
+                    .is_some_and(|refs| !refs.is_empty())
+        })
+        .max_by_key(|(field_path, _)| field_path.len())?;
+
+    let claims = claims_from_field_attribution(provenance, attribution, load_claim);
+    most_cautious_claim(claims)
+}
+
+fn claims_from_field_attribution(
+    provenance: &serde_json::Value,
+    attribution: &serde_json::Value,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
+) -> Vec<IntelligenceClaim> {
+    let mut claims = Vec::new();
+    let Some(source_refs) = attribution
+        .get("source_refs")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return claims;
+    };
+
+    for source_ref in source_refs {
+        claims.extend(claims_from_source_ref(provenance, source_ref, load_claim));
+    }
+    claims
+}
+
+fn claims_from_source_ref(
+    provenance: &serde_json::Value,
+    source_ref: &serde_json::Value,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
+) -> Vec<IntelligenceClaim> {
+    if let Some(source_index) = source_index_from_ref(source_ref) {
+        return provenance
+            .get("sources")
+            .and_then(serde_json::Value::as_array)
+            .and_then(|sources| sources.get(source_index))
+            .map(|source| claims_from_source(source, load_claim))
+            .unwrap_or_default();
+    }
+
+    let Some(child_ref) = source_ref.get("child") else {
+        return Vec::new();
+    };
+    let Some(child_field_path) = child_ref
+        .get("field_path")
+        .and_then(serde_json::Value::as_str)
+    else {
+        return Vec::new();
+    };
+
+    provenance
+        .get("children")
+        .and_then(serde_json::Value::as_array)
+        .map(|children| {
+            children
+                .iter()
+                .flat_map(|child| claims_from_child_provenance(child, child_field_path, load_claim))
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
+fn claims_from_child_provenance(
+    child: &serde_json::Value,
+    child_field_path: &str,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
+) -> Vec<IntelligenceClaim> {
+    let mut claims = Vec::new();
+    let Some(field_attributions) = child
+        .get("field_attributions")
+        .and_then(serde_json::Value::as_object)
+    else {
+        return claims;
+    };
+
+    for (candidate_path, attribution) in field_attributions {
+        if field_path_covers(child_field_path, candidate_path) {
+            claims.extend(claims_from_field_attribution(
+                child,
+                attribution,
+                load_claim,
+            ));
+        }
+    }
+    claims
+}
+
+fn source_index_from_ref(source_ref: &serde_json::Value) -> Option<usize> {
+    source_ref
+        .get("source")
+        .and_then(|source| source.get("source_index"))
+        .or_else(|| source_ref.get("source_index"))
+        .and_then(source_index_value)
+}
+
+fn source_index_value(value: &serde_json::Value) -> Option<usize> {
+    if let Some(index) = value.as_u64() {
+        return usize::try_from(index).ok();
+    }
+    value
+        .get("source_index")
+        .and_then(serde_json::Value::as_u64)
+        .and_then(|index| usize::try_from(index).ok())
+}
+
+fn claims_from_source(
+    source: &serde_json::Value,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
+) -> Vec<IntelligenceClaim> {
+    let mut claims = Vec::new();
+    let Some(identifiers) = source
+        .get("identifiers")
+        .and_then(serde_json::Value::as_array)
+    else {
+        return claims;
+    };
+
+    for identifier in identifiers {
+        for claim_id in claim_id_candidates_from_identifier(identifier) {
+            if claims.iter().any(|claim| claim.id == claim_id) {
+                continue;
+            }
+            if let Some(claim) = load_claim(&claim_id) {
+                claims.push(claim);
+            }
+        }
+    }
+    claims
+}
+
+fn claim_id_candidates_from_identifier(identifier: &serde_json::Value) -> Vec<String> {
+    let mut candidates = Vec::new();
+    collect_claim_id_candidate_fields(identifier, &mut candidates);
+    candidates
+}
+
+fn collect_claim_id_candidate_fields(value: &serde_json::Value, candidates: &mut Vec<String>) {
+    match value {
+        serde_json::Value::Object(object) => {
+            for (key, value) in object {
+                if matches!(
+                    key.as_str(),
+                    "signal_id"
+                        | "signalId"
+                        | "entry_id"
+                        | "entryId"
+                        | "document_id"
+                        | "documentId"
+                        | "meeting_id"
+                        | "meetingId"
+                        | "entity_id"
+                        | "entityId"
+                ) {
+                    if let Some(candidate) = value.as_str().filter(|value| !value.trim().is_empty())
+                    {
+                        candidates.push(candidate.to_string());
+                    }
+                }
+                collect_claim_id_candidate_fields(value, candidates);
+            }
+        }
+        serde_json::Value::Array(values) => {
+            for value in values {
+                collect_claim_id_candidate_fields(value, candidates);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn most_cautious_claim(claims: Vec<IntelligenceClaim>) -> Option<IntelligenceClaim> {
+    claims
+        .into_iter()
+        .max_by_key(|claim| claim_sensitivity_rank(&claim.sensitivity))
+}
+
+fn claim_sensitivity_rank(sensitivity: &ClaimSensitivity) -> u8 {
+    match sensitivity {
+        ClaimSensitivity::Public => 0,
+        ClaimSensitivity::Internal => 1,
+        ClaimSensitivity::Confidential => 2,
+        ClaimSensitivity::UserOnly => 3,
+    }
+}
+
+fn json_pointer_from_path(path: &[String]) -> String {
+    path.iter().fold(String::new(), |mut pointer, token| {
+        pointer.push('/');
+        pointer.push_str(&token.replace('~', "~0").replace('/', "~1"));
+        pointer
+    })
+}
+
+fn field_path_covers(candidate: &str, leaf: &str) -> bool {
+    candidate.is_empty()
+        || candidate == leaf
+        || leaf
+            .strip_prefix(candidate)
+            .is_some_and(|suffix| suffix.starts_with('/'))
+}
+
+fn is_mcp_ability_non_content_metadata_string(path: &[String]) -> bool {
+    let Some(key) = metadata_key_for_path(path) else {
+        return false;
+    };
+
+    // Identifiers are join handles, not prose. They are needed so callers can
+    // correlate MCP rows without exposing claim text.
+    if is_identifier_metadata_key(key) {
+        return true;
+    }
+
+    // Enum-shaped state is non-content routing metadata. These values describe
+    // lifecycle or type, not user-authored or model-authored claim text.
+    if matches!(
         key,
-        "briefing"
-            | "content"
-            | "context"
-            | "description"
-            | "detail"
-            | "emails"
-            | "evidenceText"
-            | "evidence_text"
-            | "intelligenceSummary"
-            | "intelligence_summary"
-            | "meetingContext"
-            | "openActions"
-            | "open_actions"
-            | "outcome"
-            | "quote"
-            | "rawText"
-            | "raw_text"
-            | "rationale"
-            | "schedule"
-            | "snippet"
-            | "sourceSummary"
-            | "sourceText"
-            | "source_summary"
-            | "source_text"
-            | "summary"
-            | "text"
-            | "title"
-    )
+        "actor"
+            | "claim_state"
+            | "claimState"
+            | "entity_type"
+            | "entityType"
+            | "kind"
+            | "lifecycle"
+            | "mode"
+            | "priority"
+            | "sensitivity"
+            | "status"
+            | "surfacing_state"
+            | "surfacingState"
+            | "temporal_scope"
+            | "temporalScope"
+            | "trust_band"
+            | "trustBand"
+    ) {
+        return true;
+    }
+
+    // Timestamp-shaped fields are chronology metadata. They can be useful to
+    // agents without carrying narrative claim content.
+    if is_timestamp_metadata_key(key) {
+        return true;
+    }
+
+    // Name-shaped fields are allowlisted only for established metadata
+    // surfaces. Generated section titles, open-loop owners, and attendee
+    // summaries are intentionally excluded unless claim/provenance-attested.
+    matches_meeting_metadata_name_path(path) || matches!(key, "display_name" | "displayName")
+}
+
+fn metadata_key_for_path(path: &[String]) -> Option<&str> {
+    let key = path.last()?.as_str();
+    if is_array_index(key) {
+        path.iter()
+            .rev()
+            .skip(1)
+            .find(|token| !is_array_index(token))
+            .map(String::as_str)
+    } else {
+        Some(key)
+    }
+}
+
+fn is_array_index(value: &str) -> bool {
+    !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+fn is_identifier_metadata_key(key: &str) -> bool {
+    key == "id"
+        || key.ends_with("_id")
+        || key.ends_with("Id")
+        || matches!(key, "claim_id" | "claimId" | "source_ids" | "sourceIds")
+}
+
+fn is_timestamp_metadata_key(key: &str) -> bool {
+    key.ends_with("_at")
+        || key.ends_with("At")
+        || matches!(
+            key,
+            "source_asof"
+                | "sourceAsof"
+                | "window_start"
+                | "windowStart"
+                | "window_end"
+                | "windowEnd"
+        )
+}
+
+fn matches_meeting_metadata_name_path(path: &[String]) -> bool {
+    if path == ["meeting", "title"] {
+        return true;
+    }
+    if path.len() == 4
+        && path[0] == "meeting"
+        && path[1] == "attendees"
+        && is_array_index(&path[2])
+        && path[3] == "name"
+    {
+        return true;
+    }
+    false
 }
 
 pub fn record_sensitivity_reveal(

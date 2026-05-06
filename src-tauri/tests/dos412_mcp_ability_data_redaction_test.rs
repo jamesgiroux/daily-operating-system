@@ -6,13 +6,17 @@ use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
 use dailyos_lib::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
+use dailyos_lib::bridges::mcp::McpAbilityBridge;
 use dailyos_lib::bridges::tauri::TauriAbilityBridge;
+use dailyos_lib::bridges::McpSessionId;
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
 use dailyos_lib::services::context::ExecutionMode;
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
-use dailyos_lib::services::sensitivity::render_mcp_ability_data_for_surface;
+use dailyos_lib::services::sensitivity::{
+    render_mcp_ability_data_for_surface, render_mcp_ability_data_for_surface_with_provenance,
+};
 use dailyos_lib::state::AppState;
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -21,6 +25,10 @@ const PUBLIC_TEXT: &str = "Public launch readiness is green.";
 const INTERNAL_TEXT: &str = "Internal rollout dependency is tracked.";
 const CONFIDENTIAL_TEXT: &str = "Confidential renewal risk must stay hidden.";
 const USER_ONLY_TEXT: &str = "User-only negotiation note must stay hidden.";
+const UNTAGGED_PRIVATE_TEXT: &str = "Untagged private note must not cross MCP.";
+const CYCLE4_OWNER_TEXT: &str = "Private owner text from source content.";
+const CYCLE4_ATTENDEE_TEXT: &str = "Private attendee context name from source content.";
+const DIAGNOSTIC_PRIVATE_TEXT: &str = "Diagnostic warning with confidential customer text.";
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
 const TYPED_FEEDBACK_SQL: &str =
     include_str!("../src/migrations/135_dos_294_typed_feedback_schema.sql");
@@ -49,7 +57,7 @@ fn synthetic_claim_text_erased<'a>(
         Ok(json!({
             "data": synthetic_ability_data(),
             "ability_version": { "major": 1, "minor": 0 },
-            "diagnostics": { "warnings": [] },
+                "diagnostics": { "warnings": [DIAGNOSTIC_PRIVATE_TEXT] },
             "provenance": {
                 "invocation_id": "41241241-4124-4124-8124-412412412412",
                 "ability_name": "dos412_synthetic_claim_text",
@@ -78,9 +86,35 @@ async fn mcp_ability_data_redacts_tagged_private_claim_text_while_tauri_stays_ra
     assert!(mcp_data.contains(INTERNAL_TEXT));
     assert!(!mcp_data.contains(CONFIDENTIAL_TEXT));
     assert!(!mcp_data.contains(USER_ONLY_TEXT));
+    assert!(!mcp_data.contains(UNTAGGED_PRIVATE_TEXT));
+    assert!(!mcp_data.contains(CYCLE4_OWNER_TEXT));
+    assert!(!mcp_data.contains(CYCLE4_ATTENDEE_TEXT));
     assert!(mcp_data_value["claims"].get("confidential").is_none());
     assert!(mcp_data_value["claims"].get("user_only").is_none());
     assert!(mcp_data_value["untagged"].get("summary").is_none());
+    assert!(mcp_data_value["top_level_secret"].is_null());
+    assert!(mcp_data_value["untagged"]["nested"].get("detail").is_none());
+    assert_eq!(mcp_data_value["untagged"]["nested"]["id"], "metadata-row-1");
+    assert_eq!(mcp_data_value["untagged"]["nested"]["status"], "active");
+    assert_eq!(
+        mcp_data_value["untagged"]["nested"]["created_at"],
+        "2026-05-06T12:00:00Z"
+    );
+    assert_eq!(
+        mcp_data_value["meeting"]["title"],
+        "Metadata planning meeting"
+    );
+    assert_eq!(
+        mcp_data_value["meeting"]["attendees"][0]["name"],
+        "Riley Rivera"
+    );
+    assert!(mcp_data_value["meeting"]["attendees"][0]
+        .get("email")
+        .is_none());
+    assert!(mcp_data_value["open_loops"][0].get("owner").is_none());
+    assert!(mcp_data_value["attendee_context"][0]
+        .get("attendee")
+        .is_none());
 
     let public_claim = mcp_data_value["claims"]["public"]
         .as_object()
@@ -108,12 +142,52 @@ async fn mcp_ability_data_redacts_tagged_private_claim_text_while_tauri_stays_ra
         INTERNAL_TEXT,
         CONFIDENTIAL_TEXT,
         USER_ONLY_TEXT,
+        UNTAGGED_PRIVATE_TEXT,
+        CYCLE4_OWNER_TEXT,
+        CYCLE4_ATTENDEE_TEXT,
     ] {
         assert!(
             tauri_data.contains(text),
             "Tauri data should include {text}"
         );
     }
+    let tauri_diagnostics = serde_json::to_string(&tauri_response.diagnostics).unwrap();
+    assert!(tauri_diagnostics.contains(DIAGNOSTIC_PRIVATE_TEXT));
+}
+
+#[tokio::test]
+async fn mcp_ability_response_drops_diagnostics_warnings_while_tauri_keeps_them() {
+    let registry = AbilityRegistry::from_descriptors_checked(vec![synthetic_descriptor()]).unwrap();
+    let mcp_bridge = McpAbilityBridge::new(&registry);
+    let mcp_response = mcp_bridge
+        .invoke_ability(
+            McpSessionId::from_uuid(uuid::Uuid::from_u128(412)),
+            "dos412_synthetic_claim_text",
+            json!({}),
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+
+    let mcp_diagnostics = serde_json::to_string(&mcp_response.diagnostics).unwrap();
+    assert!(!mcp_diagnostics.contains(DIAGNOSTIC_PRIVATE_TEXT));
+    assert_eq!(mcp_response.diagnostics, json!({ "warnings": [] }));
+
+    let state = AppState::new();
+    let tauri_bridge = TauriAbilityBridge::new(&registry);
+    let tauri_response = tauri_bridge
+        .invoke(
+            &state,
+            "dos412_synthetic_claim_text",
+            json!({}),
+            false,
+            None,
+        )
+        .await
+        .unwrap();
+    let tauri_diagnostics = serde_json::to_string(&tauri_response.diagnostics).unwrap();
+    assert!(tauri_diagnostics.contains(DIAGNOSTIC_PRIVATE_TEXT));
 }
 
 #[test]
@@ -138,6 +212,73 @@ fn mcp_ability_data_drops_dto_sensitivity_downgrade_from_stored_confidential() {
     let serialized = serde_json::to_string(&rendered).unwrap();
     assert!(!serialized.contains(CONFIDENTIAL_TEXT));
     assert!(rendered.as_object().unwrap().get("claim").is_none());
+}
+
+#[test]
+fn mcp_ability_data_renders_only_provenance_attested_raw_claim_text() {
+    let conn = fresh_claims_conn();
+    let ctx = live_claim_ctx();
+    seed_claim(
+        &ctx,
+        &conn,
+        "claim-internal-provenance",
+        ClaimSensitivity::Internal,
+        INTERNAL_TEXT,
+    );
+    seed_claim(
+        &ctx,
+        &conn,
+        "claim-confidential-provenance",
+        ClaimSensitivity::Confidential,
+        CONFIDENTIAL_TEXT,
+    );
+
+    let rendered = render_mcp_ability_data_for_surface_with_provenance(
+        ActionDb::from_conn(&conn),
+        json!({
+            "summary": INTERNAL_TEXT,
+            "private_summary": CONFIDENTIAL_TEXT,
+            "unattributed_summary": UNTAGGED_PRIVATE_TEXT
+        }),
+        &json!({
+            "sources": [
+                {
+                    "identifiers": [
+                        { "signal": { "signal_id": "claim-internal-provenance" } }
+                    ]
+                },
+                {
+                    "identifiers": [
+                        { "signal": { "signal_id": "claim-confidential-provenance" } }
+                    ]
+                }
+            ],
+            "field_attributions": {
+                "/summary": {
+                    "source_refs": [{ "source": { "source_index": 0 } }]
+                },
+                "/private_summary": {
+                    "source_refs": [{ "source": { "source_index": 1 } }]
+                }
+            }
+        }),
+    );
+
+    assert_eq!(rendered["summary"]["text"], INTERNAL_TEXT);
+    assert!(rendered["summary"].get("policy").is_some());
+    assert!(rendered
+        .as_object()
+        .unwrap()
+        .get("private_summary")
+        .is_none());
+    assert!(rendered
+        .as_object()
+        .unwrap()
+        .get("unattributed_summary")
+        .is_none());
+    let serialized = serde_json::to_string(&rendered).unwrap();
+    assert!(!serialized.contains(CONFIDENTIAL_TEXT));
+    assert!(!serialized.contains(UNTAGGED_PRIVATE_TEXT));
 }
 
 macro_rules! tagged_sibling_regression {
@@ -198,6 +339,7 @@ fn assert_tagged_claim_sibling_is_stripped(field: &str) {
 
 fn synthetic_ability_data() -> Value {
     json!({
+        "top_level_secret": UNTAGGED_PRIVATE_TEXT,
         "claims": {
             "public": tagged_claim("claim-public", "public", PUBLIC_TEXT),
             "internal": tagged_claim("claim-internal", "internal", INTERNAL_TEXT),
@@ -208,9 +350,41 @@ fn synthetic_ability_data() -> Value {
             ),
             "user_only": tagged_claim("claim-user-only", "user_only", USER_ONLY_TEXT)
         },
+        "meeting": {
+            "id": "meeting-dos412",
+            "title": "Metadata planning meeting",
+            "starts_at": "2026-05-06T12:00:00Z",
+            "attendees": [{
+                "name": "Riley Rivera",
+                "email": "riley@example.com",
+                "person_id": "person-riley"
+            }]
+        },
         "untagged": {
-            "summary": CONFIDENTIAL_TEXT
-        }
+            "summary": CONFIDENTIAL_TEXT,
+            "nested": {
+                "id": "metadata-row-1",
+                "status": "active",
+                "created_at": "2026-05-06T12:00:00Z",
+                "detail": UNTAGGED_PRIVATE_TEXT,
+                "items": [
+                    UNTAGGED_PRIVATE_TEXT,
+                    { "description": UNTAGGED_PRIVATE_TEXT }
+                ]
+            }
+        },
+        "open_loops": [{
+            "description": UNTAGGED_PRIVATE_TEXT,
+            "owner": CYCLE4_OWNER_TEXT,
+            "subject": { "kind": "meeting", "id": "meeting-dos412" },
+            "temporal_scope": "state"
+        }],
+        "attendee_context": [{
+            "attendee": CYCLE4_ATTENDEE_TEXT,
+            "context": UNTAGGED_PRIVATE_TEXT,
+            "subject": { "kind": "person", "id": "person-riley" },
+            "temporal_scope": "state"
+        }]
     })
 }
 
