@@ -7,13 +7,13 @@ import {
   writeShowAllEvidenceState,
 } from "@/lib/trust-band";
 import { formatShortDate } from "@/lib/utils";
-import type { TrustAnnotated } from "@/types";
+import type { RenderableClaimText, TrustAnnotated } from "@/types";
 import s from "./ContextEntryList.module.css";
 
 type ContextEntryListEntry = TrustAnnotated<{
   id: string;
-  title: string;
-  content: string;
+  title: string | RenderableClaimText;
+  content: string | RenderableClaimText;
   createdAt: string;
 }>;
 
@@ -65,10 +65,10 @@ export function ContextEntryList({
     setAdding(false);
   };
 
-  const startEdit = (entry: { id: string; title: string; content: string }) => {
+  const startEdit = (entry: ContextEntryListEntry) => {
     setEditingId(entry.id);
-    setEditTitle(entry.title);
-    setEditContent(entry.content);
+    setEditTitle(claimTextToEditableString(entry.title));
+    setEditContent(claimTextToEditableString(entry.content));
   };
 
   const commitEdit = () => {
@@ -230,4 +230,8 @@ function newestEntryEvidenceDate(entries: ContextEntryListEntry[]): string | nul
     .filter((date) => Number.isFinite(date.time))
     .sort((a, b) => b.time - a.time)[0];
   return newest?.raw ?? null;
+}
+
+function claimTextToEditableString(value: string | RenderableClaimText): string {
+  return typeof value === "string" ? value : value.text;
 }

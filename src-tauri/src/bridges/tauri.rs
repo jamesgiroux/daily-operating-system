@@ -138,6 +138,36 @@ impl<'registry> TauriAbilityBridge<'registry> {
         .map_err(surface_error)
     }
 
+    #[cfg(feature = "test-harness")]
+    #[doc(hidden)]
+    pub async fn invoke_with_service_context_for_tests<'a>(
+        &self,
+        services: &'a crate::services::context::ServiceContext<'a>,
+        provider: &'a dyn crate::intelligence::provider::IntelligenceProvider,
+        ability_name: &str,
+        input_json: serde_json::Value,
+    ) -> Result<AbilityResponseJson, crate::bridges::types::AbilityInvokeError> {
+        let invocation = InvocationContext {
+            actor: BridgeActor::User,
+            mode: services.mode,
+            surface: BridgeSurface::TauriApp,
+            dry_run: false,
+            confirmation: None,
+            confirmation_store: None,
+        };
+
+        invoke_registry_json(
+            self.registry,
+            services,
+            provider,
+            &NOOP_ABILITY_TRACER,
+            invocation,
+            ability_name,
+            input_json,
+        )
+        .await
+    }
+
     pub async fn issue_confirmation_token(
         &self,
         actor: BridgeActor,

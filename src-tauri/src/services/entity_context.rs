@@ -10,8 +10,9 @@ use crate::services::claims::{
     commit_claim, load_claim_by_id, load_entity_context_claims_active, subject_ref_from_json,
     withdraw_claim, ClaimProposal, CommittedClaim,
 };
+use crate::services::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
 use crate::state::AppState;
-use crate::types::EntityContextEntry;
+use crate::types::{EntityContextEntry, EntityContextText};
 
 pub const USER_NOTE_CLAIM_TYPE: &str = "user_note";
 const USER_NOTE_LEGACY_NAMESPACE: &str = "b9bd8742-3f99-5b5f-a732-94d1e4e77111";
@@ -387,16 +388,29 @@ pub fn entity_context_entry_for_claim(
         .clone()
         .unwrap_or_else(|| claim.created_at.clone());
     let title = title_for_entity_context_claim(&claim);
+    let actor = RenderActor::user("user", Some("user"));
+    let rendered_title = renderable_entity_context_text(&claim, &title, &actor)?;
+    let rendered_content = renderable_entity_context_text(&claim, &claim.text, &actor)?;
 
     Ok(EntityContextEntry {
         id: claim.id,
         entity_type,
         entity_id,
-        title,
-        content: claim.text,
+        title: rendered_title,
+        content: rendered_content,
         created_at: claim.created_at,
         updated_at,
     })
+}
+
+fn renderable_entity_context_text(
+    claim: &IntelligenceClaim,
+    value: &str,
+    actor: &RenderActor,
+) -> Result<EntityContextText, String> {
+    renderable_claim_text_with_value(claim, value, RenderSurface::TauriEntityDetail, actor)
+        .map(EntityContextText::Claim)
+        .ok_or_else(|| format!("Claim `{}` cannot render for entity context", claim.id))
 }
 
 struct UserNoteProposal<'a> {

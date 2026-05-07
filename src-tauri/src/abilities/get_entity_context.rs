@@ -15,7 +15,8 @@ use crate::abilities::{
 };
 use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
 use crate::db::claims::IntelligenceClaim;
-use crate::types::EntityContextEntry;
+use crate::services::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
+use crate::types::{EntityContextEntry, EntityContextText};
 
 const ABILITY_NAME: &str = "get_entity_context";
 const ABILITY_SCHEMA_VERSION: u32 = 1;
@@ -66,9 +67,10 @@ pub async fn get_entity_context(
         .await
         .map_err(|error| hard_error("entity context claim read failed", error))?;
     let claims = filter_claims_for_actor(ctx.actor, claims);
+    let render_actor = render_actor_for_context(ctx);
     let entries = claims
         .iter()
-        .map(entry_for_claim)
+        .map(|claim| entry_for_claim(claim, &render_actor))
         .collect::<Result<Vec<_>, _>>()?;
 
     let mut builder = ProvenanceBuilder::new(provenance_config(ctx, input.schema_version));
@@ -199,20 +201,54 @@ fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
     }
 }
 
-fn entry_for_claim(claim: &IntelligenceClaim) -> Result<EntityContextEntry, AbilityError> {
+fn entry_for_claim(
+    claim: &IntelligenceClaim,
+    render_actor: &RenderActor,
+) -> Result<EntityContextEntry, AbilityError> {
     let (entity_type, entity_id) = claim_subject_identity(claim)?;
+    let title = title_for_claim(claim);
     Ok(EntityContextEntry {
         id: claim.id.clone(),
         entity_type,
         entity_id,
-        title: title_for_claim(claim),
-        content: claim.text.clone(),
+        title: renderable_entity_context_text(claim, &title, render_actor)?,
+        content: renderable_entity_context_text(claim, &claim.text, render_actor)?,
         created_at: claim.created_at.clone(),
         updated_at: claim
             .reactivated_at
             .clone()
             .unwrap_or_else(|| claim.created_at.clone()),
     })
+}
+
+fn render_actor_for_context(ctx: &AbilityContext<'_>) -> RenderActor {
+    match ctx.actor {
+        Actor::User => RenderActor::user(ctx.services().actor, Some(ctx.services().actor)),
+        Actor::Agent => RenderActor::agent("agent:get_entity_context"),
+        Actor::Admin => RenderActor {
+            actor: "admin".to_string(),
+            user_id: None,
+        },
+        Actor::System => RenderActor {
+            actor: "system".to_string(),
+            user_id: None,
+        },
+    }
+}
+
+fn renderable_entity_context_text(
+    claim: &IntelligenceClaim,
+    value: &str,
+    render_actor: &RenderActor,
+) -> Result<EntityContextText, AbilityError> {
+    renderable_claim_text_with_value(claim, value, RenderSurface::TauriEntityDetail, render_actor)
+        .map(EntityContextText::Claim)
+        .ok_or_else(|| {
+            validation_error(format!(
+                "claim `{}` cannot render for entity context",
+                claim.id
+            ))
+        })
 }
 
 fn claim_subject_identity(claim: &IntelligenceClaim) -> Result<(String, String), AbilityError> {

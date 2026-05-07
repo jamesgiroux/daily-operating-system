@@ -2,8 +2,8 @@ use dailyos_lib::db::claims::ClaimSensitivity;
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::sensitivity::{
     render_mcp_static_json_for_surface, render_mcp_static_text_for_surface,
-    reveal_claim_text_for_tauri, McpStaticTextClass, RenderActor, RenderPolicyKind,
-    RenderSurface, RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
+    reveal_claim_text_for_tauri, McpStaticTextClass, RenderActor, RenderPolicyKind, RenderSurface,
+    RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
 };
 use rusqlite::{params, Connection};
 use serde_json::json;

@@ -2461,14 +2461,60 @@ pub struct UserContextEntry {
 }
 
 /// A structured context entry attached to an entity (account, person, or project).
+#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
+#[serde(untagged)]
+pub enum EntityContextText {
+    Plain(String),
+    Claim(crate::services::sensitivity::RenderableClaimText),
+}
+
+impl EntityContextText {
+    pub fn as_str(&self) -> &str {
+        match self {
+            Self::Plain(text) => text,
+            Self::Claim(text) => &text.text,
+        }
+    }
+}
+
+impl From<String> for EntityContextText {
+    fn from(value: String) -> Self {
+        Self::Plain(value)
+    }
+}
+
+impl From<&str> for EntityContextText {
+    fn from(value: &str) -> Self {
+        Self::Plain(value.to_string())
+    }
+}
+
+impl From<crate::services::sensitivity::RenderableClaimText> for EntityContextText {
+    fn from(value: crate::services::sensitivity::RenderableClaimText) -> Self {
+        Self::Claim(value)
+    }
+}
+
+impl PartialEq<&str> for EntityContextText {
+    fn eq(&self, other: &&str) -> bool {
+        self.as_str() == *other
+    }
+}
+
+impl PartialEq<EntityContextText> for &str {
+    fn eq(&self, other: &EntityContextText) -> bool {
+        *self == other.as_str()
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct EntityContextEntry {
     pub id: String,
     pub entity_type: String,
     pub entity_id: String,
-    pub title: String,
-    pub content: String,
+    pub title: EntityContextText,
+    pub content: EntityContextText,
     pub created_at: String,
     pub updated_at: String,
 }

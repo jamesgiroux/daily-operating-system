@@ -12,7 +12,8 @@ use dailyos_lib::services::context::{
     EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock, SeedableRng,
     ServiceContext,
 };
-use dailyos_lib::types::EntityContextEntry;
+use dailyos_lib::services::sensitivity::RenderPolicyKind;
+use dailyos_lib::types::{EntityContextEntry, EntityContextText};
 use serde_json::json;
 
 const ENTITY_TYPE: &str = "account";
@@ -54,10 +55,16 @@ async fn agent_erased_get_entity_context_filters_confidential_and_user_only_clai
     assert!(!agent_contents.contains(USER_ONLY_TEXT));
 
     let user_entries = invoke_get_entity_context(Actor::User, claims.clone()).await;
-    assert_all_claim_texts_visible(&user_entries);
+    assert!(entry_contents(&user_entries).contains(INTERNAL_TEXT));
+    assert!(!entry_contents(&user_entries).contains(CONFIDENTIAL_TEXT));
+    assert_confidential_affordance(&user_entries);
+    assert_user_only_hidden(&user_entries);
 
     let system_entries = invoke_get_entity_context(Actor::System, claims).await;
-    assert_all_claim_texts_visible(&system_entries);
+    assert!(entry_contents(&system_entries).contains(INTERNAL_TEXT));
+    assert!(!entry_contents(&system_entries).contains(CONFIDENTIAL_TEXT));
+    assert_confidential_affordance(&system_entries);
+    assert_user_only_hidden(&system_entries);
 }
 
 async fn invoke_get_entity_context(
@@ -165,11 +172,27 @@ fn claim_matches_subject(claim: &IntelligenceClaim, entity_type: &str, entity_id
     subject_ref["kind"] == entity_type && subject_ref["id"] == entity_id
 }
 
-fn assert_all_claim_texts_visible(entries: &[EntityContextEntry]) {
-    let contents = entry_contents(entries);
-    assert!(contents.contains(INTERNAL_TEXT));
-    assert!(contents.contains(CONFIDENTIAL_TEXT));
-    assert!(contents.contains(USER_ONLY_TEXT));
+fn assert_confidential_affordance(entries: &[EntityContextEntry]) {
+    let entry = entries
+        .iter()
+        .find(|entry| entry.id == "claim-confidential")
+        .expect("confidential entry present for user/system actor");
+    let EntityContextText::Claim(content) = &entry.content else {
+        panic!("confidential content should be a renderable claim carrier");
+    };
+    assert_eq!(content.text, "Confidential claim hidden");
+    assert_eq!(content.policy.kind, RenderPolicyKind::Redacted);
+    assert_eq!(content.policy.sensitivity, ClaimSensitivity::Confidential);
+    assert!(content.policy.affordance.is_some());
+}
+
+fn assert_user_only_hidden(entries: &[EntityContextEntry]) {
+    let entry = entries
+        .iter()
+        .find(|entry| entry.id == "claim-user-only")
+        .expect("user-only entry present for user/system actor");
+    assert_eq!(entry.content.as_str(), "User-only claim hidden");
+    assert!(!entry.content.as_str().contains(USER_ONLY_TEXT));
 }
 
 fn entry_contents(entries: &[EntityContextEntry]) -> HashSet<&str> {

@@ -356,7 +356,19 @@ struct PromptContext<'a> {
 #[derive(Debug, Serialize)]
 struct PromptEntityContext<'a> {
     subject: &'a BriefSubjectRef,
-    entries: &'a [EntityContextEntry],
+    entries: Vec<PromptEntityContextEntry<'a>>,
+}
+
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PromptEntityContextEntry<'a> {
+    id: &'a str,
+    entity_type: &'a str,
+    entity_id: &'a str,
+    title: &'a str,
+    content: &'a str,
+    created_at: &'a str,
+    updated_at: &'a str,
 }
 
 impl<'a> PromptContext<'a> {
@@ -371,9 +383,27 @@ impl<'a> PromptContext<'a> {
                 .iter()
                 .map(|child| PromptEntityContext {
                     subject: &child.subject,
-                    entries: &child.entries,
+                    entries: child
+                        .entries
+                        .iter()
+                        .map(PromptEntityContextEntry::from)
+                        .collect(),
                 })
                 .collect(),
+        }
+    }
+}
+
+impl<'a> From<&'a EntityContextEntry> for PromptEntityContextEntry<'a> {
+    fn from(entry: &'a EntityContextEntry) -> Self {
+        Self {
+            id: &entry.id,
+            entity_type: &entry.entity_type,
+            entity_id: &entry.entity_id,
+            title: entry.title.as_str(),
+            content: entry.content.as_str(),
+            created_at: &entry.created_at,
+            updated_at: &entry.updated_at,
         }
     }
 }

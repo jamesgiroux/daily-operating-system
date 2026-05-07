@@ -99,4 +99,42 @@ describe("ContextEntryList trust partitioning", () => {
     expect(screen.getByText("Unscored")).toBeVisible();
     expect(screen.queryByRole("button", { name: /show all evidence/i })).not.toBeInTheDocument();
   });
+
+  it("ContextEntryList_routes_confidential_carriers_to_click_to_reveal_renderer", () => {
+    render(
+      <ContextEntryList
+        entries={[
+          {
+            id: "entry-confidential",
+            title: "Confidential Example note",
+            content: {
+              text: "Confidential claim hidden",
+              policy: {
+                kind: "redacted",
+                sensitivity: "confidential",
+                surface: "tauri_entity_detail",
+                claimId: "claim-confidential-context",
+                affordance: {
+                  kind: "confidential_click_to_reveal",
+                  claim_id: "claim-confidential-context",
+                  label: "Confidential claim hidden",
+                  audit_required: true,
+                },
+              },
+            },
+            createdAt: "2026-05-01T12:00:00Z",
+            trustBand: "likely_current",
+          },
+        ]}
+        surfaceId="context-test"
+        {...handlers}
+      />,
+    );
+
+    const affordance = screen.getByText("Confidential claim hidden").closest("[data-render-policy]");
+    expect(affordance).toHaveAttribute("data-render-policy", "redacted");
+    expect(affordance).toHaveAttribute("data-sensitivity", "confidential");
+    expect(screen.getByRole("button", { name: "Reveal confidential claim" })).toBeVisible();
+    expect(screen.queryByText("Confidential source text example.com")).not.toBeInTheDocument();
+  });
 });

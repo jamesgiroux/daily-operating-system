@@ -10,6 +10,7 @@ import { TimelineEntry, TimelineContainer, type TimelineEntryType } from "@/comp
 import { formatShortDate, formatMeetingType } from "@/lib/utils";
 import { formatProvenanceSource } from "@/components/ui/ProvenanceLabel";
 import type { TimelineSource } from "@/lib/entity-types";
+import type { RenderableClaimText } from "@/types";
 import s from "./UnifiedTimeline.module.css";
 
 interface UnifiedTimelineProps {
@@ -120,12 +121,14 @@ export function UnifiedTimeline({
 
   if (data.contextEntries) {
     for (const entry of data.contextEntries) {
+      const title = contextTextToTimelineString(entry.title);
+      const content = contextTextToTimelineString(entry.content);
       items.push({
         date: formatShortDate(entry.createdAt),
         sortDate: entry.createdAt,
         type: "context",
-        title: entry.title,
-        subtitle: entry.content.length > 140 ? `${entry.content.slice(0, 140)}… · Added by you` : `${entry.content} · Added by you`,
+        title,
+        subtitle: content.length > 140 ? `${content.slice(0, 140)}… · Added by you` : `${content} · Added by you`,
       });
     }
   }
@@ -203,4 +206,8 @@ export function UnifiedTimeline({
       )}
     </section>
   );
+}
+
+function contextTextToTimelineString(value: string | RenderableClaimText): string {
+  return typeof value === "string" ? value : value.text;
 }
