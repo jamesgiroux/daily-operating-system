@@ -13,6 +13,7 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 const invokeMock = vi.mocked(invoke);
+const randomUUIDMock = vi.fn();
 
 function confidentialClaim(
   claimId: string,
@@ -37,6 +38,12 @@ function confidentialClaim(
 
 beforeEach(() => {
   invokeMock.mockReset();
+  randomUUIDMock.mockReset();
+  randomUUIDMock.mockReturnValue("88888888-8888-4888-8888-888888888888");
+  Object.defineProperty(globalThis, "crypto", {
+    value: { randomUUID: randomUUIDMock },
+    configurable: true,
+  });
 });
 
 describe("UnifiedTimeline", () => {
@@ -95,6 +102,7 @@ describe("UnifiedTimeline", () => {
     });
     expect(invokeMock).toHaveBeenCalledWith("reveal_sensitive_claim_text", {
       claimId: "claim-timeline-content",
+      revealActionId: expect.any(String),
       surface: "tauri_entity_detail",
     });
     expect(await screen.findByText(sourceClaimText)).toBeInTheDocument();

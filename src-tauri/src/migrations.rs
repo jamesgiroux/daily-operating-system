@@ -703,6 +703,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 143,
         sql: include_str!("migrations/143_sensitivity_reveal_audit_idempotency.sql"),
     },
+    // DOS-412: repair v143 idempotency variants with caller-supplied action tokens.
+    Migration {
+        version: 144,
+        sql: include_str!("migrations/144_sensitivity_reveal_audit_action_token.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

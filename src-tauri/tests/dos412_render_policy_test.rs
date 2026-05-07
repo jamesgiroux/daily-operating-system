@@ -147,7 +147,7 @@ fn renderable_claim_text_never_embeds_confidential_source_text_in_redaction() {
 }
 
 #[test]
-fn sensitivity_reveal_audit_migration_declares_required_columns() {
+fn sensitivity_reveal_audit_migration_repairs_current_audit_bucket_v143() {
     let conn = Connection::open_in_memory().expect("open in-memory database");
     conn.execute_batch(include_str!(
         "../src/migrations/142_sensitivity_reveal_audit.sql"
@@ -157,27 +157,70 @@ fn sensitivity_reveal_audit_migration_declares_required_columns() {
         "../src/migrations/143_sensitivity_reveal_audit_idempotency.sql"
     ))
     .expect("idempotency migration applies");
+    conn.execute_batch(include_str!(
+        "../src/migrations/144_sensitivity_reveal_audit_action_token.sql"
+    ))
+    .expect("action token migration applies");
 
-    let mut stmt = conn
-        .prepare("PRAGMA table_info(sensitivity_reveal_audit)")
-        .expect("query audit schema");
-    let columns: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(1))
-        .expect("read columns")
-        .map(|row| row.expect("column row"))
-        .collect();
+    let columns = reveal_audit_columns(&conn);
 
     assert!(columns.contains(&"claim_id".to_string()));
     assert!(columns.contains(&"user_id".to_string()));
     assert!(columns.contains(&"revealed_at".to_string()));
     assert!(columns.contains(&"audit_bucket".to_string()));
+    assert!(columns.contains(&"reveal_action_id".to_string()));
     assert!(!columns.contains(&"reveal_session_id".to_string()));
+    assert_reveal_action_id_unique_index(&conn);
+    assert_index_missing(&conn, "idx_sensitivity_reveal_audit_audit_bucket");
+}
 
+#[test]
+fn sensitivity_reveal_audit_migration_repairs_legacy_reveal_session_v143() {
+    let conn = Connection::open_in_memory().expect("open in-memory database");
+    conn.execute_batch(include_str!(
+        "../src/migrations/142_sensitivity_reveal_audit.sql"
+    ))
+    .expect("base audit migration applies");
+    conn.execute_batch(
+        "ALTER TABLE sensitivity_reveal_audit
+            ADD COLUMN reveal_session_id TEXT NOT NULL DEFAULT '';
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_sensitivity_reveal_audit_reveal_session
+            ON sensitivity_reveal_audit(claim_id, user_id, reveal_session_id)
+            WHERE reveal_session_id != '';",
+    )
+    .expect("legacy reveal session idempotency migration applies");
+    conn.execute_batch(include_str!(
+        "../src/migrations/144_sensitivity_reveal_audit_action_token.sql"
+    ))
+    .expect("action token migration applies");
+
+    let columns = reveal_audit_columns(&conn);
+
+    assert!(columns.contains(&"claim_id".to_string()));
+    assert!(columns.contains(&"user_id".to_string()));
+    assert!(columns.contains(&"revealed_at".to_string()));
+    assert!(columns.contains(&"reveal_session_id".to_string()));
+    assert!(columns.contains(&"reveal_action_id".to_string()));
+    assert_reveal_action_id_unique_index(&conn);
+    assert_index_missing(&conn, "idx_sensitivity_reveal_audit_reveal_session");
+}
+
+fn reveal_audit_columns(conn: &Connection) -> Vec<String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(sensitivity_reveal_audit)")
+        .expect("query audit schema");
+    stmt.query_map([], |row| row.get::<_, String>(1))
+        .expect("read columns")
+        .map(|row| row.expect("column row"))
+        .collect()
+}
+
+fn assert_reveal_action_id_unique_index(conn: &Connection) {
     let unique_index_count: i64 = conn
         .query_row(
             "SELECT COUNT(*)
              FROM pragma_index_list('sensitivity_reveal_audit')
-             WHERE name = 'idx_sensitivity_reveal_audit_audit_bucket'
+             WHERE name = 'idx_sensitivity_reveal_audit_action_token'
                AND [unique] = 1",
             [],
             |row| row.get(0),
@@ -190,13 +233,26 @@ fn sensitivity_reveal_audit_migration_declares_required_columns() {
             "SELECT sql
              FROM sqlite_master
              WHERE type = 'index'
-               AND name = 'idx_sensitivity_reveal_audit_audit_bucket'",
+               AND name = 'idx_sensitivity_reveal_audit_action_token'",
             [],
             |row| row.get(0),
         )
         .expect("read reveal audit index SQL");
-    assert!(index_sql.contains("(claim_id, user_id, audit_bucket)"));
-    assert!(index_sql.contains("WHERE audit_bucket != ''"));
+    assert!(index_sql.contains("(claim_id, user_id, reveal_action_id)"));
+    assert!(index_sql.contains("WHERE reveal_action_id != ''"));
+}
+
+fn assert_index_missing(conn: &Connection, index_name: &str) {
+    let index_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM pragma_index_list('sensitivity_reveal_audit')
+             WHERE name = ?1",
+            [index_name],
+            |row| row.get(0),
+        )
+        .expect("read reveal audit indexes");
+    assert_eq!(index_count, 0);
 }
 
 fn assert_confidential_click_to_reveal(decision: RenderDecision) {

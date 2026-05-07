@@ -15,7 +15,6 @@ use crate::intelligence::{
 use chrono::Utc;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
-use std::time::{SystemTime, UNIX_EPOCH};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
@@ -1452,22 +1451,24 @@ pub fn record_sensitivity_reveal(
     claim_id: &str,
     user_id: &str,
     revealed_at: &str,
-    audit_bucket: &str,
+    reveal_action_id: &str,
 ) -> Result<(), rusqlite::Error> {
     db.conn_ref().execute(
         "INSERT OR IGNORE INTO sensitivity_reveal_audit
-            (claim_id, user_id, revealed_at, audit_bucket)
+            (claim_id, user_id, revealed_at, reveal_action_id)
          VALUES (?1, ?2, ?3, ?4)",
-        rusqlite::params![claim_id, user_id, revealed_at, audit_bucket],
+        rusqlite::params![claim_id, user_id, revealed_at, reveal_action_id],
     )?;
     Ok(())
 }
 
-fn current_reveal_audit_bucket() -> Result<String, String> {
-    let elapsed = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map_err(|error| format!("System time before Unix epoch: {error}"))?;
-    Ok((elapsed.as_secs() / 5).to_string())
+fn validate_reveal_action_id(reveal_action_id: &str) -> Result<(), String> {
+    let parsed = uuid::Uuid::parse_str(reveal_action_id)
+        .map_err(|_| "reveal_action_id must be a UUID v4".to_string())?;
+    if parsed.get_version() != Some(uuid::Version::Random) {
+        return Err("reveal_action_id must be a UUID v4".to_string());
+    }
+    Ok(())
 }
 
 pub fn reveal_claim_text_for_tauri(
@@ -1475,7 +1476,9 @@ pub fn reveal_claim_text_for_tauri(
     claim_id: &str,
     surface: RenderSurface,
     actor: &RenderActor,
+    reveal_action_id: String,
 ) -> Result<RenderableClaimText, String> {
+    validate_reveal_action_id(&reveal_action_id)?;
     let claim = crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("Claim not found: {claim_id}"))?;
@@ -1504,8 +1507,9 @@ pub fn reveal_claim_text_for_tauri(
         } => {
             let user_id = actor.user_id.as_deref().unwrap_or(actor.actor.as_str());
             let now = Utc::now().to_rfc3339();
-            let audit_bucket = current_reveal_audit_bucket()?;
-            record_sensitivity_reveal(db, &claim.id, user_id, &now, &audit_bucket)
+            // This is a trusted-caller idempotency boundary, not adversary-resistant.
+            // The Tauri command surface is first-party and the only client is the DailyOS frontend.
+            record_sensitivity_reveal(db, &claim.id, user_id, &now, &reveal_action_id)
                 .map_err(|error| error.to_string())?;
             renderable_from_decision(&claim, &claim.text, surface, RenderDecision::Render)
                 .ok_or_else(|| "Claim cannot render on this surface".to_string())

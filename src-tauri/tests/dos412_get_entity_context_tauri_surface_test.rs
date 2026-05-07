@@ -29,6 +29,8 @@ const TYPED_FEEDBACK_SQL: &str =
 const REVEAL_AUDIT_SQL: &str = include_str!("../src/migrations/142_sensitivity_reveal_audit.sql");
 const REVEAL_AUDIT_IDEMPOTENCY_SQL: &str =
     include_str!("../src/migrations/143_sensitivity_reveal_audit_idempotency.sql");
+const REVEAL_AUDIT_ACTION_TOKEN_SQL: &str =
+    include_str!("../src/migrations/144_sensitivity_reveal_audit_action_token.sql");
 const MINIMAL_ENTITY_SCHEMA_SQL: &str = r#"
 CREATE TABLE accounts (
     id TEXT PRIMARY KEY,
@@ -130,6 +132,7 @@ async fn get_entity_context_tauri_bridge_wraps_confidential_claim_text_with_reve
             &claim_id,
             RenderSurface::TauriEntityDetail,
             &RenderActor::user("user", Some("user")),
+            "44444444-4444-4444-8444-444444444444".to_string(),
         )
         .expect("confidential claim reveals through audited Tauri path");
         assert_eq!(rendered.text, CONFIDENTIAL_TEXT);
@@ -157,6 +160,8 @@ fn fresh_claims_conn() -> Connection {
         .expect("apply reveal audit schema");
     conn.execute_batch(REVEAL_AUDIT_IDEMPOTENCY_SQL)
         .expect("apply reveal audit idempotency schema");
+    conn.execute_batch(REVEAL_AUDIT_ACTION_TOKEN_SQL)
+        .expect("apply reveal audit action token schema");
     conn
 }
 

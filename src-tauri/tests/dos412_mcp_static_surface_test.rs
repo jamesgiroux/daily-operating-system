@@ -49,12 +49,13 @@ CREATE TABLE sensitivity_reveal_audit (
     claim_id TEXT NOT NULL,
     user_id TEXT NOT NULL,
     revealed_at TEXT NOT NULL,
-    audit_bucket TEXT NOT NULL DEFAULT ''
+    audit_bucket TEXT NOT NULL DEFAULT '',
+    reveal_action_id TEXT NOT NULL DEFAULT ''
 );
 
-CREATE UNIQUE INDEX idx_sensitivity_reveal_audit_audit_bucket
-    ON sensitivity_reveal_audit(claim_id, user_id, audit_bucket)
-    WHERE audit_bucket != '';
+CREATE UNIQUE INDEX idx_sensitivity_reveal_audit_action_token
+    ON sensitivity_reveal_audit(claim_id, user_id, reveal_action_id)
+    WHERE reveal_action_id != '';
 "#;
 
 #[test]
@@ -322,6 +323,7 @@ fn withdrawn_claim_cannot_reveal_through_tauri() {
         &values.confidential.id,
         RenderSurface::TauriEntityDetail,
         &RenderActor::user("user", Some("user")),
+        "55555555-5555-4555-8555-555555555555".to_string(),
     );
 
     assert!(result.is_err(), "withdrawn claims must fail closed");
@@ -346,6 +348,7 @@ fn dormant_claim_cannot_reveal_through_tauri() {
         &values.confidential.id,
         RenderSurface::TauriEntityDetail,
         &RenderActor::user("user", Some("user")),
+        "66666666-6666-4666-8666-666666666666".to_string(),
     );
 
     assert!(result.is_err(), "dormant claims must fail closed");
@@ -369,6 +372,7 @@ fn active_surfaced_confidential_claim_reveals_through_tauri() {
         &values.confidential.id,
         RenderSurface::TauriEntityDetail,
         &RenderActor::user("user", Some("user")),
+        "77777777-7777-4777-8777-777777777777".to_string(),
     )
     .expect("active surfaced confidential claim reveals after click");
 

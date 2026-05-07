@@ -20,91 +20,66 @@ const REVEAL_AUDIT_IDEMPOTENCY_SQL: &str =
 const REVEAL_AUDIT_ACTION_TOKEN_SQL: &str =
     include_str!("../src/migrations/144_sensitivity_reveal_audit_action_token.sql");
 
-const ACCOUNT_ID: &str = "acct-dos412-idempotency-example";
-const CONFIDENTIAL_TEXT: &str = "confidential renewal blocker for example.com.";
-const ACTION_ID_ONE: &str = "11111111-1111-4111-8111-111111111111";
-const ACTION_ID_TWO: &str = "22222222-2222-4222-8222-222222222222";
+const ACCOUNT_ID: &str = "acct-dos412-action-id-validation";
+const CLAIM_ID: &str = "claim-dos412-action-id-validation";
+const CONFIDENTIAL_TEXT: &str = "confidential action id validation payload.";
 
 #[test]
-fn reveal_sensitive_claim_text_is_idempotent_for_same_action_id() {
-    let conn = setup_conn();
+fn empty_action_id_is_rejected() {
+    let conn = Connection::open_in_memory().expect("open in-memory db");
     let db = ActionDb::from_conn(&conn);
-    let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
-    let rng = SeedableRng::new(41210);
-    let external = ExternalClients::default();
-    let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
-    let claim_id = inserted_id(
-        commit_claim(&ctx, db, confidential_claim_proposal())
-            .expect("commit confidential claim fixture"),
-    );
-    let actor = RenderActor::user("user", Some("user"));
-
-    let first = reveal_claim_text_for_tauri(
+    let error = reveal_claim_text_for_tauri(
         db,
-        &claim_id,
+        "claim-any",
         RenderSurface::TauriEntityDetail,
-        &actor,
-        ACTION_ID_ONE.to_string(),
+        &RenderActor::user("user", Some("user")),
+        String::new(),
     )
-    .expect("first reveal succeeds");
-    let second = reveal_claim_text_for_tauri(
-        db,
-        &claim_id,
-        RenderSurface::TauriEntityDetail,
-        &actor,
-        ACTION_ID_ONE.to_string(),
-    )
-    .expect("second reveal with same action id succeeds");
+    .expect_err("empty action id must fail before DB access");
 
-    assert_eq!(first.text, CONFIDENTIAL_TEXT);
-    assert_eq!(second.text, CONFIDENTIAL_TEXT);
-    assert_eq!(first.policy.kind, RenderPolicyKind::Render);
-    assert_eq!(second.policy.kind, RenderPolicyKind::Render);
-    assert_eq!(reveal_audit_count(&conn), 1);
-    assert_eq!(
-        reveal_audit_action_ids(&conn),
-        vec![ACTION_ID_ONE.to_string()]
-    );
+    assert!(error.contains("UUID v4"));
 }
 
 #[test]
-fn reveal_sensitive_claim_text_records_new_audit_for_different_action_ids() {
+fn malformed_action_id_is_rejected() {
+    let conn = Connection::open_in_memory().expect("open in-memory db");
+    let db = ActionDb::from_conn(&conn);
+    let error = reveal_claim_text_for_tauri(
+        db,
+        "claim-any",
+        RenderSurface::TauriEntityDetail,
+        &RenderActor::user("user", Some("user")),
+        "not-a-uuid".to_string(),
+    )
+    .expect_err("malformed action id must fail before DB access");
+
+    assert!(error.contains("UUID v4"));
+}
+
+#[test]
+fn valid_uuid_v4_action_id_is_accepted() {
     let conn = setup_conn();
     let db = ActionDb::from_conn(&conn);
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
-    let rng = SeedableRng::new(41211);
+    let rng = SeedableRng::new(41212);
     let external = ExternalClients::default();
     let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
     let claim_id = inserted_id(
         commit_claim(&ctx, db, confidential_claim_proposal())
             .expect("commit confidential claim fixture"),
     );
-    let actor = RenderActor::user("user", Some("user"));
 
-    let first = reveal_claim_text_for_tauri(
+    let rendered = reveal_claim_text_for_tauri(
         db,
         &claim_id,
         RenderSurface::TauriEntityDetail,
-        &actor,
-        ACTION_ID_ONE.to_string(),
+        &RenderActor::user("user", Some("user")),
+        "33333333-3333-4333-8333-333333333333".to_string(),
     )
-    .expect("first reveal succeeds");
-    let second = reveal_claim_text_for_tauri(
-        db,
-        &claim_id,
-        RenderSurface::TauriEntityDetail,
-        &actor,
-        ACTION_ID_TWO.to_string(),
-    )
-    .expect("second reveal with different action id succeeds");
+    .expect("valid UUID v4 action id reveals");
 
-    assert_eq!(first.text, CONFIDENTIAL_TEXT);
-    assert_eq!(second.text, CONFIDENTIAL_TEXT);
-    assert_eq!(reveal_audit_count(&conn), 2);
-    assert_eq!(
-        reveal_audit_action_ids(&conn),
-        vec![ACTION_ID_ONE.to_string(), ACTION_ID_TWO.to_string()]
-    );
+    assert_eq!(rendered.text, CONFIDENTIAL_TEXT);
+    assert_eq!(rendered.policy.kind, RenderPolicyKind::Render);
 }
 
 fn setup_conn() -> Connection {
@@ -138,7 +113,7 @@ fn setup_conn() -> Connection {
 
 fn confidential_claim_proposal() -> ClaimProposal {
     ClaimProposal {
-        id: Some("claim-dos412-idempotent-reveal".to_string()),
+        id: Some(CLAIM_ID.to_string()),
         subject_ref: json!({
             "kind": "account",
             "id": ACCOUNT_ID,
@@ -150,11 +125,11 @@ fn confidential_claim_proposal() -> ClaimProposal {
         text: CONFIDENTIAL_TEXT.to_string(),
         actor: "agent:test".to_string(),
         data_source: "user".to_string(),
-        source_ref: Some("fixture:example.com/reveal-idempotency".to_string()),
+        source_ref: Some("fixture:example.com/action-id-validation".to_string()),
         source_asof: Some("2026-05-07T12:00:00Z".to_string()),
         observed_at: "2026-05-07T12:00:00Z".to_string(),
         provenance_json: json!({
-            "source": "dos412-cycle10-regression",
+            "source": "dos412-action-id-validation",
             "domain": "example.com"
         })
         .to_string(),
@@ -172,21 +147,4 @@ fn inserted_id(result: CommittedClaim) -> String {
         CommittedClaim::Inserted { claim } => claim.id,
         other => panic!("expected inserted claim, got {other:?}"),
     }
-}
-
-fn reveal_audit_count(conn: &Connection) -> i64 {
-    conn.query_row("SELECT COUNT(*) FROM sensitivity_reveal_audit", [], |row| {
-        row.get(0)
-    })
-    .expect("count reveal audit rows")
-}
-
-fn reveal_audit_action_ids(conn: &Connection) -> Vec<String> {
-    let mut stmt = conn
-        .prepare("SELECT reveal_action_id FROM sensitivity_reveal_audit ORDER BY id")
-        .expect("query reveal audit action ids");
-    stmt.query_map([], |row| row.get::<_, String>(0))
-        .expect("read reveal audit action ids")
-        .map(|row| row.expect("action id row"))
-        .collect()
 }

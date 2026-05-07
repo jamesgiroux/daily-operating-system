@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -12,6 +12,9 @@ vi.mock("@tauri-apps/api/core", () => ({
 }));
 
 const invokeMock = vi.mocked(invoke);
+const randomUUIDMock = vi.fn();
+const uuidV4Pattern = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+const revealActionId = "11111111-1111-4111-8111-111111111111";
 
 const renderedClaim: RenderableClaimText = {
   text: "Expansion readiness is strong.",
@@ -50,6 +53,12 @@ const droppedClaim: RenderableClaimText = {
 
 beforeEach(() => {
   invokeMock.mockReset();
+  randomUUIDMock.mockReset();
+  randomUUIDMock.mockReturnValue(revealActionId);
+  Object.defineProperty(globalThis, "crypto", {
+    value: { randomUUID: randomUUIDMock },
+    configurable: true,
+  });
 });
 
 describe("ClaimTextRenderer", () => {
@@ -89,6 +98,7 @@ describe("ClaimTextRenderer", () => {
     await waitFor(() => {
       expect(invokeMock).toHaveBeenCalledWith("reveal_sensitive_claim_text", {
         claimId: "claim-confidential",
+        revealActionId: expect.stringMatching(uuidV4Pattern),
         surface: "tauri_entity_detail",
       });
     });
@@ -96,32 +106,30 @@ describe("ClaimTextRenderer", () => {
   });
 
   it("guards rapid synchronous reveal clicks with one invoke", () => {
-    const reveal = vi.fn(
-      () =>
-        new Promise<RenderableClaimText>(() => {
-          // Keep the reveal in flight so the second click hits the same task tick.
-        }),
+    invokeMock.mockReturnValue(
+      new Promise<RenderableClaimText>(() => {
+        // Keep the reveal in flight so the second click hits the same task tick.
+      }),
     );
 
     render(
       <ClaimTextRenderer
         value={redactedClaim}
         surface="tauri_entity_detail"
-        reveal={reveal}
       />,
     );
 
     const button = screen.getByRole("button", { name: "Reveal confidential claim" });
-    act(() => {
-      button.click();
-      button.click();
-    });
+    fireEvent.click(button);
+    fireEvent.click(button);
 
-    expect(reveal).toHaveBeenCalledTimes(1);
-    expect(reveal).toHaveBeenCalledWith(
-      "claim-confidential",
-      "tauri_entity_detail",
-    );
+    expect(invokeMock).toHaveBeenCalledTimes(1);
+    expect(randomUUIDMock).toHaveBeenCalledTimes(1);
+    expect(invokeMock).toHaveBeenCalledWith("reveal_sensitive_claim_text", {
+      claimId: "claim-confidential",
+      revealActionId,
+      surface: "tauri_entity_detail",
+    });
   });
 
   it("clears revealed text when the incoming carrier identity changes", async () => {
@@ -172,6 +180,44 @@ describe("ClaimTextRenderer", () => {
 
     expect(screen.queryByText("Previously revealed confidential payload.")).not.toBeInTheDocument();
     expect(screen.getByText("New confidential claim hidden")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reveal confidential claim" })).toBeInTheDocument();
+  });
+
+  it("clears revealed text when the render surface changes", async () => {
+    const reveal = vi.fn().mockResolvedValueOnce({
+      text: "Previously revealed confidential payload.",
+      policy: {
+        kind: "render",
+        sensitivity: "confidential",
+        surface: "tauri_entity_detail",
+        claimId: "claim-confidential",
+      },
+    } satisfies RenderableClaimText);
+
+    const { rerender } = render(
+      <ClaimTextRenderer
+        value={redactedClaim}
+        surface="tauri_entity_detail"
+        reveal={reveal}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reveal confidential claim" }));
+
+    expect(
+      await screen.findByText("Previously revealed confidential payload."),
+    ).toBeInTheDocument();
+
+    rerender(
+      <ClaimTextRenderer
+        value={redactedClaim}
+        surface="tauri_report"
+        reveal={reveal}
+      />,
+    );
+
+    expect(screen.queryByText("Previously revealed confidential payload.")).not.toBeInTheDocument();
+    expect(screen.getByText("Confidential claim hidden")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Reveal confidential claim" })).toBeInTheDocument();
   });
 
