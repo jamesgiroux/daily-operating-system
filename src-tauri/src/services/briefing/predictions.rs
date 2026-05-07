@@ -1,18 +1,16 @@
 //! Predictions composer — produces the `PredictionsViewModel` slice of the
 //! Daily Briefing.
 //!
-//! **Trust source:** abilities-runtime prediction outputs. DOS-218 emits
-//! prediction invocations during meeting prep; DOS-219 reconciles
-//! post-meeting. The briefing's Predictions section needs a *forward-looking*
-//! feed of "today's predictions across all entities" — that producer is not
-//! yet wired.
+//! **Trust source:** abilities-runtime prediction outputs emitted during
+//! meeting prep and reconciled post-meeting. The briefing's Predictions
+//! section needs a *forward-looking* feed of "today's predictions across all
+//! entities" — that producer is not yet wired.
 //!
-//! **W2a default:** empty list. Returns `count: 0` with editorial copy. Trust
+//! **Default:** empty list. Returns `count: 0` with editorial copy. Trust
 //! band per item is `Unscored` (n/a while empty).
 //!
-//! **Unblocked at:** DOS-431 (canonical cutover) or earlier if a forward-
-//! feed producer ships. The empty branch is intentional and tracked — not a
-//! placeholder to overlook at W4 wire-in.
+//! The empty branch is intentional until a daily forward-looking prediction
+//! producer ships; it is not a placeholder to overlook.
 
 use crate::services::briefing_view_model::PredictionsViewModel;
 use crate::state::AppState;

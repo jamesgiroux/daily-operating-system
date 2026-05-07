@@ -766,7 +766,7 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
     let download_url = format!("https://nodejs.org/dist/v{}/{}", NODE_VERSION, pkg_name);
 
     log::info!(
-        "DOS-65: downloading Node.js {} from {}",
+        "downloading Node.js {} from {}",
         NODE_VERSION,
         download_url
     );
@@ -830,12 +830,12 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
     let mut hasher = Sha256::new();
     hasher.update(&bytes);
     let digest = format!("{:x}", hasher.finalize());
-    log::info!("DOS-65: download SHA-256 = {}", digest);
+    log::info!("Node.js download SHA-256 = {}", digest);
 
     if digest != NODE_PKG_SHA256 {
         let msg = "Node.js download integrity check failed — please try again".to_string();
         log::error!(
-            "DOS-65: checksum mismatch: expected {} got {}",
+            "Node.js checksum mismatch: expected {} got {}",
             NODE_PKG_SHA256,
             digest
         );
@@ -870,7 +870,7 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
         r#"do shell script "installer -pkg '{}' -target /" with administrator privileges"#,
         pkg_path.display()
     );
-    log::info!("DOS-65: running macOS installer via osascript");
+    log::info!("running macOS Node.js installer via osascript");
 
     let output = std::process::Command::new("osascript")
         .args(["-e", &script])
@@ -915,7 +915,7 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
         return Err(msg);
     }
 
-    log::info!("DOS-65: Node.js {} installed successfully", NODE_VERSION);
+    log::info!("Node.js {} installed successfully", NODE_VERSION);
     Ok(())
 }
 
@@ -1374,8 +1374,8 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
 // =============================================================================
 
 /// Returns current feature flags. Reads from `config.features` so operators can
-/// opt individual installations in via the TOML config file. Falls back to the
-/// struct Default (all false) for any key not present in config.
+/// opt individual installations into remaining guarded surfaces. Falls back to
+/// the struct Default for any key not present in config.
 #[tauri::command]
 pub async fn get_feature_flags(
     state: State<'_, Arc<AppState>>,
@@ -1392,10 +1392,6 @@ pub async fn get_feature_flags(
         glean_discovery_enabled: *config
             .features
             .get("glean_discovery_enabled")
-            .unwrap_or(&false),
-        daily_briefing_redesign_enabled: *config
-            .features
-            .get("daily_briefing_redesign_enabled")
             .unwrap_or(&false),
     };
     Ok(flags)

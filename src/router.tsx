@@ -15,14 +15,6 @@ import { CommandMenu, useCommandMenu } from "@/components/layout/CommandMenu";
 import { Header } from "@/components/dashboard/Header";
 import { OnboardingFlow } from "@/components/onboarding/OnboardingFlow";
 
-// Lazy load pages for code splitting
-import { DailyBriefing } from "@/components/dashboard/DailyBriefing";
-import { DashboardSkeleton } from "@/components/dashboard/DashboardSkeleton";
-import { DashboardEmpty } from "@/components/dashboard/DashboardEmpty";
-import { DashboardError } from "@/components/dashboard/DashboardError";
-import { useDashboardData } from "@/hooks/useDashboardData";
-import { useWorkflow } from "@/hooks/useWorkflow";
-
 // Page components
 import AccountsPage from "@/pages/AccountsPage";
 import AccountDetailPage from "@/pages/AccountDetailPage";
@@ -50,7 +42,6 @@ import MePage from "@/pages/MePage";
 import WeekPage from "@/pages/WeekPage";
 import DailyBriefingRedesign from "@/pages/DailyBriefingRedesign";
 
-
 // Magazine shell
 import MagazinePageLayout from "@/components/layout/MagazinePageLayout";
 import { MagazineShellContext, useMagazineShellProvider } from "@/hooks/useMagazineShell";
@@ -61,7 +52,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanelStandalone } from "@/components/devtools/DevToolsPanel";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useBackgroundStatus } from "@/hooks/useBackgroundStatus";
-import type { CalendarEvent, FeatureFlags, GoogleAuthStatus } from "@/types";
+import type { CalendarEvent, GoogleAuthStatus } from "@/types";
 import { PersonalityProvider } from "@/hooks/usePersonality";
 import { UpdateBanner } from "@/components/notifications/UpdateBanner";
 import { WhatsNewModal, useWhatsNewAutoShow } from "@/components/notifications/WhatsNewModal";
@@ -423,49 +414,6 @@ function RootLayout() {
   );
 }
 
-// Dashboard page content
-function DashboardPage() {
-  const { state, refresh } = useDashboardData();
-  const { runNow, isRunning, status } = useWorkflow();
-
-  switch (state.status) {
-    case "loading":
-      return <DashboardSkeleton />;
-    case "empty":
-      return <DashboardEmpty message={state.message} onGenerate={runNow} isRunning={isRunning} workflowStatus={status} googleAuth={state.googleAuth} />;
-    case "error":
-      return <DashboardError message={state.message} onRetry={refresh} />;
-    case "success":
-      return <DailyBriefing data={state.data} freshness={state.freshness} onRunBriefing={runNow} isRunning={isRunning} workflowStatus={status} onRefresh={refresh} />;
-  }
-}
-
-function DailyBriefingRouteGate() {
-  const [redesignEnabled, setRedesignEnabled] = useState(false);
-
-  useEffect(() => {
-    let cancelled = false;
-
-    invoke<FeatureFlags>("get_feature_flags")
-      .then((flags) => {
-        if (!cancelled) {
-          setRedesignEnabled(flags.daily_briefing_redesign_enabled);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setRedesignEnabled(false);
-        }
-      });
-
-    return () => {
-      cancelled = true;
-    };
-  }, []);
-
-  return redesignEnabled ? <DailyBriefingRedesign /> : <DashboardPage />;
-}
-
 // Create root route
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -475,7 +423,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: DailyBriefingRouteGate,
+  component: DailyBriefingRedesign,
 });
 
 const actionsRoute = createRoute({

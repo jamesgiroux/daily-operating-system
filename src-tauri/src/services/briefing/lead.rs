@@ -5,13 +5,13 @@
 //! density, lifecycle pressure). Today there is no producer that emits a
 //! "lead headline" claim; the headline is rendered editorial copy.
 //!
-//! **W2a default:** static editorial copy. Composer returns a generic
+//! **Default:** static editorial copy. Composer returns a generic
 //! "today" headline + capacity sentence. No `TrustMixin` on the slice
 //! itself — `LeadViewModel` is plain editorial text.
 //!
-//! **Unblocked at:** DOS-426 Lead-content-source ticket if/when the
-//! editorial copy needs to be derived from claims (e.g., naming the top
-//! moving entity in the headline). Not on the v1.4.x critical path.
+//! A future lead-content producer can derive this copy from claims, such as
+//! naming the top moving entity in the headline. That producer is outside the
+//! current critical path.
 
 use crate::services::briefing_view_model::{LeadHeadline, LeadViewModel};
 use crate::state::AppState;

@@ -2903,10 +2903,6 @@ pub struct FeatureFlags {
     /// When false, Glean account discovery and ephemeral lookup are hidden
     /// from the Accounts page. Defaults to false.
     pub glean_discovery_enabled: bool,
-    /// When false, the Daily Briefing redesign surface (DOS-429) is hidden;
-    /// `/` continues to render the legacy `DailyBriefing`. Defaults to false
-    /// until W6 cutover (DOS-431). Flip via `config.features` map.
-    pub daily_briefing_redesign_enabled: bool,
 }
 
 #[cfg(test)]
@@ -3306,10 +3302,6 @@ mod tests {
                 .features
                 .get("glean_discovery_enabled")
                 .unwrap_or(&false),
-            daily_briefing_redesign_enabled: *config
-                .features
-                .get("daily_briefing_redesign_enabled")
-                .unwrap_or(&false),
         }
     }
 
@@ -3322,9 +3314,6 @@ mod tests {
         config
             .features
             .insert("glean_discovery_enabled".to_string(), true);
-        config
-            .features
-            .insert("daily_briefing_redesign_enabled".to_string(), true);
 
         let flags = build_feature_flags_from_config(&config);
 
@@ -3335,10 +3324,6 @@ mod tests {
         assert!(
             flags.glean_discovery_enabled,
             "glean_discovery_enabled should be true when set in config"
-        );
-        assert!(
-            flags.daily_briefing_redesign_enabled,
-            "daily_briefing_redesign_enabled should be true when set in config"
         );
     }
 
@@ -3358,10 +3343,6 @@ mod tests {
             !flags.glean_discovery_enabled,
             "glean_discovery_enabled should default to false"
         );
-        assert!(
-            !flags.daily_briefing_redesign_enabled,
-            "daily_briefing_redesign_enabled should default to false"
-        );
     }
 
     /// Regression: the wire keys must be snake_case so the TS interface in
@@ -3374,13 +3355,11 @@ mod tests {
         let flags = FeatureFlags {
             book_of_business_enabled: true,
             glean_discovery_enabled: true,
-            daily_briefing_redesign_enabled: true,
         };
         let s = serde_json::to_string(&flags).expect("serialize");
         let parsed: serde_json::Value = serde_json::from_str(&s).expect("parse");
         assert_eq!(parsed["book_of_business_enabled"], true);
         assert_eq!(parsed["glean_discovery_enabled"], true);
-        assert_eq!(parsed["daily_briefing_redesign_enabled"], true);
         assert!(
             parsed.get("bookOfBusinessEnabled").is_none(),
             "wire must NOT emit camelCase keys",

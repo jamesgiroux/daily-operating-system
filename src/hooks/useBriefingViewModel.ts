@@ -4,12 +4,11 @@ import type { BriefingLoadState } from "@/types/briefing";
 
 /**
  * Hook to load the Daily Briefing redesign view-model from the Tauri
- * backend (DOS-413 atomic IPC).
+ * backend over the canonical atomic IPC command.
  *
  * Returns the wire-shape `BriefingLoadState` directly — the four-state
  * envelope (`loading` | `error` | `empty` | `success`) is the contract
- * surface the consuming surface (DOS-429 DailyBriefingRedesign) renders
- * branch-by-branch.
+ * that the consuming surface renders branch-by-branch.
  *
  * Features:
  * - Initial load on mount (state starts at `{status: "loading"}`).
