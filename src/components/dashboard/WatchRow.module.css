@@ -1,0 +1,176 @@
+/* WatchRow — Daily Briefing Watch action triage row.
+ * Spec: .docs/design/patterns/WatchRow.md
+ */
+
+.root {
+  display: grid;
+  grid-template-columns: minmax(110px, 0.22fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-rule-light);
+  font-family: var(--font-sans);
+  color: var(--color-text-primary);
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.root:hover,
+.root:focus-within {
+  border-bottom-color: var(--color-rule-heavy);
+  background: var(--color-desk-charcoal-4);
+}
+
+.root:focus-within {
+  outline: 2px solid var(--color-spice-saffron);
+  outline-offset: 2px;
+}
+
+.who {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0;
+  text-overflow: ellipsis;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.what {
+  min-width: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-style: italic;
+  font-weight: 300;
+  letter-spacing: 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.affordance {
+  justify-self: end;
+  display: inline-flex;
+  align-items: center;
+  min-width: max-content;
+}
+
+.selector {
+  justify-self: end;
+}
+
+.checkButton {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  padding: 0;
+  place-items: center;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: 50%;
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.checkButton:hover,
+.checkButton:focus-visible {
+  border-color: var(--color-spice-turmeric);
+  background: var(--color-spice-turmeric);
+  color: var(--color-paper-warm-white);
+  outline: none;
+}
+
+.checkGlyph {
+  width: 9px;
+  height: 5px;
+  border-bottom: 1.5px solid currentColor;
+  border-left: 1.5px solid currentColor;
+  opacity: 0;
+  transform: rotate(-45deg) translate(1px, -1px);
+  transition: opacity var(--transition-fast);
+}
+
+.checkButton:hover .checkGlyph,
+.checkButton:focus-visible .checkGlyph {
+  opacity: 1;
+}
+
+.parkedLabel,
+.ageLabel {
+  color: var(--color-text-tertiary);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.agingAffordance {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-sm);
+}
+
+.choiceGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.choiceButton {
+  display: inline-flex;
+  min-height: 26px;
+  align-items: center;
+  padding: 0 8px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-secondary);
+  cursor: pointer;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+  transition:
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.choiceButton:hover,
+.choiceButton:focus-visible {
+  border-color: var(--color-spice-saffron);
+  background: var(--color-spice-saffron-8);
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+@media (max-width: 720px) {
+  .root {
+    grid-template-columns: 1fr;
+    gap: var(--space-xs);
+  }
+
+  .affordance,
+  .selector {
+    justify-self: stretch;
+  }
+
+  .affordance,
+  .agingAffordance,
+  .choiceGroup {
+    width: 100%;
+  }
+
+  .choiceGroup {
+    justify-content: flex-start;
+  }
+}

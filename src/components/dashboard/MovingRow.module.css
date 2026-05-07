@@ -1,0 +1,139 @@
+/* MovingRow — Daily Briefing entity movement row.
+ * Spec: .docs/design/patterns/MovingRow.md
+ */
+
+.root {
+  --moving-accent: var(--color-text-tertiary);
+
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(120px, 0.2fr) minmax(0, 1fr) minmax(120px, auto);
+  align-items: start;
+  gap: var(--space-md);
+  padding: var(--space-md) 0;
+  border-bottom: 1px solid var(--color-border-subtle, var(--color-rule-light));
+  color: var(--color-text-primary);
+  cursor: pointer;
+  transition: border-color var(--transition-normal);
+}
+
+.root::before {
+  content: "";
+  position: absolute;
+  top: 12px;
+  bottom: 12px;
+  left: -28px;
+  width: 3px;
+  border-radius: 2px;
+  background: var(--moving-accent);
+}
+
+.root:hover {
+  border-bottom-color: var(--color-border-strong, var(--color-rule-heavy));
+}
+
+.root:focus-visible {
+  border-bottom-color: var(--moving-accent);
+  outline: 2px solid var(--moving-accent);
+  outline-offset: 4px;
+}
+
+.root[data-kind="customer"] {
+  --moving-accent: var(--color-account, var(--color-spice-turmeric));
+}
+
+.root[data-kind="person"] {
+  --moving-accent: var(--color-person, var(--color-garden-larkspur));
+}
+
+.root[data-kind="project"] {
+  --moving-accent: var(--color-project, var(--color-garden-olive));
+}
+
+.root[data-kind="internal"] {
+  --moving-accent: var(--color-text-tertiary);
+}
+
+.root[data-kind="lifecycle"] {
+  --moving-accent: var(--color-spice-saffron);
+}
+
+.identity {
+  min-width: 0;
+}
+
+.nameRow {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px;
+  min-width: 0;
+}
+
+.name {
+  min-width: 0;
+  overflow: hidden;
+  color: var(--color-text-primary);
+  font-family: var(--font-serif);
+  font-size: 18px;
+  font-weight: 400;
+  letter-spacing: 0;
+  line-height: 1.2;
+  text-overflow: ellipsis;
+}
+
+.statePill {
+  flex: 0 0 auto;
+}
+
+.narrative {
+  display: grid;
+  gap: var(--space-sm);
+  min-width: 0;
+}
+
+.lede {
+  max-width: 620px;
+  margin: 0;
+  color: var(--color-text-secondary);
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-style: italic;
+  font-weight: 300;
+  letter-spacing: 0;
+  line-height: 1.45;
+}
+
+.signalFeed {
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.signalItem {
+  min-width: 0;
+}
+
+.provenanceStats {
+  display: grid;
+  justify-self: end;
+  gap: 4px;
+  min-width: 120px;
+}
+
+@media (max-width: 720px) {
+  .root {
+    grid-template-columns: 1fr;
+    gap: var(--space-sm);
+  }
+
+  .root::before {
+    left: -16px;
+  }
+
+  .provenanceStats {
+    justify-self: start;
+  }
+}
