@@ -610,6 +610,8 @@ pub fn run() {
             commands::get_config,
             commands::reload_configuration,
             commands::get_dashboard_data,
+            // DOS-413 Daily Briefing redesign atomic IPC
+            commands::get_briefing_view_model,
             commands::run_workflow,
             commands::get_workflow_status,
             commands::get_execution_history,
