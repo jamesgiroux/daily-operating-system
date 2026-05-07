@@ -781,7 +781,7 @@ async fn refresh_week_calendar_cache(
 /// Force-refresh meeting preps for all future meetings.
 ///
 /// Clears existing prep_frozen_json and enqueues all future meetings into the
-/// MeetingPrepQueue at Manual priority. Used by the WeekPage refresh button.
+/// MeetingPrepQueue at Manual priority. Used by the briefing refresh button.
 #[tauri::command]
 pub async fn refresh_meeting_preps(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let app_state = state.inner().clone();

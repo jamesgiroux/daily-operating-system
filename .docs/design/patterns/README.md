@@ -19,13 +19,13 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`FolioBar`](./FolioBar.md) | integrated | Top frosted bar with crumbs + actions | every editorial surface |
 | [`FloatingNavIsland`](./FloatingNavIsland.md) | integrated | Dual-pill app + chapter nav (the canonical local-nav pattern) | every stable surface |
 | [`AtmosphereLayer`](./AtmosphereLayer.md) | integrated | Page-tinted radial gradient background | every editorial surface |
-| [`MarginGrid`](./MarginGrid.md) | integrated | Two-column section layout (margin label + content) | DailyBriefing, AccountDetail |
+| [`MarginGrid`](./MarginGrid.md) | integrated | Two-column section layout (margin label + content) | Daily Briefing, AccountDetail |
 | [`ChapterHeading`](./ChapterHeading.md) | integrated | Section opener (heavy rule + serif title + epigraph) | AccountDetail, ProjectDetail, etc. |
-| [`Lead`](./Lead.md) | proposed | Single-sentence editorial headline | DailyBriefing |
-| [`DayStrip`](./DayStrip.md) | proposed | Previous/current/next briefing-day navigation under FolioBar | DailyBriefing Daily Briefing redesign reference candidate |
+| [`Lead`](./Lead.md) | proposed | Single-sentence editorial headline | Daily Briefing |
+| [`DayStrip`](./DayStrip.md) | proposed | Previous/current/next briefing-day navigation under FolioBar | Daily Briefing redesign reference candidate |
 | [`DayChart`](./DayChart.md) | proposed | Visual day shape (hour ticks + bars + NOW line) | Daily Briefing redesign prototype only |
-| [`MeetingSpineItem`](./MeetingSpineItem.md) | proposed | Magazine-style meeting list entry | DailyBriefing Daily Briefing redesign reference candidate; source component exists but is not routed |
-| [`InferredActionSelector`](./InferredActionSelector.md) | proposed | Suggested action with a dropdown of alternatives | DailyBriefing Daily Briefing redesign reference candidate |
+| [`MeetingSpineItem`](./MeetingSpineItem.md) | proposed | Magazine-style meeting list entry | Daily Briefing redesign reference candidate; source component exists but is not routed |
+| [`InferredActionSelector`](./InferredActionSelector.md) | proposed | Suggested action with a dropdown of alternatives | Daily Briefing redesign reference candidate |
 
 ### Wave 2 (v1.4.4 trust UI, 0.2.0)
 
@@ -80,12 +80,12 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 
 | Name | Status | Job (one line) | Consumers |
 |---|---|---|---|
-| [`MovingRow`](./MovingRow.md) | proposed | Three-column entity-movement row (identity / lede + signals / stats); 5 kinds | DailyBriefing (Moving section) |
-| [`WatchRow`](./WatchRow.md) | proposed | Adaptive triage row, 4 kinds (suggestedAction / openAction / parked / aging) | DailyBriefing (Watch section) |
-| [`PredictionsSection`](./PredictionsSection.md) | proposed | Collapsed-by-default predictions list within MarginGrid | DailyBriefing |
-| [`BriefingLoadingState`](./BriefingLoadingState.md) | proposed | Centered editorial holding state with optional pulsing dot | DailyBriefing (and future editorial surfaces) |
-| [`BriefingErrorState`](./BriefingErrorState.md) | proposed | Centered editorial error frame with retry / diagnostics affordances | DailyBriefing (and future editorial surfaces) |
-| [`BriefingEmptyState`](./BriefingEmptyState.md) | proposed | Left-aligned cold-start frame with eyebrow / headline / lede / checklist / CTA | DailyBriefing (and future editorial surfaces) |
+| [`MovingRow`](./MovingRow.md) | proposed | Three-column entity-movement row (identity / lede + signals / stats); 5 kinds | Daily Briefing (Moving section) |
+| [`WatchRow`](./WatchRow.md) | proposed | Adaptive triage row, 4 kinds (suggestedAction / openAction / parked / aging) | Daily Briefing (Watch section) |
+| [`PredictionsSection`](./PredictionsSection.md) | proposed | Collapsed-by-default predictions list within MarginGrid | Daily Briefing |
+| [`BriefingLoadingState`](./BriefingLoadingState.md) | proposed | Centered editorial holding state with optional pulsing dot | Daily Briefing (and future editorial surfaces) |
+| [`BriefingErrorState`](./BriefingErrorState.md) | proposed | Centered editorial error frame with retry / diagnostics affordances | Daily Briefing (and future editorial surfaces) |
+| [`BriefingEmptyState`](./BriefingEmptyState.md) | proposed | Left-aligned cold-start frame with eyebrow / headline / lede / checklist / CTA | Daily Briefing (and future editorial surfaces) |
 
 ## Conventions
 

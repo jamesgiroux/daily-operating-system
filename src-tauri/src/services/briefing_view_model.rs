@@ -783,6 +783,11 @@ pub struct InferredActionOption {
 
 // ─── Orchestrator ────────────────────────────────────────────────────────
 
+// Per-section budgets are independent slow-path detectors — each composer's
+// elapsed time is compared against its own threshold and logged on overrun.
+// The total is wall-clock-cap because composers run concurrently via
+// `tokio::join!` (max(per-section), not sum). Per-section sum may exceed
+// total; that's expected, not a misconfiguration.
 const BRIEFING_LEAD_LATENCY_BUDGET_MS: u128 = 50;
 const BRIEFING_SCHEDULE_LATENCY_BUDGET_MS: u128 = 200;
 const BRIEFING_PREDICTIONS_LATENCY_BUDGET_MS: u128 = 100;
