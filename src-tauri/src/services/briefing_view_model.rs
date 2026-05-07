@@ -80,7 +80,11 @@ pub enum CorrectionState {
 /// rather than full round-trip of the envelope.
 #[derive(Debug, Clone, Serialize)]
 #[allow(clippy::large_enum_variant)]
-#[serde(tag = "status", rename_all = "lowercase", rename_all_fields = "camelCase")]
+#[serde(
+    tag = "status",
+    rename_all = "lowercase",
+    rename_all_fields = "camelCase"
+)]
 pub enum BriefingResult {
     Loading,
     Error {
@@ -865,7 +869,6 @@ where
     }
 }
 
-
 // ─── Tests ───────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -1179,7 +1182,10 @@ mod tests {
         assert_eq!(rows[3]["options"][1]["id"], "archive");
 
         // Selector confidence on suggested action.
-        assert_eq!(rows[0]["selector"]["options"][0]["confidence"]["label"], "82%");
+        assert_eq!(
+            rows[0]["selector"]["options"][0]["confidence"]["label"],
+            "82%"
+        );
 
         // Moving entity — LinkedEntity full shape, hyphenated SignalDot kind,
         // populated provenance.
@@ -1190,7 +1196,10 @@ mod tests {
         assert_eq!(entity["entity"]["isPrimary"], true);
         assert_eq!(entity["entity"]["role"], "primary");
         assert_eq!(entity["entity"]["appliedRule"], "P5");
-        assert!(entity["entity"].get("href").is_none(), "LinkedEntity must NOT have href");
+        assert!(
+            entity["entity"].get("href").is_none(),
+            "LinkedEntity must NOT have href"
+        );
         assert_eq!(entity["statePill"]["tone"], "olive");
 
         let signal = &entity["signals"][0];
@@ -1202,7 +1211,10 @@ mod tests {
         // Trust + populated provenance summary flow through.
         assert_eq!(signal["trustBand"], "likely_current");
         assert_eq!(signal["renderedProvenance"]["surface"], "dashboard");
-        assert_eq!(signal["renderedProvenance"]["value"]["sources"][0]["id"], "src_1");
+        assert_eq!(
+            signal["renderedProvenance"]["value"]["sources"][0]["id"],
+            "src_1"
+        );
 
         // Prediction id + ability source.
         let pred = &parsed["model"]["predictions"]["predictions"][0];
@@ -1307,96 +1319,320 @@ mod tests {
         }
 
         // TrustBandWire (snake_case)
-        check(TrustBandWire::LikelyCurrent, "likely_current", "TrustBandWire::LikelyCurrent");
-        check(TrustBandWire::UseWithCaution, "use_with_caution", "TrustBandWire::UseWithCaution");
-        check(TrustBandWire::NeedsVerification, "needs_verification", "TrustBandWire::NeedsVerification");
-        check(TrustBandWire::Unscored, "unscored", "TrustBandWire::Unscored");
+        check(
+            TrustBandWire::LikelyCurrent,
+            "likely_current",
+            "TrustBandWire::LikelyCurrent",
+        );
+        check(
+            TrustBandWire::UseWithCaution,
+            "use_with_caution",
+            "TrustBandWire::UseWithCaution",
+        );
+        check(
+            TrustBandWire::NeedsVerification,
+            "needs_verification",
+            "TrustBandWire::NeedsVerification",
+        );
+        check(
+            TrustBandWire::Unscored,
+            "unscored",
+            "TrustBandWire::Unscored",
+        );
 
         // CorrectionState (lowercase)
         check(CorrectionState::None, "none", "CorrectionState::None");
-        check(CorrectionState::Corrected, "corrected", "CorrectionState::Corrected");
-        check(CorrectionState::Contested, "contested", "CorrectionState::Contested");
+        check(
+            CorrectionState::Corrected,
+            "corrected",
+            "CorrectionState::Corrected",
+        );
+        check(
+            CorrectionState::Contested,
+            "contested",
+            "CorrectionState::Contested",
+        );
 
         // BriefingErrorCode (snake_case)
-        check(BriefingErrorCode::ServiceUnavailable, "service_unavailable", "BriefingErrorCode::ServiceUnavailable");
-        check(BriefingErrorCode::DependencyFailed, "dependency_failed", "BriefingErrorCode::DependencyFailed");
-        check(BriefingErrorCode::RateLimited, "rate_limited", "BriefingErrorCode::RateLimited");
-        check(BriefingErrorCode::Internal, "internal", "BriefingErrorCode::Internal");
+        check(
+            BriefingErrorCode::ServiceUnavailable,
+            "service_unavailable",
+            "BriefingErrorCode::ServiceUnavailable",
+        );
+        check(
+            BriefingErrorCode::DependencyFailed,
+            "dependency_failed",
+            "BriefingErrorCode::DependencyFailed",
+        );
+        check(
+            BriefingErrorCode::RateLimited,
+            "rate_limited",
+            "BriefingErrorCode::RateLimited",
+        );
+        check(
+            BriefingErrorCode::Internal,
+            "internal",
+            "BriefingErrorCode::Internal",
+        );
 
         // BriefingSectionId (snake_case)
         check(BriefingSectionId::Lead, "lead", "BriefingSectionId::Lead");
-        check(BriefingSectionId::Schedule, "schedule", "BriefingSectionId::Schedule");
-        check(BriefingSectionId::Predictions, "predictions", "BriefingSectionId::Predictions");
-        check(BriefingSectionId::Moving, "moving", "BriefingSectionId::Moving");
-        check(BriefingSectionId::Watch, "watch", "BriefingSectionId::Watch");
+        check(
+            BriefingSectionId::Schedule,
+            "schedule",
+            "BriefingSectionId::Schedule",
+        );
+        check(
+            BriefingSectionId::Predictions,
+            "predictions",
+            "BriefingSectionId::Predictions",
+        );
+        check(
+            BriefingSectionId::Moving,
+            "moving",
+            "BriefingSectionId::Moving",
+        );
+        check(
+            BriefingSectionId::Watch,
+            "watch",
+            "BriefingSectionId::Watch",
+        );
 
         // ChecklistItemStatus (lowercase)
-        check(ChecklistItemStatus::Todo, "todo", "ChecklistItemStatus::Todo");
-        check(ChecklistItemStatus::Done, "done", "ChecklistItemStatus::Done");
+        check(
+            ChecklistItemStatus::Todo,
+            "todo",
+            "ChecklistItemStatus::Todo",
+        );
+        check(
+            ChecklistItemStatus::Done,
+            "done",
+            "ChecklistItemStatus::Done",
+        );
 
         // ReadinessSemantic (snake_case)
-        check(ReadinessSemantic::Healthy, "healthy", "ReadinessSemantic::Healthy");
-        check(ReadinessSemantic::NeedsAttention, "needs_attention", "ReadinessSemantic::NeedsAttention");
-        check(ReadinessSemantic::InProgress, "in_progress", "ReadinessSemantic::InProgress");
-        check(ReadinessSemantic::Blocked, "blocked", "ReadinessSemantic::Blocked");
-        check(ReadinessSemantic::Neutral, "neutral", "ReadinessSemantic::Neutral");
+        check(
+            ReadinessSemantic::Healthy,
+            "healthy",
+            "ReadinessSemantic::Healthy",
+        );
+        check(
+            ReadinessSemantic::NeedsAttention,
+            "needs_attention",
+            "ReadinessSemantic::NeedsAttention",
+        );
+        check(
+            ReadinessSemantic::InProgress,
+            "in_progress",
+            "ReadinessSemantic::InProgress",
+        );
+        check(
+            ReadinessSemantic::Blocked,
+            "blocked",
+            "ReadinessSemantic::Blocked",
+        );
+        check(
+            ReadinessSemantic::Neutral,
+            "neutral",
+            "ReadinessSemantic::Neutral",
+        );
 
         // FolioActionKind (lowercase)
-        check(FolioActionKind::Refresh, "refresh", "FolioActionKind::Refresh");
-        check(FolioActionKind::Regenerate, "regenerate", "FolioActionKind::Regenerate");
-        check(FolioActionKind::Archive, "archive", "FolioActionKind::Archive");
-        check(FolioActionKind::Discover, "discover", "FolioActionKind::Discover");
+        check(
+            FolioActionKind::Refresh,
+            "refresh",
+            "FolioActionKind::Refresh",
+        );
+        check(
+            FolioActionKind::Regenerate,
+            "regenerate",
+            "FolioActionKind::Regenerate",
+        );
+        check(
+            FolioActionKind::Archive,
+            "archive",
+            "FolioActionKind::Archive",
+        );
+        check(
+            FolioActionKind::Discover,
+            "discover",
+            "FolioActionKind::Discover",
+        );
         check(FolioActionKind::New, "new", "FolioActionKind::New");
 
         // MeetingSpineType — tested separately above (one_on_one needs explicit rename)
-        check(MeetingSpineType::Customer, "customer", "MeetingSpineType::Customer");
-        check(MeetingSpineType::Internal, "internal", "MeetingSpineType::Internal");
-        check(MeetingSpineType::Partner, "partner", "MeetingSpineType::Partner");
-        check(MeetingSpineType::Project, "project", "MeetingSpineType::Project");
+        check(
+            MeetingSpineType::Customer,
+            "customer",
+            "MeetingSpineType::Customer",
+        );
+        check(
+            MeetingSpineType::Internal,
+            "internal",
+            "MeetingSpineType::Internal",
+        );
+        check(
+            MeetingSpineType::Partner,
+            "partner",
+            "MeetingSpineType::Partner",
+        );
+        check(
+            MeetingSpineType::Project,
+            "project",
+            "MeetingSpineType::Project",
+        );
 
         // MeetingSpineState (kebab-case)
         check(MeetingSpineState::Past, "past", "MeetingSpineState::Past");
-        check(MeetingSpineState::InProgress, "in-progress", "MeetingSpineState::InProgress");
-        check(MeetingSpineState::Upcoming, "upcoming", "MeetingSpineState::Upcoming");
-        check(MeetingSpineState::Cancelled, "cancelled", "MeetingSpineState::Cancelled");
+        check(
+            MeetingSpineState::InProgress,
+            "in-progress",
+            "MeetingSpineState::InProgress",
+        );
+        check(
+            MeetingSpineState::Upcoming,
+            "upcoming",
+            "MeetingSpineState::Upcoming",
+        );
+        check(
+            MeetingSpineState::Cancelled,
+            "cancelled",
+            "MeetingSpineState::Cancelled",
+        );
 
         // MeetingStateTag (snake_case)
         check(MeetingStateTag::Now, "now", "MeetingStateTag::Now");
-        check(MeetingStateTag::Upcoming, "upcoming", "MeetingStateTag::Upcoming");
+        check(
+            MeetingStateTag::Upcoming,
+            "upcoming",
+            "MeetingStateTag::Upcoming",
+        );
         check(MeetingStateTag::Ended, "ended", "MeetingStateTag::Ended");
-        check(MeetingStateTag::Cancelled, "cancelled", "MeetingStateTag::Cancelled");
-        check(MeetingStateTag::Building, "building", "MeetingStateTag::Building");
-        check(MeetingStateTag::NoBriefingYet, "no_briefing_yet", "MeetingStateTag::NoBriefingYet");
+        check(
+            MeetingStateTag::Cancelled,
+            "cancelled",
+            "MeetingStateTag::Cancelled",
+        );
+        check(
+            MeetingStateTag::Building,
+            "building",
+            "MeetingStateTag::Building",
+        );
+        check(
+            MeetingStateTag::NoBriefingYet,
+            "no_briefing_yet",
+            "MeetingStateTag::NoBriefingYet",
+        );
 
         // IntelligenceQualityLevel (snake_case)
-        check(IntelligenceQualityLevel::Fresh, "fresh", "IntelligenceQualityLevel::Fresh");
-        check(IntelligenceQualityLevel::Ready, "ready", "IntelligenceQualityLevel::Ready");
-        check(IntelligenceQualityLevel::Developing, "developing", "IntelligenceQualityLevel::Developing");
-        check(IntelligenceQualityLevel::Sparse, "sparse", "IntelligenceQualityLevel::Sparse");
-        check(IntelligenceQualityLevel::Captured, "captured", "IntelligenceQualityLevel::Captured");
-        check(IntelligenceQualityLevel::NoBriefing, "no_briefing", "IntelligenceQualityLevel::NoBriefing");
+        check(
+            IntelligenceQualityLevel::Fresh,
+            "fresh",
+            "IntelligenceQualityLevel::Fresh",
+        );
+        check(
+            IntelligenceQualityLevel::Ready,
+            "ready",
+            "IntelligenceQualityLevel::Ready",
+        );
+        check(
+            IntelligenceQualityLevel::Developing,
+            "developing",
+            "IntelligenceQualityLevel::Developing",
+        );
+        check(
+            IntelligenceQualityLevel::Sparse,
+            "sparse",
+            "IntelligenceQualityLevel::Sparse",
+        );
+        check(
+            IntelligenceQualityLevel::Captured,
+            "captured",
+            "IntelligenceQualityLevel::Captured",
+        );
+        check(
+            IntelligenceQualityLevel::NoBriefing,
+            "no_briefing",
+            "IntelligenceQualityLevel::NoBriefing",
+        );
 
         // DayChartBarKind (camelCase)
-        check(DayChartBarKind::Customer, "customer", "DayChartBarKind::Customer");
-        check(DayChartBarKind::Internal, "internal", "DayChartBarKind::Internal");
-        check(DayChartBarKind::Partner, "partner", "DayChartBarKind::Partner");
-        check(DayChartBarKind::Personal, "personal", "DayChartBarKind::Personal");
-        check(DayChartBarKind::OneOnOne, "oneOnOne", "DayChartBarKind::OneOnOne");
-        check(DayChartBarKind::Project, "project", "DayChartBarKind::Project");
-        check(DayChartBarKind::Cancelled, "cancelled", "DayChartBarKind::Cancelled");
+        check(
+            DayChartBarKind::Customer,
+            "customer",
+            "DayChartBarKind::Customer",
+        );
+        check(
+            DayChartBarKind::Internal,
+            "internal",
+            "DayChartBarKind::Internal",
+        );
+        check(
+            DayChartBarKind::Partner,
+            "partner",
+            "DayChartBarKind::Partner",
+        );
+        check(
+            DayChartBarKind::Personal,
+            "personal",
+            "DayChartBarKind::Personal",
+        );
+        check(
+            DayChartBarKind::OneOnOne,
+            "oneOnOne",
+            "DayChartBarKind::OneOnOne",
+        );
+        check(
+            DayChartBarKind::Project,
+            "project",
+            "DayChartBarKind::Project",
+        );
+        check(
+            DayChartBarKind::Cancelled,
+            "cancelled",
+            "DayChartBarKind::Cancelled",
+        );
 
         // DayChartBarState (lowercase)
         check(DayChartBarState::Past, "past", "DayChartBarState::Past");
         check(DayChartBarState::Now, "now", "DayChartBarState::Now");
-        check(DayChartBarState::Upcoming, "upcoming", "DayChartBarState::Upcoming");
-        check(DayChartBarState::Cancelled, "cancelled", "DayChartBarState::Cancelled");
+        check(
+            DayChartBarState::Upcoming,
+            "upcoming",
+            "DayChartBarState::Upcoming",
+        );
+        check(
+            DayChartBarState::Cancelled,
+            "cancelled",
+            "DayChartBarState::Cancelled",
+        );
 
         // MovingEntityKind (lowercase)
-        check(MovingEntityKind::Customer, "customer", "MovingEntityKind::Customer");
-        check(MovingEntityKind::Person, "person", "MovingEntityKind::Person");
-        check(MovingEntityKind::Project, "project", "MovingEntityKind::Project");
-        check(MovingEntityKind::Internal, "internal", "MovingEntityKind::Internal");
-        check(MovingEntityKind::Lifecycle, "lifecycle", "MovingEntityKind::Lifecycle");
+        check(
+            MovingEntityKind::Customer,
+            "customer",
+            "MovingEntityKind::Customer",
+        );
+        check(
+            MovingEntityKind::Person,
+            "person",
+            "MovingEntityKind::Person",
+        );
+        check(
+            MovingEntityKind::Project,
+            "project",
+            "MovingEntityKind::Project",
+        );
+        check(
+            MovingEntityKind::Internal,
+            "internal",
+            "MovingEntityKind::Internal",
+        );
+        check(
+            MovingEntityKind::Lifecycle,
+            "lifecycle",
+            "MovingEntityKind::Lifecycle",
+        );
 
         // PillTone (lowercase) — 7 tones, must match src/components/ui/Pill.tsx
         check(PillTone::Sage, "sage", "PillTone::Sage");
@@ -1411,11 +1647,31 @@ mod tests {
         check(SignalDotKind::Meeting, "meeting", "SignalDotKind::Meeting");
         check(SignalDotKind::Action, "action", "SignalDotKind::Action");
         check(SignalDotKind::Email, "email", "SignalDotKind::Email");
-        check(SignalDotKind::Lifecycle, "lifecycle", "SignalDotKind::Lifecycle");
-        check(SignalDotKind::GongCall, "gong-call", "SignalDotKind::GongCall");
-        check(SignalDotKind::ZendeskTicket, "zendesk-ticket", "SignalDotKind::ZendeskTicket");
-        check(SignalDotKind::SlackThread, "slack-thread", "SignalDotKind::SlackThread");
-        check(SignalDotKind::LinearIssue, "linear-issue", "SignalDotKind::LinearIssue");
+        check(
+            SignalDotKind::Lifecycle,
+            "lifecycle",
+            "SignalDotKind::Lifecycle",
+        );
+        check(
+            SignalDotKind::GongCall,
+            "gong-call",
+            "SignalDotKind::GongCall",
+        );
+        check(
+            SignalDotKind::ZendeskTicket,
+            "zendesk-ticket",
+            "SignalDotKind::ZendeskTicket",
+        );
+        check(
+            SignalDotKind::SlackThread,
+            "slack-thread",
+            "SignalDotKind::SlackThread",
+        );
+        check(
+            SignalDotKind::LinearIssue,
+            "linear-issue",
+            "SignalDotKind::LinearIssue",
+        );
 
         // SignalUrgency (lowercase)
         check(SignalUrgency::Normal, "normal", "SignalUrgency::Normal");
@@ -1427,8 +1683,16 @@ mod tests {
         check(ProvenanceTrend::Flat, "flat", "ProvenanceTrend::Flat");
 
         // WatchAgingOptionId (lowercase)
-        check(WatchAgingOptionId::Restore, "restore", "WatchAgingOptionId::Restore");
-        check(WatchAgingOptionId::Archive, "archive", "WatchAgingOptionId::Archive");
+        check(
+            WatchAgingOptionId::Restore,
+            "restore",
+            "WatchAgingOptionId::Restore",
+        );
+        check(
+            WatchAgingOptionId::Archive,
+            "archive",
+            "WatchAgingOptionId::Archive",
+        );
     }
 
     #[test]
@@ -1440,8 +1704,12 @@ mod tests {
             trust_source_date: None,
             rendered_provenance: None,
         };
-        let parsed: Value = serde_json::from_str(&serde_json::to_string(&omitted).unwrap()).unwrap();
-        assert!(parsed.get("trustSourceDate").is_none(), "None should omit field");
+        let parsed: Value =
+            serde_json::from_str(&serde_json::to_string(&omitted).unwrap()).unwrap();
+        assert!(
+            parsed.get("trustSourceDate").is_none(),
+            "None should omit field"
+        );
 
         let null_value = TrustMixin {
             trust_band: TrustBandWire::Unscored,
@@ -1449,8 +1717,13 @@ mod tests {
             trust_source_date: Some(None),
             rendered_provenance: None,
         };
-        let parsed: Value = serde_json::from_str(&serde_json::to_string(&null_value).unwrap()).unwrap();
-        assert_eq!(parsed["trustSourceDate"], Value::Null, "Some(None) should serialize as null");
+        let parsed: Value =
+            serde_json::from_str(&serde_json::to_string(&null_value).unwrap()).unwrap();
+        assert_eq!(
+            parsed["trustSourceDate"],
+            Value::Null,
+            "Some(None) should serialize as null"
+        );
 
         let with_value = TrustMixin {
             trust_band: TrustBandWire::Unscored,
@@ -1458,7 +1731,8 @@ mod tests {
             trust_source_date: Some(Some("2026-04-23".into())),
             rendered_provenance: None,
         };
-        let parsed: Value = serde_json::from_str(&serde_json::to_string(&with_value).unwrap()).unwrap();
+        let parsed: Value =
+            serde_json::from_str(&serde_json::to_string(&with_value).unwrap()).unwrap();
         assert_eq!(parsed["trustSourceDate"], "2026-04-23");
     }
 

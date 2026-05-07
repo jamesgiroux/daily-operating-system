@@ -9,6 +9,8 @@ use crate::services::context::ServiceContext;
 use crate::state::AppState;
 use crate::types::{Action, Priority};
 
+const DAILY_BRIEFING_SOURCE: &str = "daily_briefing";
+
 /// Emit a propagation signal and warn-log on failure instead of dropping
 /// the Result silently. Action signals feed downstream callouts and
 /// dashboards; a silent persistence drop here used to make a completed
@@ -115,6 +117,15 @@ pub fn complete_action(
     Ok(())
 }
 
+pub fn mark_complete(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
+    complete_action(ctx, db, engine, id)
+}
+
 /// Reopen a completed action, setting it back to pending.
 pub fn reopen_action(
     ctx: &ServiceContext<'_>,
@@ -140,6 +151,37 @@ pub fn reopen_action(
             0.4,
         );
     }
+
+    Ok(())
+}
+
+pub fn restore_action(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let action = db.get_action_by_id(id).map_err(|e| e.to_string())?;
+    let action = action.ok_or_else(|| format!("Action not found: {id}"))?;
+    db.accept_suggested_action(id).map_err(|e| e.to_string())?;
+
+    let (entity_type, entity_id) = action_entity_info(&action, id);
+    emit_action_signal(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        &entity_id,
+        "action_restored",
+        DAILY_BRIEFING_SOURCE,
+        Some(&format!(
+            "{{\"action_id\":\"{}\",\"title\":\"{}\"}}",
+            id,
+            action.title.replace('"', "\\\"")
+        )),
+        0.6,
+    );
 
     Ok(())
 }
@@ -324,6 +366,15 @@ pub fn dismiss_suggested_action(
     Ok(())
 }
 
+pub fn dismiss_action(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
+    dismiss_suggested_action(ctx, db, engine, id, DAILY_BRIEFING_SOURCE)
+}
+
 /// Cycle an action's priority with signal emission.
 pub fn update_action_priority(
     ctx: &ServiceContext<'_>,
@@ -356,6 +407,125 @@ pub fn update_action_priority(
     }
 
     Ok(())
+}
+
+pub fn archive_action(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let action = db.get_action_by_id(id).map_err(|e| e.to_string())?;
+    let action = action.ok_or_else(|| format!("Action not found: {id}"))?;
+    db.archive_action(id).map_err(|e| e.to_string())?;
+
+    let (entity_type, entity_id) = action_entity_info(&action, id);
+    emit_action_signal(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        &entity_id,
+        "action_archived",
+        DAILY_BRIEFING_SOURCE,
+        Some(&format!("{{\"action_id\":\"{}\"}}", id)),
+        0.4,
+    );
+    Ok(())
+}
+
+pub fn snooze_action(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    action_id: &str,
+    snoozed_until: &str,
+    reason: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let action_id = crate::util::validate_id_slug(action_id, "action_id")?;
+    let snoozed_until = validate_snoozed_until(snoozed_until)?;
+    let reason = crate::util::validate_bounded_string(reason, "reason", 1, 500)?;
+
+    let action = db
+        .get_action_by_id(&action_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found: {action_id}"))?;
+    let now = ctx.clock.now().to_rfc3339();
+    db.snooze_action(
+        &action_id,
+        &snoozed_until,
+        &reason,
+        DAILY_BRIEFING_SOURCE,
+        &now,
+    )
+    .map_err(|e| e.to_string())?;
+
+    let (entity_type, entity_id) = action_entity_info(&action, &action_id);
+    emit_action_signal(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        &entity_id,
+        "action_snoozed",
+        DAILY_BRIEFING_SOURCE,
+        Some(&format!(
+            "{{\"action_id\":\"{}\",\"snoozed_until\":\"{}\"}}",
+            action_id, snoozed_until
+        )),
+        0.5,
+    );
+    Ok(())
+}
+
+pub fn add_to_meeting(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    engine: &crate::signals::propagation::PropagationEngine,
+    action_id: &str,
+    meeting_id: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let action_id = crate::util::validate_id_slug(action_id, "action_id")?;
+    let meeting_id = crate::util::validate_id_slug(meeting_id, "meeting_id")?;
+
+    let action = db
+        .get_action_by_id(&action_id)
+        .map_err(|e| e.to_string())?
+        .ok_or_else(|| format!("Action not found: {action_id}"))?;
+    let now = ctx.clock.now().to_rfc3339();
+    db.add_action_to_meeting(&action_id, &meeting_id, DAILY_BRIEFING_SOURCE, &now)
+        .map_err(|e| e.to_string())?;
+
+    let (entity_type, entity_id) = action_entity_info(&action, &action_id);
+    emit_action_signal(
+        ctx,
+        db,
+        engine,
+        entity_type,
+        &entity_id,
+        "action_added_to_meeting",
+        DAILY_BRIEFING_SOURCE,
+        Some(&format!(
+            "{{\"action_id\":\"{}\",\"meeting_id\":\"{}\"}}",
+            action_id, meeting_id
+        )),
+        0.5,
+    );
+    Ok(())
+}
+
+fn validate_snoozed_until(value: &str) -> Result<String, String> {
+    let trimmed = value.trim();
+    if chrono::NaiveDate::parse_from_str(trimmed, "%Y-%m-%d").is_ok()
+        || chrono::DateTime::parse_from_rfc3339(trimmed).is_ok()
+    {
+        Ok(trimmed.to_string())
+    } else {
+        Err("Invalid snoozed_until: expected YYYY-MM-DD or RFC3339 timestamp".to_string())
+    }
 }
 
 /// Result type for all actions
@@ -887,4 +1057,126 @@ pub fn get_aging_action_count(db: &ActionDb) -> Result<i64, String> {
 /// Called after action creation and from the scheduler.
 pub fn scan_and_flag_decisions(db: &ActionDb) -> Result<usize, String> {
     db.scan_and_flag_decisions().map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use chrono::{TimeZone, Utc};
+    use rusqlite::params;
+
+    fn test_ctx<'a>(
+        clock: &'a FixedClock,
+        rng: &'a SeedableRng,
+        external: &'a ExternalClients,
+    ) -> ServiceContext<'a> {
+        ServiceContext::test_live(clock, rng, external)
+    }
+
+    fn seed_action(db: &ActionDb, id: &str, status: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions (id, title, priority, status, created_at, updated_at, action_kind)
+                 VALUES (?1, ?2, 2, ?3, '2026-05-07T12:00:00Z', '2026-05-07T12:00:00Z', 'task')",
+                params![id, format!("Action {id}"), status],
+            )
+            .expect("insert action");
+    }
+
+    fn seed_meeting(db: &ActionDb, id: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
+                 VALUES (?1, 'Customer Sync', 'customer', '2026-05-07T14:00:00Z', '2026-05-07T10:00:00Z')",
+                params![id],
+            )
+            .expect("insert meeting");
+    }
+
+    #[test]
+    fn watch_mutation_wrappers_persist_valid_snooze_and_meeting_link() {
+        let db = test_db();
+        seed_action(&db, "action-1", "backlog");
+        seed_meeting(&db, "meeting-1");
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let external = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &external);
+        let engine = crate::signals::propagation::PropagationEngine::new();
+
+        snooze_action(
+            &ctx,
+            &db,
+            &engine,
+            "action-1",
+            "2026-05-08T12:00:00Z",
+            "Waiting on the customer",
+        )
+        .expect("snooze action");
+        add_to_meeting(&ctx, &db, &engine, "action-1", "meeting-1").expect("add to meeting");
+
+        let reason: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT reason FROM action_snoozes WHERE action_id = 'action-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read snooze");
+        assert_eq!(reason, "Waiting on the customer");
+
+        let links: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM action_meeting_links WHERE action_id = 'action-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read link count");
+        assert_eq!(links, 1);
+    }
+
+    #[test]
+    fn watch_mutation_wrappers_fail_for_missing_terminal_or_invalid_ids() {
+        let db = test_db();
+        seed_action(&db, "open-1", "unstarted");
+        seed_action(&db, "backlog-1", "backlog");
+        seed_action(&db, "done-1", "completed");
+        seed_meeting(&db, "meeting-1");
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(42);
+        let external = ExternalClients::default();
+        let ctx = test_ctx(&clock, &rng, &external);
+        let engine = crate::signals::propagation::PropagationEngine::new();
+
+        assert!(mark_complete(&ctx, &db, &engine, "missing").is_err());
+        assert!(mark_complete(&ctx, &db, &engine, "done-1").is_err());
+        assert!(snooze_action(
+            &ctx,
+            &db,
+            &engine,
+            "../bad",
+            "2026-05-08T12:00:00Z",
+            "bad id",
+        )
+        .is_err());
+        assert!(snooze_action(
+            &ctx,
+            &db,
+            &engine,
+            "done-1",
+            "2026-05-08T12:00:00Z",
+            "already done",
+        )
+        .is_err());
+        assert!(add_to_meeting(&ctx, &db, &engine, "done-1", "meeting-1").is_err());
+        assert!(add_to_meeting(&ctx, &db, &engine, "open-1", "missing").is_err());
+        assert!(restore_action(&ctx, &db, &engine, "done-1").is_err());
+        assert!(archive_action(&ctx, &db, &engine, "done-1").is_err());
+
+        restore_action(&ctx, &db, &engine, "backlog-1").expect("restore backlog action");
+        archive_action(&ctx, &db, &engine, "open-1").expect("archive open action");
+    }
 }

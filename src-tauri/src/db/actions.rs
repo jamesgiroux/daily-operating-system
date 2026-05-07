@@ -1,5 +1,27 @@
 use super::*;
 
+#[derive(Debug, Clone)]
+pub struct ActionSnoozeRecord {
+    pub action_id: String,
+    pub snoozed_until: String,
+    pub reason: String,
+    pub source: String,
+}
+
+#[derive(Debug, Clone)]
+pub struct WatchSuggestedOutcomeClaim {
+    pub claim_id: String,
+    pub text: String,
+    pub field_path: Option<String>,
+    pub provenance_json: String,
+    pub trust_score: Option<f64>,
+    pub trust_computed_at: Option<String>,
+    pub verification_state: String,
+    pub meeting_id: String,
+    pub meeting_title: String,
+    pub meeting_start: String,
+}
+
 impl ActionDb {
     // =========================================================================
     // Actions
@@ -97,6 +119,146 @@ impl ActionDb {
             actions.push(row?);
         }
         Ok(actions)
+    }
+
+    pub fn get_watch_action_candidates(&self) -> Result<Vec<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
+                    all_links.linear_identifier, all_links.linear_url
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE status IN ('backlog', 'unstarted', 'started')
+             ORDER BY
+               CASE actions.status
+                 WHEN 'started' THEN 0
+                 WHEN 'unstarted' THEN 1
+                 WHEN 'backlog' THEN 2
+                 ELSE 3
+               END,
+               actions.priority,
+               COALESCE(actions.due_date, actions.created_at),
+               actions.updated_at DESC",
+        )?;
+
+        let rows = stmt.query_map([], |row| {
+            let mut action = Self::map_action_row(row)?;
+            action.linear_identifier = row.get(18)?;
+            action.linear_url = row.get(19)?;
+            Ok(action)
+        })?;
+
+        let mut actions = Vec::new();
+        for row in rows {
+            actions.push(row?);
+        }
+        Ok(actions)
+    }
+
+    pub fn get_action_snoozes(&self) -> Result<Vec<ActionSnoozeRecord>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT action_id, snoozed_until, reason, source
+             FROM action_snoozes
+             WHERE cleared_at IS NULL",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            Ok(ActionSnoozeRecord {
+                action_id: row.get(0)?,
+                snoozed_until: row.get(1)?,
+                reason: row.get(2)?,
+                source: row.get(3)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    pub fn get_watch_suggested_outcome_claims(
+        &self,
+    ) -> Result<Vec<WatchSuggestedOutcomeClaim>, DbError> {
+        let claim_type = crate::abilities::claims::ClaimType::SuggestedOutcome.as_str();
+        let mut stmt = self.conn.prepare(
+            "SELECT ic.id, ic.text, ic.field_path, ic.provenance_json,
+                    ic.trust_score, ic.trust_computed_at, ic.verification_state,
+                    m.id, m.title, m.start_time
+             FROM intelligence_claims ic
+             INNER JOIN meetings m
+                ON json_valid(ic.subject_ref) = 1
+               AND lower(json_extract(ic.subject_ref, '$.kind')) = 'meeting'
+               AND json_extract(ic.subject_ref, '$.id') = m.id
+             WHERE ic.claim_type = ?1
+               AND ic.claim_state = 'active'
+               AND ic.surfacing_state = 'active'
+             ORDER BY m.start_time ASC, ic.created_at DESC",
+        )?;
+        let rows = stmt.query_map(params![claim_type], |row| {
+            Ok(WatchSuggestedOutcomeClaim {
+                claim_id: row.get(0)?,
+                text: row.get(1)?,
+                field_path: row.get(2)?,
+                provenance_json: row.get(3)?,
+                trust_score: row.get(4)?,
+                trust_computed_at: row.get(5)?,
+                verification_state: row.get(6)?,
+                meeting_id: row.get(7)?,
+                meeting_title: row.get(8)?,
+                meeting_start: row.get(9)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(DbError::from)
+    }
+
+    pub fn get_or_create_watch_suggested_action(
+        &self,
+        claim: &WatchSuggestedOutcomeClaim,
+        title: &str,
+        now: &str,
+    ) -> Result<DbAction, DbError> {
+        if let Some(action) = self.get_action_by_source("intelligence_claim", &claim.claim_id)? {
+            return Ok(action);
+        }
+
+        let (account_id, project_id) = self
+            .primary_meeting_entity(&claim.meeting_id)?
+            .map(|(entity_id, entity_type)| match entity_type.as_str() {
+                "account" => (Some(entity_id), None),
+                "project" => (None, Some(entity_id)),
+                _ => (None, None),
+            })
+            .unwrap_or((None, None));
+
+        let action = DbAction {
+            id: uuid::Uuid::new_v4().to_string(),
+            title: title.to_string(),
+            priority: crate::action_status::PRIORITY_MEDIUM,
+            status: crate::action_status::BACKLOG.to_string(),
+            created_at: now.to_string(),
+            due_date: None,
+            completed_at: None,
+            account_id,
+            project_id,
+            source_type: Some("intelligence_claim".to_string()),
+            source_id: Some(claim.claim_id.clone()),
+            source_label: Some(claim.meeting_title.clone()),
+            action_kind: crate::action_status::KIND_TASK.to_string(),
+            context: Some(claim.text.clone()),
+            waiting_on: None,
+            updated_at: now.to_string(),
+            person_id: None,
+            account_name: None,
+            next_meeting_title: Some(claim.meeting_title.clone()),
+            next_meeting_start: Some(claim.meeting_start.clone()),
+            needs_decision: false,
+            decision_owner: None,
+            decision_stakes: None,
+            linear_identifier: None,
+            linear_url: None,
+        };
+        self.upsert_action(&action)?;
+        self.get_action_by_id(&action.id)?
+            .ok_or(rusqlite::Error::QueryReturnedNoRows.into())
     }
 
     /// Query suggested and pending actions for a specific account.
@@ -347,22 +509,28 @@ impl ActionDb {
     /// Mark an action as completed with the current timestamp.
     pub fn complete_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
-        self.conn.execute(
+        let changed = self.conn.execute(
             "UPDATE actions SET status = 'completed', completed_at = ?1, updated_at = ?1
-             WHERE id = ?2",
+             WHERE id = ?2 AND status IN ('unstarted', 'started')",
             params![now, id],
         )?;
+        if changed == 0 {
+            return Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
+        }
         Ok(())
     }
 
     /// Reopen a completed action, clearing the completed_at timestamp.
     pub fn reopen_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
-        self.conn.execute(
+        let changed = self.conn.execute(
             "UPDATE actions SET status = 'unstarted', completed_at = NULL, updated_at = ?1
-             WHERE id = ?2",
+             WHERE id = ?2 AND status = 'completed'",
             params![now, id],
         )?;
+        if changed == 0 {
+            return Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
+        }
         Ok(())
     }
 
@@ -392,6 +560,63 @@ impl ActionDb {
             Ok(action)
         })?;
 
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    fn get_action_by_source(
+        &self,
+        source_type: &str,
+        source_id: &str,
+    ) -> Result<Option<DbAction>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
+                    account_id, project_id, source_type, source_id, source_label,
+                    context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
+                    actions.action_kind,
+                    actions.needs_decision, actions.decision_owner, actions.decision_stakes,
+                    all_links.linear_identifier, all_links.linear_url
+             FROM actions
+             LEFT JOIN accounts acc ON actions.account_id = acc.id
+             LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
+             WHERE actions.source_type = ?1 AND actions.source_id = ?2
+             ORDER BY actions.created_at ASC
+             LIMIT 1",
+        )?;
+
+        let mut rows = stmt.query_map(params![source_type, source_id], |row| {
+            let mut action = Self::map_action_row(row)?;
+            let nd: i32 = row.get(18)?;
+            action.needs_decision = nd != 0;
+            action.decision_owner = row.get(19)?;
+            action.decision_stakes = row.get(20)?;
+            action.linear_identifier = row.get(21)?;
+            action.linear_url = row.get(22)?;
+            Ok(action)
+        })?;
+
+        match rows.next() {
+            Some(row) => Ok(Some(row?)),
+            None => Ok(None),
+        }
+    }
+
+    fn primary_meeting_entity(
+        &self,
+        meeting_id: &str,
+    ) -> Result<Option<(String, String)>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT entity_id, entity_type
+             FROM meeting_entities
+             WHERE meeting_id = ?1
+             ORDER BY is_primary DESC, confidence DESC
+             LIMIT 1",
+        )?;
+        let mut rows = stmt.query_map(params![meeting_id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
         match rows.next() {
             Some(row) => Ok(Some(row?)),
             None => Ok(None),
@@ -803,14 +1028,84 @@ impl ActionDb {
         Ok(())
     }
 
-    /// Archive an action (any status -> archived).
+    /// Archive an open action.
     pub fn archive_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
-        self.conn.execute(
+        let changed = self.conn.execute(
             "UPDATE actions SET status = 'archived', updated_at = ?1
-             WHERE id = ?2",
+             WHERE id = ?2 AND status IN ('backlog', 'unstarted', 'started')",
             params![now, id],
         )?;
+        if changed == 0 {
+            return Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
+        }
+        Ok(())
+    }
+
+    pub fn snooze_action(
+        &self,
+        action_id: &str,
+        snoozed_until: &str,
+        reason: &str,
+        source: &str,
+        now: &str,
+    ) -> Result<(), DbError> {
+        self.require_open_action(action_id)?;
+        self.conn.execute(
+            "INSERT INTO action_snoozes (
+                action_id, snoozed_until, reason, source, created_at, updated_at, cleared_at
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?5, NULL)
+             ON CONFLICT(action_id) DO UPDATE SET
+                snoozed_until = excluded.snoozed_until,
+                reason = excluded.reason,
+                source = excluded.source,
+                updated_at = excluded.updated_at,
+                cleared_at = NULL",
+            params![action_id, snoozed_until, reason, source, now],
+        )?;
+        Ok(())
+    }
+
+    pub fn add_action_to_meeting(
+        &self,
+        action_id: &str,
+        meeting_id: &str,
+        source: &str,
+        now: &str,
+    ) -> Result<(), DbError> {
+        self.require_open_action(action_id)?;
+        let meeting_exists = self
+            .conn
+            .query_row(
+                "SELECT 1 FROM meetings WHERE id = ?1",
+                params![meeting_id],
+                |_row| Ok(true),
+            )
+            .unwrap_or(false);
+        if !meeting_exists {
+            return Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
+        }
+
+        self.conn.execute(
+            "INSERT INTO action_meeting_links (action_id, meeting_id, source, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?4)
+             ON CONFLICT(action_id, meeting_id) DO UPDATE SET
+                source = excluded.source,
+                updated_at = excluded.updated_at",
+            params![action_id, meeting_id, source, now],
+        )?;
+        Ok(())
+    }
+
+    fn require_open_action(&self, action_id: &str) -> Result<(), DbError> {
+        let status = self.conn.query_row(
+            "SELECT status FROM actions WHERE id = ?1",
+            params![action_id],
+            |row| row.get::<_, String>(0),
+        )?;
+        if crate::action_status::CLOSED_STATUSES.contains(&status.as_str()) {
+            return Err(DbError::Sqlite(rusqlite::Error::QueryReturnedNoRows));
+        }
         Ok(())
     }
 
@@ -1403,6 +1698,144 @@ mod tests {
     use crate::db::types::DbAction;
     use chrono::Utc;
     use rusqlite::params;
+
+    fn seed_open_action(db: &crate::db::ActionDb, id: &str, status: &str) {
+        db.conn
+            .execute(
+                "INSERT INTO actions (id, title, priority, status, created_at, updated_at, action_kind)
+                 VALUES (?1, ?2, 2, ?3, '2026-05-07T12:00:00Z', '2026-05-07T12:00:00Z', 'task')",
+                params![id, format!("Action {id}"), status],
+            )
+            .expect("insert action");
+    }
+
+    #[test]
+    fn watch_candidate_query_preserves_open_and_backlog_statuses() {
+        let db = test_db();
+        seed_open_action(&db, "started-1", "started");
+        seed_open_action(&db, "unstarted-1", "unstarted");
+        seed_open_action(&db, "backlog-1", "backlog");
+        seed_open_action(&db, "completed-1", "completed");
+
+        let candidates = db.get_watch_action_candidates().expect("watch candidates");
+        let statuses: std::collections::HashMap<_, _> = candidates
+            .iter()
+            .map(|action| (action.id.as_str(), action.status.as_str()))
+            .collect();
+        assert_eq!(statuses.get("started-1"), Some(&"started"));
+        assert_eq!(statuses.get("unstarted-1"), Some(&"unstarted"));
+        assert_eq!(statuses.get("backlog-1"), Some(&"backlog"));
+        assert!(!statuses.contains_key("completed-1"));
+    }
+
+    #[test]
+    fn action_snooze_and_meeting_link_fail_for_missing_or_terminal_ids() {
+        let db = test_db();
+        seed_open_action(&db, "open-1", "unstarted");
+        seed_open_action(&db, "done-1", "completed");
+        db.conn
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
+                 VALUES ('meeting-1', 'Customer Sync', 'customer', '2026-05-07T14:00:00Z', '2026-05-07T10:00:00Z')",
+                [],
+            )
+            .expect("insert meeting");
+
+        db.snooze_action(
+            "open-1",
+            "2026-05-08T12:00:00Z",
+            "Waiting on the customer",
+            "daily_briefing",
+            "2026-05-07T12:00:00Z",
+        )
+        .expect("snooze open action");
+        db.add_action_to_meeting(
+            "open-1",
+            "meeting-1",
+            "daily_briefing",
+            "2026-05-07T12:00:00Z",
+        )
+        .expect("link open action");
+
+        assert!(db
+            .snooze_action(
+                "missing",
+                "2026-05-08T12:00:00Z",
+                "Missing",
+                "daily_briefing",
+                "2026-05-07T12:00:00Z",
+            )
+            .is_err());
+        assert!(db
+            .snooze_action(
+                "done-1",
+                "2026-05-08T12:00:00Z",
+                "Done",
+                "daily_briefing",
+                "2026-05-07T12:00:00Z",
+            )
+            .is_err());
+        assert!(db
+            .add_action_to_meeting(
+                "open-1",
+                "missing-meeting",
+                "daily_briefing",
+                "2026-05-07T12:00:00Z",
+            )
+            .is_err());
+    }
+
+    #[test]
+    fn suggested_outcome_claims_materialize_to_backlog_actions_once() {
+        let db = test_db();
+        db.conn
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, created_at)
+                 VALUES ('meeting-1', 'Customer Sync', 'customer', '2026-05-07T14:00:00Z', '2026-05-07T10:00:00Z')",
+                [],
+            )
+            .expect("insert meeting");
+        db.conn
+            .execute(
+                "INSERT INTO intelligence_claims (
+                    id, subject_ref, claim_type, text, dedup_key, actor, data_source,
+                    observed_at, created_at, provenance_json, claim_state,
+                    surfacing_state, trust_score, trust_computed_at, verification_state
+                 ) VALUES (
+                    'claim-1', '{\"kind\":\"Meeting\",\"id\":\"meeting-1\"}',
+                    'suggested_outcome', 'Send rollout plan: customer asked for next steps',
+                    'dedup-1', 'agent', 'ai', '2026-05-07T10:00:00Z',
+                    '2026-05-07T10:00:00Z', '{\"sources\":[]}', 'active',
+                    'active', 0.82, '2026-05-07T10:05:00Z', 'active'
+                 )",
+                [],
+            )
+            .expect("insert claim");
+
+        let claims = db
+            .get_watch_suggested_outcome_claims()
+            .expect("suggested claims");
+        assert_eq!(claims.len(), 1);
+
+        let first = db
+            .get_or_create_watch_suggested_action(
+                &claims[0],
+                "Send rollout plan",
+                "2026-05-07T12:00:00Z",
+            )
+            .expect("first materialization");
+        let second = db
+            .get_or_create_watch_suggested_action(
+                &claims[0],
+                "Send rollout plan",
+                "2026-05-07T12:01:00Z",
+            )
+            .expect("second materialization");
+        assert_eq!(first.id, second.id);
+        assert_eq!(first.status, "backlog");
+        assert_eq!(first.source_type.as_deref(), Some("intelligence_claim"));
+        assert_eq!(first.source_id.as_deref(), Some("claim-1"));
+    }
 
     #[test]
     fn archive_stale_actions_archives_past_due_pending_actions() {

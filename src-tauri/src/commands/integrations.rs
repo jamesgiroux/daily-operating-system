@@ -2368,6 +2368,29 @@ pub async fn get_meeting_timeline(
     Ok(result)
 }
 
+#[tauri::command]
+pub async fn get_week_schedule_shape(
+    state: State<'_, Arc<AppState>>,
+    days_before: Option<i64>,
+    days_after: Option<i64>,
+) -> Result<crate::services::briefing::schedule::WeekScheduleShape, String> {
+    let now = {
+        let ctx = state.live_service_context();
+        ctx.clock.now()
+    };
+    let days_before = days_before.unwrap_or(7);
+    let days_after = days_after.unwrap_or(7);
+    let timeline = get_meeting_timeline(state, Some(days_before), Some(days_after)).await?;
+    Ok(
+        crate::services::briefing::schedule::compose_week_schedule_shape_from_timeline(
+            timeline,
+            days_before,
+            days_after,
+            now,
+        ),
+    )
+}
+
 // =============================================================================
 // Person Relationships (ADR-0088)
 // =============================================================================

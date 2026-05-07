@@ -49,6 +49,18 @@ pub async fn complete_action(id: String, state: State<'_, Arc<AppState>>) -> Res
         .await
 }
 
+#[tauri::command]
+pub async fn mark_complete(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
+    state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::mark_complete(&ctx, db, &engine, &id)
+        })
+        .await
+}
+
 /// Reopen a completed action, setting it back to pending.
 #[tauri::command]
 pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
@@ -58,6 +70,18 @@ pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Resul
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
             crate::services::actions::reopen_action(&ctx, db, &engine, &id)
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn restore_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
+    state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::restore_action(&ctx, db, &engine, &id)
         })
         .await
 }
@@ -136,6 +160,70 @@ pub async fn dismiss_suggested_action(
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
             crate::services::actions::dismiss_suggested_action(&ctx, db, &engine, &id, &source)
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn dismiss_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
+    state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::dismiss_action(&ctx, db, &engine, &id)
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn archive_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
+    state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::archive_action(&ctx, db, &engine, &id)
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn snooze_action(
+    action_id: String,
+    snoozed_until: String,
+    reason: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
+    state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::snooze_action(
+                &ctx,
+                db,
+                &engine,
+                &action_id,
+                &snoozed_until,
+                &reason,
+            )
+        })
+        .await
+}
+
+#[tauri::command]
+pub async fn add_to_meeting(
+    action_id: String,
+    meeting_id: String,
+    state: State<'_, Arc<AppState>>,
+) -> Result<(), String> {
+    let engine = state.signals.engine.clone();
+    let state_for_ctx = state.inner().clone();
+    state
+        .db_write(move |db| {
+            let ctx = state_for_ctx.live_service_context();
+            crate::services::actions::add_to_meeting(&ctx, db, &engine, &action_id, &meeting_id)
         })
         .await
 }

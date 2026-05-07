@@ -20,7 +20,7 @@ Moving is the heaviest service because it aggregates from multiple upstream sour
 
 | Source | Upstream | Today's state | W2a default | Unblocked at |
 |---|---|---|---|---|
-| **Meeting signals** | `services::dashboard.meetings` (Google Calendar via existing pipeline). Each meeting has prep claims with their own trust band when present. | Wired today. | `trustBand` from `meeting.intelligence_quality.trust_band` if present; else `Unscored`. | DOS-427 W4 trust-band wire-in promotes `Unscored` to scored. |
+| **Meeting signals** | `services::dashboard.meetings` (Google Calendar via existing pipeline). | Meeting source data wired today. **`IntelligenceQuality` struct in `src-tauri/src/types.rs` does NOT yet carry a trust band field** — that wire-up is DOS-427's responsibility. | Always `Unscored` for meeting signals in this ticket. Matching the schedule.rs MVP pattern (commit 4bab00c9). | DOS-427 W4 trust-band wire-in adds the `meeting_readiness` claim lookup + populates the trust band. |
 | **Action signals** | `services::actions::get_all_actions`. Actions have no claim trust today. | Wired today. | `Unscored`. | Pending action-as-claim modeling (post-v1.4.x track). |
 | **Email signals** | `services::emails` + DOS-416 lift. Email claims have provenance from Glean. | DOS-416 lift not yet shipped. | Empty signal list from email source. | DOS-416. |
 | **Gong call signals** | Gong integration claim type. Producer not yet wired to briefing. | Not wired. | Empty signal list. | Forward-feed producer ticket (post-v1.4.x). |
@@ -117,7 +117,7 @@ fn collect_action_signals(...) -> Vec<SignalWithClaim>;
 DOS-428 (W4) consumes this triple in `build_entity_view` to batch claim-lifecycle lookups by ClaimId before serializing the signal — at that boundary, the third tuple element is dropped (it's not on the wire). Non-claim signals (e.g., a calendar meeting with no underlying claim) carry `None`.
 
 Per-source-helper rules:
-- **Meeting signals:** `Option<ClaimId>` = the meeting's `intelligence_quality.trust_band_claim_id` if present; `None` otherwise.
+- **Meeting signals:** `Option<ClaimId>` = always `None` in this ticket. The `IntelligenceQuality` struct doesn't carry a trust-band claim id field yet (DOS-427 may add one when it lands the meeting_readiness lookup). DOS-414 unblocks DOS-428 by establishing the triple shape; meeting signals carry `None` for now.
 - **Action signals:** `None` (actions have no claim trust today; post-v1.4.x track makes them claim-bearing).
 - **Email signals:** the email-as-claim id when DOS-416 ships; `None` until then.
 - **Lifecycle signals:** the `change_id` from `DashboardLifecycleUpdate` cast to ClaimId (DOS-419 owns this mapping).
@@ -216,3 +216,11 @@ After signoff, implementation can fan out to a single codex impl agent or be han
 - **DOS-416 email feeder** populates `collect_email_signals` once email lift ships.
 - **Gong/Zendesk/Slack/Linear forward-feed producers** are post-v1.4.x track. The composer is shaped to absorb them with no contract change.
 - **Ranking-weight tuning** based on user feedback — tracked separately, not blocking.
+
+## Implementation notes
+
+- Implemented in `src-tauri/src/services/briefing/moving.rs` at the requested 800 LOC cap. The composer now maps meeting/action sources, groups by local `EntityId`, ranks by the section 5 weights, caps to three entities, and emits the locked camelCase wire shape.
+- Trust is `TrustBandWire::Unscored` for all DOS-414 signal/stat rows, matching the patched section 2 direction and the schedule MVP precedent. `trustFieldPath` is populated with source-identifying paths where available.
+- `collect_email_signals` and `collect_lifecycle_signals` remain explicit empty stubs. The internal `(EntityId, MovingSignalViewModel, Option<ClaimId>)` thread is in place; current meeting/action helpers carry `None`, and tests cover `Some(ClaimId)` propagation at the grouping boundary until DOS-419 provides real lifecycle claim IDs.
+- Entity metadata is kept separate from the source-helper tuple contract: meeting links seed the entity index, and account DB lookup enriches account names/internal classification for action-only rows.
+- L1 gates run after implementation: `cargo check --lib`, `cargo clippy --lib -- -D warnings`, and `cargo test --lib services::briefing::moving` all pass. The clippy gate also required a mechanical redundant-closure cleanup in `schedule.rs`.

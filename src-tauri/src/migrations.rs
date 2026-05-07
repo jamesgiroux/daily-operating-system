@@ -698,6 +698,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 142,
         sql: include_str!("migrations/142_sensitivity_reveal_audit.sql"),
     },
+    // Durable action-level snoozes and action-to-meeting links for Watch triage.
+    Migration {
+        version: 143,
+        sql: include_str!("migrations/143_watch_action_triage.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -2314,6 +2319,26 @@ mod tests {
         // Version should match the highest migration
         let version = current_version(&conn).expect("version query");
         assert_eq!(version, MIGRATIONS.last().unwrap().version);
+    }
+
+    #[test]
+    fn watch_action_triage_migration_applies_and_manual_revert_is_clean() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("migrations should succeed");
+
+        assert!(table_exists(&conn, "action_snoozes").expect("table check"));
+        assert!(table_exists(&conn, "action_meeting_links").expect("table check"));
+
+        conn.execute_batch(
+            "DROP INDEX IF EXISTS idx_action_meeting_links_meeting;
+             DROP TABLE IF EXISTS action_meeting_links;
+             DROP INDEX IF EXISTS idx_action_snoozes_until;
+             DROP TABLE IF EXISTS action_snoozes;",
+        )
+        .expect("manual revert should succeed");
+
+        assert!(!table_exists(&conn, "action_snoozes").expect("table check"));
+        assert!(!table_exists(&conn, "action_meeting_links").expect("table check"));
     }
 
     #[test]

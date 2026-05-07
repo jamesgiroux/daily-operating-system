@@ -7,13 +7,8 @@ import { usePersonality } from "@/hooks/usePersonality";
 import { getPersonalityCopy } from "@/lib/personality";
 import { invoke } from "@tauri-apps/api/core";
 
-import type { DayShape, TimelineMeeting } from "@/types";
+import type { TimelineMeeting, WeekScheduleShape } from "@/types";
 import { cn } from "@/lib/utils";
-import {
-  computeShapeEpigraph,
-  computeWeekMeta,
-  deriveShapeFromTimeline,
-} from "@/pages/weekPageViewModel";
 import w from "./WeekPage.module.css";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -27,7 +22,7 @@ import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { HealthBadge } from "@/components/shared/HealthBadge";
 
 // =============================================================================
-// WeekPage — Single data source: get_meeting_timeline
+// WeekPage — Single data source: get_week_schedule_shape
 //
 // ADR-0086: Intelligence is a shared service. Meeting briefings consume
 // entity intelligence mechanically. The refresh button requeues prep
@@ -37,7 +32,7 @@ import { HealthBadge } from "@/components/shared/HealthBadge";
 export default function WeekPage() {
   const navigate = useNavigate();
   const { personality } = usePersonality();
-  const [timeline, setTimeline] = useState<TimelineMeeting[]>([]);
+  const [weekShape, setWeekShape] = useState<WeekScheduleShape | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [showEarlier, setShowEarlier] = useState(false);
@@ -48,12 +43,12 @@ export default function WeekPage() {
 
   const loadTimeline = useCallback(async (silent = false) => {
     try {
-      const data = await invoke<TimelineMeeting[]>("get_meeting_timeline", {
+      const data = await invoke<WeekScheduleShape>("get_week_schedule_shape", {
         daysBefore: 7,
         daysAfter: 7,
       });
       const apply = () => {
-        setTimeline(data);
+        setWeekShape(data);
         setError(null);
       };
       if (silent) {
@@ -99,36 +94,21 @@ export default function WeekPage() {
 
   // ─── Derived data ─────────────────────────────────────────────────────────
 
-  const weekMeta = useMemo(() => computeWeekMeta(), []);
-
-  const shapeDays = useMemo(
-    (): DayShape[] => deriveShapeFromTimeline(timeline),
-    [timeline]
-  );
-
-  const shapeEpigraph = useMemo(
-    () => (shapeDays.length ? computeShapeEpigraph(shapeDays) : ""),
-    [shapeDays]
-  );
-
-  const futureMeetings = useMemo(() => {
-    const now = new Date();
-    return timeline.filter((m) => new Date(m.startTime) > now);
-  }, [timeline]);
-
-  const readinessStats = useMemo(() => {
-    if (futureMeetings.length === 0) return [];
-
-    const readyCount = futureMeetings.filter((m) => m.hasPrep).length;
-    const needsPrepCount = futureMeetings.length - readyCount;
-
-    const stats: { label: string; color: "sage" | "terracotta" }[] = [];
-    stats.push({ label: `${readyCount} ready`, color: "sage" });
-    if (needsPrepCount > 0) {
-      stats.push({ label: `${needsPrepCount} building`, color: "terracotta" });
-    }
-    return stats;
-  }, [futureMeetings]);
+  const timeline = weekShape?.timeline ?? [];
+  const weekMeta = weekShape?.weekMeta ?? { weekNumber: "", dateRange: "" };
+  const shapeDays = weekShape?.shapeDays ?? [];
+  const shapeEpigraph = weekShape?.shapeEpigraph ?? "";
+  const timelineGroups = weekShape?.timelineGroups ?? {
+    earlierPast: [],
+    recentPast: [],
+    today: [],
+    future: [],
+  };
+  const readinessStats = weekShape?.readinessStats ?? [];
+  const folioReadinessStatsForShell = weekShape?.folioReadinessStats.length
+    ? weekShape.folioReadinessStats
+    : undefined;
+  const futureMeetingCount = weekShape?.futureMeetingCount ?? 0;
 
   // ─── Magazine shell ───────────────────────────────────────────────────────
 
@@ -143,25 +123,6 @@ export default function WeekPage() {
     [handleRefresh]
   );
 
-  const folioReadinessStats = useMemo(() => {
-    if (futureMeetings.length === 0) return undefined;
-
-    const readyCount = futureMeetings.filter((m) => m.hasPrep).length;
-    const total = futureMeetings.length;
-
-    const stats: { label: string; color: "sage" | "terracotta" }[] = [];
-    if (readyCount === total) {
-      stats.push({ label: `${total}/${total} ready`, color: "sage" });
-    } else {
-      stats.push({ label: `${readyCount} ready`, color: "sage" });
-      const needsPrepCount = total - readyCount;
-      if (needsPrepCount > 0) {
-        stats.push({ label: `${needsPrepCount} building`, color: "terracotta" });
-      }
-    }
-    return stats;
-  }, [futureMeetings]);
-
   const shellConfig = useMemo(
     () => ({
       folioLabel: "Weekly Forecast",
@@ -169,81 +130,12 @@ export default function WeekPage() {
       activePage: "week" as const,
       folioActions,
       folioDateText: `WEEK ${weekMeta.weekNumber} \u00b7 ${weekMeta.dateRange.toUpperCase()}`,
-      folioReadinessStats,
+      folioReadinessStats: folioReadinessStatsForShell,
     }),
-    [folioActions, weekMeta.weekNumber, weekMeta.dateRange, folioReadinessStats]
+    [folioActions, weekMeta.weekNumber, weekMeta.dateRange, folioReadinessStatsForShell]
   );
   useRegisterMagazineShell(shellConfig);
   useRevealObserver(!loading && timeline.length > 0, timeline);
-
-  // ─── Timeline grouping ────────────────────────────────────────────────────
-
-  const timelineGroups = useMemo(() => {
-    const now = new Date();
-    // Use local timezone, not UTC — toISOString() shifts the date boundary
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
-
-    const byDate = new Map<string, TimelineMeeting[]>();
-    for (const m of timeline) {
-      // Parse to local date — startTime may be UTC, slice(0,10) would give wrong day near midnight
-      const d = new Date(m.startTime);
-      const dateKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
-      if (!byDate.has(dateKey)) byDate.set(dateKey, []);
-      byDate.get(dateKey)!.push(m);
-    }
-
-    const sortedDates = [...byDate.keys()].sort();
-
-    const past: DateGroup[] = [];
-    const today: DateGroup[] = [];
-    const future: DateGroup[] = [];
-
-    for (const dateKey of sortedDates) {
-      const meetings = byDate.get(dateKey)!;
-      const date = new Date(dateKey + "T12:00:00");
-      const diffDays = Math.round(
-        (date.getTime() - new Date(todayStr + "T12:00:00").getTime()) /
-          (1000 * 60 * 60 * 24)
-      );
-
-      let label: string;
-      if (diffDays === 0) label = "Today";
-      else if (diffDays === -1) label = "Yesterday";
-      else if (diffDays === 1) label = "Tomorrow";
-      else if (diffDays < 0)
-        label = `${Math.abs(diffDays)} days ago \u2014 ${date.toLocaleDateString("en-US", { weekday: "long", month: "short", day: "numeric" })}`;
-      else
-        label = date.toLocaleDateString("en-US", {
-          weekday: "long",
-          month: "short",
-          day: "numeric",
-        });
-
-      const group = { dateKey, label, meetings };
-      if (diffDays < 0) past.push(group);
-      else if (diffDays === 0) today.push(group);
-      else future.push(group);
-    }
-
-    const earlierPast = past.filter((g) => {
-      const diff = Math.round(
-        (new Date(g.dateKey + "T12:00:00").getTime() -
-          new Date(todayStr + "T12:00:00").getTime()) /
-          (1000 * 60 * 60 * 24)
-      );
-      return diff < -2;
-    });
-    const recentPast = past.filter((g) => {
-      const diff = Math.round(
-        (new Date(g.dateKey + "T12:00:00").getTime() -
-          new Date(todayStr + "T12:00:00").getTime()) /
-          (1000 * 60 * 60 * 24)
-      );
-      return diff >= -2;
-    });
-
-    return { earlierPast, recentPast, today, future };
-  }, [timeline]);
 
   // ─── Loading skeleton ─────────────────────────────────────────────────────
 
@@ -277,7 +169,7 @@ export default function WeekPage() {
         <section className={w.weekHeader}>
           <p className={w.weekLabel}>Week {weekMeta.weekNumber}</p>
           <p className={w.weekDate}>{weekMeta.dateRange}</p>
-          {(readinessStats.length > 0 || futureMeetings.length > 0) && (
+          {(readinessStats.length > 0 || futureMeetingCount > 0) && (
             <p className={w.weekVitals}>
               {readinessStats.map((stat) => (
                 <span
@@ -289,10 +181,10 @@ export default function WeekPage() {
                   {stat.label}
                 </span>
               ))}
-              {futureMeetings.length > 0 && (
+              {futureMeetingCount > 0 && (
                 <span>
-                  {futureMeetings.length} meeting
-                  {futureMeetings.length !== 1 ? "s" : ""}
+                  {futureMeetingCount} meeting
+                  {futureMeetingCount !== 1 ? "s" : ""}
                 </span>
               )}
             </p>
@@ -305,44 +197,36 @@ export default function WeekPage() {
             <p className={w.shapeLabel}>This Week</p>
             <div className={w.shapeDaysColumn}>
               {shapeDays.map((day) => {
-                const barPct = Math.min(
-                  100,
-                  (day.meetingMinutes / 480) * 100
-                );
-                const isHeavy =
-                  day.meetingCount >= 5 || day.meetingMinutes >= 360;
-                const todayStr = new Date().toISOString().slice(0, 10);
-                const isToday = day.date === todayStr;
-                const isPast = day.date < todayStr;
-
                 return (
                   <div
                     key={day.date}
-                    className={cn(w.shapeRow, isPast && w.shapeRowPast)}
+                    className={cn(w.shapeRow, day.isPast && w.shapeRowPast)}
                   >
                     <span
                       className={cn(
                         w.shapeDayLabel,
-                        isToday && w.shapeDayLabelToday
+                        day.isToday && w.shapeDayLabelToday
                       )}
                     >
                       {day.dayName.slice(0, 3)}
                     </span>
                     <div className={w.shapeBar}>
-                      <div
+                      <progress
                         className={cn(
-                          w.shapeBarFill,
-                          isToday
-                            ? w.shapeBarFillToday
-                            : isHeavy
-                              ? w.shapeBarFillHeavy
+                          w.shapeBarProgress,
+                          day.isToday
+                            ? w.shapeBarProgressToday
+                            : day.isHeavy
+                              ? w.shapeBarProgressHeavy
                               : undefined
                         )}
-                        style={{ width: `${barPct}%` }}
+                        max={480}
+                        value={day.barValue}
+                        aria-label={`${day.dayName}: ${day.meetingMinutes} minutes`}
                       />
                     </div>
                     <span className={w.shapeCount}>
-                      {day.meetingCount}m &middot; {day.density}
+                      {Math.round(day.meetingMinutes)}m &middot; {day.density}
                     </span>
                   </div>
                 );
@@ -470,12 +354,6 @@ export default function WeekPage() {
 // =============================================================================
 // Supporting components
 // =============================================================================
-
-interface DateGroup {
-  dateKey: string;
-  label: string;
-  meetings: TimelineMeeting[];
-}
 
 function computeDaysUntil(startTime: string): number | null {
   try {

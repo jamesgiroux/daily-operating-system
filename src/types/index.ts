@@ -3180,6 +3180,42 @@ export interface TimelineMeeting {
   entityHealthMap?: Record<string, IntelligenceAccountHealth>;
 }
 
+export interface WeekScheduleShape {
+  weekMeta: { weekNumber: string; dateRange: string };
+  shapeDays: WeekScheduleDayShape[];
+  shapeEpigraph: string;
+  timelineGroups: WeekTimelineGroups;
+  readinessStats: WeekReadinessStat[];
+  folioReadinessStats: WeekReadinessStat[];
+  futureMeetingCount: number;
+  timeline: TimelineMeeting[];
+}
+
+export interface WeekScheduleDayShape extends DayShape {
+  isToday: boolean;
+  isPast: boolean;
+  isHeavy: boolean;
+  barValue: number;
+}
+
+export interface WeekTimelineGroups {
+  earlierPast: WeekTimelineGroup[];
+  recentPast: WeekTimelineGroup[];
+  today: WeekTimelineGroup[];
+  future: WeekTimelineGroup[];
+}
+
+export interface WeekTimelineGroup {
+  dateKey: string;
+  label: string;
+  meetings: TimelineMeeting[];
+}
+
+export interface WeekReadinessStat {
+  label: string;
+  color: "sage" | "terracotta";
+}
+
 // =============================================================================
 // User Entity Types (ADR-0089/0090)
 // =============================================================================
