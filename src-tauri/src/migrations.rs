@@ -698,6 +698,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 142,
         sql: include_str!("migrations/142_sensitivity_reveal_audit.sql"),
     },
+    // DOS-412: make audited reveals idempotent per frontend reveal action.
+    Migration {
+        version: 143,
+        sql: include_str!("migrations/143_sensitivity_reveal_audit_idempotency.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

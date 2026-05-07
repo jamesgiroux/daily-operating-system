@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { invoke } from "@tauri-apps/api/core";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
@@ -90,9 +90,40 @@ describe("ClaimTextRenderer", () => {
       expect(invokeMock).toHaveBeenCalledWith("reveal_sensitive_claim_text", {
         claimId: "claim-confidential",
         surface: "tauri_entity_detail",
+        revealSessionId: expect.any(String),
       });
     });
     expect(await screen.findByText("Confidential renewal blocker.")).toBeInTheDocument();
+  });
+
+  it("guards rapid synchronous reveal clicks with one invoke", () => {
+    const reveal = vi.fn(
+      () =>
+        new Promise<RenderableClaimText>(() => {
+          // Keep the reveal in flight so the second click hits the same task tick.
+        }),
+    );
+
+    render(
+      <ClaimTextRenderer
+        value={redactedClaim}
+        surface="tauri_entity_detail"
+        reveal={reveal}
+      />,
+    );
+
+    const button = screen.getByRole("button", { name: "Reveal confidential claim" });
+    act(() => {
+      button.click();
+      button.click();
+    });
+
+    expect(reveal).toHaveBeenCalledTimes(1);
+    expect(reveal).toHaveBeenCalledWith(
+      "claim-confidential",
+      "tauri_entity_detail",
+      expect.any(String),
+    );
   });
 
   it("clears revealed text when the incoming carrier identity changes", async () => {

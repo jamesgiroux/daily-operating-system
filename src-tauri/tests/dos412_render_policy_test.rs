@@ -153,6 +153,10 @@ fn sensitivity_reveal_audit_migration_declares_required_columns() {
         "../src/migrations/142_sensitivity_reveal_audit.sql"
     ))
     .expect("migration applies");
+    conn.execute_batch(include_str!(
+        "../src/migrations/143_sensitivity_reveal_audit_idempotency.sql"
+    ))
+    .expect("idempotency migration applies");
 
     let mut stmt = conn
         .prepare("PRAGMA table_info(sensitivity_reveal_audit)")
@@ -166,6 +170,19 @@ fn sensitivity_reveal_audit_migration_declares_required_columns() {
     assert!(columns.contains(&"claim_id".to_string()));
     assert!(columns.contains(&"user_id".to_string()));
     assert!(columns.contains(&"revealed_at".to_string()));
+    assert!(columns.contains(&"reveal_session_id".to_string()));
+
+    let unique_index_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM pragma_index_list('sensitivity_reveal_audit')
+             WHERE name = 'idx_sensitivity_reveal_audit_reveal_session'
+               AND [unique] = 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read reveal audit indexes");
+    assert_eq!(unique_index_count, 1);
 }
 
 fn assert_confidential_click_to_reveal(decision: RenderDecision) {

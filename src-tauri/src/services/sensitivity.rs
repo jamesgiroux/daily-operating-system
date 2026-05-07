@@ -1451,13 +1451,34 @@ pub fn record_sensitivity_reveal(
     claim_id: &str,
     user_id: &str,
     revealed_at: &str,
+    reveal_session_id: &str,
 ) -> Result<(), rusqlite::Error> {
     db.conn_ref().execute(
-        "INSERT INTO sensitivity_reveal_audit (claim_id, user_id, revealed_at)
-         VALUES (?1, ?2, ?3)",
-        rusqlite::params![claim_id, user_id, revealed_at],
+        "INSERT OR IGNORE INTO sensitivity_reveal_audit
+            (claim_id, user_id, revealed_at, reveal_session_id)
+         VALUES (?1, ?2, ?3, ?4)",
+        rusqlite::params![claim_id, user_id, revealed_at, reveal_session_id],
     )?;
     Ok(())
+}
+
+fn normalized_reveal_session_id(reveal_session_id: Option<&str>) -> Result<String, String> {
+    match reveal_session_id
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+    {
+        Some(value) if is_reveal_session_identifier(value) => Ok(value.to_string()),
+        Some(_) => Err("Invalid reveal session id".to_string()),
+        None => Ok(uuid::Uuid::new_v4().to_string()),
+    }
+}
+
+fn is_reveal_session_identifier(value: &str) -> bool {
+    !value.is_empty()
+        && value.len() <= 128
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
 }
 
 pub fn reveal_claim_text_for_tauri(
@@ -1465,6 +1486,7 @@ pub fn reveal_claim_text_for_tauri(
     claim_id: &str,
     surface: RenderSurface,
     actor: &RenderActor,
+    reveal_session_id: Option<&str>,
 ) -> Result<RenderableClaimText, String> {
     let claim = crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
         .map_err(|error| error.to_string())?
@@ -1494,7 +1516,8 @@ pub fn reveal_claim_text_for_tauri(
         } => {
             let user_id = actor.user_id.as_deref().unwrap_or(actor.actor.as_str());
             let now = Utc::now().to_rfc3339();
-            record_sensitivity_reveal(db, &claim.id, user_id, &now)
+            let reveal_session_id = normalized_reveal_session_id(reveal_session_id)?;
+            record_sensitivity_reveal(db, &claim.id, user_id, &now, &reveal_session_id)
                 .map_err(|error| error.to_string())?;
             renderable_from_decision(&claim, &claim.text, surface, RenderDecision::Render)
                 .ok_or_else(|| "Claim cannot render on this surface".to_string())

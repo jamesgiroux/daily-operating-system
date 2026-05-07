@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import clsx from "clsx";
 import { Eye, LockKeyhole } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { RenderableClaimText } from "@/types";
 import { Button } from "./button";
@@ -10,7 +10,11 @@ export interface ClaimTextRendererProps {
   value?: RenderableClaimText | string | null;
   className?: string;
   surface?: string;
-  reveal?: (claimId: string, surface?: string) => Promise<RenderableClaimText>;
+  reveal?: (
+    claimId: string,
+    surface: string | undefined,
+    revealSessionId: string,
+  ) => Promise<RenderableClaimText>;
 }
 
 function isRenderableClaimText(
@@ -27,11 +31,17 @@ function isRenderableClaimText(
 function revealClaim(
   claimId: string,
   surface?: string,
+  revealSessionId?: string,
 ): Promise<RenderableClaimText> {
   return invoke<RenderableClaimText>("reveal_sensitive_claim_text", {
     claimId,
     surface,
+    revealSessionId,
   });
+}
+
+function createRevealSessionId(): string {
+  return globalThis.crypto?.randomUUID?.() ?? `reveal-${Date.now()}-${Math.random()}`;
 }
 
 function affordanceClaimId(value: RenderableClaimText): string | undefined {
@@ -71,11 +81,16 @@ export function ClaimTextRenderer({
   } | null>(null);
   const [isRevealing, setIsRevealing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const revealInFlightRef = useRef(false);
+  const revealSessionIdRef = useRef<string | null>(null);
   const cacheKey = carrierCacheKey(value, surface);
 
   useEffect(() => {
     setRevealed(null);
     setError(null);
+    setIsRevealing(false);
+    revealInFlightRef.current = false;
+    revealSessionIdRef.current = null;
   }, [cacheKey]);
 
   if (!value) {
@@ -102,20 +117,35 @@ export function ClaimTextRenderer({
   const label = affordance?.label ?? current.text;
 
   async function handleReveal() {
-    if (!claimId || isRevealing) {
+    if (!claimId || revealInFlightRef.current) {
       return;
     }
+    revealInFlightRef.current = true;
+    revealSessionIdRef.current ??= createRevealSessionId();
+    const revealSessionId = revealSessionIdRef.current;
     setError(null);
     setIsRevealing(true);
     try {
-      setRevealed({
-        cacheKey,
-        value: await reveal(claimId, surface ?? current.policy.surface),
-      });
+      const rendered = await reveal(
+        claimId,
+        surface ?? current.policy.surface,
+        revealSessionId,
+      );
+      if (revealSessionIdRef.current === revealSessionId) {
+        setRevealed({
+          cacheKey,
+          value: rendered,
+        });
+      }
     } catch {
-      setError("Unable to reveal.");
+      if (revealSessionIdRef.current === revealSessionId) {
+        setError("Unable to reveal.");
+      }
     } finally {
-      setIsRevealing(false);
+      if (revealSessionIdRef.current === revealSessionId) {
+        revealInFlightRef.current = false;
+        setIsRevealing(false);
+      }
     }
   }
 
