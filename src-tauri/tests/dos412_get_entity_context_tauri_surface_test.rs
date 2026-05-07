@@ -26,11 +26,24 @@ const PROJECTION_STATUS_SQL: &str =
     include_str!("../src/migrations/134_dos_301_claim_projection_status.sql");
 const TYPED_FEEDBACK_SQL: &str =
     include_str!("../src/migrations/135_dos_294_typed_feedback_schema.sql");
-const REVEAL_AUDIT_SQL: &str = include_str!("../src/migrations/142_sensitivity_reveal_audit.sql");
-const REVEAL_AUDIT_IDEMPOTENCY_SQL: &str =
-    include_str!("../src/migrations/143_sensitivity_reveal_audit_idempotency.sql");
-const REVEAL_AUDIT_ACTION_TOKEN_SQL: &str =
-    include_str!("../src/migrations/144_sensitivity_reveal_audit_action_token.sql");
+const REVEAL_AUDIT_ACTION_TOKEN_SCHEMA_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS sensitivity_reveal_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    revealed_at TEXT NOT NULL,
+    reveal_action_id TEXT NOT NULL DEFAULT '',
+    FOREIGN KEY (claim_id) REFERENCES intelligence_claims(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS idx_sensitivity_reveal_audit_claim
+    ON sensitivity_reveal_audit(claim_id, revealed_at);
+CREATE INDEX IF NOT EXISTS idx_sensitivity_reveal_audit_user
+    ON sensitivity_reveal_audit(user_id, revealed_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_sensitivity_reveal_audit_action_token
+    ON sensitivity_reveal_audit(claim_id, user_id, reveal_action_id)
+    WHERE reveal_action_id != '';
+"#;
 const MINIMAL_ENTITY_SCHEMA_SQL: &str = r#"
 CREATE TABLE accounts (
     id TEXT PRIMARY KEY,
@@ -156,11 +169,7 @@ fn fresh_claims_conn() -> Connection {
         .expect("apply typed feedback schema");
     conn.execute_batch(PROJECTION_STATUS_SQL)
         .expect("apply projection status schema");
-    conn.execute_batch(REVEAL_AUDIT_SQL)
-        .expect("apply reveal audit schema");
-    conn.execute_batch(REVEAL_AUDIT_IDEMPOTENCY_SQL)
-        .expect("apply reveal audit idempotency schema");
-    conn.execute_batch(REVEAL_AUDIT_ACTION_TOKEN_SQL)
+    conn.execute_batch(REVEAL_AUDIT_ACTION_TOKEN_SCHEMA_SQL)
         .expect("apply reveal audit action token schema");
     conn
 }

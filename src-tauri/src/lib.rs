@@ -68,7 +68,7 @@ pub mod command_test_api {
         reveal_sensitive_claim_text, update_entity_context_entry,
     };
 }
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", debug_assertions))]
 #[doc(hidden)]
 pub mod migration_test_api {
     pub fn run_migrations(conn: &rusqlite::Connection) -> Result<usize, String> {

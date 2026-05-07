@@ -2,6 +2,7 @@ use dailyos_lib::abilities::feedback::ClaimVerificationState;
 use dailyos_lib::db::claims::{
     ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
 };
+use dailyos_lib::migration_test_api::run_migrations;
 use dailyos_lib::services::sensitivity::{
     render_policy_for_sensitivity_name, render_policy_for_surface, render_policy_for_surface_name,
     renderable_claim_text, RedactionAffordance, RenderActor, RenderDecision, RenderPolicyKind,
@@ -157,10 +158,8 @@ fn sensitivity_reveal_audit_migration_repairs_current_audit_bucket_v143() {
         "../src/migrations/143_sensitivity_reveal_audit_idempotency.sql"
     ))
     .expect("idempotency migration applies");
-    conn.execute_batch(include_str!(
-        "../src/migrations/144_sensitivity_reveal_audit_action_token.sql"
-    ))
-    .expect("action token migration applies");
+    setup_migration_runner_state(&conn);
+    run_pending_v144(&conn);
 
     let columns = reveal_audit_columns(&conn);
 
@@ -189,10 +188,8 @@ fn sensitivity_reveal_audit_migration_repairs_legacy_reveal_session_v143() {
             WHERE reveal_session_id != '';",
     )
     .expect("legacy reveal session idempotency migration applies");
-    conn.execute_batch(include_str!(
-        "../src/migrations/144_sensitivity_reveal_audit_action_token.sql"
-    ))
-    .expect("action token migration applies");
+    setup_migration_runner_state(&conn);
+    run_pending_v144(&conn);
 
     let columns = reveal_audit_columns(&conn);
 
@@ -204,6 +201,52 @@ fn sensitivity_reveal_audit_migration_repairs_legacy_reveal_session_v143() {
     assert!(!columns.contains(&"audit_bucket".to_string()));
     assert_reveal_action_id_unique_index(&conn);
     assert_index_missing(&conn, "idx_sensitivity_reveal_audit_reveal_session");
+}
+
+fn setup_migration_runner_state(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO schema_version (version) VALUES (143);
+
+        CREATE TABLE IF NOT EXISTS meetings (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meeting_prep (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meeting_transcripts (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS account_stakeholders (
+            id TEXT PRIMARY KEY,
+            data_source TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_assessment (
+            id TEXT PRIMARY KEY,
+            health_json TEXT,
+            org_health_json TEXT,
+            dimensions_json TEXT,
+            success_plan_signals_json TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_quality (
+            id TEXT PRIMARY KEY,
+            health_score REAL,
+            health_trend TEXT,
+            coherence_score REAL,
+            coherence_flagged INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS person_relationships (
+            id TEXT PRIMARY KEY,
+            rationale TEXT
+        );
+        CREATE TABLE IF NOT EXISTS email_signals (
+            id TEXT PRIMARY KEY,
+            source TEXT
+        );",
+    )
+    .expect("create migration runner fixture state");
+}
+
+fn run_pending_v144(conn: &Connection) {
+    let applied = run_migrations(conn).expect("action token migration applies");
+    assert_eq!(applied, 1);
 }
 
 fn reveal_audit_columns(conn: &Connection) -> Vec<String> {

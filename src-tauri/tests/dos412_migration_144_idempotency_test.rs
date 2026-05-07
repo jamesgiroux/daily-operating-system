@@ -1,7 +1,5 @@
+use dailyos_lib::migration_test_api::run_migrations;
 use rusqlite::Connection;
-
-const MIGRATION_144_SQL: &str =
-    include_str!("../src/migrations/144_sensitivity_reveal_audit_action_token.sql");
 
 #[derive(Clone, Copy)]
 enum StartingState {
@@ -30,17 +28,21 @@ fn migration_144_rebuilds_prior_audit_schemas_to_canonical_shape() {
         let conn = Connection::open_in_memory().expect("open in-memory database");
         setup_starting_state(&conn, state);
 
-        conn.execute_batch(MIGRATION_144_SQL)
-            .unwrap_or_else(|error| {
-                panic!("{}: first migration apply failed: {error}", state.label())
-            });
+        apply_pending_v144(&conn, state.label());
         assert_canonical_reveal_audit_schema(&conn, state.label());
+        assert_legacy_data_preserved(&conn, state.label());
 
-        conn.execute_batch(MIGRATION_144_SQL)
-            .unwrap_or_else(|error| {
-                panic!("{}: second migration apply failed: {error}", state.label())
-            });
+        let second = run_migrations(&conn).unwrap_or_else(|error| {
+            panic!("{}: second migration run failed: {error}", state.label())
+        });
+        assert_eq!(
+            second,
+            0,
+            "{}: second migration run should be a no-op",
+            state.label()
+        );
         assert_canonical_reveal_audit_schema(&conn, state.label());
+        assert_legacy_data_preserved(&conn, state.label());
     }
 }
 
@@ -53,11 +55,61 @@ fn migration_144_repairs_partial_prior_action_column_without_index() {
             ADD COLUMN reveal_action_id TEXT NOT NULL DEFAULT '';",
     )
     .expect("create partial prior action column state");
+    setup_migration_runner_state(&conn);
 
-    conn.execute_batch(MIGRATION_144_SQL)
-        .expect("migration repairs partial prior action column state");
+    apply_pending_v144(&conn, "partial_action_column");
 
     assert_canonical_reveal_audit_schema(&conn, "partial_action_column");
+    assert_legacy_data_preserved(&conn, "partial_action_column");
+}
+
+#[test]
+fn retry_after_partial_prior_state_preserves_tokens() {
+    let conn = Connection::open_in_memory().expect("open in-memory database");
+    setup_base_reveal_audit_table(&conn);
+    conn.execute_batch(
+        "ALTER TABLE sensitivity_reveal_audit
+            ADD COLUMN reveal_action_id TEXT NOT NULL DEFAULT '';
+         UPDATE sensitivity_reveal_audit
+            SET reveal_action_id = 'abc-123'
+            WHERE id = 7;",
+    )
+    .expect("create partial prior action token state");
+    setup_migration_runner_state(&conn);
+
+    apply_pending_v144(&conn, "partial_prior_token");
+
+    assert_canonical_reveal_audit_schema(&conn, "partial_prior_token");
+    assert_eq!(reveal_audit_row_count(&conn), 1);
+    assert_eq!(single_reveal_action_id(&conn), "abc-123");
+}
+
+#[test]
+fn idempotency_when_already_canonical() {
+    let conn = Connection::open_in_memory().expect("open in-memory database");
+    setup_base_reveal_audit_table(&conn);
+    conn.execute_batch(
+        "ALTER TABLE sensitivity_reveal_audit
+            ADD COLUMN reveal_action_id TEXT NOT NULL DEFAULT '';
+         UPDATE sensitivity_reveal_audit
+            SET reveal_action_id = 'abc-123'
+            WHERE id = 7;
+         CREATE UNIQUE INDEX idx_sensitivity_reveal_audit_action_token
+            ON sensitivity_reveal_audit(claim_id, user_id, reveal_action_id)
+            WHERE reveal_action_id != '';",
+    )
+    .expect("create canonical action token state");
+    setup_migration_runner_state(&conn);
+    let before_columns = reveal_audit_columns(&conn);
+    let before_index_sql = reveal_action_index_sql(&conn);
+
+    apply_pending_v144(&conn, "already_canonical");
+
+    assert_eq!(reveal_audit_columns(&conn), before_columns);
+    assert_eq!(reveal_action_index_sql(&conn), before_index_sql);
+    assert_eq!(reveal_audit_row_count(&conn), 1);
+    assert_eq!(single_reveal_action_id(&conn), "abc-123");
+    assert_eq!(schema_version(&conn), 144);
 }
 
 fn setup_starting_state(conn: &Connection, state: StartingState) {
@@ -84,6 +136,8 @@ fn setup_starting_state(conn: &Connection, state: StartingState) {
             )
             .expect("create audit_bucket state"),
     }
+
+    setup_migration_runner_state(conn);
 }
 
 fn setup_base_reveal_audit_table(conn: &Connection) {
@@ -104,6 +158,61 @@ fn setup_base_reveal_audit_table(conn: &Connection) {
     .expect("create base reveal audit table");
 }
 
+fn setup_migration_runner_state(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO schema_version (version) VALUES (143);
+
+        CREATE TABLE IF NOT EXISTS meetings (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meeting_prep (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meeting_transcripts (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS account_stakeholders (
+            id TEXT PRIMARY KEY,
+            data_source TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_assessment (
+            id TEXT PRIMARY KEY,
+            health_json TEXT,
+            org_health_json TEXT,
+            dimensions_json TEXT,
+            success_plan_signals_json TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_quality (
+            id TEXT PRIMARY KEY,
+            health_score REAL,
+            health_trend TEXT,
+            coherence_score REAL,
+            coherence_flagged INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS person_relationships (
+            id TEXT PRIMARY KEY,
+            rationale TEXT
+        );
+        CREATE TABLE IF NOT EXISTS email_signals (
+            id TEXT PRIMARY KEY,
+            source TEXT
+        );",
+    )
+    .expect("create migration runner fixture state");
+}
+
+fn apply_pending_v144(conn: &Connection, label: &str) {
+    let applied = run_migrations(conn)
+        .unwrap_or_else(|error| panic!("{label}: migration runner failed: {error}"));
+    assert_eq!(
+        applied, 1,
+        "{label}: v144 should be the only pending migration"
+    );
+    assert_eq!(
+        schema_version(conn),
+        144,
+        "{label}: schema version should be recorded"
+    );
+}
+
 fn assert_canonical_reveal_audit_schema(conn: &Connection, label: &str) {
     assert_eq!(
         reveal_audit_columns(conn),
@@ -121,7 +230,6 @@ fn assert_canonical_reveal_audit_schema(conn: &Connection, label: &str) {
     assert_index_exists(conn, "idx_sensitivity_reveal_audit_claim", false, label);
     assert_index_exists(conn, "idx_sensitivity_reveal_audit_user", false, label);
     assert_reveal_action_id_unique_index(conn, label);
-    assert_legacy_data_preserved(conn, label);
 }
 
 fn reveal_audit_columns(conn: &Connection) -> Vec<String> {
@@ -181,20 +289,48 @@ fn assert_reveal_action_id_unique_index(conn: &Connection, label: &str) {
         "{label}: action token unique index columns"
     );
 
-    let index_sql: String = conn
-        .query_row(
-            "SELECT sql
-             FROM sqlite_master
-             WHERE type = 'index'
-               AND name = 'idx_sensitivity_reveal_audit_action_token'",
-            [],
-            |row| row.get(0),
-        )
-        .expect("read reveal audit index SQL");
+    let index_sql = reveal_action_index_sql(conn);
     assert!(
         index_sql.contains("WHERE reveal_action_id != ''"),
         "{label}: action token unique index must stay partial"
     );
+}
+
+fn reveal_action_index_sql(conn: &Connection) -> String {
+    conn.query_row(
+        "SELECT sql
+         FROM sqlite_master
+         WHERE type = 'index'
+           AND name = 'idx_sensitivity_reveal_audit_action_token'",
+        [],
+        |row| row.get(0),
+    )
+    .expect("read reveal audit index SQL")
+}
+
+fn reveal_audit_row_count(conn: &Connection) -> i64 {
+    conn.query_row("SELECT COUNT(*) FROM sensitivity_reveal_audit", [], |row| {
+        row.get(0)
+    })
+    .expect("read reveal audit row count")
+}
+
+fn single_reveal_action_id(conn: &Connection) -> String {
+    conn.query_row(
+        "SELECT reveal_action_id FROM sensitivity_reveal_audit WHERE id = 7",
+        [],
+        |row| row.get(0),
+    )
+    .expect("read reveal action id")
+}
+
+fn schema_version(conn: &Connection) -> i64 {
+    conn.query_row(
+        "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+        [],
+        |row| row.get(0),
+    )
+    .expect("read schema version")
 }
 
 fn index_columns(conn: &Connection, index_name: &str) -> Vec<String> {

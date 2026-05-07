@@ -1,7 +1,9 @@
 //! Schema migration framework (ADR-0071).
 //!
-//! Numbered SQL migrations are embedded at compile time via `include_str!`.
-//! Each migration runs exactly once, tracked by the `schema_version` table.
+//! Numbered migrations run exactly once, tracked by the `schema_version` table.
+//! Most migrations are embedded SQL batches via `Migration::Sql`. Use
+//! `Migration::Fn` for non-trivial idempotency, data-dependent branching, or
+//! retry-safe rebuilds that need schema inspection before applying changes.
 //!
 //! For existing databases (pre-migration-framework), the bootstrap function
 //! detects the presence of known tables and marks migration 001 as applied
@@ -13,426 +15,451 @@ use std::path::{Path, PathBuf};
 use chrono::Utc;
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
-struct Migration {
-    version: i32,
-    sql: &'static str,
+mod v144_audit_action_token;
+
+type MigrationError = String;
+
+enum Migration {
+    Sql {
+        version: u32,
+        sql: &'static str,
+    },
+    Fn {
+        version: u32,
+        apply: fn(&Connection) -> Result<(), MigrationError>,
+    },
+}
+
+impl Migration {
+    fn version(&self) -> u32 {
+        match self {
+            Self::Sql { version, .. } | Self::Fn { version, .. } => *version,
+        }
+    }
+
+    fn sql(&self) -> Option<&'static str> {
+        match self {
+            Self::Sql { sql, .. } => Some(sql),
+            Self::Fn { .. } => None,
+        }
+    }
 }
 
 // Historical drift: some filenames are one less than registered version; `version` is authoritative.
 const MIGRATIONS: &[Migration] = &[
-    Migration {
+    Migration::Sql {
         version: 1,
         sql: include_str!("migrations/001_baseline.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 2,
         sql: include_str!("migrations/002_internal_teams.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 3,
         sql: include_str!("migrations/003_account_team.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 4,
         sql: include_str!("migrations/004_account_team_role_index.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 5,
         sql: include_str!("migrations/005_email_signals.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 6,
         sql: include_str!("migrations/006_content_embeddings.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 7,
         sql: include_str!("migrations/007_chat_interface.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 8,
         sql: include_str!("migrations/008_missing_indexes.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 9,
         sql: include_str!("migrations/009_fix_embeddings_column.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 10,
         sql: include_str!("migrations/010_foreign_keys.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 11,
         sql: include_str!("migrations/011_proposed_actions.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 12,
         sql: include_str!("migrations/012_person_emails.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 13,
         sql: include_str!("migrations/013_quill_sync.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 14,
         sql: include_str!("migrations/014_granola_sync.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 15,
         sql: include_str!("migrations/015_gravatar_cache.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 16,
         sql: include_str!("migrations/016_clay_enrichment.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 17,
         sql: include_str!("migrations/017_entity_keywords.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 18,
         sql: include_str!("migrations/018_signal_bus.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 19,
         sql: include_str!("migrations/019_correction_learning.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 20,
         sql: include_str!("migrations/020_signal_propagation.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 21,
         sql: include_str!("migrations/021_proactive_surfacing.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 22,
         sql: include_str!("migrations/022_rejection_signals.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 23,
         sql: include_str!("migrations/023_drop_meeting_account_id.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 24,
         sql: include_str!("migrations/024_linear_sync.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 25,
         sql: include_str!("migrations/025_entity_metadata.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 26,
         sql: include_str!("migrations/026_attendee_display_names.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 27,
         sql: include_str!("migrations/027_email_threads.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 28,
         sql: include_str!("migrations/028_entity_email_cadence.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 29,
         sql: include_str!("migrations/029_hygiene_actions_log.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 30,
         sql: include_str!("migrations/030_email_dismissals.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 31,
         sql: include_str!("migrations/031_intelligence_lifecycle.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 32,
         sql: include_str!("migrations/032_junction_fks_and_expr_indexes.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 33,
         sql: include_str!("migrations/033_people_last_seen_index.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 34,
         sql: include_str!("migrations/034_emails.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 35,
         sql: include_str!("migrations/035_email_relevance_score.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 36,
         sql: include_str!("migrations/036_account_type.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 37,
         sql: include_str!("migrations/037_project_hierarchy.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 38,
         sql: include_str!("migrations/038_person_relationships.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 39,
         sql: include_str!("migrations/039_person_relationships_types.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 40,
         sql: include_str!("migrations/040_entity_quality.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 41,
         sql: include_str!("migrations/041_linear_entity_links.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 42,
         sql: include_str!("migrations/042_placeholder.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 43,
         sql: include_str!("migrations/043_placeholder.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 44,
         sql: include_str!("migrations/044_user_entity.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 45,
         sql: include_str!("migrations/045_intelligence_report_fields.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 46,
         sql: include_str!("migrations/046_user_context_embedding.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 47,
         sql: include_str!("migrations/047_entity_intel_user_relevance.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 48,
         sql: include_str!("migrations/048_google_drive_sync.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 49,
         sql: include_str!("migrations/049_drive_rename_type_column.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 50,
         sql: include_str!("migrations/050_reports.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 51,
         sql: include_str!("migrations/051_entity_context_entries.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 52,
         sql: include_str!("migrations/052_glean_document_cache.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 53,
         sql: include_str!("migrations/053_app_state_demo.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 54,
         sql: include_str!("migrations/054_intelligence_consistency_metadata.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 55,
         sql: include_str!("migrations/055_schema_decomposition.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 56,
         sql: include_str!("migrations/056_account_stakeholders_data_source.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 57,
         sql: include_str!("migrations/057_intelligence_db_columns.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 58,
         sql: include_str!("migrations/058_health_schema_evolution.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 59,
         sql: include_str!("migrations/059_person_relationships_rationale.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 60,
         sql: include_str!("migrations/060_intelligence_dimensions.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 61,
         sql: include_str!("migrations/061_stakeholder_glean_staleness.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 62,
         sql: include_str!("migrations/062_intelligence_feedback.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 63,
         sql: include_str!("migrations/063_email_signals_source.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 64,
         sql: include_str!("migrations/064_pipeline_failures.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 65,
         sql: include_str!("migrations/065_search_fts5.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 66,
         sql: include_str!("migrations/066_sync_metadata.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 67,
         sql: include_str!("migrations/067_feedback_unique_constraint.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 68,
         sql: include_str!("migrations/068_success_plans.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 69,
         sql: include_str!("migrations/069_account_events_expand.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 70,
         sql: include_str!("migrations/070_captures_metadata.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 71,
         sql: include_str!("migrations/071_email_triage_columns.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 72,
         sql: include_str!("migrations/072_health_score_history.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 73,
         sql: include_str!("migrations/073_meeting_record_path.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 74,
         sql: include_str!("migrations/074_action_status_vocabulary.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 75,
         sql: include_str!("migrations/075_v110_lifecycle_products_provenance.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 76,
         sql: include_str!("migrations/076_source_aware_account_truth.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 77,
         sql: include_str!("migrations/077_technical_footprint.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 78,
         sql: include_str!("migrations/078_pull_quote_column.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 79,
         sql: include_str!("migrations/079_product_classification.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 80,
         sql: include_str!("migrations/080_stakeholder_source_of_truth.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 81,
         sql: include_str!("migrations/081_init_tasks.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 82,
         sql: include_str!("migrations/082_email_enriched_at.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 83,
         sql: include_str!("migrations/082_account_fact_columns.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 84,
         sql: include_str!("migrations/083_dashboard_fields_to_db.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 85,
         sql: include_str!("migrations/084_feedback_events.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 86,
         sql: include_str!("migrations/085_action_status_priority_v2.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 87,
         sql: include_str!("migrations/086_objective_evidence.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 88,
         sql: include_str!("migrations/086_rejected_action_patterns.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 89,
         sql: include_str!("migrations/086_decision_columns.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 90,
         sql: include_str!("migrations/090_commitment_milestone_link.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 91,
         sql: include_str!("migrations/085_action_linear_links.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 92,
         sql: include_str!("migrations/092_deactivate_propagated_email_signals.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 93,
         sql: include_str!("migrations/091_user_health_sentiment.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 94,
         sql: include_str!("migrations/093_email_sync_meta.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 95,
         sql: include_str!("migrations/094_user_sentiment_history.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 96,
         sql: include_str!("migrations/095_meeting_entities_confidence.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 97,
         sql: include_str!("migrations/096_health_outlook_signals.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 98,
         sql: include_str!("migrations/097_email_pending_retry_state.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 99,
         sql: include_str!("migrations/098_risk_briefing_jobs.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 100,
         sql: include_str!("migrations/099_meeting_entity_dismissals.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 101,
         sql: include_str!("migrations/100_email_retry_batch.sql"),
     },
     // risk_briefing_jobs.attempt_id (CAS lifecycle)
     // + health_recompute_pending (durable debouncer). Combined migration to
     // minimize collision with parallel work.
-    Migration {
+    Migration::Sql {
         version: 102,
         sql: include_str!("migrations/101_risk_briefing_attempt_and_recompute_pending.sql"),
     },
     // emails.is_noise column for hard-drop bulk/marketing filter.
-    Migration {
+    Migration::Sql {
         version: 103,
         sql: include_str!("migrations/102_email_is_noise.sql"),
     },
@@ -440,7 +467,7 @@ const MIGRATIONS: &[Migration] = &[
     // promotions instead of looping forever on rows that fundamentally
     // can't enrich. Email sync stats read this column to compute the
     // `permanently_failed` count surfaced in the failure UX.
-    Migration {
+    Migration::Sql {
         version: 104,
         sql: include_str!("migrations/103_email_auto_retry_count.sql"),
     },
@@ -448,14 +475,14 @@ const MIGRATIONS: &[Migration] = &[
     // "duplicate column name" by the framework if the column already
     // exists (normal upgrade); a real fix for users whose v103
     // schema_version was recorded without the ALTER actually applying.
-    Migration {
+    Migration::Sql {
         version: 105,
         sql: include_str!("migrations/104_email_is_noise_defensive.sql"),
     },
     // Recover emails over-suppressed by Rule 3
     // (List-Unsubscribe alone). Rule is tightened in code; this
     // migration restores is_noise=0 for rows outside the bulk allow-list.
-    Migration {
+    Migration::Sql {
         version: 106,
         sql: include_str!("migrations/105_email_noise_recovery.sql"),
     },
@@ -463,14 +490,14 @@ const MIGRATIONS: &[Migration] = &[
     // senders and bracket-prefix internal-org notifications that the
     // tightened rules now catch. Brings existing data in line with
     // the fixed code without requiring a fresh sync.
-    Migration {
+    Migration::Sql {
         version: 107,
         sql: include_str!("migrations/106_email_resuppress_noreply.sql"),
     },
     // Stakeholder-role soft-delete: `dismissed_at` tombstones user-removed
     // role rows so subsequent enrichment can't silently re-surface the
     // role via intel_queue's INSERT ON CONFLICT path.
-    Migration {
+    Migration::Sql {
         version: 108,
         sql: include_str!("migrations/107_stakeholder_role_dismissals.sql"),
     },
@@ -478,7 +505,7 @@ const MIGRATIONS: &[Migration] = &[
     // account_focus_pins + nudge_dismissals. Enables commitments-as-Actions,
     // focus pin overlay, and nudge dismissal memory. See migration file
     // header for rationale.
-    Migration {
+    Migration::Sql {
         version: 109,
         sql: include_str!("migrations/108_work_tab_actions.sql"),
     },
@@ -486,7 +513,7 @@ const MIGRATIONS: &[Migration] = &[
     // so dismissals survive refresh. Keyed on (entity_type, entity_id,
     // triage_key); rendering-time filter hides rows where
     // resolved_at IS NOT NULL or snoozed_until > now.
-    Migration {
+    Migration::Sql {
         version: 110,
         sql: include_str!("migrations/109_triage_snoozes.sql"),
     },
@@ -497,34 +524,34 @@ const MIGRATIONS: &[Migration] = &[
     // entity_graph_version singleton counter + triggers,
     // account_stakeholders status/confidence columns + review-queue index,
     // backfill of existing meeting_entity_dismissals into linking_dismissals.
-    Migration {
+    Migration::Sql {
         version: 111,
         sql: include_str!("migrations/110_linked_entities_raw.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 112,
         sql: include_str!("migrations/111_linking_dismissals.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 113,
         sql: include_str!("migrations/112_entity_linking_evaluations.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 114,
         sql: include_str!("migrations/113_entity_graph_version.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 115,
         sql: include_str!("migrations/114_account_stakeholders_review_queue_idx.sql"),
     },
-    Migration {
+    Migration::Sql {
         version: 116,
         sql: include_str!("migrations/115_migrate_meeting_entity_dismissals.sql"),
     },
     // pending_thread_inheritance queue for P2 out-of-order
     // email delivery. When a child email arrives before its parent, P2 enqueues
     // it here; the queue is drained when the parent is later evaluated.
-    Migration {
+    Migration::Sql {
         version: 117,
         sql: include_str!("migrations/116_pending_thread_inheritance.sql"),
     },
@@ -532,19 +559,19 @@ const MIGRATIONS: &[Migration] = &[
     // Adds INSERT/DELETE + name/archived UPDATE triggers for accounts and
     // projects so P5 name-matching and P4/P4b/P4c domain evidence stay
     // consistent after entity creation, deletion, or rename.
-    Migration {
+    Migration::Sql {
         version: 118,
         sql: include_str!("migrations/117_entity_graph_version_full_triggers.sql"),
     },
     // add source provenance to account_domains so
     // raw_rebuild_account_domains can purge inferred domains before cutover.
-    Migration {
+    Migration::Sql {
         version: 119,
         sql: include_str!("migrations/118_account_domains_source.sql"),
     },
     // email To/Cc recipient columns for multi-participant
     // domain evidence in P4b/P4c rules.
-    Migration {
+    Migration::Sql {
         version: 120,
         sql: include_str!("migrations/119_email_to_cc.sql"),
     },
@@ -552,14 +579,14 @@ const MIGRATIONS: &[Migration] = &[
     // P4b/P4c/P4d so a new stakeholder-inference rule can take the P4a slot.
     // Shifts existing rows in linked_entities_raw (rule_id, source) and
     // entity_linking_evaluations (rule_id) via a two-pass update.
-    Migration {
+    Migration::Sql {
         version: 121,
         sql: include_str!("migrations/120_dos_258_rule_rename.sql"),
     },
     // Entity-graph sweep state: add last_migration_sweep_at to entity_graph_version so
     // the startup rescan can self-correct existing weak primaries once per
     // upgrade without re-running on every boot.
-    Migration {
+    Migration::Sql {
         version: 122,
         sql: include_str!("migrations/121_entity_graph_sweep_state.sql"),
     },
@@ -569,7 +596,7 @@ const MIGRATIONS: &[Migration] = &[
     // (entity, normalized_title), rewire bridge rows to point at it,
     // delete the duplicates. Forward-going dedup is enforced in
     // services::commitment_bridge::sync_ai_commitments.
-    Migration {
+    Migration::Sql {
         version: 123,
         sql: include_str!("migrations/122_dos_321_collapse_commitment_dupes.sql"),
     },
@@ -578,7 +605,7 @@ const MIGRATIONS: &[Migration] = &[
     // entity_graph_version trigger extension that round-1 Codex review caught
     // as a singleton-counter cache thrash bug. SubjectRef::Multi uses
     // deterministic lock ordering (Account < Meeting < Person < Project).
-    Migration {
+    Migration::Sql {
         version: 124,
         sql: include_str!("migrations/123_dos_310_per_entity_claim_invalidation.sql"),
     },
@@ -586,35 +613,35 @@ const MIGRATIONS: &[Migration] = &[
     // pickup; the WriteFence rechecks at write-back. If a migration bumps
     // the epoch mid-flight, in-flight work is rejected (caller logs +
     // re-queues). See src-tauri/src/intelligence/write_fence.rs.
-    Migration {
+    Migration::Sql {
         version: 125,
         sql: include_str!("migrations/124_dos_311_schema_epoch.sql"),
     },
     // covering index for suppression lookups + quarantine table for
     // tombstone remediation before the claims substrate migration.
-    Migration {
+    Migration::Sql {
         version: 126,
         sql: include_str!("migrations/125_suppression_remediation.sql"),
     },
     // durable operator audit for malformed suppression decisions.
-    Migration {
+    Migration::Sql {
         version: 127,
         sql: include_str!("migrations/126_suppression_malformed_log.sql"),
     },
     //  cycle-3: mark remediated quarantine rows as resolved audit trail.
-    Migration {
+    Migration::Sql {
         version: 128,
         sql: include_str!("migrations/127_quarantine_resolved_at.sql"),
     },
     //  cycle-4: partial index for the unresolved-row gate query.
     // Split from migration 128 so a partial-failure retry cannot leave
     // the column added but the index missing.
-    Migration {
+    Migration::Sql {
         version: 129,
         sql: include_str!("migrations/128_quarantine_unresolved_index.sql"),
     },
     // Claims commit substrate schema (intelligence_claims + 5 siblings).
-    Migration {
+    Migration::Sql {
         version: 130,
         sql: include_str!("migrations/129_dos_7_claims_schema.sql"),
     },
@@ -622,14 +649,14 @@ const MIGRATIONS: &[Migration] = &[
     // account_stakeholder_roles.dismissed_at, email_dismissals,
     // meeting_entity_dismissals) into intelligence_claims tombstone rows.
     // D3a-2 covers mechanisms 5-8; D3b covers DismissedItem JSON blobs.
-    Migration {
+    Migration::Sql {
         version: 131,
         sql: include_str!("migrations/130_dos_7_claims_backfill_a1.sql"),
     },
     // Claims backfill D3a-2: backfill mechanisms 5-8 (linking_dismissals,
     // briefing_callouts.dismissed_at, nudge_dismissals, triage_snoozes)
     // + duplicate-pair corroboration between mechanism 4 and 5.
-    Migration {
+    Migration::Sql {
         version: 132,
         sql: include_str!("migrations/131_dos_7_claims_backfill_a2.sql"),
     },
@@ -637,14 +664,14 @@ const MIGRATIONS: &[Migration] = &[
     // participates in per-entity invalidation alongside Account/Meeting/
     // Person/Project. Required to unwind cycle-2's Account+prefix
     // workaround for email dismissals.
-    Migration {
+    Migration::Sql {
         version: 133,
         sql: include_str!("migrations/132_dos_7_email_claim_version.sql"),
     },
     // Withdraw m5 backfill rows whose
     // subject_ref kind is not a supported SubjectRef variant
     // (e.g. owner_type='email_thread' from linking_dismissals).
-    Migration {
+    Migration::Sql {
         version: 134,
         sql: include_str!("migrations/133_dos_7_withdraw_unsupported_m5_kinds.sql"),
     },
@@ -653,60 +680,60 @@ const MIGRATIONS: &[Migration] = &[
     // tables, success_plans, account AI columns, intelligence.json on
     // disk) succeeded or failed without rolling back the authoritative
     // claim. Failed rows are the repair worklist.
-    Migration {
+    Migration::Sql {
         version: 135,
         sql: include_str!("migrations/134_dos_301_claim_projection_status.sql"),
     },
     // Typed feedback schema: rebuild claim_feedback for the closed
     // action set and add claim verification state columns.
-    Migration {
+    Migration::Sql {
         version: 136,
         sql: include_str!("migrations/135_dos_294_typed_feedback_schema.sql"),
     },
     // Quarantine malformed legacy source timestamps before W4 freshness
     // scoring reads the claim substrate.
-    Migration {
+    Migration::Sql {
         version: 137,
         sql: include_str!("migrations/136_dos_299_source_asof_quarantine.sql"),
     },
     // Opaque thread metadata substrate; creation and assignment semantics land later.
-    Migration {
+    Migration::Sql {
         version: 138,
         sql: include_str!("migrations/138_thread_metadata.sql"),
     },
     // Failed-projection repair scans filter by target and order by
     // attempted_at; the status value is constant inside the partial
     // index predicate.
-    Migration {
+    Migration::Sql {
         version: 139,
         sql: include_str!("migrations/139_dos_301_projection_failed_index_v2.sql"),
     },
     // Existing databases at v139 keep the original temporal_scope CHECK that
     // omits 'closed'. Rebuild the table so writes of TemporalScope::Closed land.
-    Migration {
+    Migration::Sql {
         version: 140,
         sql: include_str!("migrations/140_dos_287_temporal_scope_closed.sql"),
     },
     // DOS-411: backfill legacy entity_context_entries into user_note claims
     // and freeze the legacy table for rollback-only reads.
-    Migration {
+    Migration::Sql {
         version: 141,
         sql: include_str!("migrations/141_user_note_claim_type_backfill.sql"),
     },
     // DOS-412: audited click-to-reveal records for Confidential claim text.
-    Migration {
+    Migration::Sql {
         version: 142,
         sql: include_str!("migrations/142_sensitivity_reveal_audit.sql"),
     },
     // DOS-412: make audited reveals idempotent per frontend reveal action.
-    Migration {
+    Migration::Sql {
         version: 143,
         sql: include_str!("migrations/143_sensitivity_reveal_audit_idempotency.sql"),
     },
     // DOS-412: repair v143 idempotency variants with caller-supplied action tokens.
-    Migration {
+    Migration::Fn {
         version: 144,
-        sql: include_str!("migrations/144_sensitivity_reveal_audit_action_token.sql"),
+        apply: v144_audit_action_token::migrate_v144_audit_action_token,
     },
 ];
 
@@ -722,13 +749,17 @@ fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
 }
 
 /// Return the highest applied migration version, or 0 if none.
-fn current_version(conn: &Connection) -> Result<i32, String> {
-    conn.query_row(
-        "SELECT COALESCE(MAX(version), 0) FROM schema_version",
-        [],
-        |row| row.get(0),
-    )
-    .map_err(|e| format!("Failed to read schema version: {}", e))
+fn current_version(conn: &Connection) -> Result<u32, String> {
+    let version: i64 = conn
+        .query_row(
+            "SELECT COALESCE(MAX(version), 0) FROM schema_version",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("Failed to read schema version: {}", e))?;
+
+    u32::try_from(version)
+        .map_err(|_| format!("Invalid negative or too-large schema version recorded: {version}"))
 }
 
 fn table_exists(conn: &Connection, table_name: &str) -> Result<bool, String> {
@@ -1262,7 +1293,7 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
     bootstrap_existing_db(conn)?;
 
     let current = current_version(conn)?;
-    let max_known = MIGRATIONS.last().map(|m| m.version).unwrap_or(0);
+    let max_known = MIGRATIONS.last().map(Migration::version).unwrap_or(0);
 
     // Forward-compat guard
     if current > max_known {
@@ -1274,7 +1305,10 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
     }
 
     // Collect pending migrations
-    let pending: Vec<&Migration> = MIGRATIONS.iter().filter(|m| m.version > current).collect();
+    let pending: Vec<&Migration> = MIGRATIONS
+        .iter()
+        .filter(|m| m.version() > current)
+        .collect();
 
     if pending.is_empty() {
         verify_required_schema(conn)?;
@@ -1285,7 +1319,7 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
     // backfill territory) until unresolved quarantine rows are resolved.
     // Resolved quarantine rows are retained as audit trail and do NOT block
     // subsequent migrations.
-    let migration_126_pending = pending.iter().any(|m| m.version == 126);
+    let migration_126_pending = pending.iter().any(|m| m.version() == 126);
     if migration_126_pending {
         let quarantine_exists: bool = conn
             .query_row(
@@ -1322,66 +1356,73 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
 
     // Apply each pending migration in order
     for migration in &pending {
-        let apply_result = if migration.version == 141 {
-            apply_migration_141_user_note_backfill(conn, migration.sql)
-                .map_err(rusqlite::Error::InvalidParameterName)
-        } else {
-            conn.execute_batch(migration.sql)
-        };
-        match apply_result {
-            Ok(()) => {}
-            Err(e) => {
-                let msg = e.to_string();
-                // SQLite DDL statements like ALTER TABLE ADD COLUMN and RENAME COLUMN
-                // are not idempotent (no IF NOT EXISTS / IF EXISTS variants).
-                // Tolerate these specific benign errors ONLY for true single-statement
-                // ALTER TABLE migrations:
-                // - "duplicate column name": ADD COLUMN when column already exists
-                // - "no such column": RENAME COLUMN when column was already renamed
-                //
-                // Detection: check that every non-empty, non-comment statement in
-                // the migration is an ALTER TABLE. Checking `!contains("BEGIN")`
-                // is insufficient — multi-statement non-transactional migrations
-                // (e.g. 023 with CREATE/INSERT/DROP/ALTER) would pass that check,
-                // silently swallowing real data-copy failures.
-                let is_single_alter = migration
-                    .sql
-                    .split(';')
-                    .map(|s| {
-                        s.lines()
-                            .filter(|l| !l.trim_start().starts_with("--"))
-                            .collect::<Vec<_>>()
-                            .join(" ")
-                    })
-                    .map(|s| s.trim().to_uppercase())
-                    .filter(|s| !s.is_empty())
-                    .all(|s| s.starts_with("ALTER"));
-                // "duplicate column name" is always safe: can only come from
-                // ALTER TABLE ADD COLUMN when the column already exists.
-                // "no such column" is only safe for pure ALTER TABLE migrations
-                // (PR #11: multi-statement migrations with CREATE/INSERT/DROP
-                // must not silently swallow this error).
-                let is_dup_column = is_duplicate_column_error(&e);
-                let is_benign_alter = is_single_alter && is_missing_column_error(&e);
-                if is_dup_column || is_benign_alter {
-                    log::warn!(
-                        "Migration v{}: benign schema conflict ({}), continuing",
-                        migration.version,
-                        msg.split('\n').next().unwrap_or(&msg)
-                    );
+        let version = migration.version();
+        match migration {
+            Migration::Sql { sql, .. } => {
+                let apply_result = if version == 141 {
+                    apply_migration_141_user_note_backfill(conn, sql)
+                        .map_err(rusqlite::Error::InvalidParameterName)
                 } else {
-                    return Err(format!("Migration v{} failed: {}", migration.version, e));
+                    conn.execute_batch(sql)
+                };
+                match apply_result {
+                    Ok(()) => {}
+                    Err(e) => {
+                        let msg = e.to_string();
+                        // SQLite DDL statements like ALTER TABLE ADD COLUMN and RENAME COLUMN
+                        // are not idempotent (no IF NOT EXISTS / IF EXISTS variants).
+                        // Tolerate these specific benign errors ONLY for true single-statement
+                        // ALTER TABLE migrations:
+                        // - "duplicate column name": ADD COLUMN when column already exists
+                        // - "no such column": RENAME COLUMN when column was already renamed
+                        //
+                        // Detection: check that every non-empty, non-comment statement in
+                        // the migration is an ALTER TABLE. Checking `!contains("BEGIN")`
+                        // is insufficient — multi-statement non-transactional migrations
+                        // (e.g. 023 with CREATE/INSERT/DROP/ALTER) would pass that check,
+                        // silently swallowing real data-copy failures.
+                        let is_single_alter = sql
+                            .split(';')
+                            .map(|s| {
+                                s.lines()
+                                    .filter(|l| !l.trim_start().starts_with("--"))
+                                    .collect::<Vec<_>>()
+                                    .join(" ")
+                            })
+                            .map(|s| s.trim().to_uppercase())
+                            .filter(|s| !s.is_empty())
+                            .all(|s| s.starts_with("ALTER"));
+                        // "duplicate column name" is always safe: can only come from
+                        // ALTER TABLE ADD COLUMN when the column already exists.
+                        // "no such column" is only safe for pure ALTER TABLE migrations
+                        // (PR #11: multi-statement migrations with CREATE/INSERT/DROP
+                        // must not silently swallow this error).
+                        let is_dup_column = is_duplicate_column_error(&e);
+                        let is_benign_alter = is_single_alter && is_missing_column_error(&e);
+                        if is_dup_column || is_benign_alter {
+                            log::warn!(
+                                "Migration v{}: benign schema conflict ({}), continuing",
+                                version,
+                                msg.split('\n').next().unwrap_or(&msg)
+                            );
+                        } else {
+                            return Err(format!("Migration v{} failed: {}", version, e));
+                        }
+                    }
                 }
+            }
+            Migration::Fn { apply, .. } => {
+                apply(conn).map_err(|e| format!("Migration v{} failed: {}", version, e))?;
             }
         }
 
         conn.execute(
             "INSERT INTO schema_version (version) VALUES (?1)",
-            [migration.version],
+            [i64::from(version)],
         )
-        .map_err(|e| format!("Failed to record migration v{}: {}", migration.version, e))?;
+        .map_err(|e| format!("Failed to record migration v{}: {}", version, e))?;
 
-        log::info!("Applied migration v{}", migration.version);
+        log::info!("Applied migration v{}", version);
     }
 
     verify_required_schema(conn)?;
@@ -1554,7 +1595,7 @@ mod tests {
 
         // Verify schema_version
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, MIGRATIONS.last().unwrap().version);
+        assert_eq!(version, MIGRATIONS.last().unwrap().version());
 
         // Verify key tables exist with correct columns
         let action_count: i32 = conn
@@ -2276,7 +2317,7 @@ mod tests {
 
         // Verify schema version matches latest migration
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, MIGRATIONS.last().unwrap().version);
+        assert_eq!(version, MIGRATIONS.last().unwrap().version());
 
         // Verify existing data is untouched
         let title: String = conn
@@ -2323,7 +2364,7 @@ mod tests {
 
         // Version should match the highest migration
         let version = current_version(&conn).expect("version query");
-        assert_eq!(version, MIGRATIONS.last().unwrap().version);
+        assert_eq!(version, MIGRATIONS.last().unwrap().version());
     }
 
     #[test]
@@ -2543,11 +2584,11 @@ mod tests {
 
         let applied = run_migrations(&conn).expect("post-126 migration should not be gated");
 
-        let expected = MIGRATIONS.iter().filter(|m| m.version >= 128).count();
+        let expected = MIGRATIONS.iter().filter(|m| m.version() >= 128).count();
         assert_eq!(applied, expected);
         assert_eq!(
             current_version(&conn).expect("version query"),
-            MIGRATIONS.last().unwrap().version
+            MIGRATIONS.last().unwrap().version()
         );
     }
 
@@ -2724,9 +2765,9 @@ mod tests {
 
         let migration_140 = MIGRATIONS
             .iter()
-            .find(|m| m.version == 140)
+            .find(|m| m.version() == 140)
             .expect("migration 140 must be registered");
-        conn.execute_batch(migration_140.sql)
+        conn.execute_batch(migration_140.sql().expect("migration 140 should be SQL"))
             .expect("migration 140 applies cleanly on v139 table");
 
         let preserved: String = conn
