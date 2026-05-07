@@ -366,12 +366,6 @@ export default function EmailsPage() {
     [allEnrichedEmails, hasScores]
   );
 
-  const sentimentColor = (s: string | undefined) => {
-    if (s === "positive") return "var(--color-garden-sage)";
-    if (s === "negative") return "var(--color-spice-terracotta)";
-    return "var(--color-text-tertiary)";
-  };
-
   const folioActions = useMemo(() => <EmailRefreshButton />, []);
 
   const shellConfig = useMemo(
@@ -385,8 +379,23 @@ export default function EmailsPage() {
   );
   useRegisterMagazineShell(shellConfig);
 
-  if (loading) return <EditorialLoading count={4} />;
-  if (error) return <EditorialError message={error} onRetry={loadEmails} />;
+  const renderSurface = (children: React.ReactNode, state = false) => (
+    <div
+      className={e.root}
+      data-ds-name="EmailsPage"
+      data-ds-tier="surface"
+      data-ds-spec="surfaces/EmailsPage.md"
+    >
+      <div className={clsx(e.main, state && e.stateMain)}>
+        <div className={e.content}>
+          {children}
+        </div>
+      </div>
+    </div>
+  );
+
+  if (loading) return renderSurface(<EditorialLoading count={4} />, true);
+  if (error) return renderSurface(<EditorialError message={error} onRetry={loadEmails} />, true);
 
   const isEmpty = !data || data.stats.total === 0;
 
@@ -409,8 +418,8 @@ export default function EmailsPage() {
   const hasSignals = entityThreads.length > 0 || inlineGoneQuietAccounts.length > 0;
   const hasYourMove = yourMoveEmails.length > 0;
 
-  return (
-    <div className={e.pageContainer}>
+  return renderSurface(
+    <>
       {/* === HERO === */}
       <section className={s.hero}>
         <h1 className={s.heroHeadline}>{headline}</h1>
@@ -451,18 +460,10 @@ export default function EmailsPage() {
               </span>
             )}
             {/*
-              DOS-29: Actionable failure UX.
-              We show the user the *permanently-failed* count, not the raw
-              `failed` count. Rows in `failed` that are still under the
-              auto-retry cap will be silently re-attempted on the next
-              refresh (DOS-31) — surfacing those would force the user to
-              respond to a failure the system is already handling.
-              The notice only renders when there's an actual decision to
-              make, and offers three actions:
-              - Retry now: kicks off the rollback-safe retry path (DOS-226)
-              - Skip: marks the rows resolved so they leave the failed count
-              - View details: lazily fetches the per-email preview so the
-                user can see *which* emails are stuck before deciding
+              Show only permanently failed enrichment rows, not transient
+              failures that the service will retry automatically. The notice
+              appears when the user has a real decision: retry, skip, inspect,
+              or dismiss the stuck messages.
             */}
             {syncStats.permanentlyFailed > 0
               && dismissedFailedCount !== syncStats.permanentlyFailed && (
@@ -473,9 +474,8 @@ export default function EmailsPage() {
                   className={e.syncRetryButton}
                   disabled={failureActionInFlight}
                   onClick={async () => {
-                    // retry is rollback-safe on the backend — if
-                    // the Gmail refresh fails, rows stay in `failed` and
-                    // this notice reappears on the next stats load.
+                    // If refresh fails, rows stay in `failed` and this notice
+                    // reappears on the next stats load.
                     setFailureActionInFlight(true);
                     try {
                       const count = await invoke<number>("retry_failed_emails");
@@ -582,11 +582,8 @@ export default function EmailsPage() {
         )}
 
         {/*
-          DOS-29: Per-email "View details" expansion. Renders only after
-          the user clicks View details (preview list is lazy-loaded). Shows
-          subject + sender + last-attempted timestamp so the user can decide
-          whether to retry or skip with context — no enrichment plumbing
-          ("attempts=5/5", "state=failed", "PTY exit 137") leaks through.
+          Per-email "View details" expansion. Renders only after the user
+          clicks View details and keeps enrichment plumbing out of the UI.
         */}
         {syncStats
           && syncStats.permanentlyFailed > 0
@@ -648,7 +645,7 @@ export default function EmailsPage() {
             </div>
             <div className={s.marginContent}>
               {yourMoveEmails.map((email) => (
-                <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
+                <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
               ))}
             </div>
           </div>
@@ -827,7 +824,7 @@ export default function EmailsPage() {
                     <>
                       <div className={s.emailScoreBandLabel}>PRIORITY</div>
                       {priorityEmails.map((email) => (
-                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
                   )}
@@ -835,7 +832,7 @@ export default function EmailsPage() {
                     <>
                       <div className={s.emailScoreBandLabel}>MONITORING</div>
                       {monitoringEmails.map((email) => (
-                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
                   )}
@@ -843,7 +840,7 @@ export default function EmailsPage() {
                     <>
                       <div className={s.emailScoreBandLabel}>OTHER</div>
                       {otherEmails.map((email) => (
-                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
+                        <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                       ))}
                     </>
                   )}
@@ -851,7 +848,7 @@ export default function EmailsPage() {
               ) : (
                 /* No scores yet -- flat list */
                 allEnrichedEmails.map((email) => (
-                  <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} sentimentColor={sentimentColor} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
+                  <EmailIntelItem key={email.id} email={email} dismissed={dismissed} onDismiss={handleDismiss} onEntityChanged={loadEmails} onArchived={silentRefresh} archivedIds={archivedIds} setArchivedIds={setArchivedIds} />
                 ))
               )}
             </div>
@@ -861,7 +858,7 @@ export default function EmailsPage() {
 
       {/* FINIS */}
       <FinisMarker />
-    </div>
+    </>,
   );
 }
 
@@ -1081,7 +1078,6 @@ function EmailIntelItem({
   email,
   dismissed,
   onDismiss: _onDismiss,
-  sentimentColor,
   onEntityChanged,
   onArchived,
   archivedIds: _archivedIds,
@@ -1090,7 +1086,6 @@ function EmailIntelItem({
   email: EnrichedEmail;
   dismissed: Set<string>;
   onDismiss: (itemType: string, emailId: string, itemText: string, senderDomain?: string, emailType?: string, entityId?: string) => void;
-  sentimentColor: (s: string | undefined) => string;
   onEntityChanged?: () => void;
   onArchived?: () => void;
   archivedIds?: Set<string>;
@@ -1174,8 +1169,8 @@ function EmailIntelItem({
         {email.sentiment && email.sentiment !== "neutral" && (
           <span className={s.emailIntelSentiment}>
             <span
-              className={s.emailIntelSentimentDot}
-              style={{ background: sentimentColor(email.sentiment) }}
+              className={clsx(s.emailIntelSentimentDot, e.sentimentDot)}
+              data-sentiment={email.sentiment}
             />
             {email.sentiment}
           </span>

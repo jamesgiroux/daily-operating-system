@@ -1,295 +1,188 @@
-/* =============================================================================
-   ActionsPage.module.css
-
-   CSS module for the Actions page editorial surface. Extracts all inline styles
-   into design-token-driven classes following the editorial-briefing pattern.
-
-   Design reference: editorial-briefing.module.css
-   ============================================================================= */
-
 @import "../styles/design-tokens.css";
 
-/* =============================================================================
-   PAGE LAYOUT
-   ============================================================================= */
-
-.pageContainer {
+.root {
   max-width: var(--page-content-width-standard);
   margin-left: auto;
   margin-right: auto;
+  color: var(--color-text-primary);
 }
-
-/* =============================================================================
-   LOADING STATE
-   ============================================================================= */
-
-.loadingContainer {
-  max-width: var(--page-content-width-standard);
-  margin-left: auto;
-  margin-right: auto;
-  padding-top: var(--space-5xl);
-}
-
-.loadingSkeleton {
-  height: 60px;
-  background: var(--color-rule-light);
-  border-radius: var(--radius-editorial-sm);
-  margin-bottom: var(--space-sm);
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-/* =============================================================================
-   ERROR STATE
-   ============================================================================= */
-
-.errorContainer {
-  max-width: var(--page-content-width-standard);
-  margin-left: auto;
-  margin-right: auto;
-  padding-top: var(--space-5xl);
-  text-align: center;
-}
-
-.errorMessage {
-  font-family: var(--font-sans);
-  font-size: 15px;
-  color: var(--color-spice-terracotta);
-}
-
-.retryButton {
-  font-family: var(--font-mono);
-  font-size: 12px;
-  color: var(--color-text-tertiary);
-  background: none;
-  border: 1px solid var(--color-rule-heavy);
-  border-radius: var(--radius-editorial-sm);
-  padding: var(--space-xs) 12px;
-  cursor: pointer;
-  margin-top: 12px;
-}
-
-/* =============================================================================
-   FOLIO ADD BUTTON
-   ============================================================================= */
 
 .folioAddButton {
+  padding: 2px 10px;
+  border: 1px solid var(--color-action);
+  border-radius: var(--radius-editorial-sm);
+  background: none;
+  color: var(--color-action);
+  cursor: pointer;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.06em;
   text-transform: uppercase;
-  color: var(--color-spice-terracotta);
-  background: none;
-  border: 1px solid var(--color-spice-terracotta);
-  border-radius: var(--radius-editorial-sm);
-  padding: 2px 10px;
-  cursor: pointer;
 }
 
-/* =============================================================================
-   TAB FILTERS — Status & Priority
-   ============================================================================= */
+.tabRow,
+.tabRowPriority {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-md) var(--space-lg);
+}
 
 .tabRow {
-  display: flex;
-  gap: var(--space-lg);
   margin-bottom: var(--space-sm);
 }
 
 .tabRowPriority {
-  display: flex;
-  gap: var(--space-lg);
   margin-bottom: var(--space-md);
 }
 
 .tabButton {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
   font-family: var(--font-mono);
   font-size: 12px;
   font-weight: 500;
   letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
   text-decoration: none;
-  text-underline-offset: 4px;
-  background: none;
-  border: none;
-  padding: 0;
-  cursor: pointer;
+  text-transform: uppercase;
+  text-underline-offset: var(--space-xs);
   transition: color var(--transition-normal);
 }
 
+.tabButton:hover,
 .tabButtonActive {
   color: var(--color-text-primary);
+}
+
+.tabButtonActive {
   text-decoration: underline;
 }
 
 .statusTabInner {
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: var(--space-sm);
+}
+
+.suggestedBadge,
+.countBadge {
+  min-width: 18px;
+  padding: 1px 6px;
+  border-radius: var(--radius-editorial-sm);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 600;
+  line-height: 16px;
+  text-align: center;
 }
 
 .suggestedBadge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-spice-turmeric);
-  background: var(--color-spice-saffron-12);
-  border-radius: var(--radius-editorial-sm);
-  padding: 1px 6px;
-  line-height: 16px;
+  background: var(--color-action-10);
+  color: var(--color-action);
 }
 
 .countBadge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 600;
-  color: var(--color-text-tertiary);
   background: var(--color-rule-light);
-  border-radius: var(--radius-editorial-sm);
-  padding: 1px 6px;
-  line-height: 16px;
+  color: var(--color-text-tertiary);
 }
-
-/* =============================================================================
-   SEARCH INPUT
-   ============================================================================= */
 
 .searchInput {
   width: 100%;
-  font-family: var(--font-sans);
-  font-size: 14px;
-  color: var(--color-text-primary);
-  background: none;
+  padding: var(--space-sm) 0;
   border: none;
   border-bottom: 1px solid var(--color-rule-light);
-  padding: var(--space-sm) 0;
+  background: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 14px;
   outline: none;
 }
 
-/* =============================================================================
-   ACTION LIST COLUMNS
-   ============================================================================= */
+.searchInput::placeholder {
+  color: var(--color-text-tertiary);
+}
 
 .actionColumn {
   display: flex;
   flex-direction: column;
 }
 
-/* =============================================================================
-   PENDING GROUPED VIEW
-   ============================================================================= */
-
-.everythingElseHeader {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.10em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
-  padding-bottom: var(--space-sm);
-  border-bottom: 2px solid var(--color-rule-heavy);
-  margin-bottom: var(--space-md);
-  margin-top: var(--space-xl);
-}
-
 .groupBlock {
   margin-bottom: var(--space-xl);
 }
 
-.groupLabel {
-  font-family: var(--font-mono);
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  padding-bottom: var(--space-sm);
-  border-bottom: 1px solid var(--color-rule-light);
-  margin-bottom: 0;
-}
-
-.groupLabelMeeting {
-  color: var(--color-garden-larkspur);
-}
-
-.groupLabelOverdue {
-  color: var(--color-spice-terracotta);
-}
-
-.groupLabelThisWeek {
-  color: var(--color-spice-turmeric);
-}
-
-.groupLabelLater {
-  color: var(--color-text-tertiary);
-}
-
-.groupCount {
-  font-weight: 400;
-  opacity: 0.7;
-  margin-left: var(--space-sm);
-}
-
-/* =============================================================================
-   CREATE FORM
-   ============================================================================= */
-
 .createForm {
+  margin-bottom: var(--space-md);
+  padding: var(--space-md) 0 var(--space-lg);
   border-bottom: 1px solid var(--color-rule-heavy);
-  padding-bottom: 20px;
-  margin-bottom: var(--space-sm);
 }
 
 .createTitleRow {
   display: flex;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
 }
 
 .createCheckCircle {
   width: 20px;
   height: 20px;
-  border-radius: 10px;
-  border: 2px solid var(--color-rule-heavy);
   flex-shrink: 0;
+  border: 2px solid var(--color-rule-heavy);
+  border-radius: 50%;
 }
 
 .createTitleInput {
   flex: 1;
+  min-width: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-primary);
   font-family: var(--font-serif);
   font-size: 17px;
   font-weight: 400;
-  color: var(--color-text-primary);
-  background: none;
-  border: none;
   outline: none;
 }
 
-.createActionsRow {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding-left: var(--space-xl);
+.createTitleInput::placeholder,
+.formInput::placeholder,
+.formTextarea::placeholder {
+  color: var(--color-text-tertiary);
 }
 
+.createActionsRow,
+.createActionsEnd {
+  display: flex;
+  align-items: center;
+  gap: var(--space-md);
+}
+
+.createActionsRow,
 .createDetailsPanel {
   padding-left: var(--space-xl);
 }
 
 .detailsToggle {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--color-text-tertiary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
+}
+
+.detailsToggle:hover,
+.cancelButton:hover {
+  color: var(--color-text-primary);
 }
 
 .detailsToggleMargin {
   composes: detailsToggle;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-md);
 }
 
 .spacer {
@@ -297,104 +190,91 @@
 }
 
 .createButton {
+  padding: 3px 12px;
+  border: 1px solid;
+  border-radius: var(--radius-editorial-sm);
+  background: none;
   font-family: var(--font-mono);
   font-size: 11px;
   font-weight: 600;
-  background: none;
-  border: 1px solid;
-  border-radius: var(--radius-editorial-sm);
-  padding: 3px 12px;
 }
 
 .createButtonEnabled {
-  color: var(--color-spice-terracotta);
-  border-color: var(--color-spice-terracotta);
+  border-color: var(--color-action);
+  color: var(--color-action);
   cursor: pointer;
 }
 
 .createButtonDisabled {
-  color: var(--color-text-tertiary);
   border-color: var(--color-rule-heavy);
+  color: var(--color-text-tertiary);
   cursor: default;
 }
 
 .cancelButton {
+  padding: 0;
+  border: none;
+  background: none;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
   font-family: var(--font-mono);
   font-size: 11px;
-  color: var(--color-text-tertiary);
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
 }
 
 .detailsFieldsRow {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 12px;
-  margin-bottom: 12px;
+  gap: var(--space-md);
+  margin-bottom: var(--space-md);
+}
+
+.formInput,
+.formTextarea {
+  width: 100%;
+  padding: var(--space-sm) 0;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  background: none;
+  color: var(--color-text-primary);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  outline: none;
 }
 
 .formInput {
-  width: 100%;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  color: var(--color-text-primary);
-  background: none;
-  border: none;
-  border-bottom: 1px solid var(--color-rule-light);
-  padding: 6px 0;
-  outline: none;
   margin-bottom: var(--space-sm);
 }
 
 .formTextarea {
-  width: 100%;
-  font-family: var(--font-sans);
-  font-size: 13px;
-  color: var(--color-text-primary);
-  background: none;
-  border: none;
-  border-bottom: 1px solid var(--color-rule-light);
-  padding: 6px 0;
-  outline: none;
-  resize: none;
-  margin-bottom: 12px;
+  margin-bottom: var(--space-md);
+  resize: vertical;
 }
 
 .createActionsEnd {
-  display: flex;
-  align-items: center;
   justify-content: flex-end;
-  gap: 12px;
 }
 
-/* =============================================================================
-   RESPONSIVE BREAKPOINTS
-   ============================================================================= */
-
 @media (max-width: 820px) {
-  .pageContainer,
-  .loadingContainer,
-  .errorContainer {
+  .root {
     max-width: 100%;
-    padding-left: var(--space-md);
-    padding-right: var(--space-md);
-  }
-
-  .pageTitle {
-    font-size: 30px;
   }
 }
 
 @media (max-width: 640px) {
-  .pageTitle {
-    font-size: 26px;
+  .createActionsRow,
+  .createActionsEnd,
+  .detailsFieldsRow {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
-  .headerRow {
-    flex-direction: column;
-    gap: var(--space-sm);
+  .createActionsRow,
+  .createDetailsPanel {
+    padding-left: 0;
+  }
+
+  .spacer {
+    display: none;
   }
 }

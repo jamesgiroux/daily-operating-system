@@ -131,6 +131,12 @@ function groupByMeeting(actions: DbAction[]): ActionGroup[] {
 type StatusTab = "backlog" | "unstarted" | "completed";
 type PriorityTab = "all" | 1 | 2 | 3 | 4;
 
+const ACTIONS_SURFACE_ATTRS = {
+  "data-ds-name": "ActionsPage",
+  "data-ds-tier": "surface",
+  "data-ds-spec": "surfaces/ActionsPage.md",
+} as const;
+
 const statusTabs: StatusTab[] = ["backlog", "unstarted", "completed"];
 const statusTabLabels: Record<StatusTab, string> = { backlog: "Suggested", unstarted: "Active", completed: "Completed" };
 const priorityTabs: PriorityTab[] = ["all", 1, 2, 3, 4];
@@ -236,16 +242,24 @@ export default function ActionsPage() {
 
   // Loading state
   if (loading) {
-    return <EditorialLoading count={4} />;
+    return (
+      <div className={s.root} {...ACTIONS_SURFACE_ATTRS}>
+        <EditorialLoading count={4} />
+      </div>
+    );
   }
 
   // Error state
   if (error) {
-    return <EditorialError message={error} onRetry={refresh} />;
+    return (
+      <div className={s.root} {...ACTIONS_SURFACE_ATTRS}>
+        <EditorialError message={error} onRetry={refresh} />
+      </div>
+    );
   }
 
   return (
-    <div className={s.pageContainer}>
+    <div className={s.root} {...ACTIONS_SURFACE_ATTRS}>
       <EditorialPageHeader
         title="Actions"
         scale="standard"

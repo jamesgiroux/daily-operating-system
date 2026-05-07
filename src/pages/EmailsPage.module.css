@@ -3,12 +3,29 @@
    Extends editorial-briefing.module.css for page-specific patterns.
    ============================================================================= */
 
+@import "../styles/design-tokens.css";
+
 /* -- Page Container --------------------------------------------------------- */
 
-.pageContainer {
-  max-width: 900px;
-  margin-left: auto;
-  margin-right: auto;
+.root {
+  position: relative;
+  width: min(var(--page-content-width-standard), 100%);
+  margin-inline: auto;
+  color: var(--color-text-primary);
+}
+
+.main {
+  width: 100%;
+}
+
+.stateMain {
+  display: grid;
+  min-height: calc(100vh - var(--folio-height) - var(--page-margin-top));
+  align-items: center;
+}
+
+.content {
+  width: 100%;
 }
 
 /* -- Hero Stat Line --------------------------------------------------------- */
@@ -67,7 +84,7 @@
 
 .syncRetryButton:hover {
   background: var(--color-text-primary);
-  color: var(--color-bg-primary);
+  color: var(--color-surface-primary);
   border-color: var(--color-text-primary);
 }
 
@@ -140,10 +157,6 @@
 
 .marginLabelYourMove {
   color: var(--color-spice-terracotta);
-}
-
-.marginLabelReplyDebt {
-  color: var(--color-spice-turmeric);
 }
 
 /* -- Extracted Items (Commitments / Questions) ------------------------------ */
@@ -260,116 +273,6 @@
   margin-bottom: var(--space-md);
 }
 
-/* -- Reply Debt  ------------------------------------------------- */
-
-.replyDebtItem {
-  margin-bottom: var(--space-md);
-  max-width: 640px;
-}
-
-.replyDebtHeader {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  margin-bottom: 2px;
-}
-
-.replyDebtSender {
-  font-family: var(--font-sans);
-  font-size: 14px;
-  font-weight: 500;
-  color: var(--color-text-primary);
-}
-
-.replyDebtAgeBadge {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-  padding: 1px 6px;
-  border-radius: 2px;
-  color: var(--color-text-tertiary);
-  background: var(--color-surface-subtle, rgba(0, 0, 0, 0.04));
-}
-
-.ageBadge_today {
-  color: var(--color-text-tertiary);
-}
-
-.ageBadge_1_2_days {
-  color: var(--color-spice-turmeric);
-  background: rgba(208, 168, 60, 0.1);
-}
-
-.ageBadge_3_5_days {
-  color: var(--color-spice-terracotta);
-  background: rgba(194, 107, 74, 0.1);
-}
-
-.ageBadge_overdue {
-  color: var(--color-editorial-error, #b91c1c);
-  background: rgba(185, 28, 28, 0.08);
-}
-
-.ageBadge_fallback {
-  color: var(--color-text-tertiary);
-}
-
-.replyDebtSubject {
-  font-family: var(--font-serif);
-  font-size: 15px;
-  font-weight: 300;
-  line-height: 1.5;
-  color: var(--color-text-secondary);
-  margin: 0 0 4px 0;
-}
-
-.replyDebtMeta {
-  display: flex;
-  align-items: center;
-  gap: var(--space-sm);
-  flex-wrap: wrap;
-}
-
-.replyDebtSentiment {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-family: var(--font-mono);
-  font-size: 10px;
-  letter-spacing: 0.04em;
-  color: var(--color-text-tertiary);
-}
-
-.replyDebtSentimentDot {
-  display: inline-block;
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-}
-
-.markRepliedButton {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--color-text-tertiary);
-  background: none;
-  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.1));
-  border-radius: 2px;
-  padding: 2px 8px;
-  cursor: pointer;
-  transition: color 0.15s, border-color 0.15s;
-  margin-left: auto;
-}
-
-.markRepliedButton:hover {
-  color: var(--color-garden-sage);
-  border-color: var(--color-garden-sage);
-}
-
 /* -- Triage Action Bar ------------------------------------------------ */
 
 .emailIntelItemHoverable {
@@ -388,6 +291,18 @@
   opacity: 1;
 }
 
+.sentimentDot {
+  background: var(--color-text-tertiary);
+}
+
+.sentimentDot[data-sentiment="positive"] {
+  background: var(--color-garden-sage);
+}
+
+.sentimentDot[data-sentiment="negative"] {
+  background: var(--color-spice-terracotta);
+}
+
 .triageButton {
   display: inline-flex;
   align-items: center;
@@ -395,7 +310,7 @@
   width: 28px;
   height: 28px;
   background: none;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-rule-light);
   border-radius: 4px;
   cursor: pointer;
   color: var(--color-text-tertiary);
@@ -423,7 +338,7 @@
 .inlineCommitments {
   margin-top: 8px;
   padding-top: 6px;
-  border-top: 1px solid var(--color-border);
+  border-top: 1px solid var(--color-rule-light);
 }
 
 .inlineCommitmentsLabel {
@@ -485,16 +400,16 @@
 
 .trackButton:hover {
   background: var(--color-spice-turmeric);
-  color: var(--color-paper-warm-white);
+  color: var(--color-surface-primary);
 }
 
 .commitmentForm {
   width: 100%;
   max-width: 420px;
   padding: 10px 12px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-rule-light);
   border-radius: 6px;
-  background: color-mix(in srgb, var(--color-paper) 86%, white 14%);
+  background: var(--color-surface-primary);
 }
 
 .commitmentFormCompact {
@@ -539,7 +454,7 @@
 }
 
 .commitmentFormSubmit {
-  color: var(--color-paper-warm-white);
+  color: var(--color-surface-primary);
   background: var(--color-text-primary);
   border: 1px solid var(--color-text-primary);
 }
@@ -547,7 +462,7 @@
 .commitmentFormCancel {
   color: var(--color-text-tertiary);
   background: transparent;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-rule-light);
 }
 
 .trackedCommitment {
@@ -585,7 +500,7 @@
   justify-content: center;
   width: 20px;
   height: 20px;
-  border: 1px solid var(--color-border);
+  border: 1px solid var(--color-rule-light);
   border-radius: 999px;
   color: var(--color-text-tertiary);
   background: transparent;
@@ -622,7 +537,7 @@
   text-transform: uppercase;
   color: var(--color-text-tertiary);
   background: none;
-  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.1));
+  border: 1px solid var(--color-rule-light);
   border-radius: 2px;
   padding: 4px 10px;
   cursor: pointer;
@@ -667,7 +582,7 @@
   align-items: center;
   gap: 5px;
   background: none;
-  border: 1px solid var(--color-border-subtle, rgba(0, 0, 0, 0.08));
+  border: 1px solid var(--color-rule-light);
   border-radius: 4px;
   padding: 3px 8px;
   margin-top: 4px;
@@ -681,7 +596,7 @@
 
 .meetingLinkBadge:hover {
   color: var(--color-text-secondary);
-  border-color: var(--color-border, rgba(0, 0, 0, 0.15));
+  border-color: var(--color-rule-heavy);
 }
 
 .meetingLinkTime {
