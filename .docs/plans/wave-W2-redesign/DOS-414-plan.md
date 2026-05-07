@@ -89,16 +89,40 @@ pub async fn compose_moving(state: &AppState) -> MovingViewModel {
 
 Module layout (`src-tauri/src/services/briefing/moving.rs`):
 - `compose_moving` — public entry point (~30 LOC orchestration)
-- `collect_meeting_signals` — Meeting → Vec<(EntityId, MovingSignalViewModel)> (~50 LOC)
-- `collect_action_signals` — Action → Vec<(EntityId, MovingSignalViewModel)> (~50 LOC)
-- `collect_email_signals` — Email → Vec<(EntityId, MovingSignalViewModel)> (~50 LOC, DOS-416 feeds)
-- `collect_lifecycle_signals` — DashboardLifecycleUpdate → Vec<(EntityId, MovingSignalViewModel)> (~30 LOC, DOS-419 absorbs into a separate adapter module)
+- `collect_meeting_signals` — Meeting → Vec<(EntityId, MovingSignalViewModel, Option<ClaimId>)> (~50 LOC)
+- `collect_action_signals` — Action → Vec<(EntityId, MovingSignalViewModel, Option<ClaimId>)> (~50 LOC)
+- `collect_email_signals` — Email → Vec<(EntityId, MovingSignalViewModel, Option<ClaimId>)> (~50 LOC, DOS-416 feeds)
+- `collect_lifecycle_signals` — DashboardLifecycleUpdate → Vec<(EntityId, MovingSignalViewModel, Option<ClaimId>)> (~30 LOC, DOS-419 absorbs into a separate adapter module)
 - `group_signals_by_entity` — pure function, HashMap-based group-by (~20 LOC)
 - `build_entity_view` — produces a MovingEntityViewModel from a (LinkedEntity, Vec<Signal>) (~80 LOC; reads the entity's provenance stats)
 - `change_magnitude` — pure ranking function (~20 LOC)
 - `format_count_label`, `format_summary` — pure label formatters (~15 LOC each)
 
 Estimate ~350 LOC for the composer + ~250 LOC of tests.
+
+### Internal `claim_id` thread (DOS-428 dependency, architect M3)
+
+`MovingSignalViewModel` (the wire shape from `briefing.ts:488-495`) does NOT include a `claim_id` field — the wire shape is locked. But DOS-428 (W4) needs to look up correctionState by claim id when rendering signals.
+
+**Solution:** carry a parallel `Option<ClaimId>` alongside each signal during composition, internal to the Rust layer:
+
+```rust
+type SignalWithClaim = (EntityId, MovingSignalViewModel, Option<ClaimId>);
+
+fn collect_meeting_signals(...) -> Vec<SignalWithClaim>;
+fn collect_action_signals(...) -> Vec<SignalWithClaim>;
+// etc.
+```
+
+DOS-428 (W4) consumes this triple in `build_entity_view` to batch claim-lifecycle lookups by ClaimId before serializing the signal — at that boundary, the third tuple element is dropped (it's not on the wire). Non-claim signals (e.g., a calendar meeting with no underlying claim) carry `None`.
+
+Per-source-helper rules:
+- **Meeting signals:** `Option<ClaimId>` = the meeting's `intelligence_quality.trust_band_claim_id` if present; `None` otherwise.
+- **Action signals:** `None` (actions have no claim trust today; post-v1.4.x track makes them claim-bearing).
+- **Email signals:** the email-as-claim id when DOS-416 ships; `None` until then.
+- **Lifecycle signals:** the `change_id` from `DashboardLifecycleUpdate` cast to ClaimId (DOS-419 owns this mapping).
+
+A unit test in DOS-414 must assert that each per-source helper preserves the claim_id correctly — non-claim signals carry None, claim-backed signals carry Some(id).
 
 ## 5. Ranking algorithm — 24h change-magnitude
 

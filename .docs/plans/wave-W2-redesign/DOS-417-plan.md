@@ -215,6 +215,17 @@ W6 then removes the `/week` route, `WeekPage.tsx`, unused week CSS, and any temp
 - new `ScheduleViewModel` fields unless L2 explicitly requires a contract amendment
 - inline style workarounds for chart positioning
 
+### File-coordination boundary with DOS-427 (W4)
+
+**Both this ticket (W2a) and DOS-427 (W4) edit `src-tauri/src/services/briefing/schedule.rs`.** The boundary contract:
+
+- **DOS-417 (this ticket) owns:** the function signatures of `compose_schedule`, `map_meeting`, `map_meeting_type`, `build_state_tags`, `compute_meeting_mix`, `format_count_label`, `format_summary`, `extract_entity_name`, plus any new helpers added for temporal grouping / day-chart bars / now-line / week shape. DOS-417 owns the full set of tests it lands.
+- **DOS-427 (W4) owns:** replacing the `TrustBandWire::Unscored` literal in `map_meeting`'s `TrustMixin` with a real lookup against `meeting_readiness` claims. DOS-427 must preserve every helper signature DOS-417 establishes and must not break any DOS-417 test.
+
+The seam: DOS-427 will likely add a new helper (`load_trust_band_for_meeting(&meeting) -> TrustBandWire`) and call it from inside `map_meeting` where the `Unscored` literal lives today. That's the only edit point DOS-427 needs in this file. If DOS-427's L0 plan grows beyond that, escalate.
+
+**At L1 of DOS-427's PR:** re-run DOS-417's full test suite (`cargo test --lib services::briefing::schedule`) and confirm zero regressions. DOS-427's PR description must cite this coordination boundary explicitly.
+
 ## 12. L1 Gates
 
 Rust:

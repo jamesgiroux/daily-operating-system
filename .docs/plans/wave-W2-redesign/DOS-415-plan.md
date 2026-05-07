@@ -23,18 +23,16 @@
 
 ## 2. Trust-Source Declaration
 
-Per the architect's W2a merge gate, Watch must name the trust source for claim-bearing rows.
+Per the architect's W2a merge gate, Watch must name the trust source for every claim-bearing row variant. Format mirrors DOS-414's table (architect's N1 review note).
 
-- **Suggested-action upstream claim type:** `crate::abilities::claims::ClaimType::SuggestedOutcome`, persisted as `intelligence_claims.claim_type = "suggested_outcome"`.
-- **Ability output type:** `crate::abilities::prepare_meeting::synthesis::SuggestedOutcome`.
-- **Publish path:** `draft_claims_for_publish()` converts `MeetingBrief.suggested_outcomes` into `ClaimDraft { claim_type: "suggested_outcome", ... }`.
-- **Canonical subject:** `SuggestedOutcome` is registered for meeting subjects only, so Watch joins it to today's meetings.
-- **Today's state:** claim type and ability output exist; the missing piece is a Watch-specific loader for active surfaced `suggested_outcome` claims relevant today.
-- **This ticket owns:** the Watch loader/adapter plus action-id materialization or lookup, because `WatchSuggestedActionRow.actionId` must be a real action id accepted by `actions::*` mutations.
-- **Fallback:** if no active surfaced `suggested_outcome` claims exist for today, emit zero `suggestedAction` rows. Do not emit unscored placeholder suggestions.
-- **Trust band mapping:** use claim trust via the existing claim-trust-band helper; fall back to `trustBand: "unscored"`.
-- **Rendered provenance:** parse claim `provenance_json` into `RenderedProvenanceSummary` when valid; invalid/empty provenance becomes `None`.
-- **Lifecycle default:** map `ClaimVerificationState::Active` to `correctionState: "none"` and preserve contested/corrected state if already present.
+| Watch row variant | Source | Upstream | Today's state | W2a default | Unblocked at |
+|---|---|---|---|---|---|
+| `WatchSuggestedActionRow` | `intelligence_claims.claim_type = "suggested_outcome"` (per `crate::abilities::claims::ClaimType::SuggestedOutcome`). Ability output: `crate::abilities::prepare_meeting::synthesis::SuggestedOutcome`. Publish path: `draft_claims_for_publish()`. Canonical subject: meeting subjects only. | Claim type + ability output exist at fork point. Watch-specific loader for active surfaced claims relevant today does NOT yet exist. | DOS-415 lands the Watch loader + action-id materialization. If no active surfaced `suggested_outcome` claims exist today, emit zero `suggestedAction` rows (do not emit unscored placeholder suggestions). | `trustBand` from claim trust via existing claim-trust-band helper; fall back to `Unscored` if claim has no trust score. `renderedProvenance` parsed from `provenance_json` when valid; `None` when invalid/empty. `correctionState` from `ClaimVerificationState`: Active → `"none"`; preserve `corrected`/`contested` if already on the claim. | Today (DOS-415 itself). |
+| `WatchOpenActionRow` | Action lifecycle status. Actions have no claim trust today. | MVP shipped at commit `3d5d5b3c` with `Unscored`. | Continue `Unscored`. | `Unscored`. | Pending action-as-claim modeling (post-v1.4.x track). |
+| `WatchParkedRow` | Snooze record (DOS-415 introduces; backed by an `action_snoozes` table or schema extension). | Not yet wired. | DOS-415 lands the snooze persistence + reads. | `Unscored` (snooze is metadata, not a claim). | DOS-415 itself. |
+| `WatchAgingRow` | Action lifecycle (status=Backlog, age threshold). Actions have no claim trust today. | MVP shipped with `Unscored` for Backlog → Aging. | Continue `Unscored`. | `Unscored`. | Pending action-as-claim modeling (post-v1.4.x track). |
+
+**This ticket owns:** the Watch loader/adapter, action-id materialization or lookup (because `WatchSuggestedActionRow.actionId` must be a real action id accepted by `actions::*` mutations), and snooze record persistence.
 
 If L2 rejects action-id materialization inside this ticket, the plan must be revised before implementation. A suggested-action row without a durable action id is not acceptable under the locked TS contract.
 
@@ -135,12 +133,36 @@ Implementation target paths for DOS-415:
 - `src-tauri/src/db/actions.rs` - watch candidate queries, action snooze persistence, archive/restore helpers where needed.
 - `src-tauri/src/commands/actions_calendar.rs` - Tauri commands for new action mutations.
 - `src-tauri/src/lib.rs` - command registration for any new Tauri commands.
-- `src-tauri/src/migrations/143_watch_action_triage.sql` - proposed next migration for action snoozes and action-meeting links, subject to migration-number availability at implementation time.
+- `src-tauri/src/migrations/{NNN}_watch_action_triage.sql` - new migration. **Migration number is assigned at implementation time** (`ls src-tauri/src/migrations/` to find the next available; do not assume `143` because the parent v1.4.0 track may have landed migrations since fork point). PR description must cite the chosen number.
 - `src-tauri/src/migrations.rs` - register the migration.
 - `src-tauri/src/services/briefing_view_model.rs` - only if Rust wire helpers/tests need fixture updates; do not change the locked wire shape without ADR follow-up.
 - `src/types/briefing.ts` - no expected change; the union already contains all four variants and required mutation ids for suggested/aging rows.
 
 No TS component files should be touched in DOS-415. WatchRow rendering belongs to the pattern ticket, and this service ticket must not introduce inline CSS.
+
+### File-deny-list (W2a parallel-agent allowlist enforcement)
+
+Per the wave plan's parallel-agent allowlist discipline (`waves.md:39-44`), W2a tickets running concurrently must declare which files are off-limits to other agents. **DOS-415 owns these files exclusively during W2a:**
+
+- `src-tauri/src/services/briefing/watch.rs`
+- `src-tauri/src/services/actions.rs` (any new mutation wrappers)
+- `src-tauri/src/db/actions.rs` (watch candidate queries, snooze persistence)
+- `src-tauri/src/commands/actions_calendar.rs` (new Tauri command registrations)
+- `src-tauri/src/migrations/{NNN}_watch_action_triage.sql` (new file)
+- `src-tauri/src/migrations.rs` (registration line)
+
+Other concurrent W2a agents (DOS-414, 416, 417, 418) must NOT edit any of the above. `lib.rs` is shared (every W2a ticket may register Tauri commands there) — coordinate via small, distinct edits at known anchor lines. Conflicts at L1 escalate to the wave orchestrator (Claude/me).
+
+### Scope split decision
+
+L0 review (architect) flagged that DOS-415 is roughly 2x the work of other W2a plans because it bundles the Watch composer with new action-system mutations + a schema migration. **Decision: keep as one ticket.** Rationale:
+
+- The composer cannot ship without the mutations it emits (per W0 plan rev 3.1 mutation-existence gate).
+- The mutations cannot ship without the schema migration that backs `actions::snooze` and `actions::add_to_meeting`.
+- Splitting into separate tickets would require the composer ticket to declare its mutation-existence verification as "done in DOS-NNN," creating a hard sequencing dependency without saving total work.
+- The parallel-agent file-deny-list above prevents merge contention with other W2a tickets despite the larger scope.
+
+If the impl agent finds the scope unmanageable in one cycle, escalate at L1 to split off the migration + mutation surface as DOS-415b. Do not attempt a partial DOS-415 ship that leaves Watch variants without their mutations.
 
 ## 8. Out Of Scope
 

@@ -63,6 +63,15 @@ Primary file:
 
 No contract type changes are expected in `src-tauri/src/services/briefing_view_model.rs` or `src/types/briefing.ts`.
 
+### File-coordination boundary with DOS-417 (W2a)
+
+This file (`services/briefing/schedule.rs`) is owned at the helper-signature level by DOS-417 (W2a). DOS-427 must:
+
+- **Preserve every helper signature DOS-417 establishes:** `compose_schedule`, `map_meeting`, `map_meeting_type`, `build_state_tags`, `compute_meeting_mix`, `format_count_label`, `format_summary`, `extract_entity_name`, plus any DOS-417 temporal-grouping / day-chart / week-shape helpers.
+- **Preserve every DOS-417 test.** At L1 of this PR, re-run `cargo test --lib services::briefing::schedule` and confirm zero regressions.
+- **Constrain edits to a minimal-surface trust loader.** The expected pattern: add a new helper (e.g., `load_trust_band_for_meeting(&meeting, db) -> TrustBandWire`) that performs the meeting_readiness lookup, and call it from inside `map_meeting` where the `Unscored` literal lives today. That's the only edit point in this file. Any larger refactor escalates.
+- **Cite this coordination boundary explicitly** in the PR description, alongside a note confirming DOS-417 is on `dev` and its tests pass.
+
 Implementation steps:
 
 1. Add a private schedule-local helper that loads trust bands for the dashboard meetings before `map_meeting` runs.

@@ -49,7 +49,7 @@ PRs for each item.
 |---|---|
 | Lead | `compose_lead` emits real day framing from the briefing model inputs, not mock/demo copy. Focus/capacity/readiness text must come from service data or render absent. |
 | Schedule | Full DOS-417 is complete: temporal classification, ISO start/end data, duration labels, day chart data, and week-shape lift are service-owned and tested. |
-| Predictions | A live producer exists for today's forward-looking predictions across entities. Empty predictions are allowed only when the live query returns none, not because the producer is unwired. |
+| Predictions | **Acceptable at cutover: empty branch.** No producer exists for today's forward-looking predictions feed (DOS-218/219 emit per-meeting predictions, not a daily roll-up). DOS-418 ships the composer's empty-branch shape; the producer is tracked as a separate post-v1.4.x ticket (filed during W6 prep, link in this PR description) and is NOT a cutover blocker. The Predictions section renders "0 predictions today" with disabled trigger — users see correct UX, not broken data. When the producer ships, the composer wires through automatically (no contract change). Per architect M4 review note from `.docs/plans/wave-W2-redesign/`. |
 | Moving | DOS-414 aggregation and DOS-419 lifecycle adapter are complete: meeting/action/email/lifecycle signals group by entity, rank by change magnitude, carry trust/provenance where available, and degrade gracefully. |
 | Watch | Full DOS-415 is complete: suggestedAction, openAction, parked, and aging rows are backed by real actions/claims and every visible affordance has a mutation path. |
 

@@ -1,11 +1,22 @@
-# DOS-419 — Lifecycle adapter for Moving (W2b)
+# DOS-419 — W2b: lifecycle adapter + orchestrator wire-up
 
-**Status:** L0 plan, awaiting reviewer signoff before impl.
-**Depends on:** DOS-414 (Moving composer must land first; this layers on its `collect_lifecycle_signals` stub).
-**Wave:** W2b. Per architect's W2a/W2b split, this lands in the second sub-wave alongside the orchestrator wire-up.
+**Status:** L0 plan, rev 2 — expanded to absorb the W2b orchestrator wire-up + latency budget table + Tauri-command integration test per architect's M6 split rule. Awaiting reviewer signoff before impl.
+**Depends on:** DOS-414 (Moving composer must land first; this layers on its `collect_lifecycle_signals` stub) + DOS-415 + DOS-416 + DOS-417 + DOS-418 (all 5 W2a per-section composers must exist before the orchestrator wires them via `tokio::try_join!`).
+**Wave:** W2b — the second sub-wave per architect's M6 split. This is **the only ticket in W2b** and absorbs every cross-section integration concern.
+
+## Scope
+
+DOS-419 has three deliverables, sequenced together because they share `services/briefing_view_model.rs::compose()`:
+
+1. **Lifecycle adapter** — implement `collect_lifecycle_signals` (replaces the DOS-414 stub).
+2. **Orchestrator wire-up** — edit `briefing_view_model::compose()` to run all 5 W2a composers concurrently via `tokio::try_join!` (or `tokio::join!` if no composer returns `Result`).
+3. **Latency budget table** — add per-section `BRIEFING_*_LATENCY_BUDGET_MS` constants alongside `compose()` mirroring `services/dashboard.rs:155 DASHBOARD_LATENCY_BUDGET_MS`. Log section-level latency on each call so the "slow service blocks assembly" failure mode is observable, not theoretical.
+
+Plus the integration test that the W2b merge gate requires: `get_briefing_view_model` Tauri command returns `BriefingResult::Success` on a populated fixture exercising every section.
 
 ## 1. Acceptance criteria
 
+### Lifecycle adapter
 - [ ] `collect_lifecycle_signals(dashboard: &DashboardData) -> Vec<(EntityId, MovingSignalViewModel)>` returns one signal per `DashboardLifecycleUpdate`.
 - [ ] Each emitted signal carries `kind: SignalDotKind::Lifecycle` and a `whatSegments` description like `"Moved to renewing"` or `"Renewal stage: prospecting → engaged"`.
 - [ ] Each signal carries `LifecycleMixin.correctionState` populated from DOS-411 user_note claim lifecycle when the underlying lifecycle change has been corrected/contested.
@@ -13,6 +24,38 @@
 - [ ] Trust band: scored from the lifecycle change's `confidence` field — `confidence >= 0.85` → `LikelyCurrent`, `0.6-0.85` → `UseWithCaution`, `<0.6` → `NeedsVerification`. Falls back to `Unscored` if confidence is missing.
 - [ ] When `dashboard.lifecycle_updates` is `None` or empty, returns `vec![]` (graceful empty).
 - [ ] `cargo test services::briefing::moving::lifecycle` covers: per-update mapping, confidence → trust-band classification at all 4 boundaries, correctionState pickup from DOS-411, missing-evidence handling, multi-update grouping by entity.
+
+### Orchestrator wire-up
+- [ ] `briefing_view_model::compose()` calls `compose_lead`, `compose_schedule`, `compose_predictions`, `compose_moving`, `compose_watch` concurrently via `tokio::join!` (composers are non-fallible today; switch to `try_join!` if any composer's signature gains a `Result`).
+- [ ] No per-section composer is invoked sequentially in `compose()` — concurrent execution is the whole point of the orchestrator.
+- [ ] Section-level errors do NOT escalate to envelope `BriefingResult::Error` automatically. The orchestrator owns whether a degraded section (composer that returned an empty/fallback shape) surfaces an envelope-level error or a partial-success render. Default policy: degrade to per-section empty branch; envelope `Error` only when the orchestrator itself can't run (e.g. fatal app-state failure).
+- [ ] The chrome slices (`date`, `folio`, `day_strip`) are composed inline from the current local date — no per-section composer needed (they're already in `compose()` from the W2a/W2b skeleton commit `626af13b`).
+
+### Latency budget table
+- [ ] New constants alongside `compose()`:
+  ```rust
+  const BRIEFING_LEAD_LATENCY_BUDGET_MS: u128 = 50;
+  const BRIEFING_SCHEDULE_LATENCY_BUDGET_MS: u128 = 200;
+  const BRIEFING_PREDICTIONS_LATENCY_BUDGET_MS: u128 = 100;
+  const BRIEFING_MOVING_LATENCY_BUDGET_MS: u128 = 400;  // heaviest — multi-source
+  const BRIEFING_WATCH_LATENCY_BUDGET_MS: u128 = 200;
+  const BRIEFING_TOTAL_LATENCY_BUDGET_MS: u128 = 500;   // not the sum — we run concurrently
+  ```
+- [ ] Each composer's elapsed time is measured (`std::time::Instant`) and logged to `tracing` (or the existing `log_command_latency` helper if present) when it exceeds its budget.
+- [ ] Total `compose()` elapsed time is measured against `BRIEFING_TOTAL_LATENCY_BUDGET_MS` and logged on overrun.
+- [ ] Budgets are tunable; first-cut values land here. Tuning per real-world traces is a post-W6 follow-up.
+
+### Tauri command integration test
+- [ ] `cargo test --lib services::briefing_view_model::integration::populated_fixture_returns_success` — constructs an `AppState` test harness with seeded data (at least one meeting, one action, one lifecycle update) and asserts the Tauri command path produces `BriefingResult::Success` with non-empty `model.schedule.meetings`, non-empty `model.watch.rows`, and a Moving entity that includes the lifecycle signal.
+- [ ] Test does NOT depend on Google Calendar auth or a live DB write — uses the dashboard service's existing test seam where possible. If the seam doesn't exist, this test is documented as an integration-style test that requires `AppState::for_tests()` (which doesn't currently exist) and is gated until that helper lands.
+
+## 2. Trust-source declaration (architect's W2a merge gate)
+
+| Source | Upstream | Today's state | W2b default | Unblocked at |
+|---|---|---|---|---|
+| **Lifecycle signals** | `services::dashboard.lifecycle_updates: Option<Vec<DashboardLifecycleUpdate>>`. Each carries `account_id`, `previous_lifecycle`, `new_lifecycle`, `renewal_stage`, `source`, `confidence`, `evidence`. | Wired today. | `trustBand` from `confidence` via classifier (≥0.85 LikelyCurrent / 0.60-0.85 UseWithCaution / <0.60 NeedsVerification / NaN Unscored). | Today. |
+| **Correction state** | DOS-411 user_note claim lifecycle. Lookup via `claims::lifecycle_state_for_change(change_id)` returning `Option<CorrectionState>`. | DOS-411 user_note + cutover shipped at parent track fork point (138b1571). Lookup function existence MUST be verified at L1 — if absent, this plan adds the ~30-line lookup as part of scope. | `correctionState: None` (omitted from wire) when lookup returns None. Signal renders default modifier. | Today, modulo lookup-function verification. |
+| **Latency timing** | `std::time::Instant` + existing `log_command_latency` (or `tracing` if not present in this layer). | Always available. | Logs only on overrun, not every call. | Today. |
 
 ## 2. Trust-source declaration (architect's W2a merge gate)
 
@@ -129,13 +172,23 @@ The emphasis renders italic via SignalDot's existing CSS.
 
 ```
 src-tauri/src/services/briefing/moving/
-  lifecycle.rs                     ← new, ~200 LOC including tests
+  lifecycle.rs                     ← new, ~200 LOC including tests (deliverable 1)
 src-tauri/src/services/briefing/
   moving.rs                        ← edit: replace stub `collect_lifecycle_signals`
                                      in section 4 of DOS-414 with real call
+                                     (deliverable 1)
+src-tauri/src/services/
+  briefing_view_model.rs           ← edit: rewrite `compose()` to call all 5
+                                     composers via tokio::join! + add
+                                     BRIEFING_*_LATENCY_BUDGET_MS constants
+                                     + per-section + total elapsed logging
+                                     (deliverables 2 + 3)
+                                   ← edit: add #[cfg(test)] integration test
+                                     module exercising the full Tauri command
+                                     path on a populated fixture (deliverable 4)
 src-tauri/src/services/claims.rs
   (optional ~30 LOC)               ← if `lifecycle_state_for_change` doesn't
-                                     exist; trivial DB lookup
+                                     exist; trivial DB lookup (deliverable 1)
 .docs/plans/wave-W2-redesign/
   DOS-419-plan.md                  ← this file
 ```
@@ -147,12 +200,14 @@ src-tauri/src/services/claims.rs
 - **Lifecycle change creation** — the dashboard service produces them today. This adapter only consumes.
 - **Trust-band threshold tuning** — follows parent-track DOS-320 thresholds. Tuning is post-W6.
 - **Signal ordering or ranking** — handled by DOS-414 `change_magnitude` (the ranking algorithm). This adapter only emits one signal per update.
+- **Latency budget tuning** — first-cut values land here. Tuning per real-world traces is a post-W6 follow-up. Specifically out of scope: deciding whether to switch to `tokio::try_join!` (requires composer signatures to gain `Result`, which is a post-W6 evolution).
+- **Per-section error escalation policy** — default: composer empty-branch fallback degrades that section silently; envelope `Error` only when orchestrator itself fails. Refining this (e.g., "if Schedule fails, escalate to envelope error because the briefing without a schedule is meaningless") is a post-W6 product call.
 
 ## 10. L1 self-validation gates
 
 - `cargo check --lib` clean
 - `cargo clippy --lib -- -D warnings` clean
-- `cargo test services::briefing::moving::lifecycle` exercises:
+- `cargo test services::briefing::moving::lifecycle` (deliverable 1) exercises:
   - Per-update mapping (entity_id, kind, whatSegments, when)
   - Confidence boundary classification: 0.85, 0.60, exactly-on-boundary, NaN-defensive
   - correctionState pickup when lookup returns Some
@@ -161,22 +216,45 @@ src-tauri/src/services/claims.rs
   - Multiple updates for same entity → multiple signals (grouping happens in DOS-414's `group_signals_by_entity`, not here)
   - whatSegments format for previous→new vs initial-classification vs renewal-stage transition
   - Wire shape serializes with camelCase (existing pattern)
+- `cargo test services::briefing_view_model::compose_runs_concurrently` (deliverable 2) exercises:
+  - All 5 composers called within one `compose()` invocation
+  - Concurrent execution proven by mocking each composer with a 50ms delay and asserting total elapsed < 200ms (i.e. not 5×50=250ms)
+  - Chrome slices (date/folio/dayStrip) populated from `Local::now()`
+  - `compose()` returns `BriefingResult::Success` with all 8 model slices populated
+- `cargo test services::briefing_view_model::latency_logging` (deliverable 3) exercises:
+  - Composer that exceeds its budget triggers a log line containing the section name + elapsed ms
+  - Composer within budget produces no log line
+  - Total `compose()` overrun produces a separate log line distinct from per-section
+- `cargo test --lib services::briefing_view_model::integration::populated_fixture_returns_success` (deliverable 4) exercises the Tauri command path end-to-end with seeded fixture data; asserts non-empty `model.schedule.meetings`, non-empty `model.watch.rows`, and a Moving entity carrying a lifecycle signal with `correctionState` populated by the test stub of `lifecycle_state_for_change`.
 
 ## 11. L2 reviewers
 
-- **code-reviewer subagent** — diff review on the new file. Focus: confidence classification correctness, segment formatting, defensive handling of optional fields.
-- **architect-reviewer subagent** — confirms the closure-injection pattern for `correction_lookup` is appropriate vs hard import; sanity-check trust-band thresholds match DOS-320.
-- **codex review** — independent shape check; pin the SignalDotKind="lifecycle" wire string and the LifecycleMixin flatten behavior in tests.
+- **code-reviewer subagent** — diff review across all 4 deliverables. Focus on:
+  - Lifecycle adapter: confidence classification correctness, segment formatting, defensive handling of optional fields.
+  - Orchestrator: concurrent execution actually achieved (no accidental sequential awaits), error-degradation policy enforced, chrome composition unchanged from existing skeleton.
+  - Latency table: budgets reasonable, logging is gated on overrun (not every call).
+  - Integration test: doesn't depend on live external services; uses a test seam.
+- **architect-reviewer subagent** — confirms:
+  - Closure-injection pattern for `correction_lookup` appropriate vs hard import.
+  - Trust-band thresholds match DOS-320.
+  - **W2b merge gate satisfied** per `waves.md:94` — `tokio::join!` orchestration, lifecycle adapter layered on Moving, latency budgets logged, Tauri command returns Success on populated fixture.
+  - Per-section error policy is the right default.
+- **codex review** — independent shape check; pin the SignalDotKind="lifecycle" wire string, the LifecycleMixin flatten behavior, and the orchestrator's concurrent-execution semantics in tests.
 
 ## 12. Risk + sequencing notes
 
-- **Hard dependency on DOS-414.** This adapter's signature uses types defined in the Moving composer's module (`EntityId`). DOS-414 must land first with the stub `collect_lifecycle_signals` returning empty; DOS-419 replaces the stub with the real implementation.
+- **Hard dependency on all 5 W2a composers.** Orchestrator wire-up cannot land before DOS-414/415/416/417/418 are complete. Lifecycle adapter cannot land before DOS-414 stubs `collect_lifecycle_signals`. **W2b is sequential after all of W2a clears L3.**
 - **Soft dependency on `claims::lifecycle_state_for_change`.** Verify it exists during L0 review. If not, the implementation includes a ~30-line addition to `services::claims`.
-- **Wave timing:** per architect's split, DOS-414 lands in W2a, this lands in W2b alongside the orchestrator wire-up. The W2b sub-wave is sequential (DOS-419 + orchestrator + latency budget table all touch the same surfaces).
+- **Single-ticket sub-wave.** Per architect's M6 split rule, DOS-419 is the *only* W2b ticket — it absorbs all cross-section integration concerns (orchestrator + latency + lifecycle adapter) so no other ticket touches `briefing_view_model::compose()`. This avoids the merge contention the split was designed to prevent.
 - **Trust-band threshold consistency:** if parent track DOS-320 has tuned thresholds since fork, this adapter must follow. Verify during impl.
+- **`tokio::join!` vs `tokio::try_join!`:** today, every composer is non-fallible (returns its view-model directly, not `Result`). Use `join!`. If a future composer evolution makes one fallible, switching to `try_join!` is a single-line change — the orchestrator structure is identical.
+- **AppState test seam:** the integration test (deliverable 4) needs an `AppState::for_tests()` helper that doesn't trigger heavy I/O (config load, audit log, DB open). If the helper doesn't exist when this ticket runs, scope expands by ~50 LOC to add it. Verify at L0 review.
 
 ## 13. Post-impl follow-ups
 
 - **Exact lifecycle-change timestamps** when the dashboard service surfaces them.
 - **Trust-band threshold tuning** if parent track DOS-320 evolves.
 - **Multi-source corroboration:** if the same lifecycle change appears in claims from multiple sources, merge the trust attribution rather than picking one.
+- **Latency-budget tuning** based on real-world traces. First-cut values are starting points.
+- **`try_join!` migration** if any composer's signature evolves to return `Result` for typed errors.
+- **Per-section error escalation policy refinement** if user feedback shows certain section failures should escalate to envelope `Error` rather than degrade silently.
