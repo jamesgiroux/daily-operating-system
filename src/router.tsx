@@ -48,6 +48,7 @@ import BookOfBusinessPage from "@/pages/BookOfBusinessPage";
 import SettingsPage from "@/pages/SettingsPage";
 import MePage from "@/pages/MePage";
 import WeekPage from "@/pages/WeekPage";
+import DailyBriefingRedesign from "@/pages/DailyBriefingRedesign";
 
 
 // Magazine shell
@@ -60,7 +61,7 @@ import { Toaster } from "@/components/ui/sonner";
 import { DevToolsPanelStandalone } from "@/components/devtools/DevToolsPanel";
 import { useNotifications } from "@/hooks/useNotifications";
 import { useBackgroundStatus } from "@/hooks/useBackgroundStatus";
-import type { CalendarEvent, GoogleAuthStatus } from "@/types";
+import type { CalendarEvent, FeatureFlags, GoogleAuthStatus } from "@/types";
 import { PersonalityProvider } from "@/hooks/usePersonality";
 import { UpdateBanner } from "@/components/notifications/UpdateBanner";
 import { WhatsNewModal, useWhatsNewAutoShow } from "@/components/notifications/WhatsNewModal";
@@ -439,6 +440,32 @@ function DashboardPage() {
   }
 }
 
+function DailyBriefingRouteGate() {
+  const [redesignEnabled, setRedesignEnabled] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    invoke<FeatureFlags>("get_feature_flags")
+      .then((flags) => {
+        if (!cancelled) {
+          setRedesignEnabled(flags.daily_briefing_redesign_enabled);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setRedesignEnabled(false);
+        }
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  return redesignEnabled ? <DailyBriefingRedesign /> : <DashboardPage />;
+}
+
 // Create root route
 const rootRoute = createRootRoute({
   component: RootLayout,
@@ -448,7 +475,7 @@ const rootRoute = createRootRoute({
 const indexRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/",
-  component: DashboardPage,
+  component: DailyBriefingRouteGate,
 });
 
 const actionsRoute = createRoute({
