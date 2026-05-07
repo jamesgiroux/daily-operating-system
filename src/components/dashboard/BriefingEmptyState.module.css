@@ -1,0 +1,92 @@
+/* BriefingEmptyState — editorial cold-start frame.
+ * Spec: .docs/design/patterns/BriefingEmptyState.md
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-md);
+  max-width: 640px;
+  padding: var(--space-5xl) var(--space-lg);
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-text-tertiary);
+}
+
+.headline {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 36px;
+  line-height: 1.15;
+  color: var(--color-text-primary);
+}
+
+.lede {
+  margin: 0 0 var(--space-md) 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 19px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+  max-width: 56ch;
+}
+
+.checklist {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-sm);
+}
+
+.checklistItem {
+  display: grid;
+  grid-template-columns: 16px 1fr;
+  align-items: baseline;
+  gap: var(--space-sm);
+  font-family: var(--font-sans);
+  font-size: 15px;
+  color: var(--color-text-secondary);
+}
+
+.checklistItemDone .checklistLabel {
+  color: var(--color-text-tertiary);
+  text-decoration: line-through;
+}
+
+.checklistGlyph {
+  font-family: var(--font-mono);
+  font-size: 14px;
+  color: var(--color-text-tertiary);
+}
+
+.checklistItemDone .checklistGlyph {
+  color: var(--color-garden-sage);
+}
+
+.cta {
+  align-self: flex-start;
+  margin-top: var(--space-md);
+  padding: 12px 24px;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  font-weight: 500;
+  background: var(--color-spice-saffron);
+  border: 1px solid var(--color-spice-saffron);
+  border-radius: var(--radius-editorial-sm);
+  color: var(--color-paper-cream);
+  cursor: pointer;
+}
+
+.cta:hover,
+.cta:focus-visible {
+  background: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric);
+  outline: none;
+}

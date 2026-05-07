@@ -1,0 +1,96 @@
+/* BriefingErrorState — editorial error frame.
+ * Spec: .docs/design/patterns/BriefingErrorState.md
+ */
+
+.root {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--space-md);
+  max-width: 640px;
+  margin: 0 auto;
+  padding: var(--space-5xl) var(--space-lg);
+  text-align: center;
+}
+
+.eyebrow {
+  margin: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-spice-terracotta);
+}
+
+.headline {
+  margin: var(--space-sm) 0 0 0;
+  font-family: var(--font-serif);
+  font-size: 28px;
+  line-height: 1.25;
+  color: var(--color-text-primary);
+}
+
+.detail {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-style: italic;
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--color-text-secondary);
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-md);
+  margin-top: var(--space-md);
+}
+
+.retry,
+.diagnostics {
+  font-family: var(--font-sans);
+  font-size: 14px;
+  padding: 8px 16px;
+  border-radius: var(--radius-editorial-sm);
+  cursor: pointer;
+}
+
+.retry {
+  background: var(--color-text-primary);
+  border: 1px solid var(--color-text-primary);
+  color: var(--color-paper-cream);
+}
+
+.retry:hover,
+.retry:focus-visible {
+  background: var(--color-desk-charcoal);
+  outline: none;
+}
+
+.diagnostics {
+  background: transparent;
+  border: 1px solid var(--color-rule-strong);
+  color: var(--color-text-primary);
+}
+
+.diagnostics:hover,
+.diagnostics:focus-visible {
+  background: var(--color-desk-charcoal-4);
+  outline: none;
+}
+
+.meta {
+  margin: var(--space-md) 0 0 0;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--color-text-tertiary);
+}
+
+.metaSegment {
+  display: inline;
+}
+
+.divider {
+  margin: 0 6px;
+  opacity: 0.5;
+}
