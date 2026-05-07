@@ -1,0 +1,41 @@
+/* ProvenanceStat — labeled metric primitive.
+ * Spec: .docs/design/primitives/ProvenanceStat.md
+ */
+
+.root {
+  display: grid;
+  grid-template-columns: 80px auto;
+  align-items: baseline;
+  gap: var(--space-sm);
+  font-family: var(--font-mono);
+  font-size: 11px;
+}
+
+.label {
+  color: var(--color-text-tertiary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.value {
+  color: var(--color-text-primary);
+  font-weight: 500;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.up {
+  color: var(--color-garden-sage);
+}
+
+.down {
+  color: var(--color-spice-terracotta);
+}
+
+.flat {
+  color: var(--color-text-tertiary);
+}
