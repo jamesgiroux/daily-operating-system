@@ -6,7 +6,12 @@
  */
 import { useState } from "react";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { TimelineEntry, TimelineContainer, type TimelineEntryType } from "@/components/editorial/TimelineEntry";
+import {
+  TimelineEntry,
+  TimelineContainer,
+  type TimelineEntryText,
+  type TimelineEntryType,
+} from "@/components/editorial/TimelineEntry";
 import { formatShortDate, formatMeetingType } from "@/lib/utils";
 import { formatProvenanceSource } from "@/components/ui/ProvenanceLabel";
 import type { TimelineSource } from "@/lib/entity-types";
@@ -26,8 +31,10 @@ interface TimelineItem {
   date: string;
   sortDate: string;
   type: TimelineEntryType;
-  title: string;
-  subtitle?: string;
+  title: TimelineEntryText;
+  subtitle?: TimelineEntryText;
+  subtitleSuffix?: React.ReactNode;
+  claimSurface?: string;
   linkTo?: string;
   linkParams?: Record<string, string>;
 }
@@ -121,14 +128,14 @@ export function UnifiedTimeline({
 
   if (data.contextEntries) {
     for (const entry of data.contextEntries) {
-      const title = contextTextToTimelineString(entry.title);
-      const content = contextTextToTimelineString(entry.content);
       items.push({
         date: formatShortDate(entry.createdAt),
         sortDate: entry.createdAt,
         type: "context",
-        title,
-        subtitle: content.length > 140 ? `${content.slice(0, 140)}… · Added by you` : `${content} · Added by you`,
+        title: entry.title,
+        subtitle: contextContentToTimelineSubtitle(entry.content),
+        subtitleSuffix: " · Added by you",
+        claimSurface: "tauri_entity_detail",
       });
     }
   }
@@ -173,6 +180,8 @@ export function UnifiedTimeline({
                 type={item.type}
                 title={item.title}
                 subtitle={item.subtitle}
+                subtitleSuffix={item.subtitleSuffix}
+                claimSurface={item.claimSurface}
                 linkTo={item.linkTo}
                 linkParams={item.linkParams}
               />
@@ -208,6 +217,12 @@ export function UnifiedTimeline({
   );
 }
 
-function contextTextToTimelineString(value: string | RenderableClaimText): string {
-  return typeof value === "string" ? value : value.text;
+function contextContentToTimelineSubtitle(
+  value: string | RenderableClaimText,
+): TimelineEntryText {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  return value.length > 140 ? `${value.slice(0, 140)}…` : value;
 }

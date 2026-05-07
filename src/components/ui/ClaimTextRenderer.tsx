@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import clsx from "clsx";
 import { Eye, LockKeyhole } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
 import type { RenderableClaimText } from "@/types";
 import { Button } from "./button";
@@ -42,15 +42,41 @@ function affordanceClaimId(value: RenderableClaimText): string | undefined {
   return affordance.claimId ?? affordance.claim_id ?? value.policy.claimId;
 }
 
+function carrierCacheKey(
+  value: ClaimTextRendererProps["value"],
+  surface?: string,
+): string | null {
+  if (!isRenderableClaimText(value)) {
+    return null;
+  }
+
+  return [
+    affordanceClaimId(value) ?? value.policy.claimId ?? "",
+    surface ?? "",
+    value.policy.surface ?? "",
+    value.policy.kind,
+    value.text,
+  ].join("\u001f");
+}
+
 export function ClaimTextRenderer({
   value,
   className,
   surface,
   reveal = revealClaim,
 }: ClaimTextRendererProps) {
-  const [revealed, setRevealed] = useState<RenderableClaimText | null>(null);
+  const [revealed, setRevealed] = useState<{
+    cacheKey: string | null;
+    value: RenderableClaimText;
+  } | null>(null);
   const [isRevealing, setIsRevealing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const cacheKey = carrierCacheKey(value, surface);
+
+  useEffect(() => {
+    setRevealed(null);
+    setError(null);
+  }, [cacheKey]);
 
   if (!value) {
     return null;
@@ -60,7 +86,8 @@ export function ClaimTextRenderer({
     return <span className={className}>{value}</span>;
   }
 
-  const current = revealed ?? value;
+  const cachedReveal = revealed?.cacheKey === cacheKey ? revealed.value : null;
+  const current = cachedReveal ?? value;
   if (current.policy.kind === "drop") {
     return null;
   }
@@ -81,7 +108,10 @@ export function ClaimTextRenderer({
     setError(null);
     setIsRevealing(true);
     try {
-      setRevealed(await reveal(claimId, surface ?? current.policy.surface));
+      setRevealed({
+        cacheKey,
+        value: await reveal(claimId, surface ?? current.policy.surface),
+      });
     } catch {
       setError("Unable to reveal.");
     } finally {
@@ -123,4 +153,3 @@ export function ClaimTextRenderer({
     </span>
   );
 }
-

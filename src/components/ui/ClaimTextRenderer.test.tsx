@@ -94,4 +94,55 @@ describe("ClaimTextRenderer", () => {
     });
     expect(await screen.findByText("Confidential renewal blocker.")).toBeInTheDocument();
   });
+
+  it("clears revealed text when the incoming carrier identity changes", async () => {
+    const reveal = vi.fn().mockResolvedValueOnce({
+      text: "Previously revealed confidential payload.",
+      policy: {
+        kind: "render",
+        sensitivity: "confidential",
+        surface: "tauri_entity_detail",
+        claimId: "claim-confidential",
+      },
+    } satisfies RenderableClaimText);
+    const nextRedactedClaim: RenderableClaimText = {
+      text: "New confidential claim hidden",
+      policy: {
+        ...redactedClaim.policy,
+        claimId: "claim-confidential-next",
+        affordance: {
+          kind: "confidential_click_to_reveal",
+          claim_id: "claim-confidential-next",
+          label: "New confidential claim hidden",
+          audit_required: true,
+        },
+      },
+    };
+
+    const { rerender } = render(
+      <ClaimTextRenderer
+        value={redactedClaim}
+        surface="tauri_entity_detail"
+        reveal={reveal}
+      />,
+    );
+
+    fireEvent.click(screen.getByRole("button", { name: "Reveal confidential claim" }));
+
+    expect(
+      await screen.findByText("Previously revealed confidential payload."),
+    ).toBeInTheDocument();
+
+    rerender(
+      <ClaimTextRenderer
+        value={nextRedactedClaim}
+        surface="tauri_entity_detail"
+        reveal={reveal}
+      />,
+    );
+
+    expect(screen.queryByText("Previously revealed confidential payload.")).not.toBeInTheDocument();
+    expect(screen.getByText("New confidential claim hidden")).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Reveal confidential claim" })).toBeInTheDocument();
+  });
 });
