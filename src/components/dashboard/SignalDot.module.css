@@ -1,0 +1,88 @@
+/* SignalDot — Daily Briefing Moving signal-feed bullet (DOS-422, W1)
+ * Spec: .docs/design/primitives/SignalDot.md
+ * Tokens: tokens/color.md → "Signal kind" + standard typography/spacing
+ */
+
+.SignalDot {
+  display: grid;
+  grid-template-columns: 12px 70px 1fr auto;
+  align-items: baseline;
+  gap: var(--space-sm);
+  padding: 2px 0;
+  font-family: var(--font-sans);
+  color: var(--color-text-secondary);
+}
+
+.dot {
+  width: 8px;
+  height: 8px;
+  align-self: center;
+  border-radius: 50%;
+  background: var(--color-text-tertiary);
+}
+
+.when {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  white-space: nowrap;
+}
+
+.what {
+  font-size: 14px;
+  line-height: 1.5;
+  color: var(--color-text-primary);
+}
+
+.what em {
+  font-style: normal;
+  font-weight: 500;
+  color: var(--color-text-primary);
+}
+
+.threadAction {
+  align-self: center;
+  background: none;
+  border: none;
+  padding: 0;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+}
+
+.threadAction:hover {
+  color: var(--color-text-primary);
+  text-decoration: underline;
+}
+
+/* Per-kind dot fills — one alias per signal source */
+.meeting       .dot { background: var(--color-signal-meeting); }
+.action        .dot { background: var(--color-signal-action); }
+.email         .dot { background: var(--color-signal-email); }
+.lifecycle     .dot { background: var(--color-signal-lifecycle); }
+.gongCall      .dot { background: var(--color-signal-gong-call); }
+.zendeskTicket .dot { background: var(--color-signal-zendesk-ticket); }
+.slackThread   .dot { background: var(--color-signal-slack-thread); }
+.linearIssue   .dot { background: var(--color-signal-linear-issue); }
+
+/* Lifecycle modifiers stack on top of kind */
+
+/* Overdue — what text shifts to terracotta. */
+.overdue .what {
+  color: var(--color-spice-terracotta);
+}
+
+/* Corrected — solid sage outline ring on the dot.
+ * Reads as: this signal had its claim corrected; downstream is now trustworthy. */
+.corrected .dot {
+  outline: 1.5px solid var(--color-garden-sage);
+  outline-offset: 1.5px;
+}
+
+/* Contested — dashed terracotta outline ring.
+ * Reads as: someone disputed the underlying claim; treat with caution. */
+.contested .dot {
+  outline: 1.5px dashed var(--color-spice-terracotta);
+  outline-offset: 1.5px;
+}

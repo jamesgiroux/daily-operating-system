@@ -1,12 +1,13 @@
 # SignalDot
 
 **Tier:** primitive
-**Status:** proposed
+**Status:** integrated
 **Owner:** James
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `SignalDot`
 **`data-ds-spec`:** `primitives/SignalDot.md`
-**Variants:** `kind="meeting" | "action" | "email" | "lifecycle" | "gongCall" | "zendeskTicket" | "slackThread" | "linearIssue"`
+**Variants (wire):** `kind` accepts the wire literal `SignalDotKind` (kebab-case for two-word kinds: `"meeting" | "action" | "email" | "lifecycle" | "gong-call" | "zendesk-ticket" | "slack-thread" | "linear-issue"`)
+**Variants (CSS class names):** camelCase per project convention (`SignalDot_meeting`, `SignalDot_gongCall`, `SignalDot_zendeskTicket`, `SignalDot_slackThread`, `SignalDot_linearIssue`)
 **Design system version introduced:** 0.6.0
 
 ## Job
