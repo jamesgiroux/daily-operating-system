@@ -130,7 +130,6 @@ async fn get_entity_context_tauri_bridge_wraps_confidential_claim_text_with_reve
             &claim_id,
             RenderSurface::TauriEntityDetail,
             &RenderActor::user("user", Some("user")),
-            Some("dos412-cycle8-reveal-session"),
         )
         .expect("confidential claim reveals through audited Tauri path");
         assert_eq!(rendered.text, CONFIDENTIAL_TEXT);

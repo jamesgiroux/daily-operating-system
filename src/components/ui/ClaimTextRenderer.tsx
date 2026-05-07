@@ -13,7 +13,6 @@ export interface ClaimTextRendererProps {
   reveal?: (
     claimId: string,
     surface: string | undefined,
-    revealSessionId: string,
   ) => Promise<RenderableClaimText>;
 }
 
@@ -31,17 +30,11 @@ function isRenderableClaimText(
 function revealClaim(
   claimId: string,
   surface?: string,
-  revealSessionId?: string,
 ): Promise<RenderableClaimText> {
   return invoke<RenderableClaimText>("reveal_sensitive_claim_text", {
     claimId,
     surface,
-    revealSessionId,
   });
-}
-
-function createRevealSessionId(): string {
-  return globalThis.crypto?.randomUUID?.() ?? `reveal-${Date.now()}-${Math.random()}`;
 }
 
 function affordanceClaimId(value: RenderableClaimText): string | undefined {
@@ -52,46 +45,30 @@ function affordanceClaimId(value: RenderableClaimText): string | undefined {
   return affordance.claimId ?? affordance.claim_id ?? value.policy.claimId;
 }
 
-function carrierCacheKey(
-  value: ClaimTextRendererProps["value"],
-  surface?: string,
-): string | null {
-  if (!isRenderableClaimText(value)) {
-    return null;
-  }
-
-  return [
-    affordanceClaimId(value) ?? value.policy.claimId ?? "",
-    surface ?? "",
-    value.policy.surface ?? "",
-    value.policy.kind,
-    value.text,
-  ].join("\u001f");
-}
-
 export function ClaimTextRenderer({
   value,
   className,
   surface,
   reveal = revealClaim,
 }: ClaimTextRendererProps) {
-  const [revealed, setRevealed] = useState<{
-    cacheKey: string | null;
-    value: RenderableClaimText;
-  } | null>(null);
+  const [revealed, setRevealed] = useState<RenderableClaimText | null>(null);
   const [isRevealing, setIsRevealing] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const revealInFlightRef = useRef(false);
-  const revealSessionIdRef = useRef<string | null>(null);
-  const cacheKey = carrierCacheKey(value, surface);
+  const carrier = isRenderableClaimText(value) ? value : null;
+  const prevCarrierRef = useRef<RenderableClaimText | null>(null);
+  const carrierChanged = carrier !== prevCarrierRef.current;
 
   useEffect(() => {
+    if (carrier === prevCarrierRef.current) {
+      return;
+    }
+    prevCarrierRef.current = carrier;
     setRevealed(null);
     setError(null);
     setIsRevealing(false);
     revealInFlightRef.current = false;
-    revealSessionIdRef.current = null;
-  }, [cacheKey]);
+  }, [carrier]);
 
   if (!value) {
     return null;
@@ -101,7 +78,7 @@ export function ClaimTextRenderer({
     return <span className={className}>{value}</span>;
   }
 
-  const cachedReveal = revealed?.cacheKey === cacheKey ? revealed.value : null;
+  const cachedReveal = carrierChanged ? null : revealed;
   const current = cachedReveal ?? value;
   if (current.policy.kind === "drop") {
     return null;
@@ -120,29 +97,24 @@ export function ClaimTextRenderer({
     if (!claimId || revealInFlightRef.current) {
       return;
     }
+    const revealCarrier = carrier;
     revealInFlightRef.current = true;
-    revealSessionIdRef.current ??= createRevealSessionId();
-    const revealSessionId = revealSessionIdRef.current;
     setError(null);
     setIsRevealing(true);
     try {
       const rendered = await reveal(
         claimId,
         surface ?? current.policy.surface,
-        revealSessionId,
       );
-      if (revealSessionIdRef.current === revealSessionId) {
-        setRevealed({
-          cacheKey,
-          value: rendered,
-        });
+      if (prevCarrierRef.current === revealCarrier) {
+        setRevealed(rendered);
       }
     } catch {
-      if (revealSessionIdRef.current === revealSessionId) {
+      if (prevCarrierRef.current === revealCarrier) {
         setError("Unable to reveal.");
       }
     } finally {
-      if (revealSessionIdRef.current === revealSessionId) {
+      if (prevCarrierRef.current === revealCarrier) {
         revealInFlightRef.current = false;
         setIsRevealing(false);
       }

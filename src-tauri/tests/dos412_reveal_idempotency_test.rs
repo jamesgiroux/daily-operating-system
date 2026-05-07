@@ -8,6 +8,7 @@ use dailyos_lib::services::sensitivity::{
 };
 use rusqlite::Connection;
 use serde_json::json;
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
 const PROJECTION_STATUS_SQL: &str =
@@ -20,10 +21,9 @@ const REVEAL_AUDIT_IDEMPOTENCY_SQL: &str =
 
 const ACCOUNT_ID: &str = "acct-dos412-idempotency-example";
 const CONFIDENTIAL_TEXT: &str = "confidential renewal blocker for example.com.";
-const REVEAL_SESSION_ID: &str = "dos412-cycle10-reveal-session";
 
 #[test]
-fn reveal_sensitive_claim_text_is_idempotent_for_same_reveal_session() {
+fn reveal_sensitive_claim_text_is_idempotent_within_same_audit_bucket() {
     let conn = setup_conn();
     let db = ActionDb::from_conn(&conn);
     let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
@@ -36,29 +36,52 @@ fn reveal_sensitive_claim_text_is_idempotent_for_same_reveal_session() {
     );
     let actor = RenderActor::user("user", Some("user"));
 
-    let first = reveal_claim_text_for_tauri(
-        db,
-        &claim_id,
-        RenderSurface::TauriEntityDetail,
-        &actor,
-        Some(REVEAL_SESSION_ID),
-    )
-    .expect("first reveal succeeds");
-    let second = reveal_claim_text_for_tauri(
-        db,
-        &claim_id,
-        RenderSurface::TauriEntityDetail,
-        &actor,
-        Some(REVEAL_SESSION_ID),
-    )
-    .expect("second reveal with same session succeeds");
+    wait_until_audit_bucket_has_room();
+    let first =
+        reveal_claim_text_for_tauri(db, &claim_id, RenderSurface::TauriEntityDetail, &actor)
+            .expect("first reveal succeeds");
+    let second =
+        reveal_claim_text_for_tauri(db, &claim_id, RenderSurface::TauriEntityDetail, &actor)
+            .expect("second reveal in same bucket succeeds");
 
     assert_eq!(first.text, CONFIDENTIAL_TEXT);
     assert_eq!(second.text, CONFIDENTIAL_TEXT);
     assert_eq!(first.policy.kind, RenderPolicyKind::Render);
     assert_eq!(second.policy.kind, RenderPolicyKind::Render);
     assert_eq!(reveal_audit_count(&conn), 1);
-    assert_eq!(reveal_audit_count_for_session(&conn, REVEAL_SESSION_ID), 1);
+    let buckets = reveal_audit_buckets(&conn);
+    assert_eq!(buckets.len(), 1);
+    assert!(!buckets[0].is_empty());
+}
+
+#[test]
+fn reveal_sensitive_claim_text_records_new_audit_after_bucket_window() {
+    let conn = setup_conn();
+    let db = ActionDb::from_conn(&conn);
+    let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
+    let rng = SeedableRng::new(41211);
+    let external = ExternalClients::default();
+    let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
+    let claim_id = inserted_id(
+        commit_claim(&ctx, db, confidential_claim_proposal())
+            .expect("commit confidential claim fixture"),
+    );
+    let actor = RenderActor::user("user", Some("user"));
+
+    let first =
+        reveal_claim_text_for_tauri(db, &claim_id, RenderSurface::TauriEntityDetail, &actor)
+            .expect("first reveal succeeds");
+    std::thread::sleep(Duration::from_secs(5));
+    let second =
+        reveal_claim_text_for_tauri(db, &claim_id, RenderSurface::TauriEntityDetail, &actor)
+            .expect("second reveal after bucket window succeeds");
+
+    assert_eq!(first.text, CONFIDENTIAL_TEXT);
+    assert_eq!(second.text, CONFIDENTIAL_TEXT);
+    assert_eq!(reveal_audit_count(&conn), 2);
+    let buckets = reveal_audit_buckets(&conn);
+    assert_eq!(buckets.len(), 2);
+    assert_ne!(buckets[0], buckets[1]);
 }
 
 fn setup_conn() -> Connection {
@@ -133,13 +156,30 @@ fn reveal_audit_count(conn: &Connection) -> i64 {
     .expect("count reveal audit rows")
 }
 
-fn reveal_audit_count_for_session(conn: &Connection, reveal_session_id: &str) -> i64 {
-    conn.query_row(
-        "SELECT COUNT(*)
-         FROM sensitivity_reveal_audit
-         WHERE reveal_session_id = ?1",
-        [reveal_session_id],
-        |row| row.get(0),
-    )
-    .expect("count reveal audit rows for session")
+fn reveal_audit_buckets(conn: &Connection) -> Vec<String> {
+    let mut stmt = conn
+        .prepare("SELECT audit_bucket FROM sensitivity_reveal_audit ORDER BY id")
+        .expect("query reveal audit buckets");
+    stmt.query_map([], |row| row.get::<_, String>(0))
+        .expect("read reveal audit buckets")
+        .map(|row| row.expect("bucket row"))
+        .collect()
+}
+
+fn wait_until_audit_bucket_has_room() {
+    let deadline = Instant::now() + Duration::from_secs(6);
+    while millis_until_next_audit_bucket() < 2_000 {
+        assert!(
+            Instant::now() < deadline,
+            "timed out waiting for audit bucket room"
+        );
+        std::thread::sleep(Duration::from_millis(50));
+    }
+}
+
+fn millis_until_next_audit_bucket() -> u128 {
+    let elapsed = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system clock is after Unix epoch");
+    5_000 - (elapsed.as_millis() % 5_000)
 }

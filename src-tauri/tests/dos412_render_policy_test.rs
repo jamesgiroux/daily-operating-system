@@ -170,19 +170,33 @@ fn sensitivity_reveal_audit_migration_declares_required_columns() {
     assert!(columns.contains(&"claim_id".to_string()));
     assert!(columns.contains(&"user_id".to_string()));
     assert!(columns.contains(&"revealed_at".to_string()));
-    assert!(columns.contains(&"reveal_session_id".to_string()));
+    assert!(columns.contains(&"audit_bucket".to_string()));
+    assert!(!columns.contains(&"reveal_session_id".to_string()));
 
     let unique_index_count: i64 = conn
         .query_row(
             "SELECT COUNT(*)
              FROM pragma_index_list('sensitivity_reveal_audit')
-             WHERE name = 'idx_sensitivity_reveal_audit_reveal_session'
+             WHERE name = 'idx_sensitivity_reveal_audit_audit_bucket'
                AND [unique] = 1",
             [],
             |row| row.get(0),
         )
         .expect("read reveal audit indexes");
     assert_eq!(unique_index_count, 1);
+
+    let index_sql: String = conn
+        .query_row(
+            "SELECT sql
+             FROM sqlite_master
+             WHERE type = 'index'
+               AND name = 'idx_sensitivity_reveal_audit_audit_bucket'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read reveal audit index SQL");
+    assert!(index_sql.contains("(claim_id, user_id, audit_bucket)"));
+    assert!(index_sql.contains("WHERE audit_bucket != ''"));
 }
 
 fn assert_confidential_click_to_reveal(decision: RenderDecision) {

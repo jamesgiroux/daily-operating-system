@@ -96,7 +96,6 @@ describe("UnifiedTimeline", () => {
     expect(invokeMock).toHaveBeenCalledWith("reveal_sensitive_claim_text", {
       claimId: "claim-timeline-content",
       surface: "tauri_entity_detail",
-      revealSessionId: expect.any(String),
     });
     expect(await screen.findByText(sourceClaimText)).toBeInTheDocument();
   });
