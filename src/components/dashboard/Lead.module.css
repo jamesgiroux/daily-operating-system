@@ -1,0 +1,75 @@
+/* Lead - Daily Briefing editorial headline (DOS-426, W1)
+ * Spec: .docs/design/patterns/Lead.md
+ * Tokens: typography, spacing, text color, turmeric emphasis
+ */
+
+.Lead {
+  display: grid;
+  gap: var(--space-md);
+  padding: var(--space-3xl) 0;
+  color: var(--color-text-primary);
+}
+
+.headline {
+  max-width: 980px;
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 52px;
+  font-weight: 400;
+  line-height: 1.1;
+  letter-spacing: 0;
+  color: var(--color-text-primary);
+}
+
+.punchLine {
+  font-weight: 500;
+  background-image: linear-gradient(
+    transparent 62%,
+    var(--color-spice-turmeric-15) 62%,
+    var(--color-spice-turmeric-15) 100%
+  );
+  background-repeat: no-repeat;
+  background-size: 100% 100%;
+}
+
+.focusMeta {
+  display: grid;
+  gap: var(--space-xs);
+  max-width: 720px;
+}
+
+.focusCapacity,
+.focusBlock {
+  margin: 0;
+}
+
+.focusCapacity {
+  font-family: var(--font-mono);
+  font-size: 12px;
+  line-height: 1.5;
+  color: var(--color-text-tertiary);
+}
+
+.focusBlock {
+  font-family: var(--font-serif);
+  font-size: 16px;
+  font-weight: 300;
+  line-height: 1.55;
+  color: var(--color-text-secondary);
+}
+
+@media (max-width: 720px) {
+  .Lead {
+    padding: var(--space-2xl) 0;
+  }
+
+  .headline {
+    font-size: 44px;
+  }
+}
+
+@media (max-width: 480px) {
+  .headline {
+    font-size: 38px;
+  }
+}
