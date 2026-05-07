@@ -345,6 +345,80 @@ describe("DailyBriefingRedesign", () => {
     expect(container.querySelectorAll('[data-ds-name="WatchRow"]')).toHaveLength(2);
   });
 
+  it("links schedule rows to their meeting detail route", () => {
+    mockBriefing({
+      status: "success",
+      model: makeModel(),
+      freshness: { freshness: "fresh", generatedAt: "2026-05-07T12:00:00Z" },
+    });
+
+    render(<DailyBriefingRedesign />);
+
+    expect(screen.getByRole("link", { name: /9:00 AM\s*Acme renewal prep/i })).toHaveAttribute(
+      "href",
+      "/meeting/meeting-1",
+    );
+  });
+
+  it("renders TrustBandBadge for scored schedule meetings", () => {
+    const model = makeModel();
+    model.schedule.meetings = [
+      makeMeeting({ trustBand: "likely_current" }),
+      makeMeeting({ id: "meeting-2", trustBand: "unscored" }),
+    ];
+    mockBriefing({
+      status: "success",
+      model,
+      freshness: { freshness: "fresh", generatedAt: "2026-05-07T12:00:00Z" },
+    });
+
+    const { container } = render(<DailyBriefingRedesign />);
+    const badges = container.querySelectorAll('[data-ds-name="TrustBandBadge"]');
+
+    expect(badges).toHaveLength(1);
+    expect(badges[0]).toHaveAttribute("data-band", "likely_current");
+  });
+
+  it("omits TrustBandBadge for unscored schedule meetings", () => {
+    mockBriefing({
+      status: "success",
+      model: makeModel(),
+      freshness: { freshness: "fresh", generatedAt: "2026-05-07T12:00:00Z" },
+    });
+
+    const { container } = render(<DailyBriefingRedesign />);
+
+    expect(
+      container.querySelector('[data-ds-name="TrustBandBadge"]'),
+    ).not.toBeInTheDocument();
+  });
+
+  it("renders all scored schedule trust variants", () => {
+    const model = makeModel();
+    model.schedule.meetings = [
+      makeMeeting({ id: "likely", trustBand: "likely_current" }),
+      makeMeeting({ id: "caution", trustBand: "use_with_caution" }),
+      makeMeeting({ id: "verify", trustBand: "needs_verification" }),
+      makeMeeting({ id: "unscored", trustBand: "unscored" }),
+    ];
+    mockBriefing({
+      status: "success",
+      model,
+      freshness: { freshness: "fresh", generatedAt: "2026-05-07T12:00:00Z" },
+    });
+
+    const { container } = render(<DailyBriefingRedesign />);
+    const bands = Array.from(
+      container.querySelectorAll('[data-ds-name="TrustBandBadge"]'),
+    ).map((badge) => badge.getAttribute("data-band"));
+
+    expect(bands).toEqual([
+      "likely_current",
+      "use_with_caution",
+      "needs_verification",
+    ]);
+  });
+
   it("renders folio crumbs, date label, and day strip on success", () => {
     mockBriefing({
       status: "success",

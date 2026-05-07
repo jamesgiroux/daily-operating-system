@@ -595,6 +595,25 @@ details[open] .detailsChevron {
   color: var(--color-text-tertiary);
 }
 
+.meetingContextBlock {
+  margin-top: var(--space-lg);
+  max-width: 680px;
+}
+
+.meetingContextLabel {
+  composes: chapterHeading;
+  color: var(--color-spice-turmeric);
+  margin: 0 0 8px;
+}
+
+.meetingContextText {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 14px;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+}
+
 /* ─────────────────────────────────────────────────────────────────────────────
    ENTITY READINESS ("Before This Meeting")
    ───────────────────────────────────────────────────────────────────────────── */
@@ -626,6 +645,23 @@ details[open] .detailsChevron {
   gap: 10px;
   font-size: 14px;
   color: var(--color-text-primary);
+}
+
+.beforeMeetingActions {
+  margin-top: var(--space-xl);
+  max-width: 720px;
+}
+
+.beforeMeetingActionsTitle {
+  composes: chapterHeading;
+  color: var(--color-spice-turmeric);
+  margin: 0 0 10px;
+}
+
+.beforeMeetingActionsList {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
 }
 
 .trustLineBody {
@@ -1131,6 +1167,79 @@ details[open] .detailsChevron {
   font-size: 14px;
   color: var(--color-text-tertiary);
   font-style: italic;
+}
+
+.prepDetailBlock {
+  margin-bottom: var(--space-lg);
+}
+
+.prepDetailHeading {
+  composes: chapterHeading;
+  color: var(--color-spice-turmeric);
+  margin: 0 0 10px;
+}
+
+.prepDetailList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.prepDetailItem {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  color: var(--color-text-primary);
+  font-size: 14px;
+  line-height: 1.55;
+}
+
+.prepDetailBody {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.prepDetailMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prepImpactBadge {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  padding: 4px 5px;
+  border: 1px solid rgba(37, 32, 27, 0.1);
+  border-radius: 4px;
+  color: var(--color-text-tertiary);
+  background: rgba(255, 255, 255, 0.7);
+}
+
+.prepImpactBadge[data-impact="high"] {
+  color: var(--color-spice-terracotta);
+  border-color: rgba(196, 101, 74, 0.3);
+  background: var(--color-spice-terracotta-8);
+}
+
+.prepImpactBadge[data-impact="medium"] {
+  color: var(--color-spice-turmeric);
+  border-color: var(--color-spice-turmeric-30);
+  background: var(--color-spice-turmeric-8);
+}
+
+.prepImpactBadge[data-impact="low"] {
+  color: var(--color-garden-sage);
+  border-color: rgba(126, 170, 123, 0.3);
+  background: var(--color-garden-sage-8);
 }
 
 /* Ghost input row */

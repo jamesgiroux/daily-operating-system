@@ -21,8 +21,11 @@ import type {
   BriefingLoadState,
   BriefingViewModel,
   MovingEntityViewModel,
+  ScheduleMeeting,
+  TrustBandWire,
   WatchRowViewModel,
 } from "@/types/briefing";
+import { TrustBandBadge, type TrustBand } from "@/components/ui/TrustBandBadge";
 import styles from "./DailyBriefingRedesign.module.css";
 
 const NAV_ROUTES: Record<string, string> = {
@@ -37,6 +40,10 @@ const NAV_ROUTES: Record<string, string> = {
   projects: "/projects",
   settings: "/settings",
 };
+
+function asBadgeBand(band: TrustBandWire): TrustBand | null {
+  return band === "unscored" ? null : band;
+}
 
 export function DailyBriefingRedesign(): JSX.Element {
   const { state, refresh } = useBriefingViewModel();
@@ -187,20 +194,67 @@ function ScheduleSection({ model }: { model: BriefingViewModel }) {
         </div>
         <ul className={styles.meetingList}>
           {model.schedule.meetings.map((meeting) => (
-            <li className={styles.meetingItem} key={meeting.id}>
-              <time
-                className={styles.meetingTime}
-                dateTime={meeting.time.startsAtIso}
-              >
-                {meeting.time.startLabel}
-              </time>
-              <span className={styles.meetingTitle}>{meeting.title}</span>
-            </li>
+            <ScheduleMeetingRow key={meeting.id} meeting={meeting} />
           ))}
         </ul>
       </div>
     </section>
   );
+}
+
+function ScheduleMeetingRow({
+  meeting,
+}: {
+  meeting: ScheduleMeeting;
+}): JSX.Element {
+  const badgeBand = asBadgeBand(meeting.trustBand);
+  const href = scheduleMeetingHref(meeting);
+  const content = (
+    <>
+      <time
+        className={styles.meetingTime}
+        dateTime={meeting.time.startsAtIso}
+      >
+        {meeting.time.startLabel}
+      </time>
+      <span className={styles.meetingMain}>
+        <span className={styles.meetingTitle}>{meeting.title}</span>
+        {badgeBand && (
+          <TrustBandBadge
+            band={badgeBand}
+            compact
+            className={styles.meetingTrust}
+          />
+        )}
+      </span>
+    </>
+  );
+
+  return (
+    <li className={styles.meetingItem}>
+      {href ? (
+        <a
+          className={styles.meetingLink}
+          href={href}
+          onClick={(event) => {
+            event.preventDefault();
+            navigateToHref(href);
+          }}
+        >
+          {content}
+        </a>
+      ) : (
+        <div className={styles.meetingItemContent}>{content}</div>
+      )}
+    </li>
+  );
+}
+
+function scheduleMeetingHref(meeting: ScheduleMeeting): string | undefined {
+  if (meeting.state === "cancelled") return undefined;
+  if (meeting.href) return meeting.href;
+  if (meeting.briefingAction.kind === "link") return meeting.briefingAction.href;
+  return `/meeting/${meeting.id}`;
 }
 
 function MovingSection({ model }: { model: BriefingViewModel }) {

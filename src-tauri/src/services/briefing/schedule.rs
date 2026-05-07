@@ -3,8 +3,9 @@
 //! Trust source: existing dashboard data flow (`services::dashboard`). The
 //! composer calls `get_dashboard_data` and reshapes the meeting list from the
 //! Google Calendar ingestion pipeline into the redesign schedule view-model.
-//! Meeting trust remains `Unscored` until provenance scoring is wired in.
+//! Meeting trust comes from active meeting-level claims when a scored source exists.
 
+use std::cell::RefCell;
 use std::cmp::Ordering;
 use std::collections::BTreeMap;
 
@@ -14,6 +15,11 @@ use chrono::{
 };
 use serde::{Deserialize, Serialize};
 
+use crate::abilities::claims::ClaimType;
+use crate::abilities::provenance::trust::claim_trust_band_from_score;
+use crate::abilities::trust::TrustBand;
+use crate::db::claims::IntelligenceClaim;
+use crate::db::ActionDb;
 use crate::services::briefing_view_model::{
     BriefingActionView, DayChartBarKind, DayChartBarLayout, DayChartBarState, DayChartBarViewModel,
     DayChartHourTick, DayChartLegendItem, DayChartNowLine, DayChartViewModel,
@@ -21,6 +27,7 @@ use crate::services::briefing_view_model::{
     MeetingStateTag, MeetingTimeViewModel, ScheduleMeeting, ScheduleMeetingEyebrow,
     ScheduleMeetingMix, ScheduleViewModel, TrustBandWire, TrustMixin,
 };
+use crate::services::claims::load_claims_active;
 use crate::services::dashboard::{get_dashboard_data, DashboardResult};
 use crate::state::AppState;
 use crate::types::{Meeting, MeetingType, OverlayStatus, TimelineMeeting};
@@ -30,15 +37,32 @@ const RANGE_END_HOUR: u32 = 20;
 const ESTIMATED_DURATION_MINUTES: i64 = 45;
 const MIN_BAR_WIDTH_PCT: f64 = 1.25;
 
+thread_local! {
+    static SCHEDULE_TRUST_BANDS: RefCell<BTreeMap<String, TrustBandWire>> = const { RefCell::new(BTreeMap::new()) };
+}
+
 pub async fn compose_schedule(state: &AppState) -> ScheduleViewModel {
     let result = get_dashboard_data(state).await;
     let meetings: Vec<Meeting> = match result {
         DashboardResult::Success { data, .. } => data.meetings,
         _ => vec![],
     };
+    let trust_bands = if meetings.is_empty() {
+        BTreeMap::new()
+    } else {
+        match state.with_db_read(|db| load_schedule_trust_bands(&meetings, db)) {
+            Ok(trust_bands) => trust_bands,
+            Err(error) => {
+                log::warn!("schedule: failed to load meeting trust bands: {error}");
+                BTreeMap::new()
+            }
+        }
+    };
 
     let ctx = state.live_service_context();
-    compose_schedule_from_meetings(meetings, ctx.clock.now())
+    with_schedule_trust_bands(trust_bands, || {
+        compose_schedule_from_meetings(meetings, ctx.clock.now())
+    })
 }
 
 fn compose_schedule_from_meetings(meetings: Vec<Meeting>, now: DateTime<Utc>) -> ScheduleViewModel {
@@ -345,6 +369,130 @@ fn format_summary(count: usize, mix: &ScheduleMeetingMix) -> String {
     format!("{}.", segments.join(" · "))
 }
 
+fn with_schedule_trust_bands<T>(
+    trust_bands: BTreeMap<String, TrustBandWire>,
+    f: impl FnOnce() -> T,
+) -> T {
+    SCHEDULE_TRUST_BANDS.with(|context| {
+        let previous = context.replace(trust_bands);
+        let result = f();
+        context.replace(previous);
+        result
+    })
+}
+
+#[derive(Debug, Clone)]
+struct MeetingTrustClaim {
+    claim_type: String,
+    trust_score: Option<f64>,
+}
+
+impl From<&IntelligenceClaim> for MeetingTrustClaim {
+    fn from(claim: &IntelligenceClaim) -> Self {
+        Self {
+            claim_type: claim.claim_type.clone(),
+            trust_score: claim.trust_score,
+        }
+    }
+}
+
+fn load_schedule_trust_bands(
+    meetings: &[Meeting],
+    db: &ActionDb,
+) -> Result<BTreeMap<String, TrustBandWire>, String> {
+    let mut trust_bands = BTreeMap::new();
+    for meeting in meetings
+        .iter()
+        .filter(|meeting| !meeting.id.trim().is_empty())
+    {
+        let subject_ref = serde_json::json!({
+            "kind": "meeting",
+            "id": meeting.id.as_str(),
+        })
+        .to_string();
+        let claims = load_claims_active(db, &subject_ref, None).map_err(|e| e.to_string())?;
+        let claims: Vec<MeetingTrustClaim> = claims.iter().map(MeetingTrustClaim::from).collect();
+        if let Some(trust) = select_meeting_trust(&claims) {
+            trust_bands.insert(meeting.id.clone(), trust);
+        }
+    }
+    Ok(trust_bands)
+}
+
+fn related_meeting_trust_claim_types() -> [&'static str; 4] {
+    [
+        ClaimType::MeetingTopic.as_str(),
+        ClaimType::MeetingChangeMarker.as_str(),
+        ClaimType::SuggestedOutcome.as_str(),
+        ClaimType::OpenLoop.as_str(),
+    ]
+}
+
+fn select_meeting_trust(claims: &[MeetingTrustClaim]) -> Option<TrustBandWire> {
+    let readiness_type = ClaimType::MeetingReadiness.as_str();
+    if claims
+        .iter()
+        .any(|claim| claim.claim_type == readiness_type)
+    {
+        return claims
+            .iter()
+            .filter(|claim| claim.claim_type == readiness_type)
+            .find_map(trust_band_for_claim);
+    }
+
+    let related_types = related_meeting_trust_claim_types();
+    claims
+        .iter()
+        .filter(|claim| related_types.contains(&claim.claim_type.as_str()))
+        .filter_map(|claim| claim_trust_band(claim).map(|band| (claim, band)))
+        .fold(None, |selected, (claim, band)| match selected {
+            Some((selected_claim, selected_band))
+                if trust_caution_rank(selected_band) <= trust_caution_rank(band) =>
+            {
+                Some((selected_claim, selected_band))
+            }
+            _ => Some((claim, band)),
+        })
+        .map(|(_, band)| trust_band_wire(band))
+}
+
+fn load_trust_band_for_meeting(meeting: &Meeting) -> TrustBandWire {
+    SCHEDULE_TRUST_BANDS
+        .with(|bands| bands.borrow().get(&meeting.id).cloned())
+        .unwrap_or(TrustBandWire::Unscored)
+}
+
+fn trust_band_for_claim(claim: &MeetingTrustClaim) -> Option<TrustBandWire> {
+    claim_trust_band(claim).map(trust_band_wire)
+}
+
+fn claim_trust_band(claim: &MeetingTrustClaim) -> Option<TrustBand> {
+    match claim_trust_band_from_score(claim.trust_score) {
+        TrustBand::LikelyCurrent => Some(TrustBand::LikelyCurrent),
+        TrustBand::UseWithCaution => Some(TrustBand::UseWithCaution),
+        TrustBand::NeedsVerification => Some(TrustBand::NeedsVerification),
+        TrustBand::Unscored => None,
+    }
+}
+
+fn trust_caution_rank(band: TrustBand) -> u8 {
+    match band {
+        TrustBand::NeedsVerification => 0,
+        TrustBand::UseWithCaution => 1,
+        TrustBand::LikelyCurrent => 2,
+        TrustBand::Unscored => 3,
+    }
+}
+
+fn trust_band_wire(band: TrustBand) -> TrustBandWire {
+    match band {
+        TrustBand::LikelyCurrent => TrustBandWire::LikelyCurrent,
+        TrustBand::UseWithCaution => TrustBandWire::UseWithCaution,
+        TrustBand::NeedsVerification => TrustBandWire::NeedsVerification,
+        TrustBand::Unscored => TrustBandWire::Unscored,
+    }
+}
+
 fn map_meeting(m: Meeting) -> ScheduleMeeting {
     let accent_type = map_meeting_type(&m.meeting_type);
     let state = if m.overlay_status == Some(OverlayStatus::Cancelled) {
@@ -358,7 +506,7 @@ fn map_meeting(m: Meeting) -> ScheduleMeeting {
     let title = m.title.clone();
     ScheduleMeeting {
         trust: TrustMixin {
-            trust_band: TrustBandWire::Unscored,
+            trust_band: load_trust_band_for_meeting(&m),
             trust_field_path: None,
             trust_source_date: None,
             rendered_provenance: None,
@@ -1001,6 +1149,22 @@ mod tests {
         }
     }
 
+    fn make_trust_claim(claim_type: &'static str, trust_score: Option<f64>) -> MeetingTrustClaim {
+        MeetingTrustClaim {
+            claim_type: claim_type.to_string(),
+            trust_score,
+        }
+    }
+
+    fn trust_bands_for_claims(
+        meeting_id: &str,
+        claims: Vec<MeetingTrustClaim>,
+    ) -> BTreeMap<String, TrustBandWire> {
+        select_meeting_trust(&claims)
+            .map(|trust| BTreeMap::from([(meeting_id.to_string(), trust)]))
+            .unwrap_or_default()
+    }
+
     fn make_timeline_meeting(
         id: &str,
         start: &str,
@@ -1167,6 +1331,68 @@ mod tests {
             BriefingActionView::Create { .. }
         ));
         assert!(view.state_tags.contains(&MeetingStateTag::NoBriefingYet));
+    }
+
+    #[test]
+    fn meeting_trust_defaults_to_unscored_without_claim() {
+        let m = make_meeting("m-unscored", MeetingType::Customer, true);
+        let view = map_meeting(m);
+
+        assert_eq!(view.trust.trust_band, TrustBandWire::Unscored);
+        assert_eq!(view.trust.trust_field_path, None);
+        assert_eq!(view.trust.trust_source_date, None);
+    }
+
+    #[test]
+    fn meeting_trust_uses_meeting_readiness_claim_score() {
+        let m = make_meeting("m-readiness", MeetingType::Customer, true);
+        let trust_bands = trust_bands_for_claims(
+            "m-readiness",
+            vec![make_trust_claim(
+                ClaimType::MeetingReadiness.as_str(),
+                Some(0.82),
+            )],
+        );
+        let view = with_schedule_trust_bands(trust_bands, || map_meeting(m));
+
+        assert_eq!(view.trust.trust_band, TrustBandWire::LikelyCurrent);
+    }
+
+    #[test]
+    fn meeting_trust_falls_back_to_related_meeting_claims() {
+        let trust = select_meeting_trust(&[make_trust_claim(
+            ClaimType::MeetingChangeMarker.as_str(),
+            Some(0.62),
+        )]);
+
+        assert_eq!(trust, Some(TrustBandWire::UseWithCaution));
+    }
+
+    #[test]
+    fn meeting_trust_ignores_unscored_when_scored_related_claim_exists() {
+        let trust = select_meeting_trust(&[
+            make_trust_claim(ClaimType::MeetingTopic.as_str(), None),
+            make_trust_claim(ClaimType::OpenLoop.as_str(), Some(0.41)),
+        ]);
+
+        assert_eq!(trust, Some(TrustBandWire::NeedsVerification));
+    }
+
+    #[test]
+    fn schedule_serializes_scored_trust_band_to_camel_case_wire_shape() {
+        let m = make_meeting("m-serialized", MeetingType::Customer, true);
+        let trust_bands = trust_bands_for_claims(
+            "m-serialized",
+            vec![make_trust_claim(
+                ClaimType::MeetingReadiness.as_str(),
+                Some(0.62),
+            )],
+        );
+        let view = with_schedule_trust_bands(trust_bands, || map_meeting(m));
+        let parsed: Value = serde_json::to_value(&view).expect("serialize meeting");
+
+        assert_eq!(parsed["trustBand"], "use_with_caution");
+        assert!(parsed.get("trust_band").is_none());
     }
 
     #[test]

@@ -37,6 +37,12 @@ import { MeetingEntityChips } from "@/components/ui/meeting-entity-chips";
 import { IntelligenceQualityBadge } from "@/components/entity/IntelligenceQualityBadge";
 import { ActionRow } from "@/components/shared/ActionRow";
 import { HealthBadge } from "@/components/shared/HealthBadge";
+import {
+  normalizePrepGridText,
+  parsePrepGridItem,
+  stringArrayField,
+  type PrepImpact,
+} from "@/components/meeting/meeting-prep-utils";
 
 import { FolioRefreshButton } from "@/components/ui/folio-refresh-button";
 import { useRegisterMagazineShell } from "@/hooks/useMagazineShell";
@@ -172,10 +178,12 @@ interface MeetingTrustEvidenceItem {
   fieldPaths: string[];
   saveFieldPath?: string;
   urgency?: string;
+  impact?: PrepImpact;
   trustBand?: TrustBandWire;
 }
 
 type MeetingTrustPartition = TrustEvidencePartition<MeetingTrustEvidenceItem>;
+type MeetingAction = MeetingIntelligence["actions"][number];
 
 export default function MeetingDetailPage() {
   const { meetingId } = useParams({ strict: false });
@@ -185,6 +193,7 @@ export default function MeetingDetailPage() {
   const [canEditUserLayer, setCanEditUserLayer] = useState(false);
   const [meetingMeta, setMeetingMeta] = useState<MeetingIntelligence["meeting"] | null>(null);
   const [linkedEntities, setLinkedEntities] = useState<LinkedEntity[]>([]);
+  const [meetingActions, setMeetingActions] = useState<MeetingIntelligence["actions"]>([]);
   const [entityHealthMap, setEntityHealthMap] = useState<MeetingIntelligence["entityHealthMap"]>({});
   const [intelligenceQuality, setIntelligenceQuality] = useState<MeetingIntelligence["intelligenceQuality"]>();
   const [postIntel, setPostIntel] = useState<MeetingPostIntelligence | null>(null);
@@ -266,6 +275,7 @@ export default function MeetingDetailPage() {
       setOutcomes(intel.outcomes ?? null);
       setCanEditUserLayer(intel.canEditUserLayer);
       setLinkedEntities(intel.linkedEntities ?? []);
+      setMeetingActions(intel.actions ?? []);
       setEntityHealthMap(intel.entityHealthMap ?? {});
       setIntelligenceQuality(intel.intelligenceQuality);
       const formatRange = (startRaw?: string, endRaw?: string) => {
@@ -1032,11 +1042,14 @@ Thanks!`;
     (data.currentState && data.currentState.length > 0) ||
     (data.risks && data.risks.length > 0) ||
     (data.recentWins && data.recentWins.length > 0) ||
+    stringArrayField(data, "wins").length > 0 ||
     (data.talkingPoints && data.talkingPoints.length > 0) ||
+    stringArrayField(data, "actions").length > 0 ||
     (data.openItems && data.openItems.length > 0) ||
     (data.questions && data.questions.length > 0) ||
     (data.keyPrinciples && data.keyPrinciples.length > 0) ||
     (data.proposedAgenda && data.proposedAgenda.length > 0) ||
+    meetingActions.length > 0 ||
     data.stakeholderSignals
   );
   const hasLinkedEntities = linkedEntities.length > 0;
@@ -1045,7 +1058,7 @@ Thanks!`;
   const sinceLastTrustItems = trustItemsForSection(meetingTrustPartition, "Since Last Meeting");
   const currentStateTrustItems = trustItemsForSection(meetingTrustPartition, "Account Pulse");
   const readinessTrustItems = trustItemsForSection(meetingTrustPartition, "Before This Meeting");
-  const riskTrustItems = trustItemsForSection(meetingTrustPartition, "Risks").slice(0, 3);
+  const riskTrustItems = trustItemsForSection(meetingTrustPartition, "Risks");
   const recentWinTrustItems = trustItemsForSection(meetingTrustPartition, "Recent Wins");
   const setShowAllEvidenceForSurface = (next: boolean) => {
     writeShowAllEvidenceState(trustSurfaceId, next);
@@ -1073,6 +1086,16 @@ Thanks!`;
     ],
   });
   const calendarNotes = stripHtml(data.calendarNotes);
+  const agendaTextKeys = new Set(
+    agendaDisplayItems.map((item) => normalizePrepGridText(item.topic)),
+  );
+  const discussTrustItems = [
+    ...trustItemsForSection(meetingTrustPartition, "Discuss"),
+    ...trustItemsForSection(meetingTrustPartition, "Questions"),
+  ].filter((item) => !agendaTextKeys.has(normalizePrepGridText(item.text)));
+  const pendingMeetingActions = millisecondsSinceMeetingEnd != null
+    ? []
+    : meetingActions.filter(isPendingMeetingAction);
 
   // Build unified attendees
   const unifiedAttendees = buildUnifiedAttendees(
@@ -1084,6 +1107,10 @@ Thanks!`;
 
   // Key insight — first sentence from intelligence summary
   const keyInsight = extractKeyInsight(data.intelligenceSummary, data.meetingContext);
+  const visibleMeetingContext = visibleContextBody(
+    calendarNotes || data.meetingContext,
+    keyInsight,
+  );
 
   // Meeting type label
   const meetingType = meetingMeta?.meetingType
@@ -1093,7 +1120,7 @@ Thanks!`;
   // Track which risks are high urgency for the pulse animation
   const hasRisks = riskTrustItems.length > 0;
   const hasRoom = unifiedAttendees.length > 0;
-  const hasPlan = agendaTrustPartition.current.length > 0 || (meetingId && isEditable);
+  const hasPlan = agendaTrustPartition.current.length > 0 || discussTrustItems.length > 0 || (meetingId && isEditable);
   return (
     <>
       <div className={styles.pageContainer}>
@@ -1195,7 +1222,7 @@ Thanks!`;
               </>
             ) : (
               <>
-                <p className={styles.emptyGenerating}>Building context</p>
+                <p className={styles.emptyGenerating}>No prep available yet</p>
                 <p className={styles.emptyText}>Meeting context will appear here once analysis completes.</p>
               </>
             )}
@@ -1374,6 +1401,15 @@ Thanks!`;
                 </p>
               )}
 
+              {visibleMeetingContext && (
+                <div className={styles.meetingContextBlock}>
+                  <p className={styles.meetingContextLabel}>Context</p>
+                  <p className={styles.meetingContextText}>
+                    <ClaimTextRenderer value={visibleMeetingContext} surface="tauri_briefing_prep" />
+                  </p>
+                </div>
+              )}
+
               {/* Since Last Meeting — compact timeline of what changed */}
               {sinceLastTrustItems.length > 0 && (
                 <div className={styles.sinceLastWrap}>
@@ -1422,6 +1458,33 @@ Thanks!`;
                       </li>
                     ))}
                   </ul>
+                </div>
+              )}
+
+              {pendingMeetingActions.length > 0 && (
+                <div className={styles.beforeMeetingActions}>
+                  <p className={styles.beforeMeetingActionsTitle}>Action Checklist</p>
+                  <div className={styles.beforeMeetingActionsList}>
+                    {pendingMeetingActions.map((action) => (
+                      <ActionRow
+                        key={action.id}
+                        variant="outcome"
+                        action={action}
+                        onComplete={async () => {
+                          await updateMeetingAction(action, loadMeetingIntelligence);
+                        }}
+                        onAccept={async () => {
+                          await acceptMeetingAction(action.id, loadMeetingIntelligence);
+                        }}
+                        onReject={async () => {
+                          await rejectMeetingAction(action.id, loadMeetingIntelligence);
+                        }}
+                        onCyclePriority={async () => {
+                          await cycleMeetingActionPriority(action, loadMeetingIntelligence);
+                        }}
+                      />
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -1661,6 +1724,30 @@ Thanks!`;
                 {meetingId && prefillNotice && (
                   <div className={styles.prefillNotice}>
                     Prefill appended new agenda/notes content.
+                  </div>
+                )}
+
+                {discussTrustItems.length > 0 && (
+                  <div className={styles.prepDetailBlock}>
+                    <p className={styles.prepDetailHeading}>Discuss</p>
+                    <ul className={styles.prepDetailList}>
+                      {discussTrustItems.map((item) => (
+                        <li key={item.id} className={styles.prepDetailItem}>
+                          <span className={styles.bulletDotTurmericMuted} />
+                          <span className={styles.prepDetailBody}>
+                            <ClaimTextRenderer value={item.text} surface="tauri_briefing_prep" />
+                            <span className={styles.prepDetailMeta}>
+                              <TrustBandIndicator band={item.trustBand ?? "unscored"} />
+                              {item.impact && (
+                                <span className={styles.prepImpactBadge} data-impact={item.impact}>
+                                  {item.impact}
+                                </span>
+                              )}
+                            </span>
+                          </span>
+                        </li>
+                      ))}
+                    </ul>
                   </div>
                 )}
 
@@ -2602,6 +2689,86 @@ function extractKeyInsight(intelligenceSummary?: string, meetingContext?: string
   return trimmed;
 }
 
+function visibleContextBody(source: string | undefined, keyInsight: string | null): string | null {
+  const value = source?.trim();
+  if (!value) return null;
+  if (!keyInsight) return value;
+
+  const normalizedSource = normalizePrepGridText(value);
+  const normalizedKey = normalizePrepGridText(keyInsight);
+  if (!normalizedKey || !normalizedSource.startsWith(normalizedKey)) {
+    return value;
+  }
+
+  const withoutKeyInsight = value.slice(keyInsight.length).trim();
+  return withoutKeyInsight.length > 0 ? withoutKeyInsight : null;
+}
+
+function uniquePrepValues(values: string[]): string[] {
+  const seen = new Set<string>();
+  const unique: string[] = [];
+  for (const value of values) {
+    const parsed = parsePrepGridItem(cleanPrepLine(value));
+    const key = normalizePrepGridText(parsed.text);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    unique.push(value);
+  }
+  return unique;
+}
+
+function isPendingMeetingAction(action: MeetingAction): boolean {
+  return action.status === "backlog" || action.status === "unstarted" || action.status === "started";
+}
+
+async function refreshMeetingAfterAction(onRefresh: () => void | Promise<void>) {
+  const y = window.scrollY;
+  await onRefresh();
+  requestAnimationFrame(() => window.scrollTo(0, y));
+}
+
+async function updateMeetingAction(action: MeetingAction, onRefresh: () => void | Promise<void>) {
+  try {
+    if (action.status === "completed") {
+      await invoke("reopen_action", { id: action.id });
+    } else {
+      await invoke("complete_action", { id: action.id });
+    }
+    await refreshMeetingAfterAction(onRefresh);
+  } catch {
+    toast.error("Failed to update action");
+  }
+}
+
+async function acceptMeetingAction(id: string, onRefresh: () => void | Promise<void>) {
+  try {
+    await invoke("accept_suggested_action", { id });
+    await refreshMeetingAfterAction(onRefresh);
+  } catch {
+    toast.error("Failed to accept action");
+  }
+}
+
+async function rejectMeetingAction(id: string, onRefresh: () => void | Promise<void>) {
+  try {
+    await invoke("reject_suggested_action", { id, source: "meeting_detail" });
+    await refreshMeetingAfterAction(onRefresh);
+  } catch {
+    toast.error("Failed to dismiss action");
+  }
+}
+
+async function cycleMeetingActionPriority(action: MeetingAction, onRefresh: () => void | Promise<void>) {
+  const p = action.priority ?? 3;
+  const next = p <= 1 ? "3" : p <= 3 ? "4" : "1";
+  try {
+    await invoke("update_action_priority", { id: action.id, priority: next });
+    await refreshMeetingAfterAction(onRefresh);
+  } catch {
+    toast.error("Failed to update priority");
+  }
+}
+
 function buildMeetingTrustPartition(
   data: FullMeetingPrep | null,
   renderedProvenance: unknown,
@@ -2622,7 +2789,25 @@ function buildMeetingTrustPartition(
     "entity_readiness",
     cleanPrepLine,
   );
-  addTextEvidence(items, "Recent Wins", data.recentWins, "recentWins", "recent_wins", cleanPrepLine);
+  const recentWinValues = uniquePrepValues([
+    ...(data.recentWins ?? []),
+    ...stringArrayField(data, "wins"),
+  ]);
+  const recentWinKeys = new Set(recentWinValues.map((value) => normalizePrepGridText(parsePrepGridItem(cleanPrepLine(value)).text)));
+  addTextEvidence(items, "Recent Wins", recentWinValues, "recentWins", "recent_wins", cleanPrepLine, {
+    extraField: "wins",
+    extraSnakeField: "wins",
+  });
+
+  const discussValues = uniquePrepValues([
+    ...(data.talkingPoints ?? []),
+    ...stringArrayField(data, "actions"),
+  ]).filter((value) => !recentWinKeys.has(normalizePrepGridText(parsePrepGridItem(cleanPrepLine(value)).text)));
+  addTextEvidence(items, "Discuss", discussValues, "talkingPoints", "talking_points", cleanPrepLine, {
+    extraField: "actions",
+    extraSnakeField: "actions",
+  });
+  addTextEvidence(items, "Questions", data.questions, "questions", "questions", cleanPrepLine);
 
   for (let i = 0; i < (data.entityRisks ?? []).length; i++) {
     const risk = data.entityRisks![i];
@@ -2640,7 +2825,8 @@ function buildMeetingTrustPartition(
   }
 
   for (let i = 0; i < (data.risks ?? []).length; i++) {
-    const text = sanitizeInlineText(data.risks![i]);
+    const parsed = parsePrepGridItem(sanitizeInlineText(data.risks![i]));
+    const text = parsed.text;
     if (!text) continue;
     const saveFieldPath = `risks[${i}]`;
     items.push({
@@ -2648,6 +2834,7 @@ function buildMeetingTrustPartition(
       section: "Risks",
       text,
       saveFieldPath,
+      impact: parsed.impact,
       fieldPaths: fieldPathCandidates(saveFieldPath),
     });
   }
@@ -2682,9 +2869,11 @@ function addTextEvidence(
   camelField: string,
   snakeField: string,
   clean: (value: string) => string,
+  options?: { extraField?: string; extraSnakeField?: string },
 ) {
   for (let i = 0; i < (values ?? []).length; i++) {
-    const text = clean(values![i]);
+    const parsed = parsePrepGridItem(clean(values![i]));
+    const text = parsed.text;
     if (!text) continue;
     const saveFieldPath = `${camelField}[${i}]`;
     items.push({
@@ -2692,9 +2881,12 @@ function addTextEvidence(
       section,
       text,
       saveFieldPath,
+      impact: parsed.impact,
       fieldPaths: [
         ...fieldPathCandidates(saveFieldPath),
         `/${snakeField}/${i}`,
+        ...(options?.extraField ? fieldPathCandidates(`${options.extraField}[${i}]`) : []),
+        ...(options?.extraSnakeField ? [`/${options.extraSnakeField}/${i}`] : []),
       ],
     });
   }

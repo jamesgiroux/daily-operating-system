@@ -258,3 +258,18 @@ src-tauri/src/services/claims.rs
 - **Latency-budget tuning** based on real-world traces. First-cut values are starting points.
 - **`try_join!` migration** if any composer's signature evolves to return `Result` for typed errors.
 - **Per-section error escalation policy refinement** if user feedback shows certain section failures should escalate to envelope `Error` rather than degrade silently.
+
+## 14. Implementation notes
+
+- Landed the lifecycle adapter in `src-tauri/src/services/briefing/moving/lifecycle.rs` and kept correction-state lookup closure-injected for focused unit coverage.
+- Added `claims::lifecycle_state_for_change` using the existing `lifecycle_changes.user_response` review state. The current schema does not expose a claim/user-note row keyed directly by lifecycle `change_id`, so this is the durable source available today; the adapter seam can be swapped to a future claim-substrate lookup without changing signal mapping.
+- Added `previous_renewal_stage` to the dashboard lifecycle update wire shape so renewal-stage transitions can render the planned previous-to-current segment.
+- `briefing_view_model::compose()` now runs the five section composers through `tokio::join!`, with first-cut per-section and total latency overrun logging. Composer signatures remain non-fallible, so `try_join!` remains a follow-up.
+- The command integration test uses Tauri's mock IPC path with an unencrypted test database fixture and enables `AppState::test_with_db_service` under `cfg(test)`.
+- L1 validation passed:
+  - `cargo check --lib`
+  - `cargo clippy --lib -- -D warnings`
+  - `cargo test services::briefing::moving::lifecycle`
+  - `cargo test services::briefing_view_model::compose_runs_concurrently`
+  - `cargo test services::briefing_view_model::latency_logging`
+  - `cargo test --lib services::briefing_view_model::integration::populated_fixture_returns_success`

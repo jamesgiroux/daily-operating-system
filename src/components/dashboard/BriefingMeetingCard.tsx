@@ -1,68 +1,40 @@
 /**
- * BriefingMeetingCard.tsx — Editorial schedule row with inline expansion
+ * BriefingMeetingCard.tsx - Editorial schedule row.
  *
- * A compact row in the schedule section. Click to expand prep details inline
- * (not navigate). Past meetings navigate to detail page on click.
- *
- * Also exports shared sub-components (KeyPeopleFlow, PrepGrid,
- * MeetingActionChecklist) used by both expansion panels and the lead story.
- *
- * Temporal states:
- * - Upcoming with prep: expandable, click toggles inline panel
- * - In Progress: auto-expanded, NOW pill, warm glow background
- * - Past: muted, click navigates to meeting detail page
- * - Cancelled: line-through, no interaction
+ * A compact row in the legacy daily briefing schedule. Non-cancelled
+ * meetings navigate to the routed meeting detail page.
  */
 
-import { useState, useRef, useLayoutEffect, useCallback, useId, useMemo } from "react";
-import { Link, useNavigate } from "@tanstack/react-router";
 import clsx from "clsx";
-import { stripMarkdown, stripHtml, formatMeetingType, formatShortDate } from "@/lib/utils";
+import { formatMeetingType } from "@/lib/utils";
 import { formatEntityByline } from "@/lib/entity-helpers";
 import { MeetingCard } from "@/components/shared/MeetingCard";
 import { Pill } from "@/components/ui/Pill";
-import { ClaimTextRenderer } from "@/components/ui/ClaimTextRenderer";
-import { TrustBandIndicator } from "@/components/ui/TrustBandIndicator";
-import {
-  fieldPathCandidates,
-  extractMostCautiousTrustBand,
-  getNewestRenderedProvenanceSourceDate,
-  partitionTrustEvidence,
-  readShowAllEvidenceState,
-  renderedProvenanceFrom,
-  writeShowAllEvidenceState,
-  type TrustBandWire,
-} from "@/lib/trust-band";
-import type { Meeting, CalendarEvent, Action, Stakeholder, CalendarAttendee } from "@/types";
+import type { Meeting, CalendarEvent, Action } from "@/types";
 import s from "@/styles/editorial-briefing.module.css";
 
-// ─── Types ───────────────────────────────────────────────────────────────────
+export {
+  buildLegacyPrepGridItems,
+  normalizePrepGridText,
+  parsePrepGridItem,
+  partitionLegacyPrepGrid,
+} from "@/components/meeting/meeting-prep-utils";
 
 interface BriefingMeetingCardProps {
   meeting: Meeting;
   now: number;
   currentMeeting?: CalendarEvent;
-  /** Actions related to this meeting (for "Before this meeting" checklist) */
   meetingActions?: Action[];
-  /** Completion callback for meeting actions */
   onComplete?: (id: string) => void;
-  /** Set of completed action IDs (optimistic UI) */
   completedIds?: Set<string>;
-  /** Callback when entities change (parent should refetch) */
   onEntitiesChanged?: () => void;
-  /** Number of total actions captured from this meeting (for past meetings) */
   capturedActionCount?: number;
-  /** Number of suggested actions needing review from this meeting */
   suggestedActionCount?: number;
-  /** When true, this is the next upcoming meeting — renders expanded by default with richer context */
   isUpNext?: boolean;
-  /** User's org domain for internal/external attendee grouping */
   userDomain?: string;
 }
 
 type TemporalState = "upcoming" | "in-progress" | "past" | "cancelled";
-
-// ─── Helpers ─────────────────────────────────────────────────────────────────
 
 function parseDisplayTimeMs(timeStr: string | undefined): number | null {
   if (!timeStr) return null;
@@ -149,467 +121,18 @@ function getAccentCssClass(meeting: Meeting): string {
   }
 }
 
-function getExpansionTintClass(meeting: Meeting): string {
-  switch (meeting.type) {
-    case "customer":
-    case "qbr":
-    case "partnership":
-    case "external":
-      return s.expansionTintTurmeric;
-    case "personal":
-      return s.expansionTintSage;
-    case "one_on_one":
-      return s.expansionTintLarkspur;
-    default:
-      return "";
-  }
-}
-
-// ─── Shared Sub-Components ───────────────────────────────────────────────────
-// Exported for use in DailyBriefing lead story section.
-
-/** "The Room" — calendar invitees grouped by side (their/our).
- *  Uses raw Google Calendar attendee data, not AI-enriched stakeholders. */
-export function KeyPeopleFlow({
-  attendees,
-  userDomain,
-  stakeholders,
-}: {
-  attendees?: CalendarAttendee[];
-  userDomain?: string;
-  /** Fallback: AI-enriched stakeholders if calendar attendees unavailable */
-  stakeholders?: Stakeholder[];
-}) {
-  // Use calendar attendees when available, fall back to prep stakeholders
-  if (attendees && attendees.length > 0 && userDomain) {
-    const external = attendees.filter((a) => a.domain !== userDomain);
-    const internal = attendees.filter((a) => a.domain === userDomain);
-    const hasBothSides = external.length > 0 && internal.length > 0;
-
-    const renderAttendee = (a: CalendarAttendee) => (
-      <div key={a.email} className={s.theRoomPerson}>
-        <span className={s.theRoomName}>{a.name}</span>
-        {a.domain && a.domain !== userDomain && (
-          <span className={s.theRoomCompany}>{a.domain}</span>
-        )}
-        {a.rsvp === "tentative" && (
-          <span className={`${s.theRoomRole} ${s.theRoomRoleTentative}`}>tentative</span>
-        )}
-      </div>
-    );
-
-    return (
-      <div className={s.theRoom}>
-        <div className={s.theRoomLabel}>The Room</div>
-        {hasBothSides ? (
-          <>
-            <div className={s.theRoomGroup}>
-              <div className={s.theRoomGroupLabel}>Their Side</div>
-              {external.map(renderAttendee)}
-            </div>
-            <div className={s.theRoomGroup}>
-              <div className={s.theRoomGroupLabel}>Our Side</div>
-              {internal.map(renderAttendee)}
-            </div>
-          </>
-        ) : (
-          <div className={s.theRoomGroup}>
-            {attendees.map(renderAttendee)}
-          </div>
-        )}
-      </div>
-    );
-  }
-
-  // Fallback: prep stakeholders (legacy)
-  if (!stakeholders || stakeholders.length === 0) return null;
-
-  const external = stakeholders.filter((p) => p.relationship === "external" || p.relationship === "unknown" || !p.relationship);
-  const internal = stakeholders.filter((p) => p.relationship === "internal");
-  const hasBothSides = external.length > 0 && internal.length > 0;
-
-  const renderPerson = (person: Stakeholder) => (
-    <div key={person.name} className={s.theRoomPerson}>
-      <span className={s.theRoomName}>{person.name}</span>
-      {person.role && (
-        <>
-          <span className={s.theRoomSep}>&middot;</span>
-          <span className={s.theRoomRole}>{person.role}</span>
-        </>
-      )}
-    </div>
-  );
-
-  return (
-    <div className={s.theRoom}>
-      <div className={s.theRoomLabel}>The Room</div>
-      {hasBothSides ? (
-        <>
-          <div className={s.theRoomGroup}>
-            <div className={s.theRoomGroupLabel}>Their Side</div>
-            {external.map(renderPerson)}
-          </div>
-          <div className={s.theRoomGroup}>
-            <div className={s.theRoomGroupLabel}>Our Side</div>
-            {internal.map(renderPerson)}
-          </div>
-        </>
-      ) : (
-        <div className={s.theRoomGroup}>
-          {stakeholders.map(renderPerson)}
-        </div>
-      )}
-    </div>
-  );
-}
-
-/** 2-column prep grid: Discuss, Watch, Wins, At a Glance. */
-export function PrepGrid({ meeting }: { meeting: Meeting }) {
-  const needsVerificationId = useId();
-  const prep = meeting.prep;
-  const surfaceId = `briefing-prep-grid-${meeting.id}`;
-  const [showAllEvidence, setShowAllEvidence] = useState(() =>
-    readShowAllEvidenceState(surfaceId),
-  );
-  const renderedProvenance = renderedProvenanceFrom(prep);
-  const newestEvidenceDate = getNewestRenderedProvenanceSourceDate(renderedProvenance);
-  const partition = useMemo(() => {
-    if (!prep) {
-      return partitionTrustEvidence<ParsedPrepGridItem>([], { showAllEvidence });
-    }
-    const wins = buildPrepGridItems(prep.wins ?? [], "wins", renderedProvenance, (i) => [
-      ...fieldPathCandidates(`wins[${i}]`),
-      ...fieldPathCandidates(`recentWins[${i}]`),
-    ]);
-    const winKeys = new Set(wins.map((item) => normalizePrepGridText(item.text)));
-    const discuss = [
-      ...buildPrepGridItems(prep.actions ?? [], "discuss", renderedProvenance, (i) => [
-        ...fieldPathCandidates(`actions[${i}]`),
-        ...fieldPathCandidates(`talkingPoints[${i}]`),
-      ]),
-      ...buildPrepGridItems(prep.questions ?? [], "discuss", renderedProvenance, (i) => [
-        ...fieldPathCandidates(`questions[${i}]`),
-      ]),
-    ].filter((item) => item.text && !winKeys.has(normalizePrepGridText(item.text)));
-    const watch = buildPrepGridItems(prep.risks ?? [], "watch", renderedProvenance, (i) => [
-      ...fieldPathCandidates(`risks[${i}]`),
-    ]);
-
-    return partitionTrustEvidence([...discuss, ...watch, ...wins], {
-      showAllEvidence,
-      getBand: (item) => item.trustBand,
-    });
-  }, [prep, renderedProvenance, showAllEvidence]);
-
-  if (!prep) return null;
-
-  const discuss = partition.current.filter((item) => item.section === "discuss");
-  const watch = partition.current.filter((item) => item.section === "watch");
-  const wins = partition.current.filter((item) => item.section === "wins");
-
-  const hasSections = partition.totalCount > 0;
-  if (!hasSections) return null;
-
-  const setShowAllEvidenceForSurface = (next: boolean) => {
-    writeShowAllEvidenceState(surfaceId, next);
-    setShowAllEvidence(next);
-  };
-
-  return (
-    <div className={s.prepGrid}>
-      {discuss.length > 0 && (
-        <div className={s.prepSection}>
-          <div className={clsx(s.prepLabel, s.prepLabelDiscuss)}>Discuss</div>
-          {discuss.slice(0, 1).map((item, i) => (
-            <PrepEvidenceItem key={i} item={item} dotClassName={s.prepDotTurmeric} />
-          ))}
-        </div>
-      )}
-
-      {watch.length > 0 && (
-        <div className={s.prepSection}>
-          <div className={clsx(s.prepLabel, s.prepLabelWatch)}>Watch</div>
-          {watch.slice(0, 1).map((item, i) => (
-            <PrepEvidenceItem key={i} item={item} dotClassName={s.prepDotTerracotta} />
-          ))}
-        </div>
-      )}
-
-      {wins.length > 0 && (
-        <div className={s.prepSection}>
-          <div className={clsx(s.prepLabel, s.prepLabelWins)}>Wins</div>
-          {wins.slice(0, 1).map((item, i) => (
-            <PrepEvidenceItem key={i} item={item} dotClassName={s.prepDotSage} />
-          ))}
-        </div>
-      )}
-
-      {partition.current.length === 0 && (
-        <p className={s.trustEvidenceEmpty}>
-          No high-confidence current-state evidence
-          {newestEvidenceDate ? ` since ${formatShortDate(newestEvidenceDate)}` : ""}.
-        </p>
-      )}
-
-      {partition.caution.length > 0 && (
-        <details className={s.trustBackground}>
-          <summary className={s.trustBackgroundSummary}>
-            Background
-            <span className={s.trustCount}>{partition.caution.length}</span>
-          </summary>
-          <div className={s.trustEvidenceList}>
-            {partition.caution.map((item, i) => (
-              <PrepBackgroundEvidenceItem key={`${item.section}-${i}`} item={item} />
-            ))}
-          </div>
-        </details>
-      )}
-
-      {partition.needsVerification.length > 0 && (
-        <div className={s.trustShowAll}>
-          <button
-            type="button"
-            className={s.trustShowAllButton}
-            aria-pressed={showAllEvidence}
-            aria-controls={needsVerificationId}
-            onClick={() => setShowAllEvidenceForSurface(!showAllEvidence)}
-          >
-            {showAllEvidence ? "Hide low-confidence evidence" : "Show all evidence"}
-            <span className={s.trustCount}>{partition.needsVerification.length}</span>
-          </button>
-          <span role="status" aria-live="polite" className={s.trustShowAllStatus}>
-            {showAllEvidence ? "Showing low-confidence evidence" : "Hiding low-confidence evidence"}
-          </span>
-          <div id={needsVerificationId} hidden={!showAllEvidence} className={s.trustEvidenceList}>
-            {partition.revealedNeedsVerification.map((item, i) => (
-              <PrepBackgroundEvidenceItem key={`${item.section}-${i}`} item={item} />
-            ))}
-          </div>
-        </div>
-      )}
-    </div>
-  );
-}
-
-type PrepImpact = "high" | "medium" | "low";
-type PrepGridSectionKey = "discuss" | "watch" | "wins";
-
-interface ParsedPrepGridItem {
-  text: string;
-  impact?: PrepImpact;
-  section?: PrepGridSectionKey;
-  trustBand?: TrustBandWire;
-}
-
-const PREP_IMPACT_TAIL_RE = /\s+[—-]\s*(high|medium|low)\s*$/i;
-
-export function parsePrepGridItem(raw: string): ParsedPrepGridItem {
-  const cleaned = stripMarkdown(raw).trim();
-  const impactMatch = cleaned.match(PREP_IMPACT_TAIL_RE);
-  if (!impactMatch) return { text: cleaned };
-  return {
-    text: cleaned.replace(PREP_IMPACT_TAIL_RE, "").trim(),
-    impact: impactMatch[1].toLowerCase() as PrepImpact,
-  };
-}
-
-function normalizePrepGridText(value: string): string {
-  return value.toLowerCase().replace(/\s+/g, " ").trim();
-}
-
-function buildPrepGridItems(
-  rawItems: string[],
-  section: PrepGridSectionKey,
-  renderedProvenance: unknown,
-  getFieldPaths: (index: number) => string[],
-): ParsedPrepGridItem[] {
-  return rawItems
-    .map((raw, index) => ({
-      ...parsePrepGridItem(raw),
-      section,
-      trustBand: extractMostCautiousTrustBand(renderedProvenance, getFieldPaths(index)),
-    }))
-    .filter((item) => item.text);
-}
-
-function PrepItemContent({ item }: { item: ParsedPrepGridItem }) {
-  return (
-    <>
-      <ClaimTextRenderer
-        value={item.text}
-        className={s.prepItemText}
-        surface="tauri_briefing_prep"
-      />
-      {item.impact && (
-        <span className={s.prepImpactBadge} data-impact={item.impact}>
-          {item.impact}
-        </span>
-      )}
-    </>
-  );
-}
-
-function PrepEvidenceItem({
-  item,
-  dotClassName,
-}: {
-  item: ParsedPrepGridItem;
-  dotClassName: string;
-}) {
-  return (
-    <div className={s.prepItem}>
-      <span className={clsx(s.prepDot, dotClassName)} />
-      <div className={s.prepItemBody}>
-        <PrepItemContent item={item} />
-        <TrustBandIndicator band={item.trustBand ?? "unscored"} />
-      </div>
-    </div>
-  );
-}
-
-function PrepBackgroundEvidenceItem({ item }: { item: ParsedPrepGridItem }) {
-  return (
-    <div className={s.trustEvidenceItem}>
-      <span className={s.trustEvidenceSection}>{sectionLabel(item.section)}</span>
-      <ClaimTextRenderer value={item.text} surface="tauri_briefing_prep" />
-      <TrustBandIndicator band={item.trustBand ?? "unscored"} />
-    </div>
-  );
-}
-
-function sectionLabel(section: PrepGridSectionKey | undefined): string {
-  switch (section) {
-    case "discuss":
-      return "Discuss";
-    case "watch":
-      return "Watch";
-    case "wins":
-      return "Wins";
-    default:
-      return "Prep";
-  }
-}
-
-/** "Before this meeting" action checklist with completion circles. */
-export function MeetingActionChecklist({
-  actions,
-  completedIds,
-  onComplete,
-}: {
-  actions: Action[];
-  completedIds?: Set<string>;
-  onComplete?: (id: string) => void;
-}) {
-  if (actions.length === 0) return null;
-
-  return (
-    <div className={s.meetingActions}>
-      <div className={s.meetingActionsLabel}>Before this meeting</div>
-      {actions.slice(0, 3).map((action) => {
-        const done = action.status === "completed" || completedIds?.has(action.id);
-        return (
-          <div
-            key={action.id}
-            className={clsx(s.meetingActionsItem, done && s.meetingActionsItemCompleted)}
-          >
-            <button
-              className={clsx(
-                s.meetingActionsCheck,
-                done && s.meetingActionsCheckChecked,
-                action.isOverdue && !done && s.meetingActionsCheckOverdue,
-              )}
-              onClick={(e) => {
-                e.stopPropagation();
-                if (!done && onComplete) onComplete(action.id);
-              }}
-              disabled={done}
-            >
-              {done && (
-                <svg width="8" height="8" viewBox="0 0 12 12" fill="none">
-                  <path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </button>
-            <div>
-              <div className={s.meetingActionsText}>{stripMarkdown(action.title)}</div>
-              {(action.isOverdue || action.dueDate || action.account) && (
-                <div className={clsx(s.meetingActionsContext, action.isOverdue && s.meetingActionsContextOverdue)}>
-                  {action.isOverdue && action.daysOverdue
-                    ? `${action.daysOverdue} day${action.daysOverdue !== 1 ? "s" : ""} overdue`
-                    : action.dueDate ?? ""}
-                  {action.account && ` \u00B7 ${action.account}`}
-                </div>
-              )}
-            </div>
-          </div>
-        );
-      })}
-    </div>
-  );
-}
-
-// ─── Main Component ──────────────────────────────────────────────────────────
-
 export function BriefingMeetingCard({
   meeting,
   now,
   currentMeeting,
-  meetingActions = [],
-  onComplete,
-  completedIds,
-  onEntitiesChanged: _onEntitiesChanged,
   capturedActionCount,
   suggestedActionCount,
   isUpNext = false,
-  userDomain,
 }: BriefingMeetingCardProps) {
-  const navigate = useNavigate();
   const state = getTemporalState(meeting, now, currentMeeting);
-  const isInitiallyExpanded = state === "in-progress" || isUpNext;
-  const [isExpanded, setIsExpanded] = useState(isInitiallyExpanded);
-  const innerRef = useRef<HTMLDivElement>(null);
-  const [measuredHeight, setMeasuredHeight] = useState<number>(isInitiallyExpanded ? 2000 : 0);
-
   const duration = formatDuration(meeting);
-  const cleanDescription = stripHtml(meeting.calendarDescription);
-  // Mirror PrepGrid's actual logic: discuss = actions ?? questions (not both independently)
-  const prepDiscuss = meeting.prep?.actions ?? meeting.prep?.questions ?? [];
-  const prepWatch = meeting.prep?.risks ?? [];
-  const prepWins = meeting.prep?.wins ?? [];
-  // "meaningful" prep — anything that would actually render in the panel.
-  // If none of these are present, we still expand but show a graceful empty state
-  // with the bridge link as the primary action (rather than an empty panel).
-  const hasPrepContent = !!(
-    cleanDescription || meeting.prep?.context ||
-    (meeting.calendarAttendees?.length ?? 0) > 0 || (meeting.prep?.stakeholders?.length ?? 0) > 0 ||
-    prepDiscuss.length > 0 || prepWatch.length > 0 || prepWins.length > 0 ||
-    meetingActions.length > 0
-  );
-  const canExpand = state === "upcoming" || state === "in-progress";
-
-  // Measure expansion panel content
-  useLayoutEffect(() => {
-    if (isExpanded && innerRef.current) {
-      setMeasuredHeight(innerRef.current.scrollHeight);
-    } else if (!isExpanded) {
-      setMeasuredHeight(0);
-    }
-  }, [isExpanded]);
-
-  const handleRowClick = useCallback(() => {
-    if (state === "past") {
-      navigate({ to: "/meeting/$meetingId", params: { meetingId: meeting.id } });
-    } else if (canExpand) {
-      setIsExpanded((prev) => !prev);
-    } else if (isUpNext) {
-      navigate({ to: "/meeting/$meetingId", params: { meetingId: meeting.id } });
-    }
-  }, [state, canExpand, isUpNext, navigate, meeting.id]);
-
   const accentClass = getAccentCssClass(meeting);
-  const tintClass = getExpansionTintClass(meeting);
 
-  // ── Cancelled ──
   if (state === "cancelled") {
     return (
       <div className={clsx(s.scheduleRow, s.scheduleRowCancelled, accentClass)}>
@@ -627,131 +150,49 @@ export function BriefingMeetingCard({
     );
   }
 
-  // ── Schedule Row (all non-cancelled states) ──
   const attendeeCount = meeting.calendarAttendees?.length ?? meeting.prep?.stakeholders?.length;
-  const subtitleParts: string[] = [];
-  subtitleParts.push(formatEntityByline(meeting.linkedEntities) ?? formatMeetingType(meeting.type));
+  const subtitleParts: string[] = [
+    formatEntityByline(meeting.linkedEntities) ?? formatMeetingType(meeting.type),
+  ];
   if (attendeeCount && attendeeCount > 0) {
     subtitleParts.push(`${attendeeCount} attendee${attendeeCount !== 1 ? "s" : ""}`);
   }
 
   return (
-    <>
-      {/* Schedule row via shared MeetingCard */}
-      <MeetingCard
-        id={meeting.id}
-        title={meeting.title}
-        displayTime={meeting.time}
-        duration={duration ?? undefined}
-        meetingType={meeting.type}
-        entityByline={subtitleParts.join(" \u00B7 ")}
-        intelligenceQuality={meeting.intelligenceQuality ?? undefined}
-        temporalState={state}
-        onClick={(state === "past" || canExpand) ? handleRowClick : undefined}
-        showNavigationHint={state === "past"}
-        className={clsx(
-          s.briefingCardOverride,
-          state === "in-progress" && s.briefingCardOverrideActive,
-          canExpand && s.scheduleRowExpandable,
-          isExpanded && s.scheduleRowExpanded,
-        )}
-        titleExtra={<>
+    <MeetingCard
+      id={meeting.id}
+      title={meeting.title}
+      displayTime={meeting.time}
+      duration={duration ?? undefined}
+      meetingType={meeting.type}
+      entityByline={subtitleParts.join(" \u00B7 ")}
+      intelligenceQuality={meeting.intelligenceQuality ?? undefined}
+      temporalState={state}
+      showNavigationHint={state === "past"}
+      className={clsx(
+        s.briefingCardOverride,
+        state === "in-progress" && s.briefingCardOverrideActive,
+      )}
+      titleExtra={(
+        <>
           {isUpNext && state !== "in-progress" && (
             <Pill tone="sage" size="compact">
               UP NEXT
             </Pill>
           )}
-          {canExpand && (
-            <span className={s.expandHint}>
-              {isExpanded ? "collapse" : "expand"}
+        </>
+      )}
+    >
+      {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
+        <div className={s.capturedSummary}>
+          {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
+          {suggestedActionCount != null && suggestedActionCount > 0 && (
+            <span className={s.capturedSummaryReview}>
+              {" \u00B7 "}{suggestedActionCount} needs review
             </span>
           )}
-        </>}
-      >
-        {state === "past" && capturedActionCount != null && capturedActionCount > 0 && (
-          <div className={s.capturedSummary}>
-            {capturedActionCount} action{capturedActionCount !== 1 ? "s" : ""} captured
-            {suggestedActionCount != null && suggestedActionCount > 0 && (
-              <span className={s.capturedSummaryReview}>
-                {" \u00B7 "}{suggestedActionCount} needs review
-              </span>
-            )}
-          </div>
-        )}
-      </MeetingCard>
-
-      {/* Expansion panel */}
-      {canExpand && (
-        <div
-          className={clsx(s.expansionPanel, tintClass, isExpanded && s.expansionPanelOpen)}
-          style={{ maxHeight: isExpanded ? measuredHeight : 0 }}
-        >
-          <div ref={innerRef} className={s.expansionInner}>
-            {hasPrepContent ? (
-              <>
-                {/* Meeting context: calendar description (organizer's words) or AI brief */}
-                {cleanDescription ? (
-                  <p className={s.expansionDescription}>
-                    {cleanDescription.length > 400
-                      ? `${cleanDescription.slice(0, 400)}…`
-                      : cleanDescription}
-                  </p>
-                ) : meeting.prep?.context ? (
-                  <p className={s.expansionNarrative}>
-                    {meeting.prep.context.length > 320
-                      ? `${meeting.prep.context.slice(0, 320)}…`
-                      : meeting.prep.context}
-                  </p>
-                ) : null}
-
-                {/* The Room — calendar invitees grouped by side */}
-                {(meeting.calendarAttendees?.length || meeting.prep?.stakeholders?.length) ? (
-                  <KeyPeopleFlow
-                    attendees={meeting.calendarAttendees}
-                    userDomain={userDomain}
-                    stakeholders={meeting.prep?.stakeholders}
-                  />
-                ) : null}
-
-                {/* Prep grid: Discuss, Watch, Wins */}
-                <PrepGrid meeting={meeting} />
-
-                {/* Before this meeting: action checklist */}
-                <MeetingActionChecklist
-                  actions={meetingActions}
-                  completedIds={completedIds}
-                  onComplete={onComplete}
-                />
-              </>
-            ) : (
-              /* graceful empty state — prep not yet generated.
-                 Bridge link below remains the primary action. */
-              <p className={s.expansionNarrative}>No prep available yet.</p>
-            )}
-
-            {/* Bridge link — always accessible, even when prep is empty */}
-            <div className={s.meetingLinks}>
-              <Link
-                to="/meeting/$meetingId"
-                params={{ meetingId: meeting.id }}
-                className={s.meetingLinkPrimary}
-                onClick={(e) => e.stopPropagation()}
-              >
-                Read full briefing &rarr;
-              </Link>
-              <button
-                className={s.expansionCollapse}
-                onClick={(e) => {
-                  e.stopPropagation();
-                  setIsExpanded(false);
-                }}
-              >
-                Collapse
-              </button>
-            </div>
-          </div>
         </div>
       )}
-    </>
+    </MeetingCard>
   );
 }

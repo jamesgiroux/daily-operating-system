@@ -4,18 +4,19 @@
 //! Meeting, action, email, and lifecycle signals are mapped into a shared
 //! entity-ranked feed.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
+use rusqlite::params_from_iter;
 
 mod lifecycle;
 
 use crate::services::actions::{get_all_actions, ActionsResult};
 use crate::services::briefing_view_model::{
-    LifecycleMixin, LinkRole, LinkedEntityType, LinkedEntityWire, MovingEntityKind,
-    MovingEntityViewModel, MovingSignalViewModel, MovingViewModel, PillTone, PillView,
-    ProvenanceStatView, ProvenanceTrend, SignalDotKind, SignalUrgency, ThreadAction, TrustBandWire,
-    TrustMixin, WhatSegment,
+    CorrectionState, LifecycleMixin, LinkRole, LinkedEntityType, LinkedEntityWire,
+    MovingEntityKind, MovingEntityViewModel, MovingSignalViewModel, MovingViewModel, PillTone,
+    PillView, ProvenanceStatView, ProvenanceTrend, SignalDotKind, SignalUrgency, ThreadAction,
+    TrustBandWire, TrustMixin, WhatSegment,
 };
 use crate::services::dashboard::{get_dashboard_data, DashboardResult};
 use crate::state::AppState;
@@ -24,11 +25,13 @@ use crate::types::{Action, DashboardLifecycleUpdate, LinkedEntity, Meeting};
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 struct EntityId(String);
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct ClaimId(i64);
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct ClaimId(String);
 
 type SignalWithClaim = (EntityId, MovingSignalViewModel, Option<ClaimId>);
 type EntitySignal = (MovingSignalViewModel, Option<ClaimId>);
+
+const LIFECYCLE_CHANGE_CLAIM_PREFIX: &str = "lifecycle_change:";
 
 #[derive(Debug, Clone)]
 struct EntityRecord {
@@ -66,10 +69,11 @@ pub async fn compose_moving(state: &AppState) -> MovingViewModel {
             .chain(email_signals)
             .chain(lifecycle_signals),
     );
+    let correction_states = load_signal_lifecycle_states(state, collect_claim_ids(&grouped)).await;
 
     let ids: Vec<EntityId> = grouped.keys().cloned().collect();
     enrich_entity_index(state, &ids, &mut entity_index).await;
-    let entities = build_ranked_entities(grouped, &entity_index);
+    let entities = build_ranked_entities(grouped, &entity_index, &correction_states);
 
     MovingViewModel {
         label: "Moving".into(),
@@ -150,7 +154,7 @@ async fn collect_email_signals(state: &AppState) -> Vec<SignalWithClaim> {
 }
 
 async fn collect_lifecycle_signals(
-    state: &AppState,
+    _state: &AppState,
     updates: Option<&[DashboardLifecycleUpdate]>,
 ) -> Vec<SignalWithClaim> {
     let Some(updates) = updates else {
@@ -160,28 +164,17 @@ async fn collect_lifecycle_signals(
         return Vec::new();
     }
 
-    let change_ids: Vec<i64> = updates.iter().map(|update| update.change_id).collect();
-    let correction_states = state
-        .db_read(move |db| {
-            let mut states = HashMap::new();
-            for change_id in change_ids {
-                if let Some(state) =
-                    crate::services::claims::lifecycle_state_for_change(db, change_id)
-                {
-                    states.insert(change_id, state);
-                }
-            }
-            Ok(states)
+    lifecycle::collect_lifecycle_signals(Some(updates), &|_| None)
+        .into_iter()
+        .zip(updates.iter())
+        .map(|((entity_id, signal), update)| {
+            (
+                entity_id,
+                signal,
+                Some(lifecycle_change_claim_id(update.change_id)),
+            )
         })
-        .await
-        .unwrap_or_default();
-
-    lifecycle::collect_lifecycle_signals(Some(updates), &|change_id| {
-        correction_states.get(&change_id).cloned()
-    })
-    .into_iter()
-    .map(|(entity_id, signal)| (entity_id, signal, None))
-    .collect()
+        .collect()
 }
 
 fn group_signals_by_entity<I>(signals: I) -> HashMap<EntityId, Vec<EntitySignal>>
@@ -198,14 +191,177 @@ where
     grouped
 }
 
+fn collect_claim_ids(grouped: &HashMap<EntityId, Vec<EntitySignal>>) -> Vec<ClaimId> {
+    let mut seen = HashSet::new();
+    let mut claim_ids = Vec::new();
+    for entries in grouped.values() {
+        for (_, claim_id) in entries {
+            let Some(claim_id) = claim_id else {
+                continue;
+            };
+            if seen.insert(claim_id.clone()) {
+                claim_ids.push(claim_id.clone());
+            }
+        }
+    }
+    claim_ids
+}
+
+async fn load_signal_lifecycle_states(
+    state: &AppState,
+    claim_ids: Vec<ClaimId>,
+) -> HashMap<ClaimId, CorrectionState> {
+    if claim_ids.is_empty() {
+        return HashMap::new();
+    }
+
+    state
+        .db_read(move |db| Ok(load_claim_lifecycle_states(db, &claim_ids)))
+        .await
+        .unwrap_or_else(|error| {
+            log::error!("moving claim lifecycle lookup failed: {error}");
+            HashMap::new()
+        })
+}
+
+fn load_claim_lifecycle_states(
+    db: &crate::db::ActionDb,
+    claim_ids: &[ClaimId],
+) -> HashMap<ClaimId, CorrectionState> {
+    let mut states = HashMap::new();
+    let mut lifecycle_change_ids = Vec::new();
+    let mut intelligence_claim_ids = Vec::new();
+    let mut seen = HashSet::new();
+
+    for claim_id in claim_ids {
+        if !seen.insert(claim_id.clone()) {
+            continue;
+        }
+        if let Some(change_id) = lifecycle_change_id(claim_id) {
+            lifecycle_change_ids.push(change_id);
+        } else {
+            intelligence_claim_ids.push(claim_id.0.clone());
+        }
+    }
+
+    if !lifecycle_change_ids.is_empty() {
+        let sql = format!(
+            "SELECT id, user_response FROM lifecycle_changes WHERE id IN ({})",
+            placeholders(lifecycle_change_ids.len())
+        );
+        match db.conn_ref().prepare(&sql).and_then(|mut stmt| {
+            let rows = stmt.query_map(params_from_iter(lifecycle_change_ids.iter()), |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })?;
+            for row in rows {
+                let (change_id, user_response) = row?;
+                states.insert(
+                    lifecycle_change_claim_id(change_id),
+                    correction_state_for_lifecycle_response(&user_response),
+                );
+            }
+            Ok(())
+        }) {
+            Ok(()) => {}
+            Err(error) => log::error!("moving lifecycle-change lookup failed: {error}"),
+        }
+    }
+
+    if !intelligence_claim_ids.is_empty() {
+        let sql = format!(
+            "SELECT id, verification_state, demotion_reason, superseded_by \
+             FROM intelligence_claims WHERE id IN ({})",
+            placeholders(intelligence_claim_ids.len())
+        );
+        match db.conn_ref().prepare(&sql).and_then(|mut stmt| {
+            let rows = stmt.query_map(params_from_iter(intelligence_claim_ids.iter()), |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
+            })?;
+            for row in rows {
+                let (claim_id, verification_state, demotion_reason, superseded_by) = row?;
+                states.insert(
+                    ClaimId(claim_id),
+                    correction_state_for_claim(
+                        &verification_state,
+                        demotion_reason.as_deref(),
+                        superseded_by.as_deref(),
+                    ),
+                );
+            }
+            Ok(())
+        }) {
+            Ok(()) => {}
+            Err(error) => log::error!("moving intelligence-claim lookup failed: {error}"),
+        }
+    }
+
+    states
+}
+
+fn placeholders(count: usize) -> String {
+    std::iter::repeat_n("?", count)
+        .collect::<Vec<_>>()
+        .join(",")
+}
+
+fn correction_state_for_lifecycle_response(user_response: &str) -> CorrectionState {
+    match user_response {
+        "corrected" => CorrectionState::Corrected,
+        "contested" => CorrectionState::Contested,
+        _ => CorrectionState::None,
+    }
+}
+
+fn correction_state_for_claim(
+    verification_state: &str,
+    demotion_reason: Option<&str>,
+    superseded_by: Option<&str>,
+) -> CorrectionState {
+    match (verification_state, demotion_reason, superseded_by) {
+        ("contested" | "needs_user_decision", _, _) => CorrectionState::Contested,
+        (_, Some("superseded"), _) | (_, _, Some(_)) => CorrectionState::Corrected,
+        _ => CorrectionState::None,
+    }
+}
+
+fn lifecycle_for_signal(
+    claim_id: &ClaimId,
+    lifecycle_map: &HashMap<ClaimId, CorrectionState>,
+) -> LifecycleMixin {
+    LifecycleMixin {
+        correction_state: Some(lifecycle_map.get(claim_id).cloned().unwrap_or_else(|| {
+            log::debug!("moving claim lifecycle state missing for {claim_id:?}");
+            CorrectionState::None
+        })),
+    }
+}
+
+fn lifecycle_change_claim_id(change_id: i64) -> ClaimId {
+    ClaimId(format!("{LIFECYCLE_CHANGE_CLAIM_PREFIX}{change_id}"))
+}
+
+fn lifecycle_change_id(claim_id: &ClaimId) -> Option<i64> {
+    claim_id
+        .0
+        .strip_prefix(LIFECYCLE_CHANGE_CLAIM_PREFIX)
+        .and_then(|id| id.parse().ok())
+}
+
 fn build_ranked_entities(
     grouped: HashMap<EntityId, Vec<EntitySignal>>,
     entity_index: &HashMap<EntityId, EntityRecord>,
+    lifecycle_map: &HashMap<ClaimId, CorrectionState>,
 ) -> Vec<MovingEntityViewModel> {
     let mut entities: Vec<_> = grouped
         .into_iter()
         .filter_map(|(id, entries)| {
-            (!entries.is_empty()).then(|| build_entity_view(&id, entries, entity_index.get(&id)))
+            (!entries.is_empty())
+                .then(|| build_entity_view(&id, entries, entity_index.get(&id), lifecycle_map))
         })
         .collect();
     entities.sort_by(|a, b| {
@@ -222,8 +378,8 @@ fn build_entity_view(
     entity_id: &EntityId,
     mut entries: Vec<EntitySignal>,
     record: Option<&EntityRecord>,
+    lifecycle_map: &HashMap<ClaimId, CorrectionState>,
 ) -> MovingEntityViewModel {
-    let _last_claim_id = entries.iter().filter_map(|(_, id)| id.map(|id| id.0)).max();
     entries.sort_by(|(a, _), (b, _)| {
         signal_weight(b)
             .total_cmp(&signal_weight(a))
@@ -231,7 +387,12 @@ fn build_entity_view(
     });
     let signals: Vec<_> = entries
         .into_iter()
-        .map(|(signal, _)| signal)
+        .map(|(mut signal, claim_id)| {
+            if let Some(claim_id) = claim_id {
+                signal.lifecycle = lifecycle_for_signal(&claim_id, lifecycle_map);
+            }
+            signal
+        })
         .take(5)
         .collect();
     let fallback = fallback_record(entity_id);
@@ -675,6 +836,7 @@ fn titleize(value: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::test_utils::test_db;
     use crate::types::{ActionStatus, MeetingType};
     use serde_json::Value;
 
@@ -772,16 +934,32 @@ mod tests {
         signals: Vec<SignalWithClaim>,
         records: Vec<EntityRecord>,
     ) -> Vec<MovingEntityViewModel> {
+        build_with_lifecycle(signals, records, &HashMap::new())
+    }
+
+    fn build_with_lifecycle(
+        signals: Vec<SignalWithClaim>,
+        records: Vec<EntityRecord>,
+        lifecycle_map: &HashMap<ClaimId, CorrectionState>,
+    ) -> Vec<MovingEntityViewModel> {
         let index = records
             .into_iter()
             .map(|record| (record.id.clone(), record))
             .collect();
-        build_ranked_entities(group_signals_by_entity(signals), &index)
+        build_ranked_entities(group_signals_by_entity(signals), &index, lifecycle_map)
+    }
+
+    fn claim_signal(claim_id: &str, when: &str) -> SignalWithClaim {
+        (
+            EntityId("acc-1".into()),
+            sig(SignalDotKind::Action, SignalUrgency::Normal, when, false),
+            Some(ClaimId(claim_id.into())),
+        )
     }
 
     #[test]
     fn moving_empty_branch_renders_editorial_copy() {
-        let entities = build_ranked_entities(HashMap::new(), &HashMap::new());
+        let entities = build_ranked_entities(HashMap::new(), &HashMap::new(), &HashMap::new());
         assert!(entities.is_empty());
         assert_eq!(format_count_label(0), "0 entities");
         assert_eq!(format_summary(&entities), "Quiet.");
@@ -798,6 +976,7 @@ mod tests {
         let entities = build_ranked_entities(
             group_signals_by_entity(signals),
             &collect_entity_index(&meetings),
+            &HashMap::new(),
         );
         assert_eq!(entities.len(), 1);
         assert_eq!(entities[0].kind, MovingEntityKind::Customer);
@@ -818,12 +997,14 @@ mod tests {
                         "2026-05-07T12:00:00Z",
                         false,
                     ),
-                    Some(ClaimId(42)),
+                    Some(lifecycle_change_claim_id(42)),
                 )]),
         );
         let entries = grouped.get(&EntityId("acc-1".into())).expect("entity");
         assert_eq!(entries.len(), 3);
-        assert!(entries.iter().any(|(_, claim)| *claim == Some(ClaimId(42))));
+        assert!(entries
+            .iter()
+            .any(|(_, claim)| *claim == Some(lifecycle_change_claim_id(42))));
         assert_eq!(
             entries.iter().filter(|(_, claim)| claim.is_none()).count(),
             2
@@ -862,6 +1043,81 @@ mod tests {
         assert_eq!(mapped[0].0, EntityId("acc-1".into()));
         assert_eq!(mapped[0].1.kind, SignalDotKind::Email);
         assert_eq!(mapped[0].2, None);
+    }
+
+    #[test]
+    fn batch_lookup_maps_lifecycle_change_states() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch("INSERT INTO lifecycle_changes (id, account_id, new_lifecycle, source, confidence, user_response) VALUES (101, 'acc-1', 'renewing', 'test', 0.9, 'corrected'), (102, 'acc-1', 'churned', 'test', 0.9, 'contested'), (103, 'acc-1', 'active', 'test', 0.9, 'pending')")
+            .expect("insert lifecycle changes");
+
+        let states = load_claim_lifecycle_states(
+            &db,
+            &[
+                lifecycle_change_claim_id(101),
+                lifecycle_change_claim_id(102),
+                lifecycle_change_claim_id(103),
+                lifecycle_change_claim_id(101),
+            ],
+        );
+
+        assert_eq!(
+            states[&lifecycle_change_claim_id(101)],
+            CorrectionState::Corrected
+        );
+        assert_eq!(
+            states[&lifecycle_change_claim_id(102)],
+            CorrectionState::Contested
+        );
+        assert_eq!(
+            states[&lifecycle_change_claim_id(103)],
+            CorrectionState::None
+        );
+    }
+
+    #[test]
+    fn claim_backed_signals_serialize_correction_state_from_batch_map() {
+        let db = test_db();
+        db.conn_ref()
+            .execute_batch(r#"INSERT INTO intelligence_claims (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at, provenance_json, verification_state, demotion_reason) VALUES ('claim-corrected', '{"kind":"account","id":"acc-1"}', 'meeting_readiness', 'corrected', 'dedup:corrected', 'system', 'test', '2026-05-07T12:00:00Z', '{}', 'active', 'superseded'), ('claim-contested', '{"kind":"account","id":"acc-1"}', 'meeting_readiness', 'contested', 'dedup:contested', 'system', 'test', '2026-05-07T12:00:00Z', '{}', 'needs_user_decision', 'superseded'), ('claim-none', '{"kind":"account","id":"acc-1"}', 'meeting_readiness', 'none', 'dedup:none', 'system', 'test', '2026-05-07T12:00:00Z', '{}', 'active', NULL)"#)
+            .expect("insert intelligence claims");
+        let states = load_claim_lifecycle_states(
+            &db,
+            &[
+                ClaimId("claim-corrected".into()),
+                ClaimId("claim-contested".into()),
+                ClaimId("claim-none".into()),
+            ],
+        );
+
+        let entities = build_with_lifecycle(
+            vec![
+                claim_signal("claim-corrected", "2026-05-07T12:00:00Z"),
+                claim_signal("claim-contested", "2026-05-07T11:00:00Z"),
+                claim_signal("claim-none", "2026-05-07T10:00:00Z"),
+                (
+                    EntityId("acc-1".into()),
+                    sig(
+                        SignalDotKind::Meeting,
+                        SignalUrgency::Normal,
+                        "2026-05-07T09:00:00Z",
+                        false,
+                    ),
+                    None,
+                ),
+            ],
+            vec![record("acc-1", "Globex", LinkedEntityType::Account)],
+            &states,
+        );
+        let parsed: Value =
+            serde_json::from_str(&serde_json::to_string(&entities[0]).unwrap()).unwrap();
+        let signals = parsed["signals"].as_array().expect("signals array");
+
+        assert_eq!(signals[0]["correctionState"], "corrected");
+        assert_eq!(signals[1]["correctionState"], "contested");
+        assert_eq!(signals[2]["correctionState"], "none");
+        assert!(signals[3].get("correctionState").is_none());
     }
 
     /// Regression: future meeting with prep must NOT take the high-weight
@@ -1064,5 +1320,8 @@ mod tests {
             "test.signal"
         );
         assert!(parsed["entities"][0]["signals"][0].get("claimId").is_none());
+        assert!(parsed["entities"][0]["signals"][0]
+            .get("correctionState")
+            .is_none());
     }
 }

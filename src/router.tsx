@@ -580,6 +580,12 @@ const meetingDetailRoute = createRoute({
   component: MeetingDetailPage,
 });
 
+const meetingsDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/meetings/$meetingId",
+  component: MeetingDetailPage,
+});
+
 const meetingHistoryDetailRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/meeting/history/$meetingId",
@@ -679,6 +685,7 @@ const routeTree = rootRoute.addChildren([
   meRoute,
   meetingHistoryDetailRoute,
   meetingDetailRoute,
+  meetingsDetailRoute,
   peopleRoute,
   personDetailRoute,
   projectsRoute,
