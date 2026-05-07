@@ -19,6 +19,7 @@
   <link rel="stylesheet" href="../_shared/styles/MeetingSpineItem.module.css">
   <link rel="stylesheet" href="../_shared/styles/InferredActionSelector.module.css">
   <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
+  <link rel="stylesheet" href="../_shared/styles/TrustBandBadge.module.css">
   <link rel="stylesheet" href="../_shared/styles/SignalDot.module.css">
   <link rel="stylesheet" href="../_shared/styles/ProvenanceStat.module.css">
   <link rel="stylesheet" href="../_shared/styles/PredictionsSection.module.css">
@@ -59,6 +60,14 @@
       display: grid;
       gap: 0;
     }
+
+    .dspine-chart-eng { left: 18.18%; width: 4.55%; }
+    .dspine-chart-acme { left: 27.27%; width: 6.82%; }
+    .dspine-chart-priya { left: 40.9%; width: 4.55%; }
+    .dspine-chart-northwind { left: 63.63%; width: 9.09%; }
+    .dspine-chart-forecast { left: 81.81%; width: 4.55%; }
+    .dspine-chart-globex { left: 86.36%; width: 4.55%; }
+    .dspine-chart-now { left: 30%; }
 
     .MagazinePageLayout_pageContainer {
       margin-top: calc(var(--page-margin-top) + 72px);
@@ -224,11 +233,6 @@
         font-size: 38px;
       }
 
-      .editorial-briefing_focusCapacity,
-      .editorial-briefing_focusText {
-        max-width: 100%;
-      }
-
       .dspine-section-heading {
         font-size: 26px;
       }
@@ -290,7 +294,7 @@
 >
   <section id="lead" class="editorial-briefing_hero" data-ds-tier="pattern" data-ds-name="Lead" data-ds-spec="patterns/Lead.md" data-ds-state="proposed">
     <h1 class="editorial-briefing_heroHeadline">Four meetings today, two with customers. <span class="dspine-sharp">The Acme renewal at 10:00 is the one to nail.</span></h1>
-    <div class="editorial-briefing_focusCapacity">
+    <div class="dspine-section-summary">
       3h available &middot; 2 deep work blocks &middot; light afternoon after 2:00
     </div>
   </section>
@@ -327,31 +331,31 @@
             <span class="DayChart_hourTick">5</span>
           </div>
           <div class="DayChart_bars" role="list" aria-label="Meetings plotted across the workday">
-            <div class="DayChart_bar DayChart_internal DayChart_past" style="left:18.18%; width:4.55%;" role="listitem" tabindex="0" aria-label="Engineering standup, 9:00 for 30 minutes" data-tooltip="Eng standup · 9:00 · 30m">
+            <div class="DayChart_bar DayChart_internal DayChart_past dspine-chart-eng" role="listitem" tabindex="0" aria-label="Engineering standup, 9:00 for 30 minutes" data-tooltip="Eng standup · 9:00 · 30m">
               <span class="DayChart_barTitle">Eng standup</span>
               <span class="DayChart_barTime">9:00 &middot; 30M</span>
             </div>
-            <div class="DayChart_bar DayChart_customer DayChart_nowBar" style="left:27.27%; width:6.82%;" role="listitem" tabindex="0" aria-label="Acme renewal, 10:00 for 45 minutes" data-tooltip="Acme renewal · 10:00 · 45m">
+            <div class="DayChart_bar DayChart_customer DayChart_nowBar dspine-chart-acme" role="listitem" tabindex="0" aria-label="Acme renewal, 10:00 for 45 minutes" data-tooltip="Acme renewal · 10:00 · 45m">
               <span class="DayChart_barTitle">Acme Renewal</span>
               <span class="DayChart_barTime">10:00 &middot; 45M</span>
             </div>
-            <div class="DayChart_bar DayChart_oo" style="left:40.9%; width:4.55%;" role="listitem" tabindex="0" aria-label="One on one with Priya, 11:30 for 30 minutes" data-tooltip="1:1 with Priya · 11:30 · 30m">
+            <div class="DayChart_bar DayChart_oo dspine-chart-priya" role="listitem" tabindex="0" aria-label="One on one with Priya, 11:30 for 30 minutes" data-tooltip="1:1 with Priya · 11:30 · 30m">
               <span class="DayChart_barTitle">1:1 Priya</span>
               <span class="DayChart_barTime">11:30 &middot; 30M</span>
             </div>
-            <div class="DayChart_bar DayChart_partner" style="left:63.63%; width:9.09%;" role="listitem" tabindex="0" aria-label="Northwind partner sync, 2:00 for 60 minutes" data-tooltip="Northwind partner sync · 2:00 · 60m">
+            <div class="DayChart_bar DayChart_partner dspine-chart-northwind" role="listitem" tabindex="0" aria-label="Northwind partner sync, 2:00 for 60 minutes" data-tooltip="Northwind partner sync · 2:00 · 60m">
               <span class="DayChart_barTitle">Northwind partner</span>
               <span class="DayChart_barTime">2:00 &middot; 60M</span>
             </div>
-            <div class="DayChart_bar DayChart_internal" style="left:81.81%; width:4.55%;" role="listitem" tabindex="0" aria-label="Q2 forecast review, 4:00 for 30 minutes" data-tooltip="Q2 forecast review · 4:00 · 30m">
+            <div class="DayChart_bar DayChart_internal dspine-chart-forecast" role="listitem" tabindex="0" aria-label="Q2 forecast review, 4:00 for 30 minutes" data-tooltip="Q2 forecast review · 4:00 · 30m">
               <span class="DayChart_barTitle">Forecast review</span>
               <span class="DayChart_barTime">4:00 &middot; 30M</span>
             </div>
-            <div class="DayChart_bar DayChart_cancel" style="left:86.36%; width:4.55%;" role="listitem" tabindex="0" aria-label="Globex intro cancelled" data-tooltip="Globex intro · cancelled">
+            <div class="DayChart_bar DayChart_cancel dspine-chart-globex" role="listitem" tabindex="0" aria-label="Globex intro cancelled" data-tooltip="Globex intro · cancelled">
               <span class="DayChart_barTitle">Globex intro</span>
               <span class="DayChart_barTime">Cancelled</span>
             </div>
-            <span class="DayChart_nowLine" style="left:30%;" data-now-label="NOW" aria-hidden="true"></span>
+            <span class="DayChart_nowLine dspine-chart-now" data-now-label="NOW" aria-hidden="true"></span>
           </div>
         </section>
 
@@ -391,7 +395,7 @@
               <div class="MeetingSpineItem_footer">
                 <span>Jen Park, Dan Mitchell, +2</span>
                 <span class="MeetingSpineItem_separator" aria-hidden="true"></span>
-                <span class="Pill_pill Pill_compact Pill_sage" data-ds-tier="primitive" data-ds-name="Pill" data-ds-spec="primitives/Pill.md"><span class="Pill_dot" aria-hidden="true"></span>Briefing fresh</span>
+                <span class="Pill_pill Pill_compact Pill_sage TrustBandBadge_badge TrustBandBadge_compact TrustBandBadge_likelyCurrent" data-ds-tier="primitive" data-ds-name="TrustBandBadge" data-ds-spec="primitives/TrustBandBadge.md"><span class="Pill_dot" aria-hidden="true"></span>Likely current</span>
                 <a class="MeetingSpineItem_briefingLink" href="meeting.html">Read full briefing &rarr;</a>
               </div>
             </div>
