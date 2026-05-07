@@ -6,7 +6,7 @@
 //! affordances, MCP responses are actor-filtered for agents, and publication,
 //! log, and notification surfaces fail closed.
 
-use crate::db::claims::{ClaimSensitivity, IntelligenceClaim};
+use crate::db::claims::{ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState};
 use crate::db::ActionDb;
 use crate::intelligence::{
     CompanyContext, CurrentState, IntelRisk, IntelWin, IntelligenceJson, StakeholderInsight,
@@ -528,6 +528,13 @@ struct TaggedMcpClaimText {
     text: String,
     claim_id: String,
     sensitivity: ClaimSensitivity,
+    stored_projection: StoredMcpClaimTextProjection,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum StoredMcpClaimTextProjection {
+    Text,
+    EntityContextTitle,
 }
 
 enum TaggedMcpClaimTextMatch {
@@ -592,8 +599,8 @@ fn render_mcp_ability_data_value(
                 .collect(),
         )),
         serde_json::Value::String(text) => {
-            if is_mcp_ability_non_content_metadata_string(path) {
-                return Some(serde_json::Value::String(text));
+            if let Some(metadata) = render_mcp_ability_metadata_string(path, &text) {
+                return Some(metadata);
             }
 
             attested_mcp_claim_text_for_leaf(path, &text, claim_id_hint, provenance, load_claim)
@@ -665,6 +672,7 @@ fn tagged_mcp_claim_text(
         text,
         claim_id,
         sensitivity,
+        stored_projection: StoredMcpClaimTextProjection::Text,
     })
 }
 
@@ -674,6 +682,7 @@ fn render_tagged_mcp_claim_text(
 ) -> Option<serde_json::Value> {
     let actor = RenderActor::agent("agent:mcp");
     let claim = load_claim(&tagged.claim_id)?;
+    let stored_text = stored_mcp_claim_text(&claim, &tagged.claim_id, tagged.stored_projection)?;
 
     if claim.sensitivity != tagged.sensitivity {
         log::warn!(
@@ -686,10 +695,61 @@ fn render_tagged_mcp_claim_text(
         return None;
     }
 
+    if stored_text != tagged.text {
+        log::warn!(
+            target: "dailyos_lib::services::sensitivity",
+            "MCP ability data claim text mismatch claim_id={}; dropping tagged object",
+            tagged.claim_id
+        );
+        return None;
+    }
+
     let decision = render_policy_for_surface(&claim, RenderSurface::McpTool, &actor);
     let rendered =
-        renderable_from_decision(&claim, &tagged.text, RenderSurface::McpTool, decision)?;
+        renderable_from_decision(&claim, &stored_text, RenderSurface::McpTool, decision)?;
     safe_tagged_mcp_claim_text_object(rendered)
+}
+
+fn stored_mcp_claim_text(
+    claim: &IntelligenceClaim,
+    claim_id: &str,
+    projection: StoredMcpClaimTextProjection,
+) -> Option<String> {
+    if claim.claim_state != ClaimState::Active || claim.surfacing_state != SurfacingState::Active {
+        log::warn!(
+            target: "dailyos_lib::services::sensitivity",
+            "MCP ability data claim is not active/surfaced claim_id={}; dropping tagged object",
+            claim_id
+        );
+        return None;
+    }
+
+    let text = match projection {
+        StoredMcpClaimTextProjection::Text => claim.text.clone(),
+        StoredMcpClaimTextProjection::EntityContextTitle => entity_context_title_for_claim(claim),
+    };
+
+    if text.trim().is_empty() {
+        log::warn!(
+            target: "dailyos_lib::services::sensitivity",
+            "MCP ability data claim has no stored text claim_id={}; dropping tagged object",
+            claim_id
+        );
+        return None;
+    }
+
+    Some(text)
+}
+
+fn entity_context_title_for_claim(claim: &IntelligenceClaim) -> String {
+    match claim
+        .field_path
+        .as_deref()
+        .filter(|value| !value.trim().is_empty())
+    {
+        Some(field_path) => format!("{}: {field_path}", claim.claim_type),
+        None => claim.claim_type.clone(),
+    }
 }
 
 fn safe_tagged_mcp_claim_text_object(rendered: RenderableClaimText) -> Option<serde_json::Value> {
@@ -796,7 +856,16 @@ fn attested_mcp_claim_text_for_leaf(
             text: text.to_string(),
             claim_id: claim.id,
             sensitivity: claim.sensitivity,
+            stored_projection: stored_mcp_claim_text_projection_for_path(path),
         })
+}
+
+fn stored_mcp_claim_text_projection_for_path(path: &[String]) -> StoredMcpClaimTextProjection {
+    if path.len() == 2 && is_array_index(&path[0]) && path[1] == "title" {
+        StoredMcpClaimTextProjection::EntityContextTitle
+    } else {
+        StoredMcpClaimTextProjection::Text
+    }
 }
 
 fn provenance_claim_for_path(
@@ -1016,105 +1085,347 @@ fn field_path_covers(candidate: &str, leaf: &str) -> bool {
             .is_some_and(|suffix| suffix.starts_with('/'))
 }
 
-fn is_mcp_ability_non_content_metadata_string(path: &[String]) -> bool {
-    let Some(key) = metadata_key_for_path(path) else {
-        return false;
-    };
-
-    // Identifiers are join handles, not prose. They are needed so callers can
-    // correlate MCP rows without exposing claim text.
-    if is_identifier_metadata_key(key) {
-        return true;
-    }
-
-    // Enum-shaped state is non-content routing metadata. These values describe
-    // lifecycle or type, not user-authored or model-authored claim text.
-    if matches!(
-        key,
-        "actor"
-            | "claim_state"
-            | "claimState"
-            | "entity_type"
-            | "entityType"
-            | "kind"
-            | "lifecycle"
-            | "mode"
-            | "priority"
-            | "sensitivity"
-            | "status"
-            | "surfacing_state"
-            | "surfacingState"
-            | "temporal_scope"
-            | "temporalScope"
-            | "trust_band"
-            | "trustBand"
-    ) {
-        return true;
-    }
-
-    // Timestamp-shaped fields are chronology metadata. They can be useful to
-    // agents without carrying narrative claim content.
-    if is_timestamp_metadata_key(key) {
-        return true;
-    }
-
-    // Name-shaped fields are allowlisted only for established metadata
-    // surfaces. Generated section titles, open-loop owners, and attendee
-    // summaries are intentionally excluded unless claim/provenance-attested.
-    matches_meeting_metadata_name_path(path) || matches!(key, "display_name" | "displayName")
-}
-
-fn metadata_key_for_path(path: &[String]) -> Option<&str> {
-    let key = path.last()?.as_str();
-    if is_array_index(key) {
-        path.iter()
-            .rev()
-            .skip(1)
-            .find(|token| !is_array_index(token))
-            .map(String::as_str)
-    } else {
-        Some(key)
-    }
-}
-
 fn is_array_index(value: &str) -> bool {
     !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-fn is_identifier_metadata_key(key: &str) -> bool {
-    key == "id"
-        || key.ends_with("_id")
-        || key.ends_with("Id")
-        || matches!(key, "claim_id" | "claimId" | "source_ids" | "sourceIds")
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum McpAbilityMetadataValueClass {
+    Identifier,
+    EntityKind,
+    TemporalScope,
+    Timestamp,
+    MeetingTitle,
+    EntityName,
 }
 
-fn is_timestamp_metadata_key(key: &str) -> bool {
-    key.ends_with("_at")
-        || key.ends_with("At")
-        || matches!(
-            key,
-            "source_asof"
-                | "sourceAsof"
-                | "window_start"
-                | "windowStart"
-                | "window_end"
-                | "windowEnd"
-        )
+struct McpAbilityMetadataPathRule {
+    pattern: &'static [&'static str],
+    value_class: McpAbilityMetadataValueClass,
 }
 
-fn matches_meeting_metadata_name_path(path: &[String]) -> bool {
-    if path == ["meeting", "title"] {
+const MCP_ABILITY_METADATA_STRING_ALLOWLIST: &[McpAbilityMetadataPathRule] = &[
+    // get_entity_context data is a top-level EntityContextEntry array.
+    McpAbilityMetadataPathRule {
+        pattern: &["*", "id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["*", "entityType"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["*", "entityId"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["*", "createdAt"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["*", "updatedAt"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    // prepare_meeting meeting metadata.
+    McpAbilityMetadataPathRule {
+        pattern: &["meeting", "id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["meeting", "title"],
+        value_class: McpAbilityMetadataValueClass::MeetingTitle,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["meeting", "starts_at"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["meeting", "ends_at"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["meeting", "attendees", "*", "name"],
+        value_class: McpAbilityMetadataValueClass::EntityName,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["meeting", "attendees", "*", "person_id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["meeting", "attendees", "*", "account_id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    // prepare_meeting subject routing and temporal-scope metadata.
+    McpAbilityMetadataPathRule {
+        pattern: &["topics", "*", "subject", "kind"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["topics", "*", "subject", "id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["topics", "*", "temporal_scope"],
+        value_class: McpAbilityMetadataValueClass::TemporalScope,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "topics",
+            "*",
+            "temporal_scope",
+            "point_in_time",
+            "occurred_at",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["topics", "*", "temporal_scope", "trend", "window_start"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["topics", "*", "temporal_scope", "trend", "window_end"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["attendee_context", "*", "subject", "kind"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["attendee_context", "*", "subject", "id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["attendee_context", "*", "temporal_scope"],
+        value_class: McpAbilityMetadataValueClass::TemporalScope,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "attendee_context",
+            "*",
+            "temporal_scope",
+            "point_in_time",
+            "occurred_at",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "attendee_context",
+            "*",
+            "temporal_scope",
+            "trend",
+            "window_start",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "attendee_context",
+            "*",
+            "temporal_scope",
+            "trend",
+            "window_end",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["open_loops", "*", "subject", "kind"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["open_loops", "*", "subject", "id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["open_loops", "*", "temporal_scope"],
+        value_class: McpAbilityMetadataValueClass::TemporalScope,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "open_loops",
+            "*",
+            "temporal_scope",
+            "point_in_time",
+            "occurred_at",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["open_loops", "*", "temporal_scope", "trend", "window_start"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["open_loops", "*", "temporal_scope", "trend", "window_end"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["what_changed_since_last", "*", "subject", "kind"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["what_changed_since_last", "*", "subject", "id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["what_changed_since_last", "*", "temporal_scope"],
+        value_class: McpAbilityMetadataValueClass::TemporalScope,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "what_changed_since_last",
+            "*",
+            "temporal_scope",
+            "point_in_time",
+            "occurred_at",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "what_changed_since_last",
+            "*",
+            "temporal_scope",
+            "trend",
+            "window_start",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "what_changed_since_last",
+            "*",
+            "temporal_scope",
+            "trend",
+            "window_end",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["suggested_outcomes", "*", "subject", "kind"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["suggested_outcomes", "*", "subject", "id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["suggested_outcomes", "*", "temporal_scope"],
+        value_class: McpAbilityMetadataValueClass::TemporalScope,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "suggested_outcomes",
+            "*",
+            "temporal_scope",
+            "point_in_time",
+            "occurred_at",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "suggested_outcomes",
+            "*",
+            "temporal_scope",
+            "trend",
+            "window_start",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "suggested_outcomes",
+            "*",
+            "temporal_scope",
+            "trend",
+            "window_end",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+];
+
+fn render_mcp_ability_metadata_string(path: &[String], text: &str) -> Option<serde_json::Value> {
+    let rule = mcp_ability_metadata_rule_for_path(path)?;
+    if mcp_metadata_value_is_valid(rule.value_class, text) {
+        return Some(serde_json::Value::String(text.to_string()));
+    }
+
+    log::warn!(
+        target: "dailyos_lib::services::sensitivity",
+        "MCP ability metadata validator rejected path={} class={:?}",
+        json_pointer_from_path(path),
+        rule.value_class
+    );
+    None
+}
+
+fn mcp_ability_metadata_rule_for_path(
+    path: &[String],
+) -> Option<&'static McpAbilityMetadataPathRule> {
+    MCP_ABILITY_METADATA_STRING_ALLOWLIST
+        .iter()
+        .find(|rule| mcp_metadata_path_matches(rule.pattern, path))
+}
+
+fn mcp_metadata_path_matches(pattern: &[&str], path: &[String]) -> bool {
+    pattern.len() == path.len()
+        && pattern.iter().zip(path).all(|(expected, actual)| {
+            if *expected == "*" {
+                is_array_index(actual)
+            } else {
+                *expected == actual
+            }
+        })
+}
+
+fn mcp_metadata_value_is_valid(value_class: McpAbilityMetadataValueClass, text: &str) -> bool {
+    match value_class {
+        McpAbilityMetadataValueClass::Identifier => is_mcp_metadata_identifier(text),
+        McpAbilityMetadataValueClass::EntityKind => is_mcp_entity_kind(text),
+        McpAbilityMetadataValueClass::TemporalScope => is_mcp_temporal_scope(text),
+        McpAbilityMetadataValueClass::Timestamp => is_iso8601_timestamp(text),
+        McpAbilityMetadataValueClass::MeetingTitle | McpAbilityMetadataValueClass::EntityName => {
+            is_mcp_metadata_label(text)
+        }
+    }
+}
+
+fn is_mcp_metadata_identifier(value: &str) -> bool {
+    let value = value.trim();
+    if value.is_empty() || value.len() > 128 {
+        return false;
+    }
+    if uuid::Uuid::parse_str(value).is_ok() {
         return true;
     }
-    if path.len() == 4
-        && path[0] == "meeting"
-        && path[1] == "attendees"
-        && is_array_index(&path[2])
-        && path[3] == "name"
-    {
-        return true;
-    }
-    false
+    value
+        .bytes()
+        .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b':' | b'.'))
+        && value
+            .bytes()
+            .any(|byte| matches!(byte, b'-' | b'_' | b':' | b'.'))
+}
+
+fn is_mcp_entity_kind(value: &str) -> bool {
+    matches!(
+        value.trim().to_ascii_lowercase().as_str(),
+        "account" | "email" | "meeting" | "person" | "project"
+    )
+}
+
+fn is_mcp_temporal_scope(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("state")
+}
+
+fn is_iso8601_timestamp(value: &str) -> bool {
+    chrono::DateTime::parse_from_rfc3339(value.trim()).is_ok()
+}
+
+fn is_mcp_metadata_label(value: &str) -> bool {
+    let value = value.trim();
+    !value.is_empty()
+        && value.len() <= 160
+        && value.chars().all(|character| !character.is_control())
 }
 
 pub fn record_sensitivity_reveal(

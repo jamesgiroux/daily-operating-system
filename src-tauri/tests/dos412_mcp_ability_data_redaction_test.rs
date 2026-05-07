@@ -11,7 +11,7 @@ use dailyos_lib::bridges::tauri::TauriAbilityBridge;
 use dailyos_lib::bridges::McpSessionId;
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
-use dailyos_lib::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
+use dailyos_lib::services::claims::{commit_claim, withdraw_claim, ClaimProposal, CommittedClaim};
 use dailyos_lib::services::context::ExecutionMode;
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::sensitivity::{
@@ -21,10 +21,10 @@ use dailyos_lib::state::AppState;
 use rusqlite::Connection;
 use serde_json::{json, Value};
 
-const PUBLIC_TEXT: &str = "Public launch readiness is green.";
-const INTERNAL_TEXT: &str = "Internal rollout dependency is tracked.";
-const CONFIDENTIAL_TEXT: &str = "Confidential renewal risk must stay hidden.";
-const USER_ONLY_TEXT: &str = "User-only negotiation note must stay hidden.";
+const PUBLIC_TEXT: &str = "public launch readiness is green.";
+const INTERNAL_TEXT: &str = "internal rollout dependency is tracked.";
+const CONFIDENTIAL_TEXT: &str = "confidential renewal risk must stay hidden.";
+const USER_ONLY_TEXT: &str = "user-only negotiation note must stay hidden.";
 const UNTAGGED_PRIVATE_TEXT: &str = "Untagged private note must not cross MCP.";
 const CYCLE4_OWNER_TEXT: &str = "Private owner text from source content.";
 const CYCLE4_ATTENDEE_TEXT: &str = "Private attendee context name from source content.";
@@ -94,12 +94,11 @@ async fn mcp_ability_data_redacts_tagged_private_claim_text_while_tauri_stays_ra
     assert!(mcp_data_value["untagged"].get("summary").is_none());
     assert!(mcp_data_value["top_level_secret"].is_null());
     assert!(mcp_data_value["untagged"]["nested"].get("detail").is_none());
-    assert_eq!(mcp_data_value["untagged"]["nested"]["id"], "metadata-row-1");
-    assert_eq!(mcp_data_value["untagged"]["nested"]["status"], "active");
-    assert_eq!(
-        mcp_data_value["untagged"]["nested"]["created_at"],
-        "2026-05-06T12:00:00Z"
-    );
+    assert!(mcp_data_value["untagged"]["nested"].get("id").is_none());
+    assert!(mcp_data_value["untagged"]["nested"].get("status").is_none());
+    assert!(mcp_data_value["untagged"]["nested"]
+        .get("created_at")
+        .is_none());
     assert_eq!(
         mcp_data_value["meeting"]["title"],
         "Metadata planning meeting"
@@ -111,6 +110,10 @@ async fn mcp_ability_data_redacts_tagged_private_claim_text_while_tauri_stays_ra
     assert!(mcp_data_value["meeting"]["attendees"][0]
         .get("email")
         .is_none());
+    assert_eq!(
+        mcp_data_value["meeting"]["attendees"][0]["person_id"],
+        "person-riley"
+    );
     assert!(mcp_data_value["open_loops"][0].get("owner").is_none());
     assert!(mcp_data_value["attendee_context"][0]
         .get("attendee")
@@ -173,6 +176,11 @@ async fn mcp_ability_response_drops_diagnostics_warnings_while_tauri_keeps_them(
     let mcp_diagnostics = serde_json::to_string(&mcp_response.diagnostics).unwrap();
     assert!(!mcp_diagnostics.contains(DIAGNOSTIC_PRIVATE_TEXT));
     assert_eq!(mcp_response.diagnostics, json!({ "warnings": [] }));
+    let serialized_mcp_response = serde_json::to_value(&mcp_response).unwrap();
+    assert!(
+        serialized_mcp_response.get("diagnostics").is_none(),
+        "serialized MCP response must omit diagnostics entirely"
+    );
 
     let state = AppState::new();
     let tauri_bridge = TauriAbilityBridge::new(&registry);
@@ -188,6 +196,8 @@ async fn mcp_ability_response_drops_diagnostics_warnings_while_tauri_keeps_them(
         .unwrap();
     let tauri_diagnostics = serde_json::to_string(&tauri_response.diagnostics).unwrap();
     assert!(tauri_diagnostics.contains(DIAGNOSTIC_PRIVATE_TEXT));
+    let serialized_tauri_response = serde_json::to_value(&tauri_response).unwrap();
+    assert!(serialized_tauri_response.get("diagnostics").is_some());
 }
 
 #[test]
@@ -212,6 +222,96 @@ fn mcp_ability_data_drops_dto_sensitivity_downgrade_from_stored_confidential() {
     let serialized = serde_json::to_string(&rendered).unwrap();
     assert!(!serialized.contains(CONFIDENTIAL_TEXT));
     assert!(rendered.as_object().unwrap().get("claim").is_none());
+}
+
+#[test]
+fn mcp_ability_data_drops_tagged_claim_text_mismatch_against_stored_text() {
+    let conn = fresh_claims_conn();
+    let ctx = live_claim_ctx();
+    seed_claim(
+        &ctx,
+        &conn,
+        "claim-internal-text-mismatch",
+        ClaimSensitivity::Internal,
+        INTERNAL_TEXT,
+    );
+
+    let rendered = render_mcp_ability_data_for_surface(
+        ActionDb::from_conn(&conn),
+        json!({
+            "claim": tagged_claim(
+                "claim-internal-text-mismatch",
+                "internal",
+                "Forged DTO text must not render."
+            )
+        }),
+    );
+
+    let serialized = serde_json::to_string(&rendered).unwrap();
+    assert!(!serialized.contains("Forged DTO text must not render."));
+    assert!(!serialized.contains(INTERNAL_TEXT));
+    assert!(rendered.as_object().unwrap().get("claim").is_none());
+}
+
+#[test]
+fn mcp_ability_data_drops_withdrawn_stored_claim_text() {
+    let conn = fresh_claims_conn();
+    let ctx = live_claim_ctx();
+    seed_claim(
+        &ctx,
+        &conn,
+        "claim-internal-withdrawn",
+        ClaimSensitivity::Internal,
+        INTERNAL_TEXT,
+    );
+    withdraw_claim(
+        &ctx,
+        ActionDb::from_conn(&conn),
+        "claim-internal-withdrawn",
+        "unit test withdrawal",
+    )
+    .expect("withdraw claim fixture");
+
+    let rendered = render_mcp_ability_data_for_surface(
+        ActionDb::from_conn(&conn),
+        json!({
+            "claim": tagged_claim("claim-internal-withdrawn", "internal", INTERNAL_TEXT)
+        }),
+    );
+
+    assert!(rendered.as_object().unwrap().get("claim").is_none());
+    assert!(!serde_json::to_string(&rendered)
+        .unwrap()
+        .contains(INTERNAL_TEXT));
+}
+
+#[test]
+fn mcp_ability_data_renders_tagged_claim_from_stored_text_only() {
+    let conn = fresh_claims_conn();
+    let ctx = live_claim_ctx();
+    seed_claim(
+        &ctx,
+        &conn,
+        "claim-internal-stored-render",
+        ClaimSensitivity::Internal,
+        INTERNAL_TEXT,
+    );
+
+    let rendered = render_mcp_ability_data_for_surface(
+        ActionDb::from_conn(&conn),
+        json!({
+            "claim": tagged_claim("claim-internal-stored-render", "internal", INTERNAL_TEXT)
+        }),
+    );
+
+    let claim = rendered["claim"]
+        .as_object()
+        .expect("matching internal claim renders");
+    assert_eq!(claim.len(), 2);
+    assert_eq!(claim["text"], INTERNAL_TEXT);
+    assert!(claim.get("policy").is_some());
+    assert!(claim.get("claim_id").is_none());
+    assert!(claim.get("sensitivity").is_none());
 }
 
 #[test]
@@ -279,6 +379,97 @@ fn mcp_ability_data_renders_only_provenance_attested_raw_claim_text() {
     let serialized = serde_json::to_string(&rendered).unwrap();
     assert!(!serialized.contains(CONFIDENTIAL_TEXT));
     assert!(!serialized.contains(UNTAGGED_PRIVATE_TEXT));
+}
+
+#[test]
+fn mcp_ability_data_drops_provenance_attested_raw_leaf_text_mismatch() {
+    let conn = fresh_claims_conn();
+    let ctx = live_claim_ctx();
+    seed_claim(
+        &ctx,
+        &conn,
+        "claim-internal-provenance-mismatch",
+        ClaimSensitivity::Internal,
+        INTERNAL_TEXT,
+    );
+
+    let rendered = render_mcp_ability_data_for_surface_with_provenance(
+        ActionDb::from_conn(&conn),
+        json!({
+            "summary": "Forged provenance leaf must not render."
+        }),
+        &json!({
+            "sources": [{
+                "identifiers": [
+                    { "signal": { "signal_id": "claim-internal-provenance-mismatch" } }
+                ]
+            }],
+            "field_attributions": {
+                "/summary": {
+                    "source_refs": [{ "source": { "source_index": 0 } }]
+                }
+            }
+        }),
+    );
+
+    assert!(rendered.as_object().unwrap().get("summary").is_none());
+    let serialized = serde_json::to_string(&rendered).unwrap();
+    assert!(!serialized.contains("Forged provenance leaf must not render."));
+    assert!(!serialized.contains(INTERNAL_TEXT));
+}
+
+#[test]
+fn mcp_metadata_key_names_at_non_allowlisted_paths_drop() {
+    let rendered = render_mcp_ability_data_for_surface(
+        ActionDb::from_conn(&fresh_claims_conn()),
+        json!({
+            "workflow": {
+                "status": "active",
+                "kind": "account"
+            }
+        }),
+    );
+
+    assert!(rendered["workflow"].get("status").is_none());
+    assert!(rendered["workflow"].get("kind").is_none());
+}
+
+#[test]
+fn mcp_metadata_allowlisted_enum_path_passes() {
+    let rendered = render_mcp_ability_data_for_surface(
+        ActionDb::from_conn(&fresh_claims_conn()),
+        json!([{ "entityType": "account" }]),
+    );
+
+    assert_eq!(rendered[0]["entityType"], "account");
+}
+
+#[test]
+fn mcp_metadata_timestamp_validator_catches_malformed_iso() {
+    let rendered = render_mcp_ability_data_for_surface(
+        ActionDb::from_conn(&fresh_claims_conn()),
+        json!([
+            { "createdAt": "2026-05-06T12:00:00Z" },
+            { "createdAt": "not-a-timestamp" }
+        ]),
+    );
+
+    assert_eq!(rendered[0]["createdAt"], "2026-05-06T12:00:00Z");
+    assert!(rendered[1].get("createdAt").is_none());
+}
+
+#[test]
+fn mcp_metadata_identifier_validator_catches_non_id_strings() {
+    let rendered = render_mcp_ability_data_for_surface(
+        ActionDb::from_conn(&fresh_claims_conn()),
+        json!([
+            { "id": "claim-internal" },
+            { "id": "not an id" }
+        ]),
+    );
+
+    assert_eq!(rendered[0]["id"], "claim-internal");
+    assert!(rendered[1].get("id").is_none());
 }
 
 macro_rules! tagged_sibling_regression {

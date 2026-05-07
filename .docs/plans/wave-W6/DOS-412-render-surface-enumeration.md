@@ -54,22 +54,28 @@ leaf as unsafe until one of three outcomes applies:
 
 - Claim text: a tagged carrier or bridge-provenance-attested field resolves to
   a persisted claim, reloads authoritative sensitivity, and serializes as the
-  minimal `{ text, policy }` object.
-- Non-content metadata: explicit allowlist only for identifiers, enum-like
-  state, timestamps, meeting title, and meeting attendee names.
+  minimal `{ text, policy }` object. Cycle 5 tightens this invariant: the
+  serialized `text` bytes must come from the active surfaced claim row, or from
+  an audited stored projection of that row such as `get_entity_context.title`.
+  DTO bytes are rendered only after exact equality with that stored value.
+- Non-content metadata: explicit JSON-pointer path allowlist only for
+  identifiers, enum-like state, timestamps, meeting title, and meeting attendee
+  names. Each allowlisted path has a value validator; leaf-key-only matching is
+  forbidden.
 - Drop: all other strings are omitted.
 
 Authoritative claim lookup is required. The bridge opens a read-only
 `ActionDb` for MCP ability data rendering and passes raw provenance into
 `render_mcp_ability_data_for_surface_with_provenance`. Missing claim lookup,
-malformed tags, DTO/stored sensitivity mismatch, and un-attributed raw strings
-all fail closed. Tagged carrier surviving fields are allowlisted to `text` and
-`policy` only; siblings such as `source_text`, `sourceSummary`, `evidenceText`,
+withdrawn or non-surfaced claims, malformed tags, DTO/stored sensitivity
+mismatch, DTO/stored text mismatch, and un-attributed raw strings all fail
+closed. Tagged carrier surviving fields are allowlisted to `text` and `policy`
+only; siblings such as `source_text`, `sourceSummary`, `evidenceText`,
 `rawText`, `quote`, `claim_id`, `sensitivity`, and `originating_actor` are
 stripped.
 
-Diagnostics are not content-safe. MCP responses replace diagnostics with
-`{ "warnings": [] }`; Tauri/worker/eval keep diagnostics unchanged.
+Diagnostics are not content-safe. Serialized MCP ability responses omit the
+`diagnostics` key entirely; Tauri/worker/eval keep diagnostics unchanged.
 
 The Agent-allowed ability audit is committed at
 `.docs/plans/wave-W6/DOS-412-mcp-ability-data-enumeration.md`. Current
@@ -80,10 +86,12 @@ provenance at the MCP bridge to render Public/Internal claim text or drop it.
 
 Regression coverage lives in
 `src-tauri/tests/dos412_mcp_ability_data_redaction_test.rs`: tagged carrier
-policy, top-level/nested/deep untagged string drops, explicit metadata
-allowlist, provenance-attested raw claim text, cycle-4 `open_loops[].owner`
-and `attendee_context[].attendee`, diagnostics drop on MCP only, DTO
-sensitivity downgrade, and tagged sibling stripping.
+policy, stored text mismatch drop, withdrawn claim drop, top-level/nested/deep
+untagged string drops, path-scoped metadata allowlist validators,
+provenance-attested raw claim text and mismatch drop, cycle-4
+`open_loops[].owner` and `attendee_context[].attendee`, serialized diagnostics
+key omission on MCP only, DTO sensitivity downgrade, and tagged sibling
+stripping.
 
 Implementation notes:
 

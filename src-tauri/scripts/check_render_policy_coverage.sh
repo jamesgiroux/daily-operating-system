@@ -44,12 +44,30 @@ if "string leaf has exactly three possible outcomes" not in service:
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks deny-by-default documentation")
 if "load_claim_by_id(db.conn_ref(), claim_id)" not in service:
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor does not reload authoritative claims")
-if "is_mcp_ability_non_content_metadata_string" not in service:
-    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks explicit non-content metadata allowlist")
+if "MCP_ABILITY_METADATA_STRING_ALLOWLIST" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor lacks explicit path-scoped metadata allowlist")
+if "render_mcp_ability_metadata_string(path, &text)" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: string leaves do not flow through the path-scoped metadata validator")
+for forbidden in [
+    "fn metadata_key_for_path",
+    "fn is_identifier_metadata_key",
+    "fn is_timestamp_metadata_key",
+    "fn matches_meeting_metadata_name_path",
+]:
+    if forbidden in service:
+        violations.append(f"src-tauri/src/services/sensitivity.rs: key-name metadata allowlist remains (`{forbidden}`)")
+if re.search(r"matches!\s*\(\s*key\s*,", service):
+    violations.append("src-tauri/src/services/sensitivity.rs: metadata allowlist still matches by leaf key name")
 if re.search(r"minimal_policy_claim\s*\(\s*tagged\.sensitivity", service):
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor still constructs synthetic policy claims from DTO sensitivity")
 if "claim.sensitivity != tagged.sensitivity" not in service:
     violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor does not fail closed on DTO/stored sensitivity mismatch")
+if "stored_text != tagged.text" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: MCP ability data redactor does not fail closed on DTO/stored text mismatch")
+if "renderable_from_decision(&claim, &stored_text" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: tagged claim renderer does not render authoritative stored claim text")
+if "claim.claim_state != ClaimState::Active" not in service or "claim.surfacing_state != SurfacingState::Active" not in service:
+    violations.append("src-tauri/src/services/sensitivity.rs: tagged claim renderer does not require active surfaced stored claims")
 
 def function_source(source: str, name: str) -> str:
     marker = f"fn {name}"
@@ -101,8 +119,10 @@ if agent_abilities and "render_mcp_ability_data_with_authoritative_claims(data, 
     for path, name in agent_abilities:
         violations.append(f"{path}: Agent-allowed ability `{name}` would bypass the MCP ability data redactor")
 
-if 'BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {\n            serde_json::json!({ "warnings": [] })' not in bridge:
-    violations.append("src-tauri/src/bridges/types.rs: MCP diagnostics are not dropped to an empty structured warning set")
+if "impl Serialize for AbilityResponseJson" not in bridge or "include_diagnostics" not in bridge:
+    violations.append("src-tauri/src/bridges/types.rs: AbilityResponseJson serialization does not gate diagnostics by surface")
+if not re.search(r"rendered_provenance\.surface,\s*BridgeSurface::McpTool\s*\|\s*BridgeSurface::McpToolDetail", bridge, re.S):
+    violations.append("src-tauri/src/bridges/types.rs: serialized MCP ability responses do not omit diagnostics for MCP surfaces")
 
 print("\n".join(violations))
 PY

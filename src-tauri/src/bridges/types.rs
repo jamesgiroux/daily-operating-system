@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -167,7 +168,7 @@ impl RenderedProvenance {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct AbilityResponseJson {
     pub invocation_id: InvocationId,
     pub ability_name: String,
@@ -176,6 +177,32 @@ pub struct AbilityResponseJson {
     pub data: serde_json::Value,
     pub rendered_provenance: RenderedProvenance,
     pub diagnostics: serde_json::Value,
+}
+
+impl Serialize for AbilityResponseJson {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let include_diagnostics = !matches!(
+            self.rendered_provenance.surface,
+            BridgeSurface::McpTool | BridgeSurface::McpToolDetail
+        );
+        let mut state = serializer.serialize_struct(
+            "AbilityResponseJson",
+            if include_diagnostics { 7 } else { 6 },
+        )?;
+        state.serialize_field("invocation_id", &self.invocation_id)?;
+        state.serialize_field("ability_name", &self.ability_name)?;
+        state.serialize_field("ability_version", &self.ability_version)?;
+        state.serialize_field("schema_version", &self.schema_version)?;
+        state.serialize_field("data", &self.data)?;
+        state.serialize_field("rendered_provenance", &self.rendered_provenance)?;
+        if include_diagnostics {
+            state.serialize_field("diagnostics", &self.diagnostics)?;
+        }
+        state.end()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
