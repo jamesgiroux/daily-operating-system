@@ -219,6 +219,78 @@ fn paraphrased_confidential_claim_text_in_static_mcp_dto_is_dropped() {
     );
 }
 
+#[test]
+fn static_claim_carrier_drops_forged_dto_text() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let values = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_summary",
+        "static stored",
+    );
+
+    assert_eq!(
+        render_claim_text_with_dto_text(
+            db,
+            &values.internal,
+            "forged static renderer text example.com"
+        ),
+        None
+    );
+}
+
+#[test]
+fn static_claim_carrier_drops_withdrawn_claim() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let values = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_summary",
+        "withdrawn static",
+    );
+    update_claim_lifecycle(&conn, &values.internal.id, "withdrawn", "dormant");
+
+    assert_eq!(render_claim_text(db, &values.internal), None);
+}
+
+#[test]
+fn static_claim_carrier_drops_inactive_surfacing_state() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let values = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_summary",
+        "inactive surface",
+    );
+    update_claim_lifecycle(&conn, &values.internal.id, "active", "dormant");
+
+    assert_eq!(render_claim_text(db, &values.internal), None);
+}
+
+#[test]
+fn static_claim_carrier_renders_matching_stored_text() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let values = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_summary",
+        "matching static",
+    );
+
+    assert_eq!(
+        render_claim_text(db, &values.internal),
+        Some("matching static internal example.com".to_string())
+    );
+}
+
 struct PolicyValue {
     id: String,
     text: String,
@@ -240,10 +312,18 @@ fn fixture_conn() -> Connection {
 }
 
 fn render_claim_text(db: &ActionDb, value: &PolicyValue) -> Option<String> {
+    render_claim_text_with_dto_text(db, value, &value.text)
+}
+
+fn render_claim_text_with_dto_text(
+    db: &ActionDb,
+    value: &PolicyValue,
+    dto_text: impl Into<String>,
+) -> Option<String> {
     render_mcp_static_text_for_surface(
         db,
         RenderableMcpText::Claim(RenderableMcpClaimText {
-            text: value.text.clone(),
+            text: dto_text.into(),
             claim_id: value.id.clone(),
             sensitivity: value.sensitivity.clone(),
         }),
@@ -369,4 +449,18 @@ fn seed_claim(
         text: text.to_string(),
         sensitivity,
     }
+}
+
+fn update_claim_lifecycle(
+    conn: &Connection,
+    claim_id: &str,
+    claim_state: &str,
+    surfacing_state: &str,
+) {
+    conn.execute(
+        "UPDATE intelligence_claims /* dos7-allowed: DOS-412 MCP static-surface policy fixture mutates lifecycle state */ \
+         SET claim_state = ?2, surfacing_state = ?3 WHERE id = ?1",
+        params![claim_id, claim_state, surfacing_state],
+    )
+    .expect("update claim lifecycle fixture");
 }

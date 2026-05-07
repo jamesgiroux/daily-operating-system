@@ -376,15 +376,21 @@ fn render_mcp_claim_text_for_surface(
     db: &ActionDb,
     value: RenderableMcpClaimText,
 ) -> Option<String> {
-    let actor = RenderActor::agent("agent:mcp");
-    let claim = crate::services::claims::load_claim_by_id(db.conn_ref(), &value.claim_id)
-        .ok()
-        .flatten()?;
-    if claim.sensitivity != value.sensitivity {
-        return None;
-    }
-    renderable_claim_text_with_value(&claim, &value.text, RenderSurface::McpTool, &actor)
-        .map(|rendered| rendered.text)
+    verify_and_render_authoritative_claim(
+        TaggedMcpClaimText {
+            text: value.text,
+            claim_id: value.claim_id,
+            sensitivity: value.sensitivity,
+            stored_projection: StoredMcpClaimTextProjection::Text,
+        },
+        RenderSurface::McpTool,
+        &|claim_id| {
+            crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
+                .ok()
+                .flatten()
+        },
+    )
+    .map(|rendered| rendered.text)
 }
 
 fn render_mcp_non_claim_static_text_for_surface(value: RenderableMcpStaticText) -> Option<String> {
@@ -680,6 +686,16 @@ fn render_tagged_mcp_claim_text(
     tagged: TaggedMcpClaimText,
     load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
 ) -> Option<serde_json::Value> {
+    let rendered =
+        verify_and_render_authoritative_claim(tagged, RenderSurface::McpTool, load_claim)?;
+    safe_tagged_mcp_claim_text_object(rendered)
+}
+
+fn verify_and_render_authoritative_claim(
+    tagged: TaggedMcpClaimText,
+    surface: RenderSurface,
+    load_claim: &impl Fn(&str) -> Option<IntelligenceClaim>,
+) -> Option<RenderableClaimText> {
     let actor = RenderActor::agent("agent:mcp");
     let claim = load_claim(&tagged.claim_id)?;
     let stored_text = stored_mcp_claim_text(&claim, &tagged.claim_id, tagged.stored_projection)?;
@@ -687,7 +703,7 @@ fn render_tagged_mcp_claim_text(
     if claim.sensitivity != tagged.sensitivity {
         log::warn!(
             target: "dailyos_lib::services::sensitivity",
-            "MCP ability data claim sensitivity mismatch claim_id={} stored={:?} emitted={:?}; dropping tagged object",
+            "MCP claim text sensitivity mismatch claim_id={} stored={:?} emitted={:?}; dropping",
             tagged.claim_id,
             claim.sensitivity,
             tagged.sensitivity
@@ -698,16 +714,14 @@ fn render_tagged_mcp_claim_text(
     if stored_text != tagged.text {
         log::warn!(
             target: "dailyos_lib::services::sensitivity",
-            "MCP ability data claim text mismatch claim_id={}; dropping tagged object",
+            "MCP claim text mismatch claim_id={}; dropping",
             tagged.claim_id
         );
         return None;
     }
 
-    let decision = render_policy_for_surface(&claim, RenderSurface::McpTool, &actor);
-    let rendered =
-        renderable_from_decision(&claim, &stored_text, RenderSurface::McpTool, decision)?;
-    safe_tagged_mcp_claim_text_object(rendered)
+    let decision = render_policy_for_surface(&claim, surface, &actor);
+    renderable_from_decision(&claim, &stored_text, surface, decision)
 }
 
 fn stored_mcp_claim_text(
@@ -718,7 +732,7 @@ fn stored_mcp_claim_text(
     if claim.claim_state != ClaimState::Active || claim.surfacing_state != SurfacingState::Active {
         log::warn!(
             target: "dailyos_lib::services::sensitivity",
-            "MCP ability data claim is not active/surfaced claim_id={}; dropping tagged object",
+            "MCP claim text is not active/surfaced claim_id={}; dropping",
             claim_id
         );
         return None;
@@ -732,7 +746,7 @@ fn stored_mcp_claim_text(
     if text.trim().is_empty() {
         log::warn!(
             target: "dailyos_lib::services::sensitivity",
-            "MCP ability data claim has no stored text claim_id={}; dropping tagged object",
+            "MCP claim text has no stored text claim_id={}; dropping",
             claim_id
         );
         return None;

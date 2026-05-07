@@ -92,10 +92,35 @@ tagged_renderer = function_source(service, "render_tagged_mcp_claim_text")
 if not tagged_renderer:
     violations.append("src-tauri/src/services/sensitivity.rs: missing render_tagged_mcp_claim_text")
 else:
+    if "verify_and_render_authoritative_claim(tagged, RenderSurface::McpTool, load_claim)" not in tagged_renderer:
+        violations.append("src-tauri/src/services/sensitivity.rs: tagged claim renderer does not use the shared authoritative claim verifier")
     if re.search(r"\bobject\s*:", tagged_renderer) or "object.insert" in tagged_renderer:
         violations.append("src-tauri/src/services/sensitivity.rs: tagged claim renderer mutates the original object instead of stripping siblings")
     if "safe_tagged_mcp_claim_text_object(rendered)" not in tagged_renderer:
         violations.append("src-tauri/src/services/sensitivity.rs: tagged claim renderer does not return the minimal safe allowlist object")
+
+static_claim_renderer = function_source(service, "render_mcp_claim_text_for_surface")
+if not static_claim_renderer:
+    violations.append("src-tauri/src/services/sensitivity.rs: missing render_mcp_claim_text_for_surface")
+else:
+    if "verify_and_render_authoritative_claim(" not in static_claim_renderer:
+        violations.append("src-tauri/src/services/sensitivity.rs: static MCP claim renderer does not use the shared authoritative claim verifier")
+    if "renderable_claim_text_with_value" in static_claim_renderer:
+        violations.append("src-tauri/src/services/sensitivity.rs: static MCP claim renderer still renders DTO text directly")
+
+authoritative_renderer = function_source(service, "verify_and_render_authoritative_claim")
+if not authoritative_renderer:
+    violations.append("src-tauri/src/services/sensitivity.rs: missing shared authoritative MCP claim verifier")
+else:
+    for required in [
+        "let claim = load_claim(&tagged.claim_id)?;",
+        "let stored_text = stored_mcp_claim_text(&claim, &tagged.claim_id, tagged.stored_projection)?;",
+        "claim.sensitivity != tagged.sensitivity",
+        "stored_text != tagged.text",
+        "renderable_from_decision(&claim, &stored_text, surface, decision)",
+    ]:
+        if required not in authoritative_renderer:
+            violations.append(f"src-tauri/src/services/sensitivity.rs: shared authoritative MCP claim verifier missing `{required}`")
 
 safe_object = function_source(service, "safe_tagged_mcp_claim_text_object")
 if not safe_object:
