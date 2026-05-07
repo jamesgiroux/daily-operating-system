@@ -81,7 +81,9 @@ describe("PrepGrid", () => {
     expect(
       within(background!).getByText("Renewal signal is older than the current quarter"),
     ).toBeInTheDocument();
-    expect(within(background!).getByText("Use with caution")).toBeInTheDocument();
+    expect(
+      within(background!).getByRole("img", { name: /Use with caution/ }),
+    ).toBeInTheDocument();
   });
 
   it("PrepGrid_collapses_needs_verification_until_show_all", () => {
@@ -108,6 +110,6 @@ describe("PrepGrid", () => {
 
     expect(screen.getByText("Showing low-confidence evidence")).toBeVisible();
     expect(screen.getByText("Verify whether the expansion pilot is still active")).toBeVisible();
-    expect(screen.getByText("Needs verification")).toBeVisible();
+    expect(screen.getByRole("img", { name: /Needs verification/ })).toBeInTheDocument();
   });
 });

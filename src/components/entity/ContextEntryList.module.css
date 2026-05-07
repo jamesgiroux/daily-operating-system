@@ -48,11 +48,6 @@
   overflow: hidden;
 }
 
-.entryTrust {
-  display: flex;
-  margin-bottom: var(--space-xs);
-}
-
 .entryActions {
   display: flex;
   gap: var(--space-md);

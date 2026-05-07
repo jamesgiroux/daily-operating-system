@@ -45,7 +45,9 @@ describe("ContextEntryList trust partitioning", () => {
     const background = screen.getByText("Background").closest("details");
     expect(background).not.toBeNull();
     expect(within(background!).getByText("Older Example note")).toBeInTheDocument();
-    expect(within(background!).getByText("Use with caution")).toBeInTheDocument();
+    expect(
+      within(background!).getByRole("img", { name: /Use with caution/ }),
+    ).toBeInTheDocument();
   });
 
   it("ContextEntryList_show_all_evidence_announces_low_confidence_entries", () => {
@@ -76,7 +78,7 @@ describe("ContextEntryList trust partitioning", () => {
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Showing low-confidence evidence")).toBeVisible();
     expect(screen.getByText("Verify Example note")).toBeVisible();
-    expect(screen.getByText("Needs verification")).toBeVisible();
+    expect(screen.getByRole("img", { name: /Needs verification/ })).toBeInTheDocument();
   });
 
   it("ContextEntryList_unscored_legacy_entries_remain_visible", () => {
@@ -96,7 +98,7 @@ describe("ContextEntryList trust partitioning", () => {
     );
 
     expect(screen.getByText("Legacy Example note")).toBeVisible();
-    expect(screen.getByText("Unscored")).toBeVisible();
+    expect(screen.getByRole("img", { name: /Unscored/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /show all evidence/i })).not.toBeInTheDocument();
   });
 

@@ -1,39 +1,40 @@
 import clsx from "clsx";
-import { AlertTriangle, CircleHelp, ShieldCheck, ShieldQuestion } from "lucide-react";
+import { Circle } from "lucide-react";
 import type { ComponentPropsWithoutRef } from "react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import type { TrustBandWire } from "@/lib/trust-band";
 import styles from "./TrustBandIndicator.module.css";
 
 interface TrustBandMeta {
   label: string;
-  ariaLabel: string;
-  Icon: typeof ShieldCheck;
+  description: string;
   className: string;
 }
 
-const BAND_META: Record<TrustBandWire, TrustBandMeta> = {
-  likely_current: {
-    label: "Likely current",
-    ariaLabel: "Trust band: Likely current. Shown in current evidence.",
-    Icon: ShieldCheck,
-    className: styles.likelyCurrent,
-  },
+const BAND_META: Record<
+  Exclude<TrustBandWire, "likely_current">,
+  TrustBandMeta
+> = {
   use_with_caution: {
     label: "Use with caution",
-    ariaLabel: "Trust band: Use with caution. Shown in Background evidence.",
-    Icon: AlertTriangle,
+    description:
+      "This evidence has caveats — it may be stale, lightly sourced, or carry an unverified timestamp.",
     className: styles.useWithCaution,
   },
   needs_verification: {
     label: "Needs verification",
-    ariaLabel: "Trust band: Needs verification. Hidden until Show all evidence is enabled.",
-    Icon: ShieldQuestion,
+    description:
+      "Confidence is low or a trust gate fired. Confirm against a primary source before acting on it.",
     className: styles.needsVerification,
   },
   unscored: {
     label: "Unscored",
-    ariaLabel: "Trust band: Unscored. Legacy evidence remains visible.",
-    Icon: CircleHelp,
+    description: "The trust compiler has not scored this evidence yet.",
     className: styles.unscored,
   },
 };
@@ -41,27 +42,40 @@ const BAND_META: Record<TrustBandWire, TrustBandMeta> = {
 export interface TrustBandIndicatorProps
   extends Omit<ComponentPropsWithoutRef<"span">, "children"> {
   band: TrustBandWire;
-  compact?: boolean;
 }
 
 export function TrustBandIndicator({
   band,
-  compact = true,
   className,
   ...rest
 }: TrustBandIndicatorProps) {
+  if (band === "likely_current") {
+    return null;
+  }
+
   const meta = BAND_META[band] ?? BAND_META.unscored;
-  const Icon = meta.Icon;
+  const ariaLabel = `Trust band: ${meta.label}. ${meta.description}`;
 
   return (
-    <span
-      className={clsx(styles.indicator, meta.className, className)}
-      data-band={band}
-      data-compact={compact ? "true" : "false"}
-      {...rest}
-    >
-      <Icon className={styles.icon} role="img" aria-label={meta.ariaLabel} />
-      <span className={styles.label}>{meta.label}</span>
-    </span>
+    <TooltipProvider delayDuration={150}>
+      <Tooltip>
+        <TooltipTrigger asChild>
+          <span
+            className={clsx(styles.indicator, meta.className, className)}
+            data-band={band}
+            role="img"
+            aria-label={ariaLabel}
+            tabIndex={0}
+            {...rest}
+          >
+            <Circle className={styles.icon} aria-hidden="true" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent side="top" align="center">
+          <span className={styles.tooltipLabel}>{meta.label}</span>
+          <span className={styles.tooltipDescription}>{meta.description}</span>
+        </TooltipContent>
+      </Tooltip>
+    </TooltipProvider>
   );
 }

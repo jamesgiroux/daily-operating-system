@@ -119,11 +119,9 @@ export function ContextEntryList({
           />
           <span className={s.entryDate}>{formatShortDate(entry.createdAt)}</span>
         </div>
-        <div className={s.entryTrust}>
-          <TrustBandIndicator band={entry.trustBand ?? "unscored"} />
-        </div>
         <div className={s.entryContent}>
           <ClaimTextRenderer value={entry.content} surface="tauri_entity_detail" />
+          <TrustBandIndicator band={entry.trustBand ?? "unscored"} />
         </div>
         <div className={s.entryActions}>
           <button className={s.entryActionBtn} onClick={() => startEdit(entry)}>
