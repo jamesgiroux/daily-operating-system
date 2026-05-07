@@ -1,0 +1,146 @@
+/* InferredActionSelector — Daily Briefing Watch action picker (DOS-421, W1)
+ * Spec: .docs/design/patterns/InferredActionSelector.md
+ * Tokens: editorial radius/rule/shadow + standard typography/spacing
+ */
+
+.root {
+  position: relative;
+  display: inline-flex;
+  align-items: stretch;
+  min-width: max-content;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0;
+}
+
+.trigger {
+  display: inline-flex;
+  align-items: stretch;
+  overflow: hidden;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-warm-white);
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: 0;
+  padding: 0;
+  transition:
+    border-color var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.trigger:hover,
+.trigger:focus-visible,
+.root:focus-within .trigger {
+  border-color: var(--color-text-secondary);
+  background: var(--color-desk-charcoal-4);
+  outline: none;
+}
+
+.label {
+  display: inline-flex;
+  align-items: center;
+  min-height: 30px;
+  min-width: 0;
+  padding: 0 10px;
+  white-space: nowrap;
+}
+
+.chevron {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 30px;
+  min-height: 30px;
+  border-left: 1px solid var(--color-rule-heavy);
+  color: var(--color-text-tertiary);
+}
+
+.chevron::before {
+  content: "";
+  width: 6px;
+  height: 6px;
+  border-right: 1.5px solid currentColor;
+  border-bottom: 1.5px solid currentColor;
+  transform: rotate(45deg) translate(-1px, -1px);
+  transition: transform var(--transition-fast);
+}
+
+.root[data-open="true"] .chevron::before {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+
+.menu {
+  position: absolute;
+  top: calc(100% + 6px);
+  right: 0;
+  z-index: 20;
+  display: grid;
+  min-width: 260px;
+  padding: 6px;
+  border: 1px solid var(--color-rule-heavy);
+  border-radius: var(--radius-editorial-sm);
+  background: var(--color-paper-warm-white);
+  box-shadow: var(--shadow-lg);
+}
+
+.option {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: var(--space-sm);
+  align-items: center;
+  min-height: 34px;
+  padding: 8px 10px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: var(--color-text-primary);
+  cursor: pointer;
+  font: inherit;
+  letter-spacing: 0;
+  text-align: left;
+}
+
+.option:hover,
+.option:focus-visible,
+.optionSelected {
+  background: var(--color-spice-turmeric-7);
+  outline: none;
+}
+
+.optionLabel {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.optionMeta {
+  color: var(--color-text-tertiary);
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.divider {
+  height: 1px;
+  margin: 4px 0;
+  background: var(--color-rule-light);
+}
+
+@media (max-width: 720px) {
+  .root,
+  .trigger {
+    width: 100%;
+  }
+
+  .label {
+    flex: 1;
+    justify-content: space-between;
+  }
+
+  .menu {
+    left: 0;
+    right: auto;
+    min-width: min(280px, calc(100vw - 48px));
+  }
+}

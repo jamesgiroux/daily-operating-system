@@ -1,7 +1,7 @@
 # InferredActionSelector
 
 **Tier:** pattern
-**Status:** proposed
+**Status:** integrated
 **Owner:** James
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `InferredActionSelector`
