@@ -41,6 +41,7 @@ use crate::db::claims::{
 };
 use crate::db::{ActionDb, DbError};
 use crate::intelligence::canonicalization::{item_hash, ItemKind};
+use crate::services::briefing_view_model::CorrectionState;
 use crate::services::context::ServiceContext;
 
 // ---------------------------------------------------------------------------
@@ -2102,6 +2103,25 @@ pub fn load_claims_active_by_source_ref(
         claims.push(read_claim_row(row)?);
     }
     Ok(claims)
+}
+
+pub fn lifecycle_state_for_change(db: &ActionDb, change_id: i64) -> Option<CorrectionState> {
+    let state: Option<String> = db
+        .conn_ref()
+        .query_row(
+            "SELECT user_response FROM lifecycle_changes WHERE id = ?1 LIMIT 1",
+            params![change_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten();
+
+    match state.as_deref() {
+        Some("corrected") => Some(CorrectionState::Corrected),
+        Some("contested") => Some(CorrectionState::Contested),
+        _ => None,
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]

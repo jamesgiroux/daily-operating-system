@@ -1,15 +1,14 @@
 //! Moving composer — produces the `MovingViewModel` slice.
 //!
 //! Aggregates the briefing's "what's moving" feed from per-source helpers.
-//! Meeting + action signals are wired today; email + lifecycle helpers keep
-//! their source-shaped signatures but return empty until their producers
-//! land. Trust bands are `Unscored` throughout — promotion to scored
-//! happens at the wire-in layer once `IntelligenceQuality` carries trust-
-//! band fields.
+//! Meeting, action, email, and lifecycle signals are mapped into a shared
+//! entity-ranked feed.
 
 use std::collections::HashMap;
 
 use chrono::{DateTime, Local, NaiveDate, TimeZone};
+
+mod lifecycle;
 
 use crate::services::actions::{get_all_actions, ActionsResult};
 use crate::services::briefing_view_model::{
@@ -57,12 +56,15 @@ pub async fn compose_moving(state: &AppState) -> MovingViewModel {
     };
 
     let mut entity_index = collect_entity_index(&meetings);
+    let action_signals = collect_action_signals(state).await;
+    let email_signals = collect_email_signals(state).await;
+    let lifecycle_signals = collect_lifecycle_signals(state, lifecycle_updates.as_deref()).await;
     let grouped = group_signals_by_entity(
         collect_meeting_signals(&meetings)
             .into_iter()
-            .chain(collect_action_signals(state).await)
-            .chain(collect_email_signals(state).await)
-            .chain(collect_lifecycle_signals(lifecycle_updates.as_deref())),
+            .chain(action_signals)
+            .chain(email_signals)
+            .chain(lifecycle_signals),
     );
 
     let ids: Vec<EntityId> = grouped.keys().cloned().collect();
@@ -147,10 +149,39 @@ async fn collect_email_signals(state: &AppState) -> Vec<SignalWithClaim> {
         .collect()
 }
 
-fn collect_lifecycle_signals(
-    _updates: Option<&[DashboardLifecycleUpdate]>,
+async fn collect_lifecycle_signals(
+    state: &AppState,
+    updates: Option<&[DashboardLifecycleUpdate]>,
 ) -> Vec<SignalWithClaim> {
-    Vec::new()
+    let Some(updates) = updates else {
+        return Vec::new();
+    };
+    if updates.is_empty() {
+        return Vec::new();
+    }
+
+    let change_ids: Vec<i64> = updates.iter().map(|update| update.change_id).collect();
+    let correction_states = state
+        .db_read(move |db| {
+            let mut states = HashMap::new();
+            for change_id in change_ids {
+                if let Some(state) =
+                    crate::services::claims::lifecycle_state_for_change(db, change_id)
+                {
+                    states.insert(change_id, state);
+                }
+            }
+            Ok(states)
+        })
+        .await
+        .unwrap_or_default();
+
+    lifecycle::collect_lifecycle_signals(Some(updates), &|change_id| {
+        correction_states.get(&change_id).cloned()
+    })
+    .into_iter()
+    .map(|(entity_id, signal)| (entity_id, signal, None))
+    .collect()
 }
 
 fn group_signals_by_entity<I>(signals: I) -> HashMap<EntityId, Vec<EntitySignal>>

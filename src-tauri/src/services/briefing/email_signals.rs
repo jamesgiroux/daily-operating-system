@@ -402,8 +402,7 @@ mod tests {
     #[test]
     fn candidate_falls_back_to_summary_then_subject() {
         let with_summary = email("email-1");
-        let candidate =
-            candidate_from_email(&with_summary, &[], None).expect("summary candidate");
+        let candidate = candidate_from_email(&with_summary, &[], None).expect("summary candidate");
         assert_eq!(
             candidate.signal.what_segments[1].text,
             "Customer asked for renewal timing."

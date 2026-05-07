@@ -2554,6 +2554,8 @@ pub struct DashboardLifecycleUpdate {
     pub previous_lifecycle: Option<String>,
     pub new_lifecycle: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    pub previous_renewal_stage: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub renewal_stage: Option<String>,
     pub source: String,
     pub confidence: f64,

@@ -216,3 +216,19 @@ AI-enriched text lacks clear source; `moving.rs` conflicts with DOS-414.
 Rollback: remove feeder registration and any `moving.rs` call site; leave the
 pure Rust selector if unused and tested; do not restore email ranking to
 `DailyBriefingRedesign.tsx`.
+
+## 13. Implementation notes
+
+- Added `services::briefing::email_signals` as the Moving email feeder. It reads
+  active DB emails, applies the lifted briefing selector, prefers
+  `email_signals` text when present, and emits `MovingSignalViewModel` rows with
+  `kind = email`, `trustBand = unscored`, source dates, and rendered provenance.
+- Replaced the `collect_email_signals` Moving stub with the feeder mapping only;
+  email signals remain claimless today.
+- Moved legacy briefing email selection into `services::emails` with parity
+  coverage for pinned-first ordering, relevance threshold, entity-linked-only
+  filtering, enriched-summary fill, five-item cap, and no raw fallback.
+- Updated live dashboard email assembly to hand `DailyBriefing.tsx` the
+  service-selected email set. `DailyBriefing.tsx` no longer imports or calls
+  `compareEmailRank`, and the email Attention section is now pass-through.
+- Left `/emails` comparator usage unchanged to preserve that surface boundary.

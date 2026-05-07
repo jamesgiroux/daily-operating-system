@@ -1,12 +1,12 @@
 // Daily Briefing view-model contract — Rust wire mirror of `src/types/briefing.ts`.
-// See `.docs/decisions/0129-briefing-view-model-contract.md` and DOS-413.
-//
-// W0 lands the contract types and a `Loading` stub. Real assembly ships in W2
-// (DOS-414..DOS-419) where each section's service writes into the matching
-// sub-view-model.
+// See `.docs/decisions/0129-briefing-view-model-contract.md`.
 
-#![allow(dead_code)] // W0: types declared, used by W2 services.
+#![allow(dead_code)] // Some contract variants are exercised by the frontend first.
 
+use std::future::Future;
+use std::time::Instant;
+
+use chrono::Local;
 use serde::{Deserialize, Serialize};
 
 use crate::json_loader::DataFreshness;
@@ -781,40 +781,115 @@ pub struct InferredActionOption {
     pub divider: Option<bool>,
 }
 
-// ─── Orchestrator (W2b — composes the 5 W2a slices) ─────────────────────
+// ─── Orchestrator ────────────────────────────────────────────────────────
 
-use chrono::Local;
+const BRIEFING_LEAD_LATENCY_BUDGET_MS: u128 = 50;
+const BRIEFING_SCHEDULE_LATENCY_BUDGET_MS: u128 = 200;
+const BRIEFING_PREDICTIONS_LATENCY_BUDGET_MS: u128 = 100;
+const BRIEFING_MOVING_LATENCY_BUDGET_MS: u128 = 400;
+const BRIEFING_WATCH_LATENCY_BUDGET_MS: u128 = 200;
+const BRIEFING_TOTAL_LATENCY_BUDGET_MS: u128 = 500;
 
-/// Compose the briefing by running all five section composers concurrently
-/// and assembling the envelope.
-///
-/// Each section composer is non-fallible today and returns an empty branch
-/// where upstream data isn't wired (per W2a trust-source declarations).
-/// `tokio::join!` is used rather than `try_join!` because the composers
-/// don't return `Result`. When live data wiring lands (per-ticket follow-
-/// ups), composers that can fail will return `Result` and the orchestrator
-/// switches to `try_join!` — at which point the orchestrator owns whether a
-/// section failure escalates to `BriefingResult::Error` (with `service:
-/// BriefingSectionId`) or degrades the section to its empty branch.
-///
-/// The chrome slices (`date`, `folio`, `day_strip`) are composed inline —
-/// they derive from the current date and a static folio config, no
-/// per-section composer needed.
 pub async fn get_briefing_view_model(state: &AppState) -> BriefingResult {
-    let (lead, schedule, predictions, moving, watch) = tokio::join!(
-        crate::services::briefing::lead::compose_lead(state),
-        crate::services::briefing::schedule::compose_schedule(state),
-        crate::services::briefing::predictions::compose_predictions(state),
-        crate::services::briefing::moving::compose_moving(state),
-        crate::services::briefing::watch::compose_watch(state),
-    );
+    let model = compose(state).await;
 
-    let now = Local::now();
+    BriefingResult::Success {
+        model,
+        freshness: DataFreshness::Unknown,
+        google_auth: None,
+    }
+}
+
+async fn compose(state: &AppState) -> BriefingViewModel {
+    let started = Instant::now();
+    let model = compose_from_section_futures(
+        Local::now(),
+        timed_section(
+            "lead",
+            BRIEFING_LEAD_LATENCY_BUDGET_MS,
+            crate::services::briefing::lead::compose_lead(state),
+        ),
+        timed_section(
+            "schedule",
+            BRIEFING_SCHEDULE_LATENCY_BUDGET_MS,
+            crate::services::briefing::schedule::compose_schedule(state),
+        ),
+        timed_section(
+            "predictions",
+            BRIEFING_PREDICTIONS_LATENCY_BUDGET_MS,
+            crate::services::briefing::predictions::compose_predictions(state),
+        ),
+        timed_section(
+            "moving",
+            BRIEFING_MOVING_LATENCY_BUDGET_MS,
+            crate::services::briefing::moving::compose_moving(state),
+        ),
+        timed_section(
+            "watch",
+            BRIEFING_WATCH_LATENCY_BUDGET_MS,
+            crate::services::briefing::watch::compose_watch(state),
+        ),
+    )
+    .await;
+    log_latency_overrun(
+        "total",
+        started.elapsed().as_millis(),
+        BRIEFING_TOTAL_LATENCY_BUDGET_MS,
+    );
+    model
+}
+
+async fn timed_section<T, F>(section: &'static str, budget_ms: u128, future: F) -> T
+where
+    F: Future<Output = T>,
+{
+    let started = Instant::now();
+    let output = future.await;
+    log_latency_overrun(section, started.elapsed().as_millis(), budget_ms);
+    output
+}
+
+fn log_latency_overrun(section: &str, elapsed_ms: u128, budget_ms: u128) {
+    if elapsed_ms > budget_ms {
+        log::warn!(
+            "briefing_view_model.{section} exceeded latency budget: {elapsed_ms}ms > {budget_ms}ms"
+        );
+    }
+}
+
+async fn compose_from_section_futures<L, S, P, M, W>(
+    now: chrono::DateTime<Local>,
+    lead: L,
+    schedule: S,
+    predictions: P,
+    moving: M,
+    watch: W,
+) -> BriefingViewModel
+where
+    L: Future<Output = LeadViewModel>,
+    S: Future<Output = ScheduleViewModel>,
+    P: Future<Output = PredictionsViewModel>,
+    M: Future<Output = MovingViewModel>,
+    W: Future<Output = WatchViewModel>,
+{
+    let (lead, schedule, predictions, moving, watch) =
+        tokio::join!(lead, schedule, predictions, moving, watch);
+    compose_model(now, lead, schedule, predictions, moving, watch)
+}
+
+fn compose_model(
+    now: chrono::DateTime<Local>,
+    lead: LeadViewModel,
+    schedule: ScheduleViewModel,
+    predictions: PredictionsViewModel,
+    moving: MovingViewModel,
+    watch: WatchViewModel,
+) -> BriefingViewModel {
     let iso_date = now.format("%Y-%m-%d").to_string();
     let display_date = now.format("%A, %B %-d, %Y").to_string();
     let date_label_caps = display_date.to_uppercase();
 
-    let model = BriefingViewModel {
+    BriefingViewModel {
         date: BriefingDateViewModel {
             iso_date: iso_date.clone(),
             display_date: display_date.clone(),
@@ -833,12 +908,6 @@ pub async fn get_briefing_view_model(state: &AppState) -> BriefingResult {
         predictions,
         moving,
         watch,
-    };
-
-    BriefingResult::Success {
-        model,
-        freshness: DataFreshness::Unknown,
-        google_auth: None,
     }
 }
 
@@ -867,6 +936,190 @@ where
             href: format!("/briefing/{}", tomorrow.format("%Y-%m-%d")),
         },
     }
+}
+
+#[cfg(test)]
+fn fixture_trust() -> TrustMixin {
+    TrustMixin {
+        trust_band: TrustBandWire::Unscored,
+        trust_field_path: None,
+        trust_source_date: None,
+        rendered_provenance: None,
+    }
+}
+
+#[cfg(test)]
+fn fixture_lead() -> LeadViewModel {
+    LeadViewModel {
+        headline: LeadHeadline {
+            lead: "A focused day.".to_string(),
+            punch_line: None,
+        },
+        focus_capacity: "2 hours available.".to_string(),
+        focus_block: None,
+    }
+}
+
+#[cfg(test)]
+fn fixture_schedule() -> ScheduleViewModel {
+    ScheduleViewModel {
+        label: "Today".to_string(),
+        heading: "Today's schedule".to_string(),
+        count_label: "1 meeting".to_string(),
+        meeting_mix: ScheduleMeetingMix {
+            customer: 1,
+            ..ScheduleMeetingMix::default()
+        },
+        summary: "1 customer call.".to_string(),
+        day_chart: DayChartViewModel {
+            range_start_hour: 8,
+            range_end_hour: 20,
+            hour_ticks: vec![],
+            legend: vec![],
+            bars: vec![],
+            now_line: None,
+        },
+        meetings: vec![],
+    }
+}
+
+#[cfg(test)]
+fn fixture_predictions() -> PredictionsViewModel {
+    PredictionsViewModel {
+        label: "Predictions".to_string(),
+        count_label: "0 today".to_string(),
+        collapsed_label: "0 predictions today".to_string(),
+        expand_hint: "expand".to_string(),
+        count: 0,
+        predictions: vec![],
+    }
+}
+
+#[cfg(test)]
+fn fixture_moving() -> MovingViewModel {
+    MovingViewModel {
+        label: "Moving".to_string(),
+        heading: "What's moving".to_string(),
+        count_label: "1 entity".to_string(),
+        summary: "Acme is moving.".to_string(),
+        entities: vec![],
+    }
+}
+
+#[cfg(test)]
+fn fixture_watch() -> WatchViewModel {
+    WatchViewModel {
+        label: "Watch".to_string(),
+        heading: "Worth a look".to_string(),
+        count_label: "1".to_string(),
+        summary: "1 item to triage.".to_string(),
+        rows: vec![],
+    }
+}
+
+#[cfg(test)]
+async fn delay_fixture<T>(value: T) -> T {
+    tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    value
+}
+
+#[cfg(test)]
+#[tokio::test]
+async fn compose_runs_concurrently() {
+    let started = Instant::now();
+    let model = compose_from_section_futures(
+        Local::now(),
+        delay_fixture(fixture_lead()),
+        delay_fixture(fixture_schedule()),
+        delay_fixture(fixture_predictions()),
+        delay_fixture(fixture_moving()),
+        delay_fixture(fixture_watch()),
+    )
+    .await;
+    let elapsed = started.elapsed();
+
+    assert!(
+        elapsed < std::time::Duration::from_millis(200),
+        "compose elapsed {elapsed:?}; expected concurrent section futures"
+    );
+    assert!(!model.date.iso_date.is_empty());
+    assert_eq!(model.folio.label, "Daily Briefing");
+    assert_eq!(model.day_strip.current.label, "Today");
+    assert_eq!(model.lead.headline.lead, "A focused day.");
+    assert_eq!(model.schedule.count_label, "1 meeting");
+    assert_eq!(model.predictions.label, "Predictions");
+    assert_eq!(model.moving.label, "Moving");
+    assert_eq!(model.watch.count_label, "1");
+}
+
+#[cfg(test)]
+struct BriefingLogCapture;
+
+#[cfg(test)]
+static BRIEFING_LOG_CAPTURE: BriefingLogCapture = BriefingLogCapture;
+
+#[cfg(test)]
+static BRIEFING_LOGS: std::sync::OnceLock<std::sync::Mutex<Vec<String>>> =
+    std::sync::OnceLock::new();
+
+#[cfg(test)]
+impl log::Log for BriefingLogCapture {
+    fn enabled(&self, metadata: &log::Metadata<'_>) -> bool {
+        metadata.level() <= log::Level::Warn
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        if self.enabled(record.metadata()) {
+            if let Some(logs) = BRIEFING_LOGS.get() {
+                logs.lock()
+                    .expect("log lock")
+                    .push(record.args().to_string());
+            }
+        }
+    }
+
+    fn flush(&self) {}
+}
+
+#[cfg(test)]
+fn captured_logs() -> &'static std::sync::Mutex<Vec<String>> {
+    BRIEFING_LOGS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
+}
+
+#[cfg(test)]
+fn init_log_capture() {
+    let _ = log::set_logger(&BRIEFING_LOG_CAPTURE);
+    log::set_max_level(log::LevelFilter::Warn);
+    captured_logs().lock().expect("log lock").clear();
+}
+
+#[cfg(test)]
+#[test]
+fn latency_logging() {
+    init_log_capture();
+
+    log_latency_overrun(
+        "lead",
+        BRIEFING_LEAD_LATENCY_BUDGET_MS + 1,
+        BRIEFING_LEAD_LATENCY_BUDGET_MS,
+    );
+    log_latency_overrun("schedule", 10, BRIEFING_SCHEDULE_LATENCY_BUDGET_MS);
+    log_latency_overrun(
+        "total",
+        BRIEFING_TOTAL_LATENCY_BUDGET_MS + 1,
+        BRIEFING_TOTAL_LATENCY_BUDGET_MS,
+    );
+
+    let logs = captured_logs().lock().expect("log lock").clone();
+    assert!(logs
+        .iter()
+        .any(|line| line.contains("briefing_view_model.lead")));
+    assert!(logs
+        .iter()
+        .any(|line| line.contains("briefing_view_model.total")));
+    assert!(!logs
+        .iter()
+        .any(|line| line.contains("briefing_view_model.schedule")));
 }
 
 // ─── Tests ───────────────────────────────────────────────────────────────
@@ -1779,5 +2032,210 @@ mod tests {
         assert_eq!(parsed["label"], "Health");
         assert_eq!(parsed["trend"], "up");
         assert!(parsed.get("trust").is_none(), "TrustMixin must flatten");
+    }
+}
+
+#[cfg(test)]
+pub mod integration {
+    use crate::db::entity_linking::LinkedEntityRawWrite;
+    use crate::db::{AccountType, DbAccount, DbMeeting};
+    use crate::state::AppState;
+    use chrono::{Duration, Local};
+    use serde_json::{json, Value};
+    use std::sync::Arc;
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn populated_fixture_returns_success() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let db_path = temp.path().join("briefing-command.db");
+        let db_service = crate::db_service::DbService::open_at_unencrypted(db_path)
+            .await
+            .expect("open test db");
+        let state = Arc::new(AppState::test_with_db_service(db_service));
+        *state.config.write() = Some(test_config(temp.path()));
+        seed_populated_fixture(&state).await;
+
+        let app = tauri::test::mock_builder()
+            .manage(state)
+            .invoke_handler(tauri::generate_handler![
+                crate::commands::get_briefing_view_model
+            ])
+            .build(tauri::test::mock_context(tauri::test::noop_assets()))
+            .expect("build app");
+        let webview = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+            .build()
+            .expect("build webview");
+
+        let response = tauri::test::get_ipc_response(
+            &webview,
+            tauri::webview::InvokeRequest {
+                cmd: "get_briefing_view_model".into(),
+                callback: tauri::ipc::CallbackFn(0),
+                error: tauri::ipc::CallbackFn(1),
+                url: "http://tauri.localhost".parse().unwrap(),
+                body: tauri::ipc::InvokeBody::default(),
+                headers: Default::default(),
+                invoke_key: tauri::test::INVOKE_KEY.to_string(),
+            },
+        )
+        .expect("ipc response");
+        let parsed: Value = response.deserialize().expect("deserialize response");
+
+        assert_eq!(parsed["status"], "success");
+        let model = &parsed["model"];
+        assert!(!model["date"]["isoDate"].as_str().unwrap().is_empty());
+        assert_eq!(model["folio"]["label"], "Daily Briefing");
+        assert_eq!(model["dayStrip"]["current"]["label"], "Today");
+        assert!(!model["lead"]["headline"]["lead"]
+            .as_str()
+            .unwrap()
+            .is_empty());
+        assert!(!model["schedule"]["meetings"].as_array().unwrap().is_empty());
+        assert!(model["predictions"]["count"].is_number());
+        assert!(!model["moving"]["entities"].as_array().unwrap().is_empty());
+        assert!(!model["watch"]["rows"].as_array().unwrap().is_empty());
+
+        let lifecycle_signal = model["moving"]["entities"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .flat_map(|entity| entity["signals"].as_array().unwrap().iter())
+            .find(|signal| signal["kind"] == "lifecycle")
+            .expect("lifecycle signal");
+        assert_eq!(lifecycle_signal["correctionState"], "corrected");
+    }
+
+    fn test_config(workspace_path: &std::path::Path) -> crate::types::Config {
+        serde_json::from_value(json!({
+            "workspacePath": workspace_path.to_string_lossy(),
+            "schedules": {
+                "today": {
+                    "enabled": false,
+                    "cron": "0 8 * * *",
+                    "timezone": "America/Toronto"
+                }
+            }
+        }))
+        .expect("minimal config")
+    }
+
+    async fn seed_populated_fixture(state: &Arc<AppState>) {
+        state
+            .db_write(|db| {
+                let now = chrono::Utc::now();
+                let today = Local::now().date_naive();
+                let start = format!("{today}T14:00:00Z");
+                let end = (chrono::DateTime::parse_from_rfc3339(&start)
+                    .expect("parse start")
+                    .with_timezone(&chrono::Utc)
+                    + Duration::minutes(30))
+                .to_rfc3339();
+                let today_string = today.to_string();
+
+                let account = DbAccount {
+                    id: "acct-briefing".to_string(),
+                    name: "Acme Briefing".to_string(),
+                    lifecycle: Some("renewing".to_string()),
+                    health: Some("green".to_string()),
+                    tracker_path: Some("Accounts/Acme Briefing".to_string()),
+                    account_type: AccountType::Customer,
+                    updated_at: now.to_rfc3339(),
+                    archived: false,
+                    ..Default::default()
+                };
+                db.upsert_account(&account).map_err(|e| e.to_string())?;
+
+                db.upsert_meeting(&DbMeeting {
+                    id: "mtg-briefing".to_string(),
+                    title: "Acme renewal sync".to_string(),
+                    meeting_type: "customer".to_string(),
+                    start_time: start,
+                    end_time: Some(end),
+                    attendees: Some("Jamie <jamie@example.com>".to_string()),
+                    notes_path: None,
+                    summary: Some("Renewal checkpoint".to_string()),
+                    created_at: now.to_rfc3339(),
+                    calendar_event_id: Some("cal-briefing".to_string()),
+                    description: Some("Discuss renewal path".to_string()),
+                    prep_context_json: Some(json!({"summary": "Renewal checkpoint"}).to_string()),
+                    user_agenda_json: None,
+                    user_notes: None,
+                    prep_frozen_json: None,
+                    prep_frozen_at: None,
+                    prep_snapshot_path: None,
+                    prep_snapshot_hash: None,
+                    transcript_path: None,
+                    transcript_processed_at: None,
+                    intelligence_state: None,
+                    intelligence_quality: None,
+                    last_enriched_at: None,
+                    signal_count: None,
+                    has_new_signals: None,
+                    last_viewed_at: None,
+                })
+                .map_err(|e| e.to_string())?;
+
+                db.upsert_linked_entity_raw(&LinkedEntityRawWrite {
+                    owner_type: "meeting".to_string(),
+                    owner_id: "mtg-briefing".to_string(),
+                    entity_id: "acct-briefing".to_string(),
+                    entity_type: "account".to_string(),
+                    role: "primary".to_string(),
+                    source: "fixture".to_string(),
+                    rule_id: Some("fixture".to_string()),
+                    confidence: Some(0.95),
+                    evidence_json: None,
+                    graph_version: 1,
+                })?;
+
+                let change_id = db
+                    .insert_lifecycle_change(
+                        "acct-briefing",
+                        Some("active"),
+                        "renewing",
+                        Some("prospecting"),
+                        Some("engaged"),
+                        None,
+                        None,
+                        "fixture",
+                        0.9,
+                        Some("Renewal language detected"),
+                        Some(0.72),
+                        Some(0.81),
+                    )
+                    .map_err(|e| e.to_string())?;
+                db.set_lifecycle_change_response(
+                    change_id,
+                    "corrected",
+                    Some("User corrected the lifecycle signal"),
+                )
+                .map_err(|e| e.to_string())?;
+
+                db.conn_ref()
+                    .execute(
+                        "INSERT INTO actions (
+                            id, title, priority, status, created_at, due_date,
+                            account_id, source_type, source_label, context, updated_at
+                        ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)",
+                        rusqlite::params![
+                            "act-briefing",
+                            "Send renewal recap",
+                            2_i64,
+                            "unstarted",
+                            &today_string,
+                            &today_string,
+                            "acct-briefing",
+                            "fixture",
+                            "Fixture",
+                            "Follow up from renewal sync",
+                            &today_string,
+                        ],
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                Ok(())
+            })
+            .await
+            .expect("seed fixture");
     }
 }

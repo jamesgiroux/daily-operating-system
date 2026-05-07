@@ -199,6 +199,7 @@ fn load_dashboard_lifecycle_updates(
                 account_name: account.name,
                 previous_lifecycle: change.previous_lifecycle,
                 new_lifecycle: change.new_lifecycle,
+                previous_renewal_stage: change.previous_stage,
                 renewal_stage: change.new_stage,
                 source: change.source,
                 confidence: change.confidence,

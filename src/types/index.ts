@@ -2046,6 +2046,7 @@ export interface DashboardLifecycleUpdate {
   accountName: string;
   previousLifecycle?: string | null;
   newLifecycle: string;
+  previousRenewalStage?: string | null;
   renewalStage?: string | null;
   source: string;
   confidence: number;
