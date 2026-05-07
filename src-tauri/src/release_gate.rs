@@ -36,6 +36,7 @@ pub const DEFAULT_TRACKED_BUNDLES: &[&str] = &[
     "bundle-11",
     "bundle-12",
 ];
+pub const RELEASE_GATE_BUILD_GIT_SHA: &str = env!("BUILD_GIT_SHA");
 
 const DOS288_SELECTORS: &[&str] = &[
     "dos288_bleed_detection_test",
@@ -279,7 +280,10 @@ struct CliArgs {
     manual_evidence: Option<PathBuf>,
     #[arg(long = "no-run-tests")]
     no_run_tests: bool,
-    #[arg(long = "git-sha")]
+    #[arg(
+        long = "git-sha",
+        help = "Optional assertion. The canonical SHA is embedded at build time; if provided, it must match the embedded SHA."
+    )]
     git_sha: Option<String>,
 }
 
@@ -335,7 +339,7 @@ where
         db_path: cli.db_path,
         manual_evidence: cli.manual_evidence,
         run_tests: !cli.no_run_tests,
-        git_sha: resolve_git_sha(cli.git_sha),
+        git_sha: resolve_git_sha(cli.git_sha)?,
     })
 }
 
@@ -949,23 +953,18 @@ fn run_dos288_selector(selector: &str) -> SuiteResult {
     // DOS-288 remains an integration-test binary rather than a library module.
     // The release gate deliberately keeps only this selector as a subprocess;
     // the Golden Daily Loop harness itself runs in-process for structured data.
+    let args = dos288_selector_args(selector);
+    let command_or_report = dos288_selector_command(selector);
     let output = Command::new("cargo")
-        .args([
-            "test",
-            "--manifest-path",
-            &manifest_dir().join("Cargo.toml").display().to_string(),
-            "--no-default-features",
-            "--test",
-            selector,
-            "--",
-        ])
+        .current_dir(repo_root())
+        .args(&args)
         .env("CARGO_TERM_COLOR", "never")
         .output();
     match output {
         Ok(output) if output.status.success() => SuiteResult {
             name: selector.to_string(),
             source: "cargo_test_selector".to_string(),
-            command_or_report: format!("cargo test --test {selector}"),
+            command_or_report,
             status: GateStatus::Pass,
             mandatory: true,
             duration_ms: Some(started.elapsed().as_millis() as u64),
@@ -974,7 +973,7 @@ fn run_dos288_selector(selector: &str) -> SuiteResult {
         Ok(output) => SuiteResult {
             name: selector.to_string(),
             source: "cargo_test_selector".to_string(),
-            command_or_report: format!("cargo test --test {selector}"),
+            command_or_report,
             status: GateStatus::Fail,
             mandatory: true,
             duration_ms: Some(started.elapsed().as_millis() as u64),
@@ -986,7 +985,7 @@ fn run_dos288_selector(selector: &str) -> SuiteResult {
         Err(error) => SuiteResult {
             name: selector.to_string(),
             source: "cargo_test_selector".to_string(),
-            command_or_report: format!("cargo test --test {selector}"),
+            command_or_report,
             status: GateStatus::InfraFailure,
             mandatory: true,
             duration_ms: Some(started.elapsed().as_millis() as u64),
@@ -996,6 +995,29 @@ fn run_dos288_selector(selector: &str) -> SuiteResult {
             )],
         },
     }
+}
+
+fn dos288_selector_args(selector: &str) -> Vec<String> {
+    [
+        "test",
+        "--manifest-path",
+        "src-tauri/Cargo.toml",
+        "--no-default-features",
+        "--features",
+        "release-gate",
+        "--test",
+        selector,
+        "--",
+        "--nocapture",
+        "--test-threads=1",
+    ]
+    .iter()
+    .map(|arg| (*arg).to_string())
+    .collect()
+}
+
+fn dos288_selector_command(selector: &str) -> String {
+    format!("cargo {}", dos288_selector_args(selector).join(" "))
 }
 
 fn read_dos288_evidence(
@@ -1286,36 +1308,44 @@ fn default_or_configured_report_path(config: &GateConfig) -> PathBuf {
         .unwrap_or_else(GateConfig::default_harness_report_path)
 }
 
-fn resolve_git_sha(cli_value: Option<String>) -> String {
-    cli_value
-        .or_else(|| std::env::var("DAILYOS_GIT_SHA").ok())
-        .or_else(|| std::env::var("GITHUB_SHA").ok())
-        .or_else(|| option_env!("DAILYOS_GIT_SHA").map(str::to_string))
-        .or_else(|| option_env!("GITHUB_SHA").map(str::to_string))
-        .or_else(resolve_git_sha_from_git)
-        .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "unknown".to_string())
+fn resolve_git_sha(cli_value: Option<String>) -> Result<String, GateError> {
+    resolve_git_sha_from_build(cli_value.as_deref(), Some(RELEASE_GATE_BUILD_GIT_SHA))
 }
 
-fn resolve_git_sha_from_git() -> Option<String> {
-    let output = Command::new("git")
-        .args([
-            "-C",
-            &manifest_dir().display().to_string(),
-            "rev-parse",
-            "HEAD",
-        ])
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
+fn resolve_git_sha_from_build(
+    cli_value: Option<&str>,
+    build_sha: Option<&str>,
+) -> Result<String, GateError> {
+    let embedded = build_sha
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or("unknown");
+    if embedded == "unknown" {
+        return Err(GateError::infra(
+            "gate-built-without-sha: rebuild release-gate with DAILYOS_BUILD_SHA env or in a git checkout",
+        ));
     }
-    let sha = String::from_utf8(output.stdout).ok()?.trim().to_string();
-    (!sha.is_empty()).then_some(sha)
+
+    if let Some(cli_value) = cli_value.map(str::trim).filter(|value| !value.is_empty()) {
+        if cli_value != embedded {
+            return Err(GateError::infra(format!(
+                "gate-binary-rebuilt-required: binary embeds SHA {embedded} but CLI requested {cli_value}; rebuild release-gate from current HEAD.",
+            )));
+        }
+    }
+
+    Ok(embedded.to_string())
 }
 
 fn manifest_dir() -> PathBuf {
     PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+}
+
+fn repo_root() -> PathBuf {
+    manifest_dir()
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(manifest_dir)
 }
 
 fn bundle_status(evidence: &GateEvidenceV1, bundle: &str) -> &'static str {
@@ -1402,6 +1432,41 @@ mod tests {
                 .unwrap();
 
         assert_eq!(config.mode, GateMode::Hermetic);
+    }
+
+    #[test]
+    fn release_gate_rejects_mismatched_cli_sha() {
+        let error =
+            parse_cli_from(["release-gate", "--git-sha", "zzz"].map(OsString::from)).unwrap_err();
+
+        assert_eq!(error.exit_code(), EXIT_INFRA_FAILURE);
+        assert!(error.to_string().contains("gate-binary-rebuilt-required"));
+        assert!(error
+            .to_string()
+            .contains("rebuild release-gate from current HEAD"));
+    }
+
+    #[test]
+    fn release_gate_rejects_unknown_build_sha() {
+        let error = resolve_git_sha_from_build(None, Some("unknown")).unwrap_err();
+
+        assert_eq!(error.exit_code(), EXIT_INFRA_FAILURE);
+        assert!(error.to_string().contains("gate-built-without-sha"));
+    }
+
+    #[test]
+    fn release_gate_accepts_matching_cli_sha_assertion() {
+        let resolved = resolve_git_sha_from_build(Some("abc123"), Some("abc123")).unwrap();
+
+        assert_eq!(resolved, "abc123");
+    }
+
+    #[test]
+    fn release_gate_dos288_selector_command_uses_release_gate_feature() {
+        assert_eq!(
+            dos288_selector_command("dos288_bleed_detection_test"),
+            "cargo test --manifest-path src-tauri/Cargo.toml --no-default-features --features release-gate --test dos288_bleed_detection_test -- --nocapture --test-threads=1"
+        );
     }
 
     #[test]

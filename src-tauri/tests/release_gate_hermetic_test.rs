@@ -11,11 +11,14 @@ use dailyos_lib::harness::{
 use dailyos_lib::release_gate::{
     exit_code_for_evidence, parse_cli_from, parse_harness_report, run_gate_with_db_reader,
     validate_manual_evidence_json, GateConfig, GateEvidenceV1, GateStatus, ManualDbReader,
-    EXIT_INFRA_FAILURE, EXIT_MANDATORY_FAILURE, EXIT_SUCCESS,
+    EXIT_INFRA_FAILURE, EXIT_MANDATORY_FAILURE, EXIT_SUCCESS, RELEASE_GATE_BUILD_GIT_SHA,
 };
 use serde_json::json;
 
-const TEST_GIT_SHA: &str = "0123456789abcdef";
+const TEST_GIT_SHA: &str = RELEASE_GATE_BUILD_GIT_SHA;
+
+type BundleStatus = (u32, bool, u64);
+type BundleStatusWithRegression = (u32, bool, u64, Option<(RegressionClass, Severity)>);
 
 #[test]
 fn release_gate_parses_harness_report_bundle_coverage() {
@@ -246,7 +249,7 @@ fn release_gate_rejects_mismatched_fixtures_hash() {
     }));
 }
 
-fn run_with_bundle_statuses(bundle_statuses: &[(u32, bool, u64)]) -> GateEvidenceV1 {
+fn run_with_bundle_statuses(bundle_statuses: &[BundleStatus]) -> GateEvidenceV1 {
     let temp = tempfile::tempdir().expect("tempdir");
     let report_path = temp.path().join("harness-report.json");
     let output_dir = temp.path().join("release-gate");
@@ -274,13 +277,13 @@ fn config_for_report(report_path: &Path, output_dir: &Path) -> GateConfig {
     parse_cli_from(args).expect("config parses")
 }
 
-fn write_harness_report(path: &Path, bundle_statuses: &[(u32, bool, u64)]) {
+fn write_harness_report(path: &Path, bundle_statuses: &[BundleStatus]) {
     write_harness_report_with_binding(path, bundle_statuses, TEST_GIT_SHA, &live_fixtures_hash());
 }
 
 fn write_harness_report_with_binding(
     path: &Path,
-    bundle_statuses: &[(u32, bool, u64)],
+    bundle_statuses: &[BundleStatus],
     git_sha: &str,
     fixtures_hash: &str,
 ) {
@@ -293,7 +296,7 @@ fn write_harness_report_with_binding(
 
 fn write_harness_report_with_regressions(
     path: &Path,
-    bundle_statuses: &[(u32, bool, u64, Option<(RegressionClass, Severity)>)],
+    bundle_statuses: &[BundleStatusWithRegression],
 ) {
     write_harness_report_with_regressions_and_binding(
         path,
@@ -305,7 +308,7 @@ fn write_harness_report_with_regressions(
 
 fn write_harness_report_with_regressions_and_binding(
     path: &Path,
-    bundle_statuses: &[(u32, bool, u64, Option<(RegressionClass, Severity)>)],
+    bundle_statuses: &[BundleStatusWithRegression],
     git_sha: &str,
     fixtures_hash: &str,
 ) {

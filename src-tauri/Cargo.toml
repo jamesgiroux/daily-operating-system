@@ -10,6 +10,7 @@ description = "Operational intelligence for your workday. Open the app, your day
 authors = ["DailyOS"]
 edition = "2021"
 autobins = false
+build = "build.rs"
 
 [lib]
 name = "dailyos_lib"
