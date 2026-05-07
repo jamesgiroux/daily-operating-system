@@ -20,7 +20,7 @@ use crate::types::GoogleAuthStatus;
 ///
 /// Rust serde does not have row-polymorphism, so this struct is
 /// `#[serde(flatten)]`-included into each carrier instead of inherited.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct TrustMixin {
     pub trust_band: TrustBandWire,
@@ -43,14 +43,15 @@ pub enum TrustBandWire {
     Unscored,
 }
 
-/// Opaque carrier — service-rendered, not interpreted on the wire.
-/// Real shape lives in the trust subsystem; this is the wire surface.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase")]
+/// Wire mirror of `RenderedProvenanceSummary` from `src/types/index.ts:146`.
+/// The frontend reads sub-fields of `value` directly; the Rust side keeps
+/// `value` opaque so producers (the trust subsystem in W2/DOS-411) can shape
+/// the sources / field_attributions tree without a type churn here.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct RenderedProvenanceSummary {
-    pub label: String,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub detail: Option<String>,
+    pub surface: Option<String>,
+    pub value: serde_json::Value,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -276,7 +277,7 @@ pub struct ScheduleMeetingMix {
     pub cancelled: u32,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ScheduleMeeting {
     #[serde(flatten)]
@@ -305,15 +306,22 @@ pub struct ScheduleMeetingEyebrow {
 }
 
 /// Mirrors `MeetingSpineType` from `src/components/dashboard/MeetingSpineItem.tsx`.
+///
+/// The wire strings derive from `MeetingType` (`src/types/index.ts:22-32`),
+/// which uses snake_case (`"one_on_one"`). Single-word variants happen to be
+/// lowercase identical; `OneOnOne` is the one that needs an explicit rename.
+/// `Personal` is not a valid `MeetingSpineType` per the TS source — the TS
+/// type includes `Extract<MeetingType, "customer" | "internal" | "one_on_one">`
+/// plus `"partner"` and `"project"` literals.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(rename_all = "kebab-case")]
+#[serde(rename_all = "lowercase")]
 pub enum MeetingSpineType {
     Customer,
     Internal,
     Partner,
-    Personal,
-    OneOnOne,
     Project,
+    #[serde(rename = "one_on_one")]
+    OneOnOne,
 }
 
 /// Mirrors `MeetingSpineState` from `src/components/dashboard/MeetingSpineItem.tsx`.
@@ -530,16 +538,52 @@ pub enum MovingEntityKind {
     Lifecycle,
 }
 
-/// Wire mirror of `LinkedEntity` from `src/types/index.ts`.
-/// W2 services map the existing Rust `LinkedEntity` (in `types.rs`) to this shape.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+/// Wire mirror of `LinkedEntity` from `src/types/index.ts:235-253`.
+/// W2 services map the existing Rust `LinkedEntity` (in `types.rs`) to this
+/// shape. Routing href is on the parent `MovingEntityViewModel.href`, not here
+/// — `LinkedEntity` is identity + linkage metadata, not navigation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct LinkedEntityWire {
     pub id: String,
     pub name: String,
-    pub entity_type: String,
+    pub entity_type: LinkedEntityType,
+    /// Per-junction confidence (0.0 – 1.0). Higher = stronger match.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub href: Option<String>,
+    pub confidence: Option<f64>,
+    /// True if this is the primary entity for the meeting.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub is_primary: Option<bool>,
+    /// True for low-confidence siblings rendered as muted suggestions.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub suggested: Option<bool>,
+    /// Deterministic link role from the entity-linking engine. Supersedes
+    /// `is_primary` + `suggested` when present.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub role: Option<LinkRole>,
+    /// Rule identifier that produced this link (e.g. `"P5"`, `"P9"`).
+    /// `Some(None)` represents the wire `null` form (rule absent but
+    /// explicitly cleared).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub applied_rule: Option<Option<String>>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "lowercase")]
+pub enum LinkedEntityType {
+    Account,
+    Project,
+    Person,
+}
+
+/// Mirrors `LinkRole` from `src/types/index.ts`.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum LinkRole {
+    Primary,
+    Related,
+    AutoSuggested,
+    UserDismissed,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -549,7 +593,8 @@ pub struct PillView {
     pub tone: PillTone,
 }
 
-/// Mirrors `PillTone` from `src/components/ui/Pill.tsx`.
+/// Mirrors `PillTone` from `src/components/ui/Pill.tsx`. Seven tones —
+/// keep this set in sync with the TS source.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
 pub enum PillTone {
@@ -557,6 +602,8 @@ pub enum PillTone {
     Turmeric,
     Terracotta,
     Larkspur,
+    Olive,
+    Eucalyptus,
     Neutral,
 }
 
@@ -846,6 +893,253 @@ mod tests {
         }
     }
 
+    /// Populated fixture exercising every WatchRow variant, every
+    /// BriefingActionView kind, non-null RenderedProvenanceSummary, mutation
+    /// IDs on every claim-bearing row, and a populated MovingEntity with
+    /// signals + provenance stats. Closes the test-coverage gap codex flagged
+    /// — the empty `sample_success()` fixture left these unexercised.
+    #[test]
+    fn populated_fixture_round_trips_every_variant() {
+        use serde_json::json as j;
+
+        let trust_with_provenance = TrustMixin {
+            trust_band: TrustBandWire::LikelyCurrent,
+            trust_field_path: Some("moving.entity.health".into()),
+            trust_source_date: Some(Some("2026-04-22T18:00:00Z".into())),
+            rendered_provenance: Some(RenderedProvenanceSummary {
+                surface: Some("dashboard".into()),
+                value: j!({
+                    "sources": [{"id": "src_1", "label": "CRM"}],
+                    "fieldAttributions": {"health": {"sourceIds": ["src_1"]}},
+                    "producedAt": "2026-04-22T18:00:00Z",
+                }),
+            }),
+        };
+
+        let watch_rows = vec![
+            WatchRowViewModel::SuggestedAction(WatchSuggestedActionRow {
+                trust: sample_trust(),
+                lifecycle: LifecycleMixin {
+                    correction_state: Some(CorrectionState::None),
+                },
+                who: "Globex".into(),
+                what: "Pushing intro to Q3.".into(),
+                action_id: "act_sug".into(),
+                selector: InferredActionSelectorViewModel {
+                    trigger_label: "Snooze to Q3".into(),
+                    options: vec![InferredActionOption {
+                        id: "snooze_q3".into(),
+                        label: "Snooze to Q3".into(),
+                        confidence: Some(ConfidenceView {
+                            value: 0.82,
+                            label: "82%".into(),
+                        }),
+                        divider: None,
+                    }],
+                    selected_option_id: "snooze_q3".into(),
+                },
+            }),
+            WatchRowViewModel::OpenAction(WatchOpenActionRow {
+                trust: sample_trust(),
+                who: "Acme".into(),
+                what: "Send pricing appendix.".into(),
+                action_id: "act_open".into(),
+                check_button_label: "Mark complete".into(),
+            }),
+            WatchRowViewModel::Parked(WatchParkedRow {
+                trust: sample_trust(),
+                who: "Internal".into(),
+                what: "Tier 3 deck circulating.".into(),
+                parked_label: "Parked".into(),
+            }),
+            WatchRowViewModel::Aging(WatchAgingRow {
+                trust: sample_trust(),
+                who: "Stark".into(),
+                what: "Old support thread.".into(),
+                action_id: "act_age".into(),
+                age_label: "2w".into(),
+                since: "2026-04-09".into(),
+                options: vec![
+                    WatchAgingOption {
+                        id: WatchAgingOptionId::Restore,
+                        label: "Restore".into(),
+                    },
+                    WatchAgingOption {
+                        id: WatchAgingOptionId::Archive,
+                        label: "Archive".into(),
+                    },
+                ],
+            }),
+        ];
+
+        let moving_entity = MovingEntityViewModel {
+            kind: MovingEntityKind::Customer,
+            entity: LinkedEntityWire {
+                id: "ent_1".into(),
+                name: "Globex".into(),
+                entity_type: LinkedEntityType::Account,
+                confidence: Some(0.94),
+                is_primary: Some(true),
+                suggested: None,
+                role: Some(LinkRole::Primary),
+                applied_rule: Some(Some("P5".into())),
+            },
+            href: "/accounts/ent_1".into(),
+            state_pill: PillView {
+                label: "Renewal ↑".into(),
+                tone: PillTone::Olive,
+            },
+            lede: "Pricing memo went out.".into(),
+            signals: vec![MovingSignalViewModel {
+                trust: trust_with_provenance.clone(),
+                lifecycle: LifecycleMixin {
+                    correction_state: Some(CorrectionState::Corrected),
+                },
+                kind: SignalDotKind::GongCall,
+                when: "10:00".into(),
+                what_segments: vec![
+                    WhatSegment {
+                        text: "Call recorded with ".into(),
+                        emphasized: None,
+                    },
+                    WhatSegment {
+                        text: "champion".into(),
+                        emphasized: Some(true),
+                    },
+                ],
+                urgency: SignalUrgency::Overdue,
+                thread_action: Some(ThreadAction {
+                    label: "→ thread".into(),
+                    href: "/threads/abc".into(),
+                }),
+            }],
+            provenance_stats: vec![ProvenanceStatView {
+                trust: sample_trust(),
+                label: "Health".into(),
+                value: "71 +3".into(),
+                trend: Some(ProvenanceTrend::Up),
+            }],
+        };
+
+        let prediction = PredictionItem {
+            trust: sample_trust(),
+            id: "pred_1".into(),
+            text: "Northwind QBR raises pricing pushback.".into(),
+            confidence: ConfidenceView {
+                value: 0.72,
+                label: "72%".into(),
+            },
+            ability_source: AbilitySource {
+                id: "predict_meeting_friction".into(),
+                label: "predict_meeting_friction".into(),
+            },
+            basis_link: BasisLink {
+                label: "basis".into(),
+                href: "/predictions/pred_1".into(),
+            },
+        };
+
+        let mut model = match sample_success() {
+            BriefingResult::Success { model, .. } => model,
+            _ => unreachable!(),
+        };
+        model.watch.rows = watch_rows;
+        model.moving.entities = vec![moving_entity];
+        model.predictions.predictions = vec![prediction];
+        model.predictions.count = 1;
+        model.schedule.meetings = vec![ScheduleMeeting {
+            trust: sample_trust(),
+            id: "mtg_1".into(),
+            href: Some("/meetings/mtg_1".into()),
+            accent_type: MeetingSpineType::OneOnOne,
+            state: MeetingSpineState::Upcoming,
+            time: MeetingTimeViewModel {
+                starts_at_iso: "2026-04-23T10:00:00Z".into(),
+                ends_at_iso: "2026-04-23T10:30:00Z".into(),
+                start_label: "10:00".into(),
+                duration_label: "30m".into(),
+            },
+            state_tags: vec![MeetingStateTag::Upcoming, MeetingStateTag::NoBriefingYet],
+            title: "1:1 with Jen".into(),
+            eyebrow: ScheduleMeetingEyebrow {
+                entity_name: "Jen Park".into(),
+                relationship: Some("Internal".into()),
+            },
+            context: "Recurring sync.".into(),
+            attendee_summary: "You and Jen".into(),
+            intelligence_quality: IntelligenceQualityView {
+                level: IntelligenceQualityLevel::NoBriefing,
+                label: "No briefing".into(),
+            },
+            briefing_action: BriefingActionView::Create {
+                label: "Create briefing".into(),
+            },
+        }];
+
+        let result = BriefingResult::Success {
+            model,
+            freshness: DataFreshness::Unknown,
+            google_auth: None,
+        };
+
+        let parsed: Value = serde_json::from_str(&serde_json::to_string(&result).unwrap()).unwrap();
+
+        // Watch row variants — all 4 with their kind discriminator.
+        let rows = parsed["model"]["watch"]["rows"].as_array().unwrap();
+        assert_eq!(rows.len(), 4);
+        assert_eq!(rows[0]["kind"], "suggestedAction");
+        assert_eq!(rows[0]["actionId"], "act_sug");
+        assert_eq!(rows[0]["correctionState"], "none");
+        assert_eq!(rows[1]["kind"], "openAction");
+        assert_eq!(rows[1]["actionId"], "act_open");
+        assert_eq!(rows[2]["kind"], "parked");
+        assert_eq!(rows[3]["kind"], "aging");
+        assert_eq!(rows[3]["actionId"], "act_age");
+        assert_eq!(rows[3]["options"][0]["id"], "restore");
+        assert_eq!(rows[3]["options"][1]["id"], "archive");
+
+        // Selector confidence on suggested action.
+        assert_eq!(rows[0]["selector"]["options"][0]["confidence"]["label"], "82%");
+
+        // Moving entity — LinkedEntity full shape, hyphenated SignalDot kind,
+        // populated provenance.
+        let entity = &parsed["model"]["moving"]["entities"][0];
+        assert_eq!(entity["kind"], "customer");
+        assert_eq!(entity["entity"]["entityType"], "account");
+        assert_eq!(entity["entity"]["confidence"], 0.94);
+        assert_eq!(entity["entity"]["isPrimary"], true);
+        assert_eq!(entity["entity"]["role"], "primary");
+        assert_eq!(entity["entity"]["appliedRule"], "P5");
+        assert!(entity["entity"].get("href").is_none(), "LinkedEntity must NOT have href");
+        assert_eq!(entity["statePill"]["tone"], "olive");
+
+        let signal = &entity["signals"][0];
+        assert_eq!(signal["kind"], "gong-call");
+        assert_eq!(signal["urgency"], "overdue");
+        assert_eq!(signal["correctionState"], "corrected");
+        assert_eq!(signal["whatSegments"][1]["emphasized"], true);
+        assert_eq!(signal["threadAction"]["label"], "→ thread");
+        // Trust + populated provenance summary flow through.
+        assert_eq!(signal["trustBand"], "likely_current");
+        assert_eq!(signal["renderedProvenance"]["surface"], "dashboard");
+        assert_eq!(signal["renderedProvenance"]["value"]["sources"][0]["id"], "src_1");
+
+        // Prediction id + ability source.
+        let pred = &parsed["model"]["predictions"]["predictions"][0];
+        assert_eq!(pred["id"], "pred_1");
+        assert_eq!(pred["abilitySource"]["id"], "predict_meeting_friction");
+
+        // Schedule meeting — accentType uses underscore (the C1 fix), state
+        // tags include NoBriefingYet (snake_case), BriefingActionView::Create
+        // exercises the Create variant.
+        let mtg = &parsed["model"]["schedule"]["meetings"][0];
+        assert_eq!(mtg["accentType"], "one_on_one");
+        assert_eq!(mtg["state"], "upcoming");
+        assert_eq!(mtg["stateTags"][1], "no_briefing_yet");
+        assert_eq!(mtg["briefingAction"]["kind"], "create");
+        assert_eq!(mtg["briefingAction"]["label"], "Create briefing");
+    }
+
     #[test]
     fn serializes_loading() {
         let v = BriefingResult::Loading;
@@ -905,10 +1199,13 @@ mod tests {
     }
 
     #[test]
-    fn meeting_spine_type_serializes_kebab_case() {
+    fn meeting_spine_type_one_on_one_uses_underscore() {
+        // Wire string must match `MeetingType` source-of-truth at
+        // `src/types/index.ts:22-32` which uses `"one_on_one"`.
         let v = MeetingSpineType::OneOnOne;
-        let s = serde_json::to_string(&v).unwrap();
-        assert_eq!(s, "\"one-on-one\"");
+        assert_eq!(serde_json::to_string(&v).unwrap(), "\"one_on_one\"");
+        let v2: MeetingSpineType = serde_json::from_str("\"one_on_one\"").unwrap();
+        assert_eq!(v, v2);
     }
 
     #[test]
@@ -916,6 +1213,173 @@ mod tests {
         let v = MeetingSpineState::InProgress;
         let s = serde_json::to_string(&v).unwrap();
         assert_eq!(s, "\"in-progress\"");
+    }
+
+    /// Parameterized literal-string check across every wire enum. Walks each
+    /// variant against the exact TS literal it claims to mirror, so a mismatch
+    /// (rename rule wrong, missing variant, typo) fails the closest test.
+    /// Class-level coverage — keeps W2 services from flowing wrong strings.
+    #[test]
+    fn enum_wire_strings_match_ts_source() {
+        fn check<T: Serialize>(value: T, expected: &str, what: &str) {
+            let s = serde_json::to_string(&value).unwrap();
+            assert_eq!(s, format!("\"{}\"", expected), "{} wrong wire string", what);
+        }
+
+        // TrustBandWire (snake_case)
+        check(TrustBandWire::LikelyCurrent, "likely_current", "TrustBandWire::LikelyCurrent");
+        check(TrustBandWire::UseWithCaution, "use_with_caution", "TrustBandWire::UseWithCaution");
+        check(TrustBandWire::NeedsVerification, "needs_verification", "TrustBandWire::NeedsVerification");
+        check(TrustBandWire::Unscored, "unscored", "TrustBandWire::Unscored");
+
+        // CorrectionState (lowercase)
+        check(CorrectionState::None, "none", "CorrectionState::None");
+        check(CorrectionState::Corrected, "corrected", "CorrectionState::Corrected");
+        check(CorrectionState::Contested, "contested", "CorrectionState::Contested");
+
+        // BriefingErrorCode (snake_case)
+        check(BriefingErrorCode::ServiceUnavailable, "service_unavailable", "BriefingErrorCode::ServiceUnavailable");
+        check(BriefingErrorCode::DependencyFailed, "dependency_failed", "BriefingErrorCode::DependencyFailed");
+        check(BriefingErrorCode::RateLimited, "rate_limited", "BriefingErrorCode::RateLimited");
+        check(BriefingErrorCode::Internal, "internal", "BriefingErrorCode::Internal");
+
+        // BriefingSectionId (snake_case)
+        check(BriefingSectionId::Lead, "lead", "BriefingSectionId::Lead");
+        check(BriefingSectionId::Schedule, "schedule", "BriefingSectionId::Schedule");
+        check(BriefingSectionId::Predictions, "predictions", "BriefingSectionId::Predictions");
+        check(BriefingSectionId::Moving, "moving", "BriefingSectionId::Moving");
+        check(BriefingSectionId::Watch, "watch", "BriefingSectionId::Watch");
+
+        // ChecklistItemStatus (lowercase)
+        check(ChecklistItemStatus::Todo, "todo", "ChecklistItemStatus::Todo");
+        check(ChecklistItemStatus::Done, "done", "ChecklistItemStatus::Done");
+
+        // ReadinessSemantic (snake_case)
+        check(ReadinessSemantic::Healthy, "healthy", "ReadinessSemantic::Healthy");
+        check(ReadinessSemantic::NeedsAttention, "needs_attention", "ReadinessSemantic::NeedsAttention");
+        check(ReadinessSemantic::InProgress, "in_progress", "ReadinessSemantic::InProgress");
+        check(ReadinessSemantic::Blocked, "blocked", "ReadinessSemantic::Blocked");
+        check(ReadinessSemantic::Neutral, "neutral", "ReadinessSemantic::Neutral");
+
+        // FolioActionKind (lowercase)
+        check(FolioActionKind::Refresh, "refresh", "FolioActionKind::Refresh");
+        check(FolioActionKind::Regenerate, "regenerate", "FolioActionKind::Regenerate");
+        check(FolioActionKind::Archive, "archive", "FolioActionKind::Archive");
+        check(FolioActionKind::Discover, "discover", "FolioActionKind::Discover");
+        check(FolioActionKind::New, "new", "FolioActionKind::New");
+
+        // MeetingSpineType — tested separately above (one_on_one needs explicit rename)
+        check(MeetingSpineType::Customer, "customer", "MeetingSpineType::Customer");
+        check(MeetingSpineType::Internal, "internal", "MeetingSpineType::Internal");
+        check(MeetingSpineType::Partner, "partner", "MeetingSpineType::Partner");
+        check(MeetingSpineType::Project, "project", "MeetingSpineType::Project");
+
+        // MeetingSpineState (kebab-case)
+        check(MeetingSpineState::Past, "past", "MeetingSpineState::Past");
+        check(MeetingSpineState::InProgress, "in-progress", "MeetingSpineState::InProgress");
+        check(MeetingSpineState::Upcoming, "upcoming", "MeetingSpineState::Upcoming");
+        check(MeetingSpineState::Cancelled, "cancelled", "MeetingSpineState::Cancelled");
+
+        // MeetingStateTag (snake_case)
+        check(MeetingStateTag::Now, "now", "MeetingStateTag::Now");
+        check(MeetingStateTag::Upcoming, "upcoming", "MeetingStateTag::Upcoming");
+        check(MeetingStateTag::Ended, "ended", "MeetingStateTag::Ended");
+        check(MeetingStateTag::Cancelled, "cancelled", "MeetingStateTag::Cancelled");
+        check(MeetingStateTag::Building, "building", "MeetingStateTag::Building");
+        check(MeetingStateTag::NoBriefingYet, "no_briefing_yet", "MeetingStateTag::NoBriefingYet");
+
+        // IntelligenceQualityLevel (snake_case)
+        check(IntelligenceQualityLevel::Fresh, "fresh", "IntelligenceQualityLevel::Fresh");
+        check(IntelligenceQualityLevel::Ready, "ready", "IntelligenceQualityLevel::Ready");
+        check(IntelligenceQualityLevel::Developing, "developing", "IntelligenceQualityLevel::Developing");
+        check(IntelligenceQualityLevel::Sparse, "sparse", "IntelligenceQualityLevel::Sparse");
+        check(IntelligenceQualityLevel::Captured, "captured", "IntelligenceQualityLevel::Captured");
+        check(IntelligenceQualityLevel::NoBriefing, "no_briefing", "IntelligenceQualityLevel::NoBriefing");
+
+        // DayChartBarKind (camelCase)
+        check(DayChartBarKind::Customer, "customer", "DayChartBarKind::Customer");
+        check(DayChartBarKind::Internal, "internal", "DayChartBarKind::Internal");
+        check(DayChartBarKind::Partner, "partner", "DayChartBarKind::Partner");
+        check(DayChartBarKind::Personal, "personal", "DayChartBarKind::Personal");
+        check(DayChartBarKind::OneOnOne, "oneOnOne", "DayChartBarKind::OneOnOne");
+        check(DayChartBarKind::Project, "project", "DayChartBarKind::Project");
+        check(DayChartBarKind::Cancelled, "cancelled", "DayChartBarKind::Cancelled");
+
+        // DayChartBarState (lowercase)
+        check(DayChartBarState::Past, "past", "DayChartBarState::Past");
+        check(DayChartBarState::Now, "now", "DayChartBarState::Now");
+        check(DayChartBarState::Upcoming, "upcoming", "DayChartBarState::Upcoming");
+        check(DayChartBarState::Cancelled, "cancelled", "DayChartBarState::Cancelled");
+
+        // MovingEntityKind (lowercase)
+        check(MovingEntityKind::Customer, "customer", "MovingEntityKind::Customer");
+        check(MovingEntityKind::Person, "person", "MovingEntityKind::Person");
+        check(MovingEntityKind::Project, "project", "MovingEntityKind::Project");
+        check(MovingEntityKind::Internal, "internal", "MovingEntityKind::Internal");
+        check(MovingEntityKind::Lifecycle, "lifecycle", "MovingEntityKind::Lifecycle");
+
+        // PillTone (lowercase) — 7 tones, must match src/components/ui/Pill.tsx
+        check(PillTone::Sage, "sage", "PillTone::Sage");
+        check(PillTone::Turmeric, "turmeric", "PillTone::Turmeric");
+        check(PillTone::Terracotta, "terracotta", "PillTone::Terracotta");
+        check(PillTone::Larkspur, "larkspur", "PillTone::Larkspur");
+        check(PillTone::Olive, "olive", "PillTone::Olive");
+        check(PillTone::Eucalyptus, "eucalyptus", "PillTone::Eucalyptus");
+        check(PillTone::Neutral, "neutral", "PillTone::Neutral");
+
+        // SignalDotKind (kebab-case) — 8 kinds
+        check(SignalDotKind::Meeting, "meeting", "SignalDotKind::Meeting");
+        check(SignalDotKind::Action, "action", "SignalDotKind::Action");
+        check(SignalDotKind::Email, "email", "SignalDotKind::Email");
+        check(SignalDotKind::Lifecycle, "lifecycle", "SignalDotKind::Lifecycle");
+        check(SignalDotKind::GongCall, "gong-call", "SignalDotKind::GongCall");
+        check(SignalDotKind::ZendeskTicket, "zendesk-ticket", "SignalDotKind::ZendeskTicket");
+        check(SignalDotKind::SlackThread, "slack-thread", "SignalDotKind::SlackThread");
+        check(SignalDotKind::LinearIssue, "linear-issue", "SignalDotKind::LinearIssue");
+
+        // SignalUrgency (lowercase)
+        check(SignalUrgency::Normal, "normal", "SignalUrgency::Normal");
+        check(SignalUrgency::Overdue, "overdue", "SignalUrgency::Overdue");
+
+        // ProvenanceTrend (lowercase)
+        check(ProvenanceTrend::Up, "up", "ProvenanceTrend::Up");
+        check(ProvenanceTrend::Down, "down", "ProvenanceTrend::Down");
+        check(ProvenanceTrend::Flat, "flat", "ProvenanceTrend::Flat");
+
+        // WatchAgingOptionId (lowercase)
+        check(WatchAgingOptionId::Restore, "restore", "WatchAgingOptionId::Restore");
+        check(WatchAgingOptionId::Archive, "archive", "WatchAgingOptionId::Archive");
+    }
+
+    #[test]
+    fn trust_source_date_serializes_three_states() {
+        // Wire contract is `string | null` (optional). Three serialized forms.
+        let omitted = TrustMixin {
+            trust_band: TrustBandWire::Unscored,
+            trust_field_path: None,
+            trust_source_date: None,
+            rendered_provenance: None,
+        };
+        let parsed: Value = serde_json::from_str(&serde_json::to_string(&omitted).unwrap()).unwrap();
+        assert!(parsed.get("trustSourceDate").is_none(), "None should omit field");
+
+        let null_value = TrustMixin {
+            trust_band: TrustBandWire::Unscored,
+            trust_field_path: None,
+            trust_source_date: Some(None),
+            rendered_provenance: None,
+        };
+        let parsed: Value = serde_json::from_str(&serde_json::to_string(&null_value).unwrap()).unwrap();
+        assert_eq!(parsed["trustSourceDate"], Value::Null, "Some(None) should serialize as null");
+
+        let with_value = TrustMixin {
+            trust_band: TrustBandWire::Unscored,
+            trust_field_path: None,
+            trust_source_date: Some(Some("2026-04-23".into())),
+            rendered_provenance: None,
+        };
+        let parsed: Value = serde_json::from_str(&serde_json::to_string(&with_value).unwrap()).unwrap();
+        assert_eq!(parsed["trustSourceDate"], "2026-04-23");
     }
 
     #[test]
