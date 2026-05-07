@@ -26,7 +26,8 @@ The cutover gate (W6) passes only if the routed `/` runs `DailyBriefingRedesign.
 |------|---------|----------------|------------|
 | **W0** — Contract | DOS-413 | 1 | half-day |
 | **W1** — Components | DOS-420 (DayStrip), DOS-421 (InferredActionSelector), DOS-422 (SignalDot), DOS-426 (Lead) | 4 | 1-2 days |
-| **W2** — Services | DOS-414 (Moving), DOS-415 (Watch), DOS-416 (email lift), DOS-417 (calendar lift), DOS-418 (Predictions), DOS-419 (lifecycle adapter) | 6 | 2-3 days |
+| **W2a** — Services (parallel) | DOS-414 (Moving), DOS-415 (Watch), DOS-416 (email lift), DOS-417 (calendar lift), DOS-418 (Predictions) | 5 | 2-3 days |
+| **W2b** — Orchestrator + lifecycle layer-on | DOS-419 (lifecycle adapter — layers on Moving), `briefing_view_model::compose()` orchestrator wire-up via `tokio::try_join!`, latency budget table | sequential | 1-2 days |
 | **W3** — Patterns | DOS-423 (MovingRow), DOS-424 (WatchRow), DOS-425 (PredictionsSection) | 3 | 1-2 days |
 | **W4** — Wire-ins | DOS-427 (trust band), DOS-428 (claim-lifecycle SignalDot), DOS-434 (MeetingDetailPage absorption) | 3 | 2 days |
 | **W5** — Surface integration | DOS-429 (surface), DOS-430 (feature flag), DOS-432 (/emails uplift), DOS-433 (/actions uplift) | 4 | 2-3 days |
@@ -89,7 +90,8 @@ Every agent produces this 1-page plan before any code. Save to `.docs/plans/dail
 |---|---|
 | W0 | `pnpm tsc --noEmit` clean · ADR doc landed · `BriefingViewModel` exported and consumable |
 | W1 | All 4 components ship: `pnpm tsc --noEmit` clean · audit-reference.py against `briefing-redesign.html` shows scoped class names land · accessibility-tester L4 pass on each component |
-| W2 | All 6 services ship: `cargo test services::{moving,watch,briefing_schedule,predictions}` pass · `cargo clippy -- -D warnings` clean · Tauri commands exposed and callable |
+| W2a | 5 service modules ship per-section view-model assembly: `cargo test services::{moving,watch,briefing_schedule,predictions}` pass · `cargo clippy -- -D warnings` clean · each ticket's L0 plan declares its **trust source** (upstream claim type OR explicit "trust unavailable, scored = unscored, unblocked at DOS-NNN") · no edits to top-level `briefing_view_model::compose()` |
+| W2b | `briefing_view_model::compose()` runs all 5 W2a services concurrently via `tokio::try_join!` · DOS-419 (lifecycle adapter) layers on Moving · section-level latency budgets logged (akin to `DASHBOARD_LATENCY_BUDGET_MS` at `services/dashboard.rs:155`) · Tauri command `get_briefing_view_model` returns Success on populated fixture |
 | W3 | All 3 patterns ship: same gates as W1 |
 | W4 | Trust band visible on MeetingSpineItem in reference render · SignalDot corrected variant visible · MeetingDetailPage absorbs former expansion-panel content (audit doc lands) |
 | W5 | DailyBriefingRedesign.tsx renders end-to-end against MockBriefingViewModel · feature flag toggles dev-mode · /emails and /actions reference-audit clean |
@@ -108,7 +110,10 @@ If parent W6 slips past redesign W4 timing, redesign W4 stalls. Mitigation: W1, 
 
 ## Risk + sequencing notes
 
-- **DOS-414 (MovingService) and DOS-419 (lifecycle adapter) share a file** (`services/moving.rs`). The lifecycle adapter is allowlisted only to the lifecycle code-path; coordination needed if both ship in the same merge cycle. Recommend: DOS-414 lands first, DOS-419 layers on.
+- **DOS-414 (MovingService) and DOS-419 (lifecycle adapter) share a file** (`services/moving.rs`). The lifecycle adapter is allowlisted only to the lifecycle code-path; resolved by the W2a/W2b split — DOS-414 lands in W2a, DOS-419 layers on in W2b alongside the orchestrator.
+- **W2 compose() merge contention** (architect L2 finding for DOS-413). Six W2 services writing into one orchestrator function would have hit cross-PR conflicts on `briefing_view_model::compose()` regardless of file allowlists. The W2a/W2b split addresses this: W2a writes per-section assembly only (5 parallel agents, no orchestrator edits — `compose()` stays returning Loading); W2b wires the orchestrator via `tokio::try_join!` after all 5 services exist. Sub-wave gates run independent L3 reviews.
+- **W2 trust-source declaration** (architect L2 finding). To prevent `unscored` becoming a cultural default, each W2a ticket's L0 plan must declare its trust source upstream (named claim type, OR explicit "trust unavailable, scored = unscored, unblocked at DOS-NNN"). Enforced at L0 review of each W2a ticket.
+- **TrustMixin / TrustAnnotated<T> dual-type fold** (architect L2 finding, ADR 0129 follow-up). Post-W6 cleanup: collapse `TrustMixin` into `TrustAnnotated<{}>` once the legacy `TrustAnnotated<T>` consumers tighten. Track as a follow-up ticket inside the W6 cleanup wave (add as DOS-43X before W6 starts) so the convergence is in Linear, not just an ADR footnote.
 - **DOS-417 (calendar grouping lift)** modifies BOTH `DailyBriefing.tsx` and `WeekPage.tsx`. /week deprecation (DOS-435) won't have happened yet at W2; the WeekPage edit must be a removal only, no behavioral change.
 - **DOS-426 (Lead pattern)** verifies whether existing source already covers the spec. Possible early completion if spec matches current implementation.
 - **DOS-427 backward-compat path is mandatory.** If DOS-320 hasn't shipped at W4 time, the trust-band variant gracefully falls back to existing fresh/developing/sparse rendering. No hard W4 stall.
