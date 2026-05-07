@@ -216,49 +216,87 @@ impl ActionDb {
         title: &str,
         now: &str,
     ) -> Result<DbAction, DbError> {
-        if let Some(action) = self.get_action_by_source("intelligence_claim", &claim.claim_id)? {
-            return Ok(action);
+        // Atomic get-or-create. SAVEPOINT brackets the lookup + insert so two
+        // concurrent compose_watch calls can't both pass the existence check
+        // and proceed to insert duplicates. The unique index on
+        // (source_type, source_id) added in migration 143 enforces this even
+        // if the SAVEPOINT envelope is somehow bypassed — a redundant insert
+        // collides with a constraint violation, which we recover by re-
+        // reading the existing row.
+        self.conn.execute("SAVEPOINT watch_get_or_create", [])?;
+
+        let result = (|| -> Result<DbAction, DbError> {
+            if let Some(action) =
+                self.get_action_by_source("intelligence_claim", &claim.claim_id)?
+            {
+                return Ok(action);
+            }
+
+            let (account_id, project_id) = self
+                .primary_meeting_entity(&claim.meeting_id)?
+                .map(|(entity_id, entity_type)| match entity_type.as_str() {
+                    "account" => (Some(entity_id), None),
+                    "project" => (None, Some(entity_id)),
+                    _ => (None, None),
+                })
+                .unwrap_or((None, None));
+
+            let action = DbAction {
+                id: uuid::Uuid::new_v4().to_string(),
+                title: title.to_string(),
+                priority: crate::action_status::PRIORITY_MEDIUM,
+                status: crate::action_status::BACKLOG.to_string(),
+                created_at: now.to_string(),
+                due_date: None,
+                completed_at: None,
+                account_id,
+                project_id,
+                source_type: Some("intelligence_claim".to_string()),
+                source_id: Some(claim.claim_id.clone()),
+                source_label: Some(claim.meeting_title.clone()),
+                action_kind: crate::action_status::KIND_TASK.to_string(),
+                context: Some(claim.text.clone()),
+                waiting_on: None,
+                updated_at: now.to_string(),
+                person_id: None,
+                account_name: None,
+                next_meeting_title: Some(claim.meeting_title.clone()),
+                next_meeting_start: Some(claim.meeting_start.clone()),
+                needs_decision: false,
+                decision_owner: None,
+                decision_stakes: None,
+                linear_identifier: None,
+                linear_url: None,
+            };
+            // If a parallel transaction inserted between our existence check
+            // and now, upsert_action will collide with the unique index.
+            // Recover by re-reading.
+            match self.upsert_action(&action) {
+                Ok(()) => self
+                    .get_action_by_id(&action.id)?
+                    .ok_or(rusqlite::Error::QueryReturnedNoRows.into()),
+                Err(_) => self
+                    .get_action_by_source("intelligence_claim", &claim.claim_id)?
+                    .ok_or(rusqlite::Error::QueryReturnedNoRows.into()),
+            }
+        })();
+
+        match result {
+            Ok(action) => {
+                self.conn
+                    .execute("RELEASE SAVEPOINT watch_get_or_create", [])?;
+                Ok(action)
+            }
+            Err(err) => {
+                let _ = self
+                    .conn
+                    .execute("ROLLBACK TO SAVEPOINT watch_get_or_create", []);
+                let _ = self
+                    .conn
+                    .execute("RELEASE SAVEPOINT watch_get_or_create", []);
+                Err(err)
+            }
         }
-
-        let (account_id, project_id) = self
-            .primary_meeting_entity(&claim.meeting_id)?
-            .map(|(entity_id, entity_type)| match entity_type.as_str() {
-                "account" => (Some(entity_id), None),
-                "project" => (None, Some(entity_id)),
-                _ => (None, None),
-            })
-            .unwrap_or((None, None));
-
-        let action = DbAction {
-            id: uuid::Uuid::new_v4().to_string(),
-            title: title.to_string(),
-            priority: crate::action_status::PRIORITY_MEDIUM,
-            status: crate::action_status::BACKLOG.to_string(),
-            created_at: now.to_string(),
-            due_date: None,
-            completed_at: None,
-            account_id,
-            project_id,
-            source_type: Some("intelligence_claim".to_string()),
-            source_id: Some(claim.claim_id.clone()),
-            source_label: Some(claim.meeting_title.clone()),
-            action_kind: crate::action_status::KIND_TASK.to_string(),
-            context: Some(claim.text.clone()),
-            waiting_on: None,
-            updated_at: now.to_string(),
-            person_id: None,
-            account_name: None,
-            next_meeting_title: Some(claim.meeting_title.clone()),
-            next_meeting_start: Some(claim.meeting_start.clone()),
-            needs_decision: false,
-            decision_owner: None,
-            decision_stakes: None,
-            linear_identifier: None,
-            linear_url: None,
-        };
-        self.upsert_action(&action)?;
-        self.get_action_by_id(&action.id)?
-            .ok_or(rusqlite::Error::QueryReturnedNoRows.into())
     }
 
     /// Query suggested and pending actions for a specific account.

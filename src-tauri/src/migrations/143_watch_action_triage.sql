@@ -31,3 +31,12 @@ CREATE TABLE IF NOT EXISTS action_meeting_links (
 
 CREATE INDEX IF NOT EXISTS idx_action_meeting_links_meeting
     ON action_meeting_links(meeting_id);
+
+-- Watch composer materializes one action per intelligence_claim. A unique
+-- index on (source_type, source_id) closes the TOCTOU race when two
+-- concurrent compose_watch calls each see no existing action and try to
+-- insert. The second insert collides cleanly instead of producing a
+-- duplicate action with a different id.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_source_unique
+    ON actions(source_type, source_id)
+    WHERE source_type IS NOT NULL AND source_id IS NOT NULL;

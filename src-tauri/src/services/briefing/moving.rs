@@ -1,9 +1,11 @@
 //! Moving composer — produces the `MovingViewModel` slice.
 //!
-//! DOS-414 wires the existing meeting/action sources into the W2 briefing
-//! contract. Email and lifecycle helpers keep their source-shaped signatures
-//! but return empty lists until DOS-416/DOS-419 land. All trust bands are
-//! `Unscored` for this ticket, matching the schedule MVP pattern.
+//! Aggregates the briefing's "what's moving" feed from per-source helpers.
+//! Meeting + action signals are wired today; email + lifecycle helpers keep
+//! their source-shaped signatures but return empty until their producers
+//! land. Trust bands are `Unscored` throughout — promotion to scored
+//! happens at the wire-in layer once `IntelligenceQuality` carries trust-
+//! band fields.
 
 use std::collections::HashMap;
 
@@ -216,10 +218,16 @@ fn change_magnitude(entity: &MovingEntityViewModel) -> f64 {
 }
 
 fn signal_weight(signal: &MovingSignalViewModel) -> f64 {
+    // Meeting weights require BOTH is_today AND prep-exists for the top tier;
+    // a future-with-prep meeting should rank with past meetings (0.5), not
+    // today's high-prep meetings (3.0). thread_action presence is set
+    // whenever the meeting has prep, regardless of date — so the today check
+    // must gate the high-prep tier.
+    let is_today_meeting = signal.when.starts_with("Today");
     match signal.kind {
         SignalDotKind::Lifecycle => 5.0,
-        SignalDotKind::Meeting if signal.thread_action.is_some() => 3.0,
-        SignalDotKind::Meeting if signal.when.starts_with("Today") => 2.5,
+        SignalDotKind::Meeting if is_today_meeting && signal.thread_action.is_some() => 3.0,
+        SignalDotKind::Meeting if is_today_meeting => 2.5,
         SignalDotKind::Meeting => 0.5,
         SignalDotKind::Action if signal.urgency == SignalUrgency::Overdue => 2.0,
         SignalDotKind::Action => 0.5,
@@ -790,6 +798,48 @@ mod tests {
                 && signal.urgency == SignalUrgency::Overdue
                 && claim.is_none()
         }));
+    }
+
+    /// Regression: future meeting with prep must NOT take the high-weight
+    /// today-with-prep tier. Past + future meetings (regardless of prep) sit
+    /// at 0.5; only today's meetings get 2.5/3.0. The earlier impl gated on
+    /// thread_action.is_some() alone, which incorrectly promoted future-with-
+    /// prep meetings to 3.0.
+    #[test]
+    fn future_meeting_with_prep_does_not_outrank_today_meetings() {
+        let future_with_prep = MovingSignalViewModel {
+            trust: TrustMixin {
+                trust_band: TrustBandWire::Unscored,
+                trust_field_path: None,
+                trust_source_date: None,
+                rendered_provenance: None,
+            },
+            lifecycle: LifecycleMixin {
+                correction_state: None,
+            },
+            kind: SignalDotKind::Meeting,
+            when: "Fri 10:00".into(), // not today
+            what_segments: vec![],
+            urgency: SignalUrgency::Normal,
+            thread_action: Some(ThreadAction {
+                label: "Open briefing".into(),
+                href: "/meetings/x".into(),
+            }),
+        };
+        assert_eq!(signal_weight(&future_with_prep), 0.5);
+
+        let today_with_prep = MovingSignalViewModel {
+            when: "Today 10:00".into(),
+            ..future_with_prep.clone()
+        };
+        assert_eq!(signal_weight(&today_with_prep), 3.0);
+
+        let today_no_prep = MovingSignalViewModel {
+            when: "Today 10:00".into(),
+            thread_action: None,
+            ..future_with_prep
+        };
+        assert_eq!(signal_weight(&today_no_prep), 2.5);
     }
 
     #[test]
