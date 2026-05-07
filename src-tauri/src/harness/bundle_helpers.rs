@@ -2,12 +2,12 @@
 
 use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
-use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
-use dailyos_lib::abilities::{
+use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
-use dailyos_lib::db::ActionDb;
-use dailyos_lib::services::context::ExecutionMode;
+use crate::db::ActionDb;
+use crate::services::context::ExecutionMode;
 use serde_json::{json, Value};
 
 use super::{load_fixture, run_fixture, EvalFixture, RunError, RunResult, RunnerDeps};
@@ -49,13 +49,13 @@ pub fn run_with_synthetic_enrich_stub(fixture: &EvalFixture) -> Result<RunResult
     run_fixture(&deps, fixture)
 }
 
-pub(crate) fn refresh_prepare_meeting_context_from_db(
+pub fn refresh_prepare_meeting_context_from_db(
     prepared: &mut super::runner::PreparedFixtureRun,
     meeting_id: &str,
 ) -> Result<(), RunError> {
     let db = ActionDb::from_conn(&prepared.conn);
     prepared.prepare_meeting_context = Some(
-        dailyos_lib::services::meetings::load_prepare_meeting_context_snapshot(db, meeting_id)
+        crate::services::meetings::load_prepare_meeting_context_snapshot(db, meeting_id)
             .map_err(RunError::StateSqlFailed)?,
     );
     Ok(())

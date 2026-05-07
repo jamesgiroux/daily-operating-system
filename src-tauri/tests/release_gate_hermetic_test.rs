@@ -1,0 +1,224 @@
+use std::ffi::OsString;
+use std::fs;
+use std::path::Path;
+
+use dailyos_lib::harness::{AbilityCategory, FixtureRunSummary, HarnessReport};
+use dailyos_lib::release_gate::{
+    exit_code_for_evidence, parse_cli_from, parse_harness_report, run_gate_with_db_reader,
+    validate_manual_evidence_json, GateConfig, GateEvidenceV1, GateStatus, ManualDbReader,
+    EXIT_INFRA_FAILURE, EXIT_MANDATORY_FAILURE, EXIT_SUCCESS,
+};
+use serde_json::json;
+
+#[test]
+fn release_gate_parses_harness_report_bundle_coverage() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let report_path = temp.path().join("harness-report.json");
+    write_harness_report(
+        &report_path,
+        &[(1, true, 12), (5, true, 20), (13, true, 30)],
+    );
+
+    let parsed = parse_harness_report(&report_path).expect("report parses");
+
+    assert_eq!(parsed.bundle_coverage.bundles_run, vec![1, 5, 13]);
+    assert_eq!(parsed.bundle_coverage.bundles_passed, vec![1, 5, 13]);
+    assert!(parsed.bundle_coverage.bundles_failed.is_empty());
+}
+
+#[test]
+fn release_gate_requires_bleed_suite_green() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let report_path = temp.path().join("harness-report.json");
+    let output_dir = temp.path().join("release-gate");
+    write_harness_report(
+        &report_path,
+        &[(1, true, 12), (5, true, 20), (13, true, 30)],
+    );
+    write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "fail");
+    write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
+    let config = config_for_report(&report_path, &output_dir);
+
+    let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate runs");
+    let evidence = read_evidence(&outcome.evidence_json_path);
+
+    assert_eq!(outcome.exit_code, EXIT_MANDATORY_FAILURE);
+    assert!(evidence
+        .invariants
+        .iter()
+        .any(|invariant| invariant.id == "dos288_bleed_detection_test"
+            && invariant.status == GateStatus::Fail));
+}
+
+#[test]
+fn release_gate_requires_get_entity_context_bundle1_parity() {
+    let evidence = run_with_bundle_statuses(&[(1, false, 12), (5, true, 20), (13, true, 30)]);
+
+    assert_eq!(exit_code_for_evidence(&evidence), EXIT_MANDATORY_FAILURE);
+    assert!(evidence.invariants.iter().any(|invariant| {
+        invariant.id == "bundle-1.get_entity_context_parity_subject_ownership_no_bleed"
+            && invariant.status == GateStatus::Fail
+    }));
+}
+
+#[test]
+fn release_gate_requires_prepare_meeting_bundle5_no_resurrection() {
+    let evidence = run_with_bundle_statuses(&[(1, true, 12), (5, false, 20), (13, true, 30)]);
+
+    assert_eq!(exit_code_for_evidence(&evidence), EXIT_MANDATORY_FAILURE);
+    assert!(evidence.invariants.iter().any(|invariant| {
+        invariant.id == "bundle-5.prepare_meeting_correction_tombstone_no_resurrection"
+            && invariant.status == GateStatus::Fail
+    }));
+}
+
+#[test]
+fn release_gate_requires_prepare_meeting_bundle13_subject_bleed_rejection() {
+    let evidence = run_with_bundle_statuses(&[(1, true, 12), (5, true, 20), (13, false, 30)]);
+
+    assert_eq!(exit_code_for_evidence(&evidence), EXIT_MANDATORY_FAILURE);
+    assert!(evidence.invariants.iter().any(|invariant| {
+        invariant.id == "bundle-13.prepare_meeting_subject_bleed_rejection"
+            && invariant.status == GateStatus::Fail
+    }));
+}
+
+#[test]
+fn release_gate_records_latency_p50_p99_from_suite_report() {
+    let evidence = run_with_bundle_statuses(&[(1, true, 10), (5, true, 20), (13, true, 30)]);
+
+    assert_eq!(evidence.latency.sample_count, 3);
+    assert_eq!(evidence.latency.p50_ms, Some(20));
+    assert_eq!(evidence.latency.p99_ms, Some(30));
+}
+
+#[test]
+fn release_gate_writes_evidence_json_and_md() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let report_path = temp.path().join("harness-report.json");
+    let output_dir = temp.path().join("release-gate");
+    write_harness_report(
+        &report_path,
+        &[(1, true, 10), (5, true, 20), (13, true, 30)],
+    );
+    write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "pass");
+    write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
+    let config = config_for_report(&report_path, &output_dir);
+
+    let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate runs");
+
+    assert_eq!(outcome.exit_code, EXIT_SUCCESS);
+    assert!(outcome.evidence_json_path.is_file());
+    assert!(outcome.evidence_markdown_path.is_file());
+    let markdown = fs::read_to_string(outcome.evidence_markdown_path).expect("read markdown");
+    assert!(markdown.contains("# Release Gate PASS"));
+    assert!(!markdown.contains("claim text"));
+}
+
+#[test]
+fn release_gate_manual_evidence_twenty_meetings_required() {
+    let value = json!({
+        "meeting_count": 19,
+        "date_range": { "start": "2026-05-01", "end": "2026-05-07" },
+        "operator": "operator-hash-001",
+        "redaction_level": "hash_only",
+        "seven_day_parallel_run_ref": "parallel-run-hash-001",
+        "attached_artifacts": [{
+            "artifact_id": "artifact-001",
+            "source_class": "manual_summary",
+            "hash_prefix": "abcdef123456"
+        }],
+        "dos411_claim_backed_lifecycle_green": true,
+        "dos412_sensitivity_rendering_green": true
+    });
+
+    let error = validate_manual_evidence_json(&value).expect_err("19 meetings rejected");
+
+    assert!(error.contains("meeting_count"));
+}
+
+#[test]
+fn release_gate_missing_harness_report_is_infra_failure() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let output_dir = temp.path().join("release-gate");
+    write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "pass");
+    write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
+    let config = config_for_report(&temp.path().join("missing-report.json"), &output_dir);
+
+    let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate writes evidence");
+
+    assert_eq!(outcome.exit_code, EXIT_INFRA_FAILURE);
+}
+
+fn run_with_bundle_statuses(bundle_statuses: &[(u32, bool, u64)]) -> GateEvidenceV1 {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let report_path = temp.path().join("harness-report.json");
+    let output_dir = temp.path().join("release-gate");
+    write_harness_report(&report_path, bundle_statuses);
+    write_dos288_evidence(&output_dir, "dos288_bleed_detection_test", "pass");
+    write_dos288_evidence(&output_dir, "dos288_ownership_validator_test", "pass");
+    let config = config_for_report(&report_path, &output_dir);
+
+    let outcome = run_gate_with_db_reader(&config, &UnusedDbReader).expect("gate runs");
+
+    read_evidence(&outcome.evidence_json_path)
+}
+
+fn config_for_report(report_path: &Path, output_dir: &Path) -> GateConfig {
+    let args = vec![
+        OsString::from("release-gate"),
+        OsString::from("--no-run-tests"),
+        OsString::from("--harness-report"),
+        report_path.as_os_str().to_os_string(),
+        OsString::from("--output-dir"),
+        output_dir.as_os_str().to_os_string(),
+        OsString::from("--git-sha"),
+        OsString::from("0123456789abcdef"),
+    ];
+    parse_cli_from(args).expect("config parses")
+}
+
+fn write_harness_report(path: &Path, bundle_statuses: &[(u32, bool, u64)]) {
+    let mut report = HarnessReport::new();
+    for (bundle, passed, runtime_ms) in bundle_statuses {
+        report.add_fixture_summary(FixtureRunSummary {
+            fixture_dir: format!("fixtures/bundle-{bundle}"),
+            bundle: Some(*bundle),
+            scenario_id: format!("bundle-{bundle}-scenario"),
+            category: if *bundle == 1 {
+                AbilityCategory::Read
+            } else {
+                AbilityCategory::Transform
+            },
+            passed: *passed,
+            continuous_score: Some(if *passed { 1.0 } else { 0.0 }),
+            regression: None,
+            diff_count: if *passed { 0 } else { 1 },
+            runtime_ms: *runtime_ms,
+        });
+    }
+    report.finalize();
+    report.write_json(path).expect("write harness report");
+}
+
+fn write_dos288_evidence(output_dir: &Path, selector: &str, status: &str) {
+    fs::create_dir_all(output_dir).expect("create output dir");
+    fs::write(
+        output_dir.join(format!("{selector}.json")),
+        serde_json::to_string_pretty(&json!({ "status": status })).expect("serialize"),
+    )
+    .expect("write dos288 evidence");
+}
+
+fn read_evidence(path: &Path) -> GateEvidenceV1 {
+    let contents = fs::read_to_string(path).expect("read evidence");
+    serde_json::from_str(&contents).expect("parse evidence")
+}
+
+struct UnusedDbReader;
+
+impl ManualDbReader for UnusedDbReader {
+    fn open_readonly_schema_version(&self, _path: &Path) -> Result<String, String> {
+        panic!("hermetic mode must not open a manual DB");
+    }
+}

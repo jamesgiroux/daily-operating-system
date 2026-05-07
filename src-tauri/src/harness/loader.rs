@@ -22,6 +22,48 @@ const REQUIRED_FILES: &[&str] = &[
 
 const OPTIONAL_EXPECTED_STATE: &str = "expected_state.json";
 
+/// Small library-facing loader for release-gate and integration harness callers.
+///
+/// The underlying fixture format stays in `tests/fixtures/bundle-{N}`; this
+/// wrapper only centralizes discovery/filtering so binaries do not know the
+/// directory traversal details.
+#[derive(Debug, Clone)]
+pub struct BundleLoader {
+    roots: Vec<PathBuf>,
+}
+
+impl BundleLoader {
+    pub fn new(roots: Vec<PathBuf>) -> Self {
+        Self { roots }
+    }
+
+    pub fn default_fixture_root() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures")
+    }
+
+    pub fn from_default_fixture_root() -> Self {
+        Self::new(vec![Self::default_fixture_root()])
+    }
+
+    pub fn discover(&self) -> Result<Vec<FixtureRef>, FixtureLoadError> {
+        let roots = self.roots.iter().map(PathBuf::as_path).collect::<Vec<_>>();
+        discover_fixtures(&roots)
+    }
+
+    pub fn fixtures_for_bundle_names(
+        &self,
+        bundle_names: &[String],
+    ) -> Result<Vec<FixtureRef>, FixtureLoadError> {
+        let mut fixtures = self.discover()?;
+        fixtures.retain(|fixture| {
+            bundle_names
+                .iter()
+                .any(|bundle| fixture.has_label(bundle.as_str()))
+        });
+        Ok(fixtures)
+    }
+}
+
 #[derive(Debug)]
 pub enum FixtureLoadError {
     InvalidFixtureDirectory {

@@ -1,5 +1,13 @@
 #![allow(dead_code)]
 
+use crate::abilities::feedback::ClaimVerificationState;
+use crate::abilities::Actor;
+use crate::abilities::NoopAbilityTracer;
+use crate::bridges::eval::{EvalAbilityBridge, EvalAbilityDeps, EvalFixtureServices};
+use crate::db::claims::{
+    ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
+};
+use crate::db::ActionDb;
 use crate::harness::classifier::{
     baseline_fingerprint_for_fixture, current_fingerprint_for_run, RegressionClassifier,
 };
@@ -9,28 +17,20 @@ use crate::harness::scoring::{
     CategoryScorer, MaintenanceScorer, PublishScorer, ReadScorer, ScoreResult, TransformScorer,
 };
 use crate::harness::types::{AbilityCategory, EvalFixture, FixtureRef};
-use base64::Engine;
-use dailyos_lib::abilities::feedback::ClaimVerificationState;
-use dailyos_lib::abilities::Actor;
-use dailyos_lib::abilities::NoopAbilityTracer;
-use dailyos_lib::bridges::eval::{EvalAbilityBridge, EvalAbilityDeps, EvalFixtureServices};
-use dailyos_lib::db::claims::{
-    ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
-};
-use dailyos_lib::db::ActionDb;
-use dailyos_lib::intelligence::provider::{
+use crate::intelligence::provider::{
     Completion, FingerprintMetadata, ModelName, ProviderKind, ReplayProvider,
 };
 #[cfg(feature = "harness-hermetic")]
-use dailyos_lib::services::context::validate_harness_hermetic_db_path;
-use dailyos_lib::services::context::{
+use crate::services::context::validate_harness_hermetic_db_path;
+use crate::services::context::{
     EntityContextClaimReadFuture, EntityContextClaimReadHandle, EntityContextReadFuture,
     EntityContextReadHandle, PrepareMeetingContextReadFuture, PrepareMeetingContextReadHandle,
     PrepareMeetingContextSnapshot,
 };
-use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
-use dailyos_lib::services::external_replay::JsonExternalReplayFixture;
-use dailyos_lib::types::EntityContextEntry;
+use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+use crate::services::external_replay::JsonExternalReplayFixture;
+use crate::types::EntityContextEntry;
+use base64::Engine;
 use rusqlite::types::ValueRef;
 use rusqlite::Connection;
 use serde::Deserialize;
@@ -83,7 +83,7 @@ pub enum RunError {
 
 pub struct RunnerDeps {
     /// W3-A registry — provides invoke_by_name_json or the eval bridge.
-    pub registry: Arc<dailyos_lib::abilities::registry::AbilityRegistry>,
+    pub registry: Arc<crate::abilities::registry::AbilityRegistry>,
 }
 
 pub fn run_harness_suite(
@@ -125,7 +125,7 @@ pub fn run_harness_suite(
     Ok(report)
 }
 
-pub(crate) struct PreparedFixtureRun {
+pub struct PreparedFixtureRun {
     pub conn: Connection,
     pub clock: FixedClock,
     pub rng: SeedableRng,
@@ -192,14 +192,12 @@ fn category_for_fixture(
         .ok_or_else(|| RunError::InvocationFailed("AbilityUnavailable".to_string()))
 }
 
-fn harness_category_from_registry(
-    category: dailyos_lib::abilities::AbilityCategory,
-) -> AbilityCategory {
+fn harness_category_from_registry(category: crate::abilities::AbilityCategory) -> AbilityCategory {
     match category {
-        dailyos_lib::abilities::AbilityCategory::Read => AbilityCategory::Read,
-        dailyos_lib::abilities::AbilityCategory::Transform => AbilityCategory::Transform,
-        dailyos_lib::abilities::AbilityCategory::Maintenance => AbilityCategory::Maintenance,
-        dailyos_lib::abilities::AbilityCategory::Publish => AbilityCategory::Publish,
+        crate::abilities::AbilityCategory::Read => AbilityCategory::Read,
+        crate::abilities::AbilityCategory::Transform => AbilityCategory::Transform,
+        crate::abilities::AbilityCategory::Maintenance => AbilityCategory::Maintenance,
+        crate::abilities::AbilityCategory::Publish => AbilityCategory::Publish,
     }
 }
 
@@ -346,9 +344,7 @@ pub fn run_fixture(deps: &RunnerDeps, fixture: &EvalFixture) -> Result<RunResult
     })
 }
 
-pub(crate) fn prepare_fixture_for_run(
-    fixture: &EvalFixture,
-) -> Result<PreparedFixtureRun, RunError> {
+pub fn prepare_fixture_for_run(fixture: &EvalFixture) -> Result<PreparedFixtureRun, RunError> {
     let conn = open_harness_connection()?;
     conn.execute_batch(&fixture.state_sql)
         .map_err(|error| RunError::StateSqlFailed(error.to_string()))?;
@@ -442,7 +438,7 @@ fn replay_provider_from_fixture(value: &Value) -> Result<ReplayProvider, RunErro
     let metadata = replay_fingerprint_metadata(value)?;
     Ok(ReplayProvider::new(completions)
         .with_provider_kind(metadata.provider)
-        .with_model_for_tier(dailyos_lib::pty::ModelTier::Synthesis, metadata.model)
+        .with_model_for_tier(crate::pty::ModelTier::Synthesis, metadata.model)
         .with_sampling(metadata.temperature, metadata.top_p, metadata.seed))
 }
 
@@ -761,7 +757,7 @@ fn capture_prepare_meeting_context(
             )
         })?;
     let db = ActionDb::from_conn(conn);
-    dailyos_lib::services::meetings::load_prepare_meeting_context_snapshot(db, meeting_id)
+    crate::services::meetings::load_prepare_meeting_context_snapshot(db, meeting_id)
         .map(Some)
         .map_err(RunError::StateSqlFailed)
 }
