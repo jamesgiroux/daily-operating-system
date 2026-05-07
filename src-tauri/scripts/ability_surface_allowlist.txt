@@ -396,3 +396,15 @@ get_entity_feedback
 get_entity_suppressions
 submit_intelligence_correction
 get_feedback_diagnostics
+
+# Daily-briefing redesign (PR #224) — to be migrated to W3 abilities
+# in v1.4.x. Tracked separately; allowlisted here so the redesign can ship
+# without inflating PR scope to N ability migrations.
+mark_complete
+restore_action
+dismiss_action
+archive_action
+snooze_action
+add_to_meeting
+get_briefing_view_model
+get_week_schedule_shape
