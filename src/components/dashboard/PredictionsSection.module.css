@@ -1,0 +1,105 @@
+/* PredictionsSection — Daily Briefing predictions section.
+ * Spec: .docs/design/patterns/PredictionsSection.md
+ */
+
+.root {
+  font-family: var(--font-sans);
+}
+
+.trigger {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-md);
+  padding: 6px 0;
+  background: none;
+  border: none;
+  border-bottom: 1px solid var(--color-rule-light);
+  color: var(--color-text-primary);
+  font-family: inherit;
+  font-size: 14px;
+  cursor: pointer;
+}
+
+.trigger:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+
+.trigger:hover:not(:disabled),
+.trigger:focus-visible {
+  background: var(--color-desk-charcoal-4);
+  outline: none;
+}
+
+.collapsedLabel {
+  font-weight: 500;
+}
+
+.expandHint {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--color-text-tertiary);
+}
+
+.list {
+  margin: 0;
+  padding: var(--space-md) 0 0 0;
+  list-style: none;
+  display: grid;
+  gap: var(--space-md);
+}
+
+.row {
+  padding: var(--space-sm) 0;
+}
+
+.text {
+  margin: 0 0 4px 0;
+  font-family: var(--font-serif);
+  font-size: 17px;
+  line-height: 1.45;
+  color: var(--color-text-primary);
+}
+
+.meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--color-text-tertiary);
+}
+
+.confidence {
+  font-weight: 500;
+  color: var(--color-text-secondary);
+}
+
+.abilitySource {
+  font-style: italic;
+}
+
+.basis {
+  color: var(--color-text-secondary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.basis:hover,
+.basis:focus-visible {
+  color: var(--color-text-primary);
+  outline: none;
+}
+
+.divider {
+  opacity: 0.5;
+}
+
+.trust {
+  margin-left: auto;
+}

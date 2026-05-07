@@ -9,6 +9,10 @@ import type {
   DataFreshness,
   GoogleAuthStatus,
 } from "./index";
+
+// Re-export wire types consumers commonly need so they don't have to
+// reach into ./index for transitively-shared shapes.
+export type { TrustBandWire };
 import type { PillTone } from "@/components/ui/Pill";
 import type {
   MeetingSpineState,
