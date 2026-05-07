@@ -1,5 +1,5 @@
 /**
- * SignalDot.tsx — Daily Briefing Moving signal-feed bullet (DOS-422, W1)
+ * SignalDot — Daily Briefing Moving signal-feed bullet.
  *
  * Tinted dot + when label + what segments. The dot color marks the signal
  * source kind so a stack of bullets is scannable as a multi-channel feed.
@@ -15,13 +15,15 @@ import styles from "./SignalDot.module.css";
 
 interface SignalDotProps {
   signal: MovingSignalViewModel;
+  /**
+   * Fires when the thread-action button is clicked. The button stops event
+   * propagation internally so the parent row's link does not fire; the parent
+   * is responsible for the actual navigation (router link or imperative push)
+   * using the href from `signal.threadAction.href`.
+   */
+  onThreadAction?: (signal: MovingSignalViewModel) => void;
 }
 
-/**
- * Map kebab-case wire kind to camelCase CSS Module class name.
- * Spec lists camelCase variant identifiers; wire format is kebab-case.
- * This lookup is the single reconciliation point.
- */
 const KIND_CLASS: Record<SignalDotKind, string> = {
   meeting: styles.meeting,
   action: styles.action,
@@ -33,20 +35,16 @@ const KIND_CLASS: Record<SignalDotKind, string> = {
   "linear-issue": styles.linearIssue,
 };
 
-export function SignalDot({ signal }: SignalDotProps): JSX.Element {
+export function SignalDot({ signal, onThreadAction }: SignalDotProps): JSX.Element {
   const handleThreadClick = (event: MouseEvent<HTMLButtonElement>) => {
-    // Stop propagation so the parent row's link doesn't fire — see spec
-    // anatomy + DOS-413 plan rev 3.1 click-target resolution.
     event.stopPropagation();
-    if (signal.threadAction) {
-      window.location.href = signal.threadAction.href;
-    }
+    onThreadAction?.(signal);
   };
 
   return (
     <span
       className={clsx(
-        styles.SignalDot,
+        styles.root,
         KIND_CLASS[signal.kind],
         signal.urgency === "overdue" && styles.overdue,
         signal.correctionState === "corrected" && styles.corrected,
@@ -54,6 +52,7 @@ export function SignalDot({ signal }: SignalDotProps): JSX.Element {
       )}
       data-kind={signal.kind}
       data-ds-name="SignalDot"
+      data-ds-tier="primitive"
       data-ds-spec="primitives/SignalDot.md"
     >
       <span className={styles.dot} aria-hidden="true" />

@@ -1,5 +1,5 @@
 /**
- * InferredActionSelector.tsx — Daily Briefing Watch action picker (DOS-421, W1)
+ * InferredActionSelector.tsx — Daily Briefing Watch action picker
  *
  * Compact selector for a recommended watch-row action plus alternatives.
  *

@@ -101,19 +101,16 @@ describe("SignalDot", () => {
     expect(wrapper?.className).toMatch(/contested/);
   });
 
-  it("threadAction renders as a button with stop-propagation behavior", () => {
+  it("threadAction button calls onThreadAction with stop-propagation", () => {
     const parentClick = vi.fn();
-    const originalLocation = window.location;
-    delete (window as unknown as { location?: Location }).location;
-    (window as unknown as { location: { href: string } }).location = { href: "" };
+    const onThreadAction = vi.fn();
+    const signal = makeSignal({
+      threadAction: { label: "→ thread", href: "/threads/abc" },
+    });
 
     const { container } = render(
       <div onClick={parentClick}>
-        <SignalDot
-          signal={makeSignal({
-            threadAction: { label: "→ thread", href: "/threads/abc" },
-          })}
-        />
+        <SignalDot signal={signal} onThreadAction={onThreadAction} />
       </div>,
     );
 
@@ -121,12 +118,26 @@ describe("SignalDot", () => {
       '[data-ds-name="SignalDot.threadAction"]',
     ) as HTMLButtonElement;
     expect(button.tagName).toBe("BUTTON");
+
     fireEvent.click(button);
 
+    expect(onThreadAction).toHaveBeenCalledTimes(1);
+    expect(onThreadAction).toHaveBeenCalledWith(signal);
     expect(parentClick).not.toHaveBeenCalled();
-    expect(window.location.href).toBe("/threads/abc");
+  });
 
-    (window as unknown as { location: Location }).location = originalLocation;
+  it("threadAction button is safe to click without onThreadAction prop", () => {
+    const { container } = render(
+      <SignalDot
+        signal={makeSignal({
+          threadAction: { label: "→ thread", href: "/threads/abc" },
+        })}
+      />,
+    );
+    const button = container.querySelector(
+      '[data-ds-name="SignalDot.threadAction"]',
+    ) as HTMLButtonElement;
+    expect(() => fireEvent.click(button)).not.toThrow();
   });
 
   it("omits threadAction button when not provided", () => {
@@ -142,5 +153,6 @@ describe("SignalDot", () => {
     expect(wrapper?.getAttribute("data-ds-spec")).toBe(
       "primitives/SignalDot.md",
     );
+    expect(wrapper?.getAttribute("data-ds-tier")).toBe("primitive");
   });
 });

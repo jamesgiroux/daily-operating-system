@@ -1,9 +1,9 @@
-/* Lead - Daily Briefing editorial headline (DOS-426, W1)
+/* Lead - Daily Briefing editorial headline
  * Spec: .docs/design/patterns/Lead.md
  * Tokens: typography, spacing, text color, turmeric emphasis
  */
 
-.Lead {
+.root {
   display: grid;
   gap: var(--space-md);
   padding: var(--space-3xl) 0;
@@ -59,7 +59,7 @@
 }
 
 @media (max-width: 720px) {
-  .Lead {
+  .root {
     padding: var(--space-2xl) 0;
   }
 

@@ -1,9 +1,9 @@
-/* DayStrip - Daily Briefing day-to-day navigation (DOS-420, W1)
+/* DayStrip - Daily Briefing day-to-day navigation
  * Spec: .docs/design/patterns/DayStrip.md
  * Reference: .docs/design/reference/_shared/styles/DayStrip.module.css
  */
 
-.DayStrip_strip {
+.root {
   position: fixed;
   top: var(--folio-height);
   left: 0;
@@ -25,7 +25,7 @@
   letter-spacing: 0;
 }
 
-.DayStrip_side {
+.side {
   display: inline-flex;
   align-items: center;
   gap: 10px;
@@ -39,27 +39,27 @@
   transition: background var(--transition-fast), color var(--transition-fast);
 }
 
-.DayStrip_side:hover,
-.DayStrip_side:focus-visible {
+.side:hover,
+.side:focus-visible {
   background: var(--color-desk-charcoal-4);
   color: var(--color-text-primary);
   outline: none;
 }
 
-.DayStrip_sideRight {
+.sideRight {
   justify-self: end;
 }
 
-.DayStrip_direction {
+.direction {
   opacity: 0.55;
 }
 
-.DayStrip_label {
+.label {
   font-weight: 700;
   text-transform: uppercase;
 }
 
-.DayStrip_preview {
+.preview {
   min-width: 0;
   overflow: hidden;
   color: var(--color-text-quaternary, var(--color-text-tertiary));
@@ -71,7 +71,7 @@
   white-space: nowrap;
 }
 
-.DayStrip_current {
+.current {
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -85,7 +85,7 @@
   white-space: nowrap;
 }
 
-.DayStrip_mark {
+.mark {
   position: relative;
   width: 6px;
   height: 6px;
@@ -93,7 +93,7 @@
   background: var(--color-spice-turmeric);
 }
 
-.DayStrip_mark::after {
+.mark::after {
   content: "";
   position: absolute;
   inset: -3px;
@@ -103,24 +103,24 @@
 }
 
 @media (max-width: 860px) {
-  .DayStrip_strip {
+  .root {
     grid-template-columns: 1fr auto 1fr;
     padding-left: 16px;
     padding-right: 16px;
   }
 
-  .DayStrip_preview {
+  .preview {
     display: none;
   }
 }
 
 @media (max-width: 560px) {
-  .DayStrip_strip {
+  .root {
     gap: var(--space-sm);
     font-size: 10px;
   }
 
-  .DayStrip_current {
+  .current {
     font-size: 10px;
   }
 }

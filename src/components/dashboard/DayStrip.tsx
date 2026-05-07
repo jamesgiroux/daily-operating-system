@@ -1,5 +1,5 @@
 /**
- * DayStrip.tsx - Daily Briefing day-to-day navigation (DOS-420, W1)
+ * DayStrip.tsx - Daily Briefing day-to-day navigation
  *
  * Fixed briefing-day strip below FolioBar. It renders the contract verbatim:
  * previous day, current day, next day.
@@ -15,16 +15,16 @@ import styles from "./DayStrip.module.css";
 function renderPrevNeighbor(prev: DayStripNeighbor): JSX.Element {
   return (
     <a
-      className={styles.DayStrip_side}
+      className={styles.side}
       href={prev.href}
       title={prev.label}
       data-iso-date={prev.isoDate}
     >
-      <span className={styles.DayStrip_direction} aria-hidden="true">
+      <span className={styles.direction} aria-hidden="true">
         &larr;
       </span>
-      <span className={styles.DayStrip_label}>{prev.label}</span>
-      <span className={styles.DayStrip_preview}>{prev.preview}</span>
+      <span className={styles.label}>{prev.label}</span>
+      <span className={styles.preview}>{prev.preview}</span>
     </a>
   );
 }
@@ -32,14 +32,14 @@ function renderPrevNeighbor(prev: DayStripNeighbor): JSX.Element {
 function renderNextNeighbor(next: DayStripNeighbor): JSX.Element {
   return (
     <a
-      className={clsx(styles.DayStrip_side, styles.DayStrip_sideRight)}
+      className={clsx(styles.side, styles.sideRight)}
       href={next.href}
       title={next.label}
       data-iso-date={next.isoDate}
     >
-      <span className={styles.DayStrip_preview}>{next.preview}</span>
-      <span className={styles.DayStrip_label}>{next.label}</span>
-      <span className={styles.DayStrip_direction} aria-hidden="true">
+      <span className={styles.preview}>{next.preview}</span>
+      <span className={styles.label}>{next.label}</span>
+      <span className={styles.direction} aria-hidden="true">
         &rarr;
       </span>
     </a>
@@ -49,7 +49,7 @@ function renderNextNeighbor(next: DayStripNeighbor): JSX.Element {
 export function DayStrip({ prev, current, next }: DayStripViewModel): JSX.Element {
   return (
     <nav
-      className={styles.DayStrip_strip}
+      className={styles.root}
       aria-label="Briefing days"
       data-ds-name="DayStrip"
       data-ds-tier="pattern"
@@ -57,13 +57,13 @@ export function DayStrip({ prev, current, next }: DayStripViewModel): JSX.Elemen
     >
       {renderPrevNeighbor(prev)}
       <time
-        className={styles.DayStrip_current}
+        className={styles.current}
         dateTime={current.isoDate}
         data-iso-date={current.isoDate}
         aria-current="date"
         aria-label={current.ariaLabel}
       >
-        <span className={styles.DayStrip_mark} aria-hidden="true" />
+        <span className={styles.mark} aria-hidden="true" />
         {current.label}
       </time>
       {renderNextNeighbor(next)}

@@ -1,9 +1,9 @@
-/* SignalDot — Daily Briefing Moving signal-feed bullet (DOS-422, W1)
+/* SignalDot — Daily Briefing Moving signal-feed bullet
  * Spec: .docs/design/primitives/SignalDot.md
  * Tokens: tokens/color.md → "Signal kind" + standard typography/spacing
  */
 
-.SignalDot {
+.root {
   display: grid;
   grid-template-columns: 12px 70px 1fr auto;
   align-items: baseline;

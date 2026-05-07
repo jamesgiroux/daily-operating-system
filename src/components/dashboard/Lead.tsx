@@ -1,5 +1,5 @@
 /**
- * Lead.tsx - Daily Briefing editorial lead headline (DOS-426, W1)
+ * Lead.tsx - Daily Briefing editorial lead headline
  *
  * Single-sentence opener for the briefing. The service owns the wording and
  * split; the component only renders the lead phrase plus optional punch line.
@@ -20,7 +20,7 @@ export function Lead({ lead }: LeadProps): JSX.Element {
 
   return (
     <section
-      className={styles.Lead}
+      className={styles.root}
       data-ds-name="Lead"
       data-ds-tier="pattern"
       data-ds-spec="patterns/Lead.md"
