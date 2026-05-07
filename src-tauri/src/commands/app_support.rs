@@ -1393,6 +1393,10 @@ pub async fn get_feature_flags(
             .features
             .get("glean_discovery_enabled")
             .unwrap_or(&false),
+        daily_briefing_redesign_enabled: *config
+            .features
+            .get("daily_briefing_redesign_enabled")
+            .unwrap_or(&false),
     };
     Ok(flags)
 }

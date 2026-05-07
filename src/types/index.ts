@@ -62,10 +62,17 @@ export interface PredictionScorecard {
   hasData: boolean;
 }
 
-/** Feature flags for gating incomplete features. */
+/** Feature flags for gating incomplete features.
+ *  Wire keys are snake_case — must match the Rust `FeatureFlags` struct in
+ *  `src-tauri/src/types.rs`. The Rust struct deliberately does NOT carry
+ *  `#[serde(rename_all = "camelCase")]` so these reads work. */
 export interface FeatureFlags {
   book_of_business_enabled: boolean;
   glean_discovery_enabled: boolean;
+  /** When false, `/` renders the legacy DailyBriefing. When true, the
+   *  redesign surface (DOS-429) is mounted instead. Defaults to false until
+   *  W6 cutover (DOS-431). */
+  daily_briefing_redesign_enabled: boolean;
 }
 
 export type ClaimSensitivity = "public" | "internal" | "confidential" | "user_only";
