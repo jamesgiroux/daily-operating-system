@@ -24,14 +24,12 @@ describe("ProvenanceStat", () => {
   });
 
   it("default (no trend) carries no trend class", () => {
+    // CSS Module class names are scoped (hashed) — assert the value element's
+    // className doesn't contain up/down/flat markers.
     const { container } = render(<ProvenanceStat stat={makeStat()} />);
-    const valueEl = container.querySelector(`.${"value"}`);
-    // Class names are scoped by CSS Modules — we look for the element and
-    // assert it doesn't carry the up/down/flat marker classes.
     const valueClassName =
       container.querySelectorAll("span")[1]?.className ?? "";
-    expect(valueClassName).not.toMatch(/_up_|_down_|_flat_/);
-    void valueEl;
+    expect(valueClassName).not.toMatch(/(^|_)(up|down|flat)(_|$)/);
   });
 
   it("trend='up' applies the up class", () => {
@@ -40,7 +38,7 @@ describe("ProvenanceStat", () => {
     );
     const valueClassName =
       container.querySelectorAll("span")[1]?.className ?? "";
-    expect(valueClassName).toMatch(/_up_|up$/);
+    expect(valueClassName).toMatch(/(^|_)up(_|$)/);
   });
 
   it("trend='down' applies the down class", () => {
@@ -49,7 +47,7 @@ describe("ProvenanceStat", () => {
     );
     const valueClassName =
       container.querySelectorAll("span")[1]?.className ?? "";
-    expect(valueClassName).toMatch(/_down_|down$/);
+    expect(valueClassName).toMatch(/(^|_)down(_|$)/);
   });
 
   it("trend='flat' applies the flat class", () => {
@@ -58,7 +56,7 @@ describe("ProvenanceStat", () => {
     );
     const valueClassName =
       container.querySelectorAll("span")[1]?.className ?? "";
-    expect(valueClassName).toMatch(/_flat_|flat$/);
+    expect(valueClassName).toMatch(/(^|_)flat(_|$)/);
   });
 
   it("emits ds-inspector attributes for design-system audit", () => {
