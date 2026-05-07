@@ -283,68 +283,6 @@
 .monthly-wrapped_animFadeInSlow { animation: wrappedFadeIn 0.5s ease forwards; animation-delay: var(--anim-delay, 0ms); }
 .monthly-wrapped_animScaleReveal { animation: wrappedScaleReveal 0.6s ease forwards; animation-delay: var(--anim-delay, 0ms); }
 
-@keyframes wrappedSlideUp {
-  from { opacity: 0; transform: translateY(32px); }
-  to   { opacity: 1; transform: translateY(0); }
-}
-
-@keyframes wrappedFadeIn {
-  from { opacity: 0; }
-  to   { opacity: 1; }
-}
-
-@keyframes wrappedScaleReveal {
-  from { opacity: 0; transform: scale(0.92); }
-  to   { opacity: 1; transform: scale(1); }
-}
-
-.monthly-wrapped_delay100 { --anim-delay: 100ms; }
-.monthly-wrapped_delay150 { --anim-delay: 150ms; }
-.monthly-wrapped_delay200 { --anim-delay: 200ms; }
-.monthly-wrapped_delay300 { --anim-delay: 300ms; }
-.monthly-wrapped_delay350 { --anim-delay: 350ms; }
-.monthly-wrapped_delay400 { --anim-delay: 400ms; }
-.monthly-wrapped_delay520 { --anim-delay: 520ms; }
-.monthly-wrapped_delay550 { --anim-delay: 550ms; }
-.monthly-wrapped_delay600 { --anim-delay: 600ms; }
-.monthly-wrapped_delay640 { --anim-delay: 640ms; }
-.monthly-wrapped_delay700 { --anim-delay: 700ms; }
-
-.monthly-wrapped_splashTexture {
-  background:
-    radial-gradient(ellipse at 20% 80%, rgba(107, 168, 164, 0.08) 0%, transparent 60%),
-    radial-gradient(ellipse at 80% 20%, rgba(201, 162, 39, 0.06) 0%, transparent 50%);
-}
-
-.monthly-wrapped_personalityGlow {
-  top: 40%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 600px;
-  height: 400px;
-  inset: auto;
-  background: radial-gradient(ellipse at center, rgba(222, 184, 65, 0.12) 0%, transparent 70%);
-}
-
-.monthly-wrapped_closeTexture {
-  background: radial-gradient(ellipse at 80% 30%, rgba(107, 168, 164, 0.06) 0%, transparent 60%);
-}
-
-.monthly-wrapped_wordPillTurmeric {
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-spice-turmeric);
-}
-
-.monthly-wrapped_wordPillLarkspur {
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-garden-larkspur);
-}
-
-.monthly-wrapped_wordPillEucalyptus {
-  color: var(--color-text-primary);
-  border: 1px solid var(--color-garden-eucalyptus);
-}
-
 /* =============================================================================
  * Slide background variants
  * ============================================================================= */

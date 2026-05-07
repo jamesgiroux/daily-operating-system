@@ -1,4 +1,4 @@
-@import './design-tokens.css';
+@import '../../styles/design-tokens.css';
 
 .WatchListPrograms_section {
   margin-top: var(--space-2xl);
@@ -99,26 +99,4 @@
   padding: var(--space-sm) 0;
   text-transform: uppercase;
   letter-spacing: 0.06em;
-}
-
-/* Reference mirror: WatchListPrograms computes badge colors inline from
-   runtime status. Data-status variants keep the static surface compliant. */
-.WatchListPrograms_statusBadge[data-status="active"],
-.WatchListPrograms_statusSelect[data-status="active"] {
-  background: var(--color-garden-sage-14, rgba(126, 170, 123, 0.14));
-  color: var(--color-garden-rosemary);
-}
-
-.WatchListPrograms_statusBadge[data-status="planned"],
-.WatchListPrograms_statusBadge[data-status="planning"],
-.WatchListPrograms_statusSelect[data-status="planned"],
-.WatchListPrograms_statusSelect[data-status="planning"] {
-  background: var(--color-garden-larkspur-14, rgba(143, 163, 196, 0.14));
-  color: var(--color-garden-larkspur);
-}
-
-.WatchListPrograms_statusBadge[data-status="on-hold"],
-.WatchListPrograms_statusSelect[data-status="on-hold"] {
-  background: var(--color-rule-light);
-  color: var(--color-text-tertiary);
 }

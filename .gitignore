@@ -68,3 +68,9 @@ src-tauri/Accounts/
 .dailyos-test
 tauri-dev.log
 .gstack/
+
+# Playwright MCP session artifacts (ephemeral debug output)
+.playwright-mcp/
+
+# Ad-hoc design screenshots dropped at repo root (temporary visual references, not docs)
+/*.png

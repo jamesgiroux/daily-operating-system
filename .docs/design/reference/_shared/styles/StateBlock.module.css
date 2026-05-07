@@ -6,16 +6,6 @@
   margin-bottom: 32px;
 }
 
-/* StateBlock receives its accent color through a CSS variable inline in React.
-   The reference mirror maps the same semantic colors with data attributes. */
-.StateBlock_container[data-state-color="sage"] {
-  --state-block-color: var(--color-garden-sage);
-}
-
-.StateBlock_container[data-state-color="terracotta"] {
-  --state-block-color: var(--color-spice-terracotta);
-}
-
 .StateBlock_label {
   font-family: var(--font-mono);
   font-size: 10px;

@@ -1,4 +1,4 @@
-@import './design-tokens.css';
+@import '../../styles/design-tokens.css';
 
 .AccountTechnicalFootprint_productGroups {
   display: grid;
