@@ -13,9 +13,10 @@
 | **W2a/W2b** | DOS-418 (5 composers) + orchestrator | Per-section composers (lead/schedule/predictions/moving/watch) + `compose()` orchestrator running them via `tokio::join!`. Tauri command returns `BriefingResult::Success` with empty-branch slices. | 22 |
 | **W3** | DOS-423, 424, 425 + `ProvenanceStat` primitive | 3 patterns: `MovingRow`, `WatchRow`, `PredictionsSection` + the supporting primitive | 42 |
 | **W5** | DOS-430 (flag), state patterns, `useBriefingViewModel` hook, DOS-429 surface | Feature flag, 3 briefing state patterns (`Loading`/`Error`/`Empty`), Tauri-wire hook, `DailyBriefingRedesign` surface composing everything, router gate | 33 |
-| **Total** | | | **148** |
+| **W2a live data** | DOS-417 (schedule MVP), DOS-415 (watch MVP) | Schedule composer wires real meetings via `get_dashboard_data`; Watch composer wires real actions via `get_all_actions`. Mapping logic + 14 new tests across both. | +14 |
+| **Total** | | | **162** |
 
-23 commits, all gates green at every checkpoint.
+27 commits, all gates green at every checkpoint. Production build clean (`pnpm build`: 3310 modules in 3.68s, ~470KB gzip). Dev server boots clean (Vite ready in 150ms).
 
 ## End-to-end flow
 
@@ -57,8 +58,11 @@
 
 ## What's NOT in this session
 
-- **W4 wire-ins** (DOS-427 trust band, DOS-428 claim-lifecycle SignalDot, DOS-434 MeetingDetailPage absorption). These have real dependency on parent-track v1.4.0 state which is still in L2 bug-crushing. Per memory's no-rebase-onto-bug-crushing rule, deferred until v1.4.0 stabilizes. Reconciliation commit lands when dev is on a stable tag.
-- **W2a per-ticket follow-ups** (DOS-414 Moving aggregation, DOS-415 Watch triage, DOS-416 email lift, DOS-417 calendar lift). Composers exist with empty-branch defaults; live data wiring is the per-ticket follow-up work. Each ticket's L0 plan must declare its trust source upstream (architect rule).
+- **W4 wire-ins** (DOS-427 trust band, DOS-428 claim-lifecycle SignalDot, DOS-434 MeetingDetailPage absorption). Reconciliation against dev shows zero overlap with W6 cycles 1-6 (MCP-boundary work doesn't touch trust UI or claim lifecycle). W4 is technically unblocked but deferred for fresh-session focus — substantial integration work.
+- **DOS-414 Moving composer live data** (the heaviest W2a service — multi-source aggregation across email + Gong + Zendesk + Slack + Linear + meetings + lifecycle). Composer exists with empty-branch default. Wire-up is fresh-session scope.
+- **DOS-416 email lift** (move email ranking + selection out of view). Touches existing `DailyBriefing.tsx`. Composer exists with empty-branch default.
+- **DOS-417 full calendar lift** (today/past/future temporal grouping + ±7 days week shape + day chart bars). MVP version landed in this session (real meetings flow), but the temporal classification is still single-state Upcoming.
+- **DOS-418 Predictions forward-feed producer**. Composer + empty-branch shipped; upstream producer is the unblock.
 - **W5 adjacent surface uplifts** (DOS-432 `/emails`, DOS-433 `/actions`). Substantial existing-file edits.
 - **W6 cutover** (DOS-431 flag default flip, DOS-435 `/week` deprecation, DOS-436 archive cards, DOS-437 CSS trim, DOS-438 view-purity audit). Sequential within wave.
 
