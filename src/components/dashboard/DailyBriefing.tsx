@@ -48,7 +48,6 @@ import type {
   PrioritizedAction,
 } from "@/types";
 import { HealthBadge } from "@/components/shared/HealthBadge";
-import { compareEmailRank } from "@/lib/email-ranking";
 import s from "@/styles/editorial-briefing.module.css";
 import briefingStyles from "./DailyBriefing.module.css";
 
@@ -148,34 +147,8 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
   const meetings = data.meetings;
   const actions = data.actions;
   const emails = data.emails ?? [];
+  const emailTotalCount = data.stats.inboxCount || emails.length;
   const lifecycleUpdates = data.lifecycleUpdates ?? [];
-
-  // Score-based email selection — scored emails first, then enriched fill.
-  // Shows up to 5 emails: high-scored ones first, then enriched emails with summaries
-  // that didn't meet the score threshold (avoids hiding useful intelligence).
-  // Cached emails shown immediately even when briefing is stale — background
-  // reconciliation will remove archived ones within seconds.
-  const briefingEmails = (() => {
-    if (emails.length === 0) return [];
-    // Only consider emails linked to a known entity (account/person/project).
-    // Unlinked emails (newsletters, marketing, stock alerts) should never
-    // appear on the daily briefing — the briefing is about your portfolio.
-    const entityLinked = emails.filter((e) => e.entityId);
-    const ranked = [...entityLinked].sort(compareEmailRank);
-    const scored = ranked
-      .filter((e) => (e.relevanceScore ?? 0) >= 0.15)
-      .slice(0, 5);
-    const scoredIds = new Set(scored.map((e) => e.id));
-    // Fill remaining slots with enriched emails that have summaries but scored below threshold
-    const enrichedFill = ranked
-      .filter((e) => !scoredIds.has(e.id) && e.summary && e.summary.trim().length > 0)
-      .slice(0, Math.max(0, 5 - scored.length));
-    const selected = [...scored, ...enrichedFill].slice(0, 5);
-    // No fallback — if no entity-linked emails pass filters, show nothing.
-    // Showing unfiltered emails by recency defeats the purpose of the briefing.
-    return selected;
-  })();
-  const emailSectionLabel = briefingEmails.length > 0 ? "WORTH YOUR ATTENTION" : "";
 
   // Up Next meeting (first upcoming, not past/cancelled)
   const upNext = findUpNextMeeting(meetings, now);
@@ -471,9 +444,8 @@ export function DailyBriefing({ data, freshness: _freshness, onRunBriefing, isRu
         pendingActions={pendingActions}
         completedIds={completedIds}
         onComplete={handleComplete}
-        briefingEmails={briefingEmails}
-        emailSectionLabel={emailSectionLabel}
-        allEmails={emails}
+        attentionEmails={emails}
+        emailTotalCount={emailTotalCount}
         todayMeetingIds={new Set(meetings.map((m) => m.id))}
         emailSyncTimestamp={data.emailSync?.lastSuccessAt}
         agingActionCount={data.agingActionCount}
@@ -574,9 +546,8 @@ function AttentionSection({
   pendingActions,
   completedIds,
   onComplete,
-  briefingEmails,
-  emailSectionLabel,
-  allEmails,
+  attentionEmails,
+  emailTotalCount,
   todayMeetingIds,
   emailSyncTimestamp,
   agingActionCount,
@@ -596,9 +567,8 @@ function AttentionSection({
   pendingActions: Action[];
   completedIds: Set<string>;
   onComplete: (id: string) => void;
-  briefingEmails: Email[];
-  emailSectionLabel: string;
-  allEmails: Email[];
+  attentionEmails: Email[];
+  emailTotalCount: number;
   todayMeetingIds: Set<string>;
   emailSyncTimestamp?: string;
   agingActionCount?: number;
@@ -631,7 +601,7 @@ function AttentionSection({
 
   // Suggested actions removed from briefing — too noisy. Live on /actions page.
   const hasActions = attentionActions.length > 0;
-  const hasEmails = briefingEmails.length > 0;
+  const hasEmails = attentionEmails.length > 0;
   // Filter lifecycle to today only — stale updates belong on the account detail page
   const todayLifecycle = useMemo(() => {
     const today = new Date().toISOString().slice(0, 10);
@@ -788,7 +758,7 @@ function AttentionSection({
           {hasEmails ? (
             <>
               <div className={clsx(s.priorityGroupLabel, s.priorityGroupLabelToday)}>
-                {emailSectionLabel}
+                WORTH YOUR ATTENTION
                 {emailSyncTimestamp && (
                   <span className={briefingStyles.emailSyncTimestamp}>
                     as of {formatAsOfTime(emailSyncTimestamp)}
@@ -796,7 +766,7 @@ function AttentionSection({
                 )}
               </div>
               <div className={s.priorityItems}>
-                {briefingEmails.map((email) => (
+                {attentionEmails.map((email) => (
                   <PriorityEmailItem key={email.id} email={email} />
                 ))}
               </div>
@@ -810,7 +780,7 @@ function AttentionSection({
                 View all {pendingActions.length} actions &rarr;
               </Link>
             )}
-            {allEmails.length > briefingEmails.length && (
+            {emailTotalCount > attentionEmails.length && (
               <Link to="/emails" className={s.viewAllLink}>
                 View all emails &rarr;
               </Link>

@@ -1006,9 +1006,15 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                 }
                 // Collapse to latest email per thread — matches EmailsPage behavior
                 let rows = crate::services::emails::collapse_to_latest_thread_emails(&all_rows);
+                let selected_rows = crate::services::emails::select_briefing_email_rows(
+                    &rows,
+                    crate::services::emails::BRIEFING_EMAIL_SELECTION_LIMIT,
+                );
                 // Batch-resolve entity names (same approach as emails service)
-                let entity_ids: std::collections::HashSet<String> =
-                    rows.iter().filter_map(|e| e.entity_id.clone()).collect();
+                let entity_ids: std::collections::HashSet<String> = selected_rows
+                    .iter()
+                    .filter_map(|e| e.entity_id.clone())
+                    .collect();
                 let mut entity_names: std::collections::HashMap<String, String> =
                     std::collections::HashMap::new();
                 for eid in &entity_ids {
@@ -1016,7 +1022,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                         entity_names.insert(eid.clone(), a.name);
                     } else if let Ok(Some(p)) = db.get_person(eid) {
                         // Find the most relevant linked account using email context
-                        let email_context: String = rows
+                        let email_context: String = selected_rows
                             .iter()
                             .filter(|e| e.entity_id.as_deref() == Some(eid.as_str()))
                             .filter_map(|e| {
@@ -1036,7 +1042,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
                         entity_names.insert(eid.clone(), p.name);
                     }
                 }
-                Ok(rows
+                Ok(selected_rows
                     .iter()
                     .map(|dbe| {
                         let entity_name = dbe

@@ -3,7 +3,7 @@
 import { render, screen } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { DailyBriefing } from "./DailyBriefing";
-import type { DashboardData, DataFreshness, Meeting } from "@/types";
+import type { DashboardData, DataFreshness, Email, Meeting } from "@/types";
 
 // ── Mocks ──────────────────────────────────────────────────────────────────────
 
@@ -99,6 +99,20 @@ function makeDashboardData(overrides: Partial<DashboardData> = {}): DashboardDat
     },
     meetings: [],
     actions: [],
+    ...overrides,
+  };
+}
+
+function makeEmail(overrides: Partial<Email> = {}): Email {
+  return {
+    id: "email-1",
+    sender: "Pat Sender",
+    senderEmail: "pat@example.com",
+    subject: "Renewal timing",
+    priority: "medium",
+    commitments: [],
+    questions: [],
+    trackedCommitments: [],
     ...overrides,
   };
 }
@@ -274,5 +288,33 @@ describe("DailyBriefing", () => {
     );
 
     expect(container.querySelector("section")).not.toBeNull();
+  });
+
+  it("renders service-selected email rows as supplied", () => {
+    render(
+      <DailyBriefing
+        data={makeDashboardData({
+          stats: {
+            totalMeetings: 0,
+            customerMeetings: 0,
+            actionsDue: 0,
+            inboxCount: 3,
+          },
+          emails: [
+            makeEmail({
+              id: "email-1",
+              summary: "Customer asked for renewal timing.",
+              entityName: "Acme",
+              entityType: "account",
+            }),
+          ],
+        })}
+        freshness={freshness}
+      />,
+    );
+
+    expect(screen.getByText("Customer asked for renewal timing.")).toBeInTheDocument();
+    expect(screen.getByText("WORTH YOUR ATTENTION")).toBeInTheDocument();
+    expect(screen.getByText(/View all emails/)).toBeInTheDocument();
   });
 });

@@ -139,8 +139,12 @@ fn map_actions_to_signals(actions: &[Action]) -> Vec<SignalWithClaim> {
         .collect()
 }
 
-async fn collect_email_signals(_state: &AppState) -> Vec<SignalWithClaim> {
-    Vec::new()
+async fn collect_email_signals(state: &AppState) -> Vec<SignalWithClaim> {
+    crate::services::briefing::email_signals::collect_email_moving_signal_candidates(state)
+        .await
+        .into_iter()
+        .map(|candidate| (EntityId(candidate.entity_id), candidate.signal, None))
+        .collect()
 }
 
 fn collect_lifecycle_signals(
@@ -798,6 +802,35 @@ mod tests {
                 && signal.urgency == SignalUrgency::Overdue
                 && claim.is_none()
         }));
+    }
+
+    #[test]
+    fn email_candidates_map_to_claimless_email_signals() {
+        let candidate = crate::services::briefing::email_signals::EmailMovingSignalCandidate {
+            entity_id: "acc-1".into(),
+            entity_type: "account".into(),
+            entity_name: Some("Globex".into()),
+            movement_score: 0.7,
+            occurred_at_iso: Some("2026-05-07T12:00:00Z".into()),
+            source_email_id: "email-1".into(),
+            source_thread_id: Some("thread-1".into()),
+            signal: sig(
+                SignalDotKind::Email,
+                SignalUrgency::Normal,
+                "2026-05-07T12:00:00Z",
+                true,
+            ),
+        };
+
+        let mapped: Vec<SignalWithClaim> = [candidate]
+            .into_iter()
+            .map(|candidate| (EntityId(candidate.entity_id), candidate.signal, None))
+            .collect();
+
+        assert_eq!(mapped.len(), 1);
+        assert_eq!(mapped[0].0, EntityId("acc-1".into()));
+        assert_eq!(mapped[0].1.kind, SignalDotKind::Email);
+        assert_eq!(mapped[0].2, None);
     }
 
     /// Regression: future meeting with prep must NOT take the high-weight

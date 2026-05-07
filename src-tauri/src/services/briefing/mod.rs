@@ -7,6 +7,7 @@
 // ticket that unblocks live data. See `.docs/plans/daily-briefing-redesign-
 // waves.md` (W2a merge gate).
 
+pub mod email_signals;
 pub mod lead;
 pub mod moving;
 pub mod predictions;

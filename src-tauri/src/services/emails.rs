@@ -557,6 +557,86 @@ pub fn compare_email_rank(a: &crate::types::Email, b: &crate::types::Email) -> O
     sb.partial_cmp(&sa).unwrap_or(Ordering::Equal)
 }
 
+pub const BRIEFING_EMAIL_RELEVANCE_THRESHOLD: f64 = 0.15;
+pub const BRIEFING_EMAIL_SELECTION_LIMIT: usize = 5;
+
+pub fn compare_db_email_rank(a: &crate::db::DbEmail, b: &crate::db::DbEmail) -> Ordering {
+    match (a.pinned_at.is_some(), b.pinned_at.is_some()) {
+        (true, false) => return Ordering::Less,
+        (false, true) => return Ordering::Greater,
+        _ => {}
+    }
+
+    let sa = a.relevance_score.unwrap_or(-1.0);
+    let sb = b.relevance_score.unwrap_or(-1.0);
+    sb.partial_cmp(&sa).unwrap_or(Ordering::Equal)
+}
+
+pub fn select_briefing_email_rows(
+    emails: &[crate::db::DbEmail],
+    limit: usize,
+) -> Vec<&crate::db::DbEmail> {
+    if limit == 0 {
+        return Vec::new();
+    }
+
+    let mut ranked: Vec<_> = emails
+        .iter()
+        .filter(|email| is_selectable_briefing_email(email))
+        .collect();
+    ranked.sort_by(|a, b| compare_db_email_rank(a, b));
+
+    let mut selected = Vec::new();
+    let mut selected_ids = HashSet::new();
+    for email in ranked
+        .iter()
+        .copied()
+        .filter(|email| email.relevance_score.unwrap_or(0.0) >= BRIEFING_EMAIL_RELEVANCE_THRESHOLD)
+        .take(limit)
+    {
+        selected_ids.insert(email.email_id.as_str());
+        selected.push(email);
+    }
+
+    if selected.len() < limit {
+        for email in ranked
+            .iter()
+            .copied()
+            .filter(|email| !selected_ids.contains(email.email_id.as_str()))
+            .filter(|email| has_nonempty_summary(email))
+            .take(limit - selected.len())
+        {
+            selected.push(email);
+        }
+    }
+
+    selected
+}
+
+fn is_selectable_briefing_email(email: &crate::db::DbEmail) -> bool {
+    email.resolved_at.is_none()
+        && !email.is_noise
+        && email
+            .entity_id
+            .as_deref()
+            .is_some_and(|value| !value.trim().is_empty())
+        && email
+            .entity_type
+            .as_deref()
+            .is_some_and(is_briefing_entity_type)
+}
+
+fn is_briefing_entity_type(value: &str) -> bool {
+    matches!(value, "account" | "person" | "project")
+}
+
+fn has_nonempty_summary(email: &crate::db::DbEmail) -> bool {
+    email
+        .contextual_summary
+        .as_deref()
+        .is_some_and(|summary| !summary.trim().is_empty())
+}
+
 fn build_email_commitment_context(owner: Option<&str>, original_commitment: &str) -> String {
     let mut lines = vec![format!(
         "Original commitment: {}",
@@ -2034,6 +2114,130 @@ mod tests {
         .expect("Failed to create test table");
 
         conn
+    }
+
+    fn briefing_email(id: &str) -> crate::db::DbEmail {
+        crate::db::DbEmail {
+            email_id: id.to_string(),
+            thread_id: Some(format!("thread-{id}")),
+            sender_email: Some("sender@example.com".to_string()),
+            sender_name: Some("Sender".to_string()),
+            subject: Some(format!("Subject {id}")),
+            snippet: Some("Snippet".to_string()),
+            priority: Some("medium".to_string()),
+            is_unread: true,
+            received_at: Some("2026-05-07T10:00:00Z".to_string()),
+            enrichment_state: "enriched".to_string(),
+            enrichment_attempts: 1,
+            last_enrichment_at: Some("2026-05-07T10:05:00Z".to_string()),
+            enriched_at: Some("2026-05-07T10:05:00Z".to_string()),
+            last_seen_at: Some("2026-05-07T10:10:00Z".to_string()),
+            resolved_at: None,
+            entity_id: Some("acc-1".to_string()),
+            entity_type: Some("account".to_string()),
+            contextual_summary: Some(format!("Summary {id}")),
+            sentiment: None,
+            urgency: None,
+            user_is_last_sender: false,
+            last_sender_email: Some("sender@example.com".to_string()),
+            message_count: 1,
+            created_at: "2026-05-07T10:00:00Z".to_string(),
+            updated_at: "2026-05-07T10:10:00Z".to_string(),
+            relevance_score: Some(0.2),
+            score_reason: None,
+            pinned_at: None,
+            commitments: None,
+            questions: None,
+            is_noise: false,
+            to_recipients: None,
+            cc_recipients: None,
+        }
+    }
+
+    #[test]
+    fn briefing_email_selector_prefers_pinned_then_relevance() {
+        let low = briefing_email("low");
+        let mut pinned = briefing_email("pinned");
+        pinned.relevance_score = Some(0.16);
+        pinned.pinned_at = Some("2026-05-07T11:00:00Z".to_string());
+        let mut high = briefing_email("high");
+        high.relevance_score = Some(0.9);
+
+        let emails = [low, high, pinned];
+        let selected = select_briefing_email_rows(&emails, BRIEFING_EMAIL_SELECTION_LIMIT);
+
+        assert_eq!(
+            selected
+                .iter()
+                .map(|email| email.email_id.as_str())
+                .collect::<Vec<_>>(),
+            ["pinned", "high", "low"]
+        );
+    }
+
+    #[test]
+    fn briefing_email_selector_requires_active_entity_linked_non_noise_rows() {
+        let active = briefing_email("active");
+        let mut unlinked = briefing_email("unlinked");
+        unlinked.entity_id = None;
+        let mut unknown_type = briefing_email("unknown-type");
+        unknown_type.entity_type = Some("ticket".to_string());
+        let mut resolved = briefing_email("resolved");
+        resolved.resolved_at = Some("2026-05-07T12:00:00Z".to_string());
+        let mut noise = briefing_email("noise");
+        noise.is_noise = true;
+
+        let emails = [unlinked, active, unknown_type, resolved, noise];
+        let selected = select_briefing_email_rows(&emails, BRIEFING_EMAIL_SELECTION_LIMIT);
+
+        assert_eq!(selected.len(), 1);
+        assert_eq!(selected[0].email_id, "active");
+    }
+
+    #[test]
+    fn briefing_email_selector_fills_with_enriched_summaries_without_raw_fallback() {
+        let mut scored = briefing_email("scored");
+        scored.relevance_score = Some(0.6);
+        let mut enriched = briefing_email("enriched");
+        enriched.relevance_score = Some(0.05);
+        enriched.contextual_summary = Some("Useful context".to_string());
+        let mut raw = briefing_email("raw");
+        raw.relevance_score = None;
+        raw.contextual_summary = None;
+
+        let emails = [raw, enriched, scored];
+        let selected = select_briefing_email_rows(&emails, 5);
+
+        assert_eq!(
+            selected
+                .iter()
+                .map(|email| email.email_id.as_str())
+                .collect::<Vec<_>>(),
+            ["scored", "enriched"]
+        );
+
+        let only_raw = [briefing_email("raw-only")].map(|mut email| {
+            email.relevance_score = None;
+            email.contextual_summary = None;
+            email
+        });
+        assert!(select_briefing_email_rows(&only_raw, 5).is_empty());
+    }
+
+    #[test]
+    fn briefing_email_selector_applies_legacy_five_item_cap() {
+        let emails: Vec<_> = (0..8)
+            .map(|index| {
+                let mut email = briefing_email(&format!("email-{index}"));
+                email.relevance_score = Some(0.2 + index as f64 / 100.0);
+                email
+            })
+            .collect();
+
+        let selected = select_briefing_email_rows(&emails, BRIEFING_EMAIL_SELECTION_LIMIT);
+
+        assert_eq!(selected.len(), 5);
+        assert_eq!(selected[0].email_id, "email-7");
     }
 
     /// L2 cycle-3 fix: dismiss_email_item must shadow-write a real
