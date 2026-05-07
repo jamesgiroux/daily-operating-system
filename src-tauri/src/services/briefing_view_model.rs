@@ -777,14 +777,94 @@ pub struct InferredActionOption {
     pub divider: Option<bool>,
 }
 
-// ─── Service entry point (W0 stub) ───────────────────────────────────────
+// ─── Orchestrator (W2b — composes the 5 W2a slices) ─────────────────────
 
-/// W0 stub. Actual assembly lands in W2 (DOS-414..DOS-419) — each section's
-/// service writes into the matching sub-view-model and the orchestrator (this
-/// function) composes them.
-pub async fn get_briefing_view_model(_state: &AppState) -> BriefingResult {
-    BriefingResult::Loading
+use chrono::Local;
+
+/// Compose the briefing by running all five section composers concurrently
+/// and assembling the envelope.
+///
+/// Each section composer is non-fallible today and returns an empty branch
+/// where upstream data isn't wired (per W2a trust-source declarations).
+/// `tokio::join!` is used rather than `try_join!` because the composers
+/// don't return `Result`. When live data wiring lands (per-ticket follow-
+/// ups), composers that can fail will return `Result` and the orchestrator
+/// switches to `try_join!` — at which point the orchestrator owns whether a
+/// section failure escalates to `BriefingResult::Error` (with `service:
+/// BriefingSectionId`) or degrades the section to its empty branch.
+///
+/// The chrome slices (`date`, `folio`, `day_strip`) are composed inline —
+/// they derive from the current date and a static folio config, no
+/// per-section composer needed.
+pub async fn get_briefing_view_model(state: &AppState) -> BriefingResult {
+    let (lead, schedule, predictions, moving, watch) = tokio::join!(
+        crate::services::briefing::lead::compose_lead(state),
+        crate::services::briefing::schedule::compose_schedule(state),
+        crate::services::briefing::predictions::compose_predictions(state),
+        crate::services::briefing::moving::compose_moving(state),
+        crate::services::briefing::watch::compose_watch(state),
+    );
+
+    let now = Local::now();
+    let iso_date = now.format("%Y-%m-%d").to_string();
+    let display_date = now.format("%A, %B %-d, %Y").to_string();
+    let date_label_caps = display_date.to_uppercase();
+
+    let model = BriefingViewModel {
+        date: BriefingDateViewModel {
+            iso_date: iso_date.clone(),
+            display_date: display_date.clone(),
+        },
+        folio: BriefingFolioViewModel {
+            label: "Daily Briefing".to_string(),
+            crumbs: vec!["Daily Briefing".to_string()],
+            date_label: date_label_caps,
+            readiness: vec![],
+            actions: vec![FolioActionKind::Refresh],
+            status: None,
+        },
+        day_strip: compose_day_strip(now),
+        lead,
+        schedule,
+        predictions,
+        moving,
+        watch,
+    };
+
+    BriefingResult::Success {
+        model,
+        freshness: DataFreshness::Unknown,
+        google_auth: None,
+    }
 }
+
+fn compose_day_strip<Tz: chrono::TimeZone>(now: chrono::DateTime<Tz>) -> DayStripViewModel
+where
+    Tz::Offset: std::fmt::Display,
+{
+    let yesterday = now.clone() - chrono::Duration::days(1);
+    let tomorrow = now.clone() + chrono::Duration::days(1);
+    DayStripViewModel {
+        prev: DayStripNeighbor {
+            label: "Yesterday".to_string(),
+            iso_date: yesterday.format("%Y-%m-%d").to_string(),
+            preview: String::new(),
+            href: format!("/briefing/{}", yesterday.format("%Y-%m-%d")),
+        },
+        current: DayStripCurrent {
+            label: "Today".to_string(),
+            iso_date: now.format("%Y-%m-%d").to_string(),
+            aria_label: format!("Today, {}", now.format("%A %B %-d %Y")),
+        },
+        next: DayStripNeighbor {
+            label: "Tomorrow".to_string(),
+            iso_date: tomorrow.format("%Y-%m-%d").to_string(),
+            preview: String::new(),
+            href: format!("/briefing/{}", tomorrow.format("%Y-%m-%d")),
+        },
+    }
+}
+
 
 // ─── Tests ───────────────────────────────────────────────────────────────
 
