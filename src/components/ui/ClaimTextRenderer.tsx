@@ -1,7 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import clsx from "clsx";
 import { Eye, LockKeyhole } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 import type { RenderableClaimText } from "@/types";
 import { Button } from "./button";
@@ -10,7 +10,11 @@ export interface ClaimTextRendererProps {
   value?: RenderableClaimText | string | null;
   className?: string;
   surface?: string;
-  reveal?: (claimId: string, surface?: string) => Promise<RenderableClaimText>;
+  reveal?: (
+    claimId: string,
+    revealActionId: string,
+    surface: string | undefined,
+  ) => Promise<RenderableClaimText>;
 }
 
 function isRenderableClaimText(
@@ -26,10 +30,12 @@ function isRenderableClaimText(
 
 function revealClaim(
   claimId: string,
+  revealActionId: string,
   surface?: string,
 ): Promise<RenderableClaimText> {
   return invoke<RenderableClaimText>("reveal_sensitive_claim_text", {
     claimId,
+    revealActionId,
     surface,
   });
 }
@@ -51,6 +57,27 @@ export function ClaimTextRenderer({
   const [revealed, setRevealed] = useState<RenderableClaimText | null>(null);
   const [isRevealing, setIsRevealing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const revealInFlightRef = useRef(false);
+  const revealActionIdRef = useRef<string | null>(null);
+  const carrier = isRenderableClaimText(value) ? value : null;
+  const cacheSurface = surface ?? carrier?.policy.surface;
+  const prevCarrierRef = useRef<RenderableClaimText | null>(null);
+  const prevSurfaceRef = useRef<string | undefined>(undefined);
+  const carrierChanged = carrier !== prevCarrierRef.current;
+  const surfaceChanged = cacheSurface !== prevSurfaceRef.current;
+
+  useEffect(() => {
+    if (carrier === prevCarrierRef.current && cacheSurface === prevSurfaceRef.current) {
+      return;
+    }
+    prevCarrierRef.current = carrier;
+    prevSurfaceRef.current = cacheSurface;
+    setRevealed(null);
+    setError(null);
+    setIsRevealing(false);
+    revealInFlightRef.current = false;
+    revealActionIdRef.current = null;
+  }, [carrier, cacheSurface]);
 
   if (!value) {
     return null;
@@ -60,7 +87,8 @@ export function ClaimTextRenderer({
     return <span className={className}>{value}</span>;
   }
 
-  const current = revealed ?? value;
+  const cachedReveal = carrierChanged || surfaceChanged ? null : revealed;
+  const current = cachedReveal ?? value;
   if (current.policy.kind === "drop") {
     return null;
   }
@@ -75,17 +103,35 @@ export function ClaimTextRenderer({
   const label = affordance?.label ?? current.text;
 
   async function handleReveal() {
-    if (!claimId || isRevealing) {
+    if (!claimId || revealInFlightRef.current) {
       return;
     }
+    const revealCarrier = carrier;
+    const revealSurface = surface ?? current.policy.surface;
+    const revealActionId = revealActionIdRef.current ?? crypto.randomUUID();
+    revealActionIdRef.current = revealActionId;
+    revealInFlightRef.current = true;
     setError(null);
     setIsRevealing(true);
     try {
-      setRevealed(await reveal(claimId, surface ?? current.policy.surface));
+      const rendered = await reveal(
+        claimId,
+        revealActionId,
+        revealSurface,
+      );
+      if (prevCarrierRef.current === revealCarrier && prevSurfaceRef.current === revealSurface) {
+        setRevealed(rendered);
+      }
     } catch {
-      setError("Unable to reveal.");
+      if (prevCarrierRef.current === revealCarrier && prevSurfaceRef.current === revealSurface) {
+        setError("Unable to reveal.");
+      }
     } finally {
-      setIsRevealing(false);
+      if (prevCarrierRef.current === revealCarrier && prevSurfaceRef.current === revealSurface) {
+        revealInFlightRef.current = false;
+        setIsRevealing(false);
+        revealActionIdRef.current = null;
+      }
     }
   }
 
@@ -123,4 +169,3 @@ export function ClaimTextRenderer({
     </span>
   );
 }
-

@@ -1,9 +1,9 @@
 # Frontend Hooks Reference
 
 > Registry of all React hooks in `src/hooks/`.
-> **Auto-generated:** 2026-04-25 by `.docs/generators/gen-frontend-hooks.sh`
+> **Auto-generated:** 2026-05-06 by `.docs/generators/gen-frontend-hooks.sh`
 
-**46** hook files | **5920** total lines
+**47** hook files | **6099** total lines
 
 ---
 
@@ -33,7 +33,7 @@
 | `useDashboardData` | `useDashboardData.ts` | 144 | get_dashboard_data | calendar-updated, emails-updated, entity-updated, prep-ready, workflow-completed |
 | `useDatabaseRecoveryStatus` | `useDatabaseRecoveryStatus.ts` | 32 | get_database_recovery_status | — |
 | `useEnrichmentProgress` | `useEnrichmentProgress.ts` | 65 | — | enrichment-complete, enrichment-progress |
-| `useEntityContextEntries` | `useEntityContextEntries.ts` | 72 | create_entity_context_entry, delete_entity_context_entry, get_entity_context_entries, update_entity_context_entry | — |
+| `useEntityContextEntries` | `useEntityContextEntries.ts` | 95 | create_entity_context_entry, delete_entity_context_entry, get_entity_context_entries, invoke_ability, update_entity_context_entry | — |
 | `useEntitySuppressions` | `useEntitySuppressions.ts` | 57 | get_entity_suppressions | — |
 | `useExecutiveIntelligence` | `useExecutiveIntelligence.ts` | 54 | — | calendar-updated, workflow-completed |
 | `useGleanAuth` | `useGleanAuth.ts` | 121 | disconnect_glean, get_glean_auth_status, start_glean_auth | glean-auth-changed, glean-auth-failed |
@@ -52,7 +52,8 @@
 | `usePersonDetail` | `usePersonDetail.ts` | 427 | archive_person, create_action, delete_person, enrich_person, get_entity_files, get_person_detail, index_entity_files, link_person_entity, merge_people, search_people, unlink_person_entity, update_person | — |
 | `usePostMeetingCapture` | `usePostMeetingCapture.ts` | 137 | capture_meeting_outcome, dismiss_meeting_prompt | post-meeting-prompt, post-meeting-prompt-fallback |
 | `useProjectDetail` | `useProjectDetail.ts` | 294 | archive_project, create_action, create_project, enrich_project, get_entity_files, get_project_detail, index_entity_files, update_project_field | — |
-| `useRevealObserver` | `useRevealObserver.ts` | 54 | — | — |
+| `useRevealObserver.test.tsx` | `useRevealObserver.test.tsx` | 115 | — | — |
+| `useRevealObserver` | `useRevealObserver.ts` | 95 | — | — |
 | `useSuggestedActions` | `useSuggestedActions.ts` | 83 | accept_suggested_action, get_suggested_actions, reject_suggested_action | intelligence-updated, transcript-processed |
 | `useTauriEvent` | `useTauriEvent.ts` | 26 | — | — |
 | `useTeamManagement` | `useTeamManagement.ts` | 310 | accept_stakeholder_suggestion, add_account_team_member, add_stakeholder_role, create_person, dismiss_stakeholder_suggestion, get_stakeholder_suggestions, remove_account_team_member, remove_stakeholder_role, search_people, set_team_member_role, update_stakeholder_assessment, update_stakeholder_engagement | — |
@@ -113,6 +114,7 @@ All Tauri commands invoked from hooks:
 - `record_account_event` (1 hooks)
 - `merge_people` (1 hooks)
 - `link_person_entity` (1 hooks)
+- `invoke_ability` (1 hooks)
 - `install_demo_data` (1 hooks)
 - `get_workflow_status` (1 hooks)
 - `get_user_entity` (1 hooks)

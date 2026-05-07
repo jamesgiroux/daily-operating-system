@@ -1,4 +1,4 @@
-@import './design-tokens.css';
+@import '../../styles/design-tokens.css';
 
 .EditableVitalsStrip_inlineInputRoot {
   display: inline-flex;
@@ -81,29 +81,6 @@
   text-transform: uppercase;
   letter-spacing: 0.06em;
   white-space: nowrap;
-  color: var(--color-text-secondary);
-}
-
-/* Runtime vital highlights are inline in React; the reference mirror carries
-   the same value set through data attributes. */
-.EditableVitalsStrip_fieldValue[data-highlight="larkspur"],
-.EditableVitalsStrip_clickableFieldValue[data-highlight="larkspur"] {
-  color: var(--color-garden-larkspur);
-}
-
-.EditableVitalsStrip_fieldValue[data-highlight="turmeric"],
-.EditableVitalsStrip_clickableFieldValue[data-highlight="turmeric"] {
-  color: var(--color-spice-turmeric);
-}
-
-.EditableVitalsStrip_fieldValue[data-highlight="olive"],
-.EditableVitalsStrip_clickableFieldValue[data-highlight="olive"] {
-  color: var(--color-garden-olive);
-}
-
-.EditableVitalsStrip_fieldValue[data-highlight="saffron"],
-.EditableVitalsStrip_clickableFieldValue[data-highlight="saffron"] {
-  color: var(--color-spice-saffron);
 }
 
 .EditableVitalsStrip_clickableFieldValue {

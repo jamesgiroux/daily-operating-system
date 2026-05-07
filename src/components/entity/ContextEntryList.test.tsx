@@ -45,7 +45,9 @@ describe("ContextEntryList trust partitioning", () => {
     const background = screen.getByText("Background").closest("details");
     expect(background).not.toBeNull();
     expect(within(background!).getByText("Older Example note")).toBeInTheDocument();
-    expect(within(background!).getByText("Use with caution")).toBeInTheDocument();
+    expect(
+      within(background!).getByRole("img", { name: /Use with caution/ }),
+    ).toBeInTheDocument();
   });
 
   it("ContextEntryList_show_all_evidence_announces_low_confidence_entries", () => {
@@ -76,7 +78,7 @@ describe("ContextEntryList trust partitioning", () => {
     expect(button).toHaveAttribute("aria-pressed", "true");
     expect(screen.getByText("Showing low-confidence evidence")).toBeVisible();
     expect(screen.getByText("Verify Example note")).toBeVisible();
-    expect(screen.getByText("Needs verification")).toBeVisible();
+    expect(screen.getByRole("img", { name: /Needs verification/ })).toBeInTheDocument();
   });
 
   it("ContextEntryList_unscored_legacy_entries_remain_visible", () => {
@@ -96,7 +98,45 @@ describe("ContextEntryList trust partitioning", () => {
     );
 
     expect(screen.getByText("Legacy Example note")).toBeVisible();
-    expect(screen.getByText("Unscored")).toBeVisible();
+    expect(screen.getByRole("img", { name: /Unscored/ })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /show all evidence/i })).not.toBeInTheDocument();
+  });
+
+  it("ContextEntryList_routes_confidential_carriers_to_click_to_reveal_renderer", () => {
+    render(
+      <ContextEntryList
+        entries={[
+          {
+            id: "entry-confidential",
+            title: "Confidential Example note",
+            content: {
+              text: "Confidential claim hidden",
+              policy: {
+                kind: "redacted",
+                sensitivity: "confidential",
+                surface: "tauri_entity_detail",
+                claimId: "claim-confidential-context",
+                affordance: {
+                  kind: "confidential_click_to_reveal",
+                  claim_id: "claim-confidential-context",
+                  label: "Confidential claim hidden",
+                  audit_required: true,
+                },
+              },
+            },
+            createdAt: "2026-05-01T12:00:00Z",
+            trustBand: "likely_current",
+          },
+        ]}
+        surfaceId="context-test"
+        {...handlers}
+      />,
+    );
+
+    const affordance = screen.getByText("Confidential claim hidden").closest("[data-render-policy]");
+    expect(affordance).toHaveAttribute("data-render-policy", "redacted");
+    expect(affordance).toHaveAttribute("data-sensitivity", "confidential");
+    expect(screen.getByRole("button", { name: "Reveal confidential claim" })).toBeVisible();
+    expect(screen.queryByText("Confidential source text example.com")).not.toBeInTheDocument();
   });
 });

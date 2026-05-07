@@ -6,10 +6,16 @@
  */
 import { useState } from "react";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
-import { TimelineEntry, TimelineContainer, type TimelineEntryType } from "@/components/editorial/TimelineEntry";
+import {
+  TimelineEntry,
+  TimelineContainer,
+  type TimelineEntryText,
+  type TimelineEntryType,
+} from "@/components/editorial/TimelineEntry";
 import { formatShortDate, formatMeetingType } from "@/lib/utils";
 import { formatProvenanceSource } from "@/components/ui/ProvenanceLabel";
 import type { TimelineSource } from "@/lib/entity-types";
+import type { RenderableClaimText } from "@/types";
 import s from "./UnifiedTimeline.module.css";
 
 interface UnifiedTimelineProps {
@@ -25,8 +31,10 @@ interface TimelineItem {
   date: string;
   sortDate: string;
   type: TimelineEntryType;
-  title: string;
-  subtitle?: string;
+  title: TimelineEntryText;
+  subtitle?: TimelineEntryText;
+  subtitleSuffix?: React.ReactNode;
+  claimSurface?: string;
   linkTo?: string;
   linkParams?: Record<string, string>;
 }
@@ -125,7 +133,9 @@ export function UnifiedTimeline({
         sortDate: entry.createdAt,
         type: "context",
         title: entry.title,
-        subtitle: entry.content.length > 140 ? `${entry.content.slice(0, 140)}… · Added by you` : `${entry.content} · Added by you`,
+        subtitle: contextContentToTimelineSubtitle(entry.content),
+        subtitleSuffix: " · Added by you",
+        claimSurface: "tauri_entity_detail",
       });
     }
   }
@@ -170,6 +180,8 @@ export function UnifiedTimeline({
                 type={item.type}
                 title={item.title}
                 subtitle={item.subtitle}
+                subtitleSuffix={item.subtitleSuffix}
+                claimSurface={item.claimSurface}
                 linkTo={item.linkTo}
                 linkParams={item.linkParams}
               />
@@ -203,4 +215,14 @@ export function UnifiedTimeline({
       )}
     </section>
   );
+}
+
+function contextContentToTimelineSubtitle(
+  value: string | RenderableClaimText,
+): TimelineEntryText {
+  if (typeof value !== "string") {
+    return value;
+  }
+
+  return value.length > 140 ? `${value.slice(0, 140)}…` : value;
 }

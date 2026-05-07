@@ -1,3 +1,5 @@
+#![cfg(feature = "release-gate")]
+
 #[path = "harness/mod.rs"]
 mod harness;
 
@@ -20,6 +22,11 @@ use rusqlite::Connection;
 use serde_json::{json, Value};
 
 const TARGET_ACCOUNT_ID: &str = "dos287-target-example";
+const FORCE_BLEED_REGRESSION_ENV: &str = "DAILYOS_DOS288_FORCE_BLEED_REGRESSION";
+
+fn force_bleed_regression() -> bool {
+    std::env::var_os(FORCE_BLEED_REGRESSION_ENV).is_some()
+}
 
 fn produced_at() -> chrono::DateTime<Utc> {
     Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap()
@@ -60,7 +67,7 @@ fn bundle1_policy() -> OwnershipPolicy {
         .expect("bundle-1 state applies");
     let db = ActionDb::from_conn(&conn);
     let extraction = extract_target_footprint(
-        &db,
+        db,
         &SubjectRef::Account(TARGET_ACCOUNT_ID.to_string()),
         "account",
         TARGET_ACCOUNT_ID,
@@ -109,7 +116,12 @@ fn bundle1_adjacent_account_content_needs_verification_before_confident_render()
 
 #[test]
 fn bundle1_target_account_content_remains_confident() {
-    let output = output_for_target_text("Alice Adams owns the Target Example renewal plan.");
+    let text = if force_bleed_regression() {
+        "Blake Branch owns cluster-1.example.com migration risk for Adjacent Example."
+    } else {
+        "Alice Adams owns the Target Example renewal plan."
+    };
+    let output = output_for_target_text(text);
 
     let report = validate_subject_ownership(
         &output,

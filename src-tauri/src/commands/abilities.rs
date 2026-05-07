@@ -2,8 +2,10 @@ use std::sync::Arc;
 
 use tauri::State;
 
-use crate::abilities::provenance::{validate_serialized_subject_ownership, OwnershipPolicy};
-use crate::abilities::AbilityRegistry;
+use crate::abilities::provenance::{
+    build_ownership_policy_for_invocation, validate_serialized_subject_ownership,
+};
+use crate::abilities::{AbilityRegistry, Actor};
 use crate::bridges::tauri::TauriAbilityBridge;
 use crate::bridges::{AbilityResponseJson, BridgeSurfaceError, ConfirmationToken};
 use crate::state::AppState;
@@ -22,6 +24,11 @@ pub async fn invoke_ability(
 
     let registry =
         AbilityRegistry::global_checked().map_err(|_| BridgeSurfaceError::AbilityUnavailable)?;
+    let ability_meta = registry
+        .iter_for(Actor::User)
+        .find(|descriptor| descriptor.name == ability_name)
+        .ok_or(BridgeSurfaceError::AbilityUnavailable)?;
+    let input_for_policy = input_json.clone();
     let response = TauriAbilityBridge::new(registry)
         .invoke(
             state.inner().as_ref(),
@@ -31,12 +38,17 @@ pub async fn invoke_ability(
             confirmation.as_ref(),
         )
         .await?;
+    let policy = build_ownership_policy_for_invocation(
+        ability_meta,
+        &input_for_policy,
+        &response.rendered_provenance.value,
+    )?;
     validate_serialized_subject_ownership(
         response.data.clone(),
         response.rendered_provenance.value.clone(),
         response.diagnostics.clone(),
         &[],
-        OwnershipPolicy::confident(),
+        policy,
     )?;
     Ok(response)
 }

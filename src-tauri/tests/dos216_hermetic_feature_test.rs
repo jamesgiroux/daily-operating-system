@@ -1,3 +1,5 @@
+#![cfg(feature = "release-gate")]
+
 #[allow(dead_code, unused_imports)]
 #[path = "harness/mod.rs"]
 mod harness;

@@ -2,11 +2,12 @@
 
 use std::{future::Future, path::PathBuf, pin::Pin, sync::Arc};
 
-use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
-use dailyos_lib::abilities::{
+use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
+use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityRegistry, Actor,
 };
-use dailyos_lib::services::context::ExecutionMode;
+use crate::db::ActionDb;
+use crate::services::context::ExecutionMode;
 use serde_json::{json, Value};
 
 use super::{load_fixture, run_fixture, EvalFixture, RunError, RunResult, RunnerDeps};
@@ -46,6 +47,18 @@ pub fn synthetic_runner_deps() -> RunnerDeps {
 pub fn run_with_synthetic_enrich_stub(fixture: &EvalFixture) -> Result<RunResult, RunError> {
     let deps = synthetic_runner_deps();
     run_fixture(&deps, fixture)
+}
+
+pub fn refresh_prepare_meeting_context_from_db(
+    prepared: &mut super::runner::PreparedFixtureRun,
+    meeting_id: &str,
+) -> Result<(), RunError> {
+    let db = ActionDb::from_conn(&prepared.conn);
+    prepared.prepare_meeting_context = Some(
+        crate::services::meetings::load_prepare_meeting_context_snapshot(db, meeting_id)
+            .map_err(RunError::StateSqlFailed)?,
+    );
+    Ok(())
 }
 
 pub fn assert_eval_bridge_stub_invoked(result: &RunResult) {

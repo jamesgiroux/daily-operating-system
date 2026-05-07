@@ -30,7 +30,7 @@ Each bundle carries the W4/W6 manifest in `metadata.json`:
 
 | bundle | scenario list | named invariant |
 | --- | --- | --- |
-| `bundle-1` | Legacy `get_entity_context` parity; same-domain sibling account; parent renewal meeting touching target and sibling; six paraphrases collapsed through `claim_corroborations`; target-account trust-band diversity; parent-account `WrongSubject` tombstone. | Legacy entity context output for `dos287-target-example` stays ordered and excludes adjacent account context while substrate rows make cross-account bleed and correction cases assertable. |
+| `bundle-1` | Claim-backed `get_entity_context` parity; same-domain sibling account; parent renewal meeting touching target and sibling; six paraphrases collapsed through `claim_corroborations`; target-account trust-band diversity; parent-account `WrongSubject` tombstone. | Active claim-backed entity context output for `dos287-target-example` stays ordered and excludes adjacent account context while substrate rows make cross-account bleed and correction cases assertable. |
 | `bundle-2` | Provider hallucination with low corroboration and poor internal consistency. | Hallucinated account content stays below the NeedsVerification threshold and is not silently accepted as truth. |
 | `bundle-3` | Withdrawn/stale source plus prior user dismissal. | Stale source resurrection does not re-promote a previously dismissed claim. |
 | `bundle-4` | Same person linked across two accounts through ambiguous context. | Person-shaped account ambiguity cannot bleed Account B context into Account A enrichment. |
@@ -46,10 +46,10 @@ Each bundle carries the W4/W6 manifest in `metadata.json`:
 
 ## DOS-283 Coordination
 
-`bundle-1` intentionally keeps the legacy `entity_context_entries` output
-shape until DOS-411 migrates the read/write substrate. Its claim rows are
-fixture substrate assertions and are marked so they do not change the legacy
-expected output in this patch.
+`bundle-1` exercises the claim-backed `get_entity_context` read path. The legacy
+`entity_context_entries` rows remain as substrate assertions for ownership and
+bleed checks, but the active target-account claims now define the expected
+output.
 
 `bundle-5` drives `prepare_meeting`, so adding active claims changes the
 canonical prompt input. Regenerate `provider_replay.json` by running the

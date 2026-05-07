@@ -41,9 +41,65 @@ Policy legend:
 | Push/tray notifications | `src/hooks/useNotifications.ts`, Tauri notification plugin, background enrichment events | event payloads from sync/enrichment/meeting processors | notification title/body, meeting/enrichment summaries | Render public only | Drop text; use generic status | Drop | Drop | Mostly status-only today | Keep private claim-derived text out of notification payloads |
 | Audit/log/export controls | `src-tauri/src/audit.rs`, `src-tauri/src/audit_log.rs`, privacy export commands | raw AI output audit files, structured audit JSONL, data export | raw outputs may contain claim-like language | Drop from structured logs | Drop | Drop | Drop | Existing raw AI audit stores full output in workspace `_audit` | New sensitivity reveal audit stores IDs only; no claim text in structured logs |
 
+## MCP Ability Data Rendering
+
+Track GG replaces the prior named-field redaction model with a deny-by-default
+MCP ability-data boundary. `src-tauri/src/bridges/types.rs` renders
+`AbilityResponseJson.data` for `BridgeSurface::McpTool`/`McpToolDetail` before
+the response is returned. Tauri, worker, and eval surfaces continue to receive
+the raw ability payload.
+
+The MCP walker in `src-tauri/src/services/sensitivity.rs` treats every string
+leaf as unsafe until one of three outcomes applies:
+
+- Claim text: a tagged carrier or bridge-provenance-attested field resolves to
+  a persisted claim, reloads authoritative sensitivity, and serializes as the
+  minimal `{ text, policy }` object. Cycle 5 tightens this invariant: the
+  serialized `text` bytes must come from the active surfaced claim row, or from
+  an audited stored projection of that row such as `get_entity_context.title`.
+  DTO bytes are rendered only after exact equality with that stored value.
+- Non-content metadata: explicit JSON-pointer path allowlist only for
+  identifiers, enum-like state, timestamps, meeting title, and meeting attendee
+  names. Each allowlisted path has a value validator; leaf-key-only matching is
+  forbidden.
+- Drop: all other strings are omitted.
+
+Authoritative claim lookup is required. The bridge opens a read-only
+`ActionDb` for MCP ability data rendering and passes raw provenance into
+`render_mcp_ability_data_for_surface_with_provenance`. Missing claim lookup,
+withdrawn or non-surfaced claims, malformed tags, DTO/stored sensitivity
+mismatch, DTO/stored text mismatch, and un-attributed raw strings all fail
+closed. Tagged carrier surviving fields are allowlisted to `text` and `policy`
+only; siblings such as `source_text`, `sourceSummary`, `evidenceText`,
+`rawText`, `quote`, `claim_id`, `sensitivity`, and `originating_actor` are
+stripped.
+
+Diagnostics are not content-safe. Serialized MCP ability responses omit the
+`diagnostics` key entirely; Tauri/worker/eval keep diagnostics unchanged.
+
+The Agent-allowed ability audit is committed at
+`.docs/plans/wave-W6/DOS-412-mcp-ability-data-enumeration.md`. Current
+Agent-allowed abilities are `get_entity_context` and `prepare_meeting`.
+`get_entity_context` keeps the cycle-6/7 Agent prompt-input sensitivity gate
+unchanged. `prepare_meeting` keeps the raw Tauri DTO and relies on field
+provenance at the MCP bridge to render Public/Internal claim text or drop it.
+
+Regression coverage lives in
+`src-tauri/tests/dos412_mcp_ability_data_redaction_test.rs`: tagged carrier
+policy, stored text mismatch drop, withdrawn claim drop, top-level/nested/deep
+untagged string drops, path-scoped metadata allowlist validators,
+provenance-attested raw claim text and mismatch drop, cycle-4
+`open_loops[].owner` and `attendee_context[].attendee`, serialized diagnostics
+key omission on MCP only, DTO sensitivity downgrade, and tagged sibling
+stripping.
+
 Implementation notes:
 
-- `get_entity_context` is intentionally excluded from new integration because cycle-6/7 already enforce the Agent sensitivity gate there.
-- `services/claims.rs::claim_allowed_for_prompt_input` remains the immutable prompt-input boundary.
-- DOS-288 ownership validator and DOS-320 `FieldAttribution.trust_band` stay separate. DOS-412 render policy is an additional annotation, not a trust-band replacement.
-- Unknown sensitivity values or unknown surfaces fail closed as Drop.
+- `services/claims.rs::claim_allowed_for_prompt_input` remains the immutable
+  prompt-input boundary.
+- DOS-288 ownership validation and DOS-320 `FieldAttribution.trust_band` stay
+  separate. DOS-412 render policy is an output boundary.
+- Unknown sensitivity values, unknown surfaces, and unrecognized strings fail
+  closed as Drop.
+- Future MCP metadata fields must be deliberately added to the allowlist rather
+  than inherited from ability DTOs.

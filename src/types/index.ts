@@ -3259,8 +3259,8 @@ export interface EntityContextEntry {
   id: string;
   entityType: string;
   entityId: string;
-  title: string;
-  content: string;
+  title: string | RenderableClaimText;
+  content: string | RenderableClaimText;
   createdAt: string;
   updatedAt: string;
 }

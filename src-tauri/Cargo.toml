@@ -10,6 +10,7 @@ description = "Operational intelligence for your workday. Open the app, your day
 authors = ["DailyOS"]
 edition = "2021"
 autobins = false
+build = "build.rs"
 
 [lib]
 name = "dailyos_lib"
@@ -33,6 +34,7 @@ dirs = "5"
 cron = "0.15"
 chrono = { version = "0.4", features = ["serde"] }
 chrono-tz = "0.10"
+clap = { version = "4.5.60", features = ["derive"] }
 portable-pty = "0.8"
 uuid = { version = "1", features = ["v4", "v5", "serde"] }
 thiserror = "2"
@@ -105,6 +107,7 @@ harness-hermetic = []
 # Enables public helpers used only by integration tests. This must stay out of
 # default/release builds; src/lib.rs also rejects release builds with it enabled.
 test-harness = []
+release-gate = []
 mcp = ["dep:anyhow"]
 
 [[bin]]
@@ -129,6 +132,11 @@ path = "src/bin/reconcile_post_migration.rs"
 [[bin]]
 name = "repair_entity_linking"
 path = "src/bin/repair_entity_linking.rs"
+
+[[bin]]
+name = "release-gate"
+path = "src/bin/release_gate.rs"
+required-features = ["release-gate"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

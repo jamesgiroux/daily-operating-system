@@ -1,58 +1,2375 @@
 {
-  "ability_name": "prepare_meeting",
-  "scenario_id": "bundle5-prepare-meeting-correction-resurrection-parity",
-  "expected": {
-    "category": "transform",
-    "composes": ["get_entity_context"],
-    "prompt_template_id": "prepare_meeting_prep",
-    "source_asof_reachable": [
-      "2026-05-05T15:30:00Z",
-      "2026-05-05T16:00:00Z",
-      "2026-05-05T16:20:00Z"
-    ],
-    "temporal_scope": ["state"],
-    "active_prompt_evidence": [
-      "src-b5-intro-note",
-      "src-b5-user-edited-preference",
-      "src-b5-agenda-dup-canonical"
-    ],
-    "suppressed_from_prompt_evidence": [
-      "src-b5-wrong-attendee-original",
-      "src-b5-original-preference",
-      "src-b5-expired-dormant-open-loop"
-    ],
-    "claim_lifecycle_assertions": [
+  "surface": "eval",
+  "value": {
+    "ability_name": "prepare_meeting",
+    "ability_schema_version": 1,
+    "ability_version": {
+      "major": 0,
+      "minor": 1
+    },
+    "actor": {
+      "component": "ability-runtime",
+      "kind": "system"
+    },
+    "children": [
       {
-        "claim_id": "src-b5-wrong-attendee-original",
-        "claim_state": "tombstoned",
-        "surfacing_state": "dormant",
-        "feedback_id": "feedback-b5-wrong-subject-riley",
-        "feedback_type": "wrong_subject"
-      },
-      {
-        "claim_id": "src-b5-original-preference",
-        "claim_state": "dormant",
-        "surfacing_state": "dormant",
-        "superseded_by": "src-b5-user-edited-preference"
-      },
-      {
-        "claim_id": "src-b5-user-edited-preference",
-        "claim_state": "active",
-        "surfacing_state": "active",
-        "precedes": "src-b5-original-preference"
-      },
-      {
-        "claim_id": "src-b5-agenda-dup-canonical",
-        "corroboration_id": "corro-b5-agenda-paraphrase",
-        "collapsed_duplicate_count": 1
-      },
-      {
-        "claim_id": "src-b5-expired-dormant-open-loop",
-        "claim_state": "dormant",
-        "surfacing_state": "dormant",
-        "expires_at": "2026-05-02T00:00:00Z",
-        "double_refresh_expected": "do_not_reactivate"
+        "ability_name": "get_entity_context",
+        "ability_schema_version": 1,
+        "ability_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "actor": {
+          "component": "dailyos",
+          "kind": "system"
+        },
+        "children": [],
+        "field_attributions": {
+          "/0/content/policy/claimId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/content/policy/kind": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/content/policy/sensitivity": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/content/policy/surface": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/content/text": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/createdAt": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/entityId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/entityType": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/id": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/policy/claimId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/policy/kind": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/policy/sensitivity": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/policy/surface": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/text": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/updatedAt": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/content/policy/claimId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/content/policy/kind": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/content/policy/sensitivity": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/content/policy/surface": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/content/text": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/createdAt": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/entityId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/entityType": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/id": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/title/policy/claimId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/title/policy/kind": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/title/policy/sensitivity": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/title/policy/surface": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/title/text": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/1/updatedAt": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 1
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/content/policy/claimId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/content/policy/kind": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/content/policy/sensitivity": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/content/policy/surface": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/content/text": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/createdAt": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/entityId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/entityType": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/id": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/title/policy/claimId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/title/policy/kind": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/title/policy/sensitivity": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/title/policy/surface": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/title/text": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/2/updatedAt": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 2
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b5-riley"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          }
+        },
+        "inputs_snapshot": {
+          "entity_watermarks": {},
+          "glean_connected": false,
+          "newest_signal_at": null,
+          "provider_config_hash": "unknown",
+          "source_freshness": {}
+        },
+        "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "mode": "evaluate",
+        "produced_at": "2026-05-06T12:00:00Z",
+        "prompt_fingerprint": null,
+        "provenance_schema_version": 1,
+        "sources": [
+          {
+            "data_source": {
+              "other": "transcript"
+            },
+            "evidence_weight": 1.0,
+            "identifiers": [
+              {
+                "entity": {
+                  "entity_id": "person-b5-riley",
+                  "field": "summary"
+                }
+              }
+            ],
+            "observed_at": "2026-05-05T16:20:00Z",
+            "scoring_class": "reference",
+            "source_asof": "2026-05-05T16:20:00Z",
+            "synthesis_marker": null
+          },
+          {
+            "data_source": "user",
+            "evidence_weight": 1.0,
+            "identifiers": [
+              {
+                "user_entry": {
+                  "entry_id": "meeting-b5-first-person"
+                }
+              }
+            ],
+            "observed_at": "2026-05-05T16:00:00Z",
+            "scoring_class": "scoring",
+            "source_asof": "2026-05-05T16:00:00Z",
+            "synthesis_marker": null
+          },
+          {
+            "data_source": "user",
+            "evidence_weight": 1.0,
+            "identifiers": [
+              {
+                "user_entry": {
+                  "entry_id": "meeting-b5-first-person"
+                }
+              }
+            ],
+            "observed_at": "2026-05-05T15:30:00Z",
+            "scoring_class": "scoring",
+            "source_asof": "2026-05-05T15:30:00Z",
+            "synthesis_marker": null
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "thread_ids": [],
+        "trust": {
+          "contains_stored_synthesis": false,
+          "contributions": [
+            {
+              "reason": "unbounded_free_text",
+              "source": {
+                "direct_source": {
+                  "source_index": 0
+                }
+              }
+            },
+            {
+              "reason": "directly_from_structured_source",
+              "source": {
+                "direct_source": {
+                  "source_index": 1
+                }
+              }
+            },
+            {
+              "reason": "directly_from_structured_source",
+              "source": {
+                "direct_source": {
+                  "source_index": 2
+                }
+              }
+            }
+          ],
+          "effective": "untrusted"
+        },
+        "warnings": []
       }
-    ]
+    ],
+    "field_attributions": {
+      "/attendee_context/0/attendee": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9200000166893005
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/0/context": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9200000166893005
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/0/subject/id": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9200000166893005
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/0/subject/kind": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9200000166893005
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/0/temporal_scope": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9200000166893005
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/1/attendee": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9599999785423279
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/1/context": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9599999785423279
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/1/subject/id": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9599999785423279
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/1/subject/kind": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9599999785423279
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/1/temporal_scope": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.9599999785423279
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/2/attendee": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.8199999928474426
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/2/context": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.8199999928474426
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/2/subject/id": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.8199999928474426
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/2/subject/kind": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.8199999928474426
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/attendee_context/2/temporal_scope": {
+        "confidence": {
+          "kind": "composed_min",
+          "value": 0.8199999928474426
+        },
+        "derivation": {
+          "composed": {
+            "composition_id": "get_entity_context:person:person-b5-riley"
+          }
+        },
+        "explanation": null,
+        "source_refs": [
+          {
+            "child": {
+              "composition_id": "get_entity_context:person:person-b5-riley",
+              "field_path": ""
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8500000238418579,
+            "method": "attendee_person",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b5-riley"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/meeting/attendees/0/domain": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/attendees/0/email": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/attendees/0/name": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/attendees/0/person_id": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/ends_at": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/id": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/starts_at": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/title": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/open_loops": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/schema_version": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/suggested_outcomes": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/topics": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/what_changed_since_last": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b5-first-person"
+          },
+          "supporting_source_refs": []
+        }
+      }
+    },
+    "inputs_snapshot": {
+      "entity_watermarks": {},
+      "glean_connected": false,
+      "newest_signal_at": null,
+      "provider_config_hash": "unknown",
+      "source_freshness": {}
+    },
+    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "mode": "evaluate",
+    "produced_at": "2026-05-06T12:00:00Z",
+    "prompt_fingerprint": {
+      "canonical_prompt_hash": "9592e589d1f462500307957d83ffdf1f3b725062aba193539acfa1138458a8f1",
+      "model": "replay",
+      "prompt_template_id": "prepare_meeting_prep",
+      "prompt_template_version": "1.0.0",
+      "provider": "replay",
+      "provider_completion_id": null,
+      "seed": null,
+      "temperature": 0.0,
+      "tokens_input": null,
+      "tokens_output": null,
+      "top_p": null
+    },
+    "provenance_schema_version": 1,
+    "sources": [
+      {
+        "data_source": "google",
+        "evidence_weight": 1.0,
+        "identifiers": [
+          {
+            "meeting": {
+              "meeting_id": "meeting-b5-first-person"
+            }
+          }
+        ],
+        "observed_at": "2026-05-06T15:00:00Z",
+        "scoring_class": "scoring",
+        "source_asof": "2026-05-06T15:00:00Z",
+        "synthesis_marker": null
+      }
+    ],
+    "subject": {
+      "binding": "direct_input",
+      "competing_subjects": [],
+      "fit": {
+        "confidence": 1.0,
+        "method": "direct_input",
+        "status": "confident"
+      },
+      "subject": {
+        "multi": [
+          {
+            "meeting": "meeting-b5-first-person"
+          },
+          {
+            "person": "person-b5-riley"
+          }
+        ]
+      },
+      "supporting_source_refs": []
+    },
+    "thread_ids": [],
+    "trust": {
+      "contains_stored_synthesis": false,
+      "contributions": [
+        {
+          "reason": "directly_from_structured_source",
+          "source": {
+            "direct_source": {
+              "source_index": 0
+            }
+          }
+        },
+        {
+          "reason": "composed_untrusted_child",
+          "source": {
+            "composed_child": {
+              "composition_id": "get_entity_context:person:person-b5-riley"
+            }
+          }
+        }
+      ],
+      "effective": "untrusted"
+    },
+    "warnings": []
   }
 }

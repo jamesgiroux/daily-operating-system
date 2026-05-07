@@ -2,6 +2,7 @@ use std::collections::{HashMap, VecDeque};
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
+use serde::ser::SerializeStruct;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
@@ -12,11 +13,16 @@ use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
     AbilityError, AbilityRegistry, Actor,
 };
+use crate::db::ActionDb;
 use crate::intelligence::provider::{
     Completion, IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError,
     ProviderKind,
 };
 use crate::services::context::{ExecutionMode, ServiceContext};
+use crate::services::sensitivity::{
+    render_mcp_ability_data_for_surface_with_provenance,
+    render_mcp_ability_data_without_claim_lookup,
+};
 use crate::state::ContextSnapshot;
 
 pub const BRIDGE_PROVENANCE_DETAIL_BYTE_CAP: usize = 10 * 1024;
@@ -162,7 +168,7 @@ impl RenderedProvenance {
     }
 }
 
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Deserialize)]
 pub struct AbilityResponseJson {
     pub invocation_id: InvocationId,
     pub ability_name: String,
@@ -171,6 +177,32 @@ pub struct AbilityResponseJson {
     pub data: serde_json::Value,
     pub rendered_provenance: RenderedProvenance,
     pub diagnostics: serde_json::Value,
+}
+
+impl Serialize for AbilityResponseJson {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let include_diagnostics = !matches!(
+            self.rendered_provenance.surface,
+            BridgeSurface::McpTool | BridgeSurface::McpToolDetail
+        );
+        let mut state = serializer.serialize_struct(
+            "AbilityResponseJson",
+            if include_diagnostics { 7 } else { 6 },
+        )?;
+        state.serialize_field("invocation_id", &self.invocation_id)?;
+        state.serialize_field("ability_name", &self.ability_name)?;
+        state.serialize_field("ability_version", &self.ability_version)?;
+        state.serialize_field("schema_version", &self.schema_version)?;
+        state.serialize_field("data", &self.data)?;
+        state.serialize_field("rendered_provenance", &self.rendered_provenance)?;
+        if include_diagnostics {
+            state.serialize_field("diagnostics", &self.diagnostics)?;
+        }
+        state.end()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Error, Serialize, Deserialize)]
@@ -561,9 +593,9 @@ fn ability_response_from_output_json(
         ability_name,
         ability_version,
         schema_version,
-        data,
+        data: render_ability_data(surface, data, &provenance),
         rendered_provenance: render_provenance(surface, provenance),
-        diagnostics,
+        diagnostics: render_diagnostics(surface, diagnostics),
     })
 }
 
@@ -581,6 +613,44 @@ fn render_provenance(surface: BridgeSurface, provenance: serde_json::Value) -> R
         BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => provenance,
     };
     RenderedProvenance::new(surface, value)
+}
+
+fn render_ability_data(
+    surface: BridgeSurface,
+    data: serde_json::Value,
+    provenance: &serde_json::Value,
+) -> serde_json::Value {
+    match surface {
+        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
+            render_mcp_ability_data_with_authoritative_claims(data, provenance)
+        }
+        BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => data,
+    }
+}
+
+fn render_mcp_ability_data_with_authoritative_claims(
+    data: serde_json::Value,
+    provenance: &serde_json::Value,
+) -> serde_json::Value {
+    match ActionDb::open_readonly() {
+        Ok(db) => render_mcp_ability_data_for_surface_with_provenance(&db, data, provenance),
+        Err(error) => {
+            log::warn!(
+                target: "dailyos_lib::bridges::mcp_ability_data",
+                "MCP ability data claim lookup unavailable; tagged claim text will be dropped: {error}"
+            );
+            render_mcp_ability_data_without_claim_lookup(data)
+        }
+    }
+}
+
+fn render_diagnostics(surface: BridgeSurface, diagnostics: serde_json::Value) -> serde_json::Value {
+    match surface {
+        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => {
+            serde_json::json!({ "warnings": [] })
+        }
+        BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => diagnostics,
+    }
 }
 
 pub(crate) fn surface_error(error: AbilityInvokeError) -> BridgeSurfaceError {

@@ -2,6 +2,7 @@ use dailyos_lib::abilities::feedback::ClaimVerificationState;
 use dailyos_lib::db::claims::{
     ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
 };
+use dailyos_lib::migration_test_api::run_migrations;
 use dailyos_lib::services::sensitivity::{
     render_policy_for_sensitivity_name, render_policy_for_surface, render_policy_for_surface_name,
     renderable_claim_text, RedactionAffordance, RenderActor, RenderDecision, RenderPolicyKind,
@@ -147,25 +148,155 @@ fn renderable_claim_text_never_embeds_confidential_source_text_in_redaction() {
 }
 
 #[test]
-fn sensitivity_reveal_audit_migration_declares_required_columns() {
+fn sensitivity_reveal_audit_migration_repairs_current_audit_bucket_v143() {
     let conn = Connection::open_in_memory().expect("open in-memory database");
     conn.execute_batch(include_str!(
         "../src/migrations/142_sensitivity_reveal_audit.sql"
     ))
     .expect("migration applies");
+    conn.execute_batch(include_str!(
+        "../src/migrations/143_sensitivity_reveal_audit_idempotency.sql"
+    ))
+    .expect("idempotency migration applies");
+    setup_migration_runner_state(&conn);
+    run_pending_v144(&conn);
 
-    let mut stmt = conn
-        .prepare("PRAGMA table_info(sensitivity_reveal_audit)")
-        .expect("query audit schema");
-    let columns: Vec<String> = stmt
-        .query_map([], |row| row.get::<_, String>(1))
-        .expect("read columns")
-        .map(|row| row.expect("column row"))
-        .collect();
+    let columns = reveal_audit_columns(&conn);
 
     assert!(columns.contains(&"claim_id".to_string()));
     assert!(columns.contains(&"user_id".to_string()));
     assert!(columns.contains(&"revealed_at".to_string()));
+    assert!(columns.contains(&"reveal_action_id".to_string()));
+    assert!(!columns.contains(&"audit_bucket".to_string()));
+    assert!(!columns.contains(&"reveal_session_id".to_string()));
+    assert_reveal_action_id_unique_index(&conn);
+    assert_index_missing(&conn, "idx_sensitivity_reveal_audit_audit_bucket");
+}
+
+#[test]
+fn sensitivity_reveal_audit_migration_repairs_legacy_reveal_session_v143() {
+    let conn = Connection::open_in_memory().expect("open in-memory database");
+    conn.execute_batch(include_str!(
+        "../src/migrations/142_sensitivity_reveal_audit.sql"
+    ))
+    .expect("base audit migration applies");
+    conn.execute_batch(
+        "ALTER TABLE sensitivity_reveal_audit
+            ADD COLUMN reveal_session_id TEXT NOT NULL DEFAULT '';
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_sensitivity_reveal_audit_reveal_session
+            ON sensitivity_reveal_audit(claim_id, user_id, reveal_session_id)
+            WHERE reveal_session_id != '';",
+    )
+    .expect("legacy reveal session idempotency migration applies");
+    setup_migration_runner_state(&conn);
+    run_pending_v144(&conn);
+
+    let columns = reveal_audit_columns(&conn);
+
+    assert!(columns.contains(&"claim_id".to_string()));
+    assert!(columns.contains(&"user_id".to_string()));
+    assert!(columns.contains(&"revealed_at".to_string()));
+    assert!(columns.contains(&"reveal_action_id".to_string()));
+    assert!(!columns.contains(&"reveal_session_id".to_string()));
+    assert!(!columns.contains(&"audit_bucket".to_string()));
+    assert_reveal_action_id_unique_index(&conn);
+    assert_index_missing(&conn, "idx_sensitivity_reveal_audit_reveal_session");
+}
+
+fn setup_migration_runner_state(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO schema_version (version) VALUES (143);
+
+        CREATE TABLE IF NOT EXISTS meetings (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meeting_prep (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meeting_transcripts (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS account_stakeholders (
+            id TEXT PRIMARY KEY,
+            data_source TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_assessment (
+            id TEXT PRIMARY KEY,
+            health_json TEXT,
+            org_health_json TEXT,
+            dimensions_json TEXT,
+            success_plan_signals_json TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_quality (
+            id TEXT PRIMARY KEY,
+            health_score REAL,
+            health_trend TEXT,
+            coherence_score REAL,
+            coherence_flagged INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS person_relationships (
+            id TEXT PRIMARY KEY,
+            rationale TEXT
+        );
+        CREATE TABLE IF NOT EXISTS email_signals (
+            id TEXT PRIMARY KEY,
+            source TEXT
+        );",
+    )
+    .expect("create migration runner fixture state");
+}
+
+fn run_pending_v144(conn: &Connection) {
+    let applied = run_migrations(conn).expect("action token migration applies");
+    assert_eq!(applied, 1);
+}
+
+fn reveal_audit_columns(conn: &Connection) -> Vec<String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(sensitivity_reveal_audit)")
+        .expect("query audit schema");
+    stmt.query_map([], |row| row.get::<_, String>(1))
+        .expect("read columns")
+        .map(|row| row.expect("column row"))
+        .collect()
+}
+
+fn assert_reveal_action_id_unique_index(conn: &Connection) {
+    let unique_index_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM pragma_index_list('sensitivity_reveal_audit')
+             WHERE name = 'idx_sensitivity_reveal_audit_action_token'
+               AND [unique] = 1",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read reveal audit indexes");
+    assert_eq!(unique_index_count, 1);
+
+    let index_sql: String = conn
+        .query_row(
+            "SELECT sql
+             FROM sqlite_master
+             WHERE type = 'index'
+               AND name = 'idx_sensitivity_reveal_audit_action_token'",
+            [],
+            |row| row.get(0),
+        )
+        .expect("read reveal audit index SQL");
+    assert!(index_sql.contains("(claim_id, user_id, reveal_action_id)"));
+    assert!(index_sql.contains("WHERE reveal_action_id != ''"));
+}
+
+fn assert_index_missing(conn: &Connection, index_name: &str) {
+    let index_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM pragma_index_list('sensitivity_reveal_audit')
+             WHERE name = ?1",
+            [index_name],
+            |row| row.get(0),
+        )
+        .expect("read reveal audit indexes");
+    assert_eq!(index_count, 0);
 }
 
 fn assert_confidential_click_to_reveal(decision: RenderDecision) {

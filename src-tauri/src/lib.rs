@@ -44,6 +44,8 @@ pub mod google_api;
 pub mod google_drive;
 pub mod granola;
 pub mod gravatar;
+#[cfg(any(test, feature = "release-gate"))]
+pub mod harness;
 pub mod helpers;
 mod hygiene;
 mod intel_queue;
@@ -65,10 +67,10 @@ pub mod substrate_test_api {
 pub mod command_test_api {
     pub use crate::commands::{
         create_entity_context_entry, delete_entity_context_entry, get_entity_context_entries,
-        update_entity_context_entry,
+        reveal_sensitive_claim_text, update_entity_context_entry,
     };
 }
-#[cfg(feature = "test-harness")]
+#[cfg(any(feature = "test-harness", debug_assertions))]
 #[doc(hidden)]
 pub mod migration_test_api {
     pub fn run_migrations(conn: &rusqlite::Connection) -> Result<usize, String> {
@@ -95,6 +97,8 @@ pub mod projects;
 pub mod pty;
 pub mod queries;
 pub mod quill;
+#[cfg(any(test, feature = "release-gate"))]
+pub mod release_gate;
 pub mod reports;
 mod risk_briefing;
 mod scheduler;

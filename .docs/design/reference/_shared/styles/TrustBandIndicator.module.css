@@ -1,0 +1,52 @@
+.TrustBandIndicator_indicator {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 0.6em;
+  height: 0.6em;
+  flex: 0 0 auto;
+  color: var(--trust-band-color);
+  cursor: help;
+  outline: none;
+  border-radius: 999px;
+  /* Sit as a finis marker after the closing punctuation of the claim. */
+  margin-left: 0.6em;
+  vertical-align: baseline;
+  position: relative;
+  top: -0.05em;
+}
+
+.TrustBandIndicator_indicator:focus-visible {
+  outline: 2px solid var(--color-focus-ring, currentColor);
+  outline-offset: 2px;
+}
+
+.TrustBandIndicator_icon {
+  width: 100%;
+  height: 100%;
+  stroke-width: 2.4;
+  fill: none;
+}
+
+.TrustBandIndicator_useWithCaution {
+  --trust-band-color: var(--color-spice-turmeric);
+}
+
+.TrustBandIndicator_needsVerification {
+  --trust-band-color: var(--color-spice-terracotta);
+}
+
+.TrustBandIndicator_unscored {
+  --trust-band-color: var(--color-text-tertiary);
+}
+
+.TrustBandIndicator_tooltipLabel {
+  display: block;
+  font-weight: 600;
+}
+
+.TrustBandIndicator_tooltipDescription {
+  display: block;
+  margin-top: 0.15rem;
+  opacity: 0.85;
+}

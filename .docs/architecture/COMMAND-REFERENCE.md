@@ -2,9 +2,9 @@
 
 Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 
-**Auto-generated:** 2026-05-05 by `.docs/generators/gen-command-reference.sh`
-**Registered in lib.rs:** ~397 commands
-**Source files:** 12
+**Auto-generated:** 2026-05-07 by `.docs/generators/gen-command-reference.sh`
+**Registered in lib.rs:** ~399 commands
+**Source files:** 13
 
 ---
 
@@ -375,6 +375,12 @@ Complete inventory of all Tauri IPC commands (`#[tauri::command]` functions).
 | `start_fresh_database` | yes | — |
 | `update_project_field` | yes | project_id, field, value |
 | `update_project_notes` | yes | project_id, notes |
+
+## `commands/sensitivity`
+
+| Command | Async | Parameters |
+|---------|-------|------------|
+| `reveal_sensitive_claim_text` | yes | claim_id, reveal_action_id, surface |
 
 ## `commands/success_plans`
 

@@ -1,3 +1,5 @@
+#![cfg(feature = "release-gate")]
+
 #[path = "harness/mod.rs"]
 mod harness;
 
@@ -1031,7 +1033,7 @@ fn diff_rendered_provenance_strips_internal_ids_before_comparison() {
 #[test]
 fn diff_rendered_documented_as_incomplete_with_todo_marker() {
     let scoring_source = fs::read_to_string(
-        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("tests/harness/scoring.rs"),
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/harness/scoring.rs"),
     )
     .expect("read scoring source");
 
@@ -1565,6 +1567,8 @@ fn harness_report_serializes_to_json_with_stable_field_order() {
         &first,
         &[
             "\"run_id\"",
+            "\"git_sha\"",
+            "\"fixtures_hash\"",
             "\"started_at\"",
             "\"finished_at\"",
             "\"fixtures\"",

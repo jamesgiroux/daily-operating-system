@@ -17,6 +17,8 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "test": "vitest run",
+    "test:release-gate": "pnpm release-gate -- --mode hermetic",
+    "release-gate": "cargo run --manifest-path src-tauri/Cargo.toml --no-default-features --features release-gate --bin release-gate --",
     "build:mcp": "bash src-tauri/scripts/build-mcp.sh",
     "build:mcp:stub": "bash src-tauri/scripts/build-mcp.sh --stub",
     "postinstall": "bash src-tauri/scripts/build-mcp.sh --stub"

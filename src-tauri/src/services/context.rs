@@ -1202,8 +1202,8 @@ fn read_entity_context_entries_from_db(
                 id: row.get("id")?,
                 entity_type: row.get("entity_type")?,
                 entity_id: row.get("entity_id")?,
-                title: row.get("title")?,
-                content: row.get("content")?,
+                title: row.get::<_, String>("title")?.into(),
+                content: row.get::<_, String>("content")?.into(),
                 created_at: row.get("created_at")?,
                 updated_at: row.get("updated_at")?,
             })

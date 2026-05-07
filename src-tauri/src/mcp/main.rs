@@ -19,7 +19,7 @@ use rmcp::{tool, Error as McpError, RoleServer, ServerHandler, ServiceExt};
 use serde::{Deserialize, Serialize};
 
 use dailyos_lib::abilities::provenance::{
-    validate_serialized_subject_ownership, InvocationId, OwnershipPolicy,
+    build_ownership_policy_for_invocation, validate_serialized_subject_ownership, InvocationId,
 };
 use dailyos_lib::abilities::{AbilityDescriptor, AbilityRegistry};
 use dailyos_lib::bridges::mcp::McpAbilityBridge;
@@ -27,7 +27,10 @@ use dailyos_lib::bridges::tauri::TauriAbilityBridge;
 use dailyos_lib::bridges::{BridgeSurfaceError, McpSessionId};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::embeddings::EmbeddingModel;
-use dailyos_lib::services::sensitivity::{renderable_claim_text, RenderActor, RenderSurface};
+use dailyos_lib::services::sensitivity::{
+    render_mcp_static_json_for_surface, render_mcp_static_text_for_surface, McpStaticTextClass,
+    RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
+};
 use dailyos_lib::state::load_config;
 use dailyos_lib::types::Config;
 
@@ -202,6 +205,7 @@ impl DailyOsMcp {
     )]
     fn get_briefing(&self, #[tool(aggr)] params: GetBriefingParams) -> String {
         let today_dir = PathBuf::from(&self.config.workspace_path).join("_today");
+        let db = self.db.lock();
 
         let date = params
             .date
@@ -209,10 +213,18 @@ impl DailyOsMcp {
 
         let response = BriefingResponse {
             date,
-            schedule: read_json_file(&today_dir.join("data/schedule.json")),
-            actions: read_json_file(&today_dir.join("data/actions.json")),
-            emails: read_json_file(&today_dir.join("data/emails.json")),
-            briefing: read_json_file(&today_dir.join("data/briefing.json")),
+            schedule: read_json_file(&today_dir.join("data/schedule.json")).and_then(|value| {
+                render_mcp_static_json_for_surface(&db, value, &briefing_static_text_class)
+            }),
+            actions: read_json_file(&today_dir.join("data/actions.json")).and_then(|value| {
+                render_mcp_static_json_for_surface(&db, value, &briefing_static_text_class)
+            }),
+            emails: read_json_file(&today_dir.join("data/emails.json")).and_then(|value| {
+                render_mcp_static_json_for_surface(&db, value, &briefing_static_text_class)
+            }),
+            briefing: read_json_file(&today_dir.join("data/briefing.json")).and_then(|value| {
+                render_mcp_static_json_for_surface(&db, value, &briefing_static_text_class)
+            }),
         };
 
         serde_json::to_string_pretty(&response).unwrap_or_else(|e| format!("Error: {e}"))
@@ -237,16 +249,16 @@ impl DailyOsMcp {
                         let meetings = db
                             .get_upcoming_meetings_for_account(&acct.id, 5)
                             .unwrap_or_default();
-                        let intel = match mcp_entity_summary(&db, "account", &acct.id) {
-                            Some(summary) => summary,
-                            None => db
-                                .get_entity_intelligence(&acct.id)
-                                .ok()
-                                .flatten()
-                                .and_then(|i| i.executive_assessment),
-                        };
+                        let legacy_intel = db
+                            .get_entity_intelligence(&acct.id)
+                            .ok()
+                            .flatten()
+                            .and_then(|i| i.executive_assessment);
+                        let intel =
+                            mcp_entity_summary(&db, "account", &acct.id, legacy_intel.as_deref());
 
                         result = Some(build_entity_result(
+                            &db,
                             &acct.id,
                             &acct.name,
                             "account",
@@ -270,16 +282,16 @@ impl DailyOsMcp {
                     if proj.id == params.query || proj.name.to_lowercase().contains(&query_lower) {
                         let actions = db.get_project_actions(&proj.id).unwrap_or_default();
                         let meetings = db.get_meetings_for_project(&proj.id, 5).unwrap_or_default();
-                        let intel = match mcp_entity_summary(&db, "project", &proj.id) {
-                            Some(summary) => summary,
-                            None => db
-                                .get_entity_intelligence(&proj.id)
-                                .ok()
-                                .flatten()
-                                .and_then(|i| i.executive_assessment),
-                        };
+                        let legacy_intel = db
+                            .get_entity_intelligence(&proj.id)
+                            .ok()
+                            .flatten()
+                            .and_then(|i| i.executive_assessment);
+                        let intel =
+                            mcp_entity_summary(&db, "project", &proj.id, legacy_intel.as_deref());
 
                         result = Some(build_entity_result(
+                            &db,
                             &proj.id,
                             &proj.name,
                             "project",
@@ -304,22 +316,34 @@ impl DailyOsMcp {
                         || person.name.to_lowercase().contains(&query_lower)
                         || person.email.to_lowercase().contains(&query_lower)
                     {
-                        let intel = match mcp_entity_summary(&db, "person", &person.id) {
-                            Some(summary) => summary,
-                            None => db
-                                .get_entity_intelligence(&person.id)
-                                .ok()
-                                .flatten()
-                                .and_then(|i| i.executive_assessment),
-                        };
+                        let legacy_intel = db
+                            .get_entity_intelligence(&person.id)
+                            .ok()
+                            .flatten()
+                            .and_then(|i| i.executive_assessment);
+                        let intel =
+                            mcp_entity_summary(&db, "person", &person.id, legacy_intel.as_deref());
                         result = Some(EntityResult {
                             id: person.id.clone(),
-                            name: person.name.clone(),
+                            name: render_mcp_static_text_for_surface(
+                                &db,
+                                RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                    person.name.clone(),
+                                    McpStaticTextClass::PersonName,
+                                )),
+                            )
+                            .unwrap_or_default(), // dos412-render-policy-covered: person names are explicit MCP non-claim metadata.
                             entity_type: "person".to_string(),
                             health: None,
-                            status: Some(person.relationship.clone()),
+                            status: render_mcp_static_text_for_surface(
+                                &db,
+                                RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                    person.relationship.clone(),
+                                    McpStaticTextClass::EntityStatus,
+                                )),
+                            ),
                             lifecycle: None,
-                            intelligence_summary: intel,
+                            intelligence_summary: intel, // dos412-render-policy-covered: intel is returned by mcp_entity_summary.
                             open_actions: Vec::new(),
                             upcoming_meetings: Vec::new(),
                         });
@@ -349,36 +373,88 @@ impl DailyOsMcp {
 
         if entity_type == "all" || entity_type == "account" {
             if let Ok(accounts) = db.get_all_accounts() {
-                items.extend(accounts.into_iter().map(|a| EntityListItem {
-                    id: a.id,
-                    name: a.name,
-                    entity_type: "account".to_string(),
-                    health: a.health,
-                    status: a.lifecycle,
+                items.extend(accounts.into_iter().filter_map(|a| {
+                    Some(EntityListItem {
+                        id: a.id,
+                        name: render_mcp_static_text_for_surface(
+                            &db,
+                            RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                a.name,
+                                McpStaticTextClass::AccountName,
+                            )),
+                        )?,
+                        entity_type: "account".to_string(),
+                        health: a.health.and_then(|health| {
+                            render_mcp_static_text_for_surface(
+                                &db,
+                                RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                    health,
+                                    McpStaticTextClass::EntityHealth,
+                                )),
+                            )
+                        }),
+                        status: a.lifecycle.and_then(|lifecycle| {
+                            render_mcp_static_text_for_surface(
+                                &db,
+                                RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                    lifecycle,
+                                    McpStaticTextClass::EntityLifecycle,
+                                )),
+                            )
+                        }),
+                    })
                 }));
             }
         }
 
         if entity_type == "all" || entity_type == "project" {
             if let Ok(projects) = db.get_all_projects() {
-                items.extend(projects.into_iter().map(|p| EntityListItem {
-                    id: p.id,
-                    name: p.name,
-                    entity_type: "project".to_string(),
-                    health: None,
-                    status: Some(p.status),
+                items.extend(projects.into_iter().filter_map(|p| {
+                    Some(EntityListItem {
+                        id: p.id,
+                        name: render_mcp_static_text_for_surface(
+                            &db,
+                            RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                p.name,
+                                McpStaticTextClass::ProjectName,
+                            )),
+                        )?,
+                        entity_type: "project".to_string(),
+                        health: None,
+                        status: render_mcp_static_text_for_surface(
+                            &db,
+                            RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                p.status,
+                                McpStaticTextClass::EntityStatus,
+                            )),
+                        ),
+                    })
                 }));
             }
         }
 
         if entity_type == "all" || entity_type == "person" {
             if let Ok(people) = db.get_people(None) {
-                items.extend(people.into_iter().map(|p| EntityListItem {
-                    id: p.id,
-                    name: p.name,
-                    entity_type: "person".to_string(),
-                    health: None,
-                    status: Some(p.relationship),
+                items.extend(people.into_iter().filter_map(|p| {
+                    Some(EntityListItem {
+                        id: p.id,
+                        name: render_mcp_static_text_for_surface(
+                            &db,
+                            RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                p.name,
+                                McpStaticTextClass::PersonName,
+                            )),
+                        )?,
+                        entity_type: "person".to_string(),
+                        health: None,
+                        status: render_mcp_static_text_for_surface(
+                            &db,
+                            RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                p.relationship,
+                                McpStaticTextClass::EntityStatus,
+                            )),
+                        ),
+                    })
                 }));
             }
         }
@@ -438,27 +514,68 @@ impl DailyOsMcp {
                 continue;
             };
 
-            let match_snippet = summary.or_else(|| {
-                prep_json.and_then(|json| {
-                    serde_json::from_str::<serde_json::Value>(&json)
-                        .ok()
-                        .and_then(|v| {
-                            v.get("intelligenceSummary")
-                                .and_then(|s| s.as_str().map(|s| s.to_string()))
-                        })
-                })
+            let Some(title) = render_mcp_static_text_for_surface(
+                &db,
+                RenderableMcpText::Static(RenderableMcpStaticText::new(
+                    title,
+                    McpStaticTextClass::MeetingTitle,
+                )),
+            ) else {
+                continue;
+            };
+
+            let match_snippet = summary
+                .map(|snippet| (snippet, McpStaticTextClass::MeetingSummary))
+                .or_else(|| {
+                    prep_json.and_then(|json| {
+                        serde_json::from_str::<serde_json::Value>(&json)
+                            .ok()
+                            .and_then(|v| {
+                                v.get("intelligenceSummary")
+                                    .and_then(|s| s.as_str().map(|s| s.to_string()))
+                            })
+                            .map(|snippet| (snippet, McpStaticTextClass::MeetingPrepSummary))
+                    })
+                });
+            let match_snippet = match_snippet.and_then(|(snippet, surface_class)| {
+                render_mcp_static_text_for_surface(
+                    &db,
+                    RenderableMcpText::Static(RenderableMcpStaticText::new(snippet, surface_class)),
+                )
             });
 
             let account_name = account_id
                 .as_ref()
                 .and_then(|aid| db.get_account(aid).ok().flatten())
-                .map(|a| a.name);
+                .and_then(|a| {
+                    render_mcp_static_text_for_surface(
+                        &db,
+                        RenderableMcpText::Static(RenderableMcpStaticText::new(
+                            a.name,
+                            McpStaticTextClass::AccountName,
+                        )),
+                    )
+                });
 
             results.push(MeetingSearchItem {
                 id,
                 title,
-                meeting_type,
-                start_time,
+                meeting_type: render_mcp_static_text_for_surface(
+                    &db,
+                    RenderableMcpText::Static(RenderableMcpStaticText::new(
+                        meeting_type,
+                        McpStaticTextClass::MeetingType,
+                    )),
+                )
+                .unwrap_or_default(),
+                start_time: render_mcp_static_text_for_surface(
+                    &db,
+                    RenderableMcpText::Static(RenderableMcpStaticText::new(
+                        start_time,
+                        McpStaticTextClass::DateTime,
+                    )),
+                )
+                .unwrap_or_default(),
                 account_name,
                 summary: match_snippet,
             });
@@ -505,20 +622,66 @@ impl DailyOsMcp {
             }
             Ok(matches) => {
                 let mut output = String::new();
-                for (i, m) in matches.iter().enumerate() {
+                let mut rendered_count = 0;
+                for m in matches.iter() {
+                    let raw_chunk = m.chunk_text.chars().take(1000).collect::<String>();
+                    let Some(chunk_text) = render_mcp_static_text_for_surface(
+                        &db,
+                        RenderableMcpText::Static(RenderableMcpStaticText::new(
+                            raw_chunk,
+                            McpStaticTextClass::ContentChunk,
+                        )),
+                    ) else {
+                        continue;
+                    };
+                    let Some(filename) = render_mcp_static_text_for_surface(
+                        &db,
+                        RenderableMcpText::Static(RenderableMcpStaticText::new(
+                            m.filename.clone(),
+                            McpStaticTextClass::ContentFilename,
+                        )),
+                    ) else {
+                        continue;
+                    };
+                    let Some(content_type) = render_mcp_static_text_for_surface(
+                        &db,
+                        RenderableMcpText::Static(RenderableMcpStaticText::new(
+                            m.content_type.clone(),
+                            McpStaticTextClass::ContentType,
+                        )),
+                    ) else {
+                        continue;
+                    };
+                    let Some(relative_path) = render_mcp_static_text_for_surface(
+                        &db,
+                        RenderableMcpText::Static(RenderableMcpStaticText::new(
+                            m.relative_path.clone(),
+                            McpStaticTextClass::ContentRelativePath,
+                        )),
+                    ) else {
+                        continue;
+                    };
+                    rendered_count += 1;
                     output.push_str(&format!(
                         "## Result {} — {} ({})\n**File:** {}\n**Score:** {:.2} (vector: {:.2}, text: {:.2})\n\n{}\n\n---\n\n",
-                        i + 1,
-                        m.filename,
-                        m.content_type,
-                        m.relative_path,
+                        rendered_count,
+                        filename,
+                        content_type,
+                        relative_path,
                         m.combined_score,
                         m.vector_score,
                         m.text_score,
-                        m.chunk_text.chars().take(1000).collect::<String>(),
+                        chunk_text,
                     ));
                 }
-                output
+                if output.is_empty() {
+                    format!(
+                        "No renderable content found for entity '{}' matching '{}'.",
+                        params.entity_id, params.query
+                    )
+                } else {
+                    output
+                }
             }
             Err(e) => format!("Search error: {e}"),
         }
@@ -679,6 +842,7 @@ pub async fn invoke_mcp_ability_tool(
 ) -> Result<CallToolResult, McpError> {
     let ability_name = request.name.to_string();
     let input_json = serde_json::Value::Object(request.arguments.unwrap_or_default());
+    let input_for_policy = input_json.clone();
     let confirmation =
         ability_bridge.take_confirmation_token(session_id, &ability_name, &input_json);
     let response = ability_bridge
@@ -686,12 +850,27 @@ pub async fn invoke_mcp_ability_tool(
         .await
         .map_err(mcp_error_from_bridge_surface_error)?;
     if ability_name != "get_entity_context" {
+        let ability_meta = ability_bridge
+            .list_descriptors()
+            .iter()
+            .find(|descriptor| descriptor.name == ability_name)
+            .copied()
+            .ok_or_else(|| {
+                mcp_error_from_bridge_surface_error(BridgeSurfaceError::AbilityUnavailable)
+            })?;
+        let policy = build_ownership_policy_for_invocation(
+            ability_meta,
+            &input_for_policy,
+            &response.rendered_provenance.value,
+        )
+        .map_err(|error| mcp_error_from_bridge_surface_error(BridgeSurfaceError::Ownership(error)))?
+        .rejecting_sources_outside_subject_scope();
         validate_serialized_subject_ownership(
             response.data.clone(),
             response.rendered_provenance.value.clone(),
             response.diagnostics.clone(),
             &[],
-            OwnershipPolicy::confident(),
+            policy,
         )
         .map_err(|error| {
             mcp_error_from_bridge_surface_error(BridgeSurfaceError::Ownership(error))
@@ -784,7 +963,7 @@ fn get_provenance_invocation_id(request: &CallToolRequestParam) -> Result<Invoca
 }
 
 pub fn mcp_error_from_bridge_surface_error(error: BridgeSurfaceError) -> McpError {
-    let data = serde_json::to_value(error)
+    let data = serde_json::to_value(&error)
         .unwrap_or_else(|_| serde_json::Value::String("ability_unavailable".to_string()));
     McpError::invalid_params(error.to_string(), Some(data))
 }
@@ -899,7 +1078,12 @@ fn resolve_entity_id(db: &ActionDb, query: &str) -> Option<String> {
     None
 }
 
-fn mcp_entity_summary(db: &ActionDb, entity_type: &str, entity_id: &str) -> Option<Option<String>> {
+fn mcp_entity_summary(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    _legacy_summary: Option<&str>,
+) -> Option<String> {
     let subject_ref = serde_json::json!({
         "kind": entity_type,
         "id": entity_id,
@@ -912,8 +1096,7 @@ fn mcp_entity_summary(db: &ActionDb, entity_type: &str, entity_id: &str) -> Opti
         return None;
     }
 
-    let actor = RenderActor::agent("agent:mcp");
-    Some(claims.into_iter().find_map(|claim| {
+    claims.into_iter().find_map(|claim| {
         let text = claim
             .metadata_json
             .as_deref()
@@ -931,16 +1114,12 @@ fn mcp_entity_summary(db: &ActionDb, entity_type: &str, entity_id: &str) -> Opti
                         .map(str::to_string)
                 })
             })
-            .unwrap_or_else(|| claim.text.clone()); // dos412-render-policy-covered: helper passes this through renderable_claim_text below.
-        renderable_claim_text(&claim, RenderSurface::McpTool, &actor).map(|rendered| {
-            if rendered.policy.kind == dailyos_lib::services::sensitivity::RenderPolicyKind::Render
-            {
-                text
-            } else {
-                rendered.text
-            }
-        })
-    }))
+            .unwrap_or_else(|| claim.text.clone()); // dos412-render-policy-covered: claim carrier keeps id+sensitivity for MCP rendering.
+        render_mcp_static_text_for_surface(
+            db,
+            RenderableMcpText::Claim(RenderableMcpClaimText::from_claim_value(&claim, text)),
+        )
+    })
 }
 
 fn read_json_file(path: &std::path::Path) -> Option<serde_json::Value> {
@@ -949,8 +1128,55 @@ fn read_json_file(path: &std::path::Path) -> Option<serde_json::Value> {
         .and_then(|s| serde_json::from_str(&s).ok())
 }
 
+fn briefing_static_text_class(path: &[String], _text: &str) -> Option<McpStaticTextClass> {
+    let root = path.first().map(String::as_str)?;
+    let leaf = path.last().map(String::as_str)?;
+    match (root, leaf) {
+        ("schedule", "title") => Some(McpStaticTextClass::MeetingTitle),
+        ("schedule", "meeting_type") | ("schedule", "type") => {
+            Some(McpStaticTextClass::MeetingType)
+        }
+        ("schedule", "start_time")
+        | ("schedule", "end_time")
+        | ("schedule", "date")
+        | ("actions", "due_date")
+        | ("actions", "created_at")
+        | ("briefing", "date") => Some(McpStaticTextClass::DateTime),
+        ("schedule", "account_name") | ("schedule", "account") => {
+            Some(McpStaticTextClass::AccountName)
+        }
+        ("schedule", "project_name") | ("schedule", "project") => {
+            Some(McpStaticTextClass::ProjectName)
+        }
+        ("schedule", "person_name")
+        | ("schedule", "attendee")
+        | ("schedule", "attendees")
+        | ("emails", "sender_name")
+        | ("emails", "from_name") => Some(McpStaticTextClass::PersonName),
+        ("actions", "priority") => Some(McpStaticTextClass::ActionPriority),
+        ("actions", "status") => Some(McpStaticTextClass::EntityStatus),
+        ("actions", "title") => Some(McpStaticTextClass::ActionTitle),
+        ("emails", "subject") => Some(McpStaticTextClass::EmailSubject),
+        ("emails", "snippet") | ("emails", "summary") => Some(McpStaticTextClass::EmailSnippet),
+        ("briefing", "narrative") | ("briefing", "summary") | ("briefing", "text") => {
+            Some(McpStaticTextClass::BriefingNarrative)
+        }
+        _ => None,
+    }
+}
+
+fn entity_name_static_class(entity_type: &str) -> McpStaticTextClass {
+    match entity_type {
+        "account" => McpStaticTextClass::AccountName,
+        "project" => McpStaticTextClass::ProjectName,
+        "person" => McpStaticTextClass::PersonName,
+        _ => McpStaticTextClass::EntityType,
+    }
+}
+
 #[allow(clippy::too_many_arguments)]
 fn build_entity_result(
+    db: &ActionDb,
     id: &str,
     name: &str,
     entity_type: &str,
@@ -963,31 +1189,109 @@ fn build_entity_result(
 ) -> EntityResult {
     EntityResult {
         id: id.to_string(),
-        name: name.to_string(),
+        name: render_mcp_static_text_for_surface(
+            db,
+            RenderableMcpText::Static(RenderableMcpStaticText::new(
+                name,
+                entity_name_static_class(entity_type),
+            )),
+        )
+        .unwrap_or_default(), // dos412-render-policy-covered: entity names are explicit MCP non-claim metadata.
         entity_type: entity_type.to_string(),
-        health: health.map(str::to_string),
-        status: status.map(str::to_string),
-        lifecycle: lifecycle.map(str::to_string),
-        intelligence_summary: intelligence_summary.map(str::to_string),
+        health: health.and_then(|health| {
+            render_mcp_static_text_for_surface(
+                db,
+                RenderableMcpText::Static(RenderableMcpStaticText::new(
+                    health,
+                    McpStaticTextClass::EntityHealth,
+                )),
+            )
+        }),
+        status: status.and_then(|status| {
+            render_mcp_static_text_for_surface(
+                db,
+                RenderableMcpText::Static(RenderableMcpStaticText::new(
+                    status,
+                    McpStaticTextClass::EntityStatus,
+                )),
+            )
+        }),
+        lifecycle: lifecycle.and_then(|lifecycle| {
+            render_mcp_static_text_for_surface(
+                db,
+                RenderableMcpText::Static(RenderableMcpStaticText::new(
+                    lifecycle,
+                    McpStaticTextClass::EntityLifecycle,
+                )),
+            )
+        }),
+        intelligence_summary: intelligence_summary.map(str::to_string), // dos412-render-policy-covered: caller supplies mcp_entity_summary-rendered text.
         open_actions: actions
             .iter()
             .filter(|a| matches!(a.status.as_str(), "backlog" | "unstarted" | "started"))
             .take(10)
-            .map(|a| ActionSummary {
-                id: a.id.clone(),
-                title: a.title.clone(),
-                priority: a.priority.to_string(),
-                due_date: a.due_date.clone(),
+            .filter_map(|a| {
+                render_mcp_static_text_for_surface(
+                    db,
+                    RenderableMcpText::Static(RenderableMcpStaticText::new(
+                        a.title.clone(),
+                        McpStaticTextClass::ActionTitle,
+                    )),
+                )
+                .map(|title| ActionSummary {
+                    id: a.id.clone(),
+                    title,
+                    priority: render_mcp_static_text_for_surface(
+                        db,
+                        RenderableMcpText::Static(RenderableMcpStaticText::new(
+                            a.priority.to_string(),
+                            McpStaticTextClass::ActionPriority,
+                        )),
+                    )
+                    .unwrap_or_default(),
+                    due_date: a.due_date.clone().and_then(|due_date| {
+                        render_mcp_static_text_for_surface(
+                            db,
+                            RenderableMcpText::Static(RenderableMcpStaticText::new(
+                                due_date,
+                                McpStaticTextClass::DateTime,
+                            )),
+                        )
+                    }),
+                })
             })
             .collect(),
         upcoming_meetings: meetings
             .iter()
             .take(5)
-            .map(|m| MeetingSummary {
-                id: m.id.clone(),
-                title: m.title.clone(),
-                start_time: m.start_time.clone(),
-                meeting_type: m.meeting_type.clone(),
+            .filter_map(|m| {
+                render_mcp_static_text_for_surface(
+                    db,
+                    RenderableMcpText::Static(RenderableMcpStaticText::new(
+                        m.title.clone(),
+                        McpStaticTextClass::MeetingTitle,
+                    )),
+                )
+                .map(|title| MeetingSummary {
+                    id: m.id.clone(),
+                    title,
+                    start_time: render_mcp_static_text_for_surface(
+                        db,
+                        RenderableMcpText::Static(RenderableMcpStaticText::new(
+                            m.start_time.clone(),
+                            McpStaticTextClass::DateTime,
+                        )),
+                    )
+                    .unwrap_or_default(),
+                    meeting_type: render_mcp_static_text_for_surface(
+                        db,
+                        RenderableMcpText::Static(RenderableMcpStaticText::new(
+                            m.meeting_type.clone(),
+                            McpStaticTextClass::MeetingType,
+                        )),
+                    )
+                    .unwrap_or_default(),
+                })
             })
             .collect(),
     }
