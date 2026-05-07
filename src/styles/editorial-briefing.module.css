@@ -1391,7 +1391,7 @@
 }
 
 /* =============================================================================
-   BRIEFING CARD OVERRIDE — Parks shared MeetingCard accent bar in margin gutter
+   BRIEFING CARD OVERRIDE — Legacy schedule card accent bar placement
    ============================================================================= */
 
 .briefingCardOverride::before {

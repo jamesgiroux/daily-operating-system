@@ -17,7 +17,7 @@ export interface MagazineShellConfig {
   /** Atmosphere gradient color */
   atmosphereColor: "turmeric" | "terracotta" | "larkspur" | "olive" | "eucalyptus";
   /** Which nav icon is highlighted */
-  activePage: "today" | "week" | "emails" | "dropbox" | "actions" | "me" | "people" | "accounts" | "projects" | "settings";
+  activePage: "today" | "emails" | "dropbox" | "actions" | "me" | "people" | "accounts" | "projects" | "settings";
   /** Persistent orientation trail for FolioBar detail/report pages */
   breadcrumbs?: FolioBreadcrumbItem[];
   /** Chapter definitions for FloatingNavIsland scroll mode */

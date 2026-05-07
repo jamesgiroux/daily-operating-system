@@ -18,7 +18,6 @@ import React, { useState, useEffect, useRef, useCallback, useLayoutEffect } from
 import { invoke } from '@tauri-apps/api/core';
 import { BrandMark } from '../ui/BrandMark';
 import {
-  Calendar,
   Mail,
   Inbox,
   CheckSquare2,
@@ -44,7 +43,7 @@ export interface FloatingNavIslandProps {
    * Currently active page for visual highlighting (global pill)
    * Default: 'today'
    */
-  activePage?: 'today' | 'week' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
+  activePage?: 'today' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
 
   /**
    * Color of active state indicator
@@ -93,10 +92,10 @@ export interface FloatingNavIslandProps {
 }
 
 interface NavItem {
-  id: 'week' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
+  id: 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
   label: string;
   icon: React.ReactNode;
-  group: 'main' | 'work' | 'entity' | 'admin';
+  group: 'work' | 'entity' | 'admin';
 }
 
 export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
@@ -226,8 +225,6 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
   const entityPair = entityMode === 'project' ? [projectsItem, accountsItem] : [accountsItem, projectsItem];
 
   const items: NavItem[] = [
-    // Time — schedule views
-    { id: 'week', label: 'This Week', icon: <Calendar size={18} strokeWidth={1.8} />, group: 'main' },
     // Work — mail + actions
     { id: 'emails', label: 'Mail', icon: <Mail size={18} strokeWidth={1.8} />, group: 'work' },
     { id: 'actions', label: 'Actions', icon: <CheckSquare2 size={18} strokeWidth={1.8} />, group: 'work' },
@@ -313,11 +310,6 @@ export const FloatingNavIsland: React.FC<FloatingNavIslandProps> = ({
         >
           <BrandMark size={16} />
         </button>
-
-        {/* Time — This Week */}
-        {items
-          .filter((item) => item.group === 'main')
-          .map(renderNavButton)}
 
         <div className={styles.navIslandDivider} aria-hidden="true" />
 

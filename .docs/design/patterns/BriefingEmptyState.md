@@ -106,7 +106,7 @@ The pattern does not detect or trigger auth — `cta.onClick` delegates to the c
 
 ## Naming notes
 
-`BriefingEmptyState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing carry the prefix. There is no generic `EmptyState` to shadow. Existing canonical precedent: `BriefingMeetingCard`, `DailyBriefingAttentionSection`.
+`BriefingEmptyState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing carry the prefix. There is no generic `EmptyState` to shadow.
 
 The slot-based API (`eyebrow`, `headline`, `lede`, `checklistItems`, `cta`) keeps copy out of the component and makes the pattern trivial to test. The briefing surface owns the words. Distinct from a generic null-state placeholder — this pattern carries the implicit contract that the state is *opt-in cold-start* (user hasn't connected sources), not a technical failure.
 

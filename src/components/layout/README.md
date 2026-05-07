@@ -45,7 +45,7 @@ interface FolioBarProps {
 ```typescript
 interface FloatingNavIslandProps {
   mode?: 'app' | 'chapters';        // 'app' = page nav, 'chapters' = scroll nav
-  activePage?: 'today' | 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'settings';
+  activePage?: 'today' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
   activeColor?: 'turmeric' | 'terracotta' | 'larkspur';
   onNavigate?: (page: string) => void;
   onHome?: () => void;
@@ -66,11 +66,13 @@ interface FloatingNavIslandProps {
 
 **Icons:**
 - Today: Grid3x3
-- This Week: Calendar
-- Inbox: Inbox
+- Mail: Mail
 - Actions: CheckSquare2
+- Me: UserCircle
 - People: Users
 - Accounts: Building2
+- Projects: FolderKanban
+- Inbox: Inbox
 - Settings: Settings
 
 ---
@@ -110,7 +112,7 @@ interface MagazinePageLayoutProps {
   heroSection: React.ReactNode;
   children: React.ReactNode;
   atmosphereColor?: 'turmeric' | 'terracotta' | 'larkspur';
-  activePage?: 'today' | 'week' | 'inbox' | 'actions' | 'people' | 'accounts' | 'settings';
+  activePage?: 'today' | 'emails' | 'dropbox' | 'actions' | 'me' | 'people' | 'accounts' | 'projects' | 'settings';
   folioLabel?: string;
   folioDate?: string;
   readinessStats?: ReadinessStat[];

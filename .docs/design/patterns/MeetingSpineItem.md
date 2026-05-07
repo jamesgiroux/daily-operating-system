@@ -85,14 +85,13 @@ Footer changes per prep state:
 ## Source
 
 - **Mockup substrate:** `.docs/_archive/mockups/claude-design-project/mockups/briefing/variations/Daily Briefing redesign.html` (`.meeting`, `.meeting-time`, `.meeting-eyebrow`, `.meeting-title`, `.meeting-context`, `.meeting-foot`)
-- **Code:** `src/components/dashboard/MeetingSpineItem.tsx` (available for the proposed cutover; not yet consumed by routed DailyBriefing)
+- **Code:** `src/components/dashboard/MeetingSpineItem.tsx`
 - **Styles:** `src/components/dashboard/MeetingSpineItem.module.css`
 - **Reference mirror:** `.docs/design/reference/_shared/styles/MeetingSpineItem.module.css`
 
 ## Surfaces that consume it
 
-- `DailyBriefingRedesign` proposed reference surface (`.docs/design/reference/surfaces/briefing-redesign.html`)
-- No shipped routed consumer yet. Routed DailyBriefing still uses `BriefingMeetingCard` + `MeetingCard`.
+- `DailyBriefingRedesign` routed surface and reference (`.docs/design/reference/surfaces/briefing-redesign.html`)
 
 ## Naming notes
 

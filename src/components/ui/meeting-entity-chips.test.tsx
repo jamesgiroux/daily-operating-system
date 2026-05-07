@@ -97,13 +97,7 @@ describe("MeetingEntityChips — chip X dismissal (DOS-240)", () => {
     // Chip is rendered
     expect(screen.getByText("Acme Corp")).toBeInTheDocument();
 
-    // The X button is the only <button> inside the chip (EntityPicker is
-    // stubbed to a div), so it is uniquely identifiable.
-    const removeButton = screen
-      .getByText("Acme Corp")
-      .closest("span")
-      ?.querySelector("button");
-    expect(removeButton).toBeTruthy();
+    const removeButton = screen.getByRole("button", { name: "Remove Acme Corp" });
 
     fireEvent.click(removeButton!);
 
@@ -152,11 +146,7 @@ describe("MeetingEntityChips — chip X dismissal (DOS-240)", () => {
       />,
     );
 
-    const removeButton = screen
-      .getByText("Error Co")
-      .closest("span")
-      ?.querySelector("button");
-    expect(removeButton).toBeTruthy();
+    const removeButton = screen.getByRole("button", { name: "Remove Error Co" });
 
     fireEvent.click(removeButton!);
 

@@ -25,9 +25,6 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`DayStrip`](./DayStrip.md) | proposed | Previous/current/next briefing-day navigation under FolioBar | DailyBriefing Daily Briefing redesign reference candidate |
 | [`DayChart`](./DayChart.md) | proposed | Visual day shape (hour ticks + bars + NOW line) | Daily Briefing redesign prototype only |
 | [`MeetingSpineItem`](./MeetingSpineItem.md) | proposed | Magazine-style meeting list entry | DailyBriefing Daily Briefing redesign reference candidate; source component exists but is not routed |
-| [`MeetingCard`](./MeetingCard.md) | integrated | Shared schedule/timeline meeting row | DailyBriefing, WeekPage |
-| [`BriefingMeetingCard`](./BriefingMeetingCard.md) | integrated | Expandable briefing schedule row with prep details | DailyBriefing |
-| [`DailyBriefingAttentionSection`](./DailyBriefingAttentionSection.md) | integrated | Priority/action/email/lifecycle section used in the briefing | DailyBriefing |
 | [`InferredActionSelector`](./InferredActionSelector.md) | proposed | Suggested action with a dropdown of alternatives | DailyBriefing Daily Briefing redesign reference candidate |
 
 ### Wave 2 (v1.4.4 trust UI, 0.2.0)

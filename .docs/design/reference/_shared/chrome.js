@@ -326,7 +326,7 @@
       'aria-label': 'Today',
     };
     if (navBase) {
-      homeAttrs.href = navBase + '/briefing.html';
+      homeAttrs.href = navBase + '/briefing-redesign.html';
       globalPill.append(el('a', homeAttrs, brandMark(16)));
     } else {
       homeAttrs.type = 'button';
@@ -446,7 +446,7 @@
 
     // Every button/link inside the content column advances to the next step.
     // Disabled buttons (e.g. claude-code "Continue" before sign-in) get
-    // ignored. On the final chapter, buttons fall back to briefing.html.
+    // ignored. On the final chapter, buttons fall back to briefing-redesign.html.
     const content = body.querySelector('.onboarding_contentColumn');
     if (!content) return;
     const targets = content.querySelectorAll('button, a');
@@ -457,7 +457,7 @@
         e.preventDefault();
         window.location.href = nextChapter
           ? nextChapter + '.html'
-          : '../briefing.html';
+          : '../briefing-redesign.html';
       });
     });
   }

@@ -30,7 +30,6 @@ import styles from "./DailyBriefingRedesign.module.css";
 
 const NAV_ROUTES: Record<string, string> = {
   today: "/",
-  week: "/week",
   emails: "/emails",
   dropbox: "/inbox",
   actions: "/actions",

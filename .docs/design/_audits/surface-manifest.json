@@ -2,17 +2,10 @@
   "_comment": "Maps each reference HTML to its canonical TSX source(s). Used by audit-reference.py to verify HTML mirrors TSX. Paths are relative to repo root. The 'primary' field is the main TSX/component the HTML mirrors; 'composes' lists imported sub-components that should also be reflected in the HTML.",
   "surfaces": [
     {
-      "html": ".docs/design/reference/surfaces/briefing.html",
-      "primary": "src/components/dashboard/DailyBriefing.tsx",
-      "module": "src/components/dashboard/DailyBriefing.module.css",
-      "module_prefix": "DailyBriefing"
-    },
-    {
       "html": ".docs/design/reference/surfaces/briefing-redesign.html",
-      "primary": "src/components/dashboard/DailyBriefingRedesign.tsx",
-      "module": "src/components/dashboard/DailyBriefingRedesign.module.css",
-      "module_prefix": "DailyBriefingRedesign",
-      "_pending_implementation": "TSX ships across W1-W5 of Daily Briefing redesign waves (DOS-422..429). Until then the script's missing-file early-return at audit-reference.py:704 yields empty findings — no false-positive failures."
+      "primary": "src/pages/DailyBriefingRedesign.tsx",
+      "module": "src/pages/DailyBriefingRedesign.module.css",
+      "module_prefix": "DailyBriefingRedesign"
     },
     {
       "html": ".docs/design/reference/surfaces/briefing-redesign-loading.html",
@@ -116,12 +109,6 @@
       "primary": "src/pages/SettingsPage.tsx",
       "module": "src/pages/SettingsPage.module.css",
       "module_prefix": "SettingsPage"
-    },
-    {
-      "html": ".docs/design/reference/surfaces/week.html",
-      "primary": "src/pages/WeekPage.tsx",
-      "module": "src/pages/WeekPage.module.css",
-      "module_prefix": "WeekPage"
     },
     {
       "html": ".docs/design/reference/surfaces/history.html",
@@ -248,11 +235,11 @@
   "route_coverage": [
     {
       "route": "/",
-      "component": "DashboardPage",
+      "component": "DailyBriefingRedesign",
       "status": "referenced+spec",
-      "reference": ".docs/design/reference/surfaces/briefing.html",
-      "spec": ".docs/design/surfaces/DailyBriefing.md",
-      "covered_by": "src/components/dashboard/DailyBriefing.tsx"
+      "reference": ".docs/design/reference/surfaces/briefing-redesign.html",
+      "spec": ".docs/design/surfaces/DailyBriefingRedesign.md",
+      "covered_by": "src/pages/DailyBriefingRedesign.tsx"
     },
     {
       "route": "/actions",
@@ -400,13 +387,6 @@
       "status": "referenced+spec",
       "reference": ".docs/design/reference/surfaces/me.html",
       "spec": ".docs/design/surfaces/MePage.md"
-    },
-    {
-      "route": "/week",
-      "component": "WeekPage",
-      "status": "referenced+spec",
-      "reference": ".docs/design/reference/surfaces/week.html",
-      "spec": ".docs/design/surfaces/WeekPage.md"
     },
     {
       "route": "/history",

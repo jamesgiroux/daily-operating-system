@@ -14,7 +14,6 @@
   <link rel="stylesheet" href="../_shared/styles/MagazinePageLayout.module.css">
 
   <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
-  <link rel="stylesheet" href="../_shared/styles/DailyBriefing.module.css">
   <link rel="stylesheet" href="../_shared/styles/DayStrip.module.css">
   <link rel="stylesheet" href="../_shared/styles/DayChart.module.css">
   <link rel="stylesheet" href="../_shared/styles/MeetingSpineItem.module.css">
@@ -63,10 +62,6 @@
 
     .MagazinePageLayout_pageContainer {
       margin-top: calc(var(--page-margin-top) + 72px);
-    }
-
-    .FloatingNavIsland_navIslandItem[href="./week.html"] {
-      display: none;
     }
 
     .dspine-moving-list {
@@ -270,7 +265,7 @@
 
 <div class="MagazinePageLayout_magazinePage">
 <nav class="DayStrip_strip" aria-label="Briefing days" data-ds-tier="pattern" data-ds-name="DayStrip" data-ds-spec="patterns/DayStrip.md">
-  <a class="DayStrip_side" href="briefing.html" title="Yesterday">
+  <a class="DayStrip_side" href="briefing-redesign.html" title="Yesterday">
     <span class="DayStrip_direction" aria-hidden="true">&larr;</span>
     <span class="DayStrip_label">Yesterday</span>
     <span class="DayStrip_preview">Wed &middot; Acme call captured &middot; 2 actions logged</span>
@@ -279,7 +274,7 @@
     <span class="DayStrip_mark" aria-hidden="true"></span>
     Today
   </div>
-  <a class="DayStrip_side DayStrip_sideRight" href="briefing.html" title="Tomorrow">
+  <a class="DayStrip_side DayStrip_sideRight" href="briefing-redesign.html" title="Tomorrow">
     <span class="DayStrip_preview">Fri &middot; Northwind follow-up at 9:00</span>
     <span class="DayStrip_label">Tomorrow</span>
     <span class="DayStrip_direction" aria-hidden="true">&rarr;</span>
@@ -581,7 +576,7 @@
     </div>
   </section>
 
-  <section id="watch" class="editorial-briefing_prioritiesSection" data-ds-tier="pattern" data-ds-name="DailyBriefingAttentionSection" data-ds-spec="patterns/DailyBriefingAttentionSection.md" data-ds-variant="watch">
+  <section id="watch" class="editorial-briefing_prioritiesSection">
     <div class="editorial-briefing_marginGrid" data-ds-tier="pattern" data-ds-name="MarginGrid" data-ds-spec="patterns/MarginGrid.md">
       <div class="editorial-briefing_marginLabel">
         Watch

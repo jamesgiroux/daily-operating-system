@@ -19,8 +19,6 @@
 <link rel="stylesheet" href="../_shared/styles/EditableText.module.css">
 <link rel="stylesheet" href="../_shared/styles/StatusDot.module.css">
 <link rel="stylesheet" href="../_shared/styles/Pill.module.css">
-<link rel="stylesheet" href="../_shared/styles/MeetingCard.module.css">
-<link rel="stylesheet" href="../_shared/styles/WeekPage.module.css">
 <link rel="stylesheet" href="../_shared/styles/EntityListShell.module.css">
 <link rel="stylesheet" href="../_shared/styles/EntityRow.module.css">
 <link rel="stylesheet" href="../_shared/styles/TalkBalanceBar.module.css">
@@ -43,7 +41,6 @@
 <link rel="stylesheet" href="../_shared/styles/GlanceCell.module.css">
 <link rel="stylesheet" href="../_shared/styles/ChapterHeading.module.css">
 <link rel="stylesheet" href="../_shared/styles/editorial-briefing.module.css">
-<link rel="stylesheet" href="../_shared/styles/DailyBriefing.module.css">
 <link rel="stylesheet" href="../_shared/styles/DayStrip.module.css">
 <link rel="stylesheet" href="../_shared/styles/DayChart.module.css">
 <link rel="stylesheet" href="../_shared/styles/MeetingSpineItem.module.css">
@@ -731,9 +728,9 @@
         <div class="ds-variants"><span>previous/current/next</span><span>mobile compact</span></div>
         <div class="ds-demo" data-ds-name="DayStrip" data-ds-tier="pattern" data-ds-spec="patterns/DayStrip.md">
           <nav class="DayStrip_strip" aria-label="Briefing days" style="position:relative; top:auto; left:auto; right:auto; z-index:1; margin:0; padding:0 16px;">
-            <a class="DayStrip_side" href="../surfaces/briefing.html"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">Yesterday</span><span class="DayStrip_preview">Acme call captured</span></a>
+            <a class="DayStrip_side" href="../surfaces/briefing-redesign.html"><span class="DayStrip_direction" aria-hidden="true">&larr;</span><span class="DayStrip_label">Yesterday</span><span class="DayStrip_preview">Acme call captured</span></a>
             <div class="DayStrip_current" aria-label="Today, Thursday April 23"><span class="DayStrip_mark" aria-hidden="true"></span>Today</div>
-            <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing.html"><span class="DayStrip_preview">Northwind follow-up</span><span class="DayStrip_label">Tomorrow</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
+            <a class="DayStrip_side DayStrip_sideRight" href="../surfaces/briefing-redesign.html"><span class="DayStrip_preview">Northwind follow-up</span><span class="DayStrip_label">Tomorrow</span><span class="DayStrip_direction" aria-hidden="true">&rarr;</span></a>
           </nav>
         </div>
       </article>
@@ -768,155 +765,6 @@
             <div class="ChapterHeading_titleRow"><h2 class="ChapterHeading_title">Health &amp; Outlook</h2></div>
             <p class="ChapterHeading_epigraph">What the room is feeling and what the data shows.</p>
           </div>
-        </div>
-      </article>
-
-      <article id="MeetingCard" class="ds-card" data-status="integrated">
-        <div class="ds-card-header">
-          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">MeetingCard</h3></div>
-          <a class="ds-spec-link" href="../../patterns/MeetingCard.md">Spec</a>
-        </div>
-        <p class="ds-composition"><strong>Composes:</strong> time column, accent bar, title/subtitle slots, temporal state, intelligence quality, and optional child content.</p>
-        <div class="ds-variants"><span>upcoming</span><span>in-progress</span><span>past outcome</span><span>slot extras</span><span>navigable</span></div>
-        <div class="ds-demo ds-demo-list" data-ds-name="MeetingCard" data-ds-tier="pattern" data-ds-spec="patterns/MeetingCard.md">
-          <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_navigable">
-            <div class="MeetingCard_time">9:30<span class="MeetingCard_duration">30m</span></div>
-            <div class="MeetingCard_content">
-              <div class="MeetingCard_titleRow"><span class="MeetingCard_title">Security review prep</span></div>
-              <div class="MeetingCard_subtitle">
-                Acme Corp
-                <span class="HealthBadge_badge"><span class="HealthBadge_dot HealthBadge_dotCompact HealthBadge_dotYellow"></span><span class="HealthBadge_score HealthBadge_scoreCompact">71</span></span>
-                <span class="WeekPage_noPrepBadge">No prep</span>
-                <span class="WeekPage_daysUntilLabel">2 days</span>
-              </div>
-            </div>
-          </div>
-          <div class="MeetingCard_card MeetingCard_accentCustomer MeetingCard_active">
-            <div class="MeetingCard_time">10:00<span class="MeetingCard_duration">45m</span></div>
-            <div class="MeetingCard_content">
-              <div class="MeetingCard_titleRow"><span class="MeetingCard_title">Acme renewal call</span><span class="Pill_pill Pill_turmeric Pill_compact MeetingStatusPill_status MeetingStatusPill_inProgress"><span class="Pill_dot" aria-hidden="true"></span>NOW</span></div>
-              <div class="MeetingCard_subtitle">Acme Corp · 6 attendees <span class="IntelligenceQualityBadge_root"><span class="IntelligenceQualityBadge_dot" data-level="ready"></span>Ready</span></div>
-            </div>
-          </div>
-          <div class="MeetingCard_card MeetingCard_accentInternal MeetingCard_past MeetingCard_pastNavigate">
-            <div class="MeetingCard_time">8:30<span class="MeetingCard_duration">30m</span></div>
-            <div class="MeetingCard_content">
-              <div class="MeetingCard_titleRow"><span class="MeetingCard_title">Pipeline sync</span><span class="MeetingCard_pastArrow">-&gt;</span></div>
-              <div class="MeetingCard_subtitle">Internal</div>
-              <span class="WeekPage_outcomeRow">
-                <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><polyline points="20 6 9 17 4 12" /></svg>
-                <span class="WeekPage_outcomeSummaryText">Renewal risk assigned to CSM owner</span>
-                <span class="WeekPage_followUpBadge">2 follow-ups</span>
-              </span>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article id="BriefingMeetingCard" class="ds-card" data-status="integrated">
-        <div class="ds-card-header">
-          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">BriefingMeetingCard</h3></div>
-          <a class="ds-spec-link" href="../../patterns/BriefingMeetingCard.md">Spec</a>
-        </div>
-        <p class="ds-composition"><strong>Composes:</strong> MeetingCard plus inline expansion panel: meeting context, KeyPeopleFlow, PrepGrid, MeetingActionChecklist, and bridge links.</p>
-        <div class="ds-variants"><span>up next expanded</span><span>in-progress expanded</span><span>past summary</span><span>cancelled</span><span>empty prep</span></div>
-        <div class="ds-demo" data-ds-name="BriefingMeetingCard" data-ds-tier="pattern" data-ds-spec="patterns/BriefingMeetingCard.md">
-          <div class="MeetingCard_card MeetingCard_accentCustomer editorial-briefing_briefingCardOverride editorial-briefing_scheduleRowExpandable editorial-briefing_scheduleRowExpanded">
-            <div class="MeetingCard_time">10:00<span class="MeetingCard_duration">45m</span></div>
-            <div class="MeetingCard_content">
-              <div class="MeetingCard_titleRow"><span class="MeetingCard_title">Acme renewal call</span><span class="Pill_pill Pill_sage Pill_compact">UP NEXT</span><span class="editorial-briefing_expandHint">collapse</span></div>
-              <div class="MeetingCard_subtitle">Acme Corp · 6 attendees <span class="IntelligenceQualityBadge_root"><span class="IntelligenceQualityBadge_dot" data-level="fresh"></span>Fresh</span></div>
-            </div>
-          </div>
-          <div class="editorial-briefing_expansionPanel editorial-briefing_expansionTintTurmeric editorial-briefing_expansionPanelOpen" style="max-height: 720px;">
-            <div class="editorial-briefing_expansionInner">
-              <p class="editorial-briefing_expansionDescription">Review procurement's redlines, confirm executive sponsor coverage, and leave with a named owner for the security questionnaire.</p>
-              <div class="editorial-briefing_theRoom">
-                <div class="editorial-briefing_theRoomLabel">The Room</div>
-                <div class="editorial-briefing_theRoomGroup">
-                  <div class="editorial-briefing_theRoomGroupLabel">Their Side</div>
-                  <div class="editorial-briefing_theRoomPerson"><span class="editorial-briefing_theRoomName">Priya Raman</span><span class="editorial-briefing_theRoomCompany">acme.com</span></div>
-                  <div class="editorial-briefing_theRoomPerson"><span class="editorial-briefing_theRoomName">Owen Carter</span><span class="editorial-briefing_theRoomCompany">acme.com</span><span class="editorial-briefing_theRoomRole editorial-briefing_theRoomRoleTentative">tentative</span></div>
-                </div>
-                <div class="editorial-briefing_theRoomGroup">
-                  <div class="editorial-briefing_theRoomGroupLabel">Our Side</div>
-                  <div class="editorial-briefing_theRoomPerson"><span class="editorial-briefing_theRoomName">James Giroux</span><span class="editorial-briefing_theRoomCompany">dailyos.com</span></div>
-                </div>
-              </div>
-              <div class="editorial-briefing_prepGrid">
-                <div class="editorial-briefing_prepSection"><div class="editorial-briefing_prepLabel editorial-briefing_prepLabelDiscuss">Discuss</div><div class="editorial-briefing_prepItem"><span class="editorial-briefing_prepDot editorial-briefing_prepDotTurmeric"></span><span class="editorial-briefing_prepItemText">Confirm pricing walk owner</span><span class="editorial-briefing_prepImpactBadge" data-impact="high">high</span></div></div>
-                <div class="editorial-briefing_prepSection"><div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWatch">Watch</div><div class="editorial-briefing_prepItem"><span class="editorial-briefing_prepDot editorial-briefing_prepDotTerracotta"></span><span class="editorial-briefing_prepItemText">Procurement joined late and may reset timing</span><span class="editorial-briefing_prepImpactBadge" data-impact="medium">medium</span></div></div>
-                <div class="editorial-briefing_prepSection"><div class="editorial-briefing_prepLabel editorial-briefing_prepLabelWins">Wins</div><div class="editorial-briefing_prepItem"><span class="editorial-briefing_prepDot editorial-briefing_prepDotSage"></span><span class="editorial-briefing_prepItemText">Champion forwarded the migration plan</span></div></div>
-              </div>
-              <div class="editorial-briefing_meetingActions">
-                <div class="editorial-briefing_meetingActionsLabel">Before this meeting</div>
-                <div class="editorial-briefing_meetingActionsItem">
-                  <button class="editorial-briefing_meetingActionsCheck" type="button" aria-label="Complete action"></button>
-                  <div><div class="editorial-briefing_meetingActionsText">Send revised pricing appendix</div><div class="editorial-briefing_meetingActionsContext">today · Acme Corp</div></div>
-                </div>
-                <div class="editorial-briefing_meetingActionsItem editorial-briefing_meetingActionsItemCompleted">
-                  <button class="editorial-briefing_meetingActionsCheck editorial-briefing_meetingActionsCheckChecked" type="button" aria-label="Completed action">
-                    <svg width="8" height="8" viewBox="0 0 12 12" fill="none" aria-hidden="true"><path d="M2.5 6L5 8.5L9.5 4" stroke="#fff" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" /></svg>
-                  </button>
-                  <div><div class="editorial-briefing_meetingActionsText">Confirm attendee list</div></div>
-                </div>
-              </div>
-              <div class="editorial-briefing_meetingLinks">
-                <a class="editorial-briefing_meetingLinkPrimary" href="../surfaces/meeting.html">Read full briefing -&gt;</a>
-                <button class="editorial-briefing_expansionCollapse" type="button">Collapse</button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </article>
-
-      <article id="DailyBriefingAttentionSection" class="ds-card" data-status="integrated">
-        <div class="ds-card-header">
-          <div class="ds-name-wrap"><span class="ds-tier">pattern</span><h3 class="ds-card-title">DailyBriefingAttentionSection</h3></div>
-          <a class="ds-spec-link" href="../../patterns/DailyBriefingAttentionSection.md">Spec</a>
-        </div>
-        <p class="ds-composition"><strong>Composes:</strong> lifecycle confirmation rows, prioritized action rows, scored email rows, aging notice, and view-all links.</p>
-        <div class="ds-variants"><span>lifecycle</span><span>prioritized action</span><span>raw action</span><span>email intelligence</span><span>aging notice</span></div>
-        <div class="ds-demo" data-ds-name="DailyBriefingAttentionSection" data-ds-tier="pattern" data-ds-spec="patterns/DailyBriefingAttentionSection.md">
-          <section class="editorial-briefing_prioritiesSection">
-            <div class="DailyBriefing_lifecycleGroup">
-              <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelToday">Lifecycle</div>
-              <div class="editorial-briefing_priorityItems">
-                <article class="editorial-briefing_priorityItem editorial-briefing_priorityItemToday editorial-briefing_priorityItemAccount">
-                  <span class="editorial-briefing_priorityDot editorial-briefing_priorityDotTurmeric"></span>
-                  <div class="editorial-briefing_priorityContent">
-                    <h4 class="editorial-briefing_priorityTitle">Acme Corp: renewal risk - procurement review</h4>
-                    <p class="editorial-briefing_priorityContext">Stage: legal review · Health 78 - 71 · 82% confidence · May 5</p>
-                    <p class="editorial-briefing_priorityWhy">Procurement joined the renewal thread and asked for security evidence.</p>
-                    <div class="DailyBriefing_lifecycleButtonRow"><button class="DailyBriefing_lifecycleConfirmBtn" type="button">Looks good</button><button class="DailyBriefing_lifecycleCorrectBtn" type="button">Fix something</button></div>
-                  </div>
-                </article>
-              </div>
-            </div>
-            <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelOverdue">Actions</div>
-            <div class="editorial-briefing_priorityItems">
-              <a class="editorial-briefing_priorityItem editorial-briefing_priorityItemOverdue editorial-briefing_priorityItemAccount" href="../surfaces/action-detail.html" style="text-decoration:none;">
-                <button class="editorial-briefing_priorityCheck editorial-briefing_priorityCheckOverdue" type="button" aria-label="Complete action"></button>
-                <div class="editorial-briefing_priorityContent"><div class="editorial-briefing_priorityTitle">Send revised pricing walk</div><p class="editorial-briefing_priorityContext">Overdue · Acme Corp · ~15m</p><p class="editorial-briefing_priorityWhy">Blocks the renewal call at 10:00.</p></div>
-              </a>
-              <article class="editorial-briefing_priorityItem editorial-briefing_priorityItemToday editorial-briefing_priorityItemAccount">
-                <button class="editorial-briefing_priorityCheck" type="button" aria-label="Complete action"></button>
-                <div class="editorial-briefing_priorityContent"><a class="editorial-briefing_priorityTitle" href="../surfaces/action-detail.html" style="text-decoration:none;">Confirm attendee list</a><p class="editorial-briefing_priorityContext">today · Acme Corp</p></div>
-              </article>
-            </div>
-            <div class="editorial-briefing_priorityGroupLabel editorial-briefing_priorityGroupLabelToday">Emails <span class="DailyBriefing_emailSyncTimestamp">as of 9:42 AM</span></div>
-            <div class="editorial-briefing_priorityItems">
-              <a class="editorial-briefing_priorityItem editorial-briefing_priorityItemEmailType" href="../surfaces/emails.html" style="text-decoration:none;">
-                <span class="editorial-briefing_priorityDot editorial-briefing_priorityDotTerracotta"></span>
-                <div class="editorial-briefing_priorityContent">
-                  <div class="editorial-briefing_priorityTitle">Security questionnaire needs an owner before renewal review</div>
-                  <div class="editorial-briefing_replyMeta DailyBriefing_emailMetaRow"><span>Acme Corp</span><span>Mina Patel</span><span class="editorial-briefing_emailScoreReason">customer blocked</span></div>
-                </div>
-              </a>
-            </div>
-            <div class="DailyBriefing_agingNotice">2 items aging toward auto-archive</div>
-            <div class="editorial-briefing_prioritiesViewAll"><a class="editorial-briefing_viewAllLink" href="../surfaces/actions.html">View all 8 actions -&gt;</a><a class="editorial-briefing_viewAllLink" href="../surfaces/emails.html">View all emails -&gt;</a></div>
-          </section>
         </div>
       </article>
 

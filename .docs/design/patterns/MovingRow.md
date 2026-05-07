@@ -22,7 +22,7 @@ Render one entity's "what's moving" row in the Daily Briefing Moving section. Th
 ## When NOT to use it
 
 - For an action triage row — that's `WatchRow`
-- For an editorial meeting list entry — that's `BriefingMeetingCard` or `MeetingSpineItem`
+- For an editorial meeting list entry — that's `MeetingSpineItem`
 - For a generic claim or finding row — that's `ClaimRow` or `EntityRow`
 - When the lede would exceed 2 sentences — restructure or fold the entity into another row's signal feed
 

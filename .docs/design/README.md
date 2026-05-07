@@ -13,7 +13,7 @@ The design system has migrated from monolithic top-level docs to per-entry specs
 |---|---|---|
 | **Tokens** | [`tokens/`](./tokens/) | Color, typography, spacing, motion, radius, shadows, glass, layout, and z-index — the primitive values everything else composes from |
 | **Primitives** | [`primitives/`](./primitives/) | 23 atomic UI elements (Pill, EntityChip, HealthBadge, EditableText, etc.) — one spec per primitive |
-| **Patterns** | [`patterns/`](./patterns/) | 49 composed UI patterns (FolioBar, ChapterHeading, MeetingCard, EntityListShell, PostMeetingIntelligence, etc.) — one spec per pattern |
+| **Patterns** | [`patterns/`](./patterns/) | Composed UI patterns (FolioBar, ChapterHeading, EntityListShell, PostMeetingIntelligence, etc.) — one spec per pattern |
 | **Surfaces** | [`surfaces/`](./surfaces/) + [`reference/surfaces/`](./reference/surfaces/) | Per-screen specs + manifest-backed fidelity checks for covered routed pages, reports, onboarding chapters, and splash modes; see [`INVENTORY.md`](./INVENTORY.md) for acknowledged gaps |
 | **Journeys** | [`reference/journeys/`](./reference/journeys/) | JTBD flows mapping which surfaces a CSM touches to accomplish each job |
 | **Inventory** | [`INVENTORY.md`](./INVENTORY.md) | Full surface roster (referenced + spec'd + gap) |

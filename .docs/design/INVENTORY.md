@@ -52,7 +52,7 @@ A surface can hold multiple states (e.g. `spec+referenced`).
 | ActionDetailPage | `src/pages/ActionDetailPage.tsx` | `/actions/$actionId` | Inspect and update a single action — priority, due date, links, status, Linear push. | `referenced+spec` | `action-detail.html` | `surfaces/ActionDetailPage.md` | — | Added as standalone routed reference. |
 | ActionsPage | `src/pages/ActionsPage.tsx` | `/actions` | Review suggested, active, and completed actions by priority and meeting context. | `referenced+spec` | `actions.html` | `surfaces/ActionsPage.md` | — | — |
 | BookOfBusinessPage | `src/pages/BookOfBusinessPage.tsx` | `/me/reports/book_of_business` | Generate a leadership-ready portfolio review across the user's customer book. | `referenced+spec` | `reports/book-of-business.html` | `surfaces/BookOfBusinessPage.md` | — | Dedicated report spec added during the parity pass. |
-| DailyBriefing (DashboardPage) | inline in `src/router.tsx` | `/` | View today's briefing, meeting prep, and what changed since the last scan. | `referenced+spec` | `briefing.html` | `surfaces/DailyBriefing.md` | — | Inline route component. Renamed from Dashboard per [DOS-360](https://linear.app/a8c/issue/DOS-360). |
+| DailyBriefingRedesign | `src/pages/DailyBriefingRedesign.tsx` | `/` | Read the canonical daily briefing with schedule spine, moving signals, predictions, and watch rows. | `referenced+spec` | `briefing-redesign.html`, `briefing-redesign-loading.html`, `briefing-redesign-error.html`, `briefing-redesign-empty.html` | `surfaces/DailyBriefingRedesign.md` | — | Current route target after briefing cutover. |
 | EbrQbrPage | `src/pages/EbrQbrPage.tsx` | `/accounts/$accountId/reports/ebr_qbr` | Generate and edit a customer-facing executive/quarterly business review deck. | `referenced+spec` | `reports/ebr-qbr.html` | `surfaces/EbrQbrPage.md` | — | Dedicated report spec added during the parity pass. |
 | EmailsPage | `src/pages/EmailsPage.tsx` | `/emails` | Triage email intelligence, extract commitments and signals, act on reply debt. | `referenced+spec` | `emails.html` | `surfaces/EmailsPage.md` | — | The Correspondent now has a standalone routed reference. |
 | HistoryPage | `src/pages/HistoryPage.tsx` | `/history` | Review past inbox processing activity and where files were classified or routed. | `referenced+spec` | `history.html` | `surfaces/HistoryPage.md` | — | Processing-history companion to InboxPage and EmailsPage. |
@@ -69,17 +69,7 @@ A surface can hold multiple states (e.g. `spec+referenced`).
 | RiskBriefingPage | `src/pages/RiskBriefingPage.tsx` | `/accounts/$accountId/reports/risk_briefing` | Generate and edit an executive risk briefing and recovery plan. | `referenced+spec` | `reports/risk-briefing.html` | `surfaces/RiskBriefingPage.md` | — | Dedicated report spec added during the parity pass. |
 | SettingsPage | `src/pages/SettingsPage.tsx` | `/settings` | Configure identity, connectors, data, system, notifications, diagnostics. | `referenced+spec` | `settings.html` | `surfaces/Settings.md` | — | Spec source files reconciled to `src/pages/SettingsPage.tsx`, `SettingsPage.module.css`, and `src/features/settings-ui/*`. |
 | SwotPage | `src/pages/SwotPage.tsx` | `/accounts/$accountId/reports/swot` | Generate and edit a SWOT analysis slide deck. | `referenced+spec` | `reports/swot.html` | `surfaces/SwotPage.md` | — | Dedicated report spec added during the parity pass. |
-| WeekPage | `src/pages/WeekPage.tsx` | `/week` | Understand the upcoming week's meeting load and briefing readiness. | `referenced+spec` | `week.html` | `surfaces/WeekPage.md` | — | — |
 | WeeklyImpactPage | `src/pages/WeeklyImpactPage.tsx` | `/me/reports/weekly_impact` | Generate and edit a weekly impact report — work moved, wins, watch items, next week. | `referenced+spec` | `reports/weekly-impact.html` | `surfaces/WeeklyImpactPage.md` | — | Dedicated report spec added during the parity pass. |
-
-## Proposed release-candidate references
-
-These are iteration references, not routed parity entries. Do not add them to
-the strict surface manifest until source routing exists.
-
-| Surface | File | Target route | JTBD | State | Reference | Spec | Notes |
-|---|---|---|---|---|---|---|---|
-| DailyBriefingRedesign | Proposed DailyBriefing redesign | `/` candidate | Explore the Daily Briefing redesign schedule-as-spine redesign using the current DailyBriefing reference foundation. | `proposed reference` | `briefing-redesign.html`, `briefing-redesign-loading.html`, `briefing-redesign-error.html`, `briefing-redesign-empty.html` | `surfaces/DailyBriefingRedesign.md` | Built from `DayStrip`, `DayChart`, `MeetingSpineItem`, `InferredActionSelector`, current DailyBriefing chrome, plus 0.6.0 substrate (`SignalDot`, `ProvenanceStat`, `MovingRow`, `WatchRow`, `PredictionsSection`, `BriefingLoadingState`, `BriefingErrorState`, `BriefingEmptyState`). DOS-413 plan + ADR 0129 govern the contract. |
 
 ## Full-screen non-route surfaces
 
@@ -102,7 +92,6 @@ These render at app-shell scale, not inside a page container.
 | AccountMergeDialog | `src/components/account/AccountMergeDialog.tsx` | Account detail FolioToolsDropdown "Merge" | Merge the current account into another and show moved-data results. | `documented` | — | Reference CSS exists but no standalone modal reference HTML. |
 | AgendaDraftDialog | `src/components/ui/agenda-draft-dialog.tsx` | MeetingDetail Folio "Draft Agenda" | Generate, review, and copy a meeting agenda message — sending stays manual. | `documented` | — | Used exclusively by MeetingDetail. |
 | CommandMenu | `src/components/layout/CommandMenu.tsx` | ⌘K, header search, MagazinePageLayout folio search | Search global entities, navigate routes, run quick actions. | `documented` | — | Global command palette; significant sub-composition. |
-| DailyBriefingLifecycleCorrectionDialog | `src/components/dashboard/DailyBriefing.tsx` | DailyBriefing lifecycle card "Fix something" | Correct a proposed account lifecycle/renewal-stage change with notes. | `referenced+spec` | — | Dialog styling lives with DailyBriefing; reference covers the affordance. |
 | DevToolsPanelSheet | `src/components/devtools/DevToolsPanel.tsx` | MagazinePageLayout dev badge / standalone wrench | Switch dev scenarios, onboarding states, integrations, account states, sandbox/live data. | `documented` | — | Controlled sheet variant from magazine shell. |
 | GoogleDriveImportModal | `src/components/inbox/GoogleDriveImportModal.tsx` | InboxPage "Google Drive" import | Pick Drive files/folders, choose import/watch mode, link to entity. | `documented` | — | Custom modal after external picker. |
 | ICloudWarningModal | `src/components/ICloudWarningModal.tsx` | RootLayout after `check_icloud_warning` returns a path | Warn that workspace is in iCloud-synced folder; offer dismiss. | `documented` | — | Custom modal, not Radix Dialog. |

@@ -109,7 +109,7 @@ The pattern does not auto-retry. Stack-trace exposure is forbidden — only `mes
 
 ## Naming notes
 
-`BriefingErrorState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing carry the prefix. There is no generic `ErrorState` to shadow. Existing canonical precedent: `BriefingMeetingCard`, `DailyBriefingAttentionSection`.
+`BriefingErrorState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing carry the prefix. There is no generic `ErrorState` to shadow.
 
 The slot-based API (`eyebrow`, `message`, `detailMessage`, `code`, `service`, `onRetry`, `onDiagnostics`) keeps copy out of the component and makes the pattern trivial to test. The briefing surface owns the words.
 

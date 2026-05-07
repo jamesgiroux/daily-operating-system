@@ -96,7 +96,7 @@ Copy is **always** passed in by the consuming surface — the pattern owns shape
 
 ## Naming notes
 
-`BriefingLoadingState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing surface carry the prefix. The anti-example (`❌ BriefingTrustBand`) only applies when the unprefixed pattern (`TrustBand`) already exists generically; there is no generic `LoadingState` to shadow. Existing canonical precedent: `BriefingMeetingCard`, `DailyBriefingAttentionSection`.
+`BriefingLoadingState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing surface carry the prefix. The anti-example (`❌ BriefingTrustBand`) only applies when the unprefixed pattern (`TrustBand`) already exists generically; there is no generic `LoadingState` to shadow.
 
 The slot-based API (`headline`, `eyebrow`, `withPulse`) keeps the editorial copy out of the component file and makes the pattern trivial to test in isolation. The briefing surface owns the words.
 

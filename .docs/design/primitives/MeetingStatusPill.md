@@ -15,7 +15,7 @@ Show the temporal state of a meeting in one compact, readable pill so the user c
 
 ## When to use it
 
-- In `MeetingCard` title rows when a meeting is happening now.
+- In meeting title rows when a meeting is happening now.
 - When schedule or timeline UI needs a compact temporal label.
 - When the status belongs to the meeting row as a whole, not to an individual action, finding, or transcript claim.
 
@@ -66,7 +66,6 @@ Composes the `Pill` primitive with meeting-specific status tokens, an icon slot,
 
 ## Surfaces that consume it
 
-- `MeetingCard` in DailyBriefing and WeekPage.
 - MeetingDetail schedule/hero contexts when temporal state is shown.
 
 ## Naming notes

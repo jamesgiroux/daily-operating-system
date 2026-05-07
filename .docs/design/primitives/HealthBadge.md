@@ -32,5 +32,4 @@ Show a health score with a compact visual band, trend direction, and optional ev
 
 ## Surfaces that consume it
 
-AccountsPage, AccountHero, MeetingDetailPage, DailyBriefing, and WeekPage.
-
+AccountsPage, AccountHero, and MeetingDetailPage.

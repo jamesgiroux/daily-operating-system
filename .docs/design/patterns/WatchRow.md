@@ -23,7 +23,7 @@ Render one Watch-section row in the Daily Briefing. Adaptive across four kinds: 
 
 - For "what's moving on this entity" — that's `MovingRow`
 - For a generic action row outside the briefing's restraint contract — that's `ActionRow` or a list pattern that doesn't enforce kind discrimination
-- For an editorial meeting row — that's `BriefingMeetingCard`
+- For an editorial meeting row — that's `MeetingSpineItem`
 - For a parked item that has no human-relevant context (then drop it from the contract — service decides)
 
 ## States / variants

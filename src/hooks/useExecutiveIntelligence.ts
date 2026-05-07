@@ -46,7 +46,7 @@ export function useExecutiveIntelligence() {
     ? data.signalCounts.decisions +
       data.signalCounts.delegations +
       data.signalCounts.portfolioAlerts +
-      // cancelable excluded — now shown as badge on MeetingCard (ADR-0055)
+      // cancelable excluded; meeting surfaces show cancellation as a row-level state.
       data.signalCounts.skipToday
     : 0;
 

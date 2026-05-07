@@ -6,8 +6,7 @@ Full screens. The user-visible products built on top of patterns and primitives.
 
 | Canonical name | Current src name | Status | Spec |
 |---|---|---|---|
-| [`DailyBriefing`](./DailyBriefing.md) | `DashboardPage` inline in `src/router.tsx` + `src/components/dashboard/DailyBriefing.tsx` | Canonical shipped + roadmap split | ✓ Reconciled (2026-05-05) |
-| [`DailyBriefingRedesign`](./DailyBriefingRedesign.md) | Proposed reference only (`reference/surfaces/briefing-redesign.html`) | v1.4.0 redesign candidate | Proposed (2026-05-06) |
+| [`DailyBriefingRedesign`](./DailyBriefingRedesign.md) | `src/pages/DailyBriefingRedesign.tsx` | Canonical routed briefing | Cutover reference (2026-05-07) |
 | [`Settings`](./Settings.md) | `src/pages/SettingsPage.tsx` + `src/features/settings-ui/*` | Canonical shipped + roadmap split | ✓ Reconciled (2026-05-05) |
 | [`MeetingDetail`](./MeetingDetail.md) | `src/pages/MeetingDetailPage.tsx` | Canonical shipped + extraction targets | ✓ Reconciled (2026-05-05) |
 | [`AccountDetailPage`](./AccountDetailPage.md) | `src/pages/AccountDetailPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
@@ -15,7 +14,6 @@ Full screens. The user-visible products built on top of patterns and primitives.
 | [`MePage`](./MePage.md) | `src/pages/MePage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`ProjectsPage`](./ProjectsPage.md) | `src/pages/ProjectsPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`OnboardingFlow`](./OnboardingFlow.md) | `src/components/onboarding/OnboardingFlow.tsx` | Canonical | ✓ Shipped sequence reconciled (2026-05-05) |
-| [`WeekPage`](./WeekPage.md) | `src/pages/WeekPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`AccountHealthPage`](./AccountHealthPage.md) | `src/pages/AccountHealthPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`BookOfBusinessPage`](./BookOfBusinessPage.md) | `src/pages/BookOfBusinessPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |
 | [`EbrQbrPage`](./EbrQbrPage.md) | `src/pages/EbrQbrPage.tsx` | Canonical | ✓ Parity pass (2026-05-05) |

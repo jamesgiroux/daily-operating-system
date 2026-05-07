@@ -11,8 +11,8 @@ export const PHASE3_SURFACE_OWNERSHIP: SurfaceOwnership[] = [
     id: "dashboard_briefing",
     label: "Dashboard / Briefing",
     routes: ["/"],
-    owners: ["hooks/useDashboardData.ts", "components/dashboard/DailyBriefing.tsx"],
-    notes: "Dashboard data is normalized in the hook and rendered through the daily briefing shell.",
+    owners: ["hooks/useBriefingViewModel.ts", "pages/DailyBriefingRedesign.tsx"],
+    notes: "Briefing data is normalized in the view-model hook and rendered through the daily briefing surface.",
   },
   {
     id: "actions",

@@ -13,7 +13,7 @@
 
 Render a meeting as an editorial schedule row with time, duration, title, entity byline, temporal state, optional intelligence quality, and caller-supplied slot content.
 
-`MeetingCard` does **not** own the expanded DailyBriefing prep panel. That state belongs to `BriefingMeetingCard`, which composes `MeetingCard` and renders the inline expansion below it.
+`MeetingCard` does **not** own meeting-detail depth. Routed meeting context belongs to `MeetingDetailPage`; this pattern remains a compact schedule/timeline row.
 
 ## Composition
 
@@ -26,4 +26,4 @@ Composes `MeetingStatusPill`, `IntelligenceQualityBadge`, title/subtitle slots, 
 
 ## Surfaces that consume it
 
-DailyBriefing through `BriefingMeetingCard`, and WeekPage timeline/direct meeting lists.
+WeekPage timeline/direct meeting lists.

@@ -6,8 +6,7 @@
  * - standard: dot + score + trend arrow
  * - hero: large score + band tint + trend rationale + confidence qualifier
  *
- * Wired across AccountsPage, AccountHero, MeetingDetailPage,
- * DailyBriefing, and WeekPage.
+ * Wired across account, meeting, and briefing surfaces.
  */
 import { TrendingUp, TrendingDown, Minus, Zap } from "lucide-react";
 import type { IntelligenceHealthTrend, HealthDivergence } from "@/types";

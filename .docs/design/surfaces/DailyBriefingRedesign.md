@@ -1,7 +1,7 @@
 # DailyBriefingRedesign
 
 **Tier:** surface
-**Status:** proposed reference candidate for v1.4.0
+**Status:** canonical routed surface
 **Owner:** James
 **Last updated:** 2026-05-06
 **`data-ds-name`:** `DailyBriefingRedesign`
@@ -11,13 +11,9 @@
 
 ## Job
 
-Explore the Daily Briefing redesign direction as an update to DailyBriefing using the existing
-reference Daily Briefing as the foundation. The page keeps DailyOS chrome,
-tokens, typography, margin grid, and inspector contracts while replacing the
-current meeting list emphasis with a schedule-as-spine reading flow.
-
-This is not a routed parity surface yet. It is an iteration surface for deciding
-whether and how the Daily Briefing redesign redesign rolls into v1.4.0.
+Render the canonical Daily Briefing with DailyOS chrome, tokens, typography,
+margin grid, and inspector contracts. The surface uses a schedule-as-spine
+reading flow backed by moving signals, predictions, and watch rows.
 
 ## Layout regions
 
@@ -55,7 +51,8 @@ the reference hides the `This Week` nav item for this surface.
 - `Lead` (surface-local current DailyBriefing hero treatment)
 - `DayChart`
 - `MeetingSpineItem`
-- `DailyBriefingAttentionSection` (watch section substrate)
+- `MovingRow`
+- `WatchRow`
 - `InferredActionSelector`
 - `FinisMarker`
 
@@ -75,25 +72,18 @@ New source-backed pattern added for this reference:
 - `src/components/dashboard/MeetingSpineItem.tsx`
 - `src/components/dashboard/MeetingSpineItem.module.css`
 
-Current shipped DailyBriefing remains:
+Current shipped DailyBriefing route:
 
-- `src/components/dashboard/DailyBriefing.tsx`
-- `src/components/dashboard/BriefingMeetingCard.tsx`
-- `src/components/shared/MeetingCard.tsx`
-- `src/styles/editorial-briefing.module.css`
+- `src/pages/DailyBriefingRedesign.tsx`
+- `src/pages/DailyBriefingRedesign.module.css`
 
 ## Release gates
 
 - Reference QA at desktop and mobile widths.
-- Inspector overlay shows all major primitives/patterns and the proposed
+- Inspector overlay shows all major primitives/patterns and the
   `DailyBriefingRedesign` surface tag.
-- DayStrip must be reviewed as a deliberate exception to the previous
-  FloatingNavIsland-only local-nav stance before route cutover.
-- No production route switch until a v1.4.0 implementation plan clears the
-  user-facing surface review gate.
-- If the redesign ships, routed DailyBriefing must either consume the extracted
-  `MeetingSpineItem`/`DayChart` patterns or deliberately document why a local
-  implementation is required.
+- Routed DailyBriefing consumes the extracted briefing patterns where they map
+  cleanly to the shipped surface.
 
 ## History
 

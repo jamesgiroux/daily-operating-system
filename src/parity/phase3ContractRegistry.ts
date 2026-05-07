@@ -22,7 +22,7 @@ export const PHASE3_SURFACE_CONTRACTS: SurfaceContract[] = [
   {
     id: "dashboard_briefing",
     label: "Dashboard / Briefing",
-    consumers: ["hooks/useDashboardData.ts", "components/dashboard/DailyBriefing.tsx"],
+    consumers: ["hooks/useBriefingViewModel.ts", "pages/DailyBriefingRedesign.tsx"],
     commands: [
       {
         command: "get_dashboard_data",
