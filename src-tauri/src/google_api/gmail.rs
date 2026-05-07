@@ -632,7 +632,7 @@ pub async fn fetch_frequent_correspondents(
             message_count: count,
         })
         .collect();
-    results.sort_by(|a, b| b.message_count.cmp(&a.message_count));
+    results.sort_by_key(|item| std::cmp::Reverse(item.message_count));
     results.truncate(limit);
 
     Ok(results)

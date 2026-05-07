@@ -190,11 +190,9 @@ fn extract_docx(path: &Path) -> Result<String, ExtractError> {
                     in_paragraph = false;
                 }
             }
-            Ok(quick_xml::events::Event::Text(ref e)) => {
-                if in_text_tag {
-                    if let Ok(s) = e.unescape() {
-                        text.push_str(&s);
-                    }
+            Ok(quick_xml::events::Event::Text(ref e)) if in_text_tag => {
+                if let Ok(s) = e.unescape() {
+                    text.push_str(&s);
                 }
             }
             Ok(quick_xml::events::Event::Eof) => break,
@@ -307,22 +305,20 @@ fn extract_pptx(path: &Path) -> Result<String, ExtractError> {
 
         loop {
             match reader.read_event_into(&mut buf) {
-                Ok(quick_xml::events::Event::Start(ref e)) => {
-                    if e.local_name().as_ref() == b"t" {
-                        in_text_tag = true;
-                    }
+                Ok(quick_xml::events::Event::Start(ref e))
+                    if e.local_name().as_ref() == b"t" =>
+                {
+                    in_text_tag = true;
                 }
-                Ok(quick_xml::events::Event::End(ref e)) => {
-                    if e.local_name().as_ref() == b"t" {
-                        in_text_tag = false;
-                    }
+                Ok(quick_xml::events::Event::End(ref e))
+                    if e.local_name().as_ref() == b"t" =>
+                {
+                    in_text_tag = false;
                 }
-                Ok(quick_xml::events::Event::Text(ref e)) => {
-                    if in_text_tag {
-                        if let Ok(s) = e.unescape() {
-                            text.push_str(&s);
-                            text.push(' ');
-                        }
+                Ok(quick_xml::events::Event::Text(ref e)) if in_text_tag => {
+                    if let Ok(s) = e.unescape() {
+                        text.push_str(&s);
+                        text.push(' ');
                     }
                 }
                 Ok(quick_xml::events::Event::Eof) => break,

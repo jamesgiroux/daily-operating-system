@@ -936,7 +936,7 @@ fn compute_shape_epigraph(day_shapes: &[WeekDayShape]) -> String {
     }
 
     let mut sorted = day_shapes.to_vec();
-    sorted.sort_by(|a, b| b.meeting_minutes.cmp(&a.meeting_minutes));
+    sorted.sort_by_key(|item| std::cmp::Reverse(item.meeting_minutes));
     let busiest = &sorted[0];
     let lightest = &sorted[sorted.len() - 1];
 

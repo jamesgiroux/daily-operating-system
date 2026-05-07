@@ -408,12 +408,8 @@ pub fn get_learned_reliability(
     signal_type: &str,
 ) -> f64 {
     match db.get_signal_weight(source, entity_type, signal_type) {
-        Ok(Some((alpha, beta, update_count))) => {
-            if update_count >= 5 {
-                super::sampling::sample_reliability(alpha, beta)
-            } else {
-                0.5
-            }
+        Ok(Some((alpha, beta, update_count))) if update_count >= 5 => {
+            super::sampling::sample_reliability(alpha, beta)
         }
         _ => 0.5,
     }
