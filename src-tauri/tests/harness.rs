@@ -1,3 +1,5 @@
+#![cfg(feature = "release-gate")]
+
 #[path = "harness/mod.rs"]
 mod harness;
 
@@ -1565,6 +1567,8 @@ fn harness_report_serializes_to_json_with_stable_field_order() {
         &first,
         &[
             "\"run_id\"",
+            "\"git_sha\"",
+            "\"fixtures_hash\"",
             "\"started_at\"",
             "\"finished_at\"",
             "\"fixtures\"",

@@ -106,6 +106,7 @@ harness-hermetic = []
 # Enables public helpers used only by integration tests. This must stay out of
 # default/release builds; src/lib.rs also rejects release builds with it enabled.
 test-harness = []
+release-gate = []
 mcp = ["dep:anyhow"]
 
 [[bin]]
@@ -134,7 +135,7 @@ path = "src/bin/repair_entity_linking.rs"
 [[bin]]
 name = "release-gate"
 path = "src/bin/release_gate.rs"
-required-features = []
+required-features = ["release-gate"]
 
 [target.'cfg(target_os = "macos")'.dependencies]
 objc2 = "0.6"

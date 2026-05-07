@@ -1,3 +1,5 @@
+#![cfg(feature = "release-gate")]
+
 #[path = "harness/mod.rs"]
 mod harness;
 

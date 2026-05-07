@@ -1,11 +1,1220 @@
 {
-  "ability_name": "prepare_meeting",
-  "scenario_id": "bundle13-prepare-meeting-subject-bleed",
-  "expected": {
-    "category": "transform",
-    "allowed_subject": { "kind": "account", "id": "dos287-target-example" },
-    "blocked_subject": { "kind": "account", "id": "dos287-adjacent-example" },
-    "filtered_prompt_evidence_ids": ["src-b13-adjacent"],
-    "source_asof_reachable": ["2026-05-05T09:30:00Z"]
+  "surface": "eval",
+  "value": {
+    "ability_name": "prepare_meeting",
+    "ability_schema_version": 1,
+    "ability_version": {
+      "major": 0,
+      "minor": 1
+    },
+    "actor": {
+      "component": "ability-runtime",
+      "kind": "system"
+    },
+    "children": [
+      {
+        "ability_name": "get_entity_context",
+        "ability_schema_version": 1,
+        "ability_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "actor": {
+          "component": "dailyos",
+          "kind": "system"
+        },
+        "children": [],
+        "field_attributions": {
+          "/0/content/policy/claimId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/content/policy/kind": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/content/policy/sensitivity": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/content/policy/surface": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/content/text": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/createdAt": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/entityId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/entityType": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/id": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/policy/claimId": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/policy/kind": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/policy/sensitivity": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/policy/surface": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/title/text": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          },
+          "/0/updatedAt": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "direct",
+            "explanation": null,
+            "source_refs": [
+              {
+                "source": {
+                  "source_index": 0
+                }
+              }
+            ],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "account": "dos287-target-example"
+              },
+              "supporting_source_refs": []
+            },
+            "trust_band": "likely_current"
+          }
+        },
+        "inputs_snapshot": {
+          "entity_watermarks": {},
+          "glean_connected": false,
+          "newest_signal_at": null,
+          "provider_config_hash": "unknown",
+          "source_freshness": {}
+        },
+        "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "mode": "evaluate",
+        "produced_at": "2026-05-06T12:00:00Z",
+        "prompt_fingerprint": null,
+        "provenance_schema_version": 1,
+        "sources": [
+          {
+            "data_source": "user",
+            "evidence_weight": 1.0,
+            "identifiers": [
+              {
+                "user_entry": {
+                  "entry_id": "meeting-b13-subject-bleed"
+                }
+              }
+            ],
+            "observed_at": "2026-05-05T09:30:00Z",
+            "scoring_class": "scoring",
+            "source_asof": "2026-05-05T09:30:00Z",
+            "synthesis_marker": null
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "thread_ids": [],
+        "trust": {
+          "contains_stored_synthesis": false,
+          "contributions": [
+            {
+              "reason": "directly_from_structured_source",
+              "source": {
+                "direct_source": {
+                  "source_index": 0
+                }
+              }
+            }
+          ],
+          "effective": "trusted"
+        },
+        "warnings": []
+      },
+      {
+        "ability_name": "get_entity_context",
+        "ability_schema_version": 1,
+        "ability_version": {
+          "major": 1,
+          "minor": 0
+        },
+        "actor": {
+          "component": "dailyos",
+          "kind": "system"
+        },
+        "children": [],
+        "field_attributions": {
+          "": {
+            "confidence": {
+              "kind": "implicit",
+              "value": 1.0
+            },
+            "derivation": "constant",
+            "explanation": null,
+            "source_refs": [],
+            "subject": {
+              "binding": "direct_input",
+              "competing_subjects": [],
+              "fit": {
+                "confidence": 1.0,
+                "method": "direct_input",
+                "status": "confident"
+              },
+              "subject": {
+                "person": "person-b13-alex"
+              },
+              "supporting_source_refs": []
+            }
+          }
+        },
+        "inputs_snapshot": {
+          "entity_watermarks": {},
+          "glean_connected": false,
+          "newest_signal_at": null,
+          "provider_config_hash": "unknown",
+          "source_freshness": {}
+        },
+        "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        "mode": "evaluate",
+        "produced_at": "2026-05-06T12:00:00Z",
+        "prompt_fingerprint": null,
+        "provenance_schema_version": 1,
+        "sources": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "person": "person-b13-alex"
+          },
+          "supporting_source_refs": []
+        },
+        "thread_ids": [],
+        "trust": {
+          "contains_stored_synthesis": false,
+          "contributions": [],
+          "effective": "trusted"
+        },
+        "warnings": []
+      }
+    ],
+    "field_attributions": {
+      "/attendee_context": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/attendees/0/account_id": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/attendees/0/domain": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/attendees/0/email": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/attendees/0/name": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/attendees/0/person_id": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/ends_at": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/id": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/starts_at": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/meeting/title": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/open_loops": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/schema_version": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/suggested_outcomes": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      },
+      "/topics/0/detail": {
+        "confidence": {
+          "kind": "provider_reported",
+          "value": 0.9399999976158142
+        },
+        "derivation": "llm_synthesis",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8999999761581421,
+            "method": "attendee_account",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/topics/0/subject/id": {
+        "confidence": {
+          "kind": "provider_reported",
+          "value": 0.9399999976158142
+        },
+        "derivation": "llm_synthesis",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8999999761581421,
+            "method": "attendee_account",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/topics/0/subject/kind": {
+        "confidence": {
+          "kind": "provider_reported",
+          "value": 0.9399999976158142
+        },
+        "derivation": "llm_synthesis",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8999999761581421,
+            "method": "attendee_account",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/topics/0/temporal_scope": {
+        "confidence": {
+          "kind": "provider_reported",
+          "value": 0.9399999976158142
+        },
+        "derivation": "llm_synthesis",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8999999761581421,
+            "method": "attendee_account",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/topics/0/title": {
+        "confidence": {
+          "kind": "provider_reported",
+          "value": 0.9399999976158142
+        },
+        "derivation": "llm_synthesis",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "inferred",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 0.8999999761581421,
+            "method": "attendee_account",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/what_changed_since_last": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "constant",
+        "explanation": null,
+        "source_refs": [],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          "supporting_source_refs": []
+        }
+      }
+    },
+    "inputs_snapshot": {
+      "entity_watermarks": {},
+      "glean_connected": false,
+      "newest_signal_at": null,
+      "provider_config_hash": "unknown",
+      "source_freshness": {}
+    },
+    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "mode": "evaluate",
+    "produced_at": "2026-05-06T12:00:00Z",
+    "prompt_fingerprint": {
+      "canonical_prompt_hash": "30429afe30cb0bde4963fda49cabc41b9a2a55f2ac91e1c12b5ce697ca598831",
+      "model": "replay",
+      "prompt_template_id": "prepare_meeting_prep",
+      "prompt_template_version": "1.0.0",
+      "provider": "replay",
+      "provider_completion_id": null,
+      "seed": null,
+      "temperature": 0.0,
+      "tokens_input": null,
+      "tokens_output": null,
+      "top_p": null
+    },
+    "provenance_schema_version": 1,
+    "sources": [
+      {
+        "data_source": "google",
+        "evidence_weight": 1.0,
+        "identifiers": [
+          {
+            "meeting": {
+              "meeting_id": "meeting-b13-subject-bleed"
+            }
+          }
+        ],
+        "observed_at": "2026-05-10T17:00:00Z",
+        "scoring_class": "scoring",
+        "source_asof": "2026-05-10T17:00:00Z",
+        "synthesis_marker": null
+      },
+      {
+        "data_source": "user",
+        "evidence_weight": 0.9399999976158142,
+        "identifiers": [
+          {
+            "user_entry": {
+              "entry_id": "src-b13-target"
+            }
+          }
+        ],
+        "observed_at": "2026-05-05T09:30:00Z",
+        "scoring_class": "scoring",
+        "source_asof": "2026-05-05T09:30:00Z",
+        "synthesis_marker": null
+      }
+    ],
+    "subject": {
+      "binding": "direct_input",
+      "competing_subjects": [],
+      "fit": {
+        "confidence": 1.0,
+        "method": "direct_input",
+        "status": "confident"
+      },
+      "subject": {
+        "multi": [
+          {
+            "meeting": "meeting-b13-subject-bleed"
+          },
+          {
+            "account": "dos287-target-example"
+          }
+        ]
+      },
+      "supporting_source_refs": []
+    },
+    "thread_ids": [],
+    "trust": {
+      "contains_stored_synthesis": false,
+      "contributions": [
+        {
+          "reason": "directly_from_structured_source",
+          "source": {
+            "direct_source": {
+              "source_index": 0
+            }
+          }
+        },
+        {
+          "reason": "directly_from_l_l_m_synthesis",
+          "source": {
+            "direct_source": {
+              "source_index": 1
+            }
+          }
+        },
+        {
+          "reason": "directly_from_structured_source",
+          "source": {
+            "composed_child": {
+              "composition_id": "get_entity_context:account:dos287-target-example"
+            }
+          }
+        },
+        {
+          "reason": "directly_from_structured_source",
+          "source": {
+            "composed_child": {
+              "composition_id": "get_entity_context:person:person-b13-alex"
+            }
+          }
+        }
+      ],
+      "effective": "untrusted"
+    },
+    "warnings": []
   }
 }

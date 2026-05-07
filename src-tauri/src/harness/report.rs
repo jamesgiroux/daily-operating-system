@@ -2,16 +2,22 @@ use super::classifier::{RegressionClass, Severity};
 use super::types::AbilityCategory;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize, Serializer};
+use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 
 const UNBLOCKED_BUNDLES: &[u32] = &[1, 2, 3, 4, 6, 7, 8];
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct HarnessReport {
     pub run_id: String,
+    #[serde(default)]
+    pub git_sha: String,
+    #[serde(default)]
+    pub fixtures_hash: String,
     pub started_at: DateTime<Utc>,
     pub finished_at: DateTime<Utc>,
     pub fixtures: Vec<FixtureRunSummary>,
@@ -56,6 +62,8 @@ impl HarnessReport {
 
         Self {
             run_id: format!("harness-{}", now.format("%Y%m%dT%H%M%S%.6fZ")),
+            git_sha: String::new(),
+            fixtures_hash: String::new(),
             started_at: now,
             finished_at: now,
             fixtures: Vec::new(),
@@ -119,13 +127,27 @@ impl HarnessReport {
         };
     }
 
+    pub fn bind_to_current_tree(&mut self) -> Result<(), io::Error> {
+        self.git_sha = resolve_report_git_sha();
+        self.fixtures_hash = compute_default_fixtures_hash()?;
+        Ok(())
+    }
+
     pub fn write_json(&self, path: &Path) -> Result<(), io::Error> {
         if let Some(parent) = path.parent() {
             fs::create_dir_all(parent)?;
         }
 
+        let mut report = self.clone();
+        if report.git_sha.trim().is_empty() {
+            report.git_sha = resolve_report_git_sha();
+        }
+        if report.fixtures_hash.trim().is_empty() {
+            report.fixtures_hash = compute_default_fixtures_hash()?;
+        }
+
         let file = fs::File::create(path)?;
-        serde_json::to_writer_pretty(file, self)
+        serde_json::to_writer_pretty(file, &report)
             .map_err(|error| io::Error::new(io::ErrorKind::InvalidData, error))
     }
 }
@@ -164,6 +186,95 @@ fn empty_category_counts() -> HashMap<String, CategorySummary> {
         )
     })
     .collect()
+}
+
+pub fn compute_default_fixtures_hash() -> Result<String, io::Error> {
+    compute_fixtures_hash(
+        &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .join("tests")
+            .join("fixtures"),
+    )
+}
+
+pub fn compute_fixtures_hash(root: &Path) -> Result<String, io::Error> {
+    let mut files = Vec::new();
+    for entry in sorted_read_dir(root)? {
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if path.is_dir() && file_name.starts_with("bundle-") {
+            collect_files(&path, &mut files)?;
+        }
+    }
+
+    files.sort();
+
+    let mut hasher = Sha256::new();
+    for path in files {
+        let relative = path
+            .strip_prefix(root)
+            .unwrap_or(path.as_path())
+            .to_string_lossy()
+            .replace('\\', "/");
+        let contents = fs::read(&path)?;
+        hasher.update(relative.as_bytes());
+        hasher.update(b"\0");
+        hasher.update((contents.len() as u64).to_be_bytes());
+        hasher.update(b"\0");
+        hasher.update(&contents);
+        hasher.update(b"\0");
+    }
+
+    Ok(hex::encode(hasher.finalize()))
+}
+
+fn collect_files(dir: &Path, files: &mut Vec<PathBuf>) -> Result<(), io::Error> {
+    for entry in sorted_read_dir(dir)? {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_files(&path, files)?;
+        } else if path.is_file() {
+            files.push(path);
+        }
+    }
+    Ok(())
+}
+
+fn sorted_read_dir(dir: &Path) -> Result<Vec<fs::DirEntry>, io::Error> {
+    let mut entries = fs::read_dir(dir)?.collect::<Result<Vec<_>, _>>()?;
+    entries.sort_by_key(|entry| entry.path());
+    Ok(entries)
+}
+
+fn resolve_report_git_sha() -> String {
+    std::env::var("DAILYOS_GIT_SHA")
+        .ok()
+        .or_else(|| std::env::var("GITHUB_SHA").ok())
+        .or_else(|| option_env!("DAILYOS_GIT_SHA").map(str::to_string))
+        .or_else(|| option_env!("GITHUB_SHA").map(str::to_string))
+        .or_else(resolve_git_sha_from_git)
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn resolve_git_sha_from_git() -> Option<String> {
+    let output = Command::new("git")
+        .args([
+            "-C",
+            &PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .display()
+                .to_string(),
+            "rev-parse",
+            "HEAD",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let sha = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (!sha.is_empty()).then_some(sha)
 }
 
 fn regression_class_label(class: &RegressionClass) -> &'static str {

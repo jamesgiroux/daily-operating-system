@@ -44,6 +44,7 @@ pub mod google_api;
 pub mod google_drive;
 pub mod granola;
 pub mod gravatar;
+#[cfg(any(test, feature = "release-gate"))]
 pub mod harness;
 pub mod helpers;
 mod hygiene;
@@ -96,6 +97,7 @@ pub mod projects;
 pub mod pty;
 pub mod queries;
 pub mod quill;
+#[cfg(any(test, feature = "release-gate"))]
 pub mod release_gate;
 pub mod reports;
 mod risk_briefing;

@@ -16,7 +16,10 @@ pub use classifier::{
 #[allow(unused_imports)]
 pub use loader::{discover_fixtures, load_fixture, BundleLoader, FixtureLoadError};
 #[allow(unused_imports)]
-pub use report::{BundleCoverage, CategorySummary, FixtureRunSummary, HarnessReport};
+pub use report::{
+    compute_default_fixtures_hash, compute_fixtures_hash, BundleCoverage, CategorySummary,
+    FixtureRunSummary, HarnessReport,
+};
 #[allow(unused_imports)]
 pub use runner::prepare_fixture_for_run;
 #[allow(unused_imports)]

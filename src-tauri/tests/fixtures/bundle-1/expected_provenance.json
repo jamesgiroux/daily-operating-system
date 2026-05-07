@@ -1,52 +1,1340 @@
 {
   "surface": "eval",
   "value": {
-    "provenance_schema_version": 1,
     "ability_name": "get_entity_context",
+    "ability_schema_version": 1,
     "ability_version": {
       "major": 1,
       "minor": 0
     },
-    "ability_schema_version": 1,
-    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-    "produced_at": "2026-05-06T12:00:00Z",
-    "inputs_snapshot": {
-      "newest_signal_at": null,
-      "entity_watermarks": {},
-      "source_freshness": {},
-      "provider_config_hash": "unknown",
-      "glean_connected": false
-    },
     "actor": {
-      "kind": "system",
-      "component": "dailyos"
+      "component": "dailyos",
+      "kind": "system"
     },
-    "mode": "evaluate",
-    "trust": {
-      "effective": "trusted",
-      "contributions": [
-        {
-          "source": {
-            "direct_source": {
+    "children": [],
+    "field_attributions": {
+      "/0/content/policy/claimId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
               "source_index": 0
             }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
           },
-          "reason": "directly_from_structured_source"
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
         },
-        {
-          "source": {
-            "direct_source": {
+        "trust_band": "likely_current"
+      },
+      "/0/content/policy/kind": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/content/policy/sensitivity": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/content/policy/surface": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/content/text": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/createdAt": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/entityId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/entityType": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/id": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/title/policy/claimId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/title/policy/kind": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/title/policy/sensitivity": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/title/policy/surface": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/title/text": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/0/updatedAt": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 0
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "likely_current"
+      },
+      "/1/content/policy/claimId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
               "source_index": 1
             }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
           },
-          "reason": "directly_from_structured_source"
-        }
-      ],
-      "contains_stored_synthesis": false
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/content/policy/kind": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/content/policy/sensitivity": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/content/policy/surface": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/content/text": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/createdAt": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/entityId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/entityType": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/id": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/title/policy/claimId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/title/policy/kind": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/title/policy/sensitivity": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/title/policy/surface": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/title/text": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/1/updatedAt": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 1
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "needs_verification"
+      },
+      "/2/content/policy/claimId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/content/policy/kind": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/content/policy/sensitivity": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/content/policy/surface": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/content/text": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/createdAt": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/entityId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/entityType": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/id": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/title/policy/claimId": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/title/policy/kind": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/title/policy/sensitivity": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/title/policy/surface": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/title/text": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      },
+      "/2/updatedAt": {
+        "confidence": {
+          "kind": "implicit",
+          "value": 1.0
+        },
+        "derivation": "direct",
+        "explanation": null,
+        "source_refs": [
+          {
+            "source": {
+              "source_index": 2
+            }
+          }
+        ],
+        "subject": {
+          "binding": "direct_input",
+          "competing_subjects": [],
+          "fit": {
+            "confidence": 1.0,
+            "method": "direct_input",
+            "status": "confident"
+          },
+          "subject": {
+            "account": "dos287-target-example"
+          },
+          "supporting_source_refs": []
+        },
+        "trust_band": "use_with_caution"
+      }
     },
+    "inputs_snapshot": {
+      "entity_watermarks": {},
+      "glean_connected": false,
+      "newest_signal_at": null,
+      "provider_config_hash": "unknown",
+      "source_freshness": {}
+    },
+    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+    "mode": "evaluate",
+    "produced_at": "2026-05-06T12:00:00Z",
+    "prompt_fingerprint": null,
+    "provenance_schema_version": 1,
     "sources": [
       {
         "data_source": "user",
+        "evidence_weight": 1.0,
         "identifiers": [
           {
             "user_entry": {
@@ -55,499 +1343,100 @@
           }
         ],
         "observed_at": "2026-05-05T10:00:00Z",
-        "source_asof": "2026-05-05T10:00:00Z",
-        "evidence_weight": 1.0,
         "scoring_class": "scoring",
+        "source_asof": "2026-05-05T10:00:00Z",
         "synthesis_marker": null
       },
       {
-        "data_source": "user",
+        "data_source": {
+          "glean": {
+            "downstream": "documents"
+          }
+        },
+        "evidence_weight": 1.0,
         "identifiers": [
           {
-            "user_entry": {
-              "entry_id": "ctx-target-older"
+            "document": {
+              "chunk_id": "thread-b1-trust-bands",
+              "document_id": "{\"source_id\":\"glean-b1-opaque-renewal\",\"lifecycle_state\":\"active\"}"
             }
           }
         ],
-        "observed_at": "2026-05-04T10:00:00Z",
-        "source_asof": "2026-05-04T10:00:00Z",
+        "observed_at": "2026-05-02T11:00:00Z",
+        "scoring_class": "reference",
+        "source_asof": null,
+        "synthesis_marker": null
+      },
+      {
+        "data_source": {
+          "other": "transcript"
+        },
         "evidence_weight": 1.0,
-        "scoring_class": "scoring",
+        "identifiers": [
+          {
+            "entity": {
+              "entity_id": "dos287-target-example",
+              "field": "support.risk"
+            }
+          }
+        ],
+        "observed_at": "2026-04-20T17:00:00Z",
+        "scoring_class": "reference",
+        "source_asof": "2026-04-20T17:00:00Z",
         "synthesis_marker": null
       }
     ],
-    "thread_ids": [],
-    "prompt_fingerprint": null,
-    "children": [],
-    "field_attributions": {
-      "/0/content": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 0
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/0/createdAt": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 0
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/0/entityId": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 0
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/0/entityType": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 0
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/0/id": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 0
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/0/title": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 0
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/0/updatedAt": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 0
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/1/content": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 1
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/1/createdAt": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 1
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/1/entityId": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 1
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/1/entityType": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 1
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/1/id": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 1
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/1/title": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 1
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      },
-      "/1/updatedAt": {
-        "subject": {
-          "subject": {
-            "account": "dos287-target-example"
-          },
-          "binding": "direct_input",
-          "supporting_source_refs": [],
-          "competing_subjects": [],
-          "fit": {
-            "status": "confident",
-            "confidence": 1.0,
-            "method": "direct_input"
-          }
-        },
-        "derivation": "direct",
-        "source_refs": [
-          {
-            "source": {
-              "source_index": 1
-            }
-          }
-        ],
-        "confidence": {
-          "value": 1.0,
-          "kind": "implicit"
-        },
-        "explanation": null
-      }
-    },
     "subject": {
+      "binding": "direct_input",
+      "competing_subjects": [],
+      "fit": {
+        "confidence": 1.0,
+        "method": "direct_input",
+        "status": "confident"
+      },
       "subject": {
         "account": "dos287-target-example"
       },
-      "binding": "direct_input",
-      "supporting_source_refs": [],
-      "competing_subjects": [],
-      "fit": {
-        "status": "confident",
-        "confidence": 1.0,
-        "method": "direct_input"
-      }
+      "supporting_source_refs": []
     },
-    "warnings": []
-  },
-  "fixture_assertions": {
-    "v3_decision": "dos-283-v3-bundle-1-legacy-shape",
-    "legacy_output_preserved": [
-      "ctx-target-newer",
-      "ctx-target-older"
-    ],
-    "blocked_legacy_rows": [
-      "ctx-foreign"
-    ],
-    "cross_account_renewal_meeting": {
-      "meeting_id": "meeting-b1-parent-renewal",
-      "primary_subject": {
-        "kind": "account",
-        "id": "dos287-example-parent"
-      },
-      "legitimate_related_subjects": [
+    "thread_ids": [],
+    "trust": {
+      "contains_stored_synthesis": false,
+      "contributions": [
         {
-          "kind": "account",
-          "id": "dos287-target-example"
+          "reason": "directly_from_structured_source",
+          "source": {
+            "direct_source": {
+              "source_index": 0
+            }
+          }
         },
         {
-          "kind": "account",
-          "id": "dos287-sibling-example"
+          "reason": "unbounded_free_text",
+          "source": {
+            "direct_source": {
+              "source_index": 1
+            }
+          }
+        },
+        {
+          "reason": "unbounded_free_text",
+          "source": {
+            "direct_source": {
+              "source_index": 2
+            }
+          }
         }
       ],
-      "shared_domain": "subsidiary.example.com"
+      "effective": "untrusted"
     },
-    "corroboration_collapse": {
-      "claim_id": "claim-b1-renewal-owner-canonical",
-      "expected_corroboration_ids": [
-        "corro-b1-renewal-owner-p1",
-        "corro-b1-renewal-owner-p2",
-        "corro-b1-renewal-owner-p3",
-        "corro-b1-renewal-owner-p4",
-        "corro-b1-renewal-owner-p5",
-        "corro-b1-renewal-owner-p6"
-      ]
-    },
-    "trust_band_diversity": [
+    "warnings": [
       {
-        "claim_id": "claim-b1-renewal-owner-canonical",
-        "expected_trust_band": "likely_current"
-      },
-      {
-        "claim_id": "claim-b1-use-caution-support-stale",
-        "expected_trust_band": "use_with_caution"
-      },
-      {
-        "claim_id": "claim-b1-needs-verification-opaque",
-        "expected_trust_band": "needs_verification"
+        "source_timestamp_unknown": {
+          "fallback": "observed_at",
+          "source_index": 1
+        }
       }
-    ],
-    "wrong_subject_tombstone": {
-      "claim_id": "claim-b1-wrong-parent-owner",
-      "feedback_id": "feedback-b1-wrong-subject-parent",
-      "feedback_type": "wrong_subject",
-      "corrected_subject": {
-        "kind": "account",
-        "id": "dos287-target-example"
-      }
-    }
+    ]
   }
 }

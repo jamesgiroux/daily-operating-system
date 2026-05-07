@@ -13,7 +13,10 @@ use uuid::Uuid;
 
 use crate::abilities::registry::AbilityRegistry;
 use crate::db::ActionDb;
-use crate::harness::{run_harness_suite, BundleLoader, HarnessReport, RunnerDeps, Severity};
+use crate::harness::{
+    compute_default_fixtures_hash, run_harness_suite, BundleLoader, HarnessReport, RunnerDeps,
+    Severity,
+};
 
 pub const RELEASE_GATE_SCHEMA_VERSION: &str = "release_gate_evidence_v1";
 pub const EXIT_SUCCESS: u8 = 0;
@@ -122,12 +125,59 @@ pub enum GateStatus {
 pub struct ManualDogfoodEvidence {
     pub meeting_count: u32,
     pub date_range: ManualDateRange,
-    pub operator: String,
-    pub redaction_level: String,
-    pub seven_day_parallel_run_ref: String,
+    pub operator: HashOnly,
+    pub redaction_level: ManualRedactionLevel,
+    pub seven_day_parallel_run_ref: HashOnly,
     pub attached_artifacts: Vec<ManualArtifactRef>,
     pub dos411_claim_backed_lifecycle_green: bool,
     pub dos412_sensitivity_rendering_green: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct HashOnly(String);
+
+impl HashOnly {
+    pub fn new(value: impl Into<String>) -> Result<Self, String> {
+        let value = value.into();
+        let valid_len = (8..=64).contains(&value.len());
+        let valid_chars = value.chars().all(|ch| ch.is_ascii_hexdigit());
+        if valid_len && valid_chars {
+            Ok(Self(value))
+        } else {
+            Err("value must match ^[a-fA-F0-9]{8,64}$".to_string())
+        }
+    }
+
+    pub fn as_str(&self) -> &str {
+        &self.0
+    }
+}
+
+impl Serialize for HashOnly {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serializer.serialize_str(&self.0)
+    }
+}
+
+impl<'de> Deserialize<'de> for HashOnly {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        let value = String::deserialize(deserializer)?;
+        Self::new(value).map_err(serde::de::Error::custom)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManualRedactionLevel {
+    Hash,
+    Synthetic,
+    Identifier,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -138,9 +188,21 @@ pub struct ManualDateRange {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ManualArtifactRef {
-    pub artifact_id: String,
-    pub source_class: String,
+    pub artifact_id: HashOnly,
+    pub source_class: ManualSourceClass,
     pub hash_prefix: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum ManualSourceClass {
+    ProspectMeeting,
+    RenewalMeeting,
+    AccountReview,
+    ExecutiveBusinessReview,
+    SupportCase,
+    SuccessPlanReview,
+    ManualSummary,
 }
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -420,7 +482,8 @@ pub fn validate_manual_evidence_json(value: &Value) -> Result<ManualDogfoodEvide
 fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateError> {
     let mut suites = Vec::new();
     let loader = BundleLoader::from_default_fixture_root();
-    let report_result = harness_report_for_config(config, &loader);
+    let binding = EvidenceBinding::for_config(config)?;
+    let report_result = harness_report_for_config(config, &loader, &binding);
     let report = match report_result {
         Ok((report, source)) => {
             suites.push(SuiteResult {
@@ -438,6 +501,11 @@ fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateEr
             Some(report)
         }
         Err(error) => {
+            let failure = if error.to_string().contains("harness-report-stale") {
+                error.to_string()
+            } else {
+                redacted_summary("harness_infra", &error.to_string())
+            };
             suites.push(SuiteResult {
                 name: "harness".to_string(),
                 source: "harness".to_string(),
@@ -447,13 +515,13 @@ fn build_hermetic_evidence(config: &GateConfig) -> Result<GateEvidenceV1, GateEr
                 status: GateStatus::InfraFailure,
                 mandatory: true,
                 duration_ms: None,
-                failures: vec![redacted_summary("harness_infra", &error.to_string())],
+                failures: vec![failure],
             });
             None
         }
     };
 
-    suites.extend(dos288_suite_results(config));
+    suites.extend(dos288_suite_results(config, &binding));
 
     let mut invariants = Vec::new();
     invariants.extend(bundle_invariants(report.as_ref(), config));
@@ -530,7 +598,7 @@ fn build_manual_evidence(
         ),
         manual_invariant(
             "manual.seven_day_parallel_run",
-            !manual.seven_day_parallel_run_ref.trim().is_empty(),
+            !manual.seven_day_parallel_run_ref.as_str().trim().is_empty(),
             "manual",
             "seven_day_parallel_run_ref",
         ),
@@ -591,14 +659,19 @@ fn base_evidence(
 fn harness_report_for_config(
     config: &GateConfig,
     loader: &BundleLoader,
+    binding: &EvidenceBinding,
 ) -> Result<(HarnessReport, String), GateError> {
     if let Some(path) = &config.harness_report {
-        return parse_harness_report(path).map(|report| (report, "harness_report".to_string()));
+        let report = parse_harness_report(path)?;
+        validate_harness_report_binding(&report, binding)?;
+        return Ok((report, "harness_report".to_string()));
     }
 
     if !config.run_tests {
         let path = GateConfig::default_harness_report_path();
-        return parse_harness_report(&path).map(|report| (report, "harness_report".to_string()));
+        let report = parse_harness_report(&path)?;
+        validate_harness_report_binding(&report, binding)?;
+        return Ok((report, "harness_report".to_string()));
     }
 
     let fixture_refs = loader
@@ -618,9 +691,17 @@ fn harness_report_for_config(
         registry: Arc::new(registry),
     };
     let report_path = GateConfig::default_harness_report_path();
-    run_harness_suite(&deps, &fixture_refs, &report_path)
-        .map(|report| (report, "in_process_harness".to_string()))
-        .map_err(|error| GateError::infra(format!("harness run failed: {error}")))
+    let mut report = run_harness_suite(&deps, &fixture_refs, &report_path)
+        .map_err(|error| GateError::infra(format!("harness run failed: {error}")))?;
+    report.git_sha = binding.git_sha.clone();
+    report.fixtures_hash = binding.fixtures_hash.clone();
+    report.write_json(&report_path).map_err(|error| {
+        GateError::infra(format!(
+            "failed to bind harness report {}: {error}",
+            report_path.display()
+        ))
+    })?;
+    Ok((report, "in_process_harness".to_string()))
 }
 
 fn bundle_suites_from_report(report: &HarnessReport, config: &GateConfig) -> Vec<SuiteResult> {
@@ -634,7 +715,8 @@ fn bundle_suites_from_report(report: &HarnessReport, config: &GateConfig) -> Vec
             if !run && !config.mandatory_bundles.contains(bundle) {
                 return None;
             }
-            let status = bundle_gate_status(report, bundle);
+            let mandatory = config.mandatory_bundles.contains(bundle);
+            let status = bundle_gate_status(report, bundle, mandatory);
             let runtime_ms = report
                 .fixtures
                 .iter()
@@ -646,7 +728,7 @@ fn bundle_suites_from_report(report: &HarnessReport, config: &GateConfig) -> Vec
                 source: "harness".to_string(),
                 command_or_report: "target/eval/harness-report.json".to_string(),
                 status,
-                mandatory: config.mandatory_bundles.contains(bundle),
+                mandatory,
                 duration_ms: (runtime_ms > 0).then_some(runtime_ms),
                 failures: if status == GateStatus::Pass {
                     Vec::new()
@@ -678,8 +760,12 @@ fn bundle_invariants(report: Option<&HarnessReport>, config: &GateConfig) -> Vec
     ]
     .into_iter()
     .map(|(id, bundle, surface)| {
+        let mandatory = config
+            .mandatory_bundles
+            .iter()
+            .any(|candidate| candidate == bundle);
         let (status, failure_summary) =
-            match report.map(|report| bundle_report_status(report, bundle)) {
+            match report.map(|report| bundle_report_status(report, bundle, mandatory)) {
                 Some(GateStatus::Pass) => (GateStatus::Pass, None),
                 Some(GateStatus::Fail) => (
                     GateStatus::Fail,
@@ -699,10 +785,7 @@ fn bundle_invariants(report: Option<&HarnessReport>, config: &GateConfig) -> Vec
             bundle: Some(bundle.to_string()),
             surface: surface.to_string(),
             status,
-            mandatory: config
-                .mandatory_bundles
-                .iter()
-                .any(|candidate| candidate == bundle),
+            mandatory,
             evidence_ref: "target/eval/harness-report.json".to_string(),
             failure_summary,
         }
@@ -797,14 +880,65 @@ fn provenance_source_coverage_invariant(
     }
 }
 
-fn dos288_suite_results(config: &GateConfig) -> Vec<SuiteResult> {
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct EvidenceBinding {
+    git_sha: String,
+    fixtures_hash: String,
+}
+
+impl EvidenceBinding {
+    fn for_config(config: &GateConfig) -> Result<Self, GateError> {
+        let fixtures_hash = compute_default_fixtures_hash().map_err(|error| {
+            GateError::infra(format!("failed to compute fixture tree hash: {error}"))
+        })?;
+        Ok(Self {
+            git_sha: config.git_sha.clone(),
+            fixtures_hash,
+        })
+    }
+}
+
+fn validate_harness_report_binding(
+    report: &HarnessReport,
+    binding: &EvidenceBinding,
+) -> Result<(), GateError> {
+    bind_evidence_to_commit(
+        Some(report.git_sha.as_str()),
+        Some(report.fixtures_hash.as_str()),
+        binding,
+    )
+}
+
+fn bind_evidence_to_commit(
+    report_git_sha: Option<&str>,
+    report_fixtures_hash: Option<&str>,
+    binding: &EvidenceBinding,
+) -> Result<(), GateError> {
+    let report_git_sha = report_git_sha
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("<missing>");
+    let report_fixtures_hash = report_fixtures_hash
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("<missing>");
+
+    if report_git_sha == binding.git_sha && report_fixtures_hash == binding.fixtures_hash {
+        Ok(())
+    } else {
+        Err(GateError::infra(format!(
+            "harness-report-stale: report bound to {report_git_sha} fixtures {report_fixtures_hash} but current state is {} {}",
+            binding.git_sha, binding.fixtures_hash
+        )))
+    }
+}
+
+fn dos288_suite_results(config: &GateConfig, binding: &EvidenceBinding) -> Vec<SuiteResult> {
     DOS288_SELECTORS
         .iter()
         .map(|selector| {
             if config.run_tests {
                 run_dos288_selector(selector)
             } else {
-                read_dos288_evidence(selector, &config.output_dir)
+                read_dos288_evidence(selector, &config.output_dir, binding)
             }
         })
         .collect()
@@ -864,25 +998,41 @@ fn run_dos288_selector(selector: &str) -> SuiteResult {
     }
 }
 
-fn read_dos288_evidence(selector: &str, output_dir: &Path) -> SuiteResult {
+fn read_dos288_evidence(
+    selector: &str,
+    output_dir: &Path,
+    binding: &EvidenceBinding,
+) -> SuiteResult {
     let path = output_dir.join(format!("{selector}.json"));
-    let contents = fs::read_to_string(&path);
-    let status = contents
-        .as_deref()
+    let parsed = fs::read_to_string(&path)
         .ok()
-        .and_then(|contents| serde_json::from_str::<Value>(contents).ok())
-        .and_then(|value| {
-            value
-                .get("status")
-                .and_then(Value::as_str)
-                .or_else(|| value.get("result").and_then(Value::as_str))
-                .map(|status| match status {
-                    "pass" | "passed" | "green" => GateStatus::Pass,
-                    "fail" | "failed" | "red" => GateStatus::Fail,
-                    _ => GateStatus::InfraFailure,
-                })
-        })
-        .unwrap_or(GateStatus::InfraFailure);
+        .and_then(|contents| serde_json::from_str::<Value>(&contents).ok());
+    let binding_error = parsed.as_ref().and_then(|value| {
+        bind_evidence_to_commit(
+            value.get("git_sha").and_then(Value::as_str),
+            value.get("fixtures_hash").and_then(Value::as_str),
+            binding,
+        )
+        .err()
+    });
+    let status = if binding_error.is_some() {
+        GateStatus::InfraFailure
+    } else {
+        parsed
+            .as_ref()
+            .and_then(|value| {
+                value
+                    .get("status")
+                    .and_then(Value::as_str)
+                    .or_else(|| value.get("result").and_then(Value::as_str))
+                    .map(|status| match status {
+                        "pass" | "passed" | "green" => GateStatus::Pass,
+                        "fail" | "failed" | "red" => GateStatus::Fail,
+                        _ => GateStatus::InfraFailure,
+                    })
+            })
+            .unwrap_or(GateStatus::InfraFailure)
+    };
     SuiteResult {
         name: selector.to_string(),
         source: "dos288_evidence_file".to_string(),
@@ -890,13 +1040,13 @@ fn read_dos288_evidence(selector: &str, output_dir: &Path) -> SuiteResult {
         status,
         mandatory: true,
         duration_ms: None,
-        failures: if status == GateStatus::Pass {
-            Vec::new()
-        } else {
-            vec![redacted_summary(
+        failures: match (status, binding_error) {
+            (GateStatus::Pass, _) => Vec::new(),
+            (_, Some(error)) => vec![error.to_string()],
+            _ => vec![redacted_summary(
                 "dos288_evidence_missing_or_failed",
                 selector,
-            )]
+            )],
         },
     }
 }
@@ -971,14 +1121,19 @@ fn validate_manual_evidence(evidence: &ManualDogfoodEvidence) -> Result<(), Stri
     if evidence.date_range.start.trim().is_empty() || evidence.date_range.end.trim().is_empty() {
         return Err("date_range.start and date_range.end are required".to_string());
     }
-    if evidence.operator.trim().is_empty() {
-        return Err("operator must be a redacted operator identifier".to_string());
+    if evidence.operator.as_str().trim().is_empty() {
+        return Err("operator must be a hash-shaped operator identifier".to_string());
     }
-    if evidence.redaction_level != "hash_only" {
-        return Err("redaction_level must be hash_only".to_string());
+    if evidence.redaction_level != ManualRedactionLevel::Hash {
+        return Err("redaction_level must be hash".to_string());
     }
-    if evidence.seven_day_parallel_run_ref.trim().is_empty() {
-        return Err("seven_day_parallel_run_ref is required".to_string());
+    if evidence
+        .seven_day_parallel_run_ref
+        .as_str()
+        .trim()
+        .is_empty()
+    {
+        return Err("seven_day_parallel_run_ref must be hash-shaped".to_string());
     }
     if evidence.attached_artifacts.is_empty() {
         return Err("at least one attached artifact ref is required".to_string());
@@ -990,9 +1145,7 @@ fn validate_manual_evidence(evidence: &ManualDogfoodEvidence) -> Result<(), Stri
         return Err("DOS-412 sensitivity rendering evidence must be green".to_string());
     }
     for artifact in &evidence.attached_artifacts {
-        if artifact.artifact_id.trim().is_empty()
-            || artifact.source_class.trim().is_empty()
-            || artifact.hash_prefix.len() < 8
+        if artifact.hash_prefix.len() < 8
             || artifact.hash_prefix.len() > 16
             || !artifact
                 .hash_prefix
@@ -1000,7 +1153,7 @@ fn validate_manual_evidence(evidence: &ManualDogfoodEvidence) -> Result<(), Stri
                 .all(|ch| ch.is_ascii_hexdigit())
         {
             return Err(
-                "manual artifacts must use IDs, source classes, and 8-16 char hash prefixes"
+                "manual artifacts must use controlled source classes and 8-16 char hash prefixes"
                     .to_string(),
             );
         }
@@ -1088,11 +1241,11 @@ fn bundle_number(value: &str) -> Option<u32> {
     value.strip_prefix("bundle-")?.parse().ok()
 }
 
-fn bundle_report_status(report: &HarnessReport, bundle: &str) -> GateStatus {
-    bundle_gate_status(report, bundle)
+fn bundle_report_status(report: &HarnessReport, bundle: &str, mandatory: bool) -> GateStatus {
+    bundle_gate_status(report, bundle, mandatory)
 }
 
-fn bundle_gate_status(report: &HarnessReport, bundle: &str) -> GateStatus {
+fn bundle_gate_status(report: &HarnessReport, bundle: &str, mandatory: bool) -> GateStatus {
     let Some(bundle_number) = bundle_number(bundle) else {
         return GateStatus::InfraFailure;
     };
@@ -1107,7 +1260,15 @@ fn bundle_gate_status(report: &HarnessReport, bundle: &str) -> GateStatus {
     if summaries.iter().all(|summary| summary.passed) {
         return GateStatus::Pass;
     }
-    if summaries.iter().all(|summary| {
+
+    let failed_summaries = summaries
+        .iter()
+        .filter(|summary| !summary.passed)
+        .collect::<Vec<_>>();
+    if mandatory && !failed_summaries.is_empty() {
+        return GateStatus::Fail;
+    }
+    if failed_summaries.iter().all(|summary| {
         matches!(
             summary.regression.as_ref().map(|(_, severity)| severity),
             Some(Severity::FailSoft)
@@ -1115,22 +1276,7 @@ fn bundle_gate_status(report: &HarnessReport, bundle: &str) -> GateStatus {
     }) {
         return GateStatus::Pass;
     }
-    if report
-        .bundle_coverage
-        .bundles_passed
-        .contains(&bundle_number)
-    {
-        GateStatus::Pass
-    } else if report
-        .bundle_coverage
-        .bundles_failed
-        .contains(&bundle_number)
-        || report.bundle_coverage.bundles_run.contains(&bundle_number)
-    {
-        GateStatus::Fail
-    } else {
-        GateStatus::InfraFailure
-    }
+    GateStatus::Fail
 }
 
 fn default_or_configured_report_path(config: &GateConfig) -> PathBuf {
@@ -1146,8 +1292,26 @@ fn resolve_git_sha(cli_value: Option<String>) -> String {
         .or_else(|| std::env::var("GITHUB_SHA").ok())
         .or_else(|| option_env!("DAILYOS_GIT_SHA").map(str::to_string))
         .or_else(|| option_env!("GITHUB_SHA").map(str::to_string))
+        .or_else(resolve_git_sha_from_git)
         .filter(|value| !value.trim().is_empty())
         .unwrap_or_else(|| "unknown".to_string())
+}
+
+fn resolve_git_sha_from_git() -> Option<String> {
+    let output = Command::new("git")
+        .args([
+            "-C",
+            &manifest_dir().display().to_string(),
+            "rev-parse",
+            "HEAD",
+        ])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let sha = String::from_utf8(output.stdout).ok()?.trim().to_string();
+    (!sha.is_empty()).then_some(sha)
 }
 
 fn manifest_dir() -> PathBuf {
@@ -1427,12 +1591,12 @@ mod tests {
                 start: "2026-05-01".to_string(),
                 end: "2026-05-07".to_string(),
             },
-            operator: "operator-hash-001".to_string(),
-            redaction_level: "hash_only".to_string(),
-            seven_day_parallel_run_ref: "parallel-run-hash-001".to_string(),
+            operator: HashOnly::new("abcdef1234567890").unwrap(),
+            redaction_level: ManualRedactionLevel::Hash,
+            seven_day_parallel_run_ref: HashOnly::new("1234567890abcdef").unwrap(),
             attached_artifacts: vec![ManualArtifactRef {
-                artifact_id: "artifact-001".to_string(),
-                source_class: "manual_summary".to_string(),
+                artifact_id: HashOnly::new("fedcba0987654321").unwrap(),
+                source_class: ManualSourceClass::ManualSummary,
                 hash_prefix: "abcdef123456".to_string(),
             }],
             dos411_claim_backed_lifecycle_green: true,
@@ -1445,11 +1609,11 @@ mod tests {
         let value = json!({
             "meeting_count": 19,
             "date_range": { "start": "2026-05-01", "end": "2026-05-07" },
-            "operator": "operator-hash-001",
-            "redaction_level": "hash_only",
-            "seven_day_parallel_run_ref": "parallel-run-hash-001",
+            "operator": "abcdef1234567890",
+            "redaction_level": "hash",
+            "seven_day_parallel_run_ref": "1234567890abcdef",
             "attached_artifacts": [{
-                "artifact_id": "artifact-001",
+                "artifact_id": "fedcba0987654321",
                 "source_class": "manual_summary",
                 "hash_prefix": "abcdef123456"
             }],
@@ -1460,5 +1624,49 @@ mod tests {
         let error = validate_manual_evidence_json(&value).unwrap_err();
 
         assert!(error.contains("meeting_count"));
+    }
+
+    #[test]
+    fn manual_evidence_rejects_raw_operator_at_deserialization() {
+        let value = json!({
+            "meeting_count": 20,
+            "date_range": { "start": "2026-05-01", "end": "2026-05-07" },
+            "operator": "Ada Lovelace",
+            "redaction_level": "hash",
+            "seven_day_parallel_run_ref": "1234567890abcdef",
+            "attached_artifacts": [{
+                "artifact_id": "fedcba0987654321",
+                "source_class": "manual_summary",
+                "hash_prefix": "abcdef123456"
+            }],
+            "dos411_claim_backed_lifecycle_green": true,
+            "dos412_sensitivity_rendering_green": true
+        });
+
+        let error = validate_manual_evidence_json(&value).unwrap_err();
+
+        assert!(error.contains("^[a-fA-F0-9]{8,64}$"));
+    }
+
+    #[test]
+    fn manual_evidence_rejects_raw_artifact_id_at_deserialization() {
+        let value = json!({
+            "meeting_count": 20,
+            "date_range": { "start": "2026-05-01", "end": "2026-05-07" },
+            "operator": "abcdef1234567890",
+            "redaction_level": "hash",
+            "seven_day_parallel_run_ref": "1234567890abcdef",
+            "attached_artifacts": [{
+                "artifact_id": "customer-call-recording",
+                "source_class": "manual_summary",
+                "hash_prefix": "abcdef123456"
+            }],
+            "dos411_claim_backed_lifecycle_green": true,
+            "dos412_sensitivity_rendering_green": true
+        });
+
+        let error = validate_manual_evidence_json(&value).unwrap_err();
+
+        assert!(error.contains("^[a-fA-F0-9]{8,64}$"));
     }
 }

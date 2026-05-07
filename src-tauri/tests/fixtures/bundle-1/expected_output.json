@@ -1,20 +1,77 @@
 [
   {
-    "id": "ctx-target-newer",
-    "entityType": "account",
+    "content": {
+      "policy": {
+        "claimId": "claim-b1-renewal-owner-canonical",
+        "kind": "render",
+        "sensitivity": "internal",
+        "surface": "tauri_entity_detail"
+      },
+      "text": "Alice Adams owns the Target Example renewal plan."
+    },
+    "createdAt": "2026-05-05T10:00:00Z",
     "entityId": "dos287-target-example",
-    "title": "Renewal owner",
-    "content": "Alice Adams owns the Target Example rollout and renewal plan.",
-    "createdAt": "2026-05-05T09:00:00Z",
+    "entityType": "account",
+    "id": "claim-b1-renewal-owner-canonical",
+    "title": {
+      "policy": {
+        "claimId": "claim-b1-renewal-owner-canonical",
+        "kind": "render",
+        "sensitivity": "internal",
+        "surface": "tauri_entity_detail"
+      },
+      "text": "entity_current_state: renewal.owner"
+    },
     "updatedAt": "2026-05-05T10:00:00Z"
   },
   {
-    "id": "ctx-target-older",
-    "entityType": "account",
+    "content": {
+      "policy": {
+        "claimId": "claim-b1-needs-verification-opaque",
+        "kind": "render",
+        "sensitivity": "internal",
+        "surface": "tauri_entity_detail"
+      },
+      "text": "An opaque imported note claims Target Example renewal risk increased, but the source timestamp is incomplete."
+    },
+    "createdAt": "2026-05-02T11:00:00Z",
     "entityId": "dos287-target-example",
-    "title": "Boundary note",
-    "content": "Do not merge Adjacent Example infrastructure risks into Target Example.",
-    "createdAt": "2026-05-04T09:00:00Z",
-    "updatedAt": "2026-05-04T10:00:00Z"
+    "entityType": "account",
+    "id": "claim-b1-needs-verification-opaque",
+    "title": {
+      "policy": {
+        "claimId": "claim-b1-needs-verification-opaque",
+        "kind": "render",
+        "sensitivity": "internal",
+        "surface": "tauri_entity_detail"
+      },
+      "text": "entity_risk: renewal.risk"
+    },
+    "updatedAt": "2026-05-02T11:00:00Z"
+  },
+  {
+    "content": {
+      "policy": {
+        "claimId": "claim-b1-use-caution-support-stale",
+        "kind": "render",
+        "sensitivity": "internal",
+        "surface": "tauri_entity_detail"
+      },
+      "text": "Support risk for Target Example is based on an older transcript and needs review before quoting."
+    },
+    "createdAt": "2026-04-20T17:00:00Z",
+    "entityId": "dos287-target-example",
+    "entityType": "account",
+    "id": "claim-b1-use-caution-support-stale",
+    "title": {
+      "policy": {
+        "claimId": "claim-b1-use-caution-support-stale",
+        "kind": "render",
+        "sensitivity": "internal",
+        "surface": "tauri_entity_detail"
+      },
+      "text": "entity_risk: support.risk"
+    },
+    "updatedAt": "2026-04-20T17:00:00Z"
   }
 ]

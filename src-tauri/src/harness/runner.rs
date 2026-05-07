@@ -119,6 +119,9 @@ pub fn run_harness_suite(
 
     report.finalize();
     report
+        .bind_to_current_tree()
+        .map_err(RunError::ReportWrite)?;
+    report
         .write_json(output_path)
         .map_err(RunError::ReportWrite)?;
 

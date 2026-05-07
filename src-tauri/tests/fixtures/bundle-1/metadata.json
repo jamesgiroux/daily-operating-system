@@ -1,7 +1,7 @@
 {
   "bundle": 1,
   "scenario_id": "bundle1-entity-context-parity",
-  "invariant": "The get_entity_context Read ability preserves legacy entity_context_entries parity for the requested account while the fixture also seeds the DOS-283 same-domain, cross-account renewal, paraphrase-corroboration, trust-band, and wrong-subject adversarial substrate rows for downstream gates.",
+  "invariant": "The get_entity_context Read ability returns only active claim-backed context for the requested account while the fixture also seeds the DOS-283 same-domain, cross-account renewal, paraphrase-corroboration, trust-band, and wrong-subject adversarial substrate rows for downstream gates.",
   "expected_render_policy": "show-with-warnings",
   "surfaces_exercised": [
     "get-entity-context-read",
@@ -24,7 +24,7 @@
   ],
   "anonymization_cert": "all-generic-placeholders-2026-05-06",
   "retention_policy": "permanent",
-  "prompt_fingerprint_baseline": "bundle-1-get-entity-context-v3-legacy",
+  "prompt_fingerprint_baseline": "bundle-1-get-entity-context-v4-claim-backed",
   "trust_factors_dominant": [
     "subject_fit",
     "source_time",
@@ -32,13 +32,13 @@
     "user_feedback_weight",
     "source_lifecycle_weight"
   ],
-  "pass_fail_definition": "PASS = output remains byte-identical to the legacy entity_context_entries projection for dos287-target-example, excludes adjacent/sibling account rows, and the seeded substrate rows expose six corroborations, three trust bands, the parent renewal meeting, and the WrongSubject tombstone for downstream fixture gates. FAIL = foreign account notes appear, order changes, source_asof/user provenance is missing, or any v3 substrate row is absent.",
+  "pass_fail_definition": "PASS = output remains byte-identical to the active claim-backed projection for dos287-target-example, excludes adjacent/sibling account rows, and the seeded substrate rows expose six corroborations, three trust bands, the parent renewal meeting, and the WrongSubject tombstone for downstream fixture gates. FAIL = foreign account notes appear, order changes, source_asof/user provenance is missing, or any v3 substrate row is absent.",
   "fixture_design_notes": {
-    "state_sql": "Copies the DOS-287 bundle-1 reproduction seed pattern with parent, target, adjacent account, domains, stakeholders, and synthetic entity_context_entries. Adds a same-domain sibling account, a parent-level renewal meeting that legitimately touches the target and sibling, claim_corroborations for six paraphrases of one target account claim, three target-account trust-band claims, and a WrongSubject feedback tombstone. Claim rows are marked dormant for legacy rendering so DOS-411 can cut over the read shape without changing the fixture path.",
+    "state_sql": "Copies the DOS-287 bundle-1 reproduction seed pattern with parent, target, adjacent account, domains, stakeholders, and synthetic entity_context_entries. Adds a same-domain sibling account, a parent-level renewal meeting that legitimately touches the target and sibling, claim_corroborations for six paraphrases of one target account claim, three active target-account trust-band claims, and a WrongSubject feedback tombstone.",
     "provider_replay": "Empty because DOS-218 is a pure Read ability and makes no provider calls.",
     "external_replay": "Empty because DOS-218 is a pure Read ability and makes no external service calls.",
-    "expected_output": "The two target account context entries ordered by created_at DESC, matching the legacy command DTO shape. It is intentionally unchanged until DOS-411 migrates bundle-1 reads to claim-backed context.",
-    "expected_provenance": "Direct user source attribution for each returned row plus fixture-level assertions for the v3 substrate rows.",
+    "expected_output": "The three active target account claims ordered by created_at DESC, matching the claim-backed get_entity_context DTO shape.",
+    "expected_provenance": "Rendered provenance for each returned claim-backed row, including trust-band attribution.",
     "v3_scenarios": [
       "cross-account renewal meeting against the parent account with the same-domain sibling in scope",
       "six paraphrases of the target renewal-owner claim collapsed through claim_corroborations",
