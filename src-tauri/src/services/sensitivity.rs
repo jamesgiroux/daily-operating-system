@@ -729,7 +729,7 @@ fn stored_mcp_claim_text(
     claim_id: &str,
     projection: StoredMcpClaimTextProjection,
 ) -> Option<String> {
-    if claim.claim_state != ClaimState::Active || claim.surfacing_state != SurfacingState::Active {
+    if !claim_has_active_surfaced_lifecycle(claim) {
         log::warn!(
             target: "dailyos_lib::services::sensitivity",
             "MCP claim text is not active/surfaced claim_id={}; dropping",
@@ -753,6 +753,10 @@ fn stored_mcp_claim_text(
     }
 
     Some(text)
+}
+
+fn claim_has_active_surfaced_lifecycle(claim: &IntelligenceClaim) -> bool {
+    !(claim.claim_state != ClaimState::Active || claim.surfacing_state != SurfacingState::Active)
 }
 
 fn entity_context_title_for_claim(claim: &IntelligenceClaim) -> String {
@@ -1465,6 +1469,17 @@ pub fn reveal_claim_text_for_tauri(
     let claim = crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("Claim not found: {claim_id}"))?;
+    if !claim_has_active_surfaced_lifecycle(&claim) {
+        log::warn!(
+            target: "dailyos_lib::services::sensitivity",
+            "Tauri reveal claim text is not active/surfaced claim_id={}; dropping",
+            claim_id
+        );
+        // Click-to-reveal audit rows record successful audited reveals only.
+        // Lifecycle-denied attempts fail before policy approval, so they warn
+        // and skip the audit insert rather than polluting the reveal trail.
+        return Err("Claim is not revealable on this surface".to_string());
+    }
     match render_policy_for_surface(&claim, surface, actor) {
         RenderDecision::Render => {
             renderable_from_decision(&claim, &claim.text, surface, RenderDecision::Render)

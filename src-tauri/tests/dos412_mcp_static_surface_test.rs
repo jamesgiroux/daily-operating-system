@@ -1,8 +1,9 @@
 use dailyos_lib::db::claims::ClaimSensitivity;
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::sensitivity::{
-    render_mcp_static_json_for_surface, render_mcp_static_text_for_surface, McpStaticTextClass,
-    RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
+    render_mcp_static_json_for_surface, render_mcp_static_text_for_surface,
+    reveal_claim_text_for_tauri, McpStaticTextClass, RenderActor, RenderPolicyKind,
+    RenderSurface, RenderableMcpClaimText, RenderableMcpStaticText, RenderableMcpText,
 };
 use rusqlite::{params, Connection};
 use serde_json::json;
@@ -41,6 +42,13 @@ CREATE TABLE intelligence_claims (
     verification_state TEXT NOT NULL,
     verification_reason TEXT,
     needs_user_decision_at TEXT
+);
+
+CREATE TABLE sensitivity_reveal_audit (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    claim_id TEXT NOT NULL,
+    user_id TEXT NOT NULL,
+    revealed_at TEXT NOT NULL
 );
 "#;
 
@@ -291,6 +299,79 @@ fn static_claim_carrier_renders_matching_stored_text() {
     );
 }
 
+#[test]
+fn withdrawn_claim_cannot_reveal_through_tauri() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let values = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_summary",
+        "withdrawn reveal",
+    );
+    update_claim_lifecycle(&conn, &values.confidential.id, "withdrawn", "dormant");
+
+    let result = reveal_claim_text_for_tauri(
+        db,
+        &values.confidential.id,
+        RenderSurface::TauriEntityDetail,
+        &RenderActor::user("user", Some("user")),
+    );
+
+    assert!(result.is_err(), "withdrawn claims must fail closed");
+    assert_eq!(reveal_audit_count(&conn), 0);
+}
+
+#[test]
+fn dormant_claim_cannot_reveal_through_tauri() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let values = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_summary",
+        "dormant reveal",
+    );
+    update_claim_lifecycle(&conn, &values.confidential.id, "active", "dormant");
+
+    let result = reveal_claim_text_for_tauri(
+        db,
+        &values.confidential.id,
+        RenderSurface::TauriEntityDetail,
+        &RenderActor::user("user", Some("user")),
+    );
+
+    assert!(result.is_err(), "dormant claims must fail closed");
+    assert_eq!(reveal_audit_count(&conn), 0);
+}
+
+#[test]
+fn active_surfaced_confidential_claim_reveals_through_tauri() {
+    let conn = fixture_conn();
+    let db = ActionDb::from_conn(&conn);
+    let values = seed_policy_claims(
+        &conn,
+        "account",
+        "acct-example",
+        "entity_summary",
+        "active reveal",
+    );
+
+    let rendered = reveal_claim_text_for_tauri(
+        db,
+        &values.confidential.id,
+        RenderSurface::TauriEntityDetail,
+        &RenderActor::user("user", Some("user")),
+    )
+    .expect("active surfaced confidential claim reveals after click");
+
+    assert_eq!(rendered.text, "active reveal confidential example.com");
+    assert_eq!(rendered.policy.kind, RenderPolicyKind::Render);
+    assert_eq!(reveal_audit_count(&conn), 1);
+}
+
 struct PolicyValue {
     id: String,
     text: String,
@@ -463,4 +544,11 @@ fn update_claim_lifecycle(
         params![claim_id, claim_state, surfacing_state],
     )
     .expect("update claim lifecycle fixture");
+}
+
+fn reveal_audit_count(conn: &Connection) -> i64 {
+    conn.query_row("SELECT COUNT(*) FROM sensitivity_reveal_audit", [], |row| {
+        row.get(0)
+    })
+    .expect("count reveal audit rows")
 }
