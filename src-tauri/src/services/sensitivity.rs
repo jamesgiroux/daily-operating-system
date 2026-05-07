@@ -1462,11 +1462,21 @@ pub fn record_sensitivity_reveal(
     Ok(())
 }
 
-fn validate_reveal_action_id(reveal_action_id: &str) -> Result<(), String> {
+pub fn canonicalize_reveal_action_id(reveal_action_id: &str) -> Result<String, String> {
     let parsed = uuid::Uuid::parse_str(reveal_action_id)
         .map_err(|_| "reveal_action_id must be a UUID v4".to_string())?;
     if parsed.get_version() != Some(uuid::Version::Random) {
         return Err("reveal_action_id must be a UUID v4".to_string());
+    }
+    Ok(parsed.hyphenated().to_string())
+}
+
+pub fn validate_canonical_reveal_action_id(reveal_action_id: &str) -> Result<(), String> {
+    let canonical = canonicalize_reveal_action_id(reveal_action_id)?;
+    if reveal_action_id != canonical {
+        return Err(
+            "reveal_action_id must be a canonical lowercase hyphenated UUID v4".to_string(),
+        );
     }
     Ok(())
 }
@@ -1478,7 +1488,7 @@ pub fn reveal_claim_text_for_tauri(
     actor: &RenderActor,
     reveal_action_id: String,
 ) -> Result<RenderableClaimText, String> {
-    validate_reveal_action_id(&reveal_action_id)?;
+    let reveal_action_id = canonicalize_reveal_action_id(&reveal_action_id)?;
     let claim = crate::services::claims::load_claim_by_id(db.conn_ref(), claim_id)
         .map_err(|error| error.to_string())?
         .ok_or_else(|| format!("Claim not found: {claim_id}"))?;

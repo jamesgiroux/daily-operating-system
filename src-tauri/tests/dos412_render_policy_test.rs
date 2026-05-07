@@ -167,8 +167,8 @@ fn sensitivity_reveal_audit_migration_repairs_current_audit_bucket_v143() {
     assert!(columns.contains(&"claim_id".to_string()));
     assert!(columns.contains(&"user_id".to_string()));
     assert!(columns.contains(&"revealed_at".to_string()));
-    assert!(columns.contains(&"audit_bucket".to_string()));
     assert!(columns.contains(&"reveal_action_id".to_string()));
+    assert!(!columns.contains(&"audit_bucket".to_string()));
     assert!(!columns.contains(&"reveal_session_id".to_string()));
     assert_reveal_action_id_unique_index(&conn);
     assert_index_missing(&conn, "idx_sensitivity_reveal_audit_audit_bucket");
@@ -199,8 +199,9 @@ fn sensitivity_reveal_audit_migration_repairs_legacy_reveal_session_v143() {
     assert!(columns.contains(&"claim_id".to_string()));
     assert!(columns.contains(&"user_id".to_string()));
     assert!(columns.contains(&"revealed_at".to_string()));
-    assert!(columns.contains(&"reveal_session_id".to_string()));
     assert!(columns.contains(&"reveal_action_id".to_string()));
+    assert!(!columns.contains(&"reveal_session_id".to_string()));
+    assert!(!columns.contains(&"audit_bucket".to_string()));
     assert_reveal_action_id_unique_index(&conn);
     assert_index_missing(&conn, "idx_sensitivity_reveal_audit_reveal_session");
 }

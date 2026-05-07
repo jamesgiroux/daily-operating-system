@@ -7,9 +7,7 @@ pub async fn reveal_sensitive_claim_text(
     surface: Option<String>,
     state: State<'_, Arc<AppState>>,
 ) -> Result<crate::services::sensitivity::RenderableClaimText, String> {
-    if reveal_action_id.is_empty() {
-        return Err("reveal_action_id is required".to_string());
-    }
+    crate::services::sensitivity::validate_canonical_reveal_action_id(&reveal_action_id)?;
     let surface = match surface.as_deref() {
         Some(name) => crate::services::sensitivity::RenderSurface::from_name(name)
             .ok_or_else(|| format!("Unknown render surface: {name}"))?,

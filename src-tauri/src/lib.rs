@@ -65,7 +65,7 @@ pub mod substrate_test_api {
 pub mod command_test_api {
     pub use crate::commands::{
         create_entity_context_entry, delete_entity_context_entry, get_entity_context_entries,
-        update_entity_context_entry,
+        reveal_sensitive_claim_text, update_entity_context_entry,
     };
 }
 #[cfg(feature = "test-harness")]

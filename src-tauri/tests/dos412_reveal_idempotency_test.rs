@@ -24,6 +24,7 @@ const ACCOUNT_ID: &str = "acct-dos412-idempotency-example";
 const CONFIDENTIAL_TEXT: &str = "confidential renewal blocker for example.com.";
 const ACTION_ID_ONE: &str = "11111111-1111-4111-8111-111111111111";
 const ACTION_ID_TWO: &str = "22222222-2222-4222-8222-222222222222";
+const ACTION_ID_WITH_ALPHA: &str = "abcdefab-cdef-4abc-8def-abcdefabcdef";
 
 #[test]
 fn reveal_sensitive_claim_text_is_idempotent_for_same_action_id() {
@@ -104,6 +105,46 @@ fn reveal_sensitive_claim_text_records_new_audit_for_different_action_ids() {
     assert_eq!(
         reveal_audit_action_ids(&conn),
         vec![ACTION_ID_ONE.to_string(), ACTION_ID_TWO.to_string()]
+    );
+}
+
+#[test]
+fn reveal_sensitive_claim_text_is_idempotent_for_same_logical_uuid_in_different_text_forms() {
+    let conn = setup_conn();
+    let db = ActionDb::from_conn(&conn);
+    let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 7, 12, 0, 0).unwrap());
+    let rng = SeedableRng::new(41214);
+    let external = ExternalClients::default();
+    let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
+    let claim_id = inserted_id(
+        commit_claim(&ctx, db, confidential_claim_proposal())
+            .expect("commit confidential claim fixture"),
+    );
+    let actor = RenderActor::user("user", Some("user"));
+
+    let first = reveal_claim_text_for_tauri(
+        db,
+        &claim_id,
+        RenderSurface::TauriEntityDetail,
+        &actor,
+        ACTION_ID_WITH_ALPHA.to_string(),
+    )
+    .expect("first reveal succeeds");
+    let second = reveal_claim_text_for_tauri(
+        db,
+        &claim_id,
+        RenderSurface::TauriEntityDetail,
+        &actor,
+        ACTION_ID_WITH_ALPHA.to_ascii_uppercase(),
+    )
+    .expect("second reveal with same logical UUID succeeds");
+
+    assert_eq!(first.text, CONFIDENTIAL_TEXT);
+    assert_eq!(second.text, CONFIDENTIAL_TEXT);
+    assert_eq!(reveal_audit_count(&conn), 1);
+    assert_eq!(
+        reveal_audit_action_ids(&conn),
+        vec![ACTION_ID_WITH_ALPHA.to_string()]
     );
 }
 
