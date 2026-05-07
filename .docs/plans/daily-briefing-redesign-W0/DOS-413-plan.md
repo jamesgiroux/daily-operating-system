@@ -14,7 +14,7 @@
 - **SignalDot camelCase classes** — `gong-call` → `gongCall`, `zendesk-ticket` → `zendeskTicket`, `slack-thread` → `slackThread`, `linear-issue` → `linearIssue` (CSS Module convention)
 - **`data-folio-mark="pulsing"` dropped** from loading stub (markPulsing-dropped contradiction)
 - **threadAction rendering rule** clarified — event-stop button, not nested anchor (MovingRow.md + SignalDot.md)
-- **3 state pattern stubs** landed at proposed status: `EditorialLoadingState.md`, `EditorialErrorState.md`, `EditorialEmptyState.md`
+- **3 state pattern stubs** landed at proposed status: `BriefingLoadingState.md`, `BriefingErrorState.md`, `BriefingEmptyState.md`
 - **MovingRow click-target** resolved (whole row via `role="link"` + tabindex, not wrapping `<a>`)
 - **WatchRow per-variant anatomy** added (4 variants, ASCII anatomy each)
 - **ProvenanceStat truncation + label-kind discriminator** resolved
@@ -683,7 +683,7 @@ The W6 view-purity audit (DOS-438) reads off these conventions.
 - 3 canonical module CSS files land
 - Reference HTML drops inline CSS for those modules; links them
 - 3 state stubs land (loading, error, empty)
-- 3 state pattern stubs land at `proposed` status (EditorialLoadingState, EditorialErrorState, EditorialEmptyState)
+- 3 state pattern stubs land at `proposed` status (BriefingLoadingState, BriefingErrorState, BriefingEmptyState)
 - W2 ticket bodies (DOS-414..419) updated with the mutation-verification clause: "L0 plan must list mutation commands consumed and confirm existence or include create-mutation work"
 
 ## L0 reviewer dispatch (round 3 — final per pacing rule)

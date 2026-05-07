@@ -1,11 +1,11 @@
-# EditorialLoadingState
+# BriefingLoadingState
 
 **Tier:** pattern
 **Status:** proposed
 **Owner:** James
 **Last updated:** 2026-05-06
-**`data-ds-name`:** `EditorialLoadingState`
-**`data-ds-spec`:** `patterns/EditorialLoadingState.md`
+**`data-ds-name`:** `BriefingLoadingState`
+**`data-ds-spec`:** `patterns/BriefingLoadingState.md`
 **Variants:** `default` (with optional `withPulse` toggle)
 **Design system version introduced:** 0.6.0
 
@@ -48,7 +48,7 @@ Pattern — no sub-primitives. Centered max-width 640px column.
 └────────────────────────────────────┘
 ```
 
-Pulsing dot animation: `editorial-loading-pulse 1.4s ease-in-out infinite`. Pure CSS, no skeleton-content motion. The surface's chrome (FolioBar, FloatingNavIsland) remains rendered and interactive.
+Pulsing dot animation: `briefing-loading-pulse 1.4s ease-in-out infinite`. Pure CSS, no skeleton-content motion. The surface's chrome (FolioBar, FloatingNavIsland) remains rendered and interactive.
 
 ## Tokens consumed
 
@@ -61,13 +61,13 @@ Pulsing dot animation: `editorial-loading-pulse 1.4s ease-in-out infinite`. Pure
 ## API sketch
 
 ```tsx
-<EditorialLoadingState
+<BriefingLoadingState
   headline="Reading your day…"
   eyebrow="GATHERING TODAY'S SIGNALS"
   withPulse
 />
 
-<EditorialLoadingState
+<BriefingLoadingState
   headline="Loading account…"
   eyebrow="ASSEMBLING DOSSIER"
 />
@@ -76,7 +76,7 @@ Pulsing dot animation: `editorial-loading-pulse 1.4s ease-in-out infinite`. Pure
 Contract type:
 
 ```ts
-interface EditorialLoadingStateProps {
+interface BriefingLoadingStateProps {
   headline: string;        // surface-specific copy
   eyebrow: string;         // surface-specific copy
   withPulse?: boolean;     // default true
@@ -87,20 +87,19 @@ Copy is **always** passed in by the consuming surface — the pattern owns shape
 
 ## Source
 
-- **Code:** ships W5 (DOS-429) at `src/components/dashboard/EditorialLoadingState.tsx` + `src/components/dashboard/EditorialLoadingState.module.css` (initial). May lift to `src/components/shared/` once a second consumer adopts it.
+- **Code:** ships W5 (DOS-429) at `src/components/dashboard/BriefingLoadingState.tsx` + `src/components/dashboard/BriefingLoadingState.module.css`.
 - **Reference render:** `.docs/design/reference/surfaces/briefing-redesign-loading.html` (DailyBriefing instance with copy "Reading your day…" / "GATHERING TODAY'S SIGNALS")
 
 ## Surfaces that consume it
 
 - DailyBriefing (via `BriefingLoadState.status === "loading"`)
-- (future) AccountDetail, ProjectDetail when their loading states adopt the editorial register
 
 ## Naming notes
 
-`EditorialLoadingState` is the canonical name. Earlier draft used `BriefingLoadingState`, which violated the `NAMING.md` rule "patterns are named for the pattern, not the surface." The pattern is briefing-resident today but is structurally generic — the briefing-specific copy lives in the consuming surface, not the pattern.
+`BriefingLoadingState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing surface carry the prefix. The anti-example (`❌ BriefingTrustBand`) only applies when the unprefixed pattern (`TrustBand`) already exists generically; there is no generic `LoadingState` to shadow. Existing canonical precedent: `BriefingMeetingCard`, `DailyBriefingAttentionSection`.
 
-Distinct from a generic loading spinner. The `Editorial` prefix marks this as the editorial-register variant — calm, serif, no skeleton motion.
+The slot-based API (`headline`, `eyebrow`, `withPulse`) keeps the editorial copy out of the component file and makes the pattern trivial to test in isolation. The briefing surface owns the words.
 
 ## History
 
-- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. Renamed from `BriefingLoadingState` per `NAMING.md` policy. TSX ships W5 under DOS-429.
+- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. TSX ships W5 under DOS-429.

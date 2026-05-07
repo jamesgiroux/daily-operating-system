@@ -16,23 +16,23 @@
     },
     {
       "html": ".docs/design/reference/surfaces/briefing-redesign-loading.html",
-      "primary": "src/components/dashboard/EditorialLoadingState.tsx",
-      "module": "src/components/dashboard/EditorialLoadingState.module.css",
-      "module_prefix": "EditorialLoadingState",
+      "primary": "src/components/dashboard/BriefingLoadingState.tsx",
+      "module": "src/components/dashboard/BriefingLoadingState.module.css",
+      "module_prefix": "BriefingLoadingState",
       "_pending_implementation": "TSX ships W5 (DOS-429). Pre-implementation entry; audit early-returns on missing TSX."
     },
     {
       "html": ".docs/design/reference/surfaces/briefing-redesign-error.html",
-      "primary": "src/components/dashboard/EditorialErrorState.tsx",
-      "module": "src/components/dashboard/EditorialErrorState.module.css",
-      "module_prefix": "EditorialErrorState",
+      "primary": "src/components/dashboard/BriefingErrorState.tsx",
+      "module": "src/components/dashboard/BriefingErrorState.module.css",
+      "module_prefix": "BriefingErrorState",
       "_pending_implementation": "TSX ships W5 (DOS-429). Pre-implementation entry; audit early-returns on missing TSX."
     },
     {
       "html": ".docs/design/reference/surfaces/briefing-redesign-empty.html",
-      "primary": "src/components/dashboard/EditorialEmptyState.tsx",
-      "module": "src/components/dashboard/EditorialEmptyState.module.css",
-      "module_prefix": "EditorialEmptyState",
+      "primary": "src/components/dashboard/BriefingEmptyState.tsx",
+      "module": "src/components/dashboard/BriefingEmptyState.module.css",
+      "module_prefix": "BriefingEmptyState",
       "_pending_implementation": "TSX ships W5 (DOS-429). Pre-implementation entry; audit early-returns on missing TSX."
     },
     {

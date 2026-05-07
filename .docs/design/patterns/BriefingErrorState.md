@@ -1,11 +1,11 @@
-# EditorialErrorState
+# BriefingErrorState
 
 **Tier:** pattern
 **Status:** proposed
 **Owner:** James
 **Last updated:** 2026-05-06
-**`data-ds-name`:** `EditorialErrorState`
-**`data-ds-spec`:** `patterns/EditorialErrorState.md`
+**`data-ds-name`:** `BriefingErrorState`
+**`data-ds-spec`:** `patterns/BriefingErrorState.md`
 **Variants:** `default`
 **Design system version introduced:** 0.6.0
 
@@ -71,7 +71,7 @@ The "Try again" button calls `onRetry()`; "Diagnostics" routes to `/settings#dia
 ## API sketch
 
 ```tsx
-<EditorialErrorState
+<BriefingErrorState
   eyebrow="BRIEFING UNAVAILABLE"
   message="We couldn't load your briefing."
   detailMessage="A signal source isn't responding. Your day is still on the calendar — we just can't shape it into a briefing right now."
@@ -85,7 +85,7 @@ The "Try again" button calls `onRetry()`; "Diagnostics" routes to `/settings#dia
 Contract type:
 
 ```ts
-interface EditorialErrorStateProps {
+interface BriefingErrorStateProps {
   eyebrow: string;             // surface-specific (e.g. "BRIEFING UNAVAILABLE")
   message: string;             // primary headline
   detailMessage?: string;      // optional secondary sentence
@@ -100,18 +100,19 @@ The pattern does not auto-retry. Stack-trace exposure is forbidden — only `mes
 
 ## Source
 
-- **Code:** ships W5 (DOS-429) at `src/components/dashboard/EditorialErrorState.tsx` + `src/components/dashboard/EditorialErrorState.module.css` (initial). Lift to `src/components/shared/` once a second consumer adopts.
+- **Code:** ships W5 (DOS-429) at `src/components/dashboard/BriefingErrorState.tsx` + `src/components/dashboard/BriefingErrorState.module.css`.
 - **Reference render:** `.docs/design/reference/surfaces/briefing-redesign-error.html`
 
 ## Surfaces that consume it
 
 - DailyBriefing (via `BriefingLoadState.status === "error"`)
-- (future) AccountDetail, ProjectDetail when their error states adopt the editorial register
 
 ## Naming notes
 
-`EditorialErrorState` is the canonical name. Earlier draft used `BriefingErrorState`, renamed per `NAMING.md` policy. Surface-specific copy (eyebrow text, headline) is passed in via props; the pattern owns shape, register, and recovery affordance behavior.
+`BriefingErrorState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing carry the prefix. There is no generic `ErrorState` to shadow. Existing canonical precedent: `BriefingMeetingCard`, `DailyBriefingAttentionSection`.
+
+The slot-based API (`eyebrow`, `message`, `detailMessage`, `code`, `service`, `onRetry`, `onDiagnostics`) keeps copy out of the component and makes the pattern trivial to test. The briefing surface owns the words.
 
 ## History
 
-- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. Renamed from `BriefingErrorState` per `NAMING.md` policy. TSX ships W5 under DOS-429.
+- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. TSX ships W5 under DOS-429.

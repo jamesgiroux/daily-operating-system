@@ -1,11 +1,11 @@
-# EditorialEmptyState
+# BriefingEmptyState
 
 **Tier:** pattern
 **Status:** proposed
 **Owner:** James
 **Last updated:** 2026-05-06
-**`data-ds-name`:** `EditorialEmptyState`
-**`data-ds-spec`:** `patterns/EditorialEmptyState.md`
+**`data-ds-name`:** `BriefingEmptyState`
+**`data-ds-spec`:** `patterns/BriefingEmptyState.md`
 **Variants:** `default`
 **Design system version introduced:** 0.6.0
 
@@ -23,8 +23,8 @@ Render an editorial-register cold-start frame when a surface has no data because
 
 - For an empty list / table where the user has connected sources but there's no data this week — use a small inline empty hint instead
 - For a feature the user lacks permission for — use a permission-guard pattern
-- For a transient empty (still loading) — use `EditorialLoadingState`
-- For an authentication failure mid-session — use `EditorialErrorState` with `code="dependency_failed"`
+- For a transient empty (still loading) — use `BriefingLoadingState`
+- For an authentication failure mid-session — use `BriefingErrorState` with `code="dependency_failed"`
 
 ## States / variants
 
@@ -68,7 +68,7 @@ Checklist items use `○` / `●` glyphs based on `status` (`"todo"` / `"done"`)
 ## API sketch
 
 ```tsx
-<EditorialEmptyState
+<BriefingEmptyState
   eyebrow="DAILY BRIEFING"
   headline="Your day, when DailyOS can read it."
   lede="The briefing is a synthesis of your calendar, mail, and signal sources. Connect what you'd like; we'll start reading."
@@ -84,7 +84,7 @@ Checklist items use `○` / `●` glyphs based on `status` (`"todo"` / `"done"`)
 Contract type:
 
 ```ts
-interface EditorialEmptyStateProps {
+interface BriefingEmptyStateProps {
   eyebrow: string;
   headline: string;
   lede: string;
@@ -97,18 +97,19 @@ The pattern does not detect or trigger auth — `cta.onClick` delegates to the c
 
 ## Source
 
-- **Code:** ships W5 (DOS-429) at `src/components/dashboard/EditorialEmptyState.tsx` + `src/components/dashboard/EditorialEmptyState.module.css` (initial). Lift to `src/components/shared/` once a second consumer adopts.
+- **Code:** ships W5 (DOS-429) at `src/components/dashboard/BriefingEmptyState.tsx` + `src/components/dashboard/BriefingEmptyState.module.css`.
 - **Reference render:** `.docs/design/reference/surfaces/briefing-redesign-empty.html`
 
 ## Surfaces that consume it
 
 - DailyBriefing (via `BriefingLoadState.status === "empty"`)
-- (future) AccountDetail when no account exists yet, ProjectDetail when user hasn't connected Linear
 
 ## Naming notes
 
-`EditorialEmptyState` is the canonical name. Earlier draft used `BriefingEmptyState`, renamed per `NAMING.md` policy. Distinct from a generic null-state placeholder — the `Editorial` prefix marks the calm, copy-driven register and the implicit contract that the state is *opt-in cold-start*, not a technical failure.
+`BriefingEmptyState` is the canonical name. The Briefing prefix matches `NAMING.md`'s ✅ example `BriefingSpine` — patterns unique to the briefing carry the prefix. There is no generic `EmptyState` to shadow. Existing canonical precedent: `BriefingMeetingCard`, `DailyBriefingAttentionSection`.
+
+The slot-based API (`eyebrow`, `headline`, `lede`, `checklistItems`, `cta`) keeps copy out of the component and makes the pattern trivial to test. The briefing surface owns the words. Distinct from a generic null-state placeholder — this pattern carries the implicit contract that the state is *opt-in cold-start* (user hasn't connected sources), not a technical failure.
 
 ## History
 
-- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. Renamed from `BriefingEmptyState` per `NAMING.md` policy. TSX ships W5 under DOS-429.
+- 2026-05-06 — Promoted to canonical from Daily Briefing redesign exploration. TSX ships W5 under DOS-429.

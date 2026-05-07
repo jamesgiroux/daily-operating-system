@@ -86,9 +86,9 @@ A pattern knows about a domain concept (a claim, a trust state, a briefing, a me
 | [`MovingRow`](./MovingRow.md) | proposed | Three-column entity-movement row (identity / lede + signals / stats); 5 kinds | DailyBriefing (Moving section) |
 | [`WatchRow`](./WatchRow.md) | proposed | Adaptive triage row, 4 kinds (suggestedAction / openAction / parked / aging) | DailyBriefing (Watch section) |
 | [`PredictionsSection`](./PredictionsSection.md) | proposed | Collapsed-by-default predictions list within MarginGrid | DailyBriefing |
-| [`EditorialLoadingState`](./EditorialLoadingState.md) | proposed | Centered editorial holding state with optional pulsing dot | DailyBriefing (and future editorial surfaces) |
-| [`EditorialErrorState`](./EditorialErrorState.md) | proposed | Centered editorial error frame with retry / diagnostics affordances | DailyBriefing (and future editorial surfaces) |
-| [`EditorialEmptyState`](./EditorialEmptyState.md) | proposed | Left-aligned cold-start frame with eyebrow / headline / lede / checklist / CTA | DailyBriefing (and future editorial surfaces) |
+| [`BriefingLoadingState`](./BriefingLoadingState.md) | proposed | Centered editorial holding state with optional pulsing dot | DailyBriefing (and future editorial surfaces) |
+| [`BriefingErrorState`](./BriefingErrorState.md) | proposed | Centered editorial error frame with retry / diagnostics affordances | DailyBriefing (and future editorial surfaces) |
+| [`BriefingEmptyState`](./BriefingEmptyState.md) | proposed | Left-aligned cold-start frame with eyebrow / headline / lede / checklist / CTA | DailyBriefing (and future editorial surfaces) |
 
 ## Conventions
 

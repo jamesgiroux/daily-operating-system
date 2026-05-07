@@ -36,9 +36,9 @@ Patterns:
 - `MovingRow` (`patterns/MovingRow.md`) — three-column entity-movement row (identity / lede + signals / stacked stats). Five `kind` variants (customer, person, project, internal, lifecycle). Composes `Pill`, `SignalDot`, `ProvenanceStat`, `EntityChip`. Click target: whole row via `role="link"` + tabindex (not wrapping `<a>`).
 - `WatchRow` (`patterns/WatchRow.md`) — adaptive triage row, four `kind` variants (`suggestedAction`, `openAction`, `parked`, `aging`) selecting different right-column affordances. Composes `InferredActionSelector`.
 - `PredictionsSection` (`patterns/PredictionsSection.md`) — collapsed-by-default predictions list within a `MarginGrid`. Composes `TrustBandBadge` per item. Restraint contract: collapsed default <32px vertical.
-- `EditorialLoadingState` (`patterns/EditorialLoadingState.md`) — centered editorial holding state with optional pulsing dot. Surface-specific copy passed via props.
-- `EditorialErrorState` (`patterns/EditorialErrorState.md`) — centered editorial error frame with retry / diagnostics affordances and optional `code` / `service` meta line.
-- `EditorialEmptyState` (`patterns/EditorialEmptyState.md`) — left-aligned cold-start frame with eyebrow / headline / lede / optional checklist / optional CTA.
+- `BriefingLoadingState` (`patterns/BriefingLoadingState.md`) — centered editorial holding state with optional pulsing dot. Surface-specific copy passed via props.
+- `BriefingErrorState` (`patterns/BriefingErrorState.md`) — centered editorial error frame with retry / diagnostics affordances and optional `code` / `service` meta line.
+- `BriefingEmptyState` (`patterns/BriefingEmptyState.md`) — left-aligned cold-start frame with eyebrow / headline / lede / optional checklist / optional CTA.
 
 Tokens (`tokens/color.md` → "Signal kind"):
 - `--color-signal-meeting` → `--color-garden-larkspur` (shared paint with `--color-person`)

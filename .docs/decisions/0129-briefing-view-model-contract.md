@@ -145,8 +145,8 @@ Services that produce these fields must respect the budgets. The W2 service tick
 
 Two adjacent states distinguish "user has not connected" from "creds went stale during operation":
 
-- **`empty` + `googleAuth` (not authenticated)** → user has never connected Google, or has revoked. Renders `EditorialEmptyState` pattern with the connect-Google CTA.
-- **`error` + `code: dependency_failed` + `service: lead | schedule | predictions | moving | watch`** → creds expired mid-session, or a downstream signal source (Glean, Gong) is unreachable. Renders `EditorialErrorState` pattern with "Try again" + "Diagnostics" affordances.
+- **`empty` + `googleAuth` (not authenticated)** → user has never connected Google, or has revoked. Renders `BriefingEmptyState` pattern with the connect-Google CTA.
+- **`error` + `code: dependency_failed` + `service: lead | schedule | predictions | moving | watch`** → creds expired mid-session, or a downstream signal source (Glean, Gong) is unreachable. Renders `BriefingErrorState` pattern with "Try again" + "Diagnostics" affordances.
 
 Services emit `empty` for "missing prerequisite" and `error` for "transient failure of an operation that should have worked." A forced reauth flow (creds detected stale) returns `error` with `code: dependency_failed` and `service: schedule` (or whichever section first detected the auth failure).
 
