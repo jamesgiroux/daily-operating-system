@@ -467,6 +467,10 @@ pub fn link_person_entity(
     })?;
 
     // Emit person linked signal
+    let signal_value = serde_json::json!({
+        "person_id": person_id,
+    })
+    .to_string();
     crate::services::signals::emit_and_propagate_or_log(
         ctx,
         db,
@@ -475,7 +479,7 @@ pub fn link_person_entity(
         entity_id,
         "person_linked",
         "user_action",
-        Some(&format!("{{\"person_id\":\"{}\"}}", person_id)),
+        Some(&signal_value),
         0.9,
     );
 
