@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 #
 # Claims-substrate lint: intelligence_claims UPDATE statements may mutate only
-# the DOS-7 amendment D lifecycle/trust/threading allowlist owned by
+# the amendment D lifecycle/trust/threading allowlist owned by
 # services/claims.rs. The scanner parses full multi-line SET clauses instead
 # of grepping a bounded line window, so forbidden columns are caught in any SET
 # position and with SQLite quoted identifier forms.

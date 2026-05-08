@@ -172,7 +172,7 @@ pub enum ClaimError {
 pub type ClaimsError = ClaimError;
 pub type TrustVersion = i64;
 
-// DOS-7 amendment D: assertion columns are insert-only. These are the only
+// amendment D: assertion columns are insert-only. These are the only
 // intelligence_claims columns the claim service may mutate in-place.
 const CLAIM_UPDATE_ALLOWED_COLUMNS: &[&str] = &[
     "claim_state",
@@ -186,7 +186,7 @@ const CLAIM_UPDATE_ALLOWED_COLUMNS: &[&str] = &[
     "trust_computed_at",
     "trust_version",
     "thread_id",
-    // DOS-294 typed feedback adds derived review state; it is mutable
+    // typed feedback adds derived review state; it is mutable
     // metadata, not assertion identity.
     "verification_state",
     "verification_reason",
