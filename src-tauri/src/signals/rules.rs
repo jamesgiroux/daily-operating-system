@@ -1433,12 +1433,20 @@ mod tests {
             [],
         ).unwrap();
 
-        // Insert a recent sibling signal on the parent (from child2, within 48 hours)
-        conn.execute(
-            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, decay_half_life_days, created_at)
-             VALUES ('sib1', 'account', 'parent1', 'health_change', 'clay', 0.75, 90, datetime('now', '-1 hours'))",
-            [],
-        ).unwrap();
+        let recent_signal_at = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
+        crate::signals::bus::emit_signal_fixture_event(
+            &db,
+            "sib1",
+            "account",
+            "parent1",
+            "health_change",
+            "clay",
+            None,
+            0.75,
+            Some(90),
+            &recent_signal_at,
+        )
+        .unwrap();
 
         // Now fire rule_hierarchy_up from child1
         let signal = make_signal(
@@ -1474,12 +1482,20 @@ mod tests {
             [],
         ).unwrap();
 
-        // Insert a signal on the parent that came from hierarchy propagation — should be excluded
-        conn.execute(
-            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, decay_half_life_days, created_at)
-             VALUES ('hier1', 'account', 'parent1', 'health_change', 'propagation:hierarchy_up', 0.75, 90, datetime('now', '-1 hours'))",
-            [],
-        ).unwrap();
+        let recent_signal_at = (chrono::Utc::now() - chrono::Duration::hours(1)).to_rfc3339();
+        crate::signals::bus::emit_signal_fixture_event(
+            &db,
+            "hier1",
+            "account",
+            "parent1",
+            "health_change",
+            "propagation:hierarchy_up",
+            None,
+            0.75,
+            Some(90),
+            &recent_signal_at,
+        )
+        .unwrap();
 
         let signal = make_signal("account", "child1", "health_change", None);
         let derived = rule_hierarchy_up(&signal, &db);

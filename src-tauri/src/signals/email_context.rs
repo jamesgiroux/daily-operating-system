@@ -144,7 +144,6 @@ mod tests {
         let now = chrono::Utc::now().to_rfc3339();
 
         // Seed two entities' worth of pre_meeting_context signals.
-        let conn = db.conn_ref();
         for (eid, from, text) in [
             (
                 "acmecorp",
@@ -163,11 +162,17 @@ mod tests {
                 "signal_text": text,
             })
             .to_string();
-            conn.execute(
-                "INSERT INTO signal_events
-                 (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at)
-                 VALUES (?1, 'account', ?2, 'pre_meeting_context', 'test', ?3, 1.0, 7.0, ?4)",
-                rusqlite::params![format!("sig-{}-{}", eid, text), eid, value, now],
+            crate::signals::bus::emit_signal_fixture_event(
+                &db,
+                &format!("sig-{}-{}", eid, text),
+                "account",
+                eid,
+                "pre_meeting_context",
+                "test",
+                Some(&value),
+                1.0,
+                Some(7),
+                &now,
             )
             .expect("insert signal");
         }

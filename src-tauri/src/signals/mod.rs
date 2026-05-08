@@ -22,6 +22,7 @@ pub mod feedback;
 pub mod fusion;
 pub mod invalidation;
 pub mod patterns;
+pub mod policy_registry;
 pub mod post_meeting;
 pub mod propagation;
 pub mod relevance;

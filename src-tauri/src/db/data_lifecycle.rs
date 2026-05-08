@@ -701,6 +701,39 @@ mod tests {
         }
     }
 
+    fn seed_signal(
+        db: &ActionDb,
+        id: &str,
+        entity_type: &str,
+        entity_id: &str,
+        signal_type: &str,
+        source: &str,
+        confidence: f64,
+        created_at: Option<&str>,
+    ) {
+        let fallback_created_at;
+        let created_at = match created_at {
+            Some(value) => value,
+            None => {
+                fallback_created_at = Utc::now().to_rfc3339();
+                &fallback_created_at
+            }
+        };
+        crate::signals::bus::emit_signal_fixture_event(
+            db,
+            id,
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            None,
+            confidence,
+            None,
+            created_at,
+        )
+        .expect("seed signal");
+    }
+
     #[test]
     fn purge_source_removes_tagged_rows_and_preserves_user_rows() {
         let db = test_db();
@@ -725,20 +758,26 @@ mod tests {
         db.link_person_to_account_with_source("a2", "p1", "champion", "user")
             .expect("seed user stakeholder");
 
-        db.conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
-                 VALUES ('s-glean', 'account', 'a1', 'profile_update', 'glean', 0.8)",
-                [],
-            )
-            .expect("seed glean signal");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
-                 VALUES ('s-user', 'account', 'a1', 'profile_update', 'user', 0.8)",
-                [],
-            )
-            .expect("seed user signal");
+        seed_signal(
+            &db,
+            "s-glean",
+            "account",
+            "a1",
+            "profile_update",
+            "glean",
+            0.8,
+            None,
+        );
+        seed_signal(
+            &db,
+            "s-user",
+            "account",
+            "a1",
+            "profile_update",
+            "user",
+            0.8,
+            None,
+        );
 
         db.conn_ref()
             .execute(
@@ -781,35 +820,39 @@ mod tests {
     fn purge_aged_signals_preserves_user_corrections() {
         let db = test_db();
 
-        // Insert an old signal (200 days ago) from a regular source
-        db.conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, created_at)
-                 VALUES ('s-old', 'account', 'a1', 'profile_update', 'email_enrichment', 0.7,
-                         datetime('now', '-200 days'))",
-                [],
-            )
-            .expect("seed old signal");
+        let old = (Utc::now() - chrono::Duration::days(200)).to_rfc3339();
+        let recent = (Utc::now() - chrono::Duration::days(10)).to_rfc3339();
 
-        // Insert an old user_correction (200 days ago) -- must be preserved
-        db.conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, created_at)
-                 VALUES ('s-correction', 'account', 'a1', 'entity_correction', 'user_correction', 1.0,
-                         datetime('now', '-200 days'))",
-                [],
-            )
-            .expect("seed old user correction");
-
-        // Insert a recent signal (10 days ago) -- must be preserved
-        db.conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, created_at)
-                 VALUES ('s-recent', 'account', 'a1', 'profile_update', 'email_enrichment', 0.7,
-                         datetime('now', '-10 days'))",
-                [],
-            )
-            .expect("seed recent signal");
+        seed_signal(
+            &db,
+            "s-old",
+            "account",
+            "a1",
+            "profile_update",
+            "email_enrichment",
+            0.7,
+            Some(&old),
+        );
+        seed_signal(
+            &db,
+            "s-correction",
+            "account",
+            "a1",
+            "entity_correction",
+            "user_correction",
+            1.0,
+            Some(&old),
+        );
+        seed_signal(
+            &db,
+            "s-recent",
+            "account",
+            "a1",
+            "profile_update",
+            "email_enrichment",
+            0.7,
+            Some(&recent),
+        );
 
         let purged = purge_aged_signals(&db, 180).expect("purge");
         assert_eq!(
@@ -1066,14 +1109,7 @@ mod tests {
     fn db_growth_report_returns_table_counts() {
         let db = test_db();
 
-        // Insert some signals
-        db.conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
-                 VALUES ('s1', 'account', 'a1', 'test', 'test', 0.5)",
-                [],
-            )
-            .expect("seed signal");
+        seed_signal(&db, "s1", "account", "a1", "test", "test", 0.5, None);
 
         let report = db_growth_report(&db);
         // Should have entries for existing tables
