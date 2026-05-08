@@ -149,11 +149,9 @@ pub fn run_cascade(
                 };
                 if !related.iter().any(|r| r.entity_id == account_id) {
                     related.push(account_ref);
-                    // Write to DB
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
+                    // Write to DB; intentional best-effort discard preserves
+                    // existing non-blocking behavior on backfill side-effects.
+                    #[allow(clippy::let_underscore_must_use)]
                     let _ = db.upsert_linked_entity_raw(
                         &crate::db::entity_linking::LinkedEntityRawWrite {
                             owner_type: link_ctx.owner.owner_type.as_str().to_string(),
@@ -226,12 +224,42 @@ fn c2_suggest_stakeholders(
                 continue;
             }
 
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = db.suggest_stakeholder_pending(account_id, person_id, data_source, 0.75);
-    }
+            let person_id = match &p.person_id {
+                Some(id) => id,
+                None => continue,
+            };
+
+            // Skip if already an active/pending stakeholder on this account.
+            let already = tx
+                .is_stakeholder_on_account(account_id, person_id)
+                .unwrap_or(false);
+            if already {
+                continue;
+            }
+
+            let data_source = match link_ctx.owner.owner_type {
+                super::types::OwnerType::Meeting => "calendar_attendance",
+                super::types::OwnerType::Email | super::types::OwnerType::EmailThread => {
+                    "email_correspondence"
+                }
+            };
+
+            let inserted =
+                tx.suggest_stakeholder_pending(account_id, person_id, data_source, 0.75)?;
+            suggested_any = suggested_any || inserted > 0;
+        }
+
+        if suggested_any {
+            crate::services::stakeholder_writer::emit_stakeholders_changed(
+                ctx,
+                tx,
+                "account",
+                account_id,
+                "suggest_stakeholders_pending",
+            )?;
+        }
+        Ok(())
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -359,10 +387,7 @@ fn c3_promote_trusted_stakeholders(
             // domain is evidence the account owns that domain. Merge it into
             // account_domains so future P4 domain evidence fires without a
             // second manual confirmation.
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
+            #[allow(clippy::let_underscore_must_use)]
             let _ = backfill_account_domain_from_person(
                 ctx,
                 tx,
