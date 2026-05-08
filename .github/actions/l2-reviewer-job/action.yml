@@ -1,0 +1,118 @@
+name: L2 reviewer job
+description: |
+  Run a single L2 reviewer (Claude Code Action), inject a unique marker into
+  the prompt, fetch the reviewer's PR comment via marker startswith match,
+  and parse the verdict.
+
+inputs:
+  reviewer-name:
+    description: 'Reviewer name (matches a file in .github/reviewer-prompts/<name>.md)'
+    required: true
+  base-sha:
+    description: 'PR base SHA — gate config + role prompt loaded from here'
+    required: true
+  head-sha:
+    description: 'PR head SHA — diff content reviewed from here'
+    required: true
+  pr-number:
+    description: 'PR number for comment fetch'
+    required: true
+  run-id:
+    description: 'github.run_id; part of the comment-fetch marker for cross-run isolation'
+    required: true
+  anthropic-api-key:
+    description: 'Anthropic API key for claude-code-action'
+    required: true
+  github-token:
+    description: 'GITHUB_TOKEN for gh api comment fetch'
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Checkout BASE ref
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        ref: ${{ inputs.base-sha }}
+        path: base-ref
+
+    - name: Checkout PR head
+      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      with:
+        fetch-depth: 0
+        ref: ${{ inputs.head-sha }}
+        path: pr-head
+
+    - id: prompt
+      shell: bash
+      env:
+        REVIEWER_NAME: ${{ inputs.reviewer-name }}
+        RUN_ID: ${{ inputs.run-id }}
+        HEAD_SHA: ${{ inputs.head-sha }}
+      run: |
+        set -euo pipefail
+        MARKER="<!-- l2-reviewer:${REVIEWER_NAME} run=${RUN_ID} sha=${HEAD_SHA} -->"
+        # Use a randomized heredoc terminator so a reviewer prompt that
+        # happens to contain a literal terminator string can't truncate
+        # the multiline output.
+        TERMINATOR="L2EOF_$(openssl rand -hex 16)"
+        {
+          echo "prompt<<${TERMINATOR}"
+          echo "Begin your review comment with this exact line as the FIRST line of your reply:"
+          echo "${MARKER}"
+          echo ""
+          echo "This marker is structural — the L2 gate uses it to identify your specific"
+          echo "comment among PR comments. If you omit it, the gate fails closed and the"
+          echo "review is not counted."
+          echo ""
+          echo "Then perform the review per the role definition below. The diff is in"
+          echo "./pr-head; the gate config and your role prompt are in ./base-ref."
+          echo ""
+          echo "── Common preamble ──"
+          cat "base-ref/.github/reviewer-prompts/_common-preamble.md"
+          echo ""
+          echo "── Role-specific prompt ──"
+          cat "base-ref/.github/reviewer-prompts/${REVIEWER_NAME}.md"
+          echo "${TERMINATOR}"
+        } >> "$GITHUB_OUTPUT"
+        # Persist marker as a step output (not GITHUB_ENV — keeps it scoped
+        # to the action, not leaking into all subsequent job steps)
+        MARKER_TERMINATOR="MARKEREOF_$(openssl rand -hex 16)"
+        {
+          echo "marker<<${MARKER_TERMINATOR}"
+          echo "${MARKER}"
+          echo "${MARKER_TERMINATOR}"
+        } >> "$GITHUB_OUTPUT"
+
+    - name: Run claude-code-action
+      uses: anthropics/claude-code-action@cacf511db27f37088382624faf2fe2f397735494 # v1
+      with:
+        anthropic_api_key: ${{ inputs.anthropic-api-key }}
+        prompt: ${{ steps.prompt.outputs.prompt }}
+        claude_args: --max-turns 10
+
+    - name: Parse reviewer verdict
+      shell: bash
+      env:
+        GH_TOKEN: ${{ inputs.github-token }}
+        REPO: ${{ github.repository }}
+        PR: ${{ inputs.pr-number }}
+        REVIEWER_NAME: ${{ inputs.reviewer-name }}
+        MARKER: ${{ steps.prompt.outputs.marker }}
+      run: |
+        set -euo pipefail
+        # Filter by exact `github-actions[bot]` login (not just user.type==Bot).
+        # claude-code-action posts via the workflow's GITHUB_TOKEN which is
+        # `github-actions[bot]`. A different bot installed on the repo
+        # cannot match this login.
+        # `startswith` ensures the marker is the first content of the body —
+        # a bot comment that QUOTES the marker (e.g., in a fenced block)
+        # cannot satisfy the gate.
+        BODY=$(gh api --paginate "repos/${REPO}/issues/${PR}/comments" \
+          --jq "[.[] | select(.user.login == \"github-actions[bot]\" and (.body | startswith(\"${MARKER}\")))] | last | .body")
+        if [ -z "$BODY" ] || [ "$BODY" = "null" ]; then
+          echo "::error::no L2 ${REVIEWER_NAME} comment with marker as first line found from github-actions[bot]"
+          echo "Expected marker: ${MARKER}"
+          exit 1
+        fi
+        printf '%s' "$BODY" | python3 base-ref/.github/scripts/parse-verdict.py

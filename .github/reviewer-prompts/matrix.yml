@@ -1,0 +1,126 @@
+# L2 reviewer matrix — maps changed-file path globs to which domain reviewer(s)
+# the L2 GitHub Action invokes for a given PR.
+#
+# Resolver: .github/scripts/resolve-reviewers.py
+# Loaded from BASE ref by the workflow (NOT the PR head — see workflow comment).
+#
+# An entry can declare:
+#   - reviewer: <name>
+#     always: true            # always invoked, regardless of changed files
+#     when_changed: [...]     # globs that trigger this reviewer
+#
+# Multiple matches are additive — a PR that touches services/ AND src/components/
+# pulls both security-auditor AND accessibility-tester.
+#
+# To add a new reviewer:
+#   1. Drop a `<name>.md` prompt in this directory (and `_common-preamble.md` is shared)
+#   2. Add an entry below
+#   3. Add a job block in .github/workflows/l2-review.yml referencing the prompt
+#   4. Re-run configure-branch-protection.sh if the new reviewer should block merge
+#
+# Glob syntax (per resolve-reviewers.py): `**/` recursive, `*` non-slash, `?` single char.
+
+reviewers:
+  - reviewer: code-reviewer
+    description: |
+      General code-quality reviewer. Always runs — every PR gets this slot.
+    always: true
+
+  - reviewer: architect-reviewer
+    description: |
+      Architectural / structural reviewer. Always runs — every PR gets architect's
+      eyes on the design implications, even small ones.
+    always: true
+
+  - reviewer: security-auditor
+    description: |
+      Mandatory for plans/PRs touching trust boundaries, claim substrate,
+      privileged actions, schema, orchestration system itself, or governance.
+      Per Amendment 3 of v1.4.0-waves-amendments.md, plus paths surfaced in
+      L2 cycle-1 review of Phase 2 (release_gate.rs, build.rs, .github/scripts/**,
+      pull_request_template.md).
+    when_changed:
+      # Backend privileged paths
+      - "src-tauri/src/services/**"
+      - "src-tauri/src/abilities/**"
+      - "src-tauri/src/bridges/**"
+      - "src-tauri/src/commands/**"
+      - "src-tauri/src/intelligence/**"
+      # Release gate + build (privileged-action surfaces)
+      - "src-tauri/src/release_gate.rs"
+      - "src-tauri/build.rs"
+      # Schema / migrations
+      - "src-tauri/src/migrations.rs"
+      - "src-tauri/migrations/**"
+      - "**/*.sql"
+      # Sensitivity / render policy / actor-filter logic
+      - "src-tauri/src/services/sensitivity.rs"
+      - "src-tauri/src/services/render_policy*.rs"
+      # Prompt templates (new attack surface)
+      - ".claude/skills/**"
+      - ".claude/hooks/**"
+      - ".claude/routines/**"
+      - ".claude/**/*.md"
+      - "prompts/**"
+      # MCP / tool registry / settings
+      - ".claude/settings.json"
+      - ".claude/settings.local.json"
+      # Supply chain
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - "package.json"
+      - "pnpm-lock.yaml"
+      # Workflow / governance
+      - ".github/workflows/**"
+      - ".github/reviewer-prompts/**"
+      - ".github/scripts/**"
+      - ".github/actions/**"
+      - ".github/pull_request_template.md"
+      - ".github/CODEOWNERS"
+      - ".github/dependabot.yml"
+      # Protocol / orchestration docs
+      - ".docs/plans/v1.4.0-waves*.md"
+      - ".docs/plans/orchestration/**"
+
+  - reviewer: performance-engineer
+    description: |
+      Triggered when the diff touches performance-budgeted hot paths,
+      DB query layers, IPC boundaries, or async orchestration.
+    when_changed:
+      - "src-tauri/src/services/**"
+      - "src-tauri/src/intelligence/**"
+      - "src-tauri/src/db/**"
+      - "src-tauri/src/commands/**"
+      - "src-tauri/src/abilities/**"
+      - "src/hooks/**"
+      - "src/components/**/*.tsx"
+      - "src/pages/**/*.tsx"
+
+  - reviewer: accessibility-tester
+    description: |
+      Triggered for any user-facing surface change. Broad globs over `src/**`
+      catch global layout, routing, providers, and root-level styles in
+      addition to components/pages — all of which can affect a11y.
+    when_changed:
+      - "src/**/*.tsx"
+      - "src/**/*.ts"
+      - "src/**/*.css"
+      - "src/**/*.module.css"
+      - "src/**/*.html"
+      - "index.html"
+
+# Notes:
+#
+# - The resolver hard-allowlists reviewer names. A typo or a malicious matrix
+#   edit that introduces an unknown reviewer name is silently skipped (logged
+#   to stderr) — defense in depth alongside path-fence.
+#
+# - Path-fence (.github/scripts/check-config-fence.sh) blocks PRs that modify
+#   matrix.yml, reviewer prompts, scripts, or the blocklist scanner. Such PRs
+#   need separate maintainer-approval flow (admin override). This means
+#   matrix changes themselves go through a manual-review path; the matrix
+#   doesn't review its own modifications.
+#
+# - matrix.yml is the single source of truth for security-auditor trigger
+#   paths. validate-pr-template.py reads `security-auditor.when_changed`
+#   from this file at runtime — no parallel list to maintain.

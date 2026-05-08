@@ -63,14 +63,19 @@ The wave gates (L3/L4/L5) are already defined in `v1.4.0-waves.md`. They run as 
 ### 3. Implementation
 - `impl-driver` routine: fires on `Approved for code` label, reads the plan from the Linear ticket (the frozen contract), spawns headless `claude -p` in a worktree, codes against the plan, opens PR on `public` via `gh` CLI. The PR description links back to the Linear ticket.
 
-### 4. L2 — per-PR
-- GitHub Action on `public`, triggered by `pull_request: [opened, synchronize]`
-- Runs:
-  - `/codex review`
-  - `code-reviewer` subagent (DoD adherence, acceptance criteria match, unintended consequences, SRP/DRY, elegance — your stated review dimensions)
-  - Domain reviewer per matrix (`performance-engineer` for perf paths, `security-auditor` for security paths, `accessibility-tester` for user-facing, etc.)
-- Status check turns green on unanimous
-- Wave-driver auto-merges on green (earns this authority after Phase 2 watches a wave ship end-to-end with you watching)
+### 4. L2 — per-PR (two moments, same review level)
+
+L2 runs in two places: **in-cycle** during development (fast feedback while context is fresh) and **at PR-open** as the formal merge gate. Same review level, different moments. Re-running at PR-open is a safety re-validation that catches drift between in-cycle review and final pushed state, and catches anything cloud routines bypass since they don't run in-cycle L2 locally.
+
+**In-cycle L2** — developer practice, no automation gate. The implementing agent (or James) invokes `/codex review` + `code-reviewer` + domain reviewer locally during the cycle. Speeds development; not blocking.
+
+**PR-open L2** — GitHub Action on `public`, triggered by `pull_request: [opened, synchronize, reopened]` against `dev` and `trunk`. Runs four jobs in parallel, each setting its own status check:
+- `/codex review` — adversarial diff read
+- `code-reviewer` subagent — DoD adherence, acceptance-criteria match, unintended consequences, SRP/DRY, elegance
+- Domain reviewer per matrix — `performance-engineer` for perf paths, `security-auditor` for security/trust-boundary paths, `accessibility-tester` for user-facing, etc.
+- `blocklist-scan` — re-runs the Phase 1 scanner against the PR commit range; catches cloud-routine commits that bypass local hooks
+
+Branch protection blocks merge until all status checks are green. Wave-driver earns merge authority after Phase 2+3 ship a wave end-to-end with James watching.
 
 ### 5. Wave gates — existing protocol
 - **L3** wave adversarial after all wave PRs merge: `/codex challenge` + `architect-reviewer` + Suite S (security) / Suite P (performance) / Suite E (edge cases)
@@ -184,13 +189,13 @@ Each phase shippable independently. Stop at any point and you have working piece
 
 | Phase | Ships | Effort |
 |---|---|---|
-| 1 | Mirror-gate (`mirror-gate.sh` with refspec allowlist + blocklist scan) + `commit-msg` hook | Hours |
-| 2 | GitHub Action on `public` for L2 (one workflow file: codex review + code-reviewer + domain reviewer) | A day |
-| 3 | Claudebot DM with Slack interactive blocks + signing verification + Linear comment writer | A day |
-| 4 | `linear-plan-drafter` + `l0-reviewer` routines (cloud, via `/schedule`) | A few days |
-| 5 | `impl-driver` routine | A day |
-| 6 | Wave gate routines (`l3-wave-adversarial`, `l5-drift-check`, `l4-surface-qa`) | A few days |
-| 7 | `daily-digest` + cross-wave reflection routine | A day or two |
+| 1 | Mirror-gate (`mirror-gate.sh` with refspec allowlist + blocklist scan) + `commit-msg` hook | Hours | **Done** — running locally (14/14 unit, 6/6 e2e) |
+| 2 | GitHub Action on `public` for L2 (one workflow file: codex review + code-reviewer + domain reviewer) | A day | **Code complete (path α)** — awaiting GitHub UI setup + test PR (task #14) |
+| 3 | Claudebot DM with Slack interactive blocks + Linear comment writer | A day | Not started — outbound DMs work today via Slack MCP |
+| 4 | `linear-plan-drafter` + `l0-reviewer` routines (cloud, via `/schedule`) | A few days | **Routine prompts drafted** at `.docs/plans/orchestration/routines/{linear-plan-drafter,l0-reviewer}.md` — pending L0 review then Anthropic Routines deployment |
+| 5 | `impl-driver` routine | A day | Not started — gated on Phase 5 codex residuals (task #17 — identity-provenance hardening) |
+| 6 | Wave gate routines (`l3-wave-adversarial`, `l5-drift-check`, `l4-surface-qa`) | A few days | **L3 + L5 prompts drafted** at `.docs/plans/orchestration/routines/` — L4 + deployment pending |
+| 7 | `daily-digest` + cross-wave reflection routine | A day or two | **Both prompts drafted** at `.docs/plans/orchestration/routines/` — pending L0 review then deployment |
 
 Phase 1 is the safety floor and goes first. Phases 2–5 are the orchestration spine. Phases 6–7 are visibility and continuous reflection.
 
