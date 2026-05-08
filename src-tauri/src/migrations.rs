@@ -735,7 +735,7 @@ const MIGRATIONS: &[Migration] = &[
         version: 144,
         apply: v144_audit_action_token::migrate_v144_audit_action_token,
     },
-    // DOS-379: fail-closed entity_members links by enforcing
+    // fail-closed entity_members links by enforcing
     // entity_members.entity_id -> entities(id).
     Migration::Sql {
         version: 145,

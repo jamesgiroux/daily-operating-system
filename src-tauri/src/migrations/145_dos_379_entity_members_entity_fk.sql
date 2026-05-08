@@ -1,4 +1,4 @@
--- DOS-379: entity_members.entity_id must reference a real profile-agnostic
+-- entity_members.entity_id must reference a real profile-agnostic
 -- entity. Rebuild is required because SQLite cannot add an FK in place.
 
 PRAGMA foreign_keys = OFF;
