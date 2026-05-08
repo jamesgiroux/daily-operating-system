@@ -1,23 +1,23 @@
 #!/usr/bin/env bash
-# Suite S — Security invariants run on the integrated wave state.
+# Suite S — Security invariants run on the integrated scope state.
 #
 # Wraps every CI policy script + cargo-audit + clippy with -D warnings into a
 # single fail-closed runner. Outputs a JSON summary for the L3 aggregator.
 #
-# Usage: scripts/suite-s.sh [--out path] [--wave WN]
+# Usage: scripts/suite-s.sh [--out path] [--scope SCOPE-ID]
 #   --out  Write JSON summary to this path (default: stdout)
-#   --wave Used only for label/log context; not enforced
+#   --scope L3 scope identifier (free-form, e.g. v1.4.1-W0 or DOS-cleanup-batch); not enforced
 #
 # Exit: 0 if all checks pass; 1 if any check fails.
 
 set -euo pipefail
 
 OUT=""
-WAVE=""
+SCOPE=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --out) OUT="$2"; shift 2 ;;
-    --wave) WAVE="$2"; shift 2 ;;
+    --scope) SCOPE="$2"; shift 2 ;;
     *) echo "unknown arg: $1" >&2; exit 2 ;;
   esac
 done
@@ -76,7 +76,7 @@ done
 
 results_json+="]"
 
-summary="{\"suite\":\"S\",\"wave\":\"$WAVE\",\"total\":$total,\"failed\":$failed,\"checks\":$results_json}"
+summary="{\"suite\":\"S\",\"scope\":\"$SCOPE\",\"total\":$total,\"failed\":$failed,\"checks\":$results_json}"
 
 if [[ -n "$OUT" ]]; then
   printf '%s\n' "$summary" > "$OUT"

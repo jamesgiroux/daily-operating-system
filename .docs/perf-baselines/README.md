@@ -1,9 +1,8 @@
 # Performance baselines
 
-Per-wave criterion bench output, written by `scripts/suite-p.sh` when the L3
-wave-review workflow runs. Each wave's `wave-WN.json` captures the integrated
-state's bench numbers; subsequent waves compare against the most recent prior
-baseline.
+Per-scope criterion bench output, written by `scripts/suite-p.sh` when L3
+runs. Each scope's `scope-{id}.json` captures the integrated state's bench
+numbers; subsequent scopes compare against the most recent prior baseline.
 
 A regression beyond 10% on any flow fails L3 / suite-p. Tune the threshold
 via `--threshold N` to `suite-p.sh`.

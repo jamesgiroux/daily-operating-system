@@ -7,8 +7,8 @@ inputs:
   reviewer:
     description: "Reviewer slot: 'codex-challenge' or 'architect-reviewer'."
     required: true
-  wave:
-    description: "Wave identifier (e.g. W0, W0.5, W3)."
+  scope:
+    description: "Scope identifier (free-form, e.g. v1.4.1-W0, DOS-cleanup-batch)."
     required: true
   range:
     description: "Git range for integrated diff (first-parent..dev-head)."
@@ -29,7 +29,7 @@ runs:
     - name: Compute integrated diff
       shell: bash
       env:
-        WAVE: ${{ inputs.wave }}
+        SCOPE: ${{ inputs.scope }}
         RANGE: ${{ inputs.range }}
         OUTDIR: ${{ inputs.output-dir }}
         REVIEWER: ${{ inputs.reviewer }}
@@ -41,13 +41,13 @@ runs:
         git log --pretty=format:'%h %s%n%n%b%n---' "$RANGE" > "$OUTDIR/commits.txt"
         git diff --stat "$RANGE" > "$OUTDIR/diff-stat.txt"
         git diff "$RANGE" | head -n 100000 > "$OUTDIR/diff.patch"
-        echo "wave=$WAVE reviewer=$REVIEWER range=$RANGE diff-lines=$(wc -l < $OUTDIR/diff.patch)" >&2
+        echo "scope=$SCOPE reviewer=$REVIEWER range=$RANGE diff-lines=$(wc -l < $OUTDIR/diff.patch)" >&2
 
     - name: Render prompt with diff context
       shell: bash
       env:
         PROMPT_PATH: ${{ inputs.prompt-path }}
-        WAVE: ${{ inputs.wave }}
+        SCOPE: ${{ inputs.scope }}
         RANGE: ${{ inputs.range }}
         OUTDIR: ${{ inputs.output-dir }}
       run: |
@@ -59,9 +59,9 @@ runs:
           echo ""
           echo "---"
           echo ""
-          echo "## Wave under review"
+          echo "## Unit under review"
           echo ""
-          echo "- Wave: $WAVE"
+          echo "- Scope: $SCOPE"
           echo "- Integrated range: $RANGE"
           echo "- Diff stat: see ${OUTDIR}/diff-stat.txt"
           echo "- Commits: see ${OUTDIR}/commits.txt"
@@ -98,20 +98,20 @@ runs:
       env:
         OUTDIR: ${{ inputs.output-dir }}
         REVIEWER: ${{ inputs.reviewer }}
-        WAVE: ${{ inputs.wave }}
+        SCOPE: ${{ inputs.scope }}
       run: |
         set -euo pipefail
         RESP="$OUTDIR/response.md"
         if [[ ! -s "$RESP" ]]; then
           echo "::error::no response from claude-code-action"
-          echo "{\"reviewer\":\"$REVIEWER\",\"wave\":\"$WAVE\",\"verdict\":\"infrastructure-failure\",\"reason\":\"empty response\"}" > "$OUTDIR/verdict.json"
+          echo "{\"reviewer\":\"$REVIEWER\",\"scope\":\"$SCOPE\",\"verdict\":\"infrastructure-failure\",\"reason\":\"empty response\"}" > "$OUTDIR/verdict.json"
           exit 1
         fi
         verdict=$(grep -E '^VERDICT: (approve|changes-requested|blocked)$' "$RESP" | tail -n1 | awk '{print $2}' || true)
         findings=$(grep -E '^FINDINGS: critical=' "$RESP" | tail -n1 || true)
         if [[ -z "$verdict" ]]; then
           echo "::error::no parseable verdict in response"
-          echo "{\"reviewer\":\"$REVIEWER\",\"wave\":\"$WAVE\",\"verdict\":\"malformed\",\"raw\":\"$(tr -d '\n' < $RESP | head -c 500)\"}" > "$OUTDIR/verdict.json"
+          echo "{\"reviewer\":\"$REVIEWER\",\"scope\":\"$SCOPE\",\"verdict\":\"malformed\",\"raw\":\"$(tr -d '\n' < $RESP | head -c 500)\"}" > "$OUTDIR/verdict.json"
           exit 1
         fi
         # Validate approve-with-blocking-findings rule.
@@ -120,10 +120,10 @@ runs:
           high=$(echo "$findings" | sed -n 's/.*high=\([0-9]*\).*/\1/p')
           if { [[ "${crit:-0}" -gt 0 ]] || [[ "${high:-0}" -gt 0 ]]; } && ! grep -qi "tracked.followup\|tracked-followup" "$RESP"; then
             echo "::error::approve verdict with untracked critical/high findings"
-            echo "{\"reviewer\":\"$REVIEWER\",\"wave\":\"$WAVE\",\"verdict\":\"invalid-approve\",\"findings\":\"$findings\"}" > "$OUTDIR/verdict.json"
+            echo "{\"reviewer\":\"$REVIEWER\",\"scope\":\"$SCOPE\",\"verdict\":\"invalid-approve\",\"findings\":\"$findings\"}" > "$OUTDIR/verdict.json"
             exit 1
           fi
         fi
-        echo "{\"reviewer\":\"$REVIEWER\",\"wave\":\"$WAVE\",\"verdict\":\"$verdict\",\"findings\":\"$findings\"}" > "$OUTDIR/verdict.json"
+        echo "{\"reviewer\":\"$REVIEWER\",\"scope\":\"$SCOPE\",\"verdict\":\"$verdict\",\"findings\":\"$findings\"}" > "$OUTDIR/verdict.json"
         echo "verdict=$verdict $findings" >&2
         if [[ "$verdict" != "approve" ]]; then exit 1; fi

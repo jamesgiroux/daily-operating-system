@@ -1,26 +1,29 @@
-name: L3 Wave Review
+name: L3 Review
 
-# L3 — Wave-level adversarial review.
+# L3 — Adversarial review of an integrated unit-of-work.
 #
-# Fires when:
-#   - A PR carrying a `wave-WN` label merges to dev AND no other open PRs
-#     carry the same label (this was the last PR in the wave); OR
-#   - The user manually dispatches with a wave input.
+# A "unit" can be anything: a release wave, a Linear project, a Linear
+# milestone, a small batch of related PRs, even a single big PR. The unit
+# is identified by a free-form scope-id supplied at dispatch time, plus the
+# list of merged PR numbers that comprise it.
 #
-# Panel: codex-challenge + architect-reviewer (parallel)
-# Suites: S (security/policy), P (perf vs prior baseline), E (frontend + attestation)
+# Triggered manually only. Auto-triggering by Linear webhook (when a project
+# closes / milestone hits 100%) is a follow-up that needs Linear → GitHub
+# webhook plumbing.
 #
 # Failure path: exit non-zero + upload findings as workflow artifacts.
-# CI fail email + polling session handle the rest. No Slack/L6 escalation.
+# CI fail email + the active polling session handle the rest. No Slack/L6
+# escalation infrastructure layered on (per memory).
 
 on:
-  pull_request:
-    types: [closed]
-    branches: [dev]
   workflow_dispatch:
     inputs:
-      wave:
-        description: "Wave to review (e.g., W0, W0.5, W1, W3)"
+      scope-id:
+        description: "Free-form name for this unit (used in artifact paths). Examples: v1.4.1-W0, DOS-310-cleanup, briefing-redesign."
+        required: true
+        type: string
+      pr-numbers:
+        description: "Comma-separated list of merged PR numbers that comprise this unit (e.g., 225,226,227)."
         required: true
         type: string
 
@@ -30,7 +33,7 @@ permissions:
   issues: read
 
 concurrency:
-  group: l3-wave-${{ github.event.inputs.wave || (github.event.pull_request && github.event.pull_request.labels[0].name) || 'unknown' }}
+  group: l3-${{ github.event.inputs.scope-id }}
   cancel-in-progress: false
 
 jobs:
@@ -38,65 +41,39 @@ jobs:
     name: L3 / gate
     runs-on: ubuntu-latest
     outputs:
-      fire: ${{ steps.decide.outputs.fire }}
-      wave: ${{ steps.decide.outputs.wave }}
+      scope: ${{ steps.normalize.outputs.scope }}
       range: ${{ steps.range.outputs.range }}
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
           fetch-depth: 0
 
-      - id: decide
+      - id: normalize
         env:
-          GH_TOKEN: ${{ github.token }}
-          EVENT: ${{ github.event_name }}
-          MERGED: ${{ github.event.pull_request.merged }}
-          PR_NUM: ${{ github.event.pull_request.number }}
-          DISPATCH_WAVE: ${{ github.event.inputs.wave }}
-          PR_LABELS: ${{ toJSON(github.event.pull_request.labels.*.name) }}
+          RAW: ${{ github.event.inputs.scope-id }}
         run: |
           set -euo pipefail
-          if [[ "$EVENT" == "workflow_dispatch" ]]; then
-            echo "Manual dispatch for wave=$DISPATCH_WAVE"
-            echo "fire=true"  >> "$GITHUB_OUTPUT"
-            echo "wave=$DISPATCH_WAVE" >> "$GITHUB_OUTPUT"
-            exit 0
+          # Sanitize scope-id for filesystem safety: alnum / dash / dot / underscore only.
+          scope=$(printf '%s' "$RAW" | tr -c '[:alnum:]._-' '_' | sed 's/^_//;s/_$//')
+          if [[ -z "$scope" ]]; then
+            echo "::error::scope-id reduced to empty after sanitization"
+            exit 1
           fi
-          if [[ "$MERGED" != "true" ]]; then
-            echo "PR closed without merge; skip"
-            echo "fire=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          wave_label=$(printf '%s' "$PR_LABELS" | .github/scripts/extract-wave-label.py)
-          if [[ -z "$wave_label" ]]; then
-            echo "Merged PR has no wave-WN label; skip"
-            echo "fire=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          last=$(.github/scripts/check-last-wave-pr.sh --wave "$wave_label" --exclude-pr "$PR_NUM")
-          if [[ "$last" != "true" ]]; then
-            echo "Wave $wave_label not yet complete (more open PRs)"
-            echo "fire=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "Last PR in wave $wave_label merged; firing L3"
-          echo "fire=true" >> "$GITHUB_OUTPUT"
-          echo "wave=$wave_label" >> "$GITHUB_OUTPUT"
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "Normalized scope-id: $scope" >&2
 
       - id: range
-        if: steps.decide.outputs.fire == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
-          WAVE: ${{ steps.decide.outputs.wave }}
+          PRS: ${{ github.event.inputs.pr-numbers }}
         run: |
           set -euo pipefail
-          range=$(.github/scripts/compute-wave-range.sh --wave "$WAVE")
+          range=$(.github/scripts/resolve-l3-range.sh --prs "$PRS")
           echo "range=$range" >> "$GITHUB_OUTPUT"
 
   panel-codex:
     name: L3 / panel / codex-challenge
     needs: gate
-    if: needs.gate.outputs.fire == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -105,7 +82,7 @@ jobs:
       - uses: ./.github/actions/l3-reviewer-job
         with:
           reviewer: codex-challenge
-          wave: ${{ needs.gate.outputs.wave }}
+          scope: ${{ needs.gate.outputs.scope }}
           range: ${{ needs.gate.outputs.range }}
           prompt-path: .github/reviewer-prompts/l3-codex-challenge.md
           output-dir: /tmp/l3/codex-challenge
@@ -119,7 +96,6 @@ jobs:
   panel-architect:
     name: L3 / panel / architect-reviewer
     needs: gate
-    if: needs.gate.outputs.fire == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -128,7 +104,7 @@ jobs:
       - uses: ./.github/actions/l3-reviewer-job
         with:
           reviewer: architect-reviewer
-          wave: ${{ needs.gate.outputs.wave }}
+          scope: ${{ needs.gate.outputs.scope }}
           range: ${{ needs.gate.outputs.range }}
           prompt-path: .github/reviewer-prompts/l3-architect-reviewer.md
           output-dir: /tmp/l3/architect-reviewer
@@ -142,12 +118,11 @@ jobs:
   suite-s:
     name: L3 / suite-s
     needs: gate
-    if: needs.gate.outputs.fire == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - run: ./scripts/suite-s.sh --wave "${{ needs.gate.outputs.wave }}" --out /tmp/suite-s.json
+      - run: ./scripts/suite-s.sh --scope "${{ needs.gate.outputs.scope }}" --out /tmp/suite-s.json
       - if: always()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
@@ -157,7 +132,6 @@ jobs:
   suite-p:
     name: L3 / suite-p
     needs: gate
-    if: needs.gate.outputs.fire == 'true'
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -168,7 +142,7 @@ jobs:
           cache: "pnpm"
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - run: pnpm install
-      - run: ./scripts/suite-p.sh --wave "${{ needs.gate.outputs.wave }}" --out /tmp/suite-p.json
+      - run: ./scripts/suite-p.sh --scope "${{ needs.gate.outputs.scope }}" --out /tmp/suite-p.json
       - if: always()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
@@ -180,7 +154,6 @@ jobs:
   suite-e:
     name: L3 / suite-e
     needs: gate
-    if: needs.gate.outputs.fire == 'true'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -190,7 +163,7 @@ jobs:
           node-version: "22"
           cache: "pnpm"
       - run: pnpm install
-      - run: ./scripts/suite-e.sh --wave "${{ needs.gate.outputs.wave }}" --out /tmp/suite-e.json
+      - run: ./scripts/suite-e.sh --scope "${{ needs.gate.outputs.scope }}" --out /tmp/suite-e.json
       - if: always()
         uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
         with:
@@ -200,7 +173,7 @@ jobs:
   aggregate:
     name: L3 / aggregate
     needs: [gate, panel-codex, panel-architect, suite-s, suite-p, suite-e]
-    if: needs.gate.outputs.fire == 'true' && always()
+    if: always()
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
@@ -233,19 +206,19 @@ jobs:
 
       - name: Write proof bundle
         env:
-          WAVE: ${{ needs.gate.outputs.wave }}
+          SCOPE: ${{ needs.gate.outputs.scope }}
           RANGE: ${{ needs.gate.outputs.range }}
           VERDICT: ${{ steps.verdict.outputs.verdict }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
-          BUNDLE_DIR=".docs/plans/wave-${WAVE}"
+          BUNDLE_DIR=".docs/plans/l3-reviews/${SCOPE}"
           mkdir -p "$BUNDLE_DIR"
           BUNDLE="${BUNDLE_DIR}/proof-bundle.md"
           {
-            echo "# L3 Wave Review — proof bundle"
+            echo "# L3 Review — proof bundle"
             echo ""
-            echo "- Wave: ${WAVE}"
+            echo "- Scope: ${SCOPE}"
             echo "- Integrated range: \`${RANGE}\`"
             echo "- Workflow run: ${RUN_URL}"
             echo "- Verdict: ${VERDICT}"
@@ -278,32 +251,32 @@ jobs:
               fi
               echo ""
             done
-            echo "<!-- l3_complete sha=$(git rev-parse HEAD) ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) wave=${WAVE} verdict=${VERDICT} -->"
+            echo "<!-- l3_complete sha=$(git rev-parse HEAD) ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) scope=${SCOPE} verdict=${VERDICT} -->"
           } > "$BUNDLE"
           echo "wrote $BUNDLE"
 
       - name: Open proof-bundle PR (success only)
         if: steps.verdict.outputs.verdict == 'pass'
         env:
-          WAVE: ${{ needs.gate.outputs.wave }}
+          SCOPE: ${{ needs.gate.outputs.scope }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          BRANCH="l3-proof/wave-${WAVE}"
+          BRANCH="l3-proof/${SCOPE}"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git config user.name "github-actions[bot]"
           git checkout -b "$BRANCH"
-          git add ".docs/plans/wave-${WAVE}/proof-bundle.md"
+          git add ".docs/plans/l3-reviews/${SCOPE}/proof-bundle.md"
           [ -d ".docs/perf-baselines" ] && git add ".docs/perf-baselines/" || true
           git diff --cached --quiet && { echo "No proof bundle changes to commit"; exit 0; }
-          git commit -m "L3 proof bundle for wave ${WAVE}"
+          git commit -m "L3 proof bundle for ${SCOPE}"
           git push -u origin "$BRANCH"
           gh pr create --base dev --head "$BRANCH" \
-            --title "L3 proof bundle — wave ${WAVE}" \
-            --body "Generated by L3 wave review. Verdict: pass. Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --title "L3 proof bundle — ${SCOPE}" \
+            --body "Generated by L3 review. Verdict: pass. Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Fail workflow if verdict is fail
         if: steps.verdict.outputs.verdict == 'fail'
         run: |
-          echo "::error::L3 wave review failed for wave ${{ needs.gate.outputs.wave }}. See workflow artifacts."
+          echo "::error::L3 review failed for scope ${{ needs.gate.outputs.scope }}. See workflow artifacts."
           exit 1
