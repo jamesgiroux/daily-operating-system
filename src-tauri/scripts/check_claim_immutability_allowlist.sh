@@ -67,17 +67,11 @@ def parse_identifier(text: str, idx: int):
         return None, idx
 
     ch = text[idx]
-    if ch in ('"', "`"):
-        end = text.find(ch, idx + 1)
-        if end == -1:
-            return None, idx
-        return text[idx + 1:end].lower(), end + 1
+    if ch in ('"', "`", "'"):
+        return parse_quoted_identifier(text, idx, ch)
 
     if ch == "[":
-        end = text.find("]", idx + 1)
-        if end == -1:
-            return None, idx
-        return text[idx + 1:end].lower(), end + 1
+        return parse_quoted_identifier(text, idx, "]")
 
     if ch == "_" or ch.isalpha():
         end = idx + 1
@@ -85,6 +79,22 @@ def parse_identifier(text: str, idx: int):
             end += 1
         return text[idx:end].lower(), end
 
+    return None, idx
+
+
+def parse_quoted_identifier(text: str, idx: int, close: str):
+    ident = []
+    cursor = idx + 1
+    while cursor < len(text):
+        ch = text[cursor]
+        cursor += 1
+        if ch == close:
+            if cursor < len(text) and text[cursor] == close:
+                ident.append(ch)
+                cursor += 1
+                continue
+            return "".join(ident).lower(), cursor
+        ident.append(ch)
     return None, idx
 
 
@@ -138,6 +148,56 @@ def skip_expression(text: str, idx: int) -> int:
     return idx
 
 
+def parse_assignment_target(text: str, idx: int):
+    column, next_idx = parse_identifier(text, idx)
+    if column is None:
+        return None, idx
+
+    next_idx = skip_ws(text, next_idx)
+    if next_idx < len(text) and text[next_idx] == ".":
+        qualified, qualified_next = parse_identifier(text, next_idx + 1)
+        if qualified is not None:
+            column = qualified
+            next_idx = skip_ws(text, qualified_next)
+
+    return column, next_idx
+
+
+def parse_row_value_targets(text: str, idx: int):
+    idx = skip_ws(text, idx)
+    if idx >= len(text) or text[idx] != "(":
+        return None
+
+    cursor = idx + 1
+    columns = []
+    while cursor < len(text):
+        cursor = skip_ws(text, cursor)
+        if cursor < len(text) and text[cursor] == ")":
+            if not columns:
+                return None
+            cursor += 1
+            break
+
+        column, next_idx = parse_assignment_target(text, cursor)
+        if column is None:
+            return None
+        columns.append(column)
+
+        cursor = skip_ws(text, next_idx)
+        if cursor < len(text) and text[cursor] == ",":
+            cursor += 1
+            continue
+        if cursor < len(text) and text[cursor] == ")":
+            cursor += 1
+            break
+        return None
+
+    cursor = skip_ws(text, cursor)
+    if cursor < len(text) and text[cursor] == "=":
+        return columns, cursor + 1
+    return None
+
+
 def parse_set_columns(text: str, idx: int):
     columns = []
     while idx < len(text):
@@ -145,17 +205,17 @@ def parse_set_columns(text: str, idx: int):
         if idx >= len(text) or top_level_clause_starts(text, idx):
             break
 
-        column, next_idx = parse_identifier(text, idx)
+        row_value = parse_row_value_targets(text, idx)
+        if row_value is not None:
+            row_columns, value_idx = row_value
+            columns.extend(row_columns)
+            idx = skip_expression(text, value_idx)
+            continue
+
+        column, next_idx = parse_assignment_target(text, idx)
         if column is None:
             idx += 1
             continue
-
-        next_idx = skip_ws(text, next_idx)
-        if next_idx < len(text) and text[next_idx] == ".":
-            qualified, qualified_next = parse_identifier(text, next_idx + 1)
-            if qualified is not None:
-                column = qualified
-                next_idx = skip_ws(text, qualified_next)
 
         if next_idx >= len(text) or text[next_idx] != "=":
             idx = next_idx + 1
@@ -310,7 +370,12 @@ def iter_files():
 
 
 violations = []
-update_re = re.compile(r"\bUPDATE\s+(?:OR\s+\w+\s+)?(?:[\"`\[]?intelligence_claims[\"`\]]?)\b", re.I)
+IDENT = r"(?:[\"`']?[A-Za-z_][A-Za-z0-9_]*[\"`']?|\[[^\]]+\])"
+CLAIMS_TABLE = r"(?:[\"`']?intelligence_claims[\"`']?|\[intelligence_claims\])"
+update_re = re.compile(
+    rf"\bUPDATE\s+(?:OR\s+\w+\s+)?(?:{IDENT}\s*\.\s*)?{CLAIMS_TABLE}(?=\W|$)",
+    re.I,
+)
 
 for path in iter_files():
     text = normalized_source(path)

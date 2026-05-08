@@ -440,6 +440,68 @@ fn lint_immutability_catches_quoted_subject_ref_in_multi_column_set() {
 }
 
 #[test]
+fn lint_immutability_catches_single_quoted_subject_ref_set() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let forbidden = "subject".to_string() + "_" + "ref";
+    let bad_sql = format!(
+        "let _ = conn.execute(\n\
+         \"UPDATE intelligence_claims SET claim_state = ?1, '{forbidden}' = ?2 WHERE id = ?3\",\n\
+         params,\n\
+         );\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_single_quoted.rs"), bad_sql)
+        .expect("write single-quoted bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on SQLite single-quoted forbidden identifier in SET target. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_immutability_catches_forbidden_column_in_row_value_set() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let forbidden = "source".to_string() + "_" + "asof";
+    let bad_sql = format!(
+        "fn bad(conn: &Connection) {{\n\
+         conn.execute(\n\
+         \"UPDATE intelligence_claims \\\n\
+          SET (claim_state, trust_score, {forbidden}) = \\\n\
+              (?1, ?2, ?3) \\\n\
+          WHERE id = ?4\",\n\
+         params,\n\
+         ).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_row_value.rs"), bad_sql)
+        .expect("write row-value bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on row-value SET with a forbidden target. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
 fn lint_immutability_catches_forbidden_column_beyond_grep_window() {
     let tmp = tempfile::tempdir().expect("tempdir");
     std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");

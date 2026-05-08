@@ -347,20 +347,16 @@ fn parse_set_columns(sql: &str, mut cursor: usize) -> Vec<String> {
             break;
         }
 
-        let Some((mut column, mut next)) = parse_identifier(sql, cursor) else {
+        if let Some((row_columns, value_start)) = parse_row_value_set_target(sql, cursor) {
+            columns.extend(row_columns);
+            cursor = skip_expression(sql, value_start);
+            continue;
+        }
+
+        let Some((column, next)) = parse_assignment_target(sql, cursor) else {
             cursor += next_char_len(sql, cursor);
             continue;
         };
-
-        next = skip_ws(sql, next);
-        if sql[next..].starts_with('.') {
-            let qualified_start = skip_ws(sql, next + 1);
-            if let Some((qualified_column, qualified_next)) = parse_identifier(sql, qualified_start)
-            {
-                column = qualified_column;
-                next = skip_ws(sql, qualified_next);
-            }
-        }
 
         if !sql[next..].starts_with('=') {
             cursor = next + next_char_len(sql, next);
@@ -372,6 +368,62 @@ fn parse_set_columns(sql: &str, mut cursor: usize) -> Vec<String> {
     }
 
     columns
+}
+
+fn parse_assignment_target(sql: &str, cursor: usize) -> Option<(String, usize)> {
+    let (mut column, mut next) = parse_identifier(sql, cursor)?;
+
+    next = skip_ws(sql, next);
+    if sql[next..].starts_with('.') {
+        let qualified_start = skip_ws(sql, next + 1);
+        if let Some((qualified_column, qualified_next)) = parse_identifier(sql, qualified_start) {
+            column = qualified_column;
+            next = skip_ws(sql, qualified_next);
+        }
+    }
+
+    Some((column, next))
+}
+
+fn parse_row_value_set_target(sql: &str, cursor: usize) -> Option<(Vec<String>, usize)> {
+    let mut cursor = skip_ws(sql, cursor);
+    if !sql[cursor..].starts_with('(') {
+        return None;
+    }
+
+    cursor += 1;
+    let mut columns = Vec::new();
+    while cursor < sql.len() {
+        cursor = skip_ws(sql, cursor);
+        if sql[cursor..].starts_with(')') {
+            if columns.is_empty() {
+                return None;
+            }
+            cursor += 1;
+            break;
+        }
+
+        let (column, next) = parse_assignment_target(sql, cursor)?;
+        columns.push(column);
+
+        cursor = skip_ws(sql, next);
+        if sql[cursor..].starts_with(',') {
+            cursor += 1;
+            continue;
+        }
+        if sql[cursor..].starts_with(')') {
+            cursor += 1;
+            break;
+        }
+        return None;
+    }
+
+    cursor = skip_ws(sql, cursor);
+    if sql[cursor..].starts_with('=') {
+        Some((columns, cursor + 1))
+    } else {
+        None
+    }
 }
 
 fn skip_expression(sql: &str, mut cursor: usize) -> usize {
@@ -426,7 +478,7 @@ fn parse_identifier(sql: &str, cursor: usize) -> Option<(String, usize)> {
     let ch = sql[cursor..].chars().next()?;
 
     match ch {
-        '"' | '`' => parse_quoted_identifier(sql, cursor, ch, ch),
+        '\'' | '"' | '`' => parse_quoted_identifier(sql, cursor, ch, ch),
         '[' => parse_quoted_identifier(sql, cursor, '[', ']'),
         _ if is_ident_start(ch) => {
             let mut end = cursor + ch.len_utf8();
@@ -458,6 +510,11 @@ fn parse_quoted_identifier(
         let ch = sql[idx..].chars().next().expect("idx in bounds");
         idx += ch.len_utf8();
         if ch == close {
+            if sql[idx..].starts_with(close) {
+                ident.push(ch);
+                idx += close.len_utf8();
+                continue;
+            }
             return Some((ident.to_ascii_lowercase(), idx));
         }
         ident.push(ch);
@@ -2999,6 +3056,39 @@ mod tests {
     }
 
     #[test]
+    fn claim_update_allowlist_rejects_single_quoted_immutable_column() {
+        let sql = "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
+             SET 'source_asof' = ?1,
+                 claim_state = 'dormant'
+             WHERE id = ?2";
+
+        let err = check_claim_update_allowlist(sql)
+            .expect_err("single-quoted immutable column must reject");
+        assert!(matches!(
+            err,
+            ClaimError::ImmutableColumnUpdate(ref columns) if columns == "source_asof"
+        ));
+    }
+
+    #[test]
+    fn claim_update_allowlist_rejects_row_value_immutable_column() {
+        let sql = "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
+             SET (claim_state, trust_score, subject_ref) =
+                 ('dormant', ?1, ?2)
+             WHERE id = ?3";
+
+        assert_eq!(
+            claim_update_columns(sql),
+            vec!["claim_state", "trust_score", "subject_ref"]
+        );
+        let err = check_claim_update_allowlist(sql).expect_err("row-value subject_ref must reject");
+        assert!(matches!(
+            err,
+            ClaimError::ImmutableColumnUpdate(ref columns) if columns == "subject_ref"
+        ));
+    }
+
+    #[test]
     fn claim_update_allowlist_rejects_identity_columns_even_with_allowed_where_filters() {
         let sql = "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
              SET dedup_key = ?1
@@ -3011,6 +3101,67 @@ mod tests {
             err,
             ClaimError::ImmutableColumnUpdate(ref columns) if columns == "dedup_key"
         ));
+    }
+
+    #[test]
+    fn execute_claims_update_rejects_immutable_columns_before_sqlite() {
+        let db = test_db();
+        let err = execute_claims_update(
+            db.conn_ref(),
+            "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
+             SET subject_ref = ?999
+             WHERE id = ?1",
+            params!["would-hit-sqlite-bind-error"],
+        )
+        .expect_err("immutable column must reject before SQLite execution");
+
+        assert!(matches!(
+            err,
+            ClaimError::ImmutableColumnUpdate(ref columns) if columns == "subject_ref"
+        ));
+    }
+
+    #[test]
+    fn execute_claims_update_allows_lifecycle_and_trust_columns() {
+        let db = test_db();
+        insert_fixture_claim(
+            &db,
+            "claim-allowed-update",
+            SUBJECT,
+            "risk",
+            "Allowed wrapper update",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+
+        let updated = execute_claims_update(
+            db.conn_ref(),
+            "UPDATE intelligence_claims
+             SET claim_state = 'dormant',
+                 surfacing_state = 'dormant',
+                 demotion_reason = ?1,
+                 trust_score = ?2,
+                 trust_computed_at = ?3,
+                 trust_version = ?4
+             WHERE id = ?5",
+            params!["unit_test", 0.42_f64, TS, 3_i64, "claim-allowed-update"],
+        )
+        .expect("allowlisted lifecycle/trust columns should execute");
+
+        assert_eq!(updated, 1);
+        assert_eq!(
+            read_lifecycle_columns(&db, "claim-allowed-update"),
+            (
+                "dormant".to_string(),
+                "dormant".to_string(),
+                Some("unit_test".to_string()),
+                None
+            )
+        );
+        assert_eq!(
+            read_trust_columns(&db, "claim-allowed-update"),
+            (Some(0.42), Some(TS.to_string()), Some(3))
+        );
     }
 
     fn ctx_parts() -> (FixedClock, SeedableRng, ExternalClients) {
