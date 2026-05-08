@@ -654,13 +654,11 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                         .map_err(|e| format!("purge meeting descriptions failed: {e}"))?;
                 }
             }
-            DataSource::Gravatar => {
-                if table_exists(tx, "gravatar_cache") {
-                    caches_deleted = tx
-                        .conn_ref()
-                        .execute("DELETE FROM gravatar_cache", [])
-                        .map_err(|e| format!("purge gravatar_cache failed: {e}"))?;
-                }
+            DataSource::Gravatar if table_exists(tx, "gravatar_cache") => {
+                caches_deleted = tx
+                    .conn_ref()
+                    .execute("DELETE FROM gravatar_cache", [])
+                    .map_err(|e| format!("purge gravatar_cache failed: {e}"))?;
             }
             _ => {}
         }
