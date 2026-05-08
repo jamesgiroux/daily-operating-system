@@ -4,6 +4,30 @@
 PRAGMA foreign_keys = OFF;
 BEGIN;
 
+CREATE TABLE IF NOT EXISTS entities (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    entity_type TEXT NOT NULL DEFAULT 'account',
+    tracker_path TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_entities_type ON entities(entity_type);
+
+CREATE TABLE IF NOT EXISTS projects (
+    id TEXT PRIMARY KEY,
+    name TEXT NOT NULL,
+    tracker_path TEXT,
+    updated_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS entity_members (
+    entity_id TEXT NOT NULL,
+    person_id TEXT NOT NULL,
+    relationship_type TEXT DEFAULT 'associated',
+    PRIMARY KEY (entity_id, person_id)
+);
+
 -- Legacy project rows may predate the project -> entities mirror. Restore every
 -- missing mirror before the FK rebuild so project entities remain canonical
 -- even when the legacy project currently has no members.

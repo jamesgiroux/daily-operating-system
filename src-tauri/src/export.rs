@@ -207,7 +207,7 @@ pub fn export_data_zip(db: &ActionDb, dest_path: &Path) -> Result<ExportReport, 
     {
         let mut stmt = conn
             .prepare(
-                "SELECT id, entity_id, entity_type, signal_type, source, confidence, value, created_at
+                "SELECT id, entity_id, entity_type, signal_type, data_source, confidence, value, created_at
                  FROM signal_events
                  WHERE created_at > datetime('now', '-90 days')
                  ORDER BY created_at DESC",

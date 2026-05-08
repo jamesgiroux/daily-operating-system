@@ -999,7 +999,7 @@ fn compute_key_advocate_health(db: &ActionDb, account_id: &str) -> DimensionScor
         .conn
         .prepare(
             "SELECT value, confidence FROM signal_events
-             WHERE entity_id = ?1 AND source = 'glean_gong'
+             WHERE entity_id = ?1 AND data_source = 'glean_gong'
                AND signal_type LIKE '%champion%'
                AND created_at > datetime('now', '-90 days')
              ORDER BY created_at DESC LIMIT 3",
@@ -1157,7 +1157,7 @@ fn compute_financial_proximity(db: &ActionDb, account: &DbAccount) -> DimensionS
         .conn
         .prepare(
             "SELECT value, confidence FROM signal_events
-             WHERE entity_id = ?1 AND source = 'glean_crm'
+             WHERE entity_id = ?1 AND data_source = 'glean_crm'
                AND signal_type = 'renewal_data_updated'
                AND created_at > datetime('now', '-30 days')
              ORDER BY created_at DESC LIMIT 1",
@@ -1262,7 +1262,7 @@ fn compute_signal_momentum(db: &ActionDb, account_id: &str) -> DimensionScore {
         .prepare(
             "SELECT value, confidence, created_at FROM signal_events
              WHERE entity_id = ?1
-               AND source = 'glean_zendesk'
+               AND data_source = 'glean_zendesk'
                AND signal_type = 'support_health_updated'
                AND created_at > datetime('now', '-30 days')
              ORDER BY created_at DESC",

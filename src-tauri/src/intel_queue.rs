@@ -4755,7 +4755,7 @@ mod tests {
             .conn_ref()
             .prepare(
                 "SELECT value FROM signal_events
-                 WHERE source = 'trust_recompute' AND value IS NOT NULL",
+                 WHERE data_source = 'trust_recompute' AND value IS NOT NULL",
             )
             .expect("prepare signal read");
         let values: Vec<String> = stmt
