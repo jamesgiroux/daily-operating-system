@@ -835,7 +835,7 @@ pub struct ServiceContext<'a> {
 pub type EntityContextReadFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<EntityContextEntry>, String>> + Send + 'a>>;
 
-/// Narrow read handle for DOS-218. This keeps the ability on `AbilityContext`
+/// Narrow read handle. This keeps the ability on `AbilityContext`
 /// while avoiding `AppState` or raw database handles in ability code.
 pub trait EntityContextReadHandle: Send + Sync {
     fn read_entity_context_entries<'a>(
@@ -848,7 +848,7 @@ pub trait EntityContextReadHandle: Send + Sync {
 pub type EntityContextClaimReadFuture<'a> =
     Pin<Box<dyn Future<Output = Result<Vec<IntelligenceClaim>, String>> + Send + 'a>>;
 
-/// Claims-backed read handle for DOS-218. Tests can inject this without
+/// Claims-backed read handle. Tests can inject this without
 /// exposing raw database handles to ability code.
 pub trait EntityContextClaimReadHandle: Send + Sync {
     fn read_entity_context_claims<'a>(

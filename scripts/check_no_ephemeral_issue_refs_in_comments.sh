@@ -6,6 +6,10 @@ ROOTS=(
   src-tauri/src
   src-tauri/tests
   src-tauri/examples
+  src-tauri/abilities-runtime/src
+  src-tauri/abilities-runtime/tests
+  src-tauri/abilities-macro/src
+  src-tauri/abilities-macro/tests
   scripts
   src-tauri/scripts
   .github
