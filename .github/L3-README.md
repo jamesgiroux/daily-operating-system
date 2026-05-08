@@ -1,24 +1,24 @@
 # L3 Release Review
 
-Adversarial review of a release bundle. Fires when a PR is opened or updated against `trunk` (the stable-release branch). Reviews everything in `trunk..dev` (or whatever the release PR's `base..head` is).
+Adversarial review of a release bundle. Fires when a PR is opened or updated against `main` (the stable-release branch). Reviews everything in `main..dev` (or whatever the release PR's `base..head` is).
 
 ## Why this scope
 
 - **One fire per release**, not per wave. Minutes scale with releases, not PR volume.
 - **Right concern at right time**: integrated-state issues matter most at the release boundary, not mid-wave when more PRs may still land.
 - **Wave bundling natural**: a release contains N waves (or M Linear projects, or any mix). Reviewing the release naturally reviews everything together.
-- **Branch semantics aligned**: dev = active development, trunk = stable releases (per `CLAUDE.md`). L3 (adversarial, expensive) at the release gate makes architectural sense.
+- **Branch semantics aligned**: dev = active development, main = stable releases (per `CLAUDE.md`). L3 (adversarial, expensive) at the release gate makes architectural sense.
 
 ## Triggering
 
-**Auto** (default): open a PR with `dev` → `trunk` (the release PR). L3 fires on `opened`, `synchronize`, and `reopened` events. Concurrency is per-PR with cancel-in-progress, so new dev commits during release prep replace the in-flight review with a fresh one.
+**Auto** (default): open a PR with `dev` → `main` (the release PR). L3 fires on `opened`, `synchronize`, and `reopened` events. Concurrency is per-PR with cancel-in-progress, so new dev commits during release prep replace the in-flight review with a fresh one.
 
 **Manual** (escape hatch):
 
 ```
 gh workflow run l3-review.yml \
   -f scope-id="release-v1.4.1" \
-  -f base="trunk" \
+  -f base="main" \
   -f head="dev"
 ```
 

@@ -25,7 +25,6 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
     branches:
-      - trunk
       - main
   workflow_dispatch:
     inputs:
@@ -34,12 +33,12 @@ on:
         required: true
         type: string
       base:
-        description: "Base ref for diff (e.g. trunk). Used by manual dispatch."
+        description: "Base ref for diff. Used by manual dispatch."
         required: false
-        default: trunk
+        default: main
         type: string
       head:
-        description: "Head ref for diff (e.g. dev). Used by manual dispatch."
+        description: "Head ref for diff. Used by manual dispatch."
         required: false
         default: dev
         type: string
