@@ -371,6 +371,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         if !scores.is_empty() {
             if let Ok(db) = crate::db::ActionDb::open() {
                 for (email_id, score, reason) in &scores {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = db.set_relevance_score(email_id, *score, reason);
                 }
             }
@@ -523,6 +527,10 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                                 "{{\"normal_interval_days\":{:.1},\"days_since_last\":{:.0}}}",
                                 acct.normal_interval_days, acct.days_since_last_email
                             );
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = crate::signals::bus::emit_signal_and_propagate(
                                 &db,
                                 engine,
@@ -1326,6 +1334,10 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
                     profile: profile.clone(),
                 };
                 let engine = crate::proactive::engine::default_engine();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = engine.run_scan(db, &scan_ctx);
 
                 // Generate callouts
@@ -1715,6 +1727,10 @@ pub async fn refresh_emails_with_retry_batch(
         if !scores.is_empty() {
             if let Ok(db) = crate::db::ActionDb::open() {
                 for (email_id, score, reason) in &scores {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = db.set_relevance_score(email_id, *score, reason);
                 }
             }
@@ -1860,6 +1876,10 @@ fn queue_person_intelligence(
 
         // Write/update dashboard.json
         if let Ok(Some(person)) = db.get_person(&entity_id) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
         }
 
@@ -1879,6 +1899,10 @@ fn queue_person_intelligence(
             }
         }
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(
             entity_id,
             "person".to_string(),
@@ -2592,6 +2616,10 @@ fn track_thread_positions(
             awaiting += 1;
         }
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = db.upsert_email_thread(
             thread_id,
             subject,
@@ -2607,6 +2635,10 @@ fn track_thread_positions(
         } else {
             "awaiting_reply"
         };
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::signals::bus::emit_signal(
             db,
             "thread",

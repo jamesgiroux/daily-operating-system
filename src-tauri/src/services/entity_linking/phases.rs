@@ -60,6 +60,10 @@ pub fn phase1_suppress(
 
     let rule_id = if s1 { "S1" } else { "S2" };
     let ev = evidence::suppress_evidence(link_ctx, rule_id);
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = db.insert_linking_evaluation(&crate::db::entity_linking::LinkingEvaluationWrite {
         owner_type: link_ctx.owner.owner_type.as_str(),
         owner_id: &link_ctx.owner.owner_id,

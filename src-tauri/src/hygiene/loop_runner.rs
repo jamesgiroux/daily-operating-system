@@ -28,6 +28,10 @@ pub async fn run_hygiene_loop(state: Arc<AppState>, app: AppHandle) {
     // Log DB size at startup and emit warning if needed
     let startup_size = crate::db::data_lifecycle::log_db_size_at_startup();
     if startup_size >= 500_000_000 {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit("db-size-warning", startup_size);
     }
 
@@ -198,6 +202,10 @@ fn run_daily_purge(state: &AppState, app: &AppHandle) {
             );
             {
                 let mut audit = state.audit_log.lock();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = audit.append(
                     "system",
                     "age_based_purge",
@@ -215,6 +223,10 @@ fn run_daily_purge(state: &AppState, app: &AppHandle) {
 
         let size = crate::db::data_lifecycle::db_file_size_bytes();
         if size >= 500_000_000 {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app.emit("db-size-warning", size);
         }
     }

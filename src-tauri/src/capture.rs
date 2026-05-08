@@ -242,6 +242,10 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                             "Triggering fallback capture prompt for '{}'",
                             prompt.meeting.title
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = app_handle.emit("post-meeting-prompt-fallback", &prompt.meeting);
                         to_remove.push(i);
                     }
@@ -307,6 +311,10 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
                                 {
                                     let mut guard = state.capture.transcript_processed.lock();
                                     guard.insert(prompt.meeting.id.clone(), record);
+                                    #[allow(
+                                        clippy::let_underscore_must_use,
+                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                    )]
                                     let _ = crate::state::save_transcript_records(&guard);
                                 }
 
@@ -318,12 +326,20 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
                                 // Remove the source file from inbox (it's been routed)
                                 if file_path.exists() {
+                                    #[allow(
+                                        clippy::let_underscore_must_use,
+                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                    )]
                                     let _ = std::fs::remove_file(&file_path);
                                 }
 
                                 // Emit event for live frontend updates
                                 let outcome =
                                     build_auto_outcome(&prompt.meeting.id, &result, &state);
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = app_handle.emit("transcript-processed", &outcome);
 
                                 log::info!(

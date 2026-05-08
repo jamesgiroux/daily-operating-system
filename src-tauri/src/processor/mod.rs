@@ -627,6 +627,10 @@ fn try_match_to_meeting(
         // Emit transcript_outcomes signal for entity intelligence
         let entity_type = "account";
         let entity_id = doc_entity_id.as_deref().unwrap_or(&m.meeting_id);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::signals::bus::emit_signal(
             db,
             entity_type,

@@ -185,6 +185,10 @@ impl QuillClient {
 
     /// Disconnect from the Quill bridge, terminating the child process.
     pub async fn disconnect(self) {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.service.cancel().await;
     }
 

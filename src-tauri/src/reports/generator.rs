@@ -48,6 +48,10 @@ pub fn run_report_generation(input: &ReportGeneratorInput) -> Result<String, Str
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
     // Audit trail
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::audit::write_audit_entry(
         &input.workspace,
         &format!("report_{}", input.report_type),

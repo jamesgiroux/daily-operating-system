@@ -53,6 +53,10 @@ pub fn evaluate_on_signal(
     if score > 0.7 && !check_circuit_breaker(db, entity_id) {
         // best-effort: signal-triggered enrichments are advisory and the
         // underlying signal will be observed again after transient pauses.
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(
             entity_id.to_string(),
             entity_type.to_string(),
@@ -226,6 +230,10 @@ fn window_hours_ago(db: &ActionDb, window_start: &str) -> f64 {
 fn enqueue_retry(queue: &IntelligenceQueue, entity_id: &str, entity_type: &str) {
     // best-effort: coherence retries are background repair work and can be
     // retriggered by later enrichment or signal activity.
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(
         entity_id.to_string(),
         entity_type.to_string(),

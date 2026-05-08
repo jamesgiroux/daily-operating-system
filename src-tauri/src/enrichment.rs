@@ -83,6 +83,10 @@ async fn process_one_sweep(state: &AppState) -> u32 {
     if clay_count > 0 {
         {
             let mut audit = state.audit_log.lock();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = audit.append(
                 "data_access",
                 "clay_enrichment",
@@ -95,6 +99,10 @@ async fn process_one_sweep(state: &AppState) -> u32 {
     if gravatar_count > 0 {
         {
             let mut audit = state.audit_log.lock();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = audit.append(
                 "data_access",
                 "gravatar_lookup",
@@ -268,6 +276,10 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
         .unwrap_or_default()
         .join(".dailyos")
         .join("avatars");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::create_dir_all(&data_dir);
 
     let mut attempted: u32 = 0;
@@ -313,8 +325,10 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
         };
 
         let engine = Arc::clone(&state.signals.engine);
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = state
             .db_write(move |db| {
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry);
 
                 if has_gravatar {
@@ -326,6 +340,7 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
                             role: cache_entry.job_title.clone(),
                             ..Default::default()
                         };
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = db.update_person_profile(pid, &update, "gravatar");
 
                         let value = serde_json::json!({
@@ -334,6 +349,7 @@ async fn process_gravatar_queue(state: &AppState) -> u32 {
                             "job_title": cache_entry.job_title,
                         })
                         .to_string();
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = crate::signals::bus::emit_signal_and_propagate(
                             db,
                             &engine,
@@ -424,6 +440,7 @@ async fn get_unenriched_people(state: &AppState, limit: usize) -> Vec<String> {
 
 async fn insert_clay_sync(state: &AppState, person_id: &str) {
     let person_id = person_id.to_string();
+    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
     let _ = state
         .db_write(move |db| {
             let id = uuid::Uuid::new_v4().to_string();
@@ -440,6 +457,10 @@ async fn insert_clay_sync(state: &AppState, person_id: &str) {
 
 async fn mark_clay_completed(state: &AppState, person_id: &str) {
     let person_id = person_id.to_string();
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .db_write(move |db| {
             let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();
@@ -456,6 +477,7 @@ async fn mark_clay_completed(state: &AppState, person_id: &str) {
 async fn mark_clay_failed(state: &AppState, person_id: &str, error: &str) {
     let person_id = person_id.to_string();
     let error = error.to_string();
+    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
     let _ = state
         .db_write(move |db| {
             let now = chrono::Utc::now().format("%Y-%m-%dT%H:%M:%S").to_string();

@@ -109,6 +109,10 @@ pub fn delete_smithery_api_key() -> Result<(), String> {
 /// Clean up the legacy Clay OAuth keychain entry if it exists.
 /// Called once during migration to Smithery transport.
 pub fn cleanup_legacy_clay_token() {
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = run_security_cmd(&[
         "delete-generic-password",
         "-a",

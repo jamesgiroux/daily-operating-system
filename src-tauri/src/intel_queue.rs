@@ -444,6 +444,10 @@ fn emit_leading_signals_failed(
 ) {
     {
         let mut audit = state.audit_log.lock();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit.append(
             "data_access",
             "glean_leading_signals_failed",
@@ -460,6 +464,10 @@ fn emit_leading_signals_failed(
     // Background hygiene sweeps would otherwise spam toasts every few
     // minutes as Glean's natural partial-failure rate surfaces.
     if !is_background {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "enrichment-glean-leading-signals-failed",
             serde_json::json!({
@@ -709,6 +717,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             )
         };
         let batch_has_manual = batch.iter().any(|r| r.priority == IntelPriority::Manual);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "background-work-status",
             serde_json::json!({
@@ -721,6 +733,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
         {
             let mut audit = state.audit_log.lock();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = audit.append(
                 "ai",
                 "entity_enrichment_started",
@@ -842,6 +858,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         original.retry_count + 1,
                         MAX_VALIDATION_RETRIES,
                     );
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = state.intel_queue.enqueue(IntelRequest {
                         entity_id: original.entity_id.clone(),
                         entity_type: original.entity_type.clone(),
@@ -852,6 +872,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 } else if !succeeded.contains(original.entity_id.as_str()) {
                     // Record claude_code sync failure
                     if let Ok(db) = crate::db::ActionDb::open() {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = crate::connectivity::record_sync_failure(
                             db.conn_ref(),
                             "claude_code",
@@ -872,6 +896,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                         .or_insert("schema_validation");
                     {
                         let mut audit = state.audit_log.lock();
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = audit.append(
                             "anomaly",
                             "schema_validation_failed",
@@ -889,6 +917,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
             if succeeded_count > 0 {
                 {
                     let mut audit = state.audit_log.lock();
+                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                     let _ = audit.append(
                         "ai",
                         "entity_enrichment_completed",
@@ -907,6 +936,7 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 };
                 {
                     let mut audit = state.audit_log.lock();
+                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                     let _ = audit.append(
                         "ai",
                         "entity_enrichment_failed",
@@ -928,6 +958,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 if !anomalies.is_empty() {
                     {
                         let mut audit = state.audit_log.lock();
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = audit.append(
                             "anomaly",
                             "injection_instruction_in_output",
@@ -1019,6 +1053,10 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         }
 
         // Emit completion status for frontend indicator
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "background-work-status",
             serde_json::json!({
@@ -1158,6 +1196,7 @@ pub fn gather_enrichment_input(
                 };
                 {
                     let mut audit = state.audit_log.lock();
+                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                     let _ = audit.append(
                         "data_access",
                         "glean_connection_failed",
@@ -1176,6 +1215,10 @@ pub fn gather_enrichment_input(
         let gather_ms = gather_start.elapsed().as_millis() as u64;
         {
             let mut audit = state.audit_log.lock();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = audit.append(
                 "data_access",
                 "glean_context_gathered",
@@ -1656,6 +1699,10 @@ fn run_parallel_enrichment(
                 });
 
             // Send result through channel; ignore error if receiver dropped
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = sender.send(result);
         });
     }
@@ -1691,6 +1738,10 @@ fn run_parallel_enrichment(
                             &input.entity_type,
                             &combined,
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = handle.emit(
                             "enrichment-progress",
                             EnrichmentProgress {
@@ -1727,6 +1778,10 @@ fn run_parallel_enrichment(
 
     // Emit completion event
     if let Some(handle) = app_handle {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = handle.emit(
             "enrichment-complete",
             EnrichmentComplete {
@@ -1815,6 +1870,10 @@ fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &In
     let mut merged = if let Some(mut existing) = existing {
         for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
             // best-effort: progressive partial writes are advisory; final reconciliation writes the authoritative snapshot.
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
                 &mut existing,
                 dim,
@@ -2457,6 +2516,10 @@ pub fn run_enrichment_post_commit_side_effects(
     final_intel: &IntelligenceJson,
 ) {
     // Invalidate cached reports when entity intelligence is refreshed.
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::reports::invalidation::mark_reports_stale(db, &input.entity_id);
 
     // Dual-write commitments from Glean enrichment to captured_commitments.
@@ -2468,7 +2531,15 @@ pub fn run_enrichment_post_commit_side_effects(
     // Regenerate person files after intelligence enrichment.
     if input.entity_type == "person" {
         if let Ok(Some(person)) = db.get_person(&input.entity_id) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_markdown(&input.workspace, &person, db);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_dashboard_json(&input.workspace, &person, db);
         }
     }
@@ -2479,6 +2550,10 @@ pub fn run_enrichment_post_commit_side_effects(
     if input.entity_type == "account" {
         if let Ok(Some(account)) = db.get_account(&input.entity_id) {
             if let Some(ref parent_id) = account.parent_id {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = state.intel_queue.enqueue(IntelRequest {
                     entity_id: parent_id.clone(),
                     entity_type: "account".to_string(),
@@ -2498,6 +2573,10 @@ pub fn run_enrichment_post_commit_side_effects(
     if input.entity_type == "project" {
         if let Ok(Some(project)) = db.get_project(&input.entity_id) {
             if let Some(ref parent_id) = project.parent_id {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = state.intel_queue.enqueue(IntelRequest {
                     entity_id: parent_id.clone(),
                     entity_type: "project".to_string(),
@@ -2576,6 +2655,10 @@ pub(crate) fn run_enrichment_finalize_post_commit(
 
     if matches!(mode, FinalizeMode::QueueWorker { .. }) {
         if let Some(app) = state.app_handle() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app.emit(
                 "intelligence-updated",
                 IntelligenceUpdatedPayload {
@@ -2593,6 +2676,10 @@ pub(crate) fn run_enrichment_finalize_post_commit(
     crate::self_healing::feedback::record_enrichment_success(db, &input.entity_id);
 
     if matches!(mode, FinalizeMode::QueueWorker { .. }) {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::self_healing::scheduler::on_enrichment_complete(
             db,
             Some(state.embedding_model.as_ref()),
@@ -2601,6 +2688,10 @@ pub(crate) fn run_enrichment_finalize_post_commit(
             &state.intel_queue,
             Some(state.signals.engine.as_ref()),
         );
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::connectivity::record_sync_success(db.conn_ref(), "claude_code");
     }
 
@@ -4091,6 +4182,10 @@ pub(crate) fn invalidate_and_requeue_meeting_preps_with_db(
     // Clear prep_frozen_json so the queue processor regenerates them
     let ctx = state.live_service_context();
     for mid in &meeting_ids {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::services::meetings::clear_meeting_prep_frozen(&ctx, db, mid);
     }
 
@@ -4260,6 +4355,10 @@ fn dual_write_enrichment_products(
             entity_id,
         );
         // Intelligence Loop: every mutation emits a signal (AC7)
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::signals::bus::emit_signal(
             db,
             "account",

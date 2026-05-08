@@ -129,6 +129,10 @@ impl Scheduler {
             let today = Local::now().date_naive();
             if today != last_date {
                 log::info!("Day changed: {} → {}", last_date, today);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = self.app_handle.emit("day-changed", ());
                 crate::meeting_prep_queue::sweep_meetings_needing_prep(&self.state);
 
@@ -313,6 +317,10 @@ impl Scheduler {
         }
 
         if refreshed > 0 {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = self.app_handle.emit("entity-updated", ());
         }
     }
@@ -575,6 +583,10 @@ impl Scheduler {
             crate::intelligence::generate_meeting_intelligence(&self.state, meeting_id, false)
                 .await
                 .map_err(|error| error.to_string())?;
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("entity-updated", ());
         Ok(quality)
     }
@@ -625,6 +637,10 @@ impl Scheduler {
 
     async fn resolve_scheduler_failure(&self, task: &SchedulerRetryTask) {
         let entity_id = task.key();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self
             .state
             .db_write(move |db| {
@@ -652,6 +668,10 @@ impl Scheduler {
         let entity_id = task.key();
         let attempt = i32::from(retry_attempt) + 1;
         let error_message = error.to_string();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self
             .state
             .db_write(move |db| {

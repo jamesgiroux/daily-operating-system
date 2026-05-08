@@ -324,6 +324,10 @@ pub fn enrich_pending_emails_two_phase(
         for (field_name, value) in &fields_to_check {
             if crate::util::contains_tag_escape(value) {
                 let mut audit = state.audit_log.lock();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = audit.append(
                     "anomaly",
                     "injection_tag_escape_detected",
@@ -384,6 +388,10 @@ pub fn enrich_pending_emails_two_phase(
                     } else {
                         enriched_count += 1;
                         if let Some(app_handle) = state.app_handle() {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = app_handle.emit(
                                 "email-enrichment-progress",
                                 EmailEnrichmentProgressPayload {
@@ -406,8 +414,16 @@ pub fn enrich_pending_emails_two_phase(
                         urgency: None,
                         is_noise: None,
                     };
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = db.set_enrichment_state(&email.email_id, "failed", empty);
                     if let Some(app_handle) = state.app_handle() {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = app_handle.emit(
                             "email-enrichment-progress",
                             EmailEnrichmentProgressPayload {
@@ -432,6 +448,10 @@ pub fn enrich_pending_emails_two_phase(
         // Audit: email enrichment batch
         {
             let mut audit = state.audit_log.lock();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = audit.append(
                 "ai",
                 "email_enrichment_batch",

@@ -255,6 +255,10 @@ impl GleanIntelligenceProvider {
                             elapsed_ms,
                             e
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = sender
                             .send((dim_name, Err(format!("chat failed: {}", e))))
                             .await;
@@ -267,6 +271,10 @@ impl GleanIntelligenceProvider {
                             ename,
                             elapsed_ms
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = sender
                             .send((dim_name, Err("timed out after 30s".to_string())))
                             .await;
@@ -322,6 +330,10 @@ impl GleanIntelligenceProvider {
                     }
                 };
 
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = sender.send(result).await;
             });
         }
@@ -377,6 +389,10 @@ impl GleanIntelligenceProvider {
                         // Progressive DB write + event emission
                         if let Some(handle) = app_handle {
                             write_progressive_glean_dimension(entity_id, entity_type, &combined);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = handle.emit(
                                 "enrichment-progress",
                                 EnrichmentProgress {
@@ -407,6 +423,10 @@ impl GleanIntelligenceProvider {
 
         // Emit completion event
         if let Some(handle) = app_handle {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = handle.emit(
                 "enrichment-complete",
                 EnrichmentComplete {
@@ -436,6 +456,10 @@ impl GleanIntelligenceProvider {
                 {
                     let state = handle.state::<std::sync::Arc<crate::state::AppState>>();
                     let mut audit = state.audit_log.lock();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = audit.append(
                         "data_access",
                         if succeeded == 0 {
@@ -458,6 +482,10 @@ impl GleanIntelligenceProvider {
                 // schedule and the 1-in-6 partial-failure rate would carpet
                 // the UI. Audit event above still logs for diagnostics.
                 if !is_background {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = handle.emit(
                         "enrichment-glean-degraded",
                         serde_json::json!({
@@ -1031,6 +1059,10 @@ fn write_progressive_glean_dimension(
     let existing = db.get_entity_intelligence(entity_id).ok().flatten();
     let mut merged = if let Some(mut existing) = existing {
         for dim in crate::intelligence::dimension_prompts::DIMENSION_NAMES {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::intelligence::dimension_prompts::merge_dimension_into(
                 &mut existing,
                 dim,
@@ -1168,6 +1200,10 @@ pub fn emit_glean_signals(
     // Competitive mentions at 0.7
     if !intel.competitive_context.is_empty() {
         if let Ok(value) = serde_json::to_string(&intel.competitive_context) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = emit_signal(
                 db,
                 entity_type,
@@ -1196,6 +1232,10 @@ pub fn emit_glean_signals(
     // Org changes at 0.8 — stakeholder movements
     if !intel.organizational_changes.is_empty() {
         if let Ok(value) = serde_json::to_string(&intel.organizational_changes) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = emit_signal_and_propagate(
                 db,
                 engine,
@@ -1225,6 +1265,10 @@ pub fn emit_glean_signals(
     // Gong call summaries at 0.8 — engagement patterns from recorded calls
     if !intel.gong_call_summaries.is_empty() {
         if let Ok(value) = serde_json::to_string(&intel.gong_call_summaries) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = emit_signal_and_propagate(
                 db,
                 engine,
@@ -1311,6 +1355,10 @@ pub fn emit_glean_signals(
             "count": slack_context.len(),
         })
         .to_string();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = emit_signal_and_propagate(
             db,
             engine,
@@ -1329,6 +1377,10 @@ pub fn emit_glean_signals(
         {
             // Check champion dimension for concerning score
             if dims.key_advocate_health.score < 40.0 && dims.key_advocate_health.weight > 0.0 {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = emit_signal_and_propagate(
                     db,
                     engine,

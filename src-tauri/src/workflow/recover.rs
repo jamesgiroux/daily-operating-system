@@ -195,6 +195,10 @@ pub fn recover_archived_transcripts(
             // Update transcript_path in DB
             let now = chrono::Utc::now().to_rfc3339();
             if let Some(dest_str) = dest_path.to_str() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.update_meeting_transcript_metadata(&meeting_id, dest_str, &now, None);
             }
 
@@ -202,6 +206,10 @@ pub fn recover_archived_transcripts(
                 .unwrap_or_else(|| filename.to_string());
 
             // Emit signal for audit trail
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::signals::bus::emit_signal(
                 db,
                 "meeting",

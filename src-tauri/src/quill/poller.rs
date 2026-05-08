@@ -113,6 +113,10 @@ async fn process_sync_row(
         };
 
         // Transition to polling state
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = sync::transition_state(&db, &row.id, "polling", None, None, None, None);
 
         let meeting = match db.get_meeting_by_id(&row.meeting_id) {
@@ -122,6 +126,10 @@ async fn process_sync_row(
                     "Quill sync: meeting {} not found, abandoning",
                     row.meeting_id
                 );
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = sync::transition_state(
                     &db,
                     &row.id,
@@ -139,6 +147,10 @@ async fn process_sync_row(
                     row.meeting_id,
                     e
                 );
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = sync::advance_attempt(&db, &row.id);
                 return;
             }
@@ -165,6 +177,10 @@ async fn process_sync_row(
         Err(e) => {
             log::warn!("Quill sync: failed to connect: {}", e);
             if let Ok(db) = crate::db::ActionDb::open() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = sync::transition_state(
                     &db,
                     &row.id,
@@ -195,6 +211,10 @@ async fn process_sync_row(
             log::warn!("Quill sync: search_meetings failed: {}", e);
             client.disconnect().await;
             if let Ok(db) = crate::db::ActionDb::open() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
@@ -219,6 +239,10 @@ async fn process_sync_row(
             );
             client.disconnect().await;
             if let Ok(db) = crate::db::ActionDb::open() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
@@ -235,6 +259,10 @@ async fn process_sync_row(
     // Step 4: Fetch transcript
     {
         if let Ok(db) = crate::db::ActionDb::open() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = sync::transition_state(
                 &db,
                 &row.id,
@@ -253,6 +281,10 @@ async fn process_sync_row(
             log::warn!("Quill sync: get_transcript failed: {}", e);
             client.disconnect().await;
             if let Ok(db) = crate::db::ActionDb::open() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = sync::transition_state(
                     &db,
                     &row.id,
@@ -262,6 +294,10 @@ async fn process_sync_row(
                     None,
                     Some(&format!("Transcript fetch failed: {}", e)),
                 );
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = sync::advance_attempt(&db, &row.id);
             }
             return;
@@ -291,6 +327,10 @@ async fn process_sync_row(
             None => {
                 log::warn!("Quill sync: config not available for transcript processing");
                 if let Ok(db) = crate::db::ActionDb::open() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = sync::transition_state(
                         &db,
                         &row.id,
@@ -309,6 +349,10 @@ async fn process_sync_row(
     // Transition to "processing" state
     {
         if let Ok(db) = crate::db::ActionDb::open() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = sync::transition_state(&db, &row.id, "processing", None, None, None, None);
         }
     }
@@ -330,6 +374,10 @@ async fn process_sync_row(
                 Ok(tr) => {
                     let dest = tr.destination.as_deref().unwrap_or("");
                     let processed_at = chrono::Utc::now().to_rfc3339();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = db.update_meeting_transcript_metadata(
                         &calendar_event.id,
                         dest,
@@ -342,6 +390,10 @@ async fn process_sync_row(
                     let meeting_account_id = resolve_meeting_account_id(&db, &calendar_event.id);
                     let account = calendar_event.account.as_deref();
                     for win in &tr.wins {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
@@ -351,6 +403,10 @@ async fn process_sync_row(
                         );
                     }
                     for risk in &tr.risks {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
@@ -360,6 +416,10 @@ async fn process_sync_row(
                         );
                     }
                     for decision in &tr.decisions {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.insert_capture(
                             &calendar_event.id,
                             &calendar_event.title,
@@ -434,6 +494,10 @@ async fn process_sync_row(
                         );
                     }
 
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = sync::transition_state(
                         &db,
                         &row.id,
@@ -445,6 +509,10 @@ async fn process_sync_row(
                     );
                 }
                 Err(error) => {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = sync::transition_state(
                         &db,
                         &row.id,
@@ -482,6 +550,10 @@ async fn process_sync_row(
 
     // Send native notification on success
     if result.is_ok() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ =
             crate::notification::notify_transcript_ready(app_handle, &meeting.title, None, &state);
     }
@@ -528,9 +600,17 @@ fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_
 
     match payload {
         Some(outcome) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app_handle.emit("transcript-processed", &outcome);
         }
         None => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app_handle.emit("transcript-processed", &meeting_id.to_string());
         }
     }

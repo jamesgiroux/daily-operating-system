@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -7,6 +12,10 @@ pub struct CopyToInboxReport {
     pub copied_filenames: Vec<String>,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_all_actions(state: State<'_, Arc<AppState>>) -> Result<ActionsResult, String> {
     Ok(crate::services::actions::get_all_actions(&state).await)
@@ -38,6 +47,10 @@ pub enum InboxResult {
 }
 
 /// Get files from the _inbox/ directory
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxResult, String> {
     let config = match state.config.read().clone() {
@@ -87,6 +100,10 @@ pub async fn get_inbox_files(state: State<'_, Arc<AppState>>) -> Result<InboxRes
 /// Process a single inbox file (classify, route, log).
 ///
 /// Runs on a background thread to avoid blocking the main thread.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn process_inbox_file(
     filename: String,
@@ -133,6 +150,10 @@ pub async fn process_inbox_file(
 /// Process all inbox files (batch).
 ///
 /// Runs on a background thread to avoid blocking the main thread.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn process_all_inbox(
     state: State<'_, Arc<AppState>>,
@@ -161,6 +182,10 @@ pub async fn process_all_inbox(
 ///
 /// Used for files that the quick classifier couldn't categorize.
 /// Runs on a background thread — Claude Code can take 1-2 minutes.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn enrich_inbox_file(
     filename: String,
@@ -467,6 +492,10 @@ fn db_email_to_email(dbe: crate::db::DbEmail) -> crate::types::Email {
 /// Get emails enriched with entity signals from SQLite.
 ///
 /// Get enriched email briefing data with signals and entity threads.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_emails_enriched(
     state: State<'_, Arc<AppState>>,
@@ -479,6 +508,10 @@ pub async fn get_emails_enriched(
 /// Update the entity assignment for an email (user correction).
 /// Cascades to email_signals and emits a signal bus event for relevance learning.
 /// also writes a user-override row to linked_entities_raw (P1 source).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_email_entity(
     state: State<'_, Arc<AppState>>,
@@ -522,12 +555,20 @@ pub async fn update_email_entity(
     )
     .await?;
 
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
 }
 
 /// Dismiss a single email signal by ID. Sets `deactivated_at` to now.
 /// Emits a signal bus event for relevance learning.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_email_signal(
     state: State<'_, Arc<AppState>>,
@@ -544,6 +585,10 @@ pub async fn dismiss_email_signal(
 
 /// Mark an email as replied to (reply debt).
 /// Sets `user_is_last_sender = 1` and emits a `reply_debt_cleared` signal.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn mark_reply_sent(
     state: State<'_, Arc<AppState>>,
@@ -557,12 +602,20 @@ pub async fn mark_reply_sent(
             crate::services::emails::mark_reply_sent(&ctx, db, &email_id)
         })
         .await?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
 }
 
 /// Dismiss a gone-quiet cadence alert for an account.
 /// Emits a signal via propagation that feeds the engagement dimension.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_gone_quiet(
     state: State<'_, Arc<AppState>>,
@@ -579,6 +632,10 @@ pub async fn dismiss_gone_quiet(
 }
 
 /// Get email sync status: last fetch time, enrichment progress, failure count.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_email_sync_status(
     state: State<'_, Arc<AppState>>,
@@ -589,6 +646,10 @@ pub async fn get_email_sync_status(
 }
 
 /// Get emails linked to a specific entity for entity detail pages (AC5).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_entity_emails(
     state: State<'_, Arc<AppState>>,
@@ -601,6 +662,10 @@ pub async fn get_entity_emails(
 }
 
 /// Refresh emails independently without re-running the full /today pipeline.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn refresh_emails(
     state: State<'_, Arc<AppState>>,
@@ -613,6 +678,10 @@ pub async fn refresh_emails(
 
 /// Reconcile local inbox presence with Gmail inbox in lightweight mode.
 /// Marks archived/removed emails resolved without running full enrichment.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn sync_email_inbox_presence(
     state: State<'_, Arc<AppState>>,
@@ -624,6 +693,10 @@ pub async fn sync_email_inbox_presence(
 }
 
 /// Archive low-priority emails in Gmail and remove them from local data.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     let app_state = state.inner().clone();
@@ -641,6 +714,10 @@ pub async fn archive_low_priority_emails(state: State<'_, Arc<AppState>>) -> Res
 /// transition through a transitional `pending_retry` state that rolls back on
 /// refresh failure. The command is a thin delegate so the rollback-safe path
 /// is the only path.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn retry_failed_emails(
     state: State<'_, Arc<AppState>>,
@@ -656,6 +733,10 @@ pub async fn retry_failed_emails(
 /// at 20 rows to keep the payload bounded — if a user has more than 20
 /// permanently-failed emails the right action is to triage in batch, not
 /// scroll the whole list.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn list_permanently_failed_emails(
     state: State<'_, Arc<AppState>>,
@@ -675,6 +756,10 @@ pub async fn list_permanently_failed_emails(
 /// supplied permanently-failed email IDs as resolved so they leave the
 /// failed-count entirely. The Gmail message stays in the inbox; we just
 /// stop trying to enrich it. Returns the number of rows skipped.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn skip_failed_emails(
     state: State<'_, Arc<AppState>>,
@@ -713,11 +798,19 @@ pub fn set_entity_mode(
 ) -> Result<Config, String> {
     let ctx = state.live_service_context();
     let config = crate::services::settings::set_entity_mode(&ctx, &mode, &state)?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("config-updated", ());
     Ok(config)
 }
 
 /// Set workspace path and scaffold directory structure
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_workspace_path(
     path: String,
@@ -739,6 +832,10 @@ pub async fn set_workspace_path(
                 "custom"
             }
         };
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit.append(
             "config",
             "workspace_path_changed",
@@ -752,6 +849,10 @@ pub async fn set_workspace_path(
 ///
 /// When enabled: switches to isolated dev database, workspace, and auth.
 /// When disabled: returns to live database, workspace, and real auth.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_developer_mode(
     enabled: bool,
@@ -825,6 +926,10 @@ pub fn get_encryption_key_status(state: State<'_, Arc<AppState>>) -> bool {
 }
 
 /// Lock the app immediately.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn lock_app(
     state: State<'_, Arc<AppState>>,
@@ -834,11 +939,19 @@ pub async fn lock_app(
         let mut guard = state.lock_state.lock();
         guard.is_locked = true;
     }
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app.emit("app-locked", ());
     Ok(())
 }
 
 /// Attempt to unlock the app via system authentication (Touch ID / password).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn unlock_app(
     state: State<'_, Arc<AppState>>,
@@ -874,8 +987,16 @@ pub async fn unlock_app(
             }
             {
                 let mut audit = state.audit_log.lock();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = audit.append("security", "app_unlock_succeeded", serde_json::json!({}));
             }
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app.emit("app-unlocked", ());
             Ok(())
         }
@@ -889,6 +1010,10 @@ pub async fn unlock_app(
             }
             {
                 let mut audit = state.audit_log.lock();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = audit.append(
                     "security",
                     "app_unlock_failed",
@@ -963,6 +1088,10 @@ async fn attempt_system_auth() -> Result<bool, String> {
             // Check if any authentication method is available
             if let Err(e) = context.canEvaluatePolicy_error(policy) {
                 log::warn!("Biometric authentication unavailable: {e}, auto-unlocking");
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = tx.send(Ok(true));
                 return;
             }
@@ -990,6 +1119,10 @@ async fn attempt_system_auth() -> Result<bool, String> {
                 };
                 // SAFETY: This lock runs inside an objc2 RcBlock callback (Touch ID). parking_lot::Mutex guarantees infallibility.
                 if let Some(tx) = tx.lock().take() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = tx.send(result);
                 }
                 done_clone.store(true, std::sync::atomic::Ordering::Release);
@@ -1149,6 +1282,10 @@ pub fn set_notification_config(
 }
 
 /// Save user profile fields (name, company, title, focus, domains)
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_user_profile(
     name: Option<String>,
@@ -1171,6 +1308,10 @@ pub async fn set_user_profile(
 // =============================================================================
 
 /// Get the user entity (creates from config on first call).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_user_entity(
     state: State<'_, Arc<AppState>>,
@@ -1180,6 +1321,10 @@ pub async fn get_user_entity(
 }
 
 /// Update a single field on the user entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_user_entity_field(
     field: String,
@@ -1191,6 +1336,10 @@ pub async fn update_user_entity_field(
 }
 
 /// Get all user context entries.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_user_context_entries(
     state: State<'_, Arc<AppState>>,
@@ -1199,6 +1348,10 @@ pub async fn get_user_context_entries(
 }
 
 /// Create a new user context entry.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_user_context_entry(
     title: String,
@@ -1210,6 +1363,10 @@ pub async fn create_user_context_entry(
 }
 
 /// Update an existing user context entry.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_user_context_entry(
     id: String,
@@ -1223,6 +1380,10 @@ pub async fn update_user_context_entry(
 }
 
 /// Delete a user context entry.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn delete_user_context_entry(
     id: String,
@@ -1233,6 +1394,10 @@ pub async fn delete_user_context_entry(
 }
 
 /// Get all entity context entries for an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_entity_context_entries(
     entity_type: String,
@@ -1243,6 +1408,10 @@ pub async fn get_entity_context_entries(
 }
 
 /// Create a new entity context entry.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_entity_context_entry(
     entity_type: String,
@@ -1264,6 +1433,10 @@ pub async fn create_entity_context_entry(
 }
 
 /// Update an existing entity context entry.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_entity_context_entry(
     id: String,
@@ -1276,6 +1449,10 @@ pub async fn update_entity_context_entry(
 }
 
 /// Delete an entity context entry.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn delete_entity_context_entry(
     id: String,
@@ -1289,6 +1466,10 @@ pub async fn delete_entity_context_entry(
 ///
 /// Copies the file into _user/attachments/ (if not already there), processes it
 /// through the file processor pipeline, and indexes it as user_context content.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn process_user_attachment(
     path: String,

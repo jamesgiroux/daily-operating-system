@@ -177,6 +177,10 @@ pub fn generate_callouts(
 
             // Persist non-default weights to entity_assessment (AC4)
             if (weight - 1.0).abs() > f64::EPSILON {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.conn_ref().execute(
                     "UPDATE entity_assessment SET user_relevance_weight = ?1 WHERE entity_id = ?2",
                     params![weight, signal.entity_id],

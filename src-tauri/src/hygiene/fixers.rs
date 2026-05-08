@@ -72,6 +72,10 @@ pub(super) fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDe
 
         if !path.exists() {
             // File was deleted since indexing -- mark so it exits the unsummarized pool
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::services::hygiene::mark_content_index_summary(
                 &ctx,
                 db,
@@ -85,6 +89,10 @@ pub(super) fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDe
         let (extracted_at, summary) = crate::intelligence::extract_and_summarize(path);
         match (extracted_at, summary) {
             (Some(ext_at), Some(summ)) => {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::services::hygiene::mark_content_index_summary(
                     &ctx, db, &file.id, &ext_at, &summ,
                 );
@@ -100,6 +108,10 @@ pub(super) fn backfill_file_summaries(db: &ActionDb) -> (usize, Vec<HygieneFixDe
             _ => {
                 // Extraction failed or returned empty -- mark as attempted so the file
                 // doesn't reappear as an unsummarized gap on every scan forever.
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::services::hygiene::mark_content_index_summary(
                     &ctx,
                     db,

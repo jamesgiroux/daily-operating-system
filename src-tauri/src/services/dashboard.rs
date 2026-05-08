@@ -271,6 +271,10 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
     }
 
     let engine = std::sync::Arc::clone(&state.signals.engine);
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .db_write(move |db| {
             //  construct Live ServiceContext inline. Dashboard
@@ -598,6 +602,10 @@ pub async fn build_live_dashboard_data(state: &AppState) -> Option<DashboardData
 /// Returns the full DashboardResult including latency tracking.
 pub async fn get_dashboard_data(state: &AppState) -> DashboardResult {
     let engine = std::sync::Arc::clone(&state.signals.engine);
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .db_write(move |db| {
             //  see comment at build_live_dashboard_data — same pattern.

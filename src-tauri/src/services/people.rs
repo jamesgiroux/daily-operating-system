@@ -41,12 +41,24 @@ pub fn merge_people(
             crate::people::person_dir(workspace, &removed.name)
         };
         if remove_dir.exists() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::remove_dir_all(&remove_dir);
         }
 
         // Regenerate kept person's files
         if let Ok(Some(kept)) = db.get_person(keep_id) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_json(workspace, &kept, db);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_markdown(workspace, &kept, db);
         }
     }
@@ -96,6 +108,10 @@ pub fn delete_person(
             crate::people::person_dir(workspace, &person.name)
         };
         if person_dir.exists() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::remove_dir_all(&person_dir);
         }
     }
@@ -409,6 +425,10 @@ pub fn update_person_field(
     // wrote the field, then mark user as the new owner in provenance.
     if let Some(prior_source) = prior_source.as_deref() {
         if prior_source != "user" {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.upsert_signal_weight(prior_source, "person", "profile_enrichment", 0.0, 1.0);
         }
     }
@@ -418,7 +438,15 @@ pub fn update_person_field(
         let config = state.config.read();
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_json(workspace, &person, db);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_markdown(workspace, &person, db);
         }
     }
@@ -469,7 +497,15 @@ pub fn link_person_entity(
         let config = state.config.read();
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_json(workspace, &person, db);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_markdown(workspace, &person, db);
         }
     }
@@ -509,7 +545,15 @@ pub fn unlink_person_entity(
         let config = state.config.read();
         if let Some(ref config) = *config {
             let workspace = Path::new(&config.workspace_path);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_json(workspace, &person, db);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::write_person_markdown(workspace, &person, db);
         }
     }
@@ -571,10 +615,30 @@ pub fn create_person(
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
         let person_dir = crate::people::person_dir(workspace, &person.name);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::create_dir_all(&person_dir);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::util::bootstrap_entity_directory(&person_dir, &person.name, "person");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::people::write_person_json(workspace, &person, db);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::people::write_person_markdown(workspace, &person, db);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
     }
 
@@ -706,10 +770,30 @@ pub fn create_person_from_stakeholder(
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
         let person_dir = crate::people::person_dir(workspace, &person.name);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::create_dir_all(&person_dir);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::util::bootstrap_entity_directory(&person_dir, &person.name, "person");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::people::write_person_json(workspace, &person, db);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::people::write_person_markdown(workspace, &person, db);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::people::write_person_dashboard_json(workspace, &person, db);
     }
 

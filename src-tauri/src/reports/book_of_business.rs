@@ -1856,6 +1856,10 @@ pub fn run_bob_generation(
     // Emit helper
     let emit_progress = |handle: Option<&AppHandle>, phase: &str, completed: u32| {
         if let Some(h) = handle {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = h.emit(
                 "bob-section-progress",
                 BobSectionProgress {
@@ -2017,6 +2021,10 @@ pub fn prefetch_glean_portfolio_context(
                 Ok(rt) => rt,
                 Err(e) => {
                     log::warn!("[I547] Failed to create runtime for Glean {}: {}", key, e);
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = sender.send((key, None));
                     return;
                 }
@@ -2046,6 +2054,10 @@ pub fn prefetch_glean_portfolio_context(
                 }
             };
 
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = sender.send((key, text));
         });
     }

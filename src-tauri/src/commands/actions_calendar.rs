@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 
 #[tauri::command]
@@ -23,6 +28,10 @@ pub struct ActionListItem {
 /// Returns pending actions (within `days_ahead` window, default 7) combined
 /// with recently completed actions (last 48 hours) so the UI can show both
 /// active and done states. Account names are resolved from the accounts table.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_actions_from_db(
     days_ahead: Option<i32>,
@@ -37,6 +46,10 @@ pub async fn get_actions_from_db(
 /// Mark an action as completed in the SQLite database.
 ///
 /// Sets `status = 'completed'` and `completed_at` to the current UTC timestamp.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn complete_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
@@ -50,6 +63,10 @@ pub async fn complete_action(id: String, state: State<'_, Arc<AppState>>) -> Res
 }
 
 /// Reopen a completed action, setting it back to pending.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
@@ -63,6 +80,10 @@ pub async fn reopen_action(id: String, state: State<'_, Arc<AppState>>) -> Resul
 }
 
 /// Accept a suggested action, moving it to pending.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn accept_suggested_action(
     id: String,
@@ -79,6 +100,10 @@ pub async fn accept_suggested_action(
 }
 
 /// Reject a suggested action by archiving it.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn reject_suggested_action(
     id: String,
@@ -113,6 +138,10 @@ pub async fn reject_suggested_action(
 /// `action_rejected` signal that penalizes Bayesian source weights.
 /// Used by the Work-tab "Dismiss" affordance for "I don't want this"
 /// versus "Is this accurate? No" which means "this is wrong."
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_suggested_action(
     id: String,
@@ -146,6 +175,10 @@ pub async fn dismiss_suggested_action(
 
 /// Archive an email — sets resolved_at locally + archives in Gmail. Returns email ID for undo.
 /// Emits `emails-updated` so all pages (dashboard, emails) refresh.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn archive_email(
     email_id: String,
@@ -155,12 +188,20 @@ pub async fn archive_email(
     let app_state = state.inner().clone();
     let ctx = app_state.live_service_context();
     let result = crate::services::emails::archive_email(&ctx, &app_state, &email_id).await?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("emails-updated", ());
     Ok(result)
 }
 
 /// Unarchive an email — clears resolved_at + moves back to Gmail inbox (undo for archive).
 /// Emits `emails-updated` so all pages refresh.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn unarchive_email(
     email_id: String,
@@ -170,6 +211,10 @@ pub async fn unarchive_email(
     let app_state = state.inner().clone();
     let ctx = app_state.live_service_context();
     crate::services::emails::unarchive_email(&ctx, &app_state, &email_id).await?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
 }
@@ -177,6 +222,10 @@ pub async fn unarchive_email(
 /// rescue an email previously suppressed by the noise filter.
 /// Clears `is_noise = 0`, causing the email to surface in inbox/Records again.
 /// Emits `emails-updated` so all pages refresh.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn unsuppress_email(
     email_id: String,
@@ -190,11 +239,19 @@ pub async fn unsuppress_email(
             crate::services::emails::unsuppress_email(&ctx, db, &email_id)
         })
         .await?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("emails-updated", ());
     Ok(())
 }
 
 /// Toggle pin on an email. Returns the new pinned state (true = pinned).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn pin_email(
     email_id: String,
@@ -209,6 +266,10 @@ pub async fn pin_email(
             crate::services::emails::pin_email(&ctx, db, &engine, &email_id)
         })
         .await?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("emails-updated", ());
     Ok(result)
 }
@@ -219,6 +280,10 @@ pub async fn pin_email(
 
 /// Promote an email commitment to a tracked action.
 /// Returns the new action ID.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 #[allow(clippy::too_many_arguments)]
 pub async fn promote_commitment_to_action(
@@ -253,6 +318,10 @@ pub async fn promote_commitment_to_action(
             )
         })
         .await?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("emails-updated", ());
     Ok(action_id)
 }
@@ -263,6 +332,10 @@ pub async fn promote_commitment_to_action(
 
 /// Dismiss an email-extracted item (commitment, question, reply_needed) from
 /// The Correspondent. Records the dismissal in SQLite for relevance learning.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_email_item(
     item_type: String,
@@ -292,6 +365,10 @@ pub async fn dismiss_email_item(
 }
 
 /// Get all dismissed email item keys for frontend filtering.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn list_dismissed_email_items(
     state: State<'_, Arc<AppState>>,
@@ -307,6 +384,10 @@ pub async fn list_dismissed_email_items(
 
 /// Reset all email dismissal learning data.
 /// Truncates the email_dismissals table so classification starts fresh.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn reset_email_preferences(
     services: State<'_, crate::services::ServiceLayer>,
@@ -327,6 +408,10 @@ pub async fn reset_email_preferences(
 }
 
 /// Resolve a decision: clear the needs_decision flag and emit signal.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn resolve_decision(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let engine = state.signals.engine.clone();
@@ -350,6 +435,10 @@ pub async fn resolve_decision(id: String, state: State<'_, Arc<AppState>>) -> Re
 ///
 /// `show_all: Some(true)` returns every backlog row regardless of owner,
 /// for a "Show everyone's" toggle.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_suggested_actions(
     state: State<'_, Arc<AppState>>,
@@ -371,6 +460,10 @@ pub async fn get_suggested_actions(
 /// Returns rows with `action_kind = 'commitment'` AND status in
 /// (backlog, unstarted, started). Sort: status ASC (backlog first), then
 /// `created_at DESC`.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_account_commitments(
     account_id: String,
@@ -386,6 +479,10 @@ pub async fn get_account_commitments(
 /// Returns `status = 'backlog'` rows for the account (any `action_kind`).
 /// Backlog commitments and backlog tasks both surface as suggestions until
 /// accepted (backlog → unstarted) or rejected (→ archived).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_account_suggestions(
     account_id: String,
@@ -401,6 +498,10 @@ pub async fn get_account_suggestions(
 ///
 /// Returns `status = 'completed'` rows with `completed_at >= now - 30 days`
 /// for the account. Sort: `completed_at DESC`. Cap 20.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_account_recently_landed(
     account_id: String,
@@ -414,6 +515,10 @@ pub async fn get_account_recently_landed(
 /// Get recent meeting history for an account from the SQLite database.
 ///
 /// Returns meetings within `lookback_days` (default 30), limited to `limit` results (default 3).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_history(
     account_id: String,
@@ -470,6 +575,10 @@ pub struct PrepContext {
 /// Get full detail for a single past meeting by ID.
 ///
 /// Assembles the meeting row, its captures, actions, and resolves the account name.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_history_detail(
     meeting_id: String,
@@ -495,6 +604,10 @@ pub struct MeetingSearchResult {
 }
 
 /// Search meetings by title, summary, or prep context.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn search_meetings(
     query: String,
@@ -518,6 +631,10 @@ pub struct ActionDetail {
 }
 
 /// Get full detail for a single action, with resolved relationships.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_action_detail(
     action_id: String,
@@ -591,6 +708,10 @@ pub fn get_google_auth_status(state: State<'_, Arc<AppState>>) -> GoogleAuthStat
 }
 
 /// Start Google OAuth flow
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn start_google_auth(
     state: State<'_, Arc<AppState>>,
@@ -627,6 +748,10 @@ pub async fn start_google_auth(
         Ok(email) => email,
         Err(err) => {
             let message = err.to_string();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app_handle.emit(
                 "google-auth-failed",
                 GoogleAuthFailedPayload {
@@ -644,6 +769,10 @@ pub async fn start_google_auth(
     // Audit: oauth_connected
     {
         let mut audit = state.audit_log.lock();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit.append(
             "security",
             "oauth_connected",
@@ -655,6 +784,10 @@ pub async fn start_google_auth(
     *state.calendar.google_auth.lock() = new_status.clone();
 
     // Emit event
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("google-auth-changed", &new_status);
 
     // Auto-extract domain from email (non-fatal, preserves manual overrides)
@@ -690,6 +823,10 @@ pub fn disconnect_google(
     // Audit: oauth_revoked
     {
         let mut audit = state.audit_log.lock();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit.append(
             "security",
             "oauth_revoked",
@@ -715,6 +852,10 @@ pub fn disconnect_google(
     }
 
     // Emit event
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("google-auth-changed", &new_status);
 
     Ok(())
@@ -762,6 +903,10 @@ pub fn get_next_meeting(state: State<'_, Arc<AppState>>) -> Option<CalendarEvent
 // =============================================================================
 
 /// Capture meeting outcomes (wins, risks, actions)
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn capture_meeting_outcome(
     outcome: CapturedOutcome,
@@ -823,6 +968,10 @@ pub fn set_capture_delay(
 ///
 /// Checks immutability (one transcript per meeting), processes the transcript
 /// with full meeting context via Claude, stores outcomes, and routes the file.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn attach_meeting_transcript(
     file_path: String,
@@ -846,6 +995,10 @@ pub async fn attach_meeting_transcript(
 /// extension ("md" or "txt") so downstream parsers can decide whether to
 /// strip markdown formatting; the actual transcript text is always written
 /// as UTF-8.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn attach_meeting_transcript_text(
     text: String,
@@ -898,6 +1051,10 @@ pub async fn attach_meeting_transcript_text(
 
 /// Reprocess an already-attached transcript: clear all extraction data then
 /// re-run the full 3-phase pipeline as if the transcript were freshly attached.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn reprocess_meeting_transcript(
     meeting_id: String,
@@ -918,6 +1075,10 @@ pub async fn reprocess_meeting_transcript(
 /// Get meeting outcomes (from transcript processing or manual capture).
 ///
 /// Returns `None` only when no outcomes/transcript metadata exist in SQLite.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_outcomes(
     meeting_id: String,
@@ -936,6 +1097,10 @@ pub async fn get_meeting_outcomes(
 
 /// Get post-meeting intelligence: interaction dynamics, champion health,
 /// role changes, and enriched captures.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_post_intelligence(
     meeting_id: String,
@@ -950,6 +1115,10 @@ pub async fn get_meeting_post_intelligence(
 }
 
 /// Update the content of a capture (win/risk/decision) — inline editing.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_capture(
     id: String,
@@ -967,6 +1136,10 @@ pub async fn update_capture(
 }
 
 /// Cycle an action's priority (P1→P2→P3→P1) — interaction.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_action_priority(
     id: String,
@@ -1014,6 +1187,10 @@ pub struct CreateActionRequest {
     pub action_kind: Option<String>,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_action(
     request: CreateActionRequest,
@@ -1048,6 +1225,10 @@ pub struct UpdateActionRequest {
     pub priority: Option<String>,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_action(
     request: UpdateActionRequest,
@@ -1064,6 +1245,10 @@ pub async fn update_action(
 
 /// Get meeting-to-meeting continuity thread: what changed between this meeting
 /// and the previous one with the same entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_continuity_thread(
     meeting_id: String,
@@ -1130,6 +1315,10 @@ pub async fn get_meeting_continuity_thread(
 /// ADR-0101: Reads prep via `load_meeting_prep_from_sources` (DB-first) instead
 /// of parsing `prep_frozen_json` directly. Falls back to frozen JSON only when
 /// the DB read model doesn't contain prep data.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_prediction_scorecard(
     meeting_id: String,

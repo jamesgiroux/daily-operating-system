@@ -281,8 +281,10 @@ pub async fn generate_meeting_intelligence(
         }
         // Has new signals: set state to "refreshing"
         let mid = meeting_id.to_string();
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = app_state
             .db_write(move |db| {
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = db.update_intelligence_state(&mid, "refreshing", None, None);
                 Ok(())
             })
@@ -290,8 +292,10 @@ pub async fn generate_meeting_intelligence(
     } else if meeting_state.as_deref() != Some("enriched") {
         // No intelligence exists (detected): set state to "enriching"
         let mid = meeting_id.to_string();
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = app_state
             .db_write(move |db| {
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = db.update_intelligence_state(&mid, "enriching", None, None);
                 Ok(())
             })
@@ -334,6 +338,10 @@ pub async fn generate_meeting_intelligence(
                 Some(quality.signal_count as i32),
             )
             .map_err(|e| e.to_string())?;
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.clear_meeting_new_signals(&mid);
             Ok(())
         })

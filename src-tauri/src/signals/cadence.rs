@@ -82,6 +82,7 @@ fn sync_weekly_cadence_rows(db: &ActionDb) {
             )
             .unwrap_or(0.0);
 
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = conn.execute(
             "INSERT INTO entity_email_cadence (entity_id, entity_type, period, message_count, rolling_avg, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5, datetime('now'))
@@ -158,6 +159,10 @@ pub fn compute_and_emit_cadence_anomalies_with_engine(
             anomaly.days_since_last_email, anomaly.normal_interval_days
         );
         if let Some(engine) = engine {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = super::bus::emit_signal_and_propagate(
                 db,
                 engine,
@@ -169,6 +174,10 @@ pub fn compute_and_emit_cadence_anomalies_with_engine(
                 anomaly.confidence,
             );
         } else {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = super::bus::emit_signal(
                 db,
                 &anomaly.entity_type,

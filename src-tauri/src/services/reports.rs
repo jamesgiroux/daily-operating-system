@@ -302,6 +302,10 @@ fn generate_book_of_business(
 
                 // Emit glean phase completion event
                 if let Some(handle) = app_handle {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = handle.emit(
                         "bob-section-progress",
                         BobSectionProgress {
@@ -343,6 +347,10 @@ fn generate_book_of_business(
         .map_err(|e| format!("Failed to serialize BoB content: {}", e))?;
 
     // Audit trail
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::audit::write_audit_entry(
         &gather.workspace,
         "report_book_of_business",

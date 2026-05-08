@@ -145,6 +145,10 @@ pub fn compute_account_health_with_preset(
 
 /// Record a health score data point for trend computation.
 fn record_health_score(db: &ActionDb, account_id: &str, score: f64, band: &str, confidence: f64) {
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = db.conn.execute(
         "INSERT INTO health_score_history (account_id, score, band, confidence)
          VALUES (?1, ?2, ?3, ?4)",
@@ -152,6 +156,10 @@ fn record_health_score(db: &ActionDb, account_id: &str, score: f64, band: &str, 
     );
 
     // Prune old entries — keep at most 20 per account to bound storage
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = db.conn.execute(
         "DELETE FROM health_score_history WHERE account_id = ?1 AND id NOT IN (
              SELECT id FROM health_score_history WHERE account_id = ?1

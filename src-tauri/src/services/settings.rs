@@ -48,12 +48,20 @@ pub fn set_entity_mode(
             if mode == "account" || mode == "both" {
                 let accounts_dir = workspace.join("Accounts");
                 if !accounts_dir.exists() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = std::fs::create_dir_all(&accounts_dir);
                 }
             }
             if mode == "project" || mode == "both" {
                 let projects_dir = workspace.join("Projects");
                 if !projects_dir.exists() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = std::fs::create_dir_all(&projects_dir);
                 }
             }
@@ -92,11 +100,27 @@ pub async fn set_workspace_path(
 
     let workspace_path = config.workspace_path.clone();
     let user_domains = config.resolved_user_domains();
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .db_write(move |db| {
             let workspace = std::path::Path::new(&workspace_path);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::people::sync_people_from_workspace(workspace, db, &user_domains);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::accounts::sync_accounts_from_workspace(workspace, db);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::projects::sync_projects_from_workspace(workspace, db);
             Ok(())
         })
@@ -421,6 +445,7 @@ pub async fn set_user_profile(
         if let Some(ref company_name) = ucompany {
             if let Ok(Some(root)) = db.get_internal_root_account() {
                 if root.name != *company_name {
+                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                     let _ = db.update_account_field(&root.id, "name", company_name);
                 }
             }
@@ -513,6 +538,10 @@ pub async fn set_user_domains(
     })?;
 
     if !parsed.is_empty() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = state
             .db_write(move |db| {
                 // Always run people reclassification; log count for observability.

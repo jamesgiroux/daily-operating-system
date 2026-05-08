@@ -510,12 +510,15 @@ pub fn run() {
                 .on_menu_event(move |app, event| match event.id.as_ref() {
                     "open" => {
                         if let Some(window) = app.get_webview_window("main") {
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = window.show();
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = window.set_focus();
                         }
                     }
                     "run_now" => {
                         if let Some(sender) = app.try_state::<SchedulerSender>() {
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = executor::request_workflow_execution(
                                 &sender.0,
                                 types::WorkflowId::Today,
@@ -536,7 +539,9 @@ pub fn run() {
                     {
                         let app = tray.app_handle();
                         if let Some(window) = app.get_webview_window("main") {
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = window.show();
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = window.set_focus();
                         }
                     }
@@ -550,6 +555,7 @@ pub fn run() {
                 window.on_window_event(move |event| match event {
                     tauri::WindowEvent::CloseRequested { api, .. } => {
                         api.prevent_close();
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = window_clone.hide();
                     }
                     tauri::WindowEvent::Focused(true) => {
@@ -597,6 +603,7 @@ pub fn run() {
                             let mut ls = lock_state_timer.lock_state.lock();
                             ls.is_locked = true;
                         }
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = lock_handle_timer.emit("app-locked", ());
                         log::info!("App locked after {} minutes idle", timeout_mins);
                     }

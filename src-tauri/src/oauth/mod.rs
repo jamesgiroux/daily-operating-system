@@ -215,7 +215,15 @@ pub fn send_response(stream: &mut impl Write, title: &str, message: &str, tone: 
         body.len(),
         body
     );
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = stream.write_all(response.as_bytes());
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = stream.flush();
 }
 

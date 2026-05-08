@@ -685,6 +685,10 @@ pub fn evaluate_hygiene_actions(signal: &SignalEvent, db: &ActionDb) {
     // Rule 1: person_created → targeted duplicate check
     if signal.signal_type == "person_created" && signal.entity_type == "person" {
         if let Some(merge_result) = hygiene_check_person_duplicate(signal, db) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.log_hygiene_action(
                 Some(&signal.id),
                 "duplicate_merge",
@@ -699,6 +703,10 @@ pub fn evaluate_hygiene_actions(signal: &SignalEvent, db: &ActionDb) {
     // Rule 2: email with sender name → name resolution
     if signal.signal_type == "email_received" && signal.entity_type == "person" {
         if let Some(resolve_result) = hygiene_resolve_person_name(signal, db) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.log_hygiene_action(
                 Some(&signal.id),
                 "name_resolved",
@@ -713,6 +721,10 @@ pub fn evaluate_hygiene_actions(signal: &SignalEvent, db: &ActionDb) {
     // Rule 3: meeting entity resolved → co-attendance linking
     if signal.signal_type == "entity_resolved" {
         if let Some(link_result) = hygiene_link_co_attendance(signal, db) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.log_hygiene_action(
                 Some(&signal.id),
                 "co_attendance_linked",
@@ -841,6 +853,10 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
             if let Ok(existing) = db.get_entities_for_person(&person.id) {
                 let already_linked = existing.iter().any(|e| e.id == signal.entity_id);
                 if !already_linked {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = db.link_person_to_entity(
                         &person.id,
                         &signal.entity_id,

@@ -1519,6 +1519,10 @@ impl ActionDb {
         let log_id = format!("el-{}", uuid::Uuid::new_v4());
         let fields_json = serde_json::to_string(&updated).unwrap_or_else(|_| "[]".to_string());
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         // best-effort: enrichment_log is audit-only; profile updates above are authoritative.
         let _ = conn.execute(
             "INSERT INTO enrichment_log

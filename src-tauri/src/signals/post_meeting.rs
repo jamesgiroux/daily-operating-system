@@ -115,6 +115,10 @@ pub fn correlate_post_meeting_emails_with_engine(
             let entity_id = account_id.as_deref().unwrap_or(meeting_id);
 
             if let Some(eng) = engine {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = bus::emit_signal_and_propagate(
                     db,
                     eng,
@@ -126,6 +130,10 @@ pub fn correlate_post_meeting_emails_with_engine(
                     0.70,
                 );
             } else {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = bus::emit_signal(
                     db,
                     entity_type,

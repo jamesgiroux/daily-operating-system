@@ -296,6 +296,10 @@ pub fn check_upcoming_meeting_readiness(
             // Pre-meeting window: enqueue if trigger score >= 0.4 (lower than the
             // signal-driven 0.7 threshold because we're in a time-critical window)
             if trigger_score >= 0.4 {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = queue.enqueue(IntelRequest::new(
                     entity.id.clone(),
                     entity_type,

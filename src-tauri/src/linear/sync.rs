@@ -59,6 +59,10 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
 
             // Signal: issue completed
             if new_state == Some("completed") && old_state_type.as_deref() != Some("completed") {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::signals::bus::emit_signal_and_propagate(
                     &db,
                     &state.signals.engine,
@@ -76,6 +80,10 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                 if state_name.to_lowercase().contains("blocked")
                     && old_state_type.as_deref() != new_state
                 {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = crate::signals::bus::emit_signal_and_propagate(
                         &db,
                         &state.signals.engine,
@@ -94,6 +102,10 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
                 let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
                 if due < &today && new_state != Some("completed") && new_state != Some("cancelled")
                 {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = crate::signals::bus::emit_signal_and_propagate(
                         &db,
                         &state.signals.engine,

@@ -163,6 +163,10 @@ impl GleanMcpClient {
                     rt.block_on(crate::glean::get_valid_access_token())
                         .map_err(|e| ContextError::Auth(format!("Glean token error: {}", e)))
                 });
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = tx.send(result);
         });
         rx.recv()
@@ -911,6 +915,10 @@ impl GleanContextProvider {
                 result.doc_type.as_deref().unwrap_or(""),
                 url,
             );
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::signals::bus::emit_signal(
                 db,
                 entity_type,
@@ -1113,6 +1121,10 @@ async fn gather_glean_context_standalone(
             result.doc_type.as_deref().unwrap_or(""),
             url,
         );
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::signals::bus::emit_signal(
             db,
             entity_type,
@@ -1493,6 +1505,10 @@ impl ContextProvider for GleanContextProvider {
                             .await
                         })
                     });
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = tx.send(result);
             });
 
@@ -1586,6 +1602,7 @@ impl ContextProvider for GleanContextProvider {
             if let Some(ref org_health) = glean.org_health {
                 if let Ok(json) = serde_json::to_string(org_health) {
                     // Write to entity_assessment.org_health column
+                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                     let _ = db.conn_ref().execute(
                         "INSERT INTO entity_assessment (entity_id, entity_type, org_health_json, updated_at)
                          VALUES (?1, ?2, ?3, datetime('now'))
@@ -1624,6 +1641,10 @@ impl ContextProvider for GleanContextProvider {
                                 let payload = serde_json::json!({
                                     "lifecycle": normalized,
                                 });
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = crate::signals::bus::emit_signal(
                                     db,
                                     "account",

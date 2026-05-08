@@ -242,6 +242,10 @@ fn resolve_primary_entity(
 
     // Emit entity_resolved signal for hygiene feedback loop
     if confidence >= 0.70 {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::signals::bus::emit_signal(
             db,
             entity_type.as_str(),

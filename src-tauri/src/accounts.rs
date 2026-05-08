@@ -617,7 +617,15 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
             let name = name_str;
             if let Ok(Some(db_account)) = db.get_account_by_name(&name) {
                 // Already in SQLite — generate files from DB
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = write_account_json(workspace, &db_account, None, db);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = write_account_markdown(workspace, &db_account, None, db);
                 synced += 1;
             } else {
@@ -635,7 +643,15 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     ..Default::default()
                 };
                 if db.upsert_account(&new_account).is_ok() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = write_account_json(workspace, &new_account, None, db);
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = write_account_markdown(workspace, &new_account, None, db);
                     log::info!(
                         "DOS-44: Bootstrapped account '{}' from bare directory",
@@ -670,8 +686,20 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             renamed.name = new_name;
                             renamed.tracker_path = Some(format!("Accounts/{}", dir_name_str));
                             renamed.updated_at = chrono::Utc::now().to_rfc3339();
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = db.upsert_account(&renamed);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_json(workspace, &renamed, Some(&json), db);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_markdown(workspace, &renamed, Some(&json), db);
                             synced += 1;
                             continue;
@@ -687,19 +715,43 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             // Preserve user-edited name: the DB name is authoritative
                             // because users rename via the UI, not by renaming directories.
                             merged.name = db_account.name.clone();
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = db.upsert_account(&merged);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_markdown(workspace, &merged, Some(&json), db);
                             synced += 1;
                         } else if db_account.updated_at > file_account.updated_at {
                             // SQLite is newer — regen both files
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_json(workspace, &db_account, Some(&json), db);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_markdown(workspace, &db_account, Some(&json), db);
                             synced += 1;
                         }
                     }
                     Ok(None) => {
                         // New account from file — insert to SQLite
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.upsert_account(&file_account);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = write_account_markdown(workspace, &file_account, Some(&json), db);
                         synced += 1;
                     }
@@ -746,7 +798,15 @@ pub fn sync_accounts_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
         for account in &all_accounts {
             let dir = resolve_account_dir(workspace, account);
             if !dir.exists() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = write_account_json(workspace, account, None, db);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = write_account_markdown(workspace, account, None, db);
                 synced += 1;
             }
@@ -813,17 +873,41 @@ fn scan_child_accounts_inner(
                             merged.account_type = db_account.account_type.clone();
                             merged.archived = db_account.archived;
                             merged.name = db_account.name.clone();
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = db.upsert_account(&merged);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_markdown(workspace, &merged, Some(&json), db);
                             synced += 1;
                         } else if db_account.updated_at > file_account.updated_at {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_json(workspace, &db_account, Some(&json), db);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_account_markdown(workspace, &db_account, Some(&json), db);
                             synced += 1;
                         }
                     }
                     Ok(None) => {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.upsert_account(&file_account);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = write_account_markdown(workspace, &file_account, Some(&json), db);
                         synced += 1;
                     }

@@ -457,20 +457,40 @@ pub fn sync_people_from_workspace(
                             file_person.meeting_count = db_person.meeting_count;
                             file_person.first_seen = db_person.first_seen.clone();
                             file_person.last_seen = db_person.last_seen.clone();
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = db.upsert_person(&file_person);
                             // Restore entity links from JSON (ADR-0048)
                             for entity_id in &linked_entities {
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = db.link_person_to_entity(
                                     &file_person.id,
                                     entity_id,
                                     "associated",
                                 );
                             }
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_person_markdown(workspace, &file_person, db);
                             synced += 1;
                         } else if db_person.updated_at > file_person.updated_at {
                             // SQLite is newer — regenerate files from SQLite
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_person_json(workspace, &db_person, db);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_person_markdown(workspace, &db_person, db);
                             synced += 1;
                         }
@@ -479,12 +499,24 @@ pub fn sync_people_from_workspace(
                     Ok(None) => {
                         // New person from file — insert to SQLite
                         file_person.first_seen = Some(Utc::now().to_rfc3339());
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.upsert_person(&file_person);
                         // Restore entity links from JSON (ADR-0048)
                         for entity_id in &linked_entities {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ =
                                 db.link_person_to_entity(&file_person.id, entity_id, "associated");
                         }
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = write_person_markdown(workspace, &file_person, db);
                         synced += 1;
                     }

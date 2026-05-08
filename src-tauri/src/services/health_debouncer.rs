@@ -153,6 +153,7 @@ pub fn schedule_recompute(
                 // Clear the durable marker so the next startup drain does
                 // not redo this work.
                 let clear_id = account_id.clone();
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = state_clone
                     .db_write(move |db| {
                         db.clear_health_recompute_pending(&clear_id)
@@ -230,6 +231,10 @@ pub async fn drain_pending(
         match recompute_result {
             Ok(()) => {
                 let clear_id = account_id.clone();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = state
                     .db_write(move |db| {
                         db.clear_health_recompute_pending(&clear_id)

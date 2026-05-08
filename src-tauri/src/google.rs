@@ -231,6 +231,10 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 // Audit: calendar sync
                 {
                     let mut audit = state.audit_log.lock();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = audit.append(
                         "data_access",
                         "google_calendar_sync",
@@ -327,6 +331,10 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             }
                         }
                         if enriched > 0 {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = handle_clone.emit("entity-updated", ());
                         }
                     });
@@ -358,10 +366,18 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                 // Record successful calendar sync
                 if let Ok(db) = crate::db::ActionDb::open() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ =
                         crate::connectivity::record_sync_success(db.conn_ref(), "google_calendar");
                 }
 
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = app_handle.emit("calendar-updated", ());
 
                 // Check for recently-ended meetings needing Quill transcript sync
@@ -372,6 +388,10 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                 // Notify frontend about new preps
                 for _ in 0..new_preps {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = app_handle.emit("prep-ready", ());
                 }
             }
@@ -379,6 +399,10 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 log::warn!("Calendar poll: token expired");
                 // Record calendar sync failure
                 if let Ok(db) = crate::db::ActionDb::open() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = crate::connectivity::record_sync_failure(
                         db.conn_ref(),
                         "google_calendar",
@@ -389,17 +413,29 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     let mut guard = state.calendar.google_auth.lock();
                     *guard = GoogleAuthStatus::TokenExpired;
                 }
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = app_handle.emit("google-auth-changed", GoogleAuthStatus::TokenExpired);
                 crate::notification::emit_system_status(
                     &app_handle,
                     "auth_expired",
                     "Google account needs reconnection",
                 );
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::notification::notify_auth_expired(&app_handle, &state);
             }
             Err(PollError::ApiError(ref e)) => {
                 // Record calendar sync failure
                 if let Ok(db) = crate::db::ActionDb::open() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = crate::connectivity::record_sync_failure(
                         db.conn_ref(),
                         "google_calendar",
@@ -732,6 +768,10 @@ fn populate_people_from_events(
             }
             Ok(crate::db::MeetingSyncOutcome::Changed) => {
                 // Mark as having new signals so intelligence refreshes
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.mark_meeting_new_signals(&meeting_id);
                 changed_meetings.push(meeting_id.clone());
 
@@ -807,6 +847,10 @@ fn populate_people_from_events(
                             match db.find_person_by_domain_alias(&email_lower, &siblings) {
                                 Ok(Some(person)) => {
                                     // Record this new email as an alias
+                                    #[allow(
+                                        clippy::let_underscore_must_use,
+                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                    )]
                                     let _ = db.add_person_email(&person.id, &email_lower, false);
                                     Some(person)
                                 }
@@ -819,6 +863,10 @@ fn populate_people_from_events(
             };
             if let Some(ref person) = existing {
                 // Record attendance (idempotent — safe across repeated polls)
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.record_meeting_attendance(&meeting_id, &person.id);
                 continue;
             }
@@ -883,6 +931,10 @@ fn populate_people_from_events(
                 }
 
                 // Record attendance for the new person
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.record_meeting_attendance(&meeting_id, &id);
             }
         }
@@ -1109,6 +1161,10 @@ pub fn deliver_from_refresh_directive(
     });
 
     write_json(&data_dir.join("emails.json"), &emails_json)?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("email-sync-status", &sync);
     log::info!(
         "Email delivery: emails.json written ({} high, {} medium, {} low)",
@@ -1118,6 +1174,10 @@ pub fn deliver_from_refresh_directive(
     );
 
     // Clean up directive
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(&refresh_path);
 
     Ok(email_ids)
@@ -1176,6 +1236,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                             "Email startup reconcile: marked {} archived emails resolved",
                                             count
                                         );
+                                    #[allow(
+                                        clippy::let_underscore_must_use,
+                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                    )]
                                     let _ = app_handle.emit("emails-updated", ());
                                 }
                                 Err(e) => {
@@ -1294,6 +1358,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         // Audit: gmail sync (after delivery so we know the count)
                         {
                             let mut audit = state.audit_log.lock();
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = audit.append(
                                 "data_access",
                                 "gmail_sync",
@@ -1302,11 +1370,19 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                         }
                         // Record successful gmail sync
                         if let Ok(db) = crate::db::ActionDb::open() {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ =
                                 crate::connectivity::record_sync_success(db.conn_ref(), "gmail");
                         }
 
                         // Emit mechanical update immediately
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = app_handle.emit("emails-updated", ());
 
                         // Check for new emails (IDs in after but not in before)
@@ -1373,6 +1449,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 ) {
                                     Ok(()) => {
                                         log::info!("Email poll: AI enrichment succeeded");
+                                        #[allow(
+                                            clippy::let_underscore_must_use,
+                                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                        )]
                                         let _ = app_handle.emit("emails-updated", ());
                                     }
                                     Err(e) => {
@@ -1435,6 +1515,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                 if !scores.is_empty() {
                                     if let Ok(db) = crate::db::ActionDb::open() {
                                         for (email_id, score, reason) in &scores {
+                                            #[allow(
+                                                clippy::let_underscore_must_use,
+                                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                            )]
                                             let _ =
                                                 db.set_relevance_score(email_id, *score, reason);
                                         }
@@ -1442,7 +1526,15 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                     log::info!("Email poll: scored {} emails", scores.len());
                                 }
 
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = app_handle.emit("operation-delivered", "emails-enriched");
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = app_handle.emit("emails-updated", ());
                             }
                         } else {
@@ -1452,6 +1544,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     Err(ref e) => {
                         // Record gmail sync failure (delivery)
                         if let Ok(db) = crate::db::ActionDb::open() {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = crate::connectivity::record_sync_failure(
                                 db.conn_ref(),
                                 "gmail",
@@ -1465,6 +1561,10 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
             Err(ref e) => {
                 // Record gmail sync failure (fetch)
                 if let Ok(db) = crate::db::ActionDb::open() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = crate::connectivity::record_sync_failure(
                         db.conn_ref(),
                         "gmail",

@@ -140,6 +140,10 @@ pub fn run_email_meeting_bridge(
 
                 // Also emit to the entity for cross-reference
                 if !entity_id.is_empty() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = bus::emit_signal_and_propagate(
                         db,
                         engine,
@@ -329,6 +333,10 @@ pub fn emit_enriched_email_signals(
                     }
 
                     // Also populate email_signals table for health scoring
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                         email_id,
                         sender_email: sender.as_deref(),
@@ -389,6 +397,10 @@ pub fn emit_enriched_email_signals(
                         }
 
                         // Also populate email_signals for health scoring
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                             email_id,
                             sender_email: sender.as_deref(),
@@ -431,6 +443,10 @@ pub fn emit_enriched_email_signals(
                 }
 
                 // Also populate email_signals for health scoring
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                     email_id,
                     sender_email: sender.as_deref(),
@@ -451,6 +467,10 @@ pub fn emit_enriched_email_signals(
             // baseline email_signal so health scoring sees email activity.
             // Uses "relationship" type — the email demonstrates active relationship.
             if sentiment.as_deref() == Some("neutral") || sentiment.is_none() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                     email_id,
                     sender_email: sender.as_deref(),
@@ -525,6 +545,10 @@ pub fn emit_enriched_email_signals(
                 // Emit at 60% of the person-signal confidence (attenuated propagation)
                 if let Some(ref s) = sentiment {
                     if s != "neutral" {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = bus::emit_signal_and_propagate(
                             db,
                             engine,
@@ -538,6 +562,10 @@ pub fn emit_enriched_email_signals(
                         emitted += 1;
 
                         // Propagate to account email_signals for health scoring
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                             email_id,
                             sender_email: sender.as_deref(),
@@ -558,6 +586,10 @@ pub fn emit_enriched_email_signals(
                     }
                 }
                 if urgency.as_deref() == Some("high") {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = bus::emit_signal_and_propagate(
                         db,
                         engine,
@@ -571,6 +603,10 @@ pub fn emit_enriched_email_signals(
                     emitted += 1;
 
                     // Propagate to account email_signals for health scoring
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                         email_id,
                         sender_email: sender.as_deref(),
@@ -588,6 +624,10 @@ pub fn emit_enriched_email_signals(
                 }
 
                 // Baseline relationship signal for all propagated emails
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.upsert_email_signal(&crate::db::signals::EmailSignalInput {
                     email_id,
                     sender_email: sender.as_deref(),

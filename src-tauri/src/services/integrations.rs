@@ -131,6 +131,10 @@ pub fn configure_claude_desktop(
                     let mode = perms.mode();
                     if mode & 0o111 == 0 {
                         perms.set_mode(mode | 0o755);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = std::fs::set_permissions(p, perms);
                     }
                 }

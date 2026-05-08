@@ -134,6 +134,10 @@ pub fn migrate_from_config(state: &crate::state::AppState) {
                 }
             }
             // Force a config save so the plaintext key is removed from disk
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::state::create_or_update_config(state, |_| {});
         }
         Err(e) => {

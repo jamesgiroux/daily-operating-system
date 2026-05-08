@@ -515,6 +515,10 @@ pub async fn create_action(
             );
 
             // Scan for decision-indicating keywords after creation
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.scan_and_flag_decisions();
 
             // Best-effort auto-link to matching objectives

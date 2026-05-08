@@ -185,7 +185,15 @@ fn canonicalize_url(url: &str) -> String {
         return canonicalize_unparsed_url(url);
     };
 
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = parsed.set_username("");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = parsed.set_password(None);
     parsed.set_fragment(None);
 
