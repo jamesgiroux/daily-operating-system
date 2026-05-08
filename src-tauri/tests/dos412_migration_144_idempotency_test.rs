@@ -109,7 +109,7 @@ fn idempotency_when_already_canonical() {
     assert_eq!(reveal_action_index_sql(&conn), before_index_sql);
     assert_eq!(reveal_audit_row_count(&conn), 1);
     assert_eq!(single_reveal_action_id(&conn), "abc-123");
-    assert_eq!(schema_version(&conn), 144);
+    assert!(schema_version(&conn) >= 144);
 }
 
 fn setup_starting_state(conn: &Connection, state: StartingState) {
@@ -194,6 +194,25 @@ fn setup_migration_runner_state(conn: &Connection) {
         CREATE TABLE IF NOT EXISTS email_signals (
             id TEXT PRIMARY KEY,
             source TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entities (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            entity_type TEXT NOT NULL DEFAULT 'account',
+            tracker_path TEXT,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            tracker_path TEXT,
+            updated_at TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_members (
+            entity_id TEXT NOT NULL,
+            person_id TEXT NOT NULL,
+            relationship_type TEXT DEFAULT 'associated',
+            PRIMARY KEY (entity_id, person_id)
         );",
     )
     .expect("create migration runner fixture state");
@@ -202,14 +221,14 @@ fn setup_migration_runner_state(conn: &Connection) {
 fn apply_pending_v144(conn: &Connection, label: &str) {
     let applied = run_migrations(conn)
         .unwrap_or_else(|error| panic!("{label}: migration runner failed: {error}"));
-    assert_eq!(
-        applied, 1,
-        "{label}: v144 should be the only pending migration"
+    assert!(
+        applied >= 1,
+        "{label}: at least v144 should have applied (got {applied})"
     );
-    assert_eq!(
-        schema_version(conn),
-        144,
-        "{label}: schema version should be recorded"
+    assert!(
+        schema_version(conn) >= 144,
+        "{label}: schema version should be at v144 or later (got {})",
+        schema_version(conn)
     );
 }
 
