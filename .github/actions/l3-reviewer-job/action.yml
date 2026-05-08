@@ -1,0 +1,129 @@
+name: L3 reviewer job
+description: |
+  Invokes a single reviewer slot (codex challenge OR architect-reviewer) against
+  the integrated wave diff. Emits a verdict file consumed by the L3 aggregator.
+
+inputs:
+  reviewer:
+    description: "Reviewer slot: 'codex-challenge' or 'architect-reviewer'."
+    required: true
+  wave:
+    description: "Wave identifier (e.g. W0, W0.5, W3)."
+    required: true
+  range:
+    description: "Git range for integrated diff (first-parent..dev-head)."
+    required: true
+  prompt-path:
+    description: "Path to the reviewer prompt file."
+    required: true
+  output-dir:
+    description: "Directory to write verdict.json into."
+    required: true
+  anthropic-api-key:
+    description: "Anthropic API key for claude-code-action."
+    required: true
+
+runs:
+  using: composite
+  steps:
+    - name: Compute integrated diff
+      shell: bash
+      env:
+        WAVE: ${{ inputs.wave }}
+        RANGE: ${{ inputs.range }}
+        OUTDIR: ${{ inputs.output-dir }}
+        REVIEWER: ${{ inputs.reviewer }}
+      run: |
+        set -euo pipefail
+        mkdir -p "$OUTDIR"
+        # Generate the diff and a file list. We cap at 100k lines of diff to
+        # avoid blowing the model context for very large waves.
+        git log --pretty=format:'%h %s%n%n%b%n---' "$RANGE" > "$OUTDIR/commits.txt"
+        git diff --stat "$RANGE" > "$OUTDIR/diff-stat.txt"
+        git diff "$RANGE" | head -n 100000 > "$OUTDIR/diff.patch"
+        echo "wave=$WAVE reviewer=$REVIEWER range=$RANGE diff-lines=$(wc -l < $OUTDIR/diff.patch)" >&2
+
+    - name: Render prompt with diff context
+      shell: bash
+      env:
+        PROMPT_PATH: ${{ inputs.prompt-path }}
+        WAVE: ${{ inputs.wave }}
+        RANGE: ${{ inputs.range }}
+        OUTDIR: ${{ inputs.output-dir }}
+      run: |
+        set -euo pipefail
+        # Build the reviewer prompt by concatenating the prompt file with
+        # context about the wave and an explicit verdict format requirement.
+        {
+          cat "$PROMPT_PATH"
+          echo ""
+          echo "---"
+          echo ""
+          echo "## Wave under review"
+          echo ""
+          echo "- Wave: $WAVE"
+          echo "- Integrated range: $RANGE"
+          echo "- Diff stat: see ${OUTDIR}/diff-stat.txt"
+          echo "- Commits: see ${OUTDIR}/commits.txt"
+          echo "- Full diff: see ${OUTDIR}/diff.patch (capped at 100k lines)"
+          echo ""
+          echo "## Required verdict format"
+          echo ""
+          echo "End your response with EXACTLY one of these tokens on its own line:"
+          echo ""
+          echo "- VERDICT: approve"
+          echo "- VERDICT: changes-requested"
+          echo "- VERDICT: blocked"
+          echo ""
+          echo "Then a second token line with severity counts:"
+          echo ""
+          echo "FINDINGS: critical=N high=N medium=N low=N"
+          echo ""
+          echo "If you approve, all four counts MUST be 0 OR the listed findings"
+          echo "MUST be marked 'tracked-followup' in the body. Approval with"
+          echo "untracked critical/high findings is invalid and will fail the gate."
+        } > "$OUTDIR/prompt.md"
+        echo "prompt rendered ($(wc -l < $OUTDIR/prompt.md) lines)" >&2
+
+    - name: Invoke reviewer via claude-code-action
+      uses: anthropics/claude-code-action@cacf511db27f37088382624faf2fe2f397735494 # v1
+      env:
+        ANTHROPIC_API_KEY: ${{ inputs.anthropic-api-key }}
+      with:
+        prompt-file: ${{ inputs.output-dir }}/prompt.md
+        output-file: ${{ inputs.output-dir }}/response.md
+
+    - name: Parse verdict
+      shell: bash
+      env:
+        OUTDIR: ${{ inputs.output-dir }}
+        REVIEWER: ${{ inputs.reviewer }}
+        WAVE: ${{ inputs.wave }}
+      run: |
+        set -euo pipefail
+        RESP="$OUTDIR/response.md"
+        if [[ ! -s "$RESP" ]]; then
+          echo "::error::no response from claude-code-action"
+          echo "{\"reviewer\":\"$REVIEWER\",\"wave\":\"$WAVE\",\"verdict\":\"infrastructure-failure\",\"reason\":\"empty response\"}" > "$OUTDIR/verdict.json"
+          exit 1
+        fi
+        verdict=$(grep -E '^VERDICT: (approve|changes-requested|blocked)$' "$RESP" | tail -n1 | awk '{print $2}' || true)
+        findings=$(grep -E '^FINDINGS: critical=' "$RESP" | tail -n1 || true)
+        if [[ -z "$verdict" ]]; then
+          echo "::error::no parseable verdict in response"
+          echo "{\"reviewer\":\"$REVIEWER\",\"wave\":\"$WAVE\",\"verdict\":\"malformed\",\"raw\":\"$(tr -d '\n' < $RESP | head -c 500)\"}" > "$OUTDIR/verdict.json"
+          exit 1
+        fi
+        # Validate approve-with-blocking-findings rule.
+        if [[ "$verdict" == "approve" ]]; then
+          crit=$(echo "$findings" | sed -n 's/.*critical=\([0-9]*\).*/\1/p')
+          high=$(echo "$findings" | sed -n 's/.*high=\([0-9]*\).*/\1/p')
+          if { [[ "${crit:-0}" -gt 0 ]] || [[ "${high:-0}" -gt 0 ]]; } && ! grep -qi "tracked.followup\|tracked-followup" "$RESP"; then
+            echo "::error::approve verdict with untracked critical/high findings"
+            echo "{\"reviewer\":\"$REVIEWER\",\"wave\":\"$WAVE\",\"verdict\":\"invalid-approve\",\"findings\":\"$findings\"}" > "$OUTDIR/verdict.json"
+            exit 1
+          fi
+        fi
+        echo "{\"reviewer\":\"$REVIEWER\",\"wave\":\"$WAVE\",\"verdict\":\"$verdict\",\"findings\":\"$findings\"}" > "$OUTDIR/verdict.json"
+        echo "verdict=$verdict $findings" >&2
+        if [[ "$verdict" != "approve" ]]; then exit 1; fi
