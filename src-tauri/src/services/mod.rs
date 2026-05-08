@@ -30,6 +30,7 @@ pub mod sensitivity;
 pub mod settings;
 pub mod signals;
 pub mod source_asof_backfill;
+pub mod stakeholder_writer;
 pub mod success_plans;
 pub mod threads;
 pub mod trust_extraction;

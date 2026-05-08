@@ -14,6 +14,7 @@ use crate::commands::{
 };
 use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
+use crate::services::stakeholder_writer;
 use crate::signals::propagation::PropagationEngine;
 use crate::state::AppState;
 
@@ -86,20 +87,16 @@ pub fn create_child_account_record(
             .map_err(|e| e.to_string())?;
 
         if let Some(owner_id) = owner_person_id {
-            tx.link_person_to_entity(owner_id, &account.id, "owner")
-                .map_err(|e| e.to_string())?;
-            crate::services::signals::emit_in_transaction(
+            stakeholder_writer::write_with_stakeholders_changed(
                 ctx,
                 tx,
                 "account",
                 &account.id,
-                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
                 "create_child_account",
-                serde_json::json!({
-                    "entity_id": &account.id,
-                    "entity_type": "account",
-                    "mutation_source": "create_child_account",
-                }),
+                |tx| {
+                    tx.link_person_to_entity(owner_id, &account.id, "owner")
+                        .map_err(|e| e.to_string())
+                },
             )?;
         }
 
@@ -2802,18 +2799,12 @@ pub fn merge_accounts(
             .merge_accounts(from_id, into_id)
             .map_err(|e| e.to_string())?;
         for account_id in [from_id, into_id] {
-            crate::services::signals::emit_in_transaction(
+            stakeholder_writer::emit_stakeholders_changed(
                 ctx,
                 tx,
                 "account",
                 account_id,
-                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
                 "merge_accounts",
-                serde_json::json!({
-                    "entity_id": account_id,
-                    "entity_type": "account",
-                    "mutation_source": "merge_accounts",
-                }),
             )?;
         }
         crate::services::signals::emit_and_propagate(
@@ -2886,20 +2877,16 @@ pub(crate) fn add_team_member_with_cache_rebuild(
     person_id: &str,
     role: &str,
 ) -> Result<(), String> {
-    tx.add_account_team_member(account_id, person_id, role)
-        .map_err(|e| e.to_string())?;
-    crate::services::signals::emit_in_transaction(
+    stakeholder_writer::write_with_stakeholders_changed(
         ctx,
         tx,
         "account",
         account_id,
-        crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
         "add_account_team_member",
-        serde_json::json!({
-            "entity_id": account_id,
-            "entity_type": "account",
-            "mutation_source": "add_account_team_member",
-        }),
+        |tx| {
+            tx.add_account_team_member(account_id, person_id, role)
+                .map_err(|e| e.to_string())
+        },
     )?;
     Ok(())
 }
@@ -2912,20 +2899,16 @@ pub(crate) fn link_person_to_account_with_source_with_cache_rebuild(
     role: &str,
     data_source: &str,
 ) -> Result<(), String> {
-    tx.link_person_to_account_with_source(account_id, person_id, role, data_source)
-        .map_err(|e| e.to_string())?;
-    crate::services::signals::emit_in_transaction(
+    stakeholder_writer::write_with_stakeholders_changed(
         ctx,
         tx,
         "account",
         account_id,
-        crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
         "link_person_to_account_with_source",
-        serde_json::json!({
-            "entity_id": account_id,
-            "entity_type": "account",
-            "mutation_source": "link_person_to_account_with_source",
-        }),
+        |tx| {
+            tx.link_person_to_account_with_source(account_id, person_id, role, data_source)
+                .map_err(|e| e.to_string())
+        },
     )?;
     Ok(())
 }
@@ -3024,20 +3007,16 @@ pub fn remove_account_team_member(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     db.with_transaction(|tx| {
-        tx.remove_account_team_member(account_id, person_id, role)
-            .map_err(|e| e.to_string())?;
-        crate::services::signals::emit_in_transaction(
+        stakeholder_writer::write_with_stakeholders_changed(
             ctx,
             tx,
             "account",
             account_id,
-            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
             "remove_account_team_member",
-            serde_json::json!({
-                "entity_id": account_id,
-                "entity_type": "account",
-                "mutation_source": "remove_account_team_member",
-            }),
+            |tx| {
+                tx.remove_account_team_member(account_id, person_id, role)
+                    .map_err(|e| e.to_string())
+            },
         )?;
         crate::services::signals::emit_and_propagate(
             ctx,
@@ -3452,18 +3431,12 @@ pub async fn create_internal_organization(
 
                     if !created_people.is_empty() || !existing_person_ids.is_empty() {
                         for account_id in [&root_account.id, &initial_team.id] {
-                            crate::services::signals::emit_in_transaction(
+                            stakeholder_writer::emit_stakeholders_changed(
                                 &ctx,
                                 db,
                                 "account",
                                 account_id,
-                                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
                                 "create_internal_organization",
-                                serde_json::json!({
-                                    "entity_id": account_id,
-                                    "entity_type": "account",
-                                    "mutation_source": "create_internal_organization",
-                                }),
                             )?;
                         }
                     }
@@ -3611,18 +3584,12 @@ pub fn backfill_internal_meeting_associations(
                 .cascade_meeting_entity_to_people(&meeting_id, Some(&account.id), None)
                 .map_err(|e| e.to_string())?;
             if linked > 0 {
-                crate::services::signals::emit_in_transaction(
+                stakeholder_writer::emit_stakeholders_changed(
                     ctx,
                     tx,
                     "account",
                     &account.id,
-                    crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
                     "link_internal_meetings_to_account",
-                    serde_json::json!({
-                        "entity_id": &account.id,
-                        "entity_type": "account",
-                        "mutation_source": "link_internal_meetings_to_account",
-                    }),
                 )?;
             }
             Ok(())
@@ -3996,69 +3963,65 @@ pub fn accept_stakeholder_suggestion(
             return Err("Cannot accept suggestion: no person_id, email, or name".to_string());
         };
 
-        // Ensure stakeholder link exists
-        // stakeholder-cache-skip: grouped suggestion writes emit stakeholders_changed below before commit.
         let now = ctx.clock.now().to_rfc3339();
-        tx.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, created_at)
-                 VALUES (?1, ?2, 'user', 'active', ?3)
-                 ON CONFLICT(account_id, person_id) DO UPDATE SET
-                    data_source = 'user',
-                    status = 'active'",
-                rusqlite::params![suggestion.account_id, person_id, now],
-            )
-            .map_err(|e| e.to_string())?;
-
-        // Add suggested role if present
-        if let Some(role) = suggestion.suggested_role.as_deref() {
-            let role = role.trim().to_lowercase();
-            if !role.is_empty() {
-                tx.conn_ref()
-                    .execute(
-                        "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
-                         VALUES (?1, ?2, ?3, 'user', ?4)
-                         ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'user'",
-                        rusqlite::params![suggestion.account_id, person_id, role, now],
-                    )
-                    .map_err(|e| e.to_string())?;
-            }
-        }
-
-        // Set engagement if suggested
-        if let Some(engagement) = suggestion.suggested_engagement.as_deref() {
-            tx.conn_ref()
-                .execute(
-                    "UPDATE account_stakeholders
-                     SET engagement = ?1, data_source_engagement = 'user'
-                     WHERE account_id = ?2 AND person_id = ?3",
-                    rusqlite::params![engagement, suggestion.account_id, person_id],
-                )
-                .map_err(|e| e.to_string())?;
-        }
-
-        // Mark suggestion as accepted
-        tx.conn_ref()
-            .execute(
-                "UPDATE stakeholder_suggestions
-                 SET status = 'accepted', resolved_at = datetime('now')
-                 WHERE id = ?1",
-                rusqlite::params![suggestion_id],
-            )
-            .map_err(|e| e.to_string())?;
-
-        crate::services::signals::emit_in_transaction(
+        stakeholder_writer::write_with_stakeholders_changed(
             ctx,
             tx,
             "account",
             &suggestion.account_id,
-            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
             "accept_stakeholder_suggestion",
-            serde_json::json!({
-                "entity_id": &suggestion.account_id,
-                "entity_type": "account",
-                "mutation_source": "accept_stakeholder_suggestion",
-            }),
+            |tx| {
+                // Ensure stakeholder link exists.
+                tx.conn_ref()
+                    .execute(
+                        "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, created_at)
+                         VALUES (?1, ?2, 'user', 'active', ?3)
+                         ON CONFLICT(account_id, person_id) DO UPDATE SET
+                            data_source = 'user',
+                            status = 'active'",
+                        rusqlite::params![suggestion.account_id, person_id, now],
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                // Add suggested role if present.
+                if let Some(role) = suggestion.suggested_role.as_deref() {
+                    let role = role.trim().to_lowercase();
+                    if !role.is_empty() {
+                        tx.conn_ref()
+                            .execute(
+                                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source, created_at)
+                                 VALUES (?1, ?2, ?3, 'user', ?4)
+                                 ON CONFLICT(account_id, person_id, role) DO UPDATE SET data_source = 'user'",
+                                rusqlite::params![suggestion.account_id, person_id, role, now],
+                            )
+                            .map_err(|e| e.to_string())?;
+                    }
+                }
+
+                // Set engagement if suggested.
+                if let Some(engagement) = suggestion.suggested_engagement.as_deref() {
+                    tx.conn_ref()
+                        .execute(
+                            "UPDATE account_stakeholders
+                             SET engagement = ?1, data_source_engagement = 'user'
+                             WHERE account_id = ?2 AND person_id = ?3",
+                            rusqlite::params![engagement, suggestion.account_id, person_id],
+                        )
+                        .map_err(|e| e.to_string())?;
+                }
+
+                // Mark suggestion as accepted.
+                tx.conn_ref()
+                    .execute(
+                        "UPDATE stakeholder_suggestions
+                         SET status = 'accepted', resolved_at = datetime('now')
+                         WHERE id = ?1",
+                        rusqlite::params![suggestion_id],
+                    )
+                    .map_err(|e| e.to_string())?;
+
+                Ok(())
+            },
         )?;
 
         crate::services::signals::emit_and_propagate(

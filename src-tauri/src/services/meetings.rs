@@ -983,18 +983,12 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         .map_err(|e| e.to_string())?;
                         if linked_people > 0 {
                             if let Some(ref eid) = entity_id {
-                                crate::services::signals::emit_in_transaction(
+                                crate::services::stakeholder_writer::emit_stakeholders_changed(
                                     &signal_ctx,
                                     db,
                                     &entity_type,
                                     eid,
-                                    crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
                                     "cascade_meeting_entity_to_people",
-                                    serde_json::json!({
-                                        "entity_id": eid,
-                                        "entity_type": &entity_type,
-                                        "mutation_source": "cascade_meeting_entity_to_people",
-                                    }),
                                 )?;
                             }
                         }
@@ -1070,18 +1064,12 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         )
                         .map_err(|e| e.to_string())?;
                         if linked_people > 0 {
-                            crate::services::signals::emit_in_transaction(
+                            crate::services::stakeholder_writer::emit_stakeholders_changed(
                                 &signal_ctx,
                                 db,
                                 &entity_type,
                                 &entity_id,
-                                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
                                 "cascade_meeting_entity_to_people",
-                                serde_json::json!({
-                                    "entity_id": &entity_id,
-                                    "entity_type": &entity_type,
-                                    "mutation_source": "cascade_meeting_entity_to_people",
-                                }),
                             )?;
                         }
 

@@ -494,43 +494,37 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                 .map_err(|e| format!("collect purged stakeholder accounts failed: {e}"))?
         };
 
-        tx.conn_ref()
-            .execute(
-                "DELETE FROM account_stakeholder_roles WHERE data_source = ?1",
-                [source_str],
-            )
-            .map_err(|e| format!("purge account_stakeholder_roles failed: {e}"))?;
-        let people_cleared = tx
-            .conn_ref()
-            .execute(
-                "DELETE FROM account_stakeholders WHERE data_source = ?1",
-                [source_str],
-            )
-            .map_err(|e| format!("purge account_stakeholders failed: {e}"))?;
-
-        if !affected_accounts.is_empty() {
-            let clock = crate::services::context::SystemClock;
-            let rng = crate::services::context::SystemRng;
-            let ext = crate::services::context::ExternalClients::default();
-            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-            let mutation_source = format!("purge_source:{source_str}");
-            for account_id in affected_accounts {
-                crate::services::signals::emit_in_transaction(
-                    &ctx,
-                    tx,
-                    "account",
-                    &account_id,
-                    crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
-                    "purge_source",
-                    serde_json::json!({
-                        "entity_id": account_id,
-                        "entity_type": "account",
-                        "mutation_source": &mutation_source,
-                    }),
-                )
-                .map_err(|e| format!("emit stakeholder purge signal failed: {e}"))?;
-            }
-        }
+        let clock = crate::services::context::SystemClock;
+        let rng = crate::services::context::SystemRng;
+        let ext = crate::services::context::ExternalClients::default();
+        let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+        let mutation_source = format!("purge_source:{source_str}");
+        let people_cleared = crate::services::stakeholder_writer::write_with_stakeholders_changed_for_entities(
+            &ctx,
+            tx,
+            &mutation_source,
+            |tx| {
+                tx.conn_ref()
+                    .execute(
+                        "DELETE FROM account_stakeholder_roles WHERE data_source = ?1",
+                        [source_str],
+                    )
+                    .map_err(|e| format!("purge account_stakeholder_roles failed: {e}"))?;
+                let people_cleared = tx
+                    .conn_ref()
+                    .execute(
+                        "DELETE FROM account_stakeholders WHERE data_source = ?1",
+                        [source_str],
+                    )
+                    .map_err(|e| format!("purge account_stakeholders failed: {e}"))?;
+                let affected_entities = affected_accounts
+                    .into_iter()
+                    .map(|account_id| (account_id, "account".to_string()))
+                    .collect();
+                Ok((people_cleared, affected_entities))
+            },
+        )
+        .map_err(|e| format!("emit stakeholder purge signal failed: {e}"))?;
 
         let signals_deleted = if source == DataSource::Glean {
             tx.conn_ref()

@@ -613,7 +613,7 @@ impl ActionDb {
         person_id: &str,
         data_source: &str,
         confidence: f64,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         self.conn_ref()
             .execute(
                 "INSERT OR IGNORE INTO account_stakeholders \
@@ -621,19 +621,17 @@ impl ActionDb {
                  VALUES (?1, ?2, ?3, ?4, 'pending_review')",
                 params![account_id, person_id, data_source, confidence],
             )
-            .map(|_| ())
             .map_err(|e| format!("suggest_stakeholder_pending: {e}"))
     }
 
     /// Promote a pending_review suggestion to active.
-    pub fn confirm_stakeholder(&self, account_id: &str, person_id: &str) -> Result<(), String> {
+    pub fn confirm_stakeholder(&self, account_id: &str, person_id: &str) -> Result<usize, String> {
         self.conn_ref()
             .execute(
                 "UPDATE account_stakeholders SET status = 'active' \
                  WHERE account_id = ?1 AND person_id = ?2 AND status = 'pending_review'",
                 params![account_id, person_id],
             )
-            .map(|_| ())
             .map_err(|e| format!("confirm_stakeholder: {e}"))
     }
 
@@ -642,14 +640,13 @@ impl ActionDb {
         &self,
         account_id: &str,
         person_id: &str,
-    ) -> Result<(), String> {
+    ) -> Result<usize, String> {
         self.conn_ref()
             .execute(
                 "UPDATE account_stakeholders SET status = 'dismissed' \
                  WHERE account_id = ?1 AND person_id = ?2 AND status = 'pending_review'",
                 params![account_id, person_id],
             )
-            .map(|_| ())
             .map_err(|e| format!("dismiss_stakeholder_suggestion: {e}"))
     }
 
