@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# DOS-383 external replay guard.
+# external replay guard.
 #
 # Eval/test code must use replay-backed external clients. This lint scans
 # integration tests plus ability codepaths, all of which may be invoked by

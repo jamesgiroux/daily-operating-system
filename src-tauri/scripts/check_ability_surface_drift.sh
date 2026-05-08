@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# DOS-217 Phase 2 surface drift guard.
+# Phase 2 surface drift guard.
 #
 # Allowed Tauri command names are the pre-existing hand-written commands
 # registered in src-tauri/src/lib.rs, minus the single registry bridge command

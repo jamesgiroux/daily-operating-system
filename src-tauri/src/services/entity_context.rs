@@ -1,7 +1,7 @@
 //! Entity context entries CRUD service.
 //!
 //! Structured knowledge entries for accounts, people, and projects.
-//! DOS-411 routes user-authored notes through `intelligence_claims`
+//! routes user-authored notes through `intelligence_claims`
 //! with claim_type `user_note`; the legacy SQL table remains only as
 //! backfill/rollback storage.
 
@@ -216,7 +216,7 @@ pub async fn delete_entry(
 
 /// Migrate legacy notes from the people table into user_note claims.
 ///
-/// Called once at startup. The old path wrote `entity_context_entries`; DOS-411
+/// Called once at startup. The old path wrote `entity_context_entries`;
 /// keeps this idempotent but routes new migration writes through `commit_claim`.
 pub fn migrate_legacy_notes(
     ctx: &crate::services::context::ServiceContext<'_>,

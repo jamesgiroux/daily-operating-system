@@ -714,23 +714,23 @@ const MIGRATIONS: &[Migration] = &[
         version: 140,
         sql: include_str!("migrations/140_dos_287_temporal_scope_closed.sql"),
     },
-    // DOS-411: backfill legacy entity_context_entries into user_note claims
+    // backfill legacy entity_context_entries into user_note claims
     // and freeze the legacy table for rollback-only reads.
     Migration::Sql {
         version: 141,
         sql: include_str!("migrations/141_user_note_claim_type_backfill.sql"),
     },
-    // DOS-412: audited click-to-reveal records for Confidential claim text.
+    // audited click-to-reveal records for Confidential claim text.
     Migration::Sql {
         version: 142,
         sql: include_str!("migrations/142_sensitivity_reveal_audit.sql"),
     },
-    // DOS-412: make audited reveals idempotent per frontend reveal action.
+    // make audited reveals idempotent per frontend reveal action.
     Migration::Sql {
         version: 143,
         sql: include_str!("migrations/143_sensitivity_reveal_audit_idempotency.sql"),
     },
-    // DOS-412: repair v143 idempotency variants with caller-supplied action tokens.
+    // repair v143 idempotency variants with caller-supplied action tokens.
     Migration::Fn {
         version: 144,
         apply: v144_audit_action_token::migrate_v144_audit_action_token,

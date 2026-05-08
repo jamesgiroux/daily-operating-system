@@ -4673,7 +4673,7 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "depends on bundle 5 fixture from W6-A/DOS-283"]
+    #[ignore = "depends on bundle 5 fixture from W6-A/"]
     fn bundle5_user_correction_tombstone_not_averaged_away() {
         panic!("bundle 5 fixture from W6-A/DOS-283 is not seeded in DOS-5 chunk 7");
     }

@@ -466,7 +466,7 @@ where
 
 /// Render ability `data` for the MCP tool surface.
 ///
-/// DOS-412 Track GG inverts the MCP output boundary to deny by default. Every
+/// Track GG inverts the MCP output boundary to deny by default. Every
 /// string leaf has exactly three possible outcomes:
 ///
 /// 1. Claim text with authoritative metadata renders as the same minimal

@@ -1744,7 +1744,7 @@ fn eval_fixture_governance_rejects_identity_map_in_tree() {
 }
 
 #[test]
-#[ignore = "TODO(DOS-216): wire the harness startup guard that aborts non-harness-hermetic runs; current verification intentionally runs the non-feature harness binary"]
+#[ignore = "TODO(): wire the harness startup guard that aborts non-harness-hermetic runs; current verification intentionally runs the non-feature harness binary"]
 fn harness_requires_hermetic_feature() {
     panic!("TODO(DOS-216): harness runner must fail closed unless built with harness-hermetic");
 }

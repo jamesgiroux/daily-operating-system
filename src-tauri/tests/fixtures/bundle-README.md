@@ -44,7 +44,7 @@ Each bundle carries the W4/W6 manifest in `metadata.json`:
 | `bundle-12` | Meeting brief with revoked source evidence. | Revoked source evidence is masked and cannot render as a meeting-prep fact. |
 | `bundle-13` | Bundle-1 target/adjacent pattern applied to `prepare_meeting` prompt evidence. | Source-ref matched adjacent-account claims are filtered before the provider boundary. |
 
-## DOS-283 Coordination
+## Coordination
 
 `bundle-1` exercises the claim-backed `get_entity_context` read path. The legacy
 `entity_context_entries` rows remain as substrate assertions for ownership and

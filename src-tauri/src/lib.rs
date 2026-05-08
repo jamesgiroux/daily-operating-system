@@ -608,7 +608,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Abilities
             commands::invoke_ability,
-            // DOS-412 sensitivity reveal audit
+            // sensitivity reveal audit
             commands::reveal_sensitive_claim_text,
             // Core
             commands::get_config,
@@ -770,7 +770,7 @@ pub fn run() {
             commands::dev_clean_artifacts,
             commands::dev_set_auth_override,
             commands::dev_onboarding_scenario,
-            // Standalone contamination audit/cleanup retired by DOS-5.
+            // Standalone contamination audit/cleanup retired.
             // Meeting-Entity M2M
             commands::link_meeting_entity,
             commands::unlink_meeting_entity,

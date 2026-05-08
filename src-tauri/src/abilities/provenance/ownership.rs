@@ -1,7 +1,7 @@
-//! DOS-288 production ownership validator.
+//! production ownership validator.
 //!
 //! ADR-0102 keeps provenance on the `AbilityOutput<T>` wrapper rather than on
-//! domain DTOs. The DOS-288 contract builds on that shape: before a production
+//! domain DTOs. The contract builds on that shape: before a production
 //! surface renders claim-attached output as confident, it must prove the
 //! rendered fields belong to the output subject, have source evidence that can
 //! be linked to that subject, and do not trip the existing cross-entity

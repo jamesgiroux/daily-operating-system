@@ -950,7 +950,7 @@ fn dos288_suite_results(config: &GateConfig, binding: &EvidenceBinding) -> Vec<S
 
 fn run_dos288_selector(selector: &str) -> SuiteResult {
     let started = std::time::Instant::now();
-    // DOS-288 remains an integration-test binary rather than a library module.
+    // remains an integration-test binary rather than a library module.
     // The release gate deliberately keeps only this selector as a subprocess;
     // the Golden Daily Loop harness itself runs in-process for structured data.
     let args = dos288_selector_args(selector);

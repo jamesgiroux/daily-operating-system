@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# DOS-216 fixture anonymization guard.
+# fixture anonymization guard.
 #
 # This lint is intentionally scoped to checked-in evaluation fixtures. Public
 # vendor or competitor references may exist in production code, but fixture data
