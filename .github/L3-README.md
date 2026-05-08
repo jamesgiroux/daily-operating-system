@@ -1,30 +1,36 @@
-# L3 Review
+# L3 Release Review
 
-Adversarial review of an integrated unit-of-work. The unit can be any
-group of merged PRs you decide forms a coherent thing to review:
-a release wave, a Linear project, a Linear milestone, a small ad-hoc
-batch, even a single big PR.
+Adversarial review of a release bundle. Fires when a PR is opened or updated against `trunk` (the stable-release branch). Reviews everything in `trunk..dev` (or whatever the release PR's `base..head` is).
+
+## Why this scope
+
+- **One fire per release**, not per wave. Minutes scale with releases, not PR volume.
+- **Right concern at right time**: integrated-state issues matter most at the release boundary, not mid-wave when more PRs may still land.
+- **Wave bundling natural**: a release contains N waves (or M Linear projects, or any mix). Reviewing the release naturally reviews everything together.
+- **Branch semantics aligned**: dev = active development, trunk = stable releases (per `CLAUDE.md`). L3 (adversarial, expensive) at the release gate makes architectural sense.
 
 ## Triggering
 
-Manual only:
+**Auto** (default): open a PR with `dev` → `trunk` (the release PR). L3 fires on `opened`, `synchronize`, and `reopened` events. Concurrency is per-PR with cancel-in-progress, so new dev commits during release prep replace the in-flight review with a fresh one.
+
+**Manual** (escape hatch):
 
 ```
 gh workflow run l3-review.yml \
-  -f scope-id="v1.4.1-W0" \
-  -f pr-numbers="225,226,227,228,229,230,231"
+  -f scope-id="release-v1.4.1" \
+  -f base="trunk" \
+  -f head="dev"
 ```
 
-`scope-id` is free-form (filesystem-safe characters; non-alnum becomes
-underscore). It controls where artifacts land — under
-`.docs/plans/l3-reviews/{scope-id}/` and `.docs/perf-baselines/scope-{id}.json`.
+Useful for re-running, ad-hoc reviews against arbitrary refs, or testing.
 
-`pr-numbers` is comma-separated merged PR numbers. The workflow finds the
-oldest one's merge-commit parent as the integration "before" SHA; current
-dev HEAD is the "after". The review covers the diff between those two SHAs.
+## scope-id auto-derivation
 
-Auto-trigger via Linear webhook (when a project closes / milestone hits 100%)
-is a follow-up that needs Linear → GitHub webhook plumbing.
+For PR-triggered runs:
+- If PR title matches `Release vX.Y.Z` (case-insensitive), scope-id = `release-vX.Y.Z`
+- Otherwise scope-id = `release-pr-<number>`
+
+scope-id is sanitized to filesystem-safe characters; non-alnum becomes underscore. It controls where artifacts land — under `.docs/plans/l3-reviews/{scope-id}/` and `.docs/perf-baselines/scope-{id}.json`.
 
 ## What runs
 
@@ -34,29 +40,34 @@ is a follow-up that needs Linear → GitHub webhook plumbing.
 | Panel | `panel-architect` | architect-reviewer agent on integrated state |
 | Suite S | `suite-s` | All CI policy invariants on integrated state (service-layer boundary, write-fence, ability-drift, durable-source-comments, OAuth secret scan, clippy `-D warnings`, cargo-audit) |
 | Suite P | `suite-p` | criterion benches vs prior scope baseline; >10% regression fails. First scope seeds empty baseline. |
-| Suite E | `suite-e` | `pnpm test` + (if scope id contains W2+ or matches user-visible work) attestation file `.docs/plans/l3-reviews/{scope-id}/l3-suite-e-attest.md` containing `L3-suite-e-attest: passed` |
+| Suite E | `suite-e` | `pnpm test` + (W2+/user-visible) attestation file `.docs/plans/l3-reviews/{scope-id}/l3-suite-e-attest.md` containing `L3-suite-e-attest: passed` |
 
 ## Output
 
-- **All green**: opens auto-PR `l3-proof/{scope-id}` with `proof-bundle.md` written under `.docs/plans/l3-reviews/{scope-id}/` plus updated baseline under `.docs/perf-baselines/`.
-- **Any red**: workflow exits non-zero. Findings + raw responses are uploaded as workflow artifacts. CI fail email lands; the active polling session reads artifacts and fixes forward. No Slack/L6 escalation.
+- **All green**: comments verdict on the release PR; opens auto-PR `l3-proof/{scope-id}` against dev with `proof-bundle.md` + updated baseline.
+- **Any red**: comments verdict on the release PR; workflow exits non-zero. Findings + raw responses are uploaded as workflow artifacts. CI fail email lands; the active polling session reads artifacts and fixes forward. No Slack/L6 escalation.
 
 ## Adding a criterion bench (Suite P)
 
-Add a bench under `src-tauri/benches/` (or any workspace member's `benches/`). Suite P will pick it up on the next run.
+Add a bench under `src-tauri/benches/` (or any workspace member's `benches/`). Suite P will pick it up on the next release cycle.
 
 ## Suite E attestation (W2+ / user-visible work)
 
-For scopes that include user-visible behavior, write `.docs/plans/l3-reviews/{scope-id}/l3-suite-e-attest.md` with the line `L3-suite-e-attest: passed` and a short list of surfaces QA'd. Commit and push, then re-dispatch L3.
+For releases that include user-visible behavior, write `.docs/plans/l3-reviews/{scope-id}/l3-suite-e-attest.md` with the line `L3-suite-e-attest: passed` and a list of surfaces QA'd. Commit and push to dev; the next L3 firing on the release PR will pick it up.
 
 Until headless Tauri lands, this is the explicit gate. False attestations are on the human; the workflow doesn't try to verify the surfaces themselves.
 
-## Adversarial review verdict format
+## Reviewer verdict format
 
-The two reviewer slots' prompts are at `.github/reviewer-prompts/l3-{codex-challenge,architect-reviewer}.md`. Reviewers must end with two lines: `VERDICT:` (approve / changes-requested / blocked) and `FINDINGS:` (`critical=N high=N medium=N low=N`).
+Both reviewer prompts require the response end with two lines:
+
+```
+VERDICT: approve|changes-requested|blocked
+FINDINGS: critical=N high=N medium=N low=N
+```
 
 `approve` with non-zero critical/high requires `tracked-followup` markers in the body, otherwise the verdict is rejected.
 
 ## Failure mode philosophy
 
-Per `feedback_no_escalation_infra_for_ci_failures`: workflow exits non-zero, attaches artifacts, stops. CI fail email + the active polling session handle remediation. No Slack DM, no Linear status flips, no escalation infrastructure layered on.
+Per `feedback_no_escalation_infra_for_ci_failures`: workflow exits non-zero, attaches artifacts, comments verdict on the PR, stops. CI fail email + the active polling session handle remediation. No Slack DM, no Linear status flips, no escalation infrastructure layered on.

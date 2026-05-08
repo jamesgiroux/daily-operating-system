@@ -1,30 +1,47 @@
-name: L3 Review
+name: L3 Release Review
 
-# L3 — Adversarial review of an integrated unit-of-work.
+# L3 — Adversarial review of a release bundle.
 #
-# A "unit" can be anything: a release wave, a Linear project, a Linear
-# milestone, a small batch of related PRs, even a single big PR. The unit
-# is identified by a free-form scope-id supplied at dispatch time, plus the
-# list of merged PR numbers that comprise it.
+# Fires on PR open/sync against `trunk`. The integrated diff is `trunk..dev`
+# (or whatever the PR's base..head is). Reviews the entire release-worth
+# of work in one pass — naturally bundles whatever waves / Linear projects /
+# ad-hoc work shipped this cycle.
 #
-# Triggered manually only. Auto-triggering by Linear webhook (when a project
-# closes / milestone hits 100%) is a follow-up that needs Linear → GitHub
-# webhook plumbing.
+# This is the right scope for L3 because:
+#   - Integrated-state issues matter most at the release boundary, not
+#     mid-wave when more PRs may still land.
+#   - One fire per release = minutes scale with releases, not PR volume.
+#   - Release PRs aren't time-sensitive — happy to sit "pending L3" for
+#     ~30 minutes while panel + suites run.
+#
+# Workflow_dispatch is kept as an escape hatch for re-runs, ad-hoc reviews,
+# or testing against a specific PR list.
 #
 # Failure path: exit non-zero + upload findings as workflow artifacts.
 # CI fail email + the active polling session handle the rest. No Slack/L6
 # escalation infrastructure layered on (per memory).
 
 on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - trunk
+      - main
   workflow_dispatch:
     inputs:
       scope-id:
-        description: "Free-form name for this unit (used in artifact paths). Examples: v1.4.1-W0, DOS-310-cleanup, briefing-redesign."
+        description: "Scope name (e.g. release-v1.4.1, ad-hoc-review-X)."
         required: true
         type: string
-      pr-numbers:
-        description: "Comma-separated list of merged PR numbers that comprise this unit (e.g., 225,226,227)."
-        required: true
+      base:
+        description: "Base ref for diff (e.g. trunk). Used by manual dispatch."
+        required: false
+        default: trunk
+        type: string
+      head:
+        description: "Head ref for diff (e.g. dev). Used by manual dispatch."
+        required: false
+        default: dev
         type: string
 
 permissions:
@@ -33,8 +50,8 @@ permissions:
   issues: read
 
 concurrency:
-  group: l3-${{ github.event.inputs.scope-id }}
-  cancel-in-progress: false
+  group: l3-${{ github.event.pull_request.number || github.event.inputs.scope-id }}
+  cancel-in-progress: true
 
 jobs:
   gate:
@@ -50,26 +67,46 @@ jobs:
 
       - id: normalize
         env:
-          RAW: ${{ github.event.inputs.scope-id }}
+          EVENT: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          DISPATCH_SCOPE: ${{ github.event.inputs.scope-id }}
         run: |
           set -euo pipefail
-          # Sanitize scope-id for filesystem safety: alnum / dash / dot / underscore only.
-          scope=$(printf '%s' "$RAW" | tr -c '[:alnum:]._-' '_' | sed 's/^_//;s/_$//')
-          if [[ -z "$scope" ]]; then
-            echo "::error::scope-id reduced to empty after sanitization"
-            exit 1
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            raw="$DISPATCH_SCOPE"
+          else
+            # Auto-derive: prefer "Release vX.Y.Z" pattern from PR title; fall back to PR number.
+            if [[ "$PR_TITLE" =~ ^[Rr]elease[[:space:]]+(v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?) ]]; then
+              raw="release-${BASH_REMATCH[1]}"
+            else
+              raw="release-pr-${PR_NUM}"
+            fi
           fi
+          scope=$(printf '%s' "$raw" | tr -c '[:alnum:]._-' '_' | sed 's/^_//;s/_$//')
+          [[ -n "$scope" ]] || { echo "::error::scope-id reduced to empty"; exit 1; }
           echo "scope=$scope" >> "$GITHUB_OUTPUT"
           echo "Normalized scope-id: $scope" >&2
 
       - id: range
         env:
-          GH_TOKEN: ${{ github.token }}
-          PRS: ${{ github.event.inputs.pr-numbers }}
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DISPATCH_BASE: ${{ github.event.inputs.base }}
+          DISPATCH_HEAD: ${{ github.event.inputs.head }}
         run: |
           set -euo pipefail
-          range=$(.github/scripts/resolve-l3-range.sh --prs "$PRS")
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            base_sha=$(git rev-parse "origin/$DISPATCH_BASE")
+            head_sha=$(git rev-parse "origin/$DISPATCH_HEAD")
+          else
+            base_sha="$BASE_SHA"
+            head_sha="$HEAD_SHA"
+          fi
+          range="${base_sha}..${head_sha}"
           echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "Integrated range: $range ($(git rev-list --count $range) commits)" >&2
 
   panel-codex:
     name: L3 / panel / codex-challenge
@@ -216,7 +253,7 @@ jobs:
           mkdir -p "$BUNDLE_DIR"
           BUNDLE="${BUNDLE_DIR}/proof-bundle.md"
           {
-            echo "# L3 Review — proof bundle"
+            echo "# L3 Release Review — proof bundle"
             echo ""
             echo "- Scope: ${SCOPE}"
             echo "- Integrated range: \`${RANGE}\`"
@@ -255,6 +292,29 @@ jobs:
           } > "$BUNDLE"
           echo "wrote $BUNDLE"
 
+      - name: Comment results on release PR
+        if: github.event_name == 'pull_request'
+        env:
+          SCOPE: ${{ needs.gate.outputs.scope }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          icon="pass"
+          [[ "$VERDICT" == "fail" ]] && icon="fail"
+          body=$(cat <<EOM
+          **L3 Release Review** — verdict: \`${VERDICT}\` (${icon})
+
+          Scope: \`${SCOPE}\`
+          Workflow run: ${RUN_URL}
+
+          Findings + panel responses available as workflow artifacts. On pass, proof bundle will land at \`.docs/plans/l3-reviews/${SCOPE}/proof-bundle.md\`.
+          EOM
+          )
+          gh pr comment "$PR_NUM" --body "$body"
+
       - name: Open proof-bundle PR (success only)
         if: steps.verdict.outputs.verdict == 'pass'
         env:
@@ -273,7 +333,7 @@ jobs:
           git push -u origin "$BRANCH"
           gh pr create --base dev --head "$BRANCH" \
             --title "L3 proof bundle — ${SCOPE}" \
-            --body "Generated by L3 review. Verdict: pass. Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+            --body "Generated by L3 release review. Verdict: pass. Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
 
       - name: Fail workflow if verdict is fail
         if: steps.verdict.outputs.verdict == 'fail'
