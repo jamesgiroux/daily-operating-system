@@ -213,6 +213,7 @@ impl ActionDb {
     }
 
     /// Update prep context JSON for a single meeting.
+    #[must_use = "check whether prep context was saved before relying on meeting preparation data"]
     pub fn update_meeting_prep_context(
         &self,
         meeting_id: &str,
@@ -228,6 +229,7 @@ impl ActionDb {
     }
 
     /// Update the frozen prep JSON for a meeting.
+    #[must_use = "check whether frozen prep JSON was saved before treating the snapshot as durable"]
     pub fn update_prep_frozen_json(&self, meeting_id: &str, json: &str) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
@@ -238,6 +240,7 @@ impl ActionDb {
     }
 
     /// Persist user-authored agenda/notes in the meeting row.
+    #[must_use = "check whether meeting user notes and agenda were saved before showing user edits"]
     pub fn update_meeting_user_layer(
         &self,
         meeting_id: &str,
@@ -256,6 +259,7 @@ impl ActionDb {
     }
 
     /// Freeze immutable prep snapshot metadata once. No-op when already frozen.
+    #[must_use = "check whether the prep snapshot froze before using the snapshot path or hash"]
     pub fn freeze_meeting_prep_snapshot(
         &self,
         meeting_id: &str,
@@ -284,6 +288,7 @@ impl ActionDb {
     }
 
     /// Persist transcript metadata directly on the meeting transcript row.
+    #[must_use = "check whether transcript metadata was saved before treating transcript processing as complete"]
     pub fn update_meeting_transcript_metadata(
         &self,
         meeting_id: &str,
@@ -304,6 +309,7 @@ impl ActionDb {
     }
 
     /// Update intelligence state for a meeting (ADR-0081).
+    #[must_use = "check whether meeting intelligence state changed before scheduling or displaying intelligence"]
     pub fn update_intelligence_state(
         &self,
         meeting_id: &str,
@@ -340,6 +346,7 @@ impl ActionDb {
     }
 
     /// Mark meeting as having new signals (ADR-0081).
+    #[must_use = "check whether the meeting was marked with new signals before surfacing freshness badges"]
     pub fn mark_meeting_new_signals(&self, meeting_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "UPDATE meeting_transcripts SET has_new_signals = 1 WHERE meeting_id = ?1",
@@ -349,6 +356,7 @@ impl ActionDb {
     }
 
     /// Clear new signals flag (when user views the meeting).
+    #[must_use = "check whether new-signal state was cleared before hiding freshness badges"]
     pub fn clear_meeting_new_signals(&self, meeting_id: &str) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
@@ -363,6 +371,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Insert a new sync state row for a meeting with a specific source.
+    #[must_use = "check whether Quill sync state was created before tracking transcript sync work"]
     pub fn insert_quill_sync_state_with_source(
         &self,
         meeting_id: &str,
@@ -382,6 +391,7 @@ impl ActionDb {
     }
 
     /// Insert a new Quill sync state row for a meeting (state=pending).
+    #[must_use = "check whether Quill sync state was created before using the sync id"]
     pub fn insert_quill_sync_state(&self, meeting_id: &str) -> Result<String, DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
@@ -448,6 +458,7 @@ impl ActionDb {
     }
 
     /// Update Quill sync state fields.
+    #[must_use = "check whether Quill sync state was updated before advancing transcript sync workflow"]
     pub fn update_quill_sync_state(
         &self,
         id: &str,
@@ -489,6 +500,7 @@ impl ActionDb {
 
     /// Advance attempt counter with exponential backoff (10, 20, 40, 80, 160 min).
     /// Returns true if still has attempts remaining, false if abandoned.
+    #[must_use = "check whether the Quill sync attempt advanced before applying retry limits"]
     pub fn advance_quill_sync_attempt(&self, id: &str) -> Result<bool, DbError> {
         let (attempts, max_attempts): (i32, i32) = self.conn.query_row(
             "SELECT attempts, max_attempts FROM quill_sync_state WHERE id = ?1",
@@ -570,6 +582,7 @@ impl ActionDb {
     }
 
     /// Reset an abandoned Quill sync for retry: set state to pending, clear attempts.
+    #[must_use = "check whether the Quill sync was reset before retrying transcript ingestion"]
     pub fn reset_quill_sync_for_retry(&self, sync_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -684,6 +697,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Insert or update a meeting history record (split across 3 tables).
+    #[must_use = "check whether the meeting and child rows were saved before relying on meeting history"]
     pub fn upsert_meeting(&self, meeting: &DbMeeting) -> Result<(), DbError> {
         // 1. meetings table (core scheduling data)
         self.conn.execute(
@@ -782,6 +796,7 @@ impl ActionDb {
     /// Used by calendar polling to create lightweight records so
     /// record_meeting_attendance() can query start_time.
     /// Does NOT overwrite existing rows — reconcile.rs owns updates.
+    #[must_use = "check whether the meeting history row was created or changed before recording attendance"]
     pub fn ensure_meeting_in_history(
         &self,
         input: EnsureMeetingHistoryInput<'_>,
@@ -866,6 +881,7 @@ impl ActionDb {
     /// Record that a meeting prep has been reviewed.
     ///
     /// `meeting_id` is the canonical meeting identity (event-id primary).
+    #[must_use = "check whether prep review state was recorded before hiding reviewed prep work"]
     pub fn mark_prep_reviewed(
         &self,
         meeting_id: &str,
@@ -904,6 +920,7 @@ impl ActionDb {
     // ─── Interaction dynamics, champion health, role changes ────────
 
     /// Store interaction dynamics for a meeting.
+    #[must_use = "check whether interaction dynamics were saved before using meeting behavior analysis"]
     pub fn upsert_interaction_dynamics(
         &self,
         meeting_id: &str,
@@ -973,6 +990,7 @@ impl ActionDb {
     }
 
     /// Store champion health assessment for a meeting.
+    #[must_use = "check whether key advocate health was saved before using stakeholder health analysis"]
     pub fn upsert_key_advocate_health(
         &self,
         meeting_id: &str,
@@ -1019,6 +1037,7 @@ impl ActionDb {
     }
 
     /// Store role changes detected in a meeting.
+    #[must_use = "check whether role changes were saved before showing post-meeting role movement"]
     pub fn insert_role_changes(
         &self,
         meeting_id: &str,
@@ -1052,6 +1071,7 @@ impl ActionDb {
     /// champion health, role changes, and captured commitments. Resets the
     /// meeting's summary and transcript_processed_at so the pipeline treats
     /// it as a fresh extraction.
+    #[must_use = "check whether extracted meeting data was cleared before rerunning extraction"]
     pub fn clear_meeting_extraction_data(&self, meeting_id: &str) -> Result<usize, DbError> {
         let mut cleared = 0usize;
         cleared += self.conn.execute(

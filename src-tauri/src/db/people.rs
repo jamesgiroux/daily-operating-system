@@ -23,6 +23,7 @@ impl ActionDb {
     /// Insert or update a person. Idempotent — won't overwrite manually-set fields
     /// unless the incoming data explicitly provides them.
     /// Upsert a person record. Returns true if the person was newly inserted (not updated).
+    #[must_use = "check whether the person was saved before relying on updated stakeholder identity"]
     pub fn upsert_person(&self, person: &DbPerson) -> Result<bool, DbError> {
         // Check if person exists before upsert to detect new inserts
         let existed: bool = self.conn.query_row(
@@ -78,6 +79,7 @@ impl ActionDb {
     ///
     /// Idempotent: if the email already exists, returns Ok without changes
     /// (the existing person is left untouched — use `update_person_profile` for updates).
+    #[must_use = "check whether the minimal person was created before linking meetings or entities to it"]
     pub fn create_person_minimal(
         &self,
         id: &str,
@@ -270,6 +272,7 @@ impl ActionDb {
     }
 
     /// Record an email alias for a person (INSERT OR IGNORE).
+    #[must_use = "check whether the person email alias was saved before using it for identity resolution"]
     pub fn add_person_email(
         &self,
         person_id: &str,
@@ -311,6 +314,7 @@ impl ActionDb {
     /// Steps 1-3 return `FoundByEmail` — the match is definitive.
     /// Step 4 returns `FoundByName` — the caller should confirm with the user.
     /// Step 5 returns `Created` — no match found.
+    #[must_use = "check whether person resolution created or matched a person before attaching downstream records"]
     pub fn find_or_create_person(
         &self,
         email: Option<&str>,
@@ -642,6 +646,7 @@ impl ActionDb {
 
     /// Link a person to an entity (account/project). Idempotent.
     /// Routes to account_stakeholders for accounts, entity_members for projects/other.
+    #[must_use = "check whether the person-entity link was saved before relying on stakeholder relationships"]
     pub fn link_person_to_entity(
         &self,
         person_id: &str,
@@ -687,6 +692,7 @@ impl ActionDb {
 
     /// Unlink a person from an entity.
     /// Deletes from both tables (only one will match per entity_id).
+    #[must_use = "check whether the person-entity link was removed before treating the relationship as absent"]
     pub fn unlink_person_from_entity(
         &self,
         person_id: &str,
@@ -710,6 +716,7 @@ impl ActionDb {
 
     /// Record that a person attended a meeting. Idempotent.
     /// Also updates `people.meeting_count` and `people.last_seen`.
+    #[must_use = "check whether meeting attendance was recorded before updating person engagement signals"]
     pub fn record_meeting_attendance(
         &self,
         meeting_id: &str,
@@ -920,6 +927,7 @@ impl ActionDb {
     }
 
     /// Update a single whitelisted field on a person.
+    #[must_use = "check whether the person field changed before showing updated profile data"]
     pub fn update_person_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         // Whitelist fields to prevent SQL injection
@@ -940,6 +948,7 @@ impl ActionDb {
     }
 
     /// Stamp/override provenance for a single person field in `enrichment_sources`.
+    #[must_use = "check whether person field source was saved before trusting profile provenance"]
     pub fn set_person_field_source(
         &self,
         person_id: &str,
@@ -1131,6 +1140,7 @@ impl ActionDb {
     }
 
     /// Update a person's relationship classification.
+    #[must_use = "check whether the person relationship changed before filtering by stakeholder type"]
     pub fn update_person_relationship(
         &self,
         person_id: &str,
@@ -1145,6 +1155,7 @@ impl ActionDb {
     }
 
     /// Recompute a person's meeting count from the meeting_attendees junction table.
+    #[must_use = "check whether meeting count recomputed before relying on engagement metrics"]
     pub fn recompute_person_meeting_count(&self, person_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -1158,6 +1169,7 @@ impl ActionDb {
     }
 
     /// Update a person's name (for email display name resolution).
+    #[must_use = "check whether the person name changed before showing canonical identity"]
     pub fn update_person_name(&self, person_id: &str, name: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -1172,6 +1184,7 @@ impl ActionDb {
     /// Transfers meeting attendees, entity links, and action associations.
     /// Uses INSERT OR IGNORE to handle overlapping meeting/entity links gracefully.
     /// Wrapped in a transaction for atomicity.
+    #[must_use = "check whether people were merged before redirecting meetings, aliases, and entity links"]
     pub fn merge_people(&self, keep_id: &str, remove_id: &str) -> Result<(), DbError> {
         // Verify both exist (before transaction)
         let keep = self
@@ -1331,6 +1344,7 @@ impl ActionDb {
 
     /// Delete a person and all their references (attendance, entity links, actions, intelligence).
     /// Wrapped in a transaction for atomicity.
+    #[must_use = "check whether the person was deleted before removing it from identity and relationship views"]
     pub fn delete_person(&self, person_id: &str) -> Result<(), DbError> {
         // Verify exists (before transaction)
         let _person = self
@@ -1421,6 +1435,7 @@ impl ActionDb {
     /// Checks source priority for each field, writes allowed fields to `people`,
     /// updates provenance in `enrichment_sources`, records an `enrichment_log`
     /// audit entry, and returns which fields were actually written.
+    #[must_use = "check whether the profile update applied before trusting sourced person fields"]
     pub fn update_person_profile(
         &self,
         person_id: &str,

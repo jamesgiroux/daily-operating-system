@@ -113,6 +113,7 @@ impl ActionDb {
     /// Insert or replace an intelligence feedback record.
     /// Uses ON CONFLICT on the UNIQUE(entity_id, entity_type, field) constraint
     /// so changing a vote replaces the previous one (AC16).
+    #[must_use = "check whether intelligence feedback was stored before suppressing or learning from a signal"]
     pub fn insert_intelligence_feedback(&self, input: &FeedbackInput<'_>) -> Result<(), String> {
         self.conn_ref()
             .execute(
