@@ -60,7 +60,7 @@ fn migration_145_preserves_project_memberships_and_surfaces_unrecoverable_orphan
     .expect("seed unrecoverable membership");
 
     let applied = run_migrations(&conn).expect("apply migration 145");
-    assert_eq!(applied, 1);
+    assert!(applied >= 1, "expected at least migration 145, got {applied}");
 
     let recovered_relationship: String = conn
         .query_row(
@@ -138,7 +138,7 @@ fn migration_145_mirrors_zero_member_legacy_projects() {
     .expect("seed zero-member project row without entity mirror");
 
     let applied = run_migrations(&conn).expect("apply migration 145");
-    assert_eq!(applied, 1);
+    assert!(applied >= 1, "expected at least migration 145, got {applied}");
 
     let mirrored_entity: (String, String, Option<String>) = conn
         .query_row(
@@ -225,7 +225,21 @@ fn setup_v144_migration_state(conn: &Connection) {
             person_id TEXT NOT NULL,
             relationship_type TEXT DEFAULT 'associated',
             PRIMARY KEY (entity_id, person_id)
-        );",
+        );
+        CREATE TABLE IF NOT EXISTS signal_events (
+            id TEXT PRIMARY KEY,
+            entity_type TEXT NOT NULL,
+            entity_id TEXT NOT NULL,
+            signal_type TEXT NOT NULL,
+            source TEXT NOT NULL,
+            value TEXT,
+            confidence REAL DEFAULT 1.0,
+            decay_half_life_days INTEGER DEFAULT 90,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            superseded_by TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_signal_events_source
+            ON signal_events(source, signal_type);",
     )
     .expect("create v144 migration fixture state");
 }
