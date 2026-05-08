@@ -701,6 +701,20 @@ mod tests {
     fn purge_source_removes_tagged_rows_and_preserves_user_rows() {
         let db = test_db();
         seed_person(&db, "p1", None);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at)
+                 VALUES ('a1', 'Glean Account', '2026-05-03T12:00:00+00:00')",
+                [],
+            )
+            .expect("seed glean account");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at)
+                 VALUES ('a2', 'User Account', '2026-05-03T12:00:00+00:00')",
+                [],
+            )
+            .expect("seed user account");
 
         db.link_person_to_account_with_source("a1", "p1", "champion", "glean")
             .expect("seed glean stakeholder");
