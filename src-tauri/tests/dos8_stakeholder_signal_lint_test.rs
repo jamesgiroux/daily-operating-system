@@ -163,6 +163,46 @@ fn bad(tx: &ActionDb) {
 }
 
 #[test]
+fn lint_stakeholder_writer_rejects_same_function_wrapper_bypass() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src_dir = tmp.path().join("src-tauri/src/services");
+    std::fs::create_dir_all(&src_dir).expect("mkdir fixture");
+    std::fs::write(
+        src_dir.join("same_function_bypass.rs"),
+        r#"
+fn bad(ctx: &ServiceContext<'_>, tx: &ActionDb) {
+    crate::services::stakeholder_writer::write_with_stakeholders_changed(
+        ctx,
+        tx,
+        "account",
+        "acc-1",
+        "fixture",
+        |_tx| Ok(()),
+    )
+    .unwrap();
+
+    tx.conn_ref()
+        .execute(
+            "INSERT INTO account_stakeholders (account_id, person_id) VALUES (?1, ?2)",
+            params,
+        )
+        .unwrap();
+}
+"#,
+    )
+    .expect("write fixture");
+
+    let output = run_lint(tmp.path());
+
+    assert!(
+        !output.status.success(),
+        "lint must reject direct writes outside a helper call even when the same function mentions a wrapper. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
 fn lint_stakeholder_writer_checks_cfg_test_modules() {
     let tmp = tempfile::tempdir().expect("tempdir");
     let src_dir = tmp.path().join("src-tauri/src/services");

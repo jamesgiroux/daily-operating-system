@@ -43,6 +43,7 @@ while IFS= read -r -d '' file; do
 
   awk -v file="$rel" -v allowlisted_writer="$allowlisted_writer" -v helper_file="$helper_file" '
     function min(a, b) { return a < b ? a : b }
+    function max(a, b) { return a > b ? a : b }
     function scan_line(input,    i, ch, next_ch) {
       clean_line = ""
       syntax_line = ""
@@ -101,14 +102,61 @@ while IFS= read -r -d '' file; do
     function is_function_decl(text) {
       return text ~ /(^|[^[:alnum:]_])((pub(\([^)]*\))?|async|unsafe|extern|const)[[:space:]]+)*fn[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*(<|\()/
     }
-    function has_stakeholder_signal_call(start, stop,    j) {
-      for (j = start; j <= stop; j++) {
-        if (syntax_lines[j] ~ /(^|[^[:alnum:]_:])((crate::services::)?stakeholder_writer::)?write_with_stakeholders_changed(_for_entities)?[[:space:]]*\(/ ||
-            syntax_lines[j] ~ /(^|[^[:alnum:]_:])((crate::services::)?stakeholder_writer::)?emit_stakeholders_changed(_for_entities)?[[:space:]]*\(/) {
+    function is_stakeholder_write_wrapper_call(line) {
+      return syntax_lines[line] ~ /(^|[^[:alnum:]_:])((crate::services::)?stakeholder_writer::)?write_with_stakeholders_changed(_for_entities)?[[:space:]]*\(/
+    }
+    function is_stakeholder_emit_helper_call(line) {
+      return syntax_lines[line] ~ /(^|[^[:alnum:]_:])((crate::services::)?stakeholder_writer::)?emit_stakeholders_changed(_for_entities)?[[:space:]]*\(/
+    }
+    function call_span_stop(start,    j, depth) {
+      depth = 0
+      for (j = start; j <= n; j++) {
+        depth += count_char(syntax_lines[j], "(")
+        depth -= count_char(syntax_lines[j], ")")
+        if (depth <= 0) {
+          return j
+        }
+      }
+      return n
+    }
+    function index_stakeholder_signal_calls(    j) {
+      for (j = 1; j <= n; j++) {
+        if (is_stakeholder_write_wrapper_call(j)) {
+          write_wrapper_count++
+          write_wrapper_start[write_wrapper_count] = j
+          write_wrapper_end[write_wrapper_count] = call_span_stop(j)
+        } else if (is_stakeholder_emit_helper_call(j)) {
+          emit_helper_count++
+          emit_helper_start[emit_helper_count] = j
+          emit_helper_end[emit_helper_count] = call_span_stop(j)
+        }
+      }
+    }
+    function is_inside_stakeholder_write_wrapper(line,    k) {
+      for (k = 1; k <= write_wrapper_count; k++) {
+        if (write_wrapper_start[k] <= line && line <= write_wrapper_end[k]) {
           return 1
         }
       }
       return 0
+    }
+    function has_nearby_stakeholder_emit(line, fn_idx,    k, window_start, window_end) {
+      if (fn_idx <= 0) {
+        return 0
+      }
+      window_start = max(fn_start[fn_idx], line - 30)
+      window_end = min(fn_end[fn_idx], line + 30)
+      for (k = 1; k <= emit_helper_count; k++) {
+        if ((window_start <= emit_helper_start[k] && emit_helper_start[k] <= window_end) ||
+            (window_start <= emit_helper_end[k] && emit_helper_end[k] <= window_end)) {
+          return 1
+        }
+      }
+      return 0
+    }
+    function has_write_level_stakeholder_signal(line, fn_idx) {
+      return is_inside_stakeholder_write_wrapper(line) ||
+        has_nearby_stakeholder_emit(line, fn_idx)
     }
     function enclosing_function(line,    k, best) {
       best = 0
@@ -183,6 +231,7 @@ while IFS= read -r -d '' file; do
         fn_end[fn_stack[stack_len]] = n
         stack_len--
       }
+      index_stakeholder_signal_calls()
 
       write_re = "(insert([[:space:]]+or[[:space:]]+(ignore|replace))?[[:space:]]+into|update|delete[[:space:]]+from)[^\"]*(account_stakeholders|entity_members)([^[:alnum:]_]|$)"
       for (i = 1; i <= n; i++) {
@@ -193,10 +242,10 @@ while IFS= read -r -d '' file; do
         stop = min(n, i + 30)
         fn_idx = enclosing_function(i)
         if (allowlisted_writer || is_non_graph_update(i, stop) ||
-            (fn_idx > 0 && has_stakeholder_signal_call(fn_start[fn_idx], fn_end[fn_idx]))) {
+            has_write_level_stakeholder_signal(i, fn_idx)) {
           continue
         }
-        printf "%s:%d: stakeholder graph write must call stakeholder_writer::write_with_stakeholders_changed/emit_stakeholders_changed in the same function or use an allowlisted DB writer\n", file, i
+        printf "%s:%d: stakeholder graph write must be covered at the write site by stakeholder_writer::write_with_stakeholders_changed/emit_stakeholders_changed or use an allowlisted DB writer\n", file, i
         failures++
       }
 
