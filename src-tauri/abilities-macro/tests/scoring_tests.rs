@@ -1,7 +1,7 @@
 #[path = "../src/scoring.rs"]
 mod scoring;
 
-use scoring::{path_is_allowlisted_mutator, MutationVisitor};
+use scoring::{path_is_allowlisted_mutator, BoundaryVisitor, MutationVisitor};
 
 fn path(path: &str) -> syn::Path {
     syn::parse_str(path).expect("valid path")
@@ -9,6 +9,12 @@ fn path(path: &str) -> syn::Path {
 
 fn scan(block: syn::Block) -> MutationVisitor {
     let mut visitor = MutationVisitor::new();
+    visitor.scan_fn_body(&block);
+    visitor
+}
+
+fn scan_boundary(block: syn::Block) -> BoundaryVisitor {
+    let mut visitor = BoundaryVisitor::new();
     visitor.scan_fn_body(&block);
     visitor
 }
@@ -145,4 +151,43 @@ fn visitor_ignores_method_call_with_mutator_like_name() {
     }));
 
     assert!(visitor.detected.is_empty());
+}
+
+#[test]
+fn boundary_visitor_detects_crate_db_import() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use crate::db::ActionDb;
+        let _ = std::any::type_name::<ActionDb>();
+    }));
+
+    assert_eq!(visitor.detected, ["crate::db"]);
+}
+
+#[test]
+fn boundary_visitor_detects_std_fs_write() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        std::fs::write(path, bytes)?;
+    }));
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_file_create_alias() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use std::fs::File;
+        let _file = File::create(path)?;
+    }));
+
+    assert_eq!(visitor.detected, ["File::create", "std::fs::File::create"]);
+}
+
+#[test]
+fn boundary_visitor_detects_tokio_fs_import() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use tokio::fs;
+        fs::write(path, bytes).await?;
+    }));
+
+    assert_eq!(visitor.detected, ["tokio::fs"]);
 }

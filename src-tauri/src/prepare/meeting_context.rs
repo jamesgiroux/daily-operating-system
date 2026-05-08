@@ -1548,7 +1548,7 @@ fn find_recent_summaries(
         }
     }
 
-    matches.sort_by_key(|matched| std::cmp::Reverse(matched.0));
+    matches.sort_by_key(|(modified_at, _)| std::cmp::Reverse(*modified_at));
     matches.into_iter().take(limit).map(|(_, p)| p).collect()
 }
 

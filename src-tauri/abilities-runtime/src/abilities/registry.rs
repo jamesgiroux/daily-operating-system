@@ -4,6 +4,8 @@
 //! proc macro (W3-A part 3) for `inventory::submit!` registration.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
+use std::future::Future;
+use std::pin::Pin;
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
@@ -59,6 +61,11 @@ pub struct SignalPolicy {
     pub coalesce: bool,
 }
 
+pub type ErasedAbilityFuture<'a> =
+    Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
+pub type ErasedAbilityInvoker =
+    for<'a> fn(&'a AbilityContext<'a>, serde_json::Value) -> ErasedAbilityFuture<'a>;
+
 /// One ability's frozen description. The proc macro emits this via
 /// inventory::submit! in part 3. For part 2 we define the shape and the
 /// registry that collects it.
@@ -74,12 +81,7 @@ pub struct AbilityDescriptor {
     pub experimental: bool,
     pub registered_at: Option<&'static str>,
     pub signal_policy: SignalPolicy,
-    pub invoke_erased: for<'a> fn(
-        &'a AbilityContext<'a>,
-        serde_json::Value,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>,
-    >,
+    pub invoke_erased: ErasedAbilityInvoker,
     pub input_schema: fn() -> serde_json::Value,
     pub output_schema: fn() -> serde_json::Value,
 }

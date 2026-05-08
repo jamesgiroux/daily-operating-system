@@ -1,0 +1,5 @@
+error: ability bodies cannot bypass the ServiceContext boundary; detected: tokio::fs
+  --> tests/trybuild/boundary/tokio_fs_in_ability_fails.rs:40:10
+   |
+40 | async fn tokio_fs_boundary(ctx: &AbilityContext<'_>, input: Input) -> AbilityResult<Output> {
+   |          ^^^^^^^^^^^^^^^^^

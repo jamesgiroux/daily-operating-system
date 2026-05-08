@@ -130,8 +130,11 @@ else:
         if f'"{forbidden}"' in safe_object:
             violations.append(f"src-tauri/src/services/sensitivity.rs: minimal tagged-object allowlist preserves forbidden field `{forbidden}`")
 
+ABILITY_ROOTS = [Path("src-tauri/abilities-runtime/src/abilities")]
+
 agent_abilities = []
-for path in Path("src-tauri/src/abilities").rglob("*.rs"):
+for root in ABILITY_ROOTS:
+  for path in root.rglob("*.rs"):
     text = path.read_text()
     for match in re.finditer(r"#\[ability\((.*?)\)\]", text, re.S):
         block = match.group(1)
@@ -172,7 +175,10 @@ ability_output_violations="$(
 from pathlib import Path
 import re
 
-ROOTS = [Path("src-tauri/src/abilities"), Path("src-tauri/src/types.rs")]
+ROOTS = [
+    Path("src-tauri/abilities-runtime/src/abilities"),
+    Path("src-tauri/abilities-runtime/src/types.rs"),
+]
 source_by_path = {path: path.read_text() for root in ROOTS for path in ([root] if root.is_file() else root.rglob("*.rs"))}
 combined = "\n".join(source_by_path.values())
 
@@ -350,7 +356,7 @@ def inspect_struct(struct_name: str, seen: set[str], violations: list[str]):
 
 def agent_ability_outputs():
     outputs = {}
-    for path in Path("src-tauri/src/abilities").rglob("*.rs"):
+    for path in Path("src-tauri/abilities-runtime/src/abilities").rglob("*.rs"):
         text = path.read_text()
         for match in re.finditer(r"#\[ability\((.*?)\)\]\s*pub\s+async\s+fn\s+([A-Za-z_][A-Za-z0-9_]*)", text, re.S):
             block = match.group(1)

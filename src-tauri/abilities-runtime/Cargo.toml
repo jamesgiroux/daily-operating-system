@@ -23,7 +23,9 @@ url = "2"
 uuid = { version = "1", features = ["v4", "serde"] }
 
 [dev-dependencies]
+tempfile = "3"
 tokio = { version = "1", features = ["macros", "rt", "time"] }
+trybuild = "1"
 
 [features]
 experimental = ["dailyos-abilities-macro/experimental"]

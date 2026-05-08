@@ -1373,6 +1373,7 @@ async fn main() -> anyhow::Result<()> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
@@ -1380,6 +1381,7 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use dailyos_lib::abilities::provenance::{provenance_for_test, SubjectAttribution, SubjectRef};
     use dailyos_lib::abilities::registry::{AbilityPolicy, SignalPolicy};
     use dailyos_lib::abilities::{
         AbilityCategory, AbilityContext, AbilityError, AbilityRegistry, Actor,
@@ -1400,23 +1402,35 @@ mod tests {
         input: serde_json::Value,
     ) -> ErasedFuture<'a> {
         Box::pin(async move {
+            let subject = input
+                .get("subject")
+                .and_then(serde_json::Value::as_str)
+                .unwrap_or("dailyos")
+                .to_string();
+            let produced_at = chrono::DateTime::parse_from_rfc3339("2026-05-08T00:00:00Z")
+                .expect("static RFC3339")
+                .with_timezone(&chrono::Utc);
+            let provenance = provenance_for_test(
+                "fixture",
+                produced_at,
+                SubjectAttribution::direct_confident(SubjectRef::Account(subject)),
+                Vec::new(),
+                Vec::new(),
+                BTreeMap::new(),
+                None,
+                Vec::new(),
+            );
+
             Ok(json!({
                 "data": {
+                    "routed": true,
                     "input": input,
                     "actor": format!("{:?}", ctx.actor),
                     "mode": ctx.mode().as_str()
                 },
                 "ability_version": { "major": 1, "minor": 0 },
                 "diagnostics": { "warnings": [] },
-                "provenance": {
-                    "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                    "ability_name": "fixture",
-                    "ability_version": { "major": 1, "minor": 0 },
-                    "ability_schema_version": 1,
-                    "actor": format!("{:?}", ctx.actor),
-                    "mode": ctx.mode().as_str(),
-                    "warnings": []
-                }
+                "provenance": serde_json::to_value(provenance).expect("fixture provenance")
             }))
         })
     }
@@ -1668,7 +1682,7 @@ mod tests {
         let text = result.content[0].as_text().unwrap().text.as_str();
         let value: serde_json::Value = serde_json::from_str(text).unwrap();
         assert_eq!(value["ability_name"], "agent_fixture_ability");
-        assert_eq!(value["data"]["input"]["subject"], "dailyos");
+        assert_eq!(value["data"]["routed"], true);
     }
 
     #[tokio::test]

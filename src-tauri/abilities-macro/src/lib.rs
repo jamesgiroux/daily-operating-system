@@ -38,6 +38,19 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     visitor.scan_fn_body(&item_fn.block);
     let detected = visitor.detected;
 
+    let mut boundary_visitor = scoring::BoundaryVisitor::new();
+    boundary_visitor.scan_fn_body(&item_fn.block);
+    let detected_boundary_bypasses = boundary_visitor.detected;
+    if !detected_boundary_bypasses.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &item_fn.sig.ident,
+            format!(
+                "ability bodies cannot bypass the ServiceContext boundary; detected: {}",
+                detected_boundary_bypasses.join(", ")
+            ),
+        ));
+    }
+
     if matches!(
         args.category,
         AbilityCategoryArg::Read | AbilityCategoryArg::Transform

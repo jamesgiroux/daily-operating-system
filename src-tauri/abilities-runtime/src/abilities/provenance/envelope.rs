@@ -356,6 +356,7 @@ pub struct Provenance {
     #[serde(default)]
     pub thread_ids: Vec<ThreadId>,
     pub prompt_fingerprint: Option<PromptFingerprint>,
+    #[serde(default)]
     pub children: Vec<ComposedProvenance>,
     pub field_attributions: BTreeMap<FieldPath, FieldAttribution>,
     pub subject: SubjectAttribution,
