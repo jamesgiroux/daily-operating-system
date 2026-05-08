@@ -1,0 +1,5 @@
+error: ability bodies cannot bypass the ServiceContext boundary; detected: tokio::fs
+  --> tests/trybuild/boundary/absolute_tokio_fs_write_in_ability_fails.rs:40:10
+   |
+40 | async fn absolute_tokio_fs_write_boundary(
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

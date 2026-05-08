@@ -192,9 +192,7 @@ impl BoundaryVisitor {
     }
 
     fn record_call_path(&mut self, path: &Path) {
-        if let Some(canonical) = path_segments(path).map(|segments| join_all_segments(&segments)) {
-            self.record_if_forbidden(canonical);
-        }
+        self.record_if_forbidden(join_all_segments(&path_segments(path)));
 
         if let Some(alias) = single_segment_path(path) {
             if let Some(canonical) = self.aliases.get(&alias).cloned() {
@@ -213,14 +211,14 @@ impl BoundaryVisitor {
             if let Some(canonical) = self.aliases.get(&alias).cloned() {
                 return Some(canonical);
             }
-            return path_segments(path).map(|segments| join_all_segments(&segments));
+            return Some(join_all_segments(&path_segments(path)));
         }
 
         if let Some(canonical) = self.resolve_module_alias_path(path) {
             return Some(canonical);
         }
 
-        path_segments(path).map(|segments| join_all_segments(&segments))
+        Some(join_all_segments(&path_segments(path)))
     }
 
     fn resolve_module_alias_path(&self, path: &Path) -> Option<String> {
@@ -782,16 +780,11 @@ fn single_segment_path(path: &Path) -> Option<String> {
         .map(|segment| segment.ident.to_string())
 }
 
-fn path_segments(path: &Path) -> Option<Vec<String>> {
-    if path.leading_colon.is_some() {
-        return None;
-    }
-    Some(
-        path.segments
-            .iter()
-            .map(|segment| segment.ident.to_string())
-            .collect(),
-    )
+fn path_segments(path: &Path) -> Vec<String> {
+    path.segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect()
 }
 
 fn join_all_segments(segments: &[String]) -> String {
