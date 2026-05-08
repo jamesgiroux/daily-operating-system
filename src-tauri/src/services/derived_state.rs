@@ -674,6 +674,8 @@ pub(crate) fn rebuild_stakeholder_insights_cache_for_entity_inner(
     entity_id: &str,
     entity_type: &str,
 ) -> Result<(), ProjectionErrorClass> {
+    validate_stakeholder_entity_pair(tx, entity_id, entity_type)?;
+
     let person_ids = stakeholder_person_ids_for_entity(tx, entity_id)?;
     let mut claims = Vec::new();
     for person_id in person_ids {
@@ -729,6 +731,43 @@ pub(crate) fn rebuild_stakeholder_insights_cache_for_entity_inner(
         .map_err(classify_sql_error)?;
 
     Ok(())
+}
+
+fn validate_stakeholder_entity_pair(
+    tx: &ActionDb,
+    entity_id: &str,
+    entity_type: &str,
+) -> Result<(), ProjectionErrorClass> {
+    if entity_type == "account" {
+        let is_account: bool = tx
+            .conn_ref()
+            .query_row(
+                "SELECT EXISTS(SELECT 1 FROM accounts WHERE id = ?1)",
+                rusqlite::params![entity_id],
+                |row| row.get(0),
+            )
+            .map_err(classify_sql_error)?;
+        return if is_account {
+            Ok(())
+        } else {
+            Err(ProjectionErrorClass::ValidationError)
+        };
+    }
+
+    let actual_type = tx
+        .conn_ref()
+        .query_row(
+            "SELECT entity_type FROM entities WHERE id = ?1",
+            rusqlite::params![entity_id],
+            |row| row.get::<_, String>(0),
+        )
+        .optional()
+        .map_err(classify_sql_error)?;
+
+    match actual_type.as_deref() {
+        Some(actual_type) if actual_type == entity_type => Ok(()),
+        _ => Err(ProjectionErrorClass::ValidationError),
+    }
 }
 
 fn stakeholder_person_ids_for_entity(
@@ -1843,6 +1882,47 @@ mod tests {
         .unwrap();
 
         assert_cache_contains(&db, account_id, "confirmed engagement visible");
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuild_rejects_unknown_entity_id() {
+        let db = test_db();
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+
+        let err = rebuild_stakeholder_insights_cache_for_entity_inner(
+            &ctx,
+            &db,
+            "missing-entity",
+            "project",
+        )
+        .expect_err("unknown entity_id should be rejected");
+
+        assert_eq!(err, ProjectionErrorClass::ValidationError);
+    }
+
+    #[test]
+    fn stakeholder_cache_rebuild_rejects_entity_type_mismatch() {
+        let db = test_db();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entities (id, name, entity_type, updated_at)
+                 VALUES ('project-type-mismatch', 'Project Type Mismatch', 'project', ?1)",
+                params![TS],
+            )
+            .unwrap();
+        let (clock, rng, ext) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &ext);
+
+        let err = rebuild_stakeholder_insights_cache_for_entity_inner(
+            &ctx,
+            &db,
+            "project-type-mismatch",
+            "account",
+        )
+        .expect_err("entity_id/entity_type mismatch should be rejected");
+
+        assert_eq!(err, ProjectionErrorClass::ValidationError);
     }
 
     #[test]

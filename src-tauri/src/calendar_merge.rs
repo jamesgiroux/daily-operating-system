@@ -110,7 +110,7 @@ pub fn merge_meetings(briefing: Vec<Meeting>, live: &[CalendarEvent], tz: &Tz) -
     }
 
     // Sort by time string (lexicographic on "H:MM AM/PM" works for display order)
-    result.sort_by_key(|a| sort_time_key(&a.time));
+    result.sort_by_key(|item| sort_time_key(&item.time));
 
     result
 }

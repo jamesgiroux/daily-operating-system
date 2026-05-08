@@ -735,8 +735,8 @@ const MIGRATIONS: &[Migration] = &[
         version: 144,
         apply: v144_audit_action_token::migrate_v144_audit_action_token,
     },
-    // entity_members.entity_id FK rebuild against entities; preserves orphan
-    // memberships in entity_members_migration_145_orphans for manual repair.
+    // DOS-379: fail-closed entity_members links by enforcing
+    // entity_members.entity_id -> entities(id).
     Migration::Sql {
         version: 145,
         sql: include_str!("migrations/145_dos_379_entity_members_entity_fk.sql"),
@@ -2180,6 +2180,13 @@ mod tests {
                 updated_at TEXT NOT NULL,
                 archived INTEGER DEFAULT 0
             );
+             CREATE TABLE entities (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                entity_type TEXT NOT NULL DEFAULT 'account',
+                tracker_path TEXT,
+                updated_at TEXT NOT NULL
+             );
              CREATE TABLE meetings_history (
                 id TEXT PRIMARY KEY,
                 title TEXT NOT NULL,

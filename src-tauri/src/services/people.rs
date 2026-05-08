@@ -241,7 +241,9 @@ fn stakeholder_entity_type_for_id(db: &ActionDb, entity_id: &str) -> Result<Stri
         )
         .optional()
         .map_err(|e| format!("lookup stakeholder entity type: {e}"))
-        .map(|entity_type| entity_type.unwrap_or_else(|| "project".to_string()))
+        .and_then(|entity_type| {
+            entity_type.ok_or_else(|| format!("unknown stakeholder entity_id: {entity_id}"))
+        })
 }
 
 /// Get full detail for a person (person + signals + entities + recent meetings).
@@ -577,6 +579,22 @@ pub fn create_person(
     }
 
     Ok(id)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::test_utils::test_db;
+
+    #[test]
+    fn stakeholder_entity_type_for_id_rejects_unknown_entity_id() {
+        let db = test_db();
+
+        let err = stakeholder_entity_type_for_id(&db, "missing-entity")
+            .expect_err("unknown entity_id should be rejected");
+
+        assert!(err.contains("unknown stakeholder entity_id"));
+    }
 }
 
 /// Archive or unarchive a person with signal emission.

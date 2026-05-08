@@ -159,7 +159,7 @@ fn sensitivity_reveal_audit_migration_repairs_current_audit_bucket_v143() {
     ))
     .expect("idempotency migration applies");
     setup_migration_runner_state(&conn);
-    run_pending_v144(&conn);
+    run_pending_from_v143(&conn);
 
     let columns = reveal_audit_columns(&conn);
 
@@ -189,7 +189,7 @@ fn sensitivity_reveal_audit_migration_repairs_legacy_reveal_session_v143() {
     )
     .expect("legacy reveal session idempotency migration applies");
     setup_migration_runner_state(&conn);
-    run_pending_v144(&conn);
+    run_pending_from_v143(&conn);
 
     let columns = reveal_audit_columns(&conn);
 
@@ -242,16 +242,7 @@ fn setup_migration_runner_state(conn: &Connection) {
         );
         CREATE TABLE IF NOT EXISTS entities (
             id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            entity_type TEXT NOT NULL DEFAULT 'account',
-            tracker_path TEXT,
-            updated_at TEXT NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS projects (
-            id TEXT PRIMARY KEY,
-            name TEXT NOT NULL,
-            tracker_path TEXT,
-            updated_at TEXT
+            entity_type TEXT NOT NULL DEFAULT 'project'
         );
         CREATE TABLE IF NOT EXISTS entity_members (
             entity_id TEXT NOT NULL,
@@ -263,9 +254,9 @@ fn setup_migration_runner_state(conn: &Connection) {
     .expect("create migration runner fixture state");
 }
 
-fn run_pending_v144(conn: &Connection) {
+fn run_pending_from_v143(conn: &Connection) {
     let applied = run_migrations(conn).expect("action token migration applies");
-    assert!(applied >= 1);
+    assert_eq!(applied, 2);
 }
 
 fn reveal_audit_columns(conn: &Connection) -> Vec<String> {
