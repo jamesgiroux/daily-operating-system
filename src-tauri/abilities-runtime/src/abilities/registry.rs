@@ -4,8 +4,6 @@
 //! proc macro (W3-A part 3) for `inventory::submit!` registration.
 
 use std::collections::{BTreeMap, HashMap, HashSet};
-use std::fs;
-use std::path::Path;
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
@@ -14,7 +12,6 @@ use serde::{Deserialize, Serialize};
 
 use crate::abilities::provenance::{AbilityOutput, CompositionId};
 use crate::abilities::tracer::AbilityTracer;
-use crate::bridges::types::{BridgeActor, ConfirmationToken};
 use crate::intelligence::provider::IntelligenceProvider;
 use crate::services::context::{ExecutionMode, ServiceContext};
 
@@ -109,6 +106,10 @@ pub struct AbilityError {
 
 pub type AbilityResult<T> = Result<AbilityOutput<T>, AbilityError>;
 
+pub trait ConfirmationProof: Send + Sync {}
+
+impl<T> ConfirmationProof for T where T: Send + Sync {}
+
 /// AbilityContext wraps ServiceContext and adds provider/tracer seams,
 /// actor, and confirmation.
 ///
@@ -120,7 +121,7 @@ pub struct AbilityContext<'a> {
     pub provider: &'a dyn IntelligenceProvider,
     pub tracer: &'a dyn AbilityTracer,
     pub actor: Actor,
-    pub confirmation: Option<&'a ConfirmationToken>,
+    pub confirmation: Option<&'a dyn ConfirmationProof>,
 }
 
 impl<'a> AbilityContext<'a> {
@@ -129,7 +130,7 @@ impl<'a> AbilityContext<'a> {
         provider: &'a dyn IntelligenceProvider,
         tracer: &'a dyn AbilityTracer,
         actor: Actor,
-        confirmation: Option<&'a ConfirmationToken>,
+        confirmation: Option<&'a dyn ConfirmationProof>,
     ) -> Self {
         Self {
             services,
@@ -138,22 +139,6 @@ impl<'a> AbilityContext<'a> {
             actor,
             confirmation,
         }
-    }
-
-    pub fn from_bridge(
-        services: &'a ServiceContext<'a>,
-        provider: &'a dyn IntelligenceProvider,
-        tracer: &'a dyn AbilityTracer,
-        actor: BridgeActor,
-        confirmation: Option<&'a ConfirmationToken>,
-    ) -> Self {
-        Self::new(
-            services,
-            provider,
-            tracer,
-            actor.registry_actor(),
-            confirmation,
-        )
     }
 
     pub fn services(&self) -> &ServiceContext<'a> {
@@ -256,7 +241,6 @@ impl AbilityRegistry {
         }
     }
 
-    #[cfg(any(test, feature = "mcp"))]
     #[doc(hidden)]
     pub fn from_descriptors_unchecked_for_runtime_validation_tests(
         descriptors: Vec<AbilityDescriptor>,
@@ -332,26 +316,26 @@ impl AbilityRegistry {
         (descriptor.invoke_erased)(ctx, input).await
     }
 
-    /// Render docs to a directory. Deterministic key order, pretty JSON schemas.
-    pub fn render_docs(&self, out_dir: &Path) -> std::io::Result<()> {
-        fs::create_dir_all(out_dir)?;
+    /// Render docs as deterministic filename/body pairs.
+    pub fn render_docs(&self) -> BTreeMap<String, String> {
         let descriptors: BTreeMap<&str, &AbilityDescriptor> = self
             .by_name
             .iter()
             .map(|(name, descriptor)| (*name, descriptor))
             .collect();
 
+        let mut rendered = BTreeMap::new();
         for (name, descriptor) in descriptors {
             let input_schema = serde_json::to_string_pretty(&(descriptor.input_schema)())
                 .unwrap_or_else(|_| "{}".to_string());
             let output_schema = serde_json::to_string_pretty(&(descriptor.output_schema)())
                 .unwrap_or_else(|_| "{}".to_string());
-            fs::write(
-                out_dir.join(format!("{name}.md")),
+            rendered.insert(
+                format!("{name}.md"),
                 render_descriptor_doc(descriptor, &input_schema, &output_schema),
-            )?;
+            );
         }
-        Ok(())
+        rendered
     }
 
     async fn invoke_with_category(
@@ -1029,7 +1013,6 @@ fn yaml_string(value: &str) -> String {
 mod tests {
     use super::*;
     use crate::abilities::tracer::{AbilityTracer, SpanHandle};
-    use crate::bridges::BridgeActor;
     use crate::intelligence::provider::{ModelName, ModelTier, ProviderKind, ReplayProvider};
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng};
     use chrono::TimeZone;
@@ -1171,7 +1154,7 @@ mod tests {
     fn context<'a>(
         services: &'a ServiceContext<'a>,
         actor: Actor,
-        confirmation: Option<&'a ConfirmationToken>,
+        confirmation: Option<&'a dyn ConfirmationProof>,
         provider: &'a ReplayProvider,
         tracer: &'a dyn AbilityTracer,
     ) -> AbilityContext<'a> {
@@ -1389,7 +1372,7 @@ mod tests {
     }
 
     #[test]
-    fn ability_context_constructed_via_bridge_safe_path_does_not_require_action_db() {
+    fn ability_context_constructed_with_capabilities_does_not_require_action_db() {
         let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 4, 12, 0, 0).unwrap());
         let rng = SeedableRng::new(217);
         let external = ExternalClients::default();
@@ -1397,8 +1380,7 @@ mod tests {
         let provider = fixture_provider();
         let tracer = RecordingTracer::default();
 
-        let ctx =
-            AbilityContext::from_bridge(&services, &provider, &tracer, BridgeActor::Agent, None);
+        let ctx = AbilityContext::new(&services, &provider, &tracer, Actor::Agent, None);
 
         assert_eq!(ctx.actor, Actor::Agent);
         assert_eq!(ctx.mode(), ExecutionMode::Live);

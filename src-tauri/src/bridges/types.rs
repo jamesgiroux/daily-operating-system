@@ -11,7 +11,7 @@ use crate::abilities::provenance::InvocationId;
 use crate::abilities::tracer::{AbilityTracer, SpanHandle};
 use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
-    AbilityError, AbilityRegistry, Actor,
+    AbilityError, AbilityRegistry, Actor, ConfirmationProof,
 };
 use crate::db::ActionDb;
 use crate::intelligence::provider::{
@@ -289,12 +289,15 @@ pub(crate) async fn invoke_registry_json<'a>(
         services.clock.now(),
     )?;
 
-    let ability_context = AbilityContext::from_bridge(
+    let confirmation = invocation
+        .confirmation
+        .map(|token| token as &dyn ConfirmationProof);
+    let ability_context = AbilityContext::new(
         services,
         provider,
         tracer,
-        invocation.actor,
-        invocation.confirmation,
+        invocation.actor.registry_actor(),
+        confirmation,
     );
     let output_json = registry
         .invoke_by_name_json(&ability_context, ability_name, input_json)

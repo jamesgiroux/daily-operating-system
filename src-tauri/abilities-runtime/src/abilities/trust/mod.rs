@@ -23,7 +23,7 @@ pub use types::{
     UserFeedbackSignal,
 };
 
-pub type ClaimRow = crate::db::claims::IntelligenceClaim;
+pub type ClaimRow = crate::types::IntelligenceClaim;
 
 const FACTOR_CEILING: f64 = 1.0;
 
@@ -459,9 +459,8 @@ mod tests {
 
     use super::*;
     use crate::abilities::provenance::SubjectRef;
-    use crate::db::claims::{
-        ClaimSensitivity, ClaimState, ClaimVerificationState, SurfacingState, TemporalScope,
-    };
+    use crate::sensitivity::ClaimVerificationState;
+    use crate::types::{ClaimSensitivity, ClaimState, SurfacingState, TemporalScope};
 
     fn test_claim() -> ClaimRow {
         ClaimRow {

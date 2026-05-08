@@ -1,6 +1,6 @@
 use std::collections::HashSet;
 
-use crate::db::claims::{ClaimSensitivity, TemporalScope};
+use crate::types::{ClaimSensitivity, TemporalScope};
 
 use super::config::TrustConfig;
 use super::types::{

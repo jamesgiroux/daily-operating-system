@@ -32,7 +32,7 @@ use crate::abilities::trust::factors::cross_entity_coherence;
 use crate::abilities::trust::{
     CrossEntityCoherenceInput, CrossEntityHitKind, EntityFootprint, TargetFootprint, TrustConfig,
 };
-use crate::db::claims::IntelligenceClaim;
+use crate::types::{claim_allowed_for_prompt_input, IntelligenceClaim};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
 pub struct OwnershipPolicy {
@@ -309,7 +309,7 @@ fn validate_provenance_ownership(
     if policy
         .prompt_input_claims
         .iter()
-        .any(|claim| !crate::services::claims::claim_allowed_for_prompt_input(claim))
+        .any(|claim| !claim_allowed_for_prompt_input(claim))
     {
         render_policy = OwnershipRenderPolicy::Suppressed;
     }

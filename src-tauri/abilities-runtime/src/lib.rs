@@ -1,5 +1,6 @@
 #![forbid(unsafe_code)]
 
+pub mod abilities;
 pub mod intelligence {
     pub mod provider;
 }
@@ -14,4 +15,4 @@ pub mod services {
 }
 pub mod types;
 
-pub use intelligence::provider::*;
+pub use abilities::*;
