@@ -411,7 +411,7 @@ fn write_canonical_json(value: &serde_json::Value, out: &mut Vec<u8>) {
         serde_json::Value::Object(object) => {
             out.push(b'{');
             let mut entries = object.iter().collect::<Vec<_>>();
-            entries.sort_by(|(left, _), (right, _)| left.cmp(right));
+            entries.sort_by_key(|(left, _)| *left);
             for (index, (key, item)) in entries.into_iter().enumerate() {
                 if index > 0 {
                     out.push(b',');
