@@ -2222,6 +2222,13 @@ mod tests {
                 relationship_type TEXT DEFAULT 'associated',
                 PRIMARY KEY (entity_id, person_id)
              );
+             CREATE TABLE entities (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL,
+                entity_type TEXT NOT NULL DEFAULT 'account',
+                tracker_path TEXT,
+                updated_at TEXT NOT NULL
+             );
              CREATE TABLE meeting_entities (
                 meeting_id TEXT NOT NULL,
                 entity_id TEXT NOT NULL,
