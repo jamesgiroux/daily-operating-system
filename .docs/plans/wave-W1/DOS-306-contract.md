@@ -17,9 +17,21 @@ For any Live-mode signal whose policy requires downstream work, `emit_signal` co
 |---|---|---|
 | Signal registry | `SignalType` inventory, propagation policy, durability class, coalescing key/window, target resolver, channel eligibility | Claim truth, retry state, worker leases, direct read-model writes |
 | Signal emission | Append `signal_events`, resolve policy, create signal-originated job rows in the same transaction, return queue receipts | Running long recompute work inline except bounded post-commit wait |
-| Durable invalidation queue | Job state, idempotency key, chain id, ancestry, leases, retries, dead-letter/cycle states, stale markers | Policy selection by call site, source-of-truth claim decisions |
+| Durable invalidation queue | Job kind, job state, idempotency key, chain id, ancestry, leases, retries, coalescing coverage watermarks, dead-letter/cycle states, stale markers | Policy selection by call site, source-of-truth claim decisions |
 | Claim recompute | Re-read canonical claims/source rows, recompute trust/read models, apply projections, mark jobs terminal | Trusting signal payloads as facts, bypassing claim commit/projection services |
 | Surfaces | Present active/proposed/stale states and dispatch explicit user intent | Running LLM enrichment or mutating enrichment state directly |
+
+## W0-A enrichment import
+
+W1-E imports the W0-A enrichment refactor design from historical commit `b2a24dc1` (`.docs/research/enrichment-refactor-design.md`). The imported amendments below are part of this frozen contract for W1-B, W1-C, and W1-D.
+
+| W0-A amendment | Decision | Contract import | Owner |
+|---|---|---|---|
+| DOS-235 signal policy registry distinguishes observation, invalidation, user feedback, and read-model-materialized signals | Accept | Every registry entry declares its signal role. Claim writes may enqueue downstream work only through the registry-declared invalidation path, and read-model-materialized signals must not recursively trigger uncontrolled propagation. | W1-B |
+| DOS-236 durable job model includes Transform/outbox job kinds, source claim-version invalidation keys, provider replay artifacts, and stale-input handling | Accept | The queue substrate must support typed job kinds for signal invalidation/recompute, Transform, Maintenance apply, and Outbox/external replay, or an equivalent shared substrate with those typed semantics. Job identity includes subject id, ability id/version, source claim-version watermark, `source_asof`, input snapshot hash, and provider/prompt fingerprint when applicable. | W1-C |
+| DOS-237 coalescing uses subject/ability/input-hash keys and a claim-level enrichment load gate | Accept | Coalescing keys for enrichment and claim churn are subject id plus ability id/version plus input hash/source-version scope, not broad entity-change buckets. Coalescing may mutate only pending jobs; a same-key running job requires a successor pending job with monotonic covered-signal watermarks. | W1-D |
+
+No W0-A DOS-235, DOS-236, or DOS-237 amendment is rejected by this contract.
 
 ## Signal bus durability semantics
 
@@ -28,7 +40,7 @@ For any Live-mode signal whose policy requires downstream work, `emit_signal` co
 | Class | Examples | Event log | Job delivery | Loss/coalescing allowed | Caller semantics |
 |---|---|---|---|---|---|
 | Durable propagation | `ClaimAsserted`, `ClaimSuperseded`, `ClaimRetracted`, `ClaimContradiction`, user correction/tombstone signals, source lifecycle signals, non-coalescable ability-output invalidations | Committed in Live mode | Required job rows committed atomically with the event | No job loss. Retries may duplicate execution, so jobs must be idempotent | `Ok` means event and job receipt are durable; failure rolls back the emission unit |
-| Coalesced durable propagation | `ClaimTrustChanged` on trust-band boundary crossings, high-volume `AbilityOutputChanged`, broad `EntityUpdated`/read-model invalidations | Every raw signal event is committed in Live mode | At least one pending/running job per coalescing key survives | Individual job payloads may collapse; the newest metadata wins, earlier raw events remain auditable | `Ok` means the raw event is durable and covered by a durable job |
+| Coalesced durable propagation | `ClaimTrustChanged` on trust-band boundary crossings, high-volume `AbilityOutputChanged`, broad `EntityUpdated`/read-model invalidations | Every raw signal event is committed in Live mode | At least one non-terminal job lineage per coalescing key survives; running jobs are not widened after lease | Individual job payloads may collapse; the newest metadata wins on pending jobs or successor pending jobs, earlier raw events remain auditable | `Ok` means the raw event is durable and covered by a pending job, the leased running job's original watermark, or a successor pending job |
 | Durable local/audit | Session, audit, or local-only observations with `Local` policy | Committed if emitted through the bus | No invalidation job required | Downstream delivery is not promised because no downstream durable work exists | `Ok` means the event is durable only |
 | Ephemeral/non-bus | UI progress ticks, debug telemetry, metrics samples, Evaluate/Simulate ring-buffer observations | Not written to Live `signal_events` unless explicitly promoted to a signal | None | Fully lossy | Must not be consumed for claim correctness |
 
@@ -37,7 +49,7 @@ For any Live-mode signal whose policy requires downstream work, `emit_signal` co
 A signal is guaranteed-delivered when its registry policy is `PropagateSync`, `PropagateAsync`, or `PropagateAndHeal` in Live mode. The guarantee is at-least-once durable work delivery:
 
 - A committed signal has a committed `signal_events` row.
-- A committed propagating signal has all required `invalidation_jobs` rows or is covered by a coalesced pending/running job with the same registry-declared coalescing key.
+- A committed propagating signal has all required `invalidation_jobs` rows or is covered by a coalesced job lineage with the same registry-declared coalescing key. If the matching job is already running, the newer signal must be covered by a successor pending job rather than by mutating the leased running job.
 - Pending/running jobs survive process restart.
 - Each affected output is eventually recomputed, marked stale, dead-lettered, or cycle-detected. Silent stale output is not allowed.
 - Duplicate execution after retry is allowed; duplicated durable jobs for the same target/idempotency key are not.
@@ -48,7 +60,7 @@ The guarantee does not mean recompute finishes before `emit_signal` returns, exc
 
 Loss is allowed only where the registry says so:
 
-- Coalescable policies may collapse multiple raw signals into one job per coalescing key/window. The job may keep only newest payload metadata, but raw signal audit rows remain.
+- Coalescable policies may collapse multiple raw signals into one pending job or job lineage per coalescing key/window. Pending jobs may keep only newest payload metadata, but raw signal audit rows remain.
 - Evaluate and Simulate modes record signals in an in-memory fixture/ring-buffer path and do not persist DB rows or queue jobs.
 - UI progress, telemetry, and debug channels are not correctness signals. They must not drive claim recompute, tombstone behavior, or read-model freshness.
 
@@ -73,6 +85,7 @@ The match must live in non-test code so adding a `SignalType` variant without a 
 Each registry entry must declare:
 
 - durability class: local, durable propagation, coalesced durable propagation, or propagate-and-heal
+- signal role: observation, invalidation, user feedback, read-model-materialized, or explicitly Local/ephemeral
 - execution-mode behavior: Live persistence vs Evaluate/Simulate in-memory capture
 - coalescing key and default window, if any
 - target resolver: how signal metadata maps to affected claim/read-model outputs
@@ -98,6 +111,8 @@ Minimum required channel families:
 | Telemetry/progress sinks | Explicitly classified as non-bus or Local; cannot enqueue invalidation jobs |
 
 The inventory must include the current entrypoint, file glob, expected policy path, allowed exclusions, and the lint/test that keeps the channel from drifting.
+
+Registry entries imported from W0-A must also state whether the signal is an observation only, an invalidation trigger, user feedback, or a read-model-materialized notification. A read-model-materialized notification may wake surfaces or audits, but it cannot recursively enqueue broad recompute work unless the registry declares a narrower downstream target and coalescing key.
 
 ### Single-writer guarantee
 
@@ -135,6 +150,16 @@ The load gate is a minimum production safety envelope for a local-first app with
 
 Bulk backfills and shadow-mode trust recomputes must use chunking/backoff against the same queue-depth signals. They may not bypass the signal registry or write stale read models directly to avoid the load gate.
 
+## Durable queue identity
+
+The durable queue substrate must be typed enough for W0-A's enrichment split without weakening W1's signal guarantee:
+
+- Job kinds include signal invalidation/recompute, Transform, Maintenance apply, and Outbox/external replay, or an equivalent shared substrate with the same typed semantics.
+- Signal-originated invalidation jobs remain the only durable path from propagating signals to recompute. Transform and Outbox jobs may share lease/retry/dead-letter machinery, but they do not let call sites bypass the signal registry.
+- Idempotency and invalidation identity include subject id, ability id/version, source claim-version watermark, `source_asof`, input snapshot hash, and provider/prompt fingerprint when applicable.
+- Source claim-version watermarks are monotonic. A job with stale source claim versions or a stale input hash must not mark an output fresh; it must enqueue/leave covered successor work or mark the affected output stale.
+- Provider replay artifacts and external call results are stored under the typed job/outbox identity so Evaluate can replay without live external side effects.
+
 ## Transactional seam
 
 ### Source mutation to signal to job
@@ -153,8 +178,10 @@ If any step fails, the whole transaction rolls back. This includes queue bound f
 Coalescing is a transaction-local enqueue decision:
 
 - The raw signal row is still written.
-- The queue either inserts a new pending job or updates an existing pending/running coalesced job for the registry-declared key.
-- The job records enough metadata to prove the raw signal is covered: coalescing key, latest signal id, count, and timestamp range.
+- The queue inserts a new pending job or updates an existing pending coalesced job for the registry-declared key.
+- A running job is never widened after lease. If a same-key job is already running, enqueue a successor pending job or update the existing successor pending job for that running job.
+- The job records enough metadata to prove the raw signal is covered: coalescing key, first and latest signal id, raw-signal count, source claim-version watermark, input hash/source-version scope, and timestamp range.
+- Coverage metadata is monotonic. `latest_signal_id` and source claim-version watermarks may only advance on pending jobs or successor pending jobs.
 - A coalescing update failure is an enqueue failure and rolls back the emit transaction.
 
 ### Await completion
@@ -177,6 +204,7 @@ Required recompute behavior:
 - Use idempotency keys so retrying the same job cannot duplicate claims, repair jobs, or read-model writes.
 - Preserve `chain_id` and bounded ancestry for fan-out; cycles become terminal `CycleDetected` jobs with stale markers, not dropped work.
 - Emit secondary signals only through the registry, with chain ancestry inherited.
+- Before marking a recomputed output fresh, terminalization proves the job's covered-signal and source-claim-version watermarks are still current for the registry-resolved target. If a newer same-key signal or source claim version arrived after lease, the worker may terminalize the leased job only with the output still stale and successor pending/running work covering the newer watermark.
 - Dead-lettered jobs mark affected outputs stale and expose enough state for the later W1 verification doc to cite file:line evidence.
 
 ## Acceptance criteria - verification
@@ -200,6 +228,8 @@ A pending claim recompute job survives process restart and completes. Retry exha
 ### Coalesced signals remain auditable
 
 A burst of coalescable claim events writes all raw signal audit rows but creates or updates bounded job rows according to the registry coalescing key. The test asserts job coverage metadata links the coalesced job back to the raw signal range.
+
+A second coalescing test leases a same-key job, emits a newer same-key signal, and proves the enqueue path creates or updates a successor pending job instead of mutating the running job. The leased worker must fail the freshness terminalization proof until the successor job covers the latest signal/source-claim-version watermark.
 
 ### Policy registry exhaustiveness fails normal builds
 
