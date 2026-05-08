@@ -43,8 +43,12 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let detected = visitor.detected;
 
     let mut boundary_visitor = scoring::BoundaryVisitor::new();
-    if let Some(module_items) = same_source_module_items_for_ability(&item_fn) {
-        boundary_visitor.scan_fn_body_with_module_items(&item_fn, &module_items);
+    if let Some(module_source) = same_source_module_items_for_ability(&item_fn) {
+        boundary_visitor.scan_fn_body_with_crate_items(
+            &item_fn,
+            &module_source.items,
+            &module_source.containing_module_path,
+        );
     } else {
         boundary_visitor.scan_fn_body(&item_fn.block);
     }
@@ -393,13 +397,56 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     Ok(expanded)
 }
 
-fn same_source_module_items_for_ability(item_fn: &ItemFn) -> Option<Vec<Item>> {
+struct BoundaryModuleSource {
+    items: Vec<Item>,
+    containing_module_path: Vec<String>,
+}
+
+fn same_source_module_items_for_ability(item_fn: &ItemFn) -> Option<BoundaryModuleSource> {
     let source_path = item_fn.sig.ident.span().local_file()?;
-    let source = fs::read_to_string(&source_path).ok()?;
+    if let Some(crate_root) = crate_root_source_path(&source_path) {
+        if let Some(module_source) = parse_module_source(&crate_root, &item_fn.sig.ident) {
+            return Some(module_source);
+        }
+    }
+
+    parse_module_source(&source_path, &item_fn.sig.ident)
+}
+
+fn parse_module_source(source_path: &Path, fn_ident: &Ident) -> Option<BoundaryModuleSource> {
+    let source = fs::read_to_string(source_path).ok()?;
     let mut file = syn::parse_file(&source).ok()?;
     let mut visited = HashSet::new();
-    hydrate_external_modules(&mut file.items, &source_path, &mut visited);
-    module_items_containing_ability_fn(&file.items, &item_fn.sig.ident)
+    hydrate_external_modules(&mut file.items, source_path, &mut visited);
+    module_path_containing_ability_fn(&file.items, fn_ident, &mut Vec::new()).map(
+        |containing_module_path| BoundaryModuleSource {
+            items: file.items,
+            containing_module_path,
+        },
+    )
+}
+
+fn crate_root_source_path(source_path: &Path) -> Option<PathBuf> {
+    for ancestor in source_path.parent()?.ancestors() {
+        if !ancestor.join("Cargo.toml").is_file() {
+            continue;
+        }
+        if !source_path.starts_with(ancestor.join("src")) {
+            continue;
+        }
+
+        let lib = ancestor.join("src/lib.rs");
+        if lib.is_file() {
+            return Some(lib);
+        }
+
+        let main = ancestor.join("src/main.rs");
+        if main.is_file() {
+            return Some(main);
+        }
+    }
+
+    None
 }
 
 fn hydrate_external_modules(
@@ -466,7 +513,11 @@ fn module_source_candidates(source_path: &Path, ident: &Ident) -> Vec<PathBuf> {
     ]
 }
 
-fn module_items_containing_ability_fn(items: &[Item], fn_ident: &Ident) -> Option<Vec<Item>> {
+fn module_path_containing_ability_fn(
+    items: &[Item],
+    fn_ident: &Ident,
+    path: &mut Vec<String>,
+) -> Option<Vec<String>> {
     if items.iter().any(|item| {
         matches!(
             item,
@@ -474,7 +525,7 @@ fn module_items_containing_ability_fn(items: &[Item], fn_ident: &Ident) -> Optio
                 if candidate.sig.ident == *fn_ident && has_ability_attribute(&candidate.attrs)
         )
     }) {
-        return Some(items.to_vec());
+        return Some(path.clone());
     }
 
     for item in items {
@@ -482,9 +533,12 @@ fn module_items_containing_ability_fn(items: &[Item], fn_ident: &Ident) -> Optio
             let Some((_, nested_items)) = &module.content else {
                 continue;
             };
-            if let Some(found) = module_items_containing_ability_fn(nested_items, fn_ident) {
+            path.push(module.ident.to_string());
+            if let Some(found) = module_path_containing_ability_fn(nested_items, fn_ident, path) {
+                path.pop();
                 return Some(found);
             }
+            path.pop();
         }
     }
 

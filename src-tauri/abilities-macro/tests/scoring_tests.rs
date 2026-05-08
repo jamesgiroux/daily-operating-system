@@ -28,6 +28,20 @@ fn scan_boundary_with_module(
     visitor
 }
 
+fn scan_boundary_with_crate_module(
+    item_fn: syn::ItemFn,
+    module_items: Vec<syn::Item>,
+    containing_module_path: &[&str],
+) -> BoundaryVisitor {
+    let containing_module_path = containing_module_path
+        .iter()
+        .map(|segment| segment.to_string())
+        .collect::<Vec<_>>();
+    let mut visitor = BoundaryVisitor::new();
+    visitor.scan_fn_body_with_crate_items(&item_fn, &module_items, &containing_module_path);
+    visitor
+}
+
 #[test]
 fn allowlist_matches_direct_service_path() {
     assert!(path_is_allowlisted_mutator(&path(
@@ -284,6 +298,104 @@ fn boundary_visitor_detects_module_qualified_helper_indirection() {
     ];
 
     let visitor = scan_boundary_with_module(ability_fn, module_items);
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_crate_qualified_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            crate::abilities::prepare_meeting::synthesis::build_meeting_brief();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![syn::parse_quote! {
+        mod abilities {
+            pub mod prepare_meeting {
+                pub mod synthesis {
+                    pub fn build_meeting_brief() {
+                        std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+                    }
+                }
+
+                async fn fixture_ability() {
+                    crate::abilities::prepare_meeting::synthesis::build_meeting_brief();
+                }
+            }
+        }
+    }];
+
+    let visitor = scan_boundary_with_crate_module(
+        ability_fn,
+        module_items,
+        &["abilities", "prepare_meeting"],
+    );
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_super_qualified_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            super::helper::write_behind_helper();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![syn::parse_quote! {
+        mod abilities {
+            pub mod helper {
+                pub fn write_behind_helper() {
+                    std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+                }
+            }
+
+            pub mod prepare_meeting {
+                async fn fixture_ability() {
+                    super::helper::write_behind_helper();
+                }
+            }
+        }
+    }];
+
+    let visitor = scan_boundary_with_crate_module(
+        ability_fn,
+        module_items,
+        &["abilities", "prepare_meeting"],
+    );
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_module_alias_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            meeting_synthesis::build_meeting_brief();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![syn::parse_quote! {
+        mod abilities {
+            pub mod prepare_meeting {
+                use crate::abilities::prepare_meeting::synthesis as meeting_synthesis;
+
+                pub mod synthesis {
+                    pub fn build_meeting_brief() {
+                        std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+                    }
+                }
+
+                async fn fixture_ability() {
+                    meeting_synthesis::build_meeting_brief();
+                }
+            }
+        }
+    }];
+
+    let visitor = scan_boundary_with_crate_module(
+        ability_fn,
+        module_items,
+        &["abilities", "prepare_meeting"],
+    );
 
     assert_eq!(visitor.detected, ["std::fs::write"]);
 }

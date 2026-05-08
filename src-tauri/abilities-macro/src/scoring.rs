@@ -127,25 +127,45 @@ impl BoundaryVisitor {
     }
 
     pub fn scan_fn_body_with_module_items(&mut self, item_fn: &ItemFn, module_items: &[Item]) {
-        let module_context = BoundaryModuleContext::new(module_items);
+        self.scan_fn_body_with_crate_items(item_fn, module_items, &[]);
+    }
+
+    pub fn scan_fn_body_with_crate_items(
+        &mut self,
+        item_fn: &ItemFn,
+        crate_items: &[Item],
+        containing_module_path: &[String],
+    ) {
+        let crate_context = BoundaryModuleContext::new(crate_items);
+        let Some(module_context) = crate_context.context_at_path(containing_module_path) else {
+            self.scan_fn_body(&item_fn.block);
+            return;
+        };
+
         self.aliases.extend(module_context.aliases.clone());
         self.module_aliases
             .extend(module_context.module_aliases.clone());
         self.scan_fn_body(&item_fn.block);
 
         let mut visited = HashSet::new();
-        self.scan_same_module_helpers(&item_fn.block, &module_context, &mut visited);
+        self.scan_same_module_helpers(
+            &item_fn.block,
+            &crate_context,
+            containing_module_path,
+            &mut visited,
+        );
     }
 
     fn scan_same_module_helpers(
         &mut self,
         body: &Block,
-        module_context: &BoundaryModuleContext<'_>,
+        crate_context: &BoundaryModuleContext<'_>,
+        current_module_path: &[String],
         visited: &mut HashSet<String>,
     ) {
         for helper_call in same_module_helper_calls(body) {
             let Some((helper_key, helper_context, helper)) =
-                module_context.resolve_helper_call(&helper_call)
+                crate_context.resolve_helper_call(&helper_call, current_module_path)
             else {
                 continue;
             };
@@ -162,7 +182,12 @@ impl BoundaryVisitor {
                 .extend(helper_context.module_aliases.clone());
             helper_visitor.scan_fn_body(&helper.block);
             self.extend_detected(helper_visitor.detected);
-            self.scan_same_module_helpers(&helper.block, helper_context, visited);
+            self.scan_same_module_helpers(
+                &helper.block,
+                crate_context,
+                &helper_context.path,
+                visited,
+            );
         }
     }
 
@@ -334,37 +359,53 @@ fn collect_method_chain_root<'a>(expr: &'a Expr, methods: &mut Vec<String>) -> &
 }
 
 struct BoundaryModuleContext<'a> {
+    path: Vec<String>,
     aliases: HashMap<String, String>,
     module_aliases: HashMap<String, String>,
+    helper_path_aliases: HashMap<String, Vec<String>>,
     functions: HashMap<String, &'a ItemFn>,
     modules: HashMap<String, BoundaryModuleContext<'a>>,
 }
 
 impl<'a> BoundaryModuleContext<'a> {
     fn new(module_items: &'a [Item]) -> Self {
+        Self::new_at_path(module_items, Vec::new())
+    }
+
+    fn new_at_path(module_items: &'a [Item], path: Vec<String>) -> Self {
         let mut aliases = HashMap::new();
         let mut module_aliases = HashMap::new();
+        let mut helper_path_aliases = HashMap::new();
         let mut ignored_detected = Vec::new();
         let mut functions = HashMap::new();
         let mut modules = HashMap::new();
 
         for item in module_items {
             match item {
-                Item::Use(item_use) => record_boundary_from_use_tree(
-                    &item_use.tree,
-                    &mut Vec::new(),
-                    &mut aliases,
-                    &mut module_aliases,
-                    &mut ignored_detected,
-                ),
+                Item::Use(item_use) => {
+                    record_boundary_from_use_tree(
+                        &item_use.tree,
+                        &mut Vec::new(),
+                        &mut aliases,
+                        &mut module_aliases,
+                        &mut ignored_detected,
+                    );
+                    record_helper_path_aliases_from_use_tree(
+                        &item_use.tree,
+                        &mut Vec::new(),
+                        &mut helper_path_aliases,
+                    );
+                }
                 Item::Fn(item_fn) => {
                     functions.insert(item_fn.sig.ident.to_string(), item_fn);
                 }
                 Item::Mod(module) => {
                     if let Some((_, nested_items)) = &module.content {
+                        let mut module_path = path.clone();
+                        module_path.push(module.ident.to_string());
                         modules.insert(
                             module.ident.to_string(),
-                            BoundaryModuleContext::new(nested_items),
+                            BoundaryModuleContext::new_at_path(nested_items, module_path),
                         );
                     }
                 }
@@ -373,8 +414,10 @@ impl<'a> BoundaryModuleContext<'a> {
         }
 
         Self {
+            path,
             aliases,
             module_aliases,
+            helper_path_aliases,
             functions,
             modules,
         }
@@ -383,36 +426,83 @@ impl<'a> BoundaryModuleContext<'a> {
     fn resolve_helper_call(
         &self,
         call: &SameModuleHelperCall,
+        current_module_path: &[String],
     ) -> Option<(String, &BoundaryModuleContext<'a>, &'a ItemFn)> {
-        let mut context = self;
-        let mut key = Vec::new();
+        let resolved_segments =
+            self.resolve_helper_segments(&call.segments, current_module_path)?;
+        let (function, module_path) = resolved_segments.split_last()?;
+        let context = self.context_at_path(module_path)?;
+        let helper = context.functions.get(function.as_str()).copied()?;
+        let mut key = module_path.to_vec();
+        key.push(function.clone());
+        Some((key.join("::"), context, helper))
+    }
 
-        for module in &call.module_path {
-            context = context.modules.get(module)?;
-            key.push(module.clone());
+    fn resolve_helper_segments(
+        &self,
+        segments: &[String],
+        current_module_path: &[String],
+    ) -> Option<Vec<String>> {
+        let current_context = self.context_at_path(current_module_path)?;
+        if let Some((first, rest)) = segments.split_first() {
+            if let Some(alias_segments) = current_context.helper_path_aliases.get(first) {
+                let mut expanded = alias_segments.clone();
+                expanded.extend(rest.iter().cloned());
+                return resolve_module_relative_segments(&expanded, current_module_path);
+            }
         }
 
-        let helper = context.functions.get(call.function.as_str()).copied()?;
-        key.push(call.function.clone());
-        Some((key.join("::"), context, helper))
+        resolve_module_relative_segments(segments, current_module_path)
+    }
+
+    fn context_at_path(&self, path: &[String]) -> Option<&BoundaryModuleContext<'a>> {
+        let mut context = self;
+        for module in path {
+            context = context.modules.get(module)?;
+        }
+        Some(context)
     }
 }
 
 fn same_module_helper_calls(body: &Block) -> Vec<SameModuleHelperCall> {
-    let mut collector = SameModuleHelperCallCollector::default();
+    let mut helper_path_aliases = HashMap::new();
+    let mut alias_scan = HelperPathAliasScan {
+        helper_path_aliases: &mut helper_path_aliases,
+    };
+    alias_scan.visit_block(body);
+
+    let mut collector = SameModuleHelperCallCollector {
+        calls: Vec::new(),
+        helper_path_aliases,
+    };
     collector.visit_block(body);
     collector.calls
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 struct SameModuleHelperCall {
-    module_path: Vec<String>,
-    function: String,
+    segments: Vec<String>,
 }
 
 #[derive(Default)]
 struct SameModuleHelperCallCollector {
     calls: Vec<SameModuleHelperCall>,
+    helper_path_aliases: HashMap<String, Vec<String>>,
+}
+
+struct HelperPathAliasScan<'a> {
+    helper_path_aliases: &'a mut HashMap<String, Vec<String>>,
+}
+
+impl<'ast> Visit<'ast> for HelperPathAliasScan<'_> {
+    fn visit_item_use(&mut self, node: &'ast ItemUse) {
+        record_helper_path_aliases_from_use_tree(
+            &node.tree,
+            &mut Vec::new(),
+            self.helper_path_aliases,
+        );
+        syn::visit::visit_item_use(self, node);
+    }
 }
 
 impl<'ast> Visit<'ast> for SameModuleHelperCallCollector {
@@ -421,7 +511,10 @@ impl<'ast> Visit<'ast> for SameModuleHelperCallCollector {
             qself: None, path, ..
         }) = node.func.as_ref()
         {
-            if let Some(call) = same_module_helper_call(path) {
+            if let Some(mut call) = same_module_helper_call(path) {
+                if let Some(expanded) = self.expand_helper_alias(&call.segments) {
+                    call.segments = expanded;
+                }
                 if !self.calls.contains(&call) {
                     self.calls.push(call);
                 }
@@ -429,6 +522,25 @@ impl<'ast> Visit<'ast> for SameModuleHelperCallCollector {
         }
 
         syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_item_use(&mut self, node: &'ast ItemUse) {
+        record_helper_path_aliases_from_use_tree(
+            &node.tree,
+            &mut Vec::new(),
+            &mut self.helper_path_aliases,
+        );
+        syn::visit::visit_item_use(self, node);
+    }
+}
+
+impl SameModuleHelperCallCollector {
+    fn expand_helper_alias(&self, segments: &[String]) -> Option<Vec<String>> {
+        let (first, rest) = segments.split_first()?;
+        let alias_segments = self.helper_path_aliases.get(first)?;
+        let mut expanded = alias_segments.clone();
+        expanded.extend(rest.iter().cloned());
+        Some(expanded)
     }
 }
 
@@ -443,33 +555,75 @@ fn same_module_helper_call(path: &Path) -> Option<SameModuleHelperCall> {
         .map(|segment| segment.ident.to_string())
         .collect::<Vec<_>>();
 
-    match segments.as_slice() {
-        [function] => Some(SameModuleHelperCall {
-            module_path: Vec::new(),
-            function: function.clone(),
-        }),
-        [prefix, function] if prefix == "self" => Some(SameModuleHelperCall {
-            module_path: Vec::new(),
-            function: function.clone(),
-        }),
-        [prefix, rest @ ..] if prefix == "self" && rest.len() >= 2 => {
-            let function = rest.last()?.clone();
-            let module_path = rest[..rest.len() - 1].to_vec();
-            Some(SameModuleHelperCall {
-                module_path,
-                function,
-            })
+    if segments.is_empty() {
+        None
+    } else {
+        Some(SameModuleHelperCall { segments })
+    }
+}
+
+fn resolve_module_relative_segments(
+    segments: &[String],
+    current_module_path: &[String],
+) -> Option<Vec<String>> {
+    let (first, _) = segments.split_first()?;
+
+    if first == "crate" {
+        return Some(segments[1..].to_vec());
+    }
+
+    if first == "self" {
+        let mut resolved = current_module_path.to_vec();
+        resolved.extend(segments[1..].iter().cloned());
+        return Some(resolved);
+    }
+
+    let super_count = segments
+        .iter()
+        .take_while(|segment| segment.as_str() == "super")
+        .count();
+    if super_count > 0 {
+        if super_count > current_module_path.len() {
+            return None;
         }
-        [first, ..] if matches!(first.as_str(), "crate" | "super") => None,
-        [..] if segments.len() >= 2 => {
-            let function = segments.last()?.clone();
-            let module_path = segments[..segments.len() - 1].to_vec();
-            Some(SameModuleHelperCall {
-                module_path,
-                function,
-            })
+        let mut resolved = current_module_path[..current_module_path.len() - super_count].to_vec();
+        resolved.extend(segments[super_count..].iter().cloned());
+        return Some(resolved);
+    }
+
+    let mut resolved = current_module_path.to_vec();
+    resolved.extend(segments.iter().cloned());
+    Some(resolved)
+}
+
+fn record_helper_path_aliases_from_use_tree(
+    tree: &UseTree,
+    prefix: &mut Vec<String>,
+    aliases: &mut HashMap<String, Vec<String>>,
+) {
+    match tree {
+        UseTree::Path(UsePath { ident, tree, .. }) => {
+            prefix.push(ident.to_string());
+            record_helper_path_aliases_from_use_tree(tree, prefix, aliases);
+            prefix.pop();
         }
-        _ => None,
+        UseTree::Name(UseName { ident }) => {
+            let alias = ident.to_string();
+            prefix.push(alias.clone());
+            aliases.insert(alias, prefix.clone());
+            prefix.pop();
+        }
+        UseTree::Rename(UseRename { ident, rename, .. }) => {
+            prefix.push(ident.to_string());
+            aliases.insert(rename.to_string(), prefix.clone());
+            prefix.pop();
+        }
+        UseTree::Group(group) => {
+            for tree in &group.items {
+                record_helper_path_aliases_from_use_tree(tree, prefix, aliases);
+            }
+        }
+        UseTree::Glob(_) => {}
     }
 }
 

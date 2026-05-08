@@ -100,7 +100,7 @@ jobs:
 
       - name: Run Rust tests
         working-directory: src-tauri
-        run: cargo test
+        run: cargo test --workspace
 
       - name: Run MCP dynamic reader harness test
         working-directory: src-tauri
