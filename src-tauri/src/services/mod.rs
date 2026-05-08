@@ -20,6 +20,7 @@ pub mod health_debouncer;
 pub mod hygiene;
 pub mod integrations;
 pub mod intelligence;
+pub mod invalidation_jobs;
 pub mod linear;
 pub mod meetings;
 pub mod mutations;

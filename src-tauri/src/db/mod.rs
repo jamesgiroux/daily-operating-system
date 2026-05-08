@@ -20,6 +20,7 @@ pub mod entity_linking;
 pub mod feedback;
 pub mod hardening;
 pub mod intelligence_feedback;
+pub mod invalidation_jobs;
 pub mod meetings;
 pub mod people;
 pub mod person_relationships;

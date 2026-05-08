@@ -746,6 +746,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 146,
         sql: include_str!("migrations/146_dos_212_signal_events_data_source.sql"),
     },
+    // Durable invalidation queue substrate.
+    Migration::Sql {
+        version: 147,
+        sql: include_str!("migrations/147_invalidation_jobs.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

@@ -109,7 +109,7 @@ fn idempotency_when_already_canonical() {
     assert_eq!(reveal_action_index_sql(&conn), before_index_sql);
     assert_eq!(reveal_audit_row_count(&conn), 1);
     assert_eq!(single_reveal_action_id(&conn), "abc-123");
-    assert!(schema_version(&conn) >= 144);
+    assert!(schema_version(&conn) >= 145);
 }
 
 fn setup_starting_state(conn: &Connection, state: StartingState) {
@@ -211,10 +211,13 @@ fn setup_migration_runner_state(conn: &Connection) {
 fn apply_pending_from_v143(conn: &Connection, label: &str) {
     let applied = run_migrations(conn)
         .unwrap_or_else(|error| panic!("{label}: migration runner failed: {error}"));
-    assert!(applied >= 1, "{label}: v144 should be applied");
     assert!(
-        schema_version(conn) >= 144,
-        "{label}: schema version should include v144"
+        applied >= 2,
+        "{label}: at least v144 and v145 should run from a v143 fixture; ran {applied}"
+    );
+    assert!(
+        schema_version(conn) >= 145,
+        "{label}: schema version should be at least 145"
     );
 }
 

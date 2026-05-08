@@ -181,6 +181,7 @@ pub fn run() {
                         let ext = crate::services::context::ExternalClients::default();
                         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                         crate::services::health_debouncer::drain_pending(&ctx, &init_state).await;
+                        crate::services::invalidation_jobs::drain_pending_claim_recomputes(&init_state).await;
 
                         // Run the claims cutover (rekey
                         // m1-m8 to runtime dedup_key shape + JSON-blob
