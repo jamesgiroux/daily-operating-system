@@ -2588,6 +2588,11 @@ pub fn update_account_notes(
         .map_err(|e| format!("failed to write account dashboard.md: {e}"))?;
 
     // Emit field update signal
+    let signal_value = serde_json::json!({
+        "field": "notes",
+        "value": notes.chars().take(100).collect::<String>(),
+    })
+    .to_string();
     crate::services::signals::emit_and_propagate(
         ctx,
         db,
@@ -2596,14 +2601,7 @@ pub fn update_account_notes(
         account_id,
         "field_updated",
         "user_edit",
-        Some(&format!(
-            "{{\"field\":\"notes\",\"value\":\"{}\"}}",
-            notes
-                .chars()
-                .take(100)
-                .collect::<String>()
-                .replace('"', "\\\"")
-        )),
+        Some(&signal_value),
         0.8,
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -2642,6 +2640,10 @@ pub fn update_account_programs(
         .map_err(|e| format!("failed to write account dashboard.md: {e}"))?;
 
     // Emit field update signal
+    let signal_value = serde_json::json!({
+        "field": "strategic_programs",
+    })
+    .to_string();
     crate::services::signals::emit_and_propagate(
         ctx,
         db,
@@ -2650,7 +2652,7 @@ pub fn update_account_programs(
         account_id,
         "field_updated",
         "user_edit",
-        Some("{\"field\":\"strategic_programs\"}"),
+        Some(&signal_value),
         0.8,
     )
     .map_err(|e| format!("signal emit failed: {e}"))?;
@@ -3821,6 +3823,11 @@ fn add_stakeholder_role_inner(
             },
         )
         .map_err(|e| format!("withdraw stakeholder_role claim failed: {e}"))?;
+        let signal_value = serde_json::json!({
+            "person_id": person_id,
+            "role": role,
+        })
+        .to_string();
         crate::services::signals::emit_and_propagate(
             ctx,
             tx,
@@ -3829,10 +3836,7 @@ fn add_stakeholder_role_inner(
             account_id,
             "stakeholder_role_added",
             "user_action",
-            Some(&format!(
-                "{{\"person_id\":\"{}\",\"role\":\"{}\"}}",
-                person_id, role
-            )),
+            Some(&signal_value),
             0.9,
         )
         .map_err(|e| format!("signal emit failed: {e}"))?;
