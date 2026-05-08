@@ -3,7 +3,9 @@
 #[allow(dead_code)]
 mod scoring;
 
+use std::collections::HashSet;
 use std::fs;
+use std::path::{Path, PathBuf};
 
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
@@ -393,9 +395,75 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
 
 fn same_source_module_items_for_ability(item_fn: &ItemFn) -> Option<Vec<Item>> {
     let source_path = item_fn.sig.ident.span().local_file()?;
-    let source = fs::read_to_string(source_path).ok()?;
-    let file = syn::parse_file(&source).ok()?;
+    let source = fs::read_to_string(&source_path).ok()?;
+    let mut file = syn::parse_file(&source).ok()?;
+    let mut visited = HashSet::new();
+    hydrate_external_modules(&mut file.items, &source_path, &mut visited);
     module_items_containing_ability_fn(&file.items, &item_fn.sig.ident)
+}
+
+fn hydrate_external_modules(
+    items: &mut [Item],
+    source_path: &Path,
+    visited: &mut HashSet<PathBuf>,
+) {
+    for item in items {
+        let Item::Mod(module) = item else {
+            continue;
+        };
+
+        if let Some((_, nested_items)) = &mut module.content {
+            hydrate_external_modules(nested_items, source_path, visited);
+            continue;
+        }
+
+        let Some(module_path) = module_source_path(source_path, &module.ident) else {
+            continue;
+        };
+        let visited_path = module_path
+            .canonicalize()
+            .unwrap_or_else(|_| module_path.clone());
+        if !visited.insert(visited_path) {
+            continue;
+        }
+
+        let Ok(source) = fs::read_to_string(&module_path) else {
+            continue;
+        };
+        let Ok(mut file) = syn::parse_file(&source) else {
+            continue;
+        };
+        hydrate_external_modules(&mut file.items, &module_path, visited);
+        module.content = Some((syn::token::Brace::default(), file.items));
+        module.semi = None;
+    }
+}
+
+fn module_source_path(source_path: &Path, ident: &Ident) -> Option<PathBuf> {
+    module_source_candidates(source_path, ident)
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+}
+
+fn module_source_candidates(source_path: &Path, ident: &Ident) -> Vec<PathBuf> {
+    let module_name = ident.to_string();
+    let Some(parent) = source_path.parent() else {
+        return Vec::new();
+    };
+
+    let file_name = source_path.file_name().and_then(|name| name.to_str());
+    let base_dir = if matches!(file_name, Some("lib.rs" | "main.rs" | "mod.rs")) {
+        parent.to_path_buf()
+    } else if let Some(stem) = source_path.file_stem() {
+        parent.join(stem)
+    } else {
+        parent.to_path_buf()
+    };
+
+    vec![
+        base_dir.join(format!("{module_name}.rs")),
+        base_dir.join(module_name).join("mod.rs"),
+    ]
 }
 
 fn module_items_containing_ability_fn(items: &[Item], fn_ident: &Ident) -> Option<Vec<Item>> {

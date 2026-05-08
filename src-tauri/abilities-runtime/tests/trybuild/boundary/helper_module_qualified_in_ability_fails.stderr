@@ -1,0 +1,5 @@
+error: ability bodies cannot bypass the ServiceContext boundary; detected: std::fs::write
+  --> tests/trybuild/boundary/helper_module_qualified_in_ability_fails.rs:43:10
+   |
+43 | async fn helper_module_qualified_boundary(
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

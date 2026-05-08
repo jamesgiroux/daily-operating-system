@@ -212,6 +212,31 @@ fn boundary_visitor_detects_open_options_write_handle() {
 }
 
 #[test]
+fn boundary_visitor_rejects_split_open_options_builder() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use std::fs::OpenOptions;
+        let mut opts = OpenOptions::new();
+        opts.create(true);
+        opts.write(true);
+        let _file = opts.open(path)?;
+    }));
+
+    assert_eq!(visitor.detected, ["std::fs::OpenOptions::open(write)"]);
+}
+
+#[test]
+fn boundary_visitor_rejects_file_options_builder() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use std::fs::File;
+        let mut opts = File::options();
+        opts.write(true);
+        let _file = opts.open(path)?;
+    }));
+
+    assert_eq!(visitor.detected, ["std::fs::OpenOptions::open(write)"]);
+}
+
+#[test]
 fn boundary_visitor_detects_same_module_helper_indirection() {
     let ability_fn: syn::ItemFn = syn::parse_quote! {
         async fn fixture_ability() {
@@ -227,6 +252,33 @@ fn boundary_visitor_detects_same_module_helper_indirection() {
         syn::parse_quote! {
             async fn fixture_ability() {
                 write_behind_helper();
+            }
+        },
+    ];
+
+    let visitor = scan_boundary_with_module(ability_fn, module_items);
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_module_qualified_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            helper::write_behind_helper();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![
+        syn::parse_quote! {
+            mod helper {
+                pub fn write_behind_helper() {
+                    std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+                }
+            }
+        },
+        syn::parse_quote! {
+            async fn fixture_ability() {
+                helper::write_behind_helper();
             }
         },
     ];

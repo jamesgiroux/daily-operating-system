@@ -143,25 +143,26 @@ impl BoundaryVisitor {
         module_context: &BoundaryModuleContext<'_>,
         visited: &mut HashSet<String>,
     ) {
-        for helper_name in same_module_helper_calls(body) {
-            if !visited.insert(helper_name.clone()) {
-                continue;
-            }
-
-            let Some(helper) = module_context.functions.get(helper_name.as_str()) else {
+        for helper_call in same_module_helper_calls(body) {
+            let Some((helper_key, helper_context, helper)) =
+                module_context.resolve_helper_call(&helper_call)
+            else {
                 continue;
             };
+            if !visited.insert(helper_key) {
+                continue;
+            }
 
             let mut helper_visitor = BoundaryVisitor::new();
             helper_visitor
                 .aliases
-                .extend(module_context.aliases.clone());
+                .extend(helper_context.aliases.clone());
             helper_visitor
                 .module_aliases
-                .extend(module_context.module_aliases.clone());
+                .extend(helper_context.module_aliases.clone());
             helper_visitor.scan_fn_body(&helper.block);
             self.extend_detected(helper_visitor.detected);
-            self.scan_same_module_helpers(&helper.block, module_context, visited);
+            self.scan_same_module_helpers(&helper.block, helper_context, visited);
         }
     }
 
@@ -336,6 +337,7 @@ struct BoundaryModuleContext<'a> {
     aliases: HashMap<String, String>,
     module_aliases: HashMap<String, String>,
     functions: HashMap<String, &'a ItemFn>,
+    modules: HashMap<String, BoundaryModuleContext<'a>>,
 }
 
 impl<'a> BoundaryModuleContext<'a> {
@@ -344,6 +346,7 @@ impl<'a> BoundaryModuleContext<'a> {
         let mut module_aliases = HashMap::new();
         let mut ignored_detected = Vec::new();
         let mut functions = HashMap::new();
+        let mut modules = HashMap::new();
 
         for item in module_items {
             match item {
@@ -357,6 +360,14 @@ impl<'a> BoundaryModuleContext<'a> {
                 Item::Fn(item_fn) => {
                     functions.insert(item_fn.sig.ident.to_string(), item_fn);
                 }
+                Item::Mod(module) => {
+                    if let Some((_, nested_items)) = &module.content {
+                        modules.insert(
+                            module.ident.to_string(),
+                            BoundaryModuleContext::new(nested_items),
+                        );
+                    }
+                }
                 _ => {}
             }
         }
@@ -365,19 +376,43 @@ impl<'a> BoundaryModuleContext<'a> {
             aliases,
             module_aliases,
             functions,
+            modules,
         }
+    }
+
+    fn resolve_helper_call(
+        &self,
+        call: &SameModuleHelperCall,
+    ) -> Option<(String, &BoundaryModuleContext<'a>, &'a ItemFn)> {
+        let mut context = self;
+        let mut key = Vec::new();
+
+        for module in &call.module_path {
+            context = context.modules.get(module)?;
+            key.push(module.clone());
+        }
+
+        let helper = context.functions.get(call.function.as_str()).copied()?;
+        key.push(call.function.clone());
+        Some((key.join("::"), context, helper))
     }
 }
 
-fn same_module_helper_calls(body: &Block) -> Vec<String> {
+fn same_module_helper_calls(body: &Block) -> Vec<SameModuleHelperCall> {
     let mut collector = SameModuleHelperCallCollector::default();
     collector.visit_block(body);
     collector.calls
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SameModuleHelperCall {
+    module_path: Vec<String>,
+    function: String,
+}
+
 #[derive(Default)]
 struct SameModuleHelperCallCollector {
-    calls: Vec<String>,
+    calls: Vec<SameModuleHelperCall>,
 }
 
 impl<'ast> Visit<'ast> for SameModuleHelperCallCollector {
@@ -386,9 +421,9 @@ impl<'ast> Visit<'ast> for SameModuleHelperCallCollector {
             qself: None, path, ..
         }) = node.func.as_ref()
         {
-            if let Some(name) = same_module_function_name(path) {
-                if !self.calls.contains(&name) {
-                    self.calls.push(name);
+            if let Some(call) = same_module_helper_call(path) {
+                if !self.calls.contains(&call) {
+                    self.calls.push(call);
                 }
             }
         }
@@ -397,20 +432,43 @@ impl<'ast> Visit<'ast> for SameModuleHelperCallCollector {
     }
 }
 
-fn same_module_function_name(path: &Path) -> Option<String> {
+fn same_module_helper_call(path: &Path) -> Option<SameModuleHelperCall> {
     if path.leading_colon.is_some() {
         return None;
     }
 
-    match path
+    let segments = path
         .segments
         .iter()
         .map(|segment| segment.ident.to_string())
-        .collect::<Vec<_>>()
-        .as_slice()
-    {
-        [name] => Some(name.clone()),
-        [prefix, name] if prefix == "self" => Some(name.clone()),
+        .collect::<Vec<_>>();
+
+    match segments.as_slice() {
+        [function] => Some(SameModuleHelperCall {
+            module_path: Vec::new(),
+            function: function.clone(),
+        }),
+        [prefix, function] if prefix == "self" => Some(SameModuleHelperCall {
+            module_path: Vec::new(),
+            function: function.clone(),
+        }),
+        [prefix, rest @ ..] if prefix == "self" && rest.len() >= 2 => {
+            let function = rest.last()?.clone();
+            let module_path = rest[..rest.len() - 1].to_vec();
+            Some(SameModuleHelperCall {
+                module_path,
+                function,
+            })
+        }
+        [first, ..] if matches!(first.as_str(), "crate" | "super") => None,
+        [..] if segments.len() >= 2 => {
+            let function = segments.last()?.clone();
+            let module_path = segments[..segments.len() - 1].to_vec();
+            Some(SameModuleHelperCall {
+                module_path,
+                function,
+            })
+        }
         _ => None,
     }
 }
@@ -681,6 +739,19 @@ const FORBIDDEN_BOUNDARY_PATHS: &[&str] = &[
 ];
 
 fn forbidden_boundary_path(canonical: &str) -> Option<&'static str> {
+    match canonical {
+        "OpenOptions::new"
+        | "std::fs::OpenOptions::new"
+        | "File::options"
+        | "std::fs::File::options" => {
+            return Some("std::fs::OpenOptions::open(write)");
+        }
+        "tokio::fs::OpenOptions::new" => {
+            return Some("tokio::fs");
+        }
+        _ => {}
+    }
+
     FORBIDDEN_BOUNDARY_PATHS.iter().copied().find(|path| {
         canonical == *path
             || matches!(
