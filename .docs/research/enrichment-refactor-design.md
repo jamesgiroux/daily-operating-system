@@ -82,6 +82,10 @@ Enrichment generation must be claim-based at the smallest reviewable fact, not s
 - Action extraction writes a proposal per suggested action or open loop. The action row is a derived workflow object after commit/accept, not the first source of truth.
 - Briefing narrative output is not durable knowledge by default. If a narrative contains a new assertion worth retaining, it must emit an explicit claim proposal with citations.
 
+### Claim Type Classification Contract
+
+The enrichment claim taxonomy is closed. Every new enrichment claim type must be added as a parser-layer closed-set `ClaimType` enum variant and registered in `CLAIM_TYPE_REGISTRY` with subject, provenance, freshness, sensitivity, and commit-policy metadata before any Transform can emit it or any Maintenance ability can apply it. Parser and Maintenance entrypoints must reject unknown `claim_type` strings fail-closed; ad hoc string-only claim types are not allowed in prompts, DTOs, migrations, read models, or backfills.
+
 ### Ownership Boundary Decision
 
 - **Claims** own durable knowledge, contradiction state, tombstones, provenance, trust, and user corrections.
@@ -109,8 +113,10 @@ Recommended policy:
    - Blast radius is low: display/contextual fact, not external action, Publish side effect, user preference, or account-critical field.
    - ADR-0105 provenance is complete, including prompt fingerprint for AI and upstream citations.
    - ADR-0114 trust score is at or above the configured threshold.
+   - ADR-0113 agent trust ledger gate passes for the authoring agent identity, behavior-version composite, and claim type.
    - No active user-authored conflicting claim, user override, tombstone, or unresolved contradiction exists.
    - Source freshness and source_asof are within the claim type's freshness policy.
+   High-trust agent claims still pass through the ADR-0113 ledger gate before auto-commit; enrichment must never auto-commit agent-authored claims by trust score alone.
 4. **Novel narrative analysis** that changes account state, risk, priority, suggested action, meeting recommendation, or email reply obligation routes to proposed state unless corroborated and policy-allowed.
 5. **Actions and external side effects** require user acceptance or explicit policy preauthorization. Enrichment never directly publishes externally.
 
@@ -136,6 +142,7 @@ Data source handling:
 Trust score integration:
 
 - Run ADR-0114 trust compiler before commit decisions.
+- Treat ADR-0114 trust score as one claim-level input, not sufficient authorization. Agent-authored claims also require a passing ADR-0113 `agent_trust_ledger` row for the agent/version/claim-type key before auto-commit.
 - Inputs come from source reliability, freshness, corroboration, contradiction penalty, and user feedback.
 - User-authored claims keep high trust and precedence. Agent claims can gain trust through corroboration and lose trust through rejection/correction.
 - Dismissal and rejection semantics remain distinct: dismissal suppresses recurrence without source penalty; rejection lowers source/claim trust.
@@ -223,7 +230,7 @@ Accepted design decisions:
 
 1. Enrichment is not a wrapper around the old queue. It becomes Acquire -> Transform -> Maintenance -> Read.
 2. Claim granularity is per reviewable fact, not per `IntelligenceJson`, prep blob, or email row.
-3. AI synthesis uses tiered gated commit. Current automatic agent commit is retired for v1.4.1 enrichment paths except policy-allowed, trusted, low-blast claims.
+3. AI synthesis uses tiered gated commit. Current automatic agent commit is retired for v1.4.1 enrichment paths except policy-allowed, trusted, ledger-cleared, low-blast claims.
 4. `get_entity_context` and `prepare_meeting` are the reference shapes for Read and Transform. Similar ability boundaries should be introduced for email triage, action extraction, profile enrichment, and entity claim synthesis.
 5. `entity_assessment`, `meeting_prep`, email display columns, reports, and briefing artifacts are read models/caches after migration.
 6. Signals notify and invalidate; jobs schedule and retry; claims own truth; surfaces present and collect user intent.
@@ -232,6 +239,7 @@ Accepted design decisions:
 Amendments or follow-up docs needed:
 
 - **ADR-0113 / DOS-241 follow-up**: define the concrete pending proposal storage/API and the v1.4.1 active gate config for agent-authored enrichment claims.
+- **ADR-0113 / CLAIM_TYPE_REGISTRY**: keep enrichment claim types closed by requiring every new claim type to add a parser-layer `ClaimType` enum variant plus `CLAIM_TYPE_REGISTRY` metadata before any prompt, DTO, migration, read model, or backfill can reference it.
 - **ADR-0105 / ADR-0114**: require non-empty provenance and trust compiler output for enrichment claim commits; clarify `DataSource::Ai` plus upstream citation rules for Glean/LLM synthesis.
 - **DOS-236**: include Transform/outbox job kinds, idempotency keys, source claim-version invalidation, provider replay artifacts, and stale-input handling.
 - **DOS-237**: coalesce claim/source changes by subject, ability, and input hash; include the load gate for claim-level enrichment bursts.
