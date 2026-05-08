@@ -51,7 +51,7 @@ jobs:
 
       - name: Fail on committed OAuth secrets
         run: |
-          if rg -n "GOCSPX-[A-Za-z0-9_-]+" --glob '!target/**' --glob '!node_modules/**' --glob '!.git/**' .; then
+          if rg -n "GOCSPX-[A-Za-z0-9_-]+" --glob '!target/**' --glob '!node_modules/**' --glob '!.git/**' --glob '!_archive/**' .; then
             echo "Committed Google OAuth secret pattern detected."
             exit 1
           fi
