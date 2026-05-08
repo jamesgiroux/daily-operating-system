@@ -1110,7 +1110,13 @@ impl AppState {
     /// caller must keep the `state` reference alive for the call's
     /// duration — which is the natural pattern for command handlers.
     pub fn live_service_context(&self) -> crate::services::context::ServiceContext<'_> {
-        crate::services::context::ServiceContext::new_live(&self.clock, &self.rng, &self.external)
+        crate::services::context::attach_live_workspace_readers(
+            crate::services::context::ServiceContext::new_live(
+                &self.clock,
+                &self.rng,
+                &self.external,
+            ),
+        )
     }
 
     ///  atomic context-mode transition.

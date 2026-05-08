@@ -638,31 +638,7 @@ fn parse_usage_day(value: &str) -> Option<chrono::NaiveDate> {
     chrono::NaiveDate::parse_from_str(value, "%Y-%m-%d").ok()
 }
 
-/// Model tier for AI operations.
-///
-/// Maps to configured model names via `AiModelConfig`.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ModelTier {
-    /// Intelligence, briefing, week narrative — needs synthesis
-    Synthesis,
-    /// Emails, preps — structured extraction
-    Extraction,
-    /// Automatic background maintenance should stay cheap.
-    Background,
-    /// Inbox classification, file summaries — mechanical tasks
-    Mechanical,
-}
-
-impl ModelTier {
-    pub fn as_str(self) -> &'static str {
-        match self {
-            ModelTier::Synthesis => "synthesis",
-            ModelTier::Extraction => "extraction",
-            ModelTier::Background => "background",
-            ModelTier::Mechanical => "mechanical",
-        }
-    }
-}
+pub use abilities_runtime::intelligence::provider::ModelTier;
 
 /// PTY Manager for spawning Claude Code
 pub struct PtyManager {

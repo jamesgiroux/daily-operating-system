@@ -9,10 +9,8 @@ use std::path::Path;
 use std::sync::OnceLock;
 
 use chrono::{DateTime, Utc};
-use schemars::schema::{InstanceType, Schema, SchemaObject, SingleOrVec};
-use schemars::{gen::SchemaGenerator, JsonSchema};
-use serde::de::Error as _;
-use serde::{Deserialize, Deserializer, Serialize, Serializer};
+use schemars::JsonSchema;
+use serde::{Deserialize, Serialize};
 
 use crate::abilities::provenance::{AbilityOutput, CompositionId};
 use crate::abilities::tracer::AbilityTracer;
@@ -638,51 +636,6 @@ fn pointer_segment(pointer: &str, segment: &str) -> String {
         format!("/{escaped}")
     } else {
         format!("{pointer}/{escaped}")
-    }
-}
-
-impl Serialize for ExecutionMode {
-    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
-    where
-        S: Serializer,
-    {
-        serializer.serialize_str(self.as_str())
-    }
-}
-
-impl<'de> Deserialize<'de> for ExecutionMode {
-    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
-    where
-        D: Deserializer<'de>,
-    {
-        let value = String::deserialize(deserializer)?;
-        match value.as_str() {
-            "live" | "Live" => Ok(ExecutionMode::Live),
-            "simulate" | "Simulate" => Ok(ExecutionMode::Simulate),
-            "evaluate" | "Evaluate" => Ok(ExecutionMode::Evaluate),
-            other => Err(D::Error::custom(format!(
-                "unknown execution mode `{other}`"
-            ))),
-        }
-    }
-}
-
-impl JsonSchema for ExecutionMode {
-    fn schema_name() -> String {
-        "ExecutionMode".to_string()
-    }
-
-    fn json_schema(_gen: &mut SchemaGenerator) -> Schema {
-        let mut schema = SchemaObject {
-            instance_type: Some(SingleOrVec::Single(Box::new(InstanceType::String))),
-            ..Default::default()
-        };
-        schema.enum_values = Some(vec![
-            serde_json::json!("live"),
-            serde_json::json!("simulate"),
-            serde_json::json!("evaluate"),
-        ]);
-        Schema::Object(schema)
     }
 }
 

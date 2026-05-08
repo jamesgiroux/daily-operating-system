@@ -3,6 +3,29 @@
 version = 4
 
 [[package]]
+name = "abilities-runtime"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "base64 0.22.1",
+ "chrono",
+ "hex",
+ "http",
+ "inventory",
+ "parking_lot",
+ "rand 0.10.1",
+ "schemars 0.8.22",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+ "tokio",
+ "tracing",
+ "url",
+ "uuid",
+]
+
+[[package]]
 name = "adler2"
 version = "2.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1143,6 +1166,7 @@ dependencies = [
 name = "dailyos"
 version = "1.2.1"
 dependencies = [
+ "abilities-runtime",
  "anyhow",
  "async-trait",
  "base64 0.22.1",

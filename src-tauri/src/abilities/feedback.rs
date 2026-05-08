@@ -21,6 +21,8 @@ use std::collections::HashSet;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub use abilities_runtime::sensitivity::ClaimVerificationState;
+
 /// Closed set of typed feedback actions a user may apply to a claim.
 /// The variant set is the contract: extending it is a substrate change
 /// that requires updating every consumer that matches `FeedbackAction`.
@@ -75,29 +77,6 @@ impl FeedbackAction {
             Self::NotRelevantHere => "not_relevant_here",
         }
     }
-}
-
-/// Verification state on `intelligence_claims`. Distinct from
-/// `claim_state` (user intent: active/dormant/tombstoned/withdrawn)
-/// and `surfacing_state` (rendering: active/dormant). Tracks the
-/// system's confidence-in-rendering view.
-///
-/// State machine:
-/// - `Active` → default; claim renders normally.
-/// - `Contested` → automated processes flagged it (e.g.
-///   `WrongSource` left no qualifying source, `CannotVerify`
-///   enqueued repair). Renders with a caveat.
-/// - `NeedsUserDecision` → terminal. The system explicitly asks
-///   for user judgment. NOT auto-resolvable: only explicit user
-///   feedback, a corrected superseding claim, or contradiction
-///   reconciliation can close this.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, JsonSchema)]
-#[serde(rename_all = "snake_case")]
-pub enum ClaimVerificationState {
-    #[default]
-    Active,
-    Contested,
-    NeedsUserDecision,
 }
 
 /// Render policy a feedback action produces. Render-time consumers
