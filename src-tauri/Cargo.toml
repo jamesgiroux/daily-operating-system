@@ -1,5 +1,5 @@
 [workspace]
-members = [".", "abilities-macro"]
+members = [".", "abilities-macro", "abilities-runtime"]
 resolver = "2"
 
 [workspace.lints.clippy]
@@ -97,6 +97,7 @@ rmcp = { version = "0.1", features = ["server", "client", "transport-io", "trans
 schemars = "0.8.22"
 inventory = "0.3"
 dailyos-abilities-macro = { path = "abilities-macro" }
+abilities-runtime = { path = "abilities-runtime" }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 anyhow = { version = "1", optional = true }
@@ -108,8 +109,8 @@ tracing-test = "0.2"
 trybuild = "1"
 
 [features]
-experimental = []
-harness-hermetic = []
+experimental = ["abilities-runtime/experimental", "dailyos-abilities-macro/experimental"]
+harness-hermetic = ["abilities-runtime/harness-hermetic"]
 # Enables public helpers used only by integration tests. This must stay out of
 # default/release builds; src/lib.rs also rejects release builds with it enabled.
 test-harness = []

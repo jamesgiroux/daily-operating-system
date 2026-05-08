@@ -1,0 +1,7 @@
+error[E0432]: unresolved import `rusqlite`
+ --> tests/trybuild/boundary/rusqlite_unavailable.rs:1:5
+  |
+1 | use rusqlite::Connection;
+  |     ^^^^^^^^ use of unresolved module or unlinked crate `rusqlite`
+  |
+  = help: if you wanted to use a crate named `rusqlite`, use `cargo add rusqlite` to add it to your `Cargo.toml`

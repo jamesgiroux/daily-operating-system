@@ -3,13 +3,17 @@
 #[allow(dead_code)]
 mod scoring;
 
+use std::collections::HashSet;
+use std::fs;
+use std::path::{Path, PathBuf};
+
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{
-    braced, bracketed, parse_macro_input, FnArg, GenericArgument, Ident, ItemFn, LitBool, LitInt,
-    LitStr, Pat, PathArguments, ReturnType, Token, Type,
+    braced, bracketed, parse_macro_input, Attribute, FnArg, GenericArgument, Ident, Item, ItemFn,
+    LitBool, LitInt, LitStr, Pat, PathArguments, ReturnType, Token, Type,
 };
 
 #[proc_macro_attribute]
@@ -37,6 +41,27 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let mut visitor = scoring::MutationVisitor::new();
     visitor.scan_fn_body(&item_fn.block);
     let detected = visitor.detected;
+
+    let mut boundary_visitor = scoring::BoundaryVisitor::new();
+    if let Some(module_source) = same_source_module_items_for_ability(&item_fn) {
+        boundary_visitor.scan_fn_body_with_crate_items(
+            &item_fn,
+            &module_source.items,
+            &module_source.containing_module_path,
+        );
+    } else {
+        boundary_visitor.scan_fn_body(&item_fn.block);
+    }
+    let detected_boundary_bypasses = boundary_visitor.detected;
+    if !detected_boundary_bypasses.is_empty() {
+        return Err(syn::Error::new_spanned(
+            &item_fn.sig.ident,
+            format!(
+                "ability bodies cannot bypass the ServiceContext boundary; detected: {}",
+                detected_boundary_bypasses.join(", ")
+            ),
+        ));
+    }
 
     if matches!(
         args.category,
@@ -370,6 +395,163 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     };
 
     Ok(expanded)
+}
+
+struct BoundaryModuleSource {
+    items: Vec<Item>,
+    containing_module_path: Vec<String>,
+}
+
+fn same_source_module_items_for_ability(item_fn: &ItemFn) -> Option<BoundaryModuleSource> {
+    let source_path = item_fn.sig.ident.span().local_file()?;
+    if let Some(crate_root) = crate_root_source_path(&source_path) {
+        if let Some(module_source) = parse_module_source(&crate_root, &item_fn.sig.ident) {
+            return Some(module_source);
+        }
+    }
+
+    parse_module_source(&source_path, &item_fn.sig.ident)
+}
+
+fn parse_module_source(source_path: &Path, fn_ident: &Ident) -> Option<BoundaryModuleSource> {
+    let source = fs::read_to_string(source_path).ok()?;
+    let mut file = syn::parse_file(&source).ok()?;
+    let mut visited = HashSet::new();
+    hydrate_external_modules(&mut file.items, source_path, &mut visited);
+    module_path_containing_ability_fn(&file.items, fn_ident, &mut Vec::new()).map(
+        |containing_module_path| BoundaryModuleSource {
+            items: file.items,
+            containing_module_path,
+        },
+    )
+}
+
+fn crate_root_source_path(source_path: &Path) -> Option<PathBuf> {
+    for ancestor in source_path.parent()?.ancestors() {
+        if !ancestor.join("Cargo.toml").is_file() {
+            continue;
+        }
+        if !source_path.starts_with(ancestor.join("src")) {
+            continue;
+        }
+
+        let lib = ancestor.join("src/lib.rs");
+        if lib.is_file() {
+            return Some(lib);
+        }
+
+        let main = ancestor.join("src/main.rs");
+        if main.is_file() {
+            return Some(main);
+        }
+    }
+
+    None
+}
+
+fn hydrate_external_modules(
+    items: &mut [Item],
+    source_path: &Path,
+    visited: &mut HashSet<PathBuf>,
+) {
+    for item in items {
+        let Item::Mod(module) = item else {
+            continue;
+        };
+
+        if let Some((_, nested_items)) = &mut module.content {
+            hydrate_external_modules(nested_items, source_path, visited);
+            continue;
+        }
+
+        let Some(module_path) = module_source_path(source_path, &module.ident) else {
+            continue;
+        };
+        let visited_path = module_path
+            .canonicalize()
+            .unwrap_or_else(|_| module_path.clone());
+        if !visited.insert(visited_path) {
+            continue;
+        }
+
+        let Ok(source) = fs::read_to_string(&module_path) else {
+            continue;
+        };
+        let Ok(mut file) = syn::parse_file(&source) else {
+            continue;
+        };
+        hydrate_external_modules(&mut file.items, &module_path, visited);
+        module.content = Some((syn::token::Brace::default(), file.items));
+        module.semi = None;
+    }
+}
+
+fn module_source_path(source_path: &Path, ident: &Ident) -> Option<PathBuf> {
+    module_source_candidates(source_path, ident)
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+}
+
+fn module_source_candidates(source_path: &Path, ident: &Ident) -> Vec<PathBuf> {
+    let module_name = ident.to_string();
+    let Some(parent) = source_path.parent() else {
+        return Vec::new();
+    };
+
+    let file_name = source_path.file_name().and_then(|name| name.to_str());
+    let base_dir = if matches!(file_name, Some("lib.rs" | "main.rs" | "mod.rs")) {
+        parent.to_path_buf()
+    } else if let Some(stem) = source_path.file_stem() {
+        parent.join(stem)
+    } else {
+        parent.to_path_buf()
+    };
+
+    vec![
+        base_dir.join(format!("{module_name}.rs")),
+        base_dir.join(module_name).join("mod.rs"),
+    ]
+}
+
+fn module_path_containing_ability_fn(
+    items: &[Item],
+    fn_ident: &Ident,
+    path: &mut Vec<String>,
+) -> Option<Vec<String>> {
+    if items.iter().any(|item| {
+        matches!(
+            item,
+            Item::Fn(candidate)
+                if candidate.sig.ident == *fn_ident && has_ability_attribute(&candidate.attrs)
+        )
+    }) {
+        return Some(path.clone());
+    }
+
+    for item in items {
+        if let Item::Mod(module) = item {
+            let Some((_, nested_items)) = &module.content else {
+                continue;
+            };
+            path.push(module.ident.to_string());
+            if let Some(found) = module_path_containing_ability_fn(nested_items, fn_ident, path) {
+                path.pop();
+                return Some(found);
+            }
+            path.pop();
+        }
+    }
+
+    None
+}
+
+fn has_ability_attribute(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|attr| {
+        attr.path()
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == "ability")
+    })
 }
 
 fn ability_signature_parts(item_fn: &ItemFn) -> syn::Result<(Ident, Ident, Type)> {

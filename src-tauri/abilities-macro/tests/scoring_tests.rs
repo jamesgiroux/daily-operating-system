@@ -1,7 +1,7 @@
 #[path = "../src/scoring.rs"]
 mod scoring;
 
-use scoring::{path_is_allowlisted_mutator, MutationVisitor};
+use scoring::{path_is_allowlisted_mutator, BoundaryVisitor, MutationVisitor};
 
 fn path(path: &str) -> syn::Path {
     syn::parse_str(path).expect("valid path")
@@ -10,6 +10,35 @@ fn path(path: &str) -> syn::Path {
 fn scan(block: syn::Block) -> MutationVisitor {
     let mut visitor = MutationVisitor::new();
     visitor.scan_fn_body(&block);
+    visitor
+}
+
+fn scan_boundary(block: syn::Block) -> BoundaryVisitor {
+    let mut visitor = BoundaryVisitor::new();
+    visitor.scan_fn_body(&block);
+    visitor
+}
+
+fn scan_boundary_with_module(
+    item_fn: syn::ItemFn,
+    module_items: Vec<syn::Item>,
+) -> BoundaryVisitor {
+    let mut visitor = BoundaryVisitor::new();
+    visitor.scan_fn_body_with_module_items(&item_fn, &module_items);
+    visitor
+}
+
+fn scan_boundary_with_crate_module(
+    item_fn: syn::ItemFn,
+    module_items: Vec<syn::Item>,
+    containing_module_path: &[&str],
+) -> BoundaryVisitor {
+    let containing_module_path = containing_module_path
+        .iter()
+        .map(|segment| segment.to_string())
+        .collect::<Vec<_>>();
+    let mut visitor = BoundaryVisitor::new();
+    visitor.scan_fn_body_with_crate_items(&item_fn, &module_items, &containing_module_path);
     visitor
 }
 
@@ -145,4 +174,228 @@ fn visitor_ignores_method_call_with_mutator_like_name() {
     }));
 
     assert!(visitor.detected.is_empty());
+}
+
+#[test]
+fn boundary_visitor_detects_crate_db_import() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use crate::db::ActionDb;
+        let _ = std::any::type_name::<ActionDb>();
+    }));
+
+    assert_eq!(visitor.detected, ["crate::db"]);
+}
+
+#[test]
+fn boundary_visitor_detects_std_fs_write() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        std::fs::write(path, bytes)?;
+    }));
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_file_create_alias() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use std::fs::File;
+        let _file = File::create(path)?;
+    }));
+
+    assert_eq!(visitor.detected, ["File::create", "std::fs::File::create"]);
+}
+
+#[test]
+fn boundary_visitor_detects_tokio_fs_import() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use tokio::fs;
+        fs::write(path, bytes).await?;
+    }));
+
+    assert_eq!(visitor.detected, ["tokio::fs"]);
+}
+
+#[test]
+fn boundary_visitor_detects_open_options_write_handle() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use std::fs::OpenOptions;
+        let _file = OpenOptions::new().create(true).write(true).open(path)?;
+    }));
+
+    assert_eq!(visitor.detected, ["std::fs::OpenOptions::open(write)"]);
+}
+
+#[test]
+fn boundary_visitor_rejects_split_open_options_builder() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use std::fs::OpenOptions;
+        let mut opts = OpenOptions::new();
+        opts.create(true);
+        opts.write(true);
+        let _file = opts.open(path)?;
+    }));
+
+    assert_eq!(visitor.detected, ["std::fs::OpenOptions::open(write)"]);
+}
+
+#[test]
+fn boundary_visitor_rejects_file_options_builder() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use std::fs::File;
+        let mut opts = File::options();
+        opts.write(true);
+        let _file = opts.open(path)?;
+    }));
+
+    assert_eq!(visitor.detected, ["std::fs::OpenOptions::open(write)"]);
+}
+
+#[test]
+fn boundary_visitor_detects_same_module_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            write_behind_helper();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![
+        syn::parse_quote! {
+            fn write_behind_helper() {
+                std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+            }
+        },
+        syn::parse_quote! {
+            async fn fixture_ability() {
+                write_behind_helper();
+            }
+        },
+    ];
+
+    let visitor = scan_boundary_with_module(ability_fn, module_items);
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_module_qualified_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            helper::write_behind_helper();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![
+        syn::parse_quote! {
+            mod helper {
+                pub fn write_behind_helper() {
+                    std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+                }
+            }
+        },
+        syn::parse_quote! {
+            async fn fixture_ability() {
+                helper::write_behind_helper();
+            }
+        },
+    ];
+
+    let visitor = scan_boundary_with_module(ability_fn, module_items);
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_crate_qualified_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            crate::abilities::prepare_meeting::synthesis::build_meeting_brief();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![syn::parse_quote! {
+        mod abilities {
+            pub mod prepare_meeting {
+                pub mod synthesis {
+                    pub fn build_meeting_brief() {
+                        std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+                    }
+                }
+
+                async fn fixture_ability() {
+                    crate::abilities::prepare_meeting::synthesis::build_meeting_brief();
+                }
+            }
+        }
+    }];
+
+    let visitor = scan_boundary_with_crate_module(
+        ability_fn,
+        module_items,
+        &["abilities", "prepare_meeting"],
+    );
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_super_qualified_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            super::helper::write_behind_helper();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![syn::parse_quote! {
+        mod abilities {
+            pub mod helper {
+                pub fn write_behind_helper() {
+                    std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+                }
+            }
+
+            pub mod prepare_meeting {
+                async fn fixture_ability() {
+                    super::helper::write_behind_helper();
+                }
+            }
+        }
+    }];
+
+    let visitor = scan_boundary_with_crate_module(
+        ability_fn,
+        module_items,
+        &["abilities", "prepare_meeting"],
+    );
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
+}
+
+#[test]
+fn boundary_visitor_detects_module_alias_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            meeting_synthesis::build_meeting_brief();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![syn::parse_quote! {
+        mod abilities {
+            pub mod prepare_meeting {
+                use crate::abilities::prepare_meeting::synthesis as meeting_synthesis;
+
+                pub mod synthesis {
+                    pub fn build_meeting_brief() {
+                        std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+                    }
+                }
+
+                async fn fixture_ability() {
+                    meeting_synthesis::build_meeting_brief();
+                }
+            }
+        }
+    }];
+
+    let visitor = scan_boundary_with_crate_module(
+        ability_fn,
+        module_items,
+        &["abilities", "prepare_meeting"],
+    );
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
 }

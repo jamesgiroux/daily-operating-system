@@ -8,41 +8,9 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 pub use crate::abilities::feedback::{ClaimVerificationState, FeedbackAction as FeedbackType};
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ClaimState {
-    Active,
-    Dormant,
-    Tombstoned,
-    Withdrawn,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum SurfacingState {
-    Active,
-    Dormant,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum TemporalScope {
-    State,
-    PointInTime,
-    Trend,
-    /// Observation window has ended; later observations must not refresh the claim.
-    Closed,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum ClaimSensitivity {
-    Public,
-    Internal,
-    Confidential,
-    UserOnly,
-}
+pub use abilities_runtime::types::{
+    ClaimSensitivity, ClaimState, IntelligenceClaim, SurfacingState, TemporalScope,
+};
 
 #[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -69,43 +37,6 @@ pub enum RepairJobState {
     Completed,
     Failed,
     BudgetExhausted,
-}
-
-/// Mirror of the `intelligence_claims` row.
-#[derive(Debug, Clone, Serialize, Deserialize, JsonSchema, PartialEq)]
-pub struct IntelligenceClaim {
-    pub id: String,
-    pub subject_ref: String,
-    pub claim_type: String,
-    pub field_path: Option<String>,
-    pub topic_key: Option<String>,
-    pub text: String,
-    pub dedup_key: String,
-    pub item_hash: Option<String>,
-    pub actor: String,
-    pub data_source: String,
-    pub source_ref: Option<String>,
-    pub source_asof: Option<String>,
-    pub observed_at: String,
-    pub created_at: String,
-    pub provenance_json: String,
-    pub metadata_json: Option<String>,
-    pub claim_state: ClaimState,
-    pub surfacing_state: SurfacingState,
-    pub demotion_reason: Option<String>,
-    pub reactivated_at: Option<String>,
-    pub retraction_reason: Option<String>,
-    pub expires_at: Option<String>,
-    pub superseded_by: Option<String>,
-    pub trust_score: Option<f64>,
-    pub trust_computed_at: Option<String>,
-    pub trust_version: Option<i64>,
-    pub thread_id: Option<String>,
-    pub temporal_scope: TemporalScope,
-    pub sensitivity: ClaimSensitivity,
-    pub verification_state: ClaimVerificationState,
-    pub verification_reason: Option<String>,
-    pub needs_user_decision_at: Option<String>,
 }
 
 /// Mirror of the `claim_corroborations` row.

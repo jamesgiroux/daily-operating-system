@@ -2,11 +2,12 @@
 
 include!(concat!(env!("OUT_DIR"), "/mutation_allowlist.rs"));
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use syn::visit::Visit;
 use syn::{
-    Expr, ExprCall, ExprMethodCall, ExprPath, ItemUse, Path, UseName, UsePath, UseRename, UseTree,
+    Block, Expr, ExprCall, ExprMethodCall, ExprPath, Item, ItemFn, ItemUse, Path, UseName, UsePath,
+    UseRename, UseTree,
 };
 
 /// Returns true if the path matches an allowlisted mutator.
@@ -93,6 +94,553 @@ impl MutationVisitor {
 impl Default for MutationVisitor {
     fn default() -> Self {
         Self::new()
+    }
+}
+
+/// AST visitor that records direct ability-body bypasses of the
+/// ServiceContext/runtime-crate boundary. Unlike mutation scoring, these are
+/// forbidden for every ability category because they reach raw app state,
+/// SQLite, or filesystem handles directly.
+pub struct BoundaryVisitor {
+    pub aliases: HashMap<String, String>,
+    pub module_aliases: HashMap<String, String>,
+    pub detected: Vec<String>,
+}
+
+impl BoundaryVisitor {
+    pub fn new() -> Self {
+        Self {
+            aliases: HashMap::new(),
+            module_aliases: HashMap::new(),
+            detected: Vec::new(),
+        }
+    }
+
+    pub fn scan_fn_body(&mut self, body: &syn::Block) {
+        let mut alias_scan = BoundaryAliasScan {
+            aliases: &mut self.aliases,
+            module_aliases: &mut self.module_aliases,
+            detected: &mut self.detected,
+        };
+        alias_scan.visit_block(body);
+        self.visit_block(body);
+    }
+
+    pub fn scan_fn_body_with_module_items(&mut self, item_fn: &ItemFn, module_items: &[Item]) {
+        self.scan_fn_body_with_crate_items(item_fn, module_items, &[]);
+    }
+
+    pub fn scan_fn_body_with_crate_items(
+        &mut self,
+        item_fn: &ItemFn,
+        crate_items: &[Item],
+        containing_module_path: &[String],
+    ) {
+        let crate_context = BoundaryModuleContext::new(crate_items);
+        let Some(module_context) = crate_context.context_at_path(containing_module_path) else {
+            self.scan_fn_body(&item_fn.block);
+            return;
+        };
+
+        self.aliases.extend(module_context.aliases.clone());
+        self.module_aliases
+            .extend(module_context.module_aliases.clone());
+        self.scan_fn_body(&item_fn.block);
+
+        let mut visited = HashSet::new();
+        self.scan_same_module_helpers(
+            &item_fn.block,
+            &crate_context,
+            containing_module_path,
+            &mut visited,
+        );
+    }
+
+    fn scan_same_module_helpers(
+        &mut self,
+        body: &Block,
+        crate_context: &BoundaryModuleContext<'_>,
+        current_module_path: &[String],
+        visited: &mut HashSet<String>,
+    ) {
+        for helper_call in same_module_helper_calls(body) {
+            let Some((helper_key, helper_context, helper)) =
+                crate_context.resolve_helper_call(&helper_call, current_module_path)
+            else {
+                continue;
+            };
+            if !visited.insert(helper_key) {
+                continue;
+            }
+
+            let mut helper_visitor = BoundaryVisitor::new();
+            helper_visitor
+                .aliases
+                .extend(helper_context.aliases.clone());
+            helper_visitor
+                .module_aliases
+                .extend(helper_context.module_aliases.clone());
+            helper_visitor.scan_fn_body(&helper.block);
+            self.extend_detected(helper_visitor.detected);
+            self.scan_same_module_helpers(
+                &helper.block,
+                crate_context,
+                &helper_context.path,
+                visited,
+            );
+        }
+    }
+
+    fn record_call_path(&mut self, path: &Path) {
+        self.record_if_forbidden(join_all_segments(&path_segments(path)));
+
+        if let Some(alias) = single_segment_path(path) {
+            if let Some(canonical) = self.aliases.get(&alias).cloned() {
+                self.record_if_forbidden(canonical);
+            }
+            return;
+        }
+
+        if let Some(canonical) = self.resolve_module_alias_path(path) {
+            self.record_if_forbidden(canonical);
+        }
+    }
+
+    fn resolve_boundary_path(&self, path: &Path) -> Option<String> {
+        if let Some(alias) = single_segment_path(path) {
+            if let Some(canonical) = self.aliases.get(&alias).cloned() {
+                return Some(canonical);
+            }
+            return Some(join_all_segments(&path_segments(path)));
+        }
+
+        if let Some(canonical) = self.resolve_module_alias_path(path) {
+            return Some(canonical);
+        }
+
+        Some(join_all_segments(&path_segments(path)))
+    }
+
+    fn resolve_module_alias_path(&self, path: &Path) -> Option<String> {
+        if path.leading_colon.is_some() {
+            return None;
+        }
+
+        let mut segments = path
+            .segments
+            .iter()
+            .map(|segment| segment.ident.to_string());
+        let first = segments.next()?;
+        let canonical_prefix = self.module_aliases.get(&first)?;
+        let rest = segments.collect::<Vec<_>>();
+        Some(join_segments(canonical_prefix, &rest))
+    }
+
+    fn record_if_forbidden(&mut self, canonical: String) {
+        if let Some(forbidden) = forbidden_boundary_path(&canonical) {
+            self.record_detected(forbidden);
+        }
+    }
+
+    fn record_detected(&mut self, forbidden: &str) {
+        if !self.detected.iter().any(|detected| detected == forbidden) {
+            self.detected.push(forbidden.to_string());
+        }
+    }
+
+    fn extend_detected(&mut self, detected: Vec<String>) {
+        for forbidden in detected {
+            self.record_detected(&forbidden);
+        }
+    }
+}
+
+impl Default for BoundaryVisitor {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl<'ast> Visit<'ast> for BoundaryVisitor {
+    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
+        if let Expr::Path(ExprPath {
+            qself: None, path, ..
+        }) = node.func.as_ref()
+        {
+            self.record_call_path(path);
+        }
+
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_expr_method_call(&mut self, node: &'ast ExprMethodCall) {
+        if let Some(forbidden) = self.open_options_write_open_boundary(node) {
+            self.record_detected(forbidden);
+        }
+
+        syn::visit::visit_expr_method_call(self, node);
+    }
+
+    fn visit_item_use(&mut self, node: &'ast ItemUse) {
+        record_boundary_from_use_tree(
+            &node.tree,
+            &mut Vec::new(),
+            &mut self.aliases,
+            &mut self.module_aliases,
+            &mut self.detected,
+        );
+        syn::visit::visit_item_use(self, node);
+    }
+}
+
+impl BoundaryVisitor {
+    fn open_options_write_open_boundary(&self, node: &ExprMethodCall) -> Option<&'static str> {
+        if node.method != "open" {
+            return None;
+        }
+
+        let mut methods = vec![node.method.to_string()];
+        let root = collect_method_chain_root(node.receiver.as_ref(), &mut methods);
+        let Expr::Call(ExprCall { func, .. }) = root else {
+            return None;
+        };
+        let Expr::Path(ExprPath {
+            qself: None, path, ..
+        }) = func.as_ref()
+        else {
+            return None;
+        };
+
+        if path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string())
+            != Some("new".to_string())
+        {
+            return None;
+        }
+
+        let canonical = self.resolve_boundary_path(path)?;
+        if !matches!(
+            canonical.as_str(),
+            "std::fs::OpenOptions::new" | "tokio::fs::OpenOptions::new"
+        ) {
+            return None;
+        }
+
+        let writes = methods.iter().any(|method| {
+            matches!(
+                method.as_str(),
+                "append" | "create" | "create_new" | "truncate" | "write"
+            )
+        });
+        if !writes {
+            return None;
+        }
+
+        match canonical.as_str() {
+            "std::fs::OpenOptions::new" => Some("std::fs::OpenOptions::open(write)"),
+            "tokio::fs::OpenOptions::new" => Some("tokio::fs"),
+            _ => None,
+        }
+    }
+}
+
+fn collect_method_chain_root<'a>(expr: &'a Expr, methods: &mut Vec<String>) -> &'a Expr {
+    match expr {
+        Expr::MethodCall(method_call) => {
+            methods.push(method_call.method.to_string());
+            collect_method_chain_root(method_call.receiver.as_ref(), methods)
+        }
+        other => other,
+    }
+}
+
+struct BoundaryModuleContext<'a> {
+    path: Vec<String>,
+    aliases: HashMap<String, String>,
+    module_aliases: HashMap<String, String>,
+    helper_path_aliases: HashMap<String, Vec<String>>,
+    functions: HashMap<String, &'a ItemFn>,
+    modules: HashMap<String, BoundaryModuleContext<'a>>,
+}
+
+impl<'a> BoundaryModuleContext<'a> {
+    fn new(module_items: &'a [Item]) -> Self {
+        Self::new_at_path(module_items, Vec::new())
+    }
+
+    fn new_at_path(module_items: &'a [Item], path: Vec<String>) -> Self {
+        let mut aliases = HashMap::new();
+        let mut module_aliases = HashMap::new();
+        let mut helper_path_aliases = HashMap::new();
+        let mut ignored_detected = Vec::new();
+        let mut functions = HashMap::new();
+        let mut modules = HashMap::new();
+
+        for item in module_items {
+            match item {
+                Item::Use(item_use) => {
+                    record_boundary_from_use_tree(
+                        &item_use.tree,
+                        &mut Vec::new(),
+                        &mut aliases,
+                        &mut module_aliases,
+                        &mut ignored_detected,
+                    );
+                    record_helper_path_aliases_from_use_tree(
+                        &item_use.tree,
+                        &mut Vec::new(),
+                        &mut helper_path_aliases,
+                    );
+                }
+                Item::Fn(item_fn) => {
+                    functions.insert(item_fn.sig.ident.to_string(), item_fn);
+                }
+                Item::Mod(module) => {
+                    if let Some((_, nested_items)) = &module.content {
+                        let mut module_path = path.clone();
+                        module_path.push(module.ident.to_string());
+                        modules.insert(
+                            module.ident.to_string(),
+                            BoundaryModuleContext::new_at_path(nested_items, module_path),
+                        );
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        Self {
+            path,
+            aliases,
+            module_aliases,
+            helper_path_aliases,
+            functions,
+            modules,
+        }
+    }
+
+    fn resolve_helper_call(
+        &self,
+        call: &SameModuleHelperCall,
+        current_module_path: &[String],
+    ) -> Option<(String, &BoundaryModuleContext<'a>, &'a ItemFn)> {
+        let resolved_segments =
+            self.resolve_helper_segments(&call.segments, current_module_path)?;
+        let (function, module_path) = resolved_segments.split_last()?;
+        let context = self.context_at_path(module_path)?;
+        let helper = context.functions.get(function.as_str()).copied()?;
+        let mut key = module_path.to_vec();
+        key.push(function.clone());
+        Some((key.join("::"), context, helper))
+    }
+
+    fn resolve_helper_segments(
+        &self,
+        segments: &[String],
+        current_module_path: &[String],
+    ) -> Option<Vec<String>> {
+        let current_context = self.context_at_path(current_module_path)?;
+        if let Some((first, rest)) = segments.split_first() {
+            if let Some(alias_segments) = current_context.helper_path_aliases.get(first) {
+                let mut expanded = alias_segments.clone();
+                expanded.extend(rest.iter().cloned());
+                return resolve_module_relative_segments(&expanded, current_module_path);
+            }
+        }
+
+        resolve_module_relative_segments(segments, current_module_path)
+    }
+
+    fn context_at_path(&self, path: &[String]) -> Option<&BoundaryModuleContext<'a>> {
+        let mut context = self;
+        for module in path {
+            context = context.modules.get(module)?;
+        }
+        Some(context)
+    }
+}
+
+fn same_module_helper_calls(body: &Block) -> Vec<SameModuleHelperCall> {
+    let mut helper_path_aliases = HashMap::new();
+    let mut alias_scan = HelperPathAliasScan {
+        helper_path_aliases: &mut helper_path_aliases,
+    };
+    alias_scan.visit_block(body);
+
+    let mut collector = SameModuleHelperCallCollector {
+        calls: Vec::new(),
+        helper_path_aliases,
+    };
+    collector.visit_block(body);
+    collector.calls
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+struct SameModuleHelperCall {
+    segments: Vec<String>,
+}
+
+#[derive(Default)]
+struct SameModuleHelperCallCollector {
+    calls: Vec<SameModuleHelperCall>,
+    helper_path_aliases: HashMap<String, Vec<String>>,
+}
+
+struct HelperPathAliasScan<'a> {
+    helper_path_aliases: &'a mut HashMap<String, Vec<String>>,
+}
+
+impl<'ast> Visit<'ast> for HelperPathAliasScan<'_> {
+    fn visit_item_use(&mut self, node: &'ast ItemUse) {
+        record_helper_path_aliases_from_use_tree(
+            &node.tree,
+            &mut Vec::new(),
+            self.helper_path_aliases,
+        );
+        syn::visit::visit_item_use(self, node);
+    }
+}
+
+impl<'ast> Visit<'ast> for SameModuleHelperCallCollector {
+    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
+        if let Expr::Path(ExprPath {
+            qself: None, path, ..
+        }) = node.func.as_ref()
+        {
+            if let Some(mut call) = same_module_helper_call(path) {
+                if let Some(expanded) = self.expand_helper_alias(&call.segments) {
+                    call.segments = expanded;
+                }
+                if !self.calls.contains(&call) {
+                    self.calls.push(call);
+                }
+            }
+        }
+
+        syn::visit::visit_expr_call(self, node);
+    }
+
+    fn visit_item_use(&mut self, node: &'ast ItemUse) {
+        record_helper_path_aliases_from_use_tree(
+            &node.tree,
+            &mut Vec::new(),
+            &mut self.helper_path_aliases,
+        );
+        syn::visit::visit_item_use(self, node);
+    }
+}
+
+impl SameModuleHelperCallCollector {
+    fn expand_helper_alias(&self, segments: &[String]) -> Option<Vec<String>> {
+        let (first, rest) = segments.split_first()?;
+        let alias_segments = self.helper_path_aliases.get(first)?;
+        let mut expanded = alias_segments.clone();
+        expanded.extend(rest.iter().cloned());
+        Some(expanded)
+    }
+}
+
+fn same_module_helper_call(path: &Path) -> Option<SameModuleHelperCall> {
+    if path.leading_colon.is_some() {
+        return None;
+    }
+
+    let segments = path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>();
+
+    if segments.is_empty() {
+        None
+    } else {
+        Some(SameModuleHelperCall { segments })
+    }
+}
+
+fn resolve_module_relative_segments(
+    segments: &[String],
+    current_module_path: &[String],
+) -> Option<Vec<String>> {
+    let (first, _) = segments.split_first()?;
+
+    if first == "crate" {
+        return Some(segments[1..].to_vec());
+    }
+
+    if first == "self" {
+        let mut resolved = current_module_path.to_vec();
+        resolved.extend(segments[1..].iter().cloned());
+        return Some(resolved);
+    }
+
+    let super_count = segments
+        .iter()
+        .take_while(|segment| segment.as_str() == "super")
+        .count();
+    if super_count > 0 {
+        if super_count > current_module_path.len() {
+            return None;
+        }
+        let mut resolved = current_module_path[..current_module_path.len() - super_count].to_vec();
+        resolved.extend(segments[super_count..].iter().cloned());
+        return Some(resolved);
+    }
+
+    let mut resolved = current_module_path.to_vec();
+    resolved.extend(segments.iter().cloned());
+    Some(resolved)
+}
+
+fn record_helper_path_aliases_from_use_tree(
+    tree: &UseTree,
+    prefix: &mut Vec<String>,
+    aliases: &mut HashMap<String, Vec<String>>,
+) {
+    match tree {
+        UseTree::Path(UsePath { ident, tree, .. }) => {
+            prefix.push(ident.to_string());
+            record_helper_path_aliases_from_use_tree(tree, prefix, aliases);
+            prefix.pop();
+        }
+        UseTree::Name(UseName { ident }) => {
+            let alias = ident.to_string();
+            prefix.push(alias.clone());
+            aliases.insert(alias, prefix.clone());
+            prefix.pop();
+        }
+        UseTree::Rename(UseRename { ident, rename, .. }) => {
+            prefix.push(ident.to_string());
+            aliases.insert(rename.to_string(), prefix.clone());
+            prefix.pop();
+        }
+        UseTree::Group(group) => {
+            for tree in &group.items {
+                record_helper_path_aliases_from_use_tree(tree, prefix, aliases);
+            }
+        }
+        UseTree::Glob(_) => {}
+    }
+}
+
+struct BoundaryAliasScan<'a> {
+    aliases: &'a mut HashMap<String, String>,
+    module_aliases: &'a mut HashMap<String, String>,
+    detected: &'a mut Vec<String>,
+}
+
+impl<'ast> Visit<'ast> for BoundaryAliasScan<'_> {
+    fn visit_item_use(&mut self, node: &'ast ItemUse) {
+        record_boundary_from_use_tree(
+            &node.tree,
+            &mut Vec::new(),
+            self.aliases,
+            self.module_aliases,
+            self.detected,
+        );
+        syn::visit::visit_item_use(self, node);
     }
 }
 
@@ -230,4 +778,137 @@ fn single_segment_path(path: &Path) -> Option<String> {
     path.segments
         .first()
         .map(|segment| segment.ident.to_string())
+}
+
+fn path_segments(path: &Path) -> Vec<String> {
+    path.segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect()
+}
+
+fn join_all_segments(segments: &[String]) -> String {
+    segments.join("::")
+}
+
+fn record_boundary_from_use_tree(
+    tree: &UseTree,
+    prefix: &mut Vec<String>,
+    aliases: &mut HashMap<String, String>,
+    module_aliases: &mut HashMap<String, String>,
+    detected: &mut Vec<String>,
+) {
+    match tree {
+        UseTree::Path(UsePath { ident, tree, .. }) => {
+            prefix.push(ident.to_string());
+            record_boundary_from_use_tree(tree, prefix, aliases, module_aliases, detected);
+            prefix.pop();
+        }
+        UseTree::Name(UseName { ident }) => {
+            prefix.push(ident.to_string());
+            record_boundary_alias(ident.to_string(), prefix, aliases, module_aliases, detected);
+            prefix.pop();
+        }
+        UseTree::Rename(UseRename { ident, rename, .. }) => {
+            prefix.push(ident.to_string());
+            record_boundary_alias(
+                rename.to_string(),
+                prefix,
+                aliases,
+                module_aliases,
+                detected,
+            );
+            prefix.pop();
+        }
+        UseTree::Group(group) => {
+            for tree in &group.items {
+                record_boundary_from_use_tree(tree, prefix, aliases, module_aliases, detected);
+            }
+        }
+        UseTree::Glob(_) => {
+            let canonical = join_all_segments(prefix);
+            record_forbidden_boundary_import(canonical, detected);
+        }
+    }
+}
+
+fn record_boundary_alias(
+    alias: String,
+    path_segments: &[String],
+    aliases: &mut HashMap<String, String>,
+    module_aliases: &mut HashMap<String, String>,
+    detected: &mut Vec<String>,
+) {
+    let canonical = join_all_segments(path_segments);
+    record_forbidden_boundary_import(canonical.clone(), detected);
+    if forbidden_boundary_path(&canonical).is_some() {
+        aliases.insert(alias.clone(), canonical.clone());
+        module_aliases.insert(alias, canonical);
+    } else if boundary_has_forbidden_prefix(&canonical) || is_open_options_type_path(&canonical) {
+        module_aliases.insert(alias, canonical);
+    }
+}
+
+fn record_forbidden_boundary_import(canonical: String, detected: &mut Vec<String>) {
+    if let Some(forbidden) = forbidden_boundary_path(&canonical) {
+        let forbidden = forbidden.to_string();
+        if !detected.contains(&forbidden) {
+            detected.push(forbidden);
+        }
+    }
+}
+
+fn boundary_has_forbidden_prefix(canonical: &str) -> bool {
+    FORBIDDEN_BOUNDARY_PATHS
+        .iter()
+        .any(|path| path.starts_with(&format!("{canonical}::")))
+}
+
+fn is_open_options_type_path(canonical: &str) -> bool {
+    matches!(canonical, "std::fs::OpenOptions" | "tokio::fs::OpenOptions")
+}
+
+const FORBIDDEN_BOUNDARY_PATHS: &[&str] = &[
+    "crate::db",
+    "crate::state",
+    "crate::db_service",
+    "crate::queries",
+    "rusqlite",
+    "tokio::fs",
+    "std::fs::write",
+    "std::fs::File::create",
+    "std::fs::File::create_new",
+    "std::fs::File::open",
+    "File::create",
+    "File::create_new",
+    "File::open",
+    "std::fs::OpenOptions::open(write)",
+];
+
+fn forbidden_boundary_path(canonical: &str) -> Option<&'static str> {
+    match canonical {
+        "OpenOptions::new"
+        | "std::fs::OpenOptions::new"
+        | "File::options"
+        | "std::fs::File::options" => {
+            return Some("std::fs::OpenOptions::open(write)");
+        }
+        "tokio::fs::OpenOptions::new" => {
+            return Some("tokio::fs");
+        }
+        _ => {}
+    }
+
+    FORBIDDEN_BOUNDARY_PATHS.iter().copied().find(|path| {
+        canonical == *path
+            || matches!(
+                *path,
+                "crate::db"
+                    | "crate::state"
+                    | "crate::db_service"
+                    | "crate::queries"
+                    | "rusqlite"
+                    | "tokio::fs"
+            ) && canonical.starts_with(&format!("{path}::"))
+    })
 }

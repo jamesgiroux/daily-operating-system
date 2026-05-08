@@ -1,0 +1,5 @@
+error: ability bodies cannot bypass the ServiceContext boundary; detected: std::fs::File::create
+  --> tests/trybuild/boundary/absolute_file_create_in_ability_fails.rs:40:10
+   |
+40 | async fn absolute_file_create_boundary(
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

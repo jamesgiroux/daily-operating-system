@@ -195,6 +195,7 @@ fn extract_docx(path: &Path) -> Result<String, ExtractError> {
                     text.push_str(&s);
                 }
             }
+            Ok(quick_xml::events::Event::Text(_)) => {}
             Ok(quick_xml::events::Event::Eof) => break,
             Err(e) => {
                 return Err(ExtractError::ExtractionFailed(format!("DOCX XML: {}", e)));

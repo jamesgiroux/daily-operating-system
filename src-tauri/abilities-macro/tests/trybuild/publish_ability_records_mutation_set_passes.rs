@@ -142,6 +142,8 @@ mod abilities {
             pub output_schema: fn() -> serde_json::Value,
         }
 
+        pub fn close_schema_objects(_schema: &mut serde_json::Value) {}
+
         inventory::collect!(AbilityDescriptor);
 
         pub fn close_schema_objects(_schema: &mut serde_json::Value) {}

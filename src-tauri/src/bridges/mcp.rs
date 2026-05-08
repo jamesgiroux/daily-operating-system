@@ -12,10 +12,14 @@ use crate::bridges::{
     AbilityResponseJson, BridgeActor, BridgeSurface, BridgeSurfaceError, ConfirmationToken,
     InvocationContext, McpSessionId, RenderedProvenance,
 };
+use crate::db::ActionDb;
 use crate::intelligence::provider::IntelligenceProvider;
 use crate::services::context::{
-    ExecutionMode, ExternalClients, ServiceContext, SystemClock, SystemRng,
+    EntityContextClaimReadFuture, EntityContextClaimReadHandle, EntityContextReadFuture,
+    EntityContextReadHandle, ExecutionMode, ExternalClients, PrepareMeetingContextReadFuture,
+    PrepareMeetingContextReadHandle, ServiceContext, SystemClock, SystemRng,
 };
+use parking_lot::Mutex as ParkingMutex;
 use rmcp::model::{CallToolResult, Content};
 use rmcp::Error as McpError;
 
@@ -30,6 +34,90 @@ const MCP_CONFIRMATION_TOKEN_TTL_SECONDS: u32 = 5 * 60;
 
 type InvocationCacheKey = (McpSessionId, InvocationId);
 type ConfirmationTokenCacheKey = (McpSessionId, String, [u8; 32]);
+
+#[derive(Clone)]
+pub struct McpWorkspaceReaders {
+    entity_context_reader: Arc<dyn EntityContextReadHandle>,
+    entity_context_claim_reader: Arc<dyn EntityContextClaimReadHandle>,
+    prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle>,
+}
+
+impl McpWorkspaceReaders {
+    pub fn from_action_db(db: Arc<ParkingMutex<ActionDb>>) -> Self {
+        let reader = Arc::new(McpActionDbWorkspaceReader { db });
+        let entity_context_reader: Arc<dyn EntityContextReadHandle> = reader.clone();
+        let entity_context_claim_reader: Arc<dyn EntityContextClaimReadHandle> = reader.clone();
+        let prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle> = reader;
+
+        Self {
+            entity_context_reader,
+            entity_context_claim_reader,
+            prepare_meeting_context_reader,
+        }
+    }
+
+    fn attach_to<'a>(&self, ctx: ServiceContext<'a>) -> ServiceContext<'a> {
+        ctx.with_entity_context_reader(self.entity_context_reader.clone())
+            .with_entity_context_claim_reader(self.entity_context_claim_reader.clone())
+            .with_prepare_meeting_context_reader(self.prepare_meeting_context_reader.clone())
+    }
+}
+
+struct McpActionDbWorkspaceReader {
+    db: Arc<ParkingMutex<ActionDb>>,
+}
+
+impl EntityContextReadHandle for McpActionDbWorkspaceReader {
+    fn read_entity_context_entries<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+    ) -> EntityContextReadFuture<'a> {
+        let result = {
+            let db = self.db.lock();
+            crate::services::context::read_entity_context_entries_from_db(
+                &db,
+                &entity_type,
+                &entity_id,
+            )
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
+
+impl EntityContextClaimReadHandle for McpActionDbWorkspaceReader {
+    fn read_entity_context_claims<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        depth: usize,
+    ) -> EntityContextClaimReadFuture<'a> {
+        let result = {
+            let db = self.db.lock();
+            crate::services::claims::load_entity_context_claims_active(
+                &db,
+                &entity_type,
+                &entity_id,
+                depth,
+            )
+            .map_err(|error| format!("Entity context claim read failed: {error}"))
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
+
+impl PrepareMeetingContextReadHandle for McpActionDbWorkspaceReader {
+    fn read_prepare_meeting_context<'a>(
+        &'a self,
+        meeting_id: String,
+    ) -> PrepareMeetingContextReadFuture<'a> {
+        let result = {
+            let db = self.db.lock();
+            crate::services::meetings::load_prepare_meeting_context_snapshot(&db, &meeting_id)
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
 
 #[derive(Debug, Clone)]
 struct CachedInvocationProvenance {
@@ -153,6 +241,9 @@ pub struct McpAbilityBridge<'registry> {
     /// the next matching call_tool invocation. Token bytes never need to be
     /// supplied through MCP ability tool args.
     confirmation_tokens: Arc<Mutex<McpConfirmationTokenCache>>,
+    /// Read-only workspace capabilities supplied by the MCP server's
+    /// already-opened ActionDb connection.
+    workspace_readers: Option<McpWorkspaceReaders>,
     /// MCP confirmation depends on a Tauri-side prompt UI that resolves the
     /// pending attestation. That UI is scheduled for the W5/W6 prompt-surface
     /// work. Until those Tauri commands ship, request_confirmation_tool would
@@ -192,8 +283,21 @@ impl<'registry> McpAbilityBridge<'registry> {
             actor_filtered_descriptors,
             invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
             confirmation_tokens: Arc::new(Mutex::new(McpConfirmationTokenCache::default())),
+            workspace_readers: None,
             mcp_confirmation_enabled: false,
         }
+    }
+
+    pub fn new_with_action_db_readers(
+        registry: &'registry AbilityRegistry,
+        db: Arc<ParkingMutex<ActionDb>>,
+    ) -> Self {
+        Self::new(registry).with_action_db_readers(db)
+    }
+
+    pub fn with_action_db_readers(mut self, db: Arc<ParkingMutex<ActionDb>>) -> Self {
+        self.workspace_readers = Some(McpWorkspaceReaders::from_action_db(db));
+        self
     }
 
     /// Re-enable MCP request_confirmation once the W5/W6 prompt UI commands
@@ -229,8 +333,11 @@ impl<'registry> McpAbilityBridge<'registry> {
         let clock = SystemClock;
         let rng = SystemRng;
         let external = ExternalClients::default();
-        let services =
+        let mut services =
             ServiceContext::new_live(&clock, &rng, &external).with_actor(MCP_ACTOR_LABEL);
+        if let Some(readers) = &self.workspace_readers {
+            services = readers.attach_to(services);
+        }
         let invocation = InvocationContext {
             actor: BridgeActor::Agent,
             mode: ExecutionMode::Live,
@@ -637,6 +744,7 @@ mod tests {
             actor_filtered_descriptors: cached_descriptors,
             invocation_cache: Arc::new(Mutex::new(McpInvocationCache::default())),
             confirmation_tokens: Arc::new(Mutex::new(McpConfirmationTokenCache::default())),
+            workspace_readers: None,
             mcp_confirmation_enabled: false,
         }
     }

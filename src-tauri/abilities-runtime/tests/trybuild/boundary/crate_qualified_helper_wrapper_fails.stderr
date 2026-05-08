@@ -1,0 +1,5 @@
+error: ability bodies cannot bypass the ServiceContext boundary; detected: std::fs::write
+  --> tests/trybuild/boundary/crate_qualified_helper_wrapper_fails.rs:52:22
+   |
+52 |         pub async fn crate_qualified_helper_wrapper_boundary(
+   |                      ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

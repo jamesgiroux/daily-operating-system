@@ -1,0 +1,5 @@
+error: ability bodies cannot bypass the ServiceContext boundary; detected: std::fs::OpenOptions::open(write)
+  --> tests/trybuild/boundary/absolute_open_options_write_in_ability_fails.rs:40:10
+   |
+40 | async fn absolute_open_options_write_boundary(
+   |          ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^

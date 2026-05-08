@@ -1,0 +1,9 @@
+error[E0432]: unresolved imports `abilities_runtime::db`, `abilities_runtime::db_service`, `abilities_runtime::queries`, `abilities_runtime::state`
+ --> tests/trybuild/boundary/app_boundary_modules_unavailable.rs:1:25
+  |
+1 | use abilities_runtime::{db, db_service, queries, state};
+  |                         ^^  ^^^^^^^^^^  ^^^^^^^  ^^^^^ no `state` in the root
+  |                         |   |           |
+  |                         |   |           no `queries` in the root
+  |                         |   no `db_service` in the root
+  |                         no `db` in the root
