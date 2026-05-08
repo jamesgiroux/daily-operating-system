@@ -369,7 +369,44 @@ def iter_files():
                 yield path
 
 
+def path_text(path: pathlib.Path) -> str:
+    return path.as_posix()
+
+
+def is_claim_service_path(path: pathlib.Path) -> bool:
+    path_str = path_text(path)
+    return path_str.endswith("src/services/claims.rs")
+
+
+def is_migration_or_backfill_path(path: pathlib.Path) -> bool:
+    path_str = path_text(path)
+    return (
+        "/src/migrations/" in f"/{path_str}"
+        or path_str.endswith("src/migrations.rs")
+        or path_str.endswith("src/services/claims_backfill.rs")
+        or path_str.endswith("src/services/source_asof_backfill.rs")
+    )
+
+
+def is_test_path(path: pathlib.Path) -> bool:
+    return "/tests/" in f"/{path_text(path)}/"
+
+
+def marker_can_exempt_forbidden_set(path: pathlib.Path) -> bool:
+    # `dos7-allowed:` is reserved for the central claim-service parser tests and
+    # documented one-time migration/backfill exceptions. Runtime code must not
+    # be able to silence immutable SET targets with a local marker.
+    return is_claim_service_path(path) or is_migration_or_backfill_path(path) or is_test_path(path)
+
+
+def direct_runtime_update_allowed_here(path: pathlib.Path) -> bool:
+    # Runtime UPDATEs outside services/claims.rs must go through a shared claim
+    # service helper so the Rust allowlist guard runs before SQLite execution.
+    return is_claim_service_path(path) or is_migration_or_backfill_path(path) or is_test_path(path)
+
+
 violations = []
+direct_runtime_violations = []
 IDENT = r"(?:[\"`']?[A-Za-z_][A-Za-z0-9_]*[\"`']?|\[[^\]]+\])"
 CLAIMS_TABLE = r"(?:[\"`']?intelligence_claims[\"`']?|\[intelligence_claims\])"
 update_re = re.compile(
@@ -383,23 +420,33 @@ for path in iter_files():
         window = text[match.start(): match.start() + 8000]
         statement_end = window.find(");")
         statement = window if statement_end == -1 else window[:statement_end]
-        if "dos7-allowed:" in statement:
-            continue
 
         columns = parse_update_columns(text, match.start())
         denied = sorted({column for column in columns if column not in ALLOWED})
-        if denied:
-            line = text.count("\n", 0, match.start()) + 1
+        line = text.count("\n", 0, match.start()) + 1
+        has_marker = "dos7-allowed:" in statement
+        if denied and not (has_marker and marker_can_exempt_forbidden_set(path)):
             violations.append((str(path), line, ", ".join(denied)))
+        if not direct_runtime_update_allowed_here(path):
+            direct_runtime_violations.append((str(path), line))
 
-if violations:
-    print("UPDATE on non-allowlisted intelligence_claims columns is forbidden.")
-    print("Allowed columns are parsed from services/claims.rs::CLAIM_UPDATE_ALLOWED_COLUMNS:")
-    print("  " + ", ".join(sorted(ALLOWED)))
-    print("Use /* dos7-allowed: ... */ only for documented one-time migration/backfill exceptions.")
-    print()
-    for path, line, columns in sorted(set(violations)):
-        print(f"{path}:{line}: non-allowlisted SET column(s): {columns}")
+if violations or direct_runtime_violations:
+    if violations:
+        print("UPDATE on non-allowlisted intelligence_claims columns is forbidden.")
+        print("Allowed columns are parsed from services/claims.rs::CLAIM_UPDATE_ALLOWED_COLUMNS:")
+        print("  " + ", ".join(sorted(ALLOWED)))
+        print("Use /* dos7-allowed: ... */ only for documented one-time migration/backfill exceptions.")
+        print()
+        for path, line, columns in sorted(set(violations)):
+            print(f"{path}:{line}: non-allowlisted SET column(s): {columns}")
+        print()
+    if direct_runtime_violations:
+        print("Runtime UPDATE statements against intelligence_claims must use services/claims.rs helpers.")
+        print("Direct UPDATE is allowed only in services/claims.rs, migration/backfill code, and tests.")
+        print()
+        for path, line in sorted(set(direct_runtime_violations)):
+            print(f"{path}:{line}: direct runtime UPDATE intelligence_claims")
+        print()
     sys.exit(1)
 
 print("All UPDATE statements against intelligence_claims target allowlisted mutable columns only.")

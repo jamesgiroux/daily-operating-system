@@ -2467,26 +2467,20 @@ pub async fn restore_meeting_entity(
                     .map_err(|e| e.to_string())?;
                 // Restore must withdraw the shadow tombstone claims so PRE-GATE /
                 // claim-backed readers don't keep suppressing the entity.
-                // dos7-allowed: claim lifecycle column update — claim_state/surfacing_state/retraction_reason are restore-flow lifecycle writes.
-                db.conn_ref()
-                    .execute(
-                        "UPDATE intelligence_claims /* dos7-allowed: claim lifecycle column update */ \
-                         SET claim_state = 'withdrawn', \
-                             surfacing_state = 'dormant', \
-                             retraction_reason = 'restored_by_user' \
-                         WHERE id IN ( \
-                             SELECT ic.id FROM intelligence_claims ic \
-                             WHERE ic.claim_state = 'tombstoned' \
-                               AND json_valid(ic.subject_ref) = 1 \
-                               AND lower(json_extract(ic.subject_ref, '$.kind')) = 'meeting' \
-                               AND json_extract(ic.subject_ref, '$.id') = ?1 \
-                               AND ic.claim_type IN ('meeting_entity_dismissed', 'linking_dismissed') \
-                               AND coalesce(ic.field_path, '') = coalesce(?2, '') \
-                               AND ic.text = ?3 \
-                         )",
-                        rusqlite::params![meeting_id_s, entity_type_s, entity_id_s],
+                for claim_type in ["meeting_entity_dismissed", "linking_dismissed"] {
+                    crate::services::claims::withdraw_tombstones_for(
+                        db,
+                        crate::services::claims::WithdrawTombstoneFilter {
+                            subject_kind: "meeting",
+                            subject_id: &meeting_id_s,
+                            claim_type,
+                            text: Some(&entity_id_s),
+                            field_path: Some(&entity_type_s),
+                            retraction_reason: "restored_by_user",
+                        },
                     )
-                    .map_err(|e| e.to_string())?;
+                    .map_err(|e| format!("withdraw {claim_type} claim failed: {e}"))?;
+                }
                 db.conn_ref()
                     .execute(
                         "UPDATE linked_entities_raw SET source = 'rule:restored' \

@@ -2945,6 +2945,55 @@ pub fn withdraw_all_tombstones_of_type(
     )
 }
 
+/// Withdraw Email-subject claims for resolved emails that are about to be
+/// purged by the age-based lifecycle job. The email rows must still exist so
+/// the subquery can identify the claim subjects safely.
+pub fn withdraw_email_subject_claims_for_aged_resolved_emails(
+    db: &ActionDb,
+    cutoff_modifier: &str,
+) -> Result<usize, rusqlite::Error> {
+    execute_claims_update_sqlite(
+        db.conn_ref(),
+        "UPDATE intelligence_claims \
+         SET claim_state = 'withdrawn', \
+             retraction_reason = coalesce(retraction_reason, 'subject_purged') \
+         WHERE id IN ( \
+             SELECT ic.id FROM intelligence_claims ic \
+             WHERE json_valid(ic.subject_ref) = 1 \
+               AND ic.claim_state IN ('active', 'tombstoned', 'dormant') \
+               AND lower(json_extract(ic.subject_ref, '$.kind')) = 'email' \
+               AND json_extract(ic.subject_ref, '$.id') IN ( \
+                   SELECT email_id FROM emails \
+                   WHERE resolved_at IS NOT NULL \
+                     AND resolved_at < datetime('now', ?1) \
+               ) \
+         )",
+        params![cutoff_modifier],
+    )
+}
+
+/// Withdraw Email-subject claims for all currently-present email rows before a
+/// connector source purge deletes those rows.
+pub fn withdraw_email_subject_claims_for_existing_emails(
+    db: &ActionDb,
+) -> Result<usize, rusqlite::Error> {
+    execute_claims_update_sqlite(
+        db.conn_ref(),
+        "UPDATE intelligence_claims \
+         SET claim_state = 'withdrawn', \
+             retraction_reason = coalesce(retraction_reason, 'subject_purged') \
+         WHERE id IN ( \
+             SELECT ic.id FROM intelligence_claims ic \
+             WHERE json_valid(ic.subject_ref) = 1 \
+               AND ic.claim_state IN ('active', 'tombstoned', 'dormant') \
+               AND lower(json_extract(ic.subject_ref, '$.kind')) = 'email' \
+               AND json_extract(ic.subject_ref, '$.id') IN \
+                   (SELECT email_id FROM emails) \
+         )",
+        [],
+    )
+}
+
 pub fn withdraw_tombstones_for(
     db: &ActionDb,
     filter: WithdrawTombstoneFilter<'_>,
