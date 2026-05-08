@@ -195,9 +195,18 @@ fn setup_migration_runner_state(conn: &Connection) {
             id TEXT PRIMARY KEY,
             source TEXT
         );
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            tracker_path TEXT,
+            updated_at TEXT NOT NULL
+        );
         CREATE TABLE IF NOT EXISTS entities (
             id TEXT PRIMARY KEY,
-            entity_type TEXT NOT NULL DEFAULT 'project'
+            name TEXT NOT NULL,
+            entity_type TEXT NOT NULL DEFAULT 'account',
+            tracker_path TEXT,
+            updated_at TEXT NOT NULL
         );
         CREATE TABLE IF NOT EXISTS entity_members (
             entity_id TEXT NOT NULL,

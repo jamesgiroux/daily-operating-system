@@ -29,3 +29,153 @@ fn migration_145_enforces_entity_members_entity_id_fk() {
     )
     .expect_err("orphan entity_members.entity_id should be rejected");
 }
+
+#[test]
+fn migration_145_preserves_project_memberships_and_surfaces_unrecoverable_orphans() {
+    let conn = Connection::open_in_memory().expect("open in-memory database");
+    setup_v144_migration_state(&conn);
+
+    conn.execute(
+        "INSERT INTO projects (id, name, tracker_path, updated_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![
+            "project-without-entity",
+            "Legacy Project",
+            "/projects/legacy",
+            "2026-05-08T12:00:00Z"
+        ],
+    )
+    .expect("seed project row without entity mirror");
+    conn.execute(
+        "INSERT INTO entity_members (entity_id, person_id, relationship_type)
+         VALUES (?1, ?2, ?3)",
+        params!["project-without-entity", "person-project", "member"],
+    )
+    .expect("seed recoverable project membership");
+    conn.execute(
+        "INSERT INTO entity_members (entity_id, person_id, relationship_type)
+         VALUES (?1, ?2, ?3)",
+        params!["missing-entity", "person-orphan", "reviewer"],
+    )
+    .expect("seed unrecoverable membership");
+
+    let applied = run_migrations(&conn).expect("apply migration 145");
+    assert_eq!(applied, 1);
+
+    let recovered_relationship: String = conn
+        .query_row(
+            "SELECT relationship_type
+             FROM entity_members
+             WHERE entity_id = ?1 AND person_id = ?2",
+            params!["project-without-entity", "person-project"],
+            |row| row.get(0),
+        )
+        .expect("project membership should survive migration");
+    assert_eq!(recovered_relationship, "member");
+
+    let recovered_entity: (String, String, Option<String>) = conn
+        .query_row(
+            "SELECT name, entity_type, tracker_path
+             FROM entities
+             WHERE id = ?1",
+            params!["project-without-entity"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("missing project entity mirror should be backfilled");
+    assert_eq!(
+        recovered_entity,
+        (
+            "Legacy Project".to_string(),
+            "project".to_string(),
+            Some("/projects/legacy".to_string())
+        )
+    );
+
+    let active_orphan_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM entity_members
+             WHERE entity_id = ?1 AND person_id = ?2",
+            params!["missing-entity", "person-orphan"],
+            |row| row.get(0),
+        )
+        .expect("count active orphan rows");
+    assert_eq!(active_orphan_count, 0);
+
+    let surfaced_orphan: (String, String) = conn
+        .query_row(
+            "SELECT relationship_type, reason
+             FROM entity_members_migration_145_orphans
+             WHERE entity_id = ?1 AND person_id = ?2",
+            params!["missing-entity", "person-orphan"],
+            |row| Ok((row.get(0)?, row.get(1)?)),
+        )
+        .expect("unrecoverable membership should be surfaced for triage");
+    assert_eq!(
+        surfaced_orphan,
+        (
+            "reviewer".to_string(),
+            "missing_entity_after_project_mirror_backfill".to_string()
+        )
+    );
+}
+
+fn setup_v144_migration_state(conn: &Connection) {
+    conn.execute_batch(
+        "CREATE TABLE IF NOT EXISTS schema_version (
+            version INTEGER PRIMARY KEY,
+            applied_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        INSERT INTO schema_version (version) VALUES (144);
+
+        CREATE TABLE IF NOT EXISTS meetings (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meeting_prep (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS meeting_transcripts (id TEXT PRIMARY KEY);
+        CREATE TABLE IF NOT EXISTS account_stakeholders (
+            id TEXT PRIMARY KEY,
+            data_source TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_assessment (
+            id TEXT PRIMARY KEY,
+            health_json TEXT,
+            org_health_json TEXT,
+            dimensions_json TEXT,
+            success_plan_signals_json TEXT
+        );
+        CREATE TABLE IF NOT EXISTS entity_quality (
+            id TEXT PRIMARY KEY,
+            health_score REAL,
+            health_trend TEXT,
+            coherence_score REAL,
+            coherence_flagged INTEGER
+        );
+        CREATE TABLE IF NOT EXISTS person_relationships (
+            id TEXT PRIMARY KEY,
+            rationale TEXT
+        );
+        CREATE TABLE IF NOT EXISTS email_signals (
+            id TEXT PRIMARY KEY,
+            source TEXT
+        );
+        CREATE TABLE IF NOT EXISTS projects (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            tracker_path TEXT,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS entities (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            entity_type TEXT NOT NULL DEFAULT 'account',
+            tracker_path TEXT,
+            updated_at TEXT NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS entity_members (
+            entity_id TEXT NOT NULL,
+            person_id TEXT NOT NULL,
+            relationship_type TEXT DEFAULT 'associated',
+            PRIMARY KEY (entity_id, person_id)
+        );",
+    )
+    .expect("create v144 migration fixture state");
+}
