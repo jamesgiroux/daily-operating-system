@@ -261,14 +261,20 @@ mod tests {
     }
 
     fn link_stakeholder(db: &ActionDb, account_id: &str, person_id: &str, status: &str) {
-        db.conn_ref()
-            .execute(
-                "INSERT OR REPLACE INTO account_stakeholders \
-                 (account_id, person_id, data_source, confidence, status, created_at) \
-                 VALUES (?1, ?2, 'test', 1.0, ?3, ?4)",
-                params![account_id, person_id, status, Utc::now().to_rfc3339()],
-            )
+        db.suggest_stakeholder_pending(account_id, person_id, "test", 1.0)
             .expect("insert stakeholder");
+        match status {
+            "active" => {
+                db.confirm_stakeholder(account_id, person_id)
+                    .expect("activate stakeholder");
+            }
+            "dismissed" => {
+                db.dismiss_stakeholder_suggestion(account_id, person_id)
+                    .expect("dismiss stakeholder");
+            }
+            "pending_review" => {}
+            other => panic!("unsupported stakeholder status fixture: {other}"),
+        }
     }
 
     fn count_domain_signals(db: &ActionDb, account_id: &str) -> i64 {

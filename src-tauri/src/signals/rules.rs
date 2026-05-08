@@ -981,16 +981,8 @@ mod tests {
             [],
         )
         .unwrap();
-        conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'associated')",
-            [],
-        )
-        .unwrap();
+        db.add_account_team_member("a1", "p1", "associated")
+            .unwrap();
 
         let signal = make_signal(
             "person",
@@ -1099,16 +1091,7 @@ mod tests {
             [],
         )
         .unwrap();
-        conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
-            [],
-        )
-        .unwrap();
+        db.add_account_team_member("a1", "p1", "champion").unwrap();
 
         // Renewal in 60 days
         let renewal_date = (chrono::Utc::now() + chrono::Duration::days(60))

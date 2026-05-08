@@ -5809,13 +5809,7 @@ fn seed_w0g_stakeholder(db: &ActionDb, account_id: &str, person_id: &str) {
             rusqlite::params![person_id, format!("{person_id}@example.com")],
         )
         .expect("seed person");
-    db.conn_ref()
-        .execute(
-            "INSERT OR IGNORE INTO account_stakeholders
-             (account_id, person_id, data_source, created_at)
-             VALUES (?1, ?2, 'user', '2026-01-01T00:00:00Z')",
-            rusqlite::params![account_id, person_id],
-        )
+    db.add_account_team_member(account_id, person_id, "associated")
         .expect("seed stakeholder");
 }
 

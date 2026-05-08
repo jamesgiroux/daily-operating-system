@@ -457,24 +457,26 @@ pub(crate) fn confirm_stakeholder_suggestion_inner(
     user_domains: &[String],
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
-        tx.confirm_stakeholder(account_id, person_id)?;
-        if let Err(e) =
-            stakeholder_domains::backfill_domains_for_account(ctx, tx, account_id, user_domains)
-        {
-            log::warn!("stakeholder_domains: confirm backfill for {account_id} failed: {e}");
-        }
-        crate::services::signals::emit_in_transaction(
+        crate::services::stakeholder_writer::write_with_stakeholders_changed(
             ctx,
             tx,
             "account",
             account_id,
-            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
             "confirm_stakeholder_suggestion",
-            serde_json::json!({
-                "entity_id": account_id,
-                "entity_type": "account",
-                "mutation_source": "confirm_stakeholder_suggestion",
-            }),
+            |tx| {
+                tx.confirm_stakeholder(account_id, person_id)?;
+                if let Err(e) = stakeholder_domains::backfill_domains_for_account(
+                    ctx,
+                    tx,
+                    account_id,
+                    user_domains,
+                ) {
+                    log::warn!(
+                        "stakeholder_domains: confirm backfill for {account_id} failed: {e}"
+                    );
+                }
+                Ok(())
+            },
         )?;
         Ok(())
     })
@@ -503,19 +505,16 @@ pub(crate) fn dismiss_stakeholder_suggestion_inner(
     person_id: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
-        tx.dismiss_stakeholder_suggestion(account_id, person_id)?;
-        crate::services::signals::emit_in_transaction(
+        crate::services::stakeholder_writer::write_with_stakeholders_changed(
             ctx,
             tx,
             "account",
             account_id,
-            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
             "dismiss_stakeholder_suggestion",
-            serde_json::json!({
-                "entity_id": account_id,
-                "entity_type": "account",
-                "mutation_source": "dismiss_stakeholder_suggestion",
-            }),
+            |tx| {
+                tx.dismiss_stakeholder_suggestion(account_id, person_id)?;
+                Ok(())
+            },
         )?;
         Ok(())
     })

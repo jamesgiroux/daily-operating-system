@@ -115,7 +115,7 @@ pub fn run_cascade(
                 .unwrap_or(false);
 
             if auto_resolved {
-                c2_suggest_stakeholders(link_ctx, &primary.entity_id, db);
+                c2_suggest_stakeholders(ctx, link_ctx, &primary.entity_id, db)?;
             } else {
                 // C3 — User-set primary: promote domain-matching attendees directly.
                 c3_promote_trusted_stakeholders(ctx, link_ctx, &primary.entity_id, db)?;
@@ -198,44 +198,66 @@ pub fn run_cascade(
 // C2 helpers
 // ---------------------------------------------------------------------------
 
-fn c2_suggest_stakeholders(ctx: &LinkingContext, account_id: &str, db: &ActionDb) {
+fn c2_suggest_stakeholders(
+    ctx: &ServiceContext<'_>,
+    link_ctx: &LinkingContext,
+    account_id: &str,
+    db: &ActionDb,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     // Get account domains to identify domain-matching external participants.
     let account_domains = get_account_domains(db, account_id);
 
-    for p in ctx.external_participants() {
-        let p_domain = p.email.rsplit_once('@').map(|(_, d)| d.to_lowercase());
+    db.with_transaction(|tx| {
+        let mut suggested_any = false;
+        for p in link_ctx.external_participants() {
+            let p_domain = p.email.rsplit_once('@').map(|(_, d)| d.to_lowercase());
 
-        let domain_matches = p_domain
-            .as_deref()
-            .map(|d| account_domains.iter().any(|ad| ad.eq_ignore_ascii_case(d)))
-            .unwrap_or(false);
+            let domain_matches = p_domain
+                .as_deref()
+                .map(|d| account_domains.iter().any(|ad| ad.eq_ignore_ascii_case(d)))
+                .unwrap_or(false);
 
-        if !domain_matches {
-            continue;
-        }
-
-        let person_id = match &p.person_id {
-            Some(id) => id,
-            None => continue,
-        };
-
-        // Skip if already an active/pending stakeholder on this account.
-        let already = db
-            .is_stakeholder_on_account(account_id, person_id)
-            .unwrap_or(false);
-        if already {
-            continue;
-        }
-
-        let data_source = match ctx.owner.owner_type {
-            super::types::OwnerType::Meeting => "calendar_attendance",
-            super::types::OwnerType::Email | super::types::OwnerType::EmailThread => {
-                "email_correspondence"
+            if !domain_matches {
+                continue;
             }
-        };
 
-        let _ = db.suggest_stakeholder_pending(account_id, person_id, data_source, 0.75);
-    }
+            let person_id = match &p.person_id {
+                Some(id) => id,
+                None => continue,
+            };
+
+            // Skip if already an active/pending stakeholder on this account.
+            let already = tx
+                .is_stakeholder_on_account(account_id, person_id)
+                .unwrap_or(false);
+            if already {
+                continue;
+            }
+
+            let data_source = match link_ctx.owner.owner_type {
+                super::types::OwnerType::Meeting => "calendar_attendance",
+                super::types::OwnerType::Email | super::types::OwnerType::EmailThread => {
+                    "email_correspondence"
+                }
+            };
+
+            let inserted =
+                tx.suggest_stakeholder_pending(account_id, person_id, data_source, 0.75)?;
+            suggested_any = suggested_any || inserted > 0;
+        }
+
+        if suggested_any {
+            crate::services::stakeholder_writer::emit_stakeholders_changed(
+                ctx,
+                tx,
+                "account",
+                account_id,
+                "suggest_stakeholders_pending",
+            )?;
+        }
+        Ok(())
+    })
 }
 
 // ---------------------------------------------------------------------------
@@ -373,18 +395,12 @@ fn c3_promote_trusted_stakeholders(
         }
 
         if promoted_any {
-            crate::services::signals::emit_in_transaction(
+            crate::services::stakeholder_writer::emit_stakeholders_changed(
                 ctx,
                 tx,
                 "account",
                 account_id,
-                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
                 "manual_set_primary",
-                serde_json::json!({
-                    "entity_id": account_id,
-                    "entity_type": "account",
-                    "mutation_source": "manual_set_primary",
-                }),
             )?;
         }
         Ok(())

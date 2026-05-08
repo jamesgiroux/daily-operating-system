@@ -6,6 +6,7 @@ use std::path::Path;
 use crate::commands::{EntitySummary, MeetingSummary, PersonDetailResult};
 use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
+use crate::services::stakeholder_writer;
 use crate::state::AppState;
 use rusqlite::OptionalExtension;
 
@@ -108,23 +109,16 @@ pub(crate) fn delete_person_with_stakeholder_cache_rebuild(
     person_id: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
-        let affected_entities = affected_stakeholder_entities_for_person(tx, person_id)?;
-        tx.delete_person(person_id).map_err(|e| e.to_string())?;
-        for (entity_id, entity_type) in affected_entities {
-            crate::services::signals::emit_in_transaction(
-                ctx,
-                tx,
-                &entity_type,
-                &entity_id,
-                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
-                "delete_person",
-                serde_json::json!({
-                    "entity_id": entity_id,
-                    "entity_type": entity_type,
-                    "mutation_source": "delete_person",
-                }),
-            )?;
-        }
+        stakeholder_writer::write_with_stakeholders_changed_for_entities(
+            ctx,
+            tx,
+            "delete_person",
+            |tx| {
+                let affected_entities = affected_stakeholder_entities_for_person(tx, person_id)?;
+                tx.delete_person(person_id).map_err(|e| e.to_string())?;
+                Ok(((), affected_entities))
+            },
+        )?;
         Ok(())
     })
 }
@@ -136,29 +130,22 @@ pub(crate) fn merge_people_with_stakeholder_cache_rebuild(
     remove_id: &str,
 ) -> Result<(), String> {
     db.with_transaction(|tx| {
-        let mut affected_entities = affected_stakeholder_entities_for_person(tx, remove_id)?;
-        affected_entities.extend(affected_stakeholder_entities_for_person(tx, keep_id)?);
-        affected_entities.sort();
-        affected_entities.dedup();
+        stakeholder_writer::write_with_stakeholders_changed_for_entities(
+            ctx,
+            tx,
+            "merge_people",
+            |tx| {
+                let mut affected_entities =
+                    affected_stakeholder_entities_for_person(tx, remove_id)?;
+                affected_entities.extend(affected_stakeholder_entities_for_person(tx, keep_id)?);
+                affected_entities.sort();
+                affected_entities.dedup();
 
-        tx.merge_people(keep_id, remove_id)
-            .map_err(|e| e.to_string())?;
-
-        for (entity_id, entity_type) in affected_entities {
-            crate::services::signals::emit_in_transaction(
-                ctx,
-                tx,
-                &entity_type,
-                &entity_id,
-                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
-                "merge_people",
-                serde_json::json!({
-                    "entity_id": entity_id,
-                    "entity_type": entity_type,
-                    "mutation_source": "merge_people",
-                }),
-            )?;
-        }
+                tx.merge_people(keep_id, remove_id)
+                    .map_err(|e| e.to_string())?;
+                Ok(((), affected_entities))
+            },
+        )?;
         Ok(())
     })
 }
@@ -171,20 +158,16 @@ pub(crate) fn link_person_to_entity_with_stakeholder_cache_rebuild(
     relationship_type: &str,
 ) -> Result<String, String> {
     let entity_type = stakeholder_entity_type_for_id(tx, entity_id)?;
-    tx.link_person_to_entity(person_id, entity_id, relationship_type)
-        .map_err(|e| e.to_string())?;
-    crate::services::signals::emit_in_transaction(
+    stakeholder_writer::write_with_stakeholders_changed(
         ctx,
         tx,
         &entity_type,
         entity_id,
-        crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
         "link_person_entity",
-        serde_json::json!({
-            "entity_id": entity_id,
-            "entity_type": &entity_type,
-            "mutation_source": "link_person_entity",
-        }),
+        |tx| {
+            tx.link_person_to_entity(person_id, entity_id, relationship_type)
+                .map_err(|e| e.to_string())
+        },
     )?;
     Ok(entity_type)
 }
@@ -196,20 +179,16 @@ pub(crate) fn unlink_person_from_entity_with_stakeholder_cache_rebuild(
     entity_id: &str,
 ) -> Result<String, String> {
     let entity_type = stakeholder_entity_type_for_id(tx, entity_id)?;
-    tx.unlink_person_from_entity(person_id, entity_id)
-        .map_err(|e| e.to_string())?;
-    crate::services::signals::emit_in_transaction(
+    stakeholder_writer::write_with_stakeholders_changed(
         ctx,
         tx,
         &entity_type,
         entity_id,
-        crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
         "unlink_person_entity",
-        serde_json::json!({
-            "entity_id": entity_id,
-            "entity_type": &entity_type,
-            "mutation_source": "unlink_person_entity",
-        }),
+        |tx| {
+            tx.unlink_person_from_entity(person_id, entity_id)
+                .map_err(|e| e.to_string())
+        },
     )?;
     Ok(entity_type)
 }
@@ -690,20 +669,16 @@ pub fn create_person_from_stakeholder(
         tx.upsert_person(&person).map_err(|e| e.to_string())?;
 
         // Link to the parent entity
-        tx.link_person_to_entity(&id, entity_id, "associated")
-            .map_err(|e| e.to_string())?;
-        crate::services::signals::emit_in_transaction(
+        stakeholder_writer::write_with_stakeholders_changed(
             ctx,
             tx,
             entity_type,
             entity_id,
-            crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
             "create_person_from_stakeholder",
-            serde_json::json!({
-                "entity_id": entity_id,
-                "entity_type": entity_type,
-                "mutation_source": "create_person_from_stakeholder",
-            }),
+            |tx| {
+                tx.link_person_to_entity(&id, entity_id, "associated")
+                    .map_err(|e| e.to_string())
+            },
         )?;
         Ok(())
     })?;

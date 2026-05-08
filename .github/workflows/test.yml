@@ -73,6 +73,9 @@ jobs:
       - name: Enforce write_intelligence_json fence usage
         run: ./scripts/check_write_fence_usage.sh
 
+      - name: Enforce stakeholder graph writer signal helper
+        run: ./scripts/check_stakeholder_writer_emits_signal.sh
+
       - name: Enforce ability surface drift guard
         run: |
           bash src-tauri/scripts/check_ability_surface_drift.sh

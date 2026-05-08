@@ -120,39 +120,35 @@ pub fn apply_repair(db: &ActionDb, opts: &RepairOptions) -> Result<RepairReport,
         let now = Utc::now().to_rfc3339();
         let ledger_items = write_ledger(tx, &repair_id, &now)?;
 
-        tx.conn_ref()
-            .execute(
-                "UPDATE account_stakeholders \
-                 SET status = 'dismissed', data_source = ?1, confidence = 0.0 \
-                 WHERE EXISTS ( \
-                   SELECT 1 FROM dos345_candidates c \
-                   WHERE c.account_id = account_stakeholders.account_id \
-                     AND c.person_id = account_stakeholders.person_id \
-                 )",
-                params![REPAIR_SOURCE],
-            )
-            .map_err(|e| format!("quarantine stakeholders: {e}"))?;
-
-        let affected_accounts = repair_candidate_account_ids(tx)?;
         let clock = crate::services::context::SystemClock;
         let rng = crate::services::context::SystemRng;
         let ext = crate::services::context::ExternalClients::default();
         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-        for account_id in affected_accounts {
-            crate::services::signals::emit_in_transaction(
-                &ctx,
-                tx,
-                "account",
-                &account_id,
-                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
-                "apply_repair",
-                serde_json::json!({
-                    "entity_id": account_id,
-                    "entity_type": "account",
-                    "mutation_source": "apply_repair",
-                }),
-            )?;
-        }
+        crate::services::stakeholder_writer::write_with_stakeholders_changed_for_entities(
+            &ctx,
+            tx,
+            "apply_repair",
+            |tx| {
+                let affected_accounts = repair_candidate_account_ids(tx)?;
+                tx.conn_ref()
+                    .execute(
+                        "UPDATE account_stakeholders \
+                         SET status = 'dismissed', data_source = ?1, confidence = 0.0 \
+                         WHERE EXISTS ( \
+                           SELECT 1 FROM dos345_candidates c \
+                           WHERE c.account_id = account_stakeholders.account_id \
+                             AND c.person_id = account_stakeholders.person_id \
+                         )",
+                        params![REPAIR_SOURCE],
+                    )
+                    .map_err(|e| format!("quarantine stakeholders: {e}"))?;
+                let affected_entities = affected_accounts
+                    .into_iter()
+                    .map(|account_id| (account_id, "account".to_string()))
+                    .collect();
+                Ok(((), affected_entities))
+            },
+        )?;
 
         // L2 cycle-22 fix: snapshot the (person_id, role) tuples
         // we're about to dismiss BEFORE the UPDATE so we can write
@@ -778,22 +774,24 @@ mod tests {
     }
 
     fn seed_candidate_pair(db: &ActionDb, account_id: &str, person_id: &str, created_at: &str) {
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders
-                 (account_id, person_id, data_source, status, confidence, created_at)
-                 VALUES (?1, ?2, 'user', 'active', NULL, ?3)",
-                params![account_id, person_id, created_at],
-            )
+        db.add_account_team_member(account_id, person_id, "associated")
             .expect("insert stakeholder");
         db.conn_ref()
             .execute(
-                "INSERT INTO account_stakeholder_roles
-                 (account_id, person_id, role, data_source, created_at)
-                 VALUES (?1, ?2, 'associated', 'ai', ?3)",
+                "UPDATE account_stakeholders
+                 SET created_at = ?3
+                 WHERE account_id = ?1 AND person_id = ?2",
                 params![account_id, person_id, created_at],
             )
-            .expect("insert role");
+            .expect("set stakeholder batch timestamp");
+        db.conn_ref()
+            .execute(
+                "UPDATE account_stakeholder_roles
+                 SET data_source = 'ai', created_at = ?3
+                 WHERE account_id = ?1 AND person_id = ?2 AND role = 'associated'",
+                params![account_id, person_id, created_at],
+            )
+            .expect("seed role provenance");
     }
 
     fn seed_fixture() -> ActionDb {
