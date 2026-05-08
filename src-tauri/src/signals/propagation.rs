@@ -87,29 +87,24 @@ impl PropagationEngine {
             let derived_signals = rule_fn(source_signal, db);
 
             for ds in derived_signals {
-                let id = format!("sig-{}", Uuid::new_v4());
-                let half_life = super::bus::default_half_life(&ds.source);
+                let event = super::bus::emit_signal_derived_in_active_tx(
+                    db,
+                    &ds.entity_type,
+                    &ds.entity_id,
+                    &ds.signal_type,
+                    &ds.source,
+                    ds.value.as_deref(),
+                    ds.confidence,
+                )?;
 
-                db.insert_signal_event(&super::bus::InsertSignalRow {
-                    id: &id,
-                    entity_type: &ds.entity_type,
-                    entity_id: &ds.entity_id,
-                    signal_type: &ds.signal_type,
-                    source: &ds.source,
-                    value: ds.value.as_deref(),
-                    confidence: ds.confidence,
-                    decay_half_life_days: half_life,
-                    source_context: None,
-                })?;
-
-                db.insert_signal_derivation(&source_signal.id, &id, rule_name)?;
+                db.insert_signal_derivation(&source_signal.id, &event.id, rule_name)?;
 
                 // Track cross-entity targets for intel enrichment
                 if ds.entity_id != source_signal.entity_id {
                     cross_entity_targets.push((ds.entity_id.clone(), ds.entity_type.clone()));
                 }
 
-                derived_ids.push(id);
+                derived_ids.push(event.id);
             }
         }
 

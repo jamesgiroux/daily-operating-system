@@ -4705,30 +4705,46 @@ mod live_acceptance_tests {
             .link_person_to_account_with_source(&account_user, &user_person_id, "champion", "user")
             .expect("seed user stakeholder");
 
-        snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
-                 VALUES (?1, 'account', ?2, 'profile_update', 'glean', 0.8)",
-                params![format!("{marker}-sig-glean"), account_glean],
-            )
-            .expect("seed glean signal");
-        snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
-                 VALUES (?1, 'account', ?2, 'profile_update', 'google', 0.8)",
-                params![format!("{marker}-sig-google"), account_google],
-            )
-            .expect("seed google signal");
-        snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence)
-                 VALUES (?1, 'account', ?2, 'profile_update', 'user', 0.8)",
-                params![format!("{marker}-sig-user"), account_user],
-            )
-            .expect("seed user signal");
+        let created_at = Utc::now().to_rfc3339();
+        crate::services::signals::emit_fixture_event(
+            &snapshot_db,
+            &format!("{marker}-sig-glean"),
+            "account",
+            &account_glean,
+            "profile_update",
+            "glean",
+            None,
+            0.8,
+            None,
+            &created_at,
+        )
+        .expect("seed glean signal");
+        crate::services::signals::emit_fixture_event(
+            &snapshot_db,
+            &format!("{marker}-sig-google"),
+            "account",
+            &account_google,
+            "profile_update",
+            "google",
+            None,
+            0.8,
+            None,
+            &created_at,
+        )
+        .expect("seed google signal");
+        crate::services::signals::emit_fixture_event(
+            &snapshot_db,
+            &format!("{marker}-sig-user"),
+            "account",
+            &account_user,
+            "profile_update",
+            "user",
+            None,
+            0.8,
+            None,
+            &created_at,
+        )
+        .expect("seed user signal");
 
         snapshot_db
             .conn_ref()

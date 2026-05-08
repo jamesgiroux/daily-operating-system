@@ -254,6 +254,34 @@ pub fn run_propagation(
     engine.propagate(db, signal)
 }
 
+#[cfg(test)]
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn emit_fixture_event(
+    db: &ActionDb,
+    id: &str,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+    decay_half_life_days: Option<i32>,
+    created_at: &str,
+) -> Result<String, crate::db::DbError> {
+    bus::emit_signal_fixture_event(
+        db,
+        id,
+        entity_type,
+        entity_id,
+        signal_type,
+        source,
+        value,
+        confidence,
+        decay_half_life_days,
+        created_at,
+    )
+}
+
 /// Queue affected meeting preps for regeneration after entity correction.
 pub fn invalidate_preps(queue: &Arc<Mutex<Vec<String>>>, meeting_ids: Vec<String>) {
     let mut q = queue.lock();

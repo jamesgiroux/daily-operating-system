@@ -6270,11 +6270,19 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
             signal_type.replace('_', "-"),
             &created_at[..10]
         );
-        conn.execute(
-            "INSERT OR REPLACE INTO signal_events (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![sig_id, entity_type, entity_id, signal_type, source, value, confidence, decay, created_at],
-        ).map_err(|e| format!("Signal event: {}", e))?;
+        crate::signals::bus::emit_signal_fixture_event(
+            db,
+            &sig_id,
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            Some(*value),
+            *confidence,
+            (*decay).map(|days| days.round() as i32),
+            created_at,
+        )
+        .map_err(|e| format!("Signal event: {}", e))?;
     }
 
     // =========================================================================
@@ -6341,20 +6349,17 @@ fn seed_intelligence_data(db: &ActionDb) -> Result<(), String> {
                 .replace('.', "-"),
         );
         let value_str = value_json.to_string();
-        conn.execute(
-            "INSERT OR REPLACE INTO signal_events (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at) \
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            rusqlite::params![
-                sig_id,
-                "meeting",
-                meeting_id,
-                "pre_meeting_context",
-                "email_thread",
-                value_str,
-                confidence,
-                7.0,
-                days_ago_rfc(0)
-            ],
+        crate::signals::bus::emit_signal_fixture_event(
+            db,
+            &sig_id,
+            "meeting",
+            meeting_id,
+            "pre_meeting_context",
+            "email_thread",
+            Some(&value_str),
+            *confidence,
+            Some(7),
+            &days_ago_rfc(0),
         )
         .map_err(|e| format!("Pre-meeting context signal: {}", e))?;
     }

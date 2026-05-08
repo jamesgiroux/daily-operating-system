@@ -24,6 +24,8 @@ use uuid::Uuid;
 
 use crate::db::{ActionDb, DbError};
 
+use super::policy_registry::{policy_for, SignalEmissionChannel, SignalType};
+
 // ---------------------------------------------------------------------------
 // Types
 // ---------------------------------------------------------------------------
@@ -45,6 +47,12 @@ pub struct SignalEvent {
     /// Context tag for the signal source (e.g. "inbound_email", "outbound_email").
     #[serde(skip_serializing_if = "Option::is_none")]
     pub source_context: Option<String>,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum SignalInsertMode {
+    Insert,
+    InsertOrReplace,
 }
 
 // ---------------------------------------------------------------------------
@@ -106,7 +114,7 @@ pub fn default_half_life(source: &str) -> i32 {
 
 /// Parameters for inserting a signal event row into the DB.
 #[derive(Debug)]
-pub struct InsertSignalRow<'a> {
+struct InsertSignalRow<'a> {
     pub id: &'a str,
     pub entity_type: &'a str,
     pub entity_id: &'a str,
@@ -115,6 +123,7 @@ pub struct InsertSignalRow<'a> {
     pub value: Option<&'a str>,
     pub confidence: f64,
     pub decay_half_life_days: i32,
+    pub created_at: &'a str,
     pub source_context: Option<&'a str>,
 }
 
@@ -132,35 +141,25 @@ pub struct SignalEmission<'a> {
 
 /// Emit a signal using the builder struct. Returns the generated signal ID.
 pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError> {
-    let id = format!("sig-{}", Uuid::new_v4());
-    let half_life = default_half_life(signal.source);
-    db.insert_signal_event(&InsertSignalRow {
-        id: &id,
-        entity_type: signal.entity_type,
-        entity_id: signal.entity_id,
-        signal_type: signal.signal_type,
-        source: signal.source,
-        value: signal.value,
-        confidence: signal.confidence,
-        decay_half_life_days: half_life,
-        source_context: signal.source_context,
-    })?;
-
-    // Flag upcoming meetings linked to this entity for intelligence refresh.
-    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-    let _ = db.conn_ref().execute(
-        "UPDATE meeting_transcripts SET has_new_signals = 1
-         WHERE meeting_id IN (
-             SELECT me.meeting_id FROM meeting_entities me
-             INNER JOIN meetings m ON m.id = me.meeting_id
-             WHERE me.entity_id = ?1 AND me.entity_type = ?2
-             AND julianday(m.start_time) > julianday('now')
-             AND (meeting_transcripts.intelligence_state IS NULL OR meeting_transcripts.intelligence_state != 'archived')
-         )",
-        rusqlite::params![signal.entity_id, signal.entity_type],
-    );
-
-    Ok(id)
+    let event = emit_signal_event(
+        db,
+        EmitSignalEvent {
+            entity_type: signal.entity_type,
+            entity_id: signal.entity_id,
+            signal_type: signal.signal_type,
+            source: signal.source,
+            value: signal.value,
+            confidence: signal.confidence,
+            source_context: signal.source_context,
+            id: None,
+            created_at: None,
+            decay_half_life_days: None,
+            insert_mode: SignalInsertMode::Insert,
+            channel: SignalEmissionChannel::Infrastructure,
+            refresh_meetings: true,
+        },
+    )?;
+    Ok(event.id)
 }
 
 // ---------------------------------------------------------------------------
@@ -179,36 +178,25 @@ pub fn emit_signal(
     value: Option<&str>,
     confidence: f64,
 ) -> Result<String, DbError> {
-    let id = format!("sig-{}", Uuid::new_v4());
-    let half_life = default_half_life(source);
-    db.insert_signal_event(&InsertSignalRow {
-        id: &id,
-        entity_type,
-        entity_id,
-        signal_type,
-        source,
-        value,
-        confidence,
-        decay_half_life_days: half_life,
-        source_context: None,
-    })?;
-
-    // Flag upcoming meetings linked to this entity for intelligence refresh.
-    // Lightweight SQL UPDATE — scheduler picks these up every 30 min.
-    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-    let _ = db.conn_ref().execute(
-        "UPDATE meeting_transcripts SET has_new_signals = 1
-         WHERE meeting_id IN (
-             SELECT me.meeting_id FROM meeting_entities me
-             INNER JOIN meetings m ON m.id = me.meeting_id
-             WHERE me.entity_id = ?1 AND me.entity_type = ?2
-             AND julianday(m.start_time) > julianday('now')
-             AND (meeting_transcripts.intelligence_state IS NULL OR meeting_transcripts.intelligence_state != 'archived')
-         )",
-        rusqlite::params![entity_id, entity_type],
-    );
-
-    Ok(id)
+    let event = emit_signal_event(
+        db,
+        EmitSignalEvent {
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            value,
+            confidence,
+            source_context: None,
+            id: None,
+            created_at: None,
+            decay_half_life_days: None,
+            insert_mode: SignalInsertMode::Insert,
+            channel: SignalEmissionChannel::Infrastructure,
+            refresh_meetings: true,
+        },
+    )?;
+    Ok(event.id)
 }
 
 /// Emit a signal row inside the caller's active transaction.
@@ -224,22 +212,216 @@ pub fn emit_signal_in_active_tx(
     source: &str,
     payload: &serde_json::Value,
 ) -> Result<String, DbError> {
-    let id = format!("sig-{}", Uuid::new_v4());
-    let half_life = default_half_life(source);
     let value = payload.to_string();
-    db.insert_signal_event(&InsertSignalRow {
-        id: &id,
-        entity_type,
-        entity_id,
-        signal_type,
-        source,
-        value: Some(&value),
-        confidence: 1.0,
-        decay_half_life_days: half_life,
-        source_context: None,
-    })?;
+    let event = emit_signal_event(
+        db,
+        EmitSignalEvent {
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            value: Some(&value),
+            confidence: 1.0,
+            source_context: None,
+            id: None,
+            created_at: None,
+            decay_half_life_days: None,
+            insert_mode: SignalInsertMode::Insert,
+            channel: SignalEmissionChannel::ActiveTransaction,
+            refresh_meetings: false,
+        },
+    )?;
 
-    Ok(id)
+    Ok(event.id)
+}
+
+pub(crate) fn emit_signal_derived_in_active_tx(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+) -> Result<SignalEvent, DbError> {
+    emit_signal_event(
+        db,
+        EmitSignalEvent {
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            value,
+            confidence,
+            source_context: None,
+            id: None,
+            created_at: None,
+            decay_half_life_days: None,
+            insert_mode: SignalInsertMode::Insert,
+            channel: SignalEmissionChannel::PropagationDerived,
+            refresh_meetings: false,
+        },
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn emit_signal_fixture_event(
+    db: &ActionDb,
+    id: &str,
+    entity_type: &str,
+    entity_id: &str,
+    signal_type: &str,
+    source: &str,
+    value: Option<&str>,
+    confidence: f64,
+    decay_half_life_days: Option<i32>,
+    created_at: &str,
+) -> Result<String, DbError> {
+    let event = emit_signal_event(
+        db,
+        EmitSignalEvent {
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            value,
+            confidence,
+            source_context: None,
+            id: Some(id),
+            created_at: Some(created_at),
+            decay_half_life_days,
+            insert_mode: SignalInsertMode::InsertOrReplace,
+            channel: SignalEmissionChannel::FixtureSeed,
+            refresh_meetings: false,
+        },
+    )?;
+    Ok(event.id)
+}
+
+struct EmitSignalEvent<'a> {
+    entity_type: &'a str,
+    entity_id: &'a str,
+    signal_type: &'a str,
+    source: &'a str,
+    value: Option<&'a str>,
+    confidence: f64,
+    source_context: Option<&'a str>,
+    id: Option<&'a str>,
+    created_at: Option<&'a str>,
+    decay_half_life_days: Option<i32>,
+    insert_mode: SignalInsertMode,
+    channel: SignalEmissionChannel,
+    refresh_meetings: bool,
+}
+
+fn emit_signal_event(db: &ActionDb, signal: EmitSignalEvent<'_>) -> Result<SignalEvent, DbError> {
+    let typed_signal = SignalType::from_name(signal.signal_type);
+    let policy = policy_for(&typed_signal);
+    if !policy.channel_eligibility.allows(signal.channel) {
+        return Err(DbError::InvalidArgument(format!(
+            "signal channel {:?} is not eligible for {}",
+            signal.channel, signal.signal_type
+        )));
+    }
+
+    let id = signal
+        .id
+        .map(str::to_string)
+        .unwrap_or_else(|| format!("sig-{}", Uuid::new_v4()));
+    let created_at = signal
+        .created_at
+        .map(str::to_string)
+        .unwrap_or_else(|| Utc::now().to_rfc3339());
+    let decay_half_life_days = signal
+        .decay_half_life_days
+        .unwrap_or_else(|| default_half_life(signal.source));
+
+    emit_signal_insert_event_row(
+        db,
+        &InsertSignalRow {
+            id: &id,
+            entity_type: signal.entity_type,
+            entity_id: signal.entity_id,
+            signal_type: signal.signal_type,
+            source: signal.source,
+            value: signal.value,
+            confidence: signal.confidence,
+            decay_half_life_days,
+            created_at: &created_at,
+            source_context: signal.source_context,
+        },
+        signal.insert_mode,
+    )?;
+
+    if signal.refresh_meetings {
+        emit_signal_flag_upcoming_meetings(db, signal.entity_type, signal.entity_id);
+    }
+
+    Ok(SignalEvent {
+        id,
+        entity_type: signal.entity_type.to_string(),
+        entity_id: signal.entity_id.to_string(),
+        signal_type: signal.signal_type.to_string(),
+        source: signal.source.to_string(),
+        value: signal.value.map(str::to_string),
+        confidence: signal.confidence,
+        decay_half_life_days,
+        created_at,
+        superseded_by: None,
+        source_context: signal.source_context.map(str::to_string),
+    })
+}
+
+fn emit_signal_insert_event_row(
+    db: &ActionDb,
+    row: &InsertSignalRow<'_>,
+    mode: SignalInsertMode,
+) -> Result<(), DbError> {
+    let sql = match mode {
+        SignalInsertMode::Insert => {
+            "INSERT INTO signal_events
+                (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at, source_context)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+        }
+        SignalInsertMode::InsertOrReplace => {
+            "INSERT OR REPLACE INTO signal_events
+                (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at, source_context)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
+        }
+    };
+
+    db.conn_ref().execute(
+        sql,
+        params![
+            row.id,
+            row.entity_type,
+            row.entity_id,
+            row.signal_type,
+            row.source,
+            row.value,
+            row.confidence,
+            row.decay_half_life_days,
+            row.created_at,
+            row.source_context,
+        ],
+    )?;
+    Ok(())
+}
+
+fn emit_signal_flag_upcoming_meetings(db: &ActionDb, entity_type: &str, entity_id: &str) {
+    if let Err(e) = db.conn_ref().execute(
+        "UPDATE meeting_transcripts SET has_new_signals = 1
+         WHERE meeting_id IN (
+             SELECT me.meeting_id FROM meeting_entities me
+             INNER JOIN meetings m ON m.id = me.meeting_id
+             WHERE me.entity_id = ?1 AND me.entity_type = ?2
+             AND julianday(m.start_time) > julianday('now')
+             AND (meeting_transcripts.intelligence_state IS NULL OR meeting_transcripts.intelligence_state != 'archived')
+         )",
+        params![entity_id, entity_type],
+    ) {
+        log::warn!("Failed to flag upcoming meetings for signal refresh: {}", e);
+    }
 }
 
 /// Emit a signal and run propagation rules, returning the original signal ID
@@ -269,30 +451,26 @@ pub fn emit_signal_and_propagate(
     confidence: f64,
 ) -> Result<(String, Vec<String>), DbError> {
     db.with_transaction(|tx_db| {
-        let id = emit_signal(
+        let signal = emit_signal_event(
             tx_db,
-            entity_type,
-            entity_id,
-            signal_type,
-            source,
-            value,
-            confidence,
+            EmitSignalEvent {
+                entity_type,
+                entity_id,
+                signal_type,
+                source,
+                value,
+                confidence,
+                source_context: None,
+                id: None,
+                created_at: None,
+                decay_half_life_days: None,
+                insert_mode: SignalInsertMode::Insert,
+                channel: SignalEmissionChannel::Infrastructure,
+                refresh_meetings: true,
+            },
         )
         .map_err(|e| e.to_string())?;
-
-        let signal = SignalEvent {
-            id: id.clone(),
-            entity_type: entity_type.to_string(),
-            entity_id: entity_id.to_string(),
-            signal_type: signal_type.to_string(),
-            source: source.to_string(),
-            value: value.map(|s| s.to_string()),
-            confidence,
-            decay_half_life_days: default_half_life(source),
-            created_at: Utc::now().to_rfc3339(),
-            superseded_by: None,
-            source_context: None,
-        };
+        let id = signal.id.clone();
 
         let derived_ids = engine
             .propagate(tx_db, &signal)
@@ -446,27 +624,6 @@ impl ActionDb {
             superseded_by: row.get(9)?,
             source_context: row.get(10)?,
         })
-    }
-
-    /// Insert a signal event row.
-    pub fn insert_signal_event(&self, row: &InsertSignalRow<'_>) -> Result<(), DbError> {
-        self.conn_ref().execute(
-            "INSERT INTO signal_events
-                (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, source_context)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
-            params![
-                row.id,
-                row.entity_type,
-                row.entity_id,
-                row.signal_type,
-                row.source,
-                row.value,
-                row.confidence,
-                row.decay_half_life_days,
-                row.source_context,
-            ],
-        )?;
-        Ok(())
     }
 
     /// Query non-superseded signal events for an entity, optionally filtered by signal_type.
