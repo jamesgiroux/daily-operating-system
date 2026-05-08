@@ -28,7 +28,7 @@ fn lint_legacy_snapshot_does_not_write_registry_backed_columns() {
     fs::write(
         services_dir.join("derived_state.rs"),
         r#"
-pub fn upsert_entity_intelligence_legacy_snapshot() {
+pub(crate) fn upsert_entity_intelligence_legacy_snapshot() {
     conn.execute(
         "INSERT INTO entity_assessment (entity_id, executive_assessment)
          VALUES (?1, ?2)",
@@ -36,7 +36,7 @@ pub fn upsert_entity_intelligence_legacy_snapshot() {
     ).unwrap();
 }
 
-pub fn upsert_entity_health_legacy_projection() {}
+pub(crate) fn upsert_entity_health_legacy_projection() {}
 "#,
     )
     .expect("write fixture");

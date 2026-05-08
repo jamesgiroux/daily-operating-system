@@ -98,9 +98,9 @@ for root in "${roots[@]}"; do
 
   legacy_snapshot_hits="$(
     awk '
-      /pub fn upsert_entity_intelligence_legacy_snapshot[[:space:]]*\(/ { in_fn = 1 }
+      /pub([[:space:]]*\([^)]*\))?[[:space:]]+fn[[:space:]]+upsert_entity_intelligence_legacy_snapshot[[:space:]]*\(/ { in_fn = 1 }
       in_fn { print FILENAME ":" FNR ":" $0 }
-      in_fn && /pub fn upsert_entity_health_legacy_projection[[:space:]]*\(/ { in_fn = 0 }
+      in_fn && /pub([[:space:]]*\([^)]*\))?[[:space:]]+fn[[:space:]]+upsert_entity_health_legacy_projection[[:space:]]*\(/ { in_fn = 0 }
     ' "$legacy_snapshot_file" \
       | grep -Ei "\b(${registry_backed_entity_assessment_columns})\b" \
       || true

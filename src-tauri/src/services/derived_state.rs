@@ -70,7 +70,7 @@ const SQLITE_ABORT_VALIDATION_ERROR: &str = "DOS:validation_error";
 /// assert_eq!(skip_if_unchanged(Some("old"), "new"), Some("new"));
 /// assert_eq!(skip_if_unchanged::<i32>(None, 7), Some(7));
 /// ```
-pub(crate) fn skip_if_unchanged<T: PartialEq>(existing: Option<T>, new: T) -> Option<T> {
+fn skip_if_unchanged<T: PartialEq>(existing: Option<T>, new: T) -> Option<T> {
     match existing {
         Some(existing) if existing == new => None,
         _ => Some(new),
@@ -81,7 +81,7 @@ pub(crate) fn skip_if_unchanged<T: PartialEq>(existing: Option<T>, new: T) -> Op
 /// label values are stable wire-format strings — repair tooling and
 /// cross-version manifests reference them.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum ProjectionTarget {
+enum ProjectionTarget {
     /// Legacy `entity_assessment` + `entity_quality` tables that
     /// today's render path reads to reconstruct entity intelligence.
     EntityIntelligence,
@@ -99,7 +99,7 @@ pub enum ProjectionTarget {
 }
 
 impl ProjectionTarget {
-    pub fn as_str(&self) -> &'static str {
+    fn as_str(&self) -> &'static str {
         match self {
             Self::EntityIntelligence => "entity_intelligence",
             Self::SuccessPlans => "success_plans",
@@ -108,7 +108,7 @@ impl ProjectionTarget {
         }
     }
 
-    pub fn try_from_str(s: &str) -> Option<Self> {
+    fn try_from_str(s: &str) -> Option<Self> {
         Some(match s {
             "entity_intelligence" => Self::EntityIntelligence,
             "success_plans" => Self::SuccessPlans,
@@ -121,7 +121,7 @@ impl ProjectionTarget {
 
 /// Outcome status recorded per (claim, target) pair.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectionStatus {
+enum ProjectionStatus {
     /// Projection succeeded at commit time.
     Committed,
     /// Projection failed; row is on the repair worklist. The
@@ -134,7 +134,7 @@ pub enum ProjectionStatus {
 }
 
 impl ProjectionStatus {
-    pub fn as_str(&self) -> &'static str {
+    fn as_str(&self) -> &'static str {
         match self {
             Self::Committed => "committed",
             Self::Failed => "failed",
@@ -142,7 +142,7 @@ impl ProjectionStatus {
         }
     }
 
-    pub fn try_from_str(s: &str) -> Option<Self> {
+    fn try_from_str(s: &str) -> Option<Self> {
         Some(match s {
             "committed" => Self::Committed,
             "failed" => Self::Failed,
@@ -153,7 +153,7 @@ impl ProjectionStatus {
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ProjectionErrorClass {
+pub(crate) enum ProjectionErrorClass {
     ValidationError,
     TargetTableLocked,
     FenceAdvanced,
@@ -163,7 +163,7 @@ pub enum ProjectionErrorClass {
 }
 
 impl ProjectionErrorClass {
-    pub fn as_str(&self) -> &'static str {
+    pub(crate) fn as_str(&self) -> &'static str {
         match self {
             Self::ValidationError => "validation_error",
             Self::TargetTableLocked => "target_table_locked",
@@ -178,21 +178,21 @@ impl ProjectionErrorClass {
 /// Outcome of a single projection rule. The aggregate of these
 /// across all targets is what commit_claim returns to its caller.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ProjectionOutcome {
-    pub target: ProjectionTarget,
-    pub status: ProjectionStatus,
+pub(crate) struct ProjectionOutcome {
+    target: ProjectionTarget,
+    status: ProjectionStatus,
     /// Recorded only for `Failed` rows; carries the error class so
     /// repair can branch on it. Customer text never appears here.
-    pub error_message: Option<String>,
-    pub attempted_at: String,
-    pub succeeded_at: Option<String>,
+    error_message: Option<String>,
+    attempted_at: String,
+    succeeded_at: Option<String>,
 }
 
 /// Errors callers may see from this module. Distinct from a
 /// `Failed` status: those are recorded outcomes; these are
 /// substrate-level problems (DB unavailable, malformed input).
 #[derive(Debug, thiserror::Error)]
-pub enum DerivedStateError {
+pub(crate) enum DerivedStateError {
     #[error("ServiceContext mutation gate: {0}")]
     Mode(String),
     #[error("rusqlite error: {0}")]
@@ -208,7 +208,7 @@ pub enum DerivedStateError {
 /// `None` for `Failed`. The contract isn't enforced at the SQL layer
 /// because backfill and out-of-band repair flows may want flexibility,
 /// but production callers go through the `mark_*` helpers below.
-pub fn record_projection_outcome(
+pub(crate) fn record_projection_outcome(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     claim_id: &str,
@@ -239,7 +239,7 @@ pub fn record_projection_outcome(
 
 /// Convenience: record a successful projection at the supplied
 /// `attempted_at` (typically `ctx.clock.now().to_rfc3339()`).
-pub fn mark_committed(
+fn mark_committed(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     claim_id: &str,
@@ -263,7 +263,7 @@ pub fn mark_committed(
 /// Convenience: record a failed projection. The error class string
 /// must NOT contain customer text — it's a class label like
 /// `validation_error`, `target_table_locked`, `fence_advanced`.
-pub fn mark_failed(
+fn mark_failed(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     claim_id: &str,
@@ -286,7 +286,7 @@ pub fn mark_failed(
 }
 
 /// Convenience: mark a previously-failed projection as repaired.
-pub fn mark_repaired(
+fn mark_repaired(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     claim_id: &str,
@@ -310,7 +310,7 @@ pub fn mark_repaired(
 /// Read-side: enumerate the failed-projection worklist for a target.
 /// Returns `(claim_id, error_message_or_class)` pairs. The repair
 /// binary uses this to drive idempotent reprojection.
-pub fn list_failed_projections(
+fn list_failed_projections(
     db: &ActionDb,
     target: ProjectionTarget,
 ) -> Result<Vec<(String, Option<String>)>, rusqlite::Error> {
@@ -330,7 +330,7 @@ pub fn list_failed_projections(
     Ok(out)
 }
 
-pub fn project_claim_to_db_legacy_tx(
+pub(crate) fn project_claim_to_db_legacy_tx(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     claim: &IntelligenceClaim,
@@ -654,7 +654,7 @@ fn stakeholder_cache_memberships(
 /// Projection-rule entry point for rebuilding stakeholder_insights_cache.
 /// The savepoint keeps projection failure classified without rolling back the
 /// parent claim commit.
-pub(crate) fn rebuild_stakeholder_insights_cache_for_entity_in_savepoint(
+fn rebuild_stakeholder_insights_cache_for_entity_in_savepoint(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
     entity_id: &str,
@@ -1005,7 +1005,7 @@ fn json_company_context_from_claims(claims: &[&IntelligenceClaim]) -> Option<Str
 /// structs, consistency metadata, relationship depth, and UI cache blobs. Those
 /// stay as direct cache writes during the dual-read window, but this module owns
 /// the SQL so callers do not write projection targets from unrelated services.
-pub fn upsert_entity_intelligence_legacy_snapshot(
+pub(crate) fn upsert_entity_intelligence_legacy_snapshot(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
     intel: &crate::intelligence::IntelligenceJson,
@@ -1101,7 +1101,7 @@ pub fn upsert_entity_intelligence_legacy_snapshot(
     Ok(())
 }
 
-pub fn upsert_entity_health_legacy_projection(
+pub(crate) fn upsert_entity_health_legacy_projection(
     db: &ActionDb,
     entity_id: &str,
     entity_type: &str,
@@ -1132,7 +1132,7 @@ pub fn upsert_entity_health_legacy_projection(
     Ok(())
 }
 
-pub fn upsert_health_outlook_signals_legacy_projection(
+pub(crate) fn upsert_health_outlook_signals_legacy_projection(
     db: &ActionDb,
     entity_id: &str,
     entity_type: &str,
@@ -1149,7 +1149,7 @@ pub fn upsert_health_outlook_signals_legacy_projection(
     Ok(())
 }
 
-pub fn update_account_ai_field_projection(
+pub(crate) fn update_account_ai_field_projection(
     db: &ActionDb,
     id: &str,
     field: &str,
@@ -1175,7 +1175,7 @@ pub fn update_account_ai_field_projection(
     Ok(())
 }
 
-pub fn update_account_ai_columns_projection(
+pub(crate) fn update_account_ai_columns_projection(
     db: &ActionDb,
     id: &str,
     company_overview: Option<&str>,
@@ -1197,12 +1197,12 @@ pub fn update_account_ai_columns_projection(
 /// signals never surface upstream and the callout pipeline silently misses
 /// expected entries.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub struct EnrichmentSideEffectOutcome {
-    pub dropped_signal_count: u32,
+struct EnrichmentSideEffectOutcome {
+    dropped_signal_count: u32,
 }
 
 impl EnrichmentSideEffectOutcome {
-    pub fn is_degraded(&self) -> bool {
+    fn is_degraded(&self) -> bool {
         self.dropped_signal_count > 0
     }
 }
