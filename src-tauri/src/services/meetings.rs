@@ -1079,13 +1079,13 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         entity_id,
                         entity_type,
                     } => {
-                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                        let _ = crate::signals::feedback::record_removal(
+                        crate::signals::feedback::record_removal(
                             db,
                             &meeting_id,
                             &entity_id,
                             &entity_type,
-                        );
+                        )
+                        .map_err(|e| format!("record meeting entity removal failed: {e}"))?;
                         db.unlink_meeting_entity(&meeting_id, &entity_id)
                             .map_err(|e| e.to_string())?;
 
@@ -1105,7 +1105,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         // Shadow-write the
                         // mechanism-5 (linking_dismissals) write so
                         // commit_claim PRE-GATE blocks re-surfacing.
-                        crate::services::claims::shadow_write_tombstone_claim(
+                        match crate::services::claims::shadow_write_tombstone_claim(
                             db,
                             crate::services::claims::ShadowTombstoneClaim {
                                 subject_kind: "Meeting",
@@ -1118,7 +1118,15 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                                 observed_at: &now,
                                 expires_at: None,
                             },
-                        );
+                        ) {
+                            crate::services::claims::ShadowTombstoneOutcome::Committed
+                            | crate::services::claims::ShadowTombstoneOutcome::SkippedUnsupportedSubjectKind => {}
+                            crate::services::claims::ShadowTombstoneOutcome::Failed(err) => {
+                                return Err(format!(
+                                    "meeting entity dismissal claim write failed: {err}"
+                                ));
+                            }
+                        }
                         db.conn_ref()
                             .execute(
                                 "UPDATE linked_entities_raw SET source = 'user_dismissed' \
@@ -1132,12 +1140,20 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                     }
                 }
 
-                if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
-                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                    let _ = std::fs::remove_file(&old_path);
+                if let Some(old_path) = db
+                    .invalidate_meeting_prep(&meeting_id)
+                    .map_err(|e| format!("invalidate meeting prep failed: {e}"))?
+                {
+                    if let Err(err) = std::fs::remove_file(&old_path) {
+                        log::warn!(
+                            "mutate_meeting_entities_and_refresh_briefing: failed to remove stale prep file {}: {}",
+                            old_path,
+                            err
+                        );
+                    }
                 }
-                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                let _ = db.update_intelligence_state(&meeting_id, "refreshing", None, None);
+                db.update_intelligence_state(&meeting_id, "refreshing", None, None)
+                    .map_err(|e| format!("mark meeting intelligence refreshing failed: {e}"))?;
 
                 Ok::<MeetingEntityMutationOutcome, String>(result)
                 })
@@ -1150,19 +1166,18 @@ async fn mutate_meeting_entities_and_refresh_briefing(
         let old_ids = mutation_result.old_entity_ids.clone();
         let correction_target = mutation_result.correction_target.clone();
         let keyword_target = mutation_result.keyword_target.clone();
-        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-        let _ = state
+        state
             .db_write(move |db| {
                 if let Some((new_id, entity_type)) = correction_target {
                     if !old_ids.is_empty() && old_ids.iter().all(|(id, _)| id != &new_id) {
-                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                        let _ = crate::signals::feedback::record_correction(
+                        crate::signals::feedback::record_correction(
                             db,
                             &meeting_id,
                             &old_ids,
                             &new_id,
                             &entity_type,
-                        );
+                        )
+                        .map_err(|e| format!("record meeting entity correction failed: {e}"))?;
                     }
                 }
 
@@ -1173,19 +1188,19 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         let ext = crate::services::context::ExternalClients::default();
                         let ctx =
                             crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
-                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                        let _ = crate::services::entities::auto_extract_title_keywords(
+                        crate::services::entities::auto_extract_title_keywords(
                             &ctx,
                             db,
                             &entity_id,
                             &entity_type,
                             &meeting_title,
-                        );
+                        )
+                        .map_err(|e| format!("auto-extract meeting title keywords failed: {e}"))?;
                     }
                 }
                 Ok::<(), String>(())
             })
-            .await;
+            .await?;
     }
 
     let mut entities_to_refresh = mutation_result.entities_to_refresh;
@@ -1193,17 +1208,15 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     entities_to_refresh.dedup();
     if !entities_to_refresh.is_empty() {
         for (entity_id, entity_type) in entities_to_refresh {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = state
-                .intel_queue
-                .enqueue(crate::intel_queue::IntelRequest::new(
+            crate::intel_queue::enqueue_user_facing(
+                &state.intel_queue,
+                crate::intel_queue::IntelRequest::new(
                     entity_id,
                     entity_type,
-                    crate::intel_queue::IntelPriority::CalendarChange,
-                ));
+                    crate::intel_queue::IntelPriority::Manual,
+                ),
+            )
+            .map_err(|e| format!("enqueue intelligence refresh failed: {e}"))?;
         }
         state.integrations.intel_queue_wake.notify_one();
     }
@@ -1254,11 +1267,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
 
     if prep_rebuilt_sync {
         let meeting_id = meeting_id_s.clone();
-        #[allow(
-            clippy::let_underscore_must_use,
-            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-        )]
-        let _ = state
+        state
             .db_write(move |db| {
                 let quality = crate::intelligence::assess_intelligence_quality(db, &meeting_id);
                 db.update_intelligence_state(
@@ -1270,20 +1279,22 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                 .map_err(|e| e.to_string())?;
                 Ok::<(), String>(())
             })
-            .await;
+            .await
+            .map_err(|e| format!("mark meeting intelligence enriched failed: {e}"))?;
 
         // Emit prep-ready so MeetingDetailPage auto-refreshes.
         if let Some(app) = app_handle {
-            #[allow(
-                clippy::let_underscore_must_use,
-                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-            )]
-            let _ = app.emit(
+            if let Err(err) = app.emit(
                 "prep-ready",
                 crate::meeting_prep_queue::PrepReadyPayload {
                     meeting_id: meeting_id_s,
                 },
-            );
+            ) {
+                log::warn!(
+                    "mutate_meeting_entities_and_refresh_briefing: prep-ready emit failed: {}",
+                    err
+                );
+            }
         }
     } else {
         // Fallback: enqueue for background rebuild. The background processor

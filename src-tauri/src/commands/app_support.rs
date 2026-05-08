@@ -170,8 +170,9 @@ pub async fn set_wizard_step(
 ///
 /// For each account: creates `Accounts/{name}/` and upserts a minimal DbAccount
 /// record (bridge pattern fires `ensure_entity_for_account` automatically).
-/// For each project: creates `Projects/{name}/` (filesystem only, no SQLite).
-/// DB errors are non-fatal; folder creation is the primary value.
+/// For each project: creates `Projects/{name}/` and upserts a minimal DbProject
+/// record. Persistence errors are returned to the caller so onboarding cannot
+/// report success after the workspace DB failed to update.
 #[allow(
     clippy::let_underscore_must_use,
     reason = "tauri::command macro emits internal Result glue that discards generated metadata"
@@ -263,8 +264,7 @@ pub async fn populate_workspace(
     let engine = std::sync::Arc::clone(&state.signals.engine);
     let wp = workspace_path.clone();
     let state_for_ctx = state.inner().clone();
-    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-    let _ = state
+    state
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
             let workspace = std::path::Path::new(&wp);
@@ -348,29 +348,33 @@ pub async fn populate_workspace(
                         .and_then(|e| e.user_health_sentiment.clone()),
                     sentiment_set_at: existing.as_ref().and_then(|e| e.sentiment_set_at.clone()),
                 };
-                if let Err(e) =
-                    crate::services::mutations::upsert_account(&ctx, db, &engine, &db_account)
-                {
-                    log::warn!("Failed to upsert account '{}': {}", name, e);
-                }
+                crate::services::mutations::upsert_account(&ctx, db, &engine, &db_account)
+                    .map_err(|e| format!("Failed to upsert account '{}': {}", name, e))?;
             }
             // Upsert projects + write dashboard files
             for db_project in &valid_projects {
-                if let Err(e) =
-                    crate::services::mutations::upsert_project(&ctx, db, &engine, db_project)
-                {
-                    log::warn!("Failed to upsert project '{}': {}", db_project.name, e);
-                }
+                crate::services::mutations::upsert_project(&ctx, db, &engine, db_project).map_err(
+                    |e| format!("Failed to upsert project '{}': {}", db_project.name, e),
+                )?;
                 let json = crate::projects::default_project_json(db_project);
-                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                let _ = crate::projects::write_project_json(workspace, db_project, Some(&json), db);
-                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
-                let _ =
-                    crate::projects::write_project_markdown(workspace, db_project, Some(&json), db);
+                crate::projects::write_project_json(workspace, db_project, Some(&json), db)
+                    .map_err(|e| {
+                        format!(
+                            "Failed to write project dashboard for '{}': {}",
+                            db_project.name, e
+                        )
+                    })?;
+                crate::projects::write_project_markdown(workspace, db_project, Some(&json), db)
+                    .map_err(|e| {
+                        format!(
+                            "Failed to write project markdown for '{}': {}",
+                            db_project.name, e
+                        )
+                    })?;
             }
             Ok(())
         })
-        .await;
+        .await?;
 
     Ok(format!(
         "Created {} accounts, {} projects",
