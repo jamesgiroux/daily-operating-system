@@ -2951,14 +2951,20 @@ mod mutation_smoke_tests {
         db.upsert_account(&account).unwrap();
         seed_account_domain(&db, "acc-compose-rollback", "compose.example");
         seed_person(&db, "p-compose-rollback", "Existing Buyer");
+        db.add_account_team_member("acc-compose-rollback", "p-compose-rollback", "associated")
+            .expect("seed account stakeholder");
         db.conn_ref()
             .execute(
-                "INSERT INTO account_stakeholders
-                 (account_id, person_id, engagement, data_source_engagement, assessment, data_source_assessment, data_source)
-                 VALUES (?1, ?2, 'neutral', 'ai', 'prior assessment', 'ai', 'ai')",
+                "UPDATE account_stakeholders
+                 SET engagement = 'neutral',
+                     data_source_engagement = 'ai',
+                     assessment = 'prior assessment',
+                     data_source_assessment = 'ai',
+                     data_source = 'ai'
+                 WHERE account_id = ?1 AND person_id = ?2",
                 params!["acc-compose-rollback", "p-compose-rollback"],
             )
-            .expect("seed account stakeholder");
+            .expect("seed account stakeholder metadata");
         db.conn_ref()
             .execute(
                 "INSERT INTO suppression_tombstones
@@ -4676,53 +4682,24 @@ mod live_acceptance_tests {
             .expect("count user relationships before");
 
         snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
-                 VALUES (?1, ?2, 'glean')",
-                params![account_glean, glean_person_id],
+            .link_person_to_account_with_source(
+                &account_glean,
+                &glean_person_id,
+                "champion",
+                "glean",
             )
             .expect("seed glean stakeholder");
         snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'glean')",
-                params![account_glean, glean_person_id],
-            )
-            .expect("seed glean stakeholder role");
-        snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
-                 VALUES (?1, ?2, 'google')",
-                params![account_google, google_person_id],
+            .link_person_to_account_with_source(
+                &account_google,
+                &google_person_id,
+                "champion",
+                "google",
             )
             .expect("seed google stakeholder");
         snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'google')",
-                params![account_google, google_person_id],
-            )
-            .expect("seed google stakeholder role");
-        snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
-                 VALUES (?1, ?2, 'user')",
-                params![account_user, user_person_id],
-            )
+            .link_person_to_account_with_source(&account_user, &user_person_id, "champion", "user")
             .expect("seed user stakeholder");
-        snapshot_db
-            .conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
-                 VALUES (?1, ?2, 'champion', 'user')",
-                params![account_user, user_person_id],
-            )
-            .expect("seed user stakeholder role");
 
         snapshot_db
             .conn_ref()

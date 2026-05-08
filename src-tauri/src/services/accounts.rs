@@ -4166,13 +4166,10 @@ mod tests {
                 [],
             )
             .expect("insert person");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status)
-                 VALUES ('acc-promote-active', 'p-promote-active', 'ai', 'dismissed')",
-                [],
-            )
-            .expect("insert dismissed stakeholder");
+        db.suggest_stakeholder_pending("acc-promote-active", "p-promote-active", "ai", 1.0)
+            .expect("insert pending stakeholder");
+        db.dismiss_stakeholder_suggestion("acc-promote-active", "p-promote-active")
+            .expect("dismiss stakeholder");
 
         db.add_account_team_member("acc-promote-active", "p-promote-active", "champion")
             .expect("add team member");
@@ -4415,18 +4412,12 @@ mod tests {
         db.with_transaction(|tx| {
             tx.remove_account_team_member("acc-tm", "p-tm", "csm")
                 .map_err(|e| e.to_string())?;
-            crate::services::signals::emit_in_transaction(
+            crate::services::stakeholder_writer::emit_stakeholders_changed(
                 &ctx,
                 tx,
                 "account",
                 "acc-tm",
-                crate::services::signals::STAKEHOLDERS_CHANGED_SIGNAL,
                 "remove_account_team_member",
-                serde_json::json!({
-                    "entity_id": "acc-tm",
-                    "entity_type": "account",
-                    "mutation_source": "remove_account_team_member",
-                }),
             )?;
             crate::services::signals::emit_and_propagate(
                 &ctx,
@@ -4493,22 +4484,11 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-rp', 'p-rp', 'user')",
-                [],
-            )
+        db.add_account_team_member("acc-rp", "p-rp", "champion")
             .unwrap();
 
-        // Seed two existing roles: one user-pinned (champion), one
-        // AI-surfaced (technical). This is the Chris-on-Globex shape.
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
-                 VALUES ('acc-rp', 'p-rp', 'champion', 'user')",
-                [],
-            )
-            .unwrap();
+        // Seed a second existing AI-surfaced technical role. Together with
+        // add_account_team_member above, this is the Chris-on-Globex shape.
         db.conn_ref()
             .execute(
                 "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
@@ -4610,20 +4590,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source) \
-                 VALUES ('acc-rt', 'p-rt', 'user')",
-                [],
-            )
-            .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles \
-                 (account_id, person_id, role, data_source) \
-                 VALUES ('acc-rt', 'p-rt', 'champion', 'user')",
-                [],
-            )
+        db.add_account_team_member("acc-rt", "p-rt", "champion")
             .unwrap();
 
         let temp = tempfile::tempdir().expect("tempdir");
@@ -4706,20 +4673,7 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-dsm', 'p-dsm', 'user')",
-                [],
-            )
-            .unwrap();
-
-        // Seed a user-pinned role (what `add_stakeholder_role` writes).
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
-                 VALUES ('acc-dsm', 'p-dsm', 'associated', 'user')",
-                [],
-            )
+        db.add_account_team_member("acc-dsm", "p-dsm", "associated")
             .unwrap();
 
         let visible_after_add: Vec<String> = db
@@ -4814,19 +4768,8 @@ mod tests {
                 [],
             )
             .unwrap();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acc-pr', 'p-pr', 'ai')",
-                [],
-            )
-            .unwrap();
         // AI had surfaced Chris as Champion; user now explicitly pins Champion.
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
-                 VALUES ('acc-pr', 'p-pr', 'champion', 'ai')",
-                [],
-            )
+        db.link_person_to_account_with_source("acc-pr", "p-pr", "champion", "ai")
             .unwrap();
 
         db.set_team_member_role("acc-pr", "p-pr", "champion")

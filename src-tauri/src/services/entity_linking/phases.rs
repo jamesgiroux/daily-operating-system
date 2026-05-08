@@ -438,13 +438,10 @@ mod tests {
     }
 
     fn seed_active_stakeholder(db: &ActionDb, account_id: &str, person_id: &str) {
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, confidence, created_at) \
-                 VALUES (?1, ?2, 'test', 'active', 1.0, '2026-01-01')",
-                rusqlite::params![account_id, person_id],
-            )
+        db.suggest_stakeholder_pending(account_id, person_id, "test", 1.0)
             .expect("insert stakeholder");
+        db.confirm_stakeholder(account_id, person_id)
+            .expect("activate stakeholder");
     }
 
     fn one_on_one_ctx(person_id: &str) -> LinkingContext {

@@ -130,13 +130,20 @@ mod tests {
     }
 
     fn seed_stakeholder(db: &ActionDb, account_id: &str, person_id: &str, status: &str) {
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source, status, confidence, created_at) \
-                 VALUES (?1, ?2, 'test', ?3, 1.0, '2026-01-01')",
-                rusqlite::params![account_id, person_id, status],
-            )
+        db.suggest_stakeholder_pending(account_id, person_id, "test", 1.0)
             .expect("insert stakeholder");
+        match status {
+            "active" => {
+                db.confirm_stakeholder(account_id, person_id)
+                    .expect("activate stakeholder");
+            }
+            "dismissed" => {
+                db.dismiss_stakeholder_suggestion(account_id, person_id)
+                    .expect("dismiss stakeholder");
+            }
+            "pending_review" => {}
+            other => panic!("unsupported stakeholder status fixture: {other}"),
+        }
     }
 
     fn mk_ctx(external_person_id: Option<&str>, email: &str) -> LinkingContext {

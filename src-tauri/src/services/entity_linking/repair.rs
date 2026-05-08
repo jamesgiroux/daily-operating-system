@@ -774,22 +774,24 @@ mod tests {
     }
 
     fn seed_candidate_pair(db: &ActionDb, account_id: &str, person_id: &str, created_at: &str) {
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders
-                 (account_id, person_id, data_source, status, confidence, created_at)
-                 VALUES (?1, ?2, 'user', 'active', NULL, ?3)",
-                params![account_id, person_id, created_at],
-            )
+        db.add_account_team_member(account_id, person_id, "associated")
             .expect("insert stakeholder");
         db.conn_ref()
             .execute(
-                "INSERT INTO account_stakeholder_roles
-                 (account_id, person_id, role, data_source, created_at)
-                 VALUES (?1, ?2, 'associated', 'ai', ?3)",
+                "UPDATE account_stakeholders
+                 SET created_at = ?3
+                 WHERE account_id = ?1 AND person_id = ?2",
                 params![account_id, person_id, created_at],
             )
-            .expect("insert role");
+            .expect("set stakeholder batch timestamp");
+        db.conn_ref()
+            .execute(
+                "UPDATE account_stakeholder_roles
+                 SET data_source = 'ai', created_at = ?3
+                 WHERE account_id = ?1 AND person_id = ?2 AND role = 'associated'",
+                params![account_id, person_id, created_at],
+            )
+            .expect("seed role provenance");
     }
 
     fn seed_fixture() -> ActionDb {

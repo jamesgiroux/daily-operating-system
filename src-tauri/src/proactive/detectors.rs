@@ -1173,15 +1173,7 @@ mod tests {
             "INSERT INTO people (id, email, name, updated_at) VALUES ('p1', 'jane@acme.com', 'Jane Doe', '2026-01-01')",
             [],
         ).unwrap();
-        conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
-            [],
-        ).unwrap();
+        db.add_account_team_member("a1", "p1", "champion").unwrap();
 
         // Old meeting (60 days ago)
         conn.execute(
@@ -1231,15 +1223,7 @@ mod tests {
             "INSERT INTO people (id, email, name, updated_at) VALUES ('p1', 'jane@acme.com', 'Jane Doe', '2026-01-01')",
             [],
         ).unwrap();
-        conn.execute(
-            "INSERT INTO account_stakeholders (account_id, person_id) VALUES ('a1', 'p1')",
-            [],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO account_stakeholder_roles (account_id, person_id, role) VALUES ('a1', 'p1', 'champion')",
-            [],
-        ).unwrap();
+        db.add_account_team_member("a1", "p1", "champion").unwrap();
 
         // Recent meeting (10 days ago)
         conn.execute(

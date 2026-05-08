@@ -731,34 +731,10 @@ mod tests {
         let db = test_db();
         seed_person(&db, "p1", None);
 
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
-                 VALUES ('a1', 'p1', 'glean')",
-                [],
-            )
+        db.link_person_to_account_with_source("a1", "p1", "champion", "glean")
             .expect("seed glean stakeholder");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
-                 VALUES ('a1', 'p1', 'champion', 'glean')",
-                [],
-            )
-            .expect("seed glean stakeholder role");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholders (account_id, person_id, data_source)
-                 VALUES ('a2', 'p1', 'user')",
-                [],
-            )
+        db.link_person_to_account_with_source("a2", "p1", "champion", "user")
             .expect("seed user stakeholder");
-        db.conn_ref()
-            .execute(
-                "INSERT INTO account_stakeholder_roles (account_id, person_id, role, data_source)
-                 VALUES ('a2', 'p1', 'champion', 'user')",
-                [],
-            )
-            .expect("seed user stakeholder role");
 
         db.conn_ref()
             .execute(
