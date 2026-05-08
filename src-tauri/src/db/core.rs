@@ -253,6 +253,26 @@ impl ActionDb {
 
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+        conn.execute_batch("PRAGMA query_only = ON;")?;
+        Ok(Self { conn })
+    }
+
+    #[cfg(any(test, feature = "test-harness"))]
+    #[doc(hidden)]
+    pub fn from_connection_for_tests(conn: Connection) -> Self {
+        Self { conn }
+    }
+
+    #[cfg(any(test, feature = "test-harness"))]
+    #[doc(hidden)]
+    pub fn open_unencrypted_readonly_at_for_tests(path: &std::path::Path) -> Result<Self, DbError> {
+        let conn = Connection::open_with_flags(
+            path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+        )?;
+        conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")?;
+        conn.execute_batch("PRAGMA query_only = ON;")?;
         Ok(Self { conn })
     }
 

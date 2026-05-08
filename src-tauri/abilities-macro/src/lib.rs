@@ -3,13 +3,15 @@
 #[allow(dead_code)]
 mod scoring;
 
+use std::fs;
+
 use proc_macro::TokenStream;
 use quote::{format_ident, quote};
 use syn::parse::{Parse, ParseStream};
 use syn::punctuated::Punctuated;
 use syn::{
-    braced, bracketed, parse_macro_input, FnArg, GenericArgument, Ident, ItemFn, LitBool, LitInt,
-    LitStr, Pat, PathArguments, ReturnType, Token, Type,
+    braced, bracketed, parse_macro_input, Attribute, FnArg, GenericArgument, Ident, Item, ItemFn,
+    LitBool, LitInt, LitStr, Pat, PathArguments, ReturnType, Token, Type,
 };
 
 #[proc_macro_attribute]
@@ -39,7 +41,11 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     let detected = visitor.detected;
 
     let mut boundary_visitor = scoring::BoundaryVisitor::new();
-    boundary_visitor.scan_fn_body(&item_fn.block);
+    if let Some(module_items) = same_source_module_items_for_ability(&item_fn) {
+        boundary_visitor.scan_fn_body_with_module_items(&item_fn, &module_items);
+    } else {
+        boundary_visitor.scan_fn_body(&item_fn.block);
+    }
     let detected_boundary_bypasses = boundary_visitor.detected;
     if !detected_boundary_bypasses.is_empty() {
         return Err(syn::Error::new_spanned(
@@ -383,6 +389,47 @@ fn expand_ability(args: AbilityArgs, item_fn: ItemFn) -> syn::Result<proc_macro2
     };
 
     Ok(expanded)
+}
+
+fn same_source_module_items_for_ability(item_fn: &ItemFn) -> Option<Vec<Item>> {
+    let source_path = item_fn.sig.ident.span().local_file()?;
+    let source = fs::read_to_string(source_path).ok()?;
+    let file = syn::parse_file(&source).ok()?;
+    module_items_containing_ability_fn(&file.items, &item_fn.sig.ident)
+}
+
+fn module_items_containing_ability_fn(items: &[Item], fn_ident: &Ident) -> Option<Vec<Item>> {
+    if items.iter().any(|item| {
+        matches!(
+            item,
+            Item::Fn(candidate)
+                if candidate.sig.ident == *fn_ident && has_ability_attribute(&candidate.attrs)
+        )
+    }) {
+        return Some(items.to_vec());
+    }
+
+    for item in items {
+        if let Item::Mod(module) = item {
+            let Some((_, nested_items)) = &module.content else {
+                continue;
+            };
+            if let Some(found) = module_items_containing_ability_fn(nested_items, fn_ident) {
+                return Some(found);
+            }
+        }
+    }
+
+    None
+}
+
+fn has_ability_attribute(attrs: &[Attribute]) -> bool {
+    attrs.iter().any(|attr| {
+        attr.path()
+            .segments
+            .last()
+            .is_some_and(|segment| segment.ident == "ability")
+    })
 }
 
 fn ability_signature_parts(item_fn: &ItemFn) -> syn::Result<(Ident, Ident, Type)> {

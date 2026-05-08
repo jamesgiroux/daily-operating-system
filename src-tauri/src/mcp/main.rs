@@ -183,7 +183,7 @@ struct MeetingSearchItem {
 #[tool(tool_box)]
 impl DailyOsMcp {
     fn new(
-        db: ActionDb,
+        db: Arc<Mutex<ActionDb>>,
         config: Config,
         embedding_model: Arc<EmbeddingModel>,
         ability_bridge: Arc<McpAbilityBridge<'static>>,
@@ -191,7 +191,7 @@ impl DailyOsMcp {
         mcp_session_id: McpSessionId,
     ) -> Self {
         Self {
-            db: Arc::new(Mutex::new(db)),
+            db,
             config,
             embedding_model,
             ability_bridge,
@@ -1353,7 +1353,11 @@ async fn main() -> anyhow::Result<()> {
             ))
         }
     };
-    let ability_bridge = Arc::new(McpAbilityBridge::new(ability_registry));
+    let db = Arc::new(Mutex::new(db));
+    let ability_bridge = Arc::new(McpAbilityBridge::new_with_action_db_readers(
+        ability_registry,
+        Arc::clone(&db),
+    ));
     let tauri_bridge = Arc::new(TauriAbilityBridge::new(ability_registry));
     let mcp_session_id = McpSessionId::new_process_scoped();
     let server = DailyOsMcp::new(

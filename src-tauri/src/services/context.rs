@@ -100,7 +100,7 @@ impl EntityContextReadHandle for crate::db_service::PooledConnection {
     }
 }
 
-fn read_entity_context_entries_from_db(
+pub(crate) fn read_entity_context_entries_from_db(
     db: &crate::db::ActionDb,
     entity_type: &str,
     entity_id: &str,

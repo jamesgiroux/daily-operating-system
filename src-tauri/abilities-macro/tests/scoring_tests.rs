@@ -19,6 +19,15 @@ fn scan_boundary(block: syn::Block) -> BoundaryVisitor {
     visitor
 }
 
+fn scan_boundary_with_module(
+    item_fn: syn::ItemFn,
+    module_items: Vec<syn::Item>,
+) -> BoundaryVisitor {
+    let mut visitor = BoundaryVisitor::new();
+    visitor.scan_fn_body_with_module_items(&item_fn, &module_items);
+    visitor
+}
+
 #[test]
 fn allowlist_matches_direct_service_path() {
     assert!(path_is_allowlisted_mutator(&path(
@@ -190,4 +199,39 @@ fn boundary_visitor_detects_tokio_fs_import() {
     }));
 
     assert_eq!(visitor.detected, ["tokio::fs"]);
+}
+
+#[test]
+fn boundary_visitor_detects_open_options_write_handle() {
+    let visitor = scan_boundary(syn::parse_quote!({
+        use std::fs::OpenOptions;
+        let _file = OpenOptions::new().create(true).write(true).open(path)?;
+    }));
+
+    assert_eq!(visitor.detected, ["std::fs::OpenOptions::open(write)"]);
+}
+
+#[test]
+fn boundary_visitor_detects_same_module_helper_indirection() {
+    let ability_fn: syn::ItemFn = syn::parse_quote! {
+        async fn fixture_ability() {
+            write_behind_helper();
+        }
+    };
+    let module_items: Vec<syn::Item> = vec![
+        syn::parse_quote! {
+            fn write_behind_helper() {
+                std::fs::write("target/ability-runtime-boundary-proof", b"forbidden").unwrap();
+            }
+        },
+        syn::parse_quote! {
+            async fn fixture_ability() {
+                write_behind_helper();
+            }
+        },
+    ];
+
+    let visitor = scan_boundary_with_module(ability_fn, module_items);
+
+    assert_eq!(visitor.detected, ["std::fs::write"]);
 }

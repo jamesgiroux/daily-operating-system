@@ -2,11 +2,12 @@
 
 include!(concat!(env!("OUT_DIR"), "/mutation_allowlist.rs"));
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use syn::visit::Visit;
 use syn::{
-    Expr, ExprCall, ExprMethodCall, ExprPath, ItemUse, Path, UseName, UsePath, UseRename, UseTree,
+    Block, Expr, ExprCall, ExprMethodCall, ExprPath, Item, ItemFn, ItemUse, Path, UseName, UsePath,
+    UseRename, UseTree,
 };
 
 /// Returns true if the path matches an allowlisted mutator.
@@ -125,6 +126,45 @@ impl BoundaryVisitor {
         self.visit_block(body);
     }
 
+    pub fn scan_fn_body_with_module_items(&mut self, item_fn: &ItemFn, module_items: &[Item]) {
+        let module_context = BoundaryModuleContext::new(module_items);
+        self.aliases.extend(module_context.aliases.clone());
+        self.module_aliases
+            .extend(module_context.module_aliases.clone());
+        self.scan_fn_body(&item_fn.block);
+
+        let mut visited = HashSet::new();
+        self.scan_same_module_helpers(&item_fn.block, &module_context, &mut visited);
+    }
+
+    fn scan_same_module_helpers(
+        &mut self,
+        body: &Block,
+        module_context: &BoundaryModuleContext<'_>,
+        visited: &mut HashSet<String>,
+    ) {
+        for helper_name in same_module_helper_calls(body) {
+            if !visited.insert(helper_name.clone()) {
+                continue;
+            }
+
+            let Some(helper) = module_context.functions.get(helper_name.as_str()) else {
+                continue;
+            };
+
+            let mut helper_visitor = BoundaryVisitor::new();
+            helper_visitor
+                .aliases
+                .extend(module_context.aliases.clone());
+            helper_visitor
+                .module_aliases
+                .extend(module_context.module_aliases.clone());
+            helper_visitor.scan_fn_body(&helper.block);
+            self.extend_detected(helper_visitor.detected);
+            self.scan_same_module_helpers(&helper.block, module_context, visited);
+        }
+    }
+
     fn record_call_path(&mut self, path: &Path) {
         if let Some(canonical) = path_segments(path).map(|segments| join_all_segments(&segments)) {
             self.record_if_forbidden(canonical);
@@ -140,6 +180,21 @@ impl BoundaryVisitor {
         if let Some(canonical) = self.resolve_module_alias_path(path) {
             self.record_if_forbidden(canonical);
         }
+    }
+
+    fn resolve_boundary_path(&self, path: &Path) -> Option<String> {
+        if let Some(alias) = single_segment_path(path) {
+            if let Some(canonical) = self.aliases.get(&alias).cloned() {
+                return Some(canonical);
+            }
+            return path_segments(path).map(|segments| join_all_segments(&segments));
+        }
+
+        if let Some(canonical) = self.resolve_module_alias_path(path) {
+            return Some(canonical);
+        }
+
+        path_segments(path).map(|segments| join_all_segments(&segments))
     }
 
     fn resolve_module_alias_path(&self, path: &Path) -> Option<String> {
@@ -159,10 +214,19 @@ impl BoundaryVisitor {
 
     fn record_if_forbidden(&mut self, canonical: String) {
         if let Some(forbidden) = forbidden_boundary_path(&canonical) {
-            let forbidden = forbidden.to_string();
-            if !self.detected.contains(&forbidden) {
-                self.detected.push(forbidden);
-            }
+            self.record_detected(forbidden);
+        }
+    }
+
+    fn record_detected(&mut self, forbidden: &str) {
+        if !self.detected.iter().any(|detected| detected == forbidden) {
+            self.detected.push(forbidden.to_string());
+        }
+    }
+
+    fn extend_detected(&mut self, detected: Vec<String>) {
+        for forbidden in detected {
+            self.record_detected(&forbidden);
         }
     }
 }
@@ -186,6 +250,10 @@ impl<'ast> Visit<'ast> for BoundaryVisitor {
     }
 
     fn visit_expr_method_call(&mut self, node: &'ast ExprMethodCall) {
+        if let Some(forbidden) = self.open_options_write_open_boundary(node) {
+            self.record_detected(forbidden);
+        }
+
         syn::visit::visit_expr_method_call(self, node);
     }
 
@@ -198,6 +266,152 @@ impl<'ast> Visit<'ast> for BoundaryVisitor {
             &mut self.detected,
         );
         syn::visit::visit_item_use(self, node);
+    }
+}
+
+impl BoundaryVisitor {
+    fn open_options_write_open_boundary(&self, node: &ExprMethodCall) -> Option<&'static str> {
+        if node.method != "open" {
+            return None;
+        }
+
+        let mut methods = vec![node.method.to_string()];
+        let root = collect_method_chain_root(node.receiver.as_ref(), &mut methods);
+        let Expr::Call(ExprCall { func, .. }) = root else {
+            return None;
+        };
+        let Expr::Path(ExprPath {
+            qself: None, path, ..
+        }) = func.as_ref()
+        else {
+            return None;
+        };
+
+        if path
+            .segments
+            .last()
+            .map(|segment| segment.ident.to_string())
+            != Some("new".to_string())
+        {
+            return None;
+        }
+
+        let canonical = self.resolve_boundary_path(path)?;
+        if !matches!(
+            canonical.as_str(),
+            "std::fs::OpenOptions::new" | "tokio::fs::OpenOptions::new"
+        ) {
+            return None;
+        }
+
+        let writes = methods.iter().any(|method| {
+            matches!(
+                method.as_str(),
+                "append" | "create" | "create_new" | "truncate" | "write"
+            )
+        });
+        if !writes {
+            return None;
+        }
+
+        match canonical.as_str() {
+            "std::fs::OpenOptions::new" => Some("std::fs::OpenOptions::open(write)"),
+            "tokio::fs::OpenOptions::new" => Some("tokio::fs"),
+            _ => None,
+        }
+    }
+}
+
+fn collect_method_chain_root<'a>(expr: &'a Expr, methods: &mut Vec<String>) -> &'a Expr {
+    match expr {
+        Expr::MethodCall(method_call) => {
+            methods.push(method_call.method.to_string());
+            collect_method_chain_root(method_call.receiver.as_ref(), methods)
+        }
+        other => other,
+    }
+}
+
+struct BoundaryModuleContext<'a> {
+    aliases: HashMap<String, String>,
+    module_aliases: HashMap<String, String>,
+    functions: HashMap<String, &'a ItemFn>,
+}
+
+impl<'a> BoundaryModuleContext<'a> {
+    fn new(module_items: &'a [Item]) -> Self {
+        let mut aliases = HashMap::new();
+        let mut module_aliases = HashMap::new();
+        let mut ignored_detected = Vec::new();
+        let mut functions = HashMap::new();
+
+        for item in module_items {
+            match item {
+                Item::Use(item_use) => record_boundary_from_use_tree(
+                    &item_use.tree,
+                    &mut Vec::new(),
+                    &mut aliases,
+                    &mut module_aliases,
+                    &mut ignored_detected,
+                ),
+                Item::Fn(item_fn) => {
+                    functions.insert(item_fn.sig.ident.to_string(), item_fn);
+                }
+                _ => {}
+            }
+        }
+
+        Self {
+            aliases,
+            module_aliases,
+            functions,
+        }
+    }
+}
+
+fn same_module_helper_calls(body: &Block) -> Vec<String> {
+    let mut collector = SameModuleHelperCallCollector::default();
+    collector.visit_block(body);
+    collector.calls
+}
+
+#[derive(Default)]
+struct SameModuleHelperCallCollector {
+    calls: Vec<String>,
+}
+
+impl<'ast> Visit<'ast> for SameModuleHelperCallCollector {
+    fn visit_expr_call(&mut self, node: &'ast ExprCall) {
+        if let Expr::Path(ExprPath {
+            qself: None, path, ..
+        }) = node.func.as_ref()
+        {
+            if let Some(name) = same_module_function_name(path) {
+                if !self.calls.contains(&name) {
+                    self.calls.push(name);
+                }
+            }
+        }
+
+        syn::visit::visit_expr_call(self, node);
+    }
+}
+
+fn same_module_function_name(path: &Path) -> Option<String> {
+    if path.leading_colon.is_some() {
+        return None;
+    }
+
+    match path
+        .segments
+        .iter()
+        .map(|segment| segment.ident.to_string())
+        .collect::<Vec<_>>()
+        .as_slice()
+    {
+        [name] => Some(name.clone()),
+        [prefix, name] if prefix == "self" => Some(name.clone()),
+        _ => None,
     }
 }
 
@@ -423,8 +637,9 @@ fn record_boundary_alias(
     let canonical = join_all_segments(path_segments);
     record_forbidden_boundary_import(canonical.clone(), detected);
     if forbidden_boundary_path(&canonical).is_some() {
-        aliases.insert(alias, canonical);
-    } else if boundary_has_forbidden_prefix(&canonical) {
+        aliases.insert(alias.clone(), canonical.clone());
+        module_aliases.insert(alias, canonical);
+    } else if boundary_has_forbidden_prefix(&canonical) || is_open_options_type_path(&canonical) {
         module_aliases.insert(alias, canonical);
     }
 }
@@ -444,6 +659,10 @@ fn boundary_has_forbidden_prefix(canonical: &str) -> bool {
         .any(|path| path.starts_with(&format!("{canonical}::")))
 }
 
+fn is_open_options_type_path(canonical: &str) -> bool {
+    matches!(canonical, "std::fs::OpenOptions" | "tokio::fs::OpenOptions")
+}
+
 const FORBIDDEN_BOUNDARY_PATHS: &[&str] = &[
     "crate::db",
     "crate::state",
@@ -458,6 +677,7 @@ const FORBIDDEN_BOUNDARY_PATHS: &[&str] = &[
     "File::create",
     "File::create_new",
     "File::open",
+    "std::fs::OpenOptions::open(write)",
 ];
 
 fn forbidden_boundary_path(canonical: &str) -> Option<&'static str> {
