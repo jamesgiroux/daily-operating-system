@@ -267,6 +267,10 @@ pub fn run_parallel_swot_generation(
                         .map_err(|e| format!("Failed to parse {} JSON: {}", section_name, e))?;
                     Ok((section_name, value, output.stdout))
                 });
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = sender.send(result);
         });
     }
@@ -284,6 +288,10 @@ pub fn run_parallel_swot_generation(
     for result in rx {
         match result {
             Ok((section, value, raw_output)) => {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::audit::write_audit_entry(
                     &input.workspace,
                     &format!("swot_{}", section),
@@ -330,6 +338,10 @@ pub fn run_parallel_swot_generation(
 
                 completed += 1;
                 if let Some(handle) = app_handle {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = handle.emit(
                         "swot-progress",
                         SwotProgressPayload {
@@ -339,6 +351,10 @@ pub fn run_parallel_swot_generation(
                             section_name: section.clone(),
                         },
                     );
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = handle.emit(
                         "swot-content",
                         SwotContentPayload {

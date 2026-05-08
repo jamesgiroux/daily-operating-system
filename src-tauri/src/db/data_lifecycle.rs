@@ -253,6 +253,10 @@ pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
         }
         Err(e) => {
             // best-effort: preserve the original purge error if rollback itself fails.
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = conn.execute_batch("ROLLBACK");
             Err(e)
         }

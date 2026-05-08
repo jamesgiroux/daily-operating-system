@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 
 #[derive(Debug, serde::Deserialize)]
@@ -20,6 +25,10 @@ pub struct MilestoneUpdateRequest {
     pub status: Option<String>,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_objective(
     account_id: String,
@@ -46,6 +55,10 @@ pub async fn create_objective(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_objective(
     id: String,
@@ -70,6 +83,10 @@ pub async fn update_objective(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn complete_objective(
     id: String,
@@ -85,6 +102,10 @@ pub async fn complete_objective(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn abandon_objective(
     id: String,
@@ -95,6 +116,10 @@ pub async fn abandon_objective(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn delete_objective(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let state_for_ctx = state.inner().clone();
@@ -106,6 +131,10 @@ pub async fn delete_objective(id: String, state: State<'_, Arc<AppState>>) -> Re
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_milestone(
     objective_id: String,
@@ -130,6 +159,10 @@ pub async fn create_milestone(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_milestone(
     id: String,
@@ -154,6 +187,10 @@ pub async fn update_milestone(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn complete_milestone(
     id: String,
@@ -169,6 +206,10 @@ pub async fn complete_milestone(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn skip_milestone(
     id: String,
@@ -184,6 +225,10 @@ pub async fn skip_milestone(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn delete_milestone(id: String, state: State<'_, Arc<AppState>>) -> Result<(), String> {
     let state_for_ctx = state.inner().clone();
@@ -195,6 +240,10 @@ pub async fn delete_milestone(id: String, state: State<'_, Arc<AppState>>) -> Re
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn link_action_to_objective(
     action_id: String,
@@ -215,6 +264,10 @@ pub async fn link_action_to_objective(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn unlink_action_from_objective(
     action_id: String,
@@ -235,6 +288,10 @@ pub async fn unlink_action_from_objective(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn reorder_objectives(
     account_id: String,
@@ -248,6 +305,10 @@ pub async fn reorder_objectives(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn reorder_milestones(
     objective_id: String,
@@ -261,6 +322,10 @@ pub async fn reorder_milestones(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_objective_suggestions(
     account_id: String,
@@ -273,6 +338,10 @@ pub async fn get_objective_suggestions(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_objective_from_suggestion(
     account_id: String,
@@ -300,6 +369,10 @@ pub fn list_success_plan_templates() -> Result<Vec<crate::types::SuccessPlanTemp
     Ok(crate::services::success_plans::list_templates())
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn apply_success_plan_template(
     account_id: String,

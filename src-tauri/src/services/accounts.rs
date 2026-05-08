@@ -103,6 +103,7 @@ pub fn create_child_account_record(
         if let Some(desc) = description {
             let trimmed = desc.trim();
             if !trimmed.is_empty() {
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = tx.update_account_field(&account.id, "notes", trimmed);
             }
         }
@@ -116,10 +117,26 @@ pub fn create_child_account_record(
 
     if let Some(ws) = workspace {
         let account_dir = crate::accounts::resolve_account_dir(ws, &account);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::create_dir_all(&account_dir);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::accounts::write_account_json(ws, &account, None, db);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::accounts::write_account_markdown(ws, &account, None, db);
     }
 
@@ -786,6 +803,7 @@ pub fn apply_lifecycle_transition(
             }
         }
 
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = crate::services::intelligence::recompute_entity_health(
             ctx,
             tx,
@@ -1556,6 +1574,10 @@ pub async fn get_account_detail(
     let state_for_ctx = state.clone();
 
     let lifecycle_account_id = account_id.to_string();
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
@@ -1986,6 +2008,10 @@ fn update_account_field_inner(
                         );
                         // Update tracker_path in DB
                         let new_tracker = format!("Accounts/{}", new_dir_name);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.update_account_field(account_id, "tracker_path", &new_tracker);
                     }
                 }
@@ -1993,7 +2019,15 @@ fn update_account_field_inner(
 
             // Re-fetch account after potential tracker_path update
             let account = db.get_account(account_id).ok().flatten().unwrap_or(account);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
         }
     }
@@ -2703,6 +2737,10 @@ pub fn create_account(
 
     db.upsert_account(&account).map_err(|e| e.to_string())?;
     if let Some(pid) = parent_id {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = db.copy_account_domains(pid, &account.id);
     }
 
@@ -2711,9 +2749,25 @@ pub fn create_account(
     if let Some(ref config) = *config {
         let workspace = Path::new(&config.workspace_path);
         let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::create_dir_all(&account_dir);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::util::bootstrap_entity_directory(&account_dir, &name, "account");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
     }
 
@@ -3144,9 +3198,25 @@ pub fn bulk_create_accounts(
         db.upsert_account(&account).map_err(|e| e.to_string())?;
 
         let account_dir = crate::accounts::resolve_account_dir(workspace, &account);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::create_dir_all(&account_dir);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::util::bootstrap_entity_directory(&account_dir, name, "account");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::accounts::write_account_json(workspace, &account, None, db);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::accounts::write_account_markdown(workspace, &account, None, db);
 
         created_ids.push(id);
@@ -3448,24 +3518,36 @@ pub async fn create_internal_organization(
 
             // Filesystem writes (best-effort, outside transaction)
             let root_dir = crate::accounts::resolve_account_dir(workspace, &root_account);
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = std::fs::create_dir_all(&root_dir);
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ =
                 crate::util::bootstrap_entity_directory(&root_dir, &company_name_clone, "account");
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = crate::accounts::write_account_json(workspace, &root_account, None, db);
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = crate::accounts::write_account_markdown(workspace, &root_account, None, db);
 
             let team_dir = crate::accounts::resolve_account_dir(workspace, &initial_team);
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = std::fs::create_dir_all(&team_dir);
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = crate::util::bootstrap_entity_directory(&team_dir, &team_name_clone, "account");
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = crate::accounts::write_account_json(workspace, &initial_team, None, db);
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = crate::accounts::write_account_markdown(workspace, &initial_team, None, db);
 
             for person in &created_people {
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::people::write_person_json(workspace, person, db);
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::people::write_person_markdown(workspace, person, db);
             }
             for person in &updated_people {
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::people::write_person_json(workspace, person, db);
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::people::write_person_markdown(workspace, person, db);
             }
 
@@ -3539,6 +3621,10 @@ pub async fn create_child_account_cmd(
         })
         .await?;
 
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .intel_queue
         .enqueue(crate::intel_queue::IntelRequest::new(

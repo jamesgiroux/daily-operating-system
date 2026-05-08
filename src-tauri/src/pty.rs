@@ -959,6 +959,10 @@ impl PtyManager {
 
             // best-effort: the receiver may time out and drop interest in
             // this PTY output before the reader thread exits.
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = tx.send(output);
         });
 

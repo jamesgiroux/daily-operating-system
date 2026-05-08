@@ -260,6 +260,10 @@ fn load_token_macos() -> Result<GoogleToken, GoogleApiError> {
     // One-time migration from legacy plaintext token file.
     let token = load_token_file()?;
     save_token_to_keychain(&token)?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = delete_token_file();
     Ok(token)
 }
@@ -267,6 +271,10 @@ fn load_token_macos() -> Result<GoogleToken, GoogleApiError> {
 #[cfg(target_os = "macos")]
 fn save_token_macos(token: &GoogleToken) -> Result<(), GoogleApiError> {
     save_token_to_keychain(token)?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = delete_token_file();
     Ok(())
 }
@@ -274,6 +282,10 @@ fn save_token_macos(token: &GoogleToken) -> Result<(), GoogleApiError> {
 #[cfg(target_os = "macos")]
 fn delete_token_macos() -> Result<(), GoogleApiError> {
     delete_token_from_keychain()?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = delete_token_file();
     Ok(())
 }

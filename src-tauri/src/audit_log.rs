@@ -69,6 +69,10 @@ impl AuditLogger {
         // Ensure parent directory exists
         if let Some(parent) = self.path.parent() {
             if !parent.exists() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = fs::create_dir_all(parent);
             }
         }
@@ -83,6 +87,10 @@ impl AuditLogger {
         #[cfg(unix)]
         {
             use std::os::unix::fs::PermissionsExt;
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = file.set_permissions(fs::Permissions::from_mode(0o600));
         }
 
@@ -175,6 +183,10 @@ pub fn rotate_audit_log(logger: &mut AuditLogger) -> (usize, u64) {
             for line in &rewritten {
                 if writeln!(f, "{}", line).is_err() {
                     log::warn!("Failed to write rotating audit log");
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = fs::remove_file(&rotating_path);
                     return (0, 0);
                 }
@@ -188,6 +200,10 @@ pub fn rotate_audit_log(logger: &mut AuditLogger) -> (usize, u64) {
 
     if let Err(e) = fs::rename(&rotating_path, &path) {
         log::warn!("Failed to rename rotating audit log: {e}");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = fs::remove_file(&rotating_path);
         return (0, 0);
     }

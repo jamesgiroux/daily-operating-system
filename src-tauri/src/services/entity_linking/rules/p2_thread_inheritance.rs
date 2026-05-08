@@ -27,6 +27,10 @@ impl super::super::phases::Rule for P2ThreadInheritance {
             Ok(Some(p)) => p,
             Ok(None) => {
                 // Parent not yet evaluated — enqueue for later flush.
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.enqueue_thread_inheritance(thread_id, &link_ctx.owner.owner_id);
                 return Ok(RuleOutcome::Skip);
             }

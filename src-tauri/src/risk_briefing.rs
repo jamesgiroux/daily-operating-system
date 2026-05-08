@@ -494,6 +494,10 @@ pub fn run_risk_enrichment(
                         .map_err(|e| format!("Failed to parse {} JSON: {}", section_name, e))?;
                     Ok((section_name, value, output.stdout))
                 });
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = sender.send(result);
         });
     }
@@ -505,6 +509,10 @@ pub fn run_risk_enrichment(
     for result in rx {
         match result {
             Ok((section, value, raw_output)) => {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::audit::write_audit_entry(
                     &input.workspace_path,
                     &format!("risk_briefing_{}", section),
@@ -515,6 +523,10 @@ pub fn run_risk_enrichment(
                     Ok(()) => {
                         completed += 1;
                         if let Some(handle) = app_handle {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = handle.emit(
                                 "risk-briefing-progress",
                                 RiskBriefingProgress {
@@ -524,6 +536,10 @@ pub fn run_risk_enrichment(
                                     total: total_sections,
                                 },
                             );
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = handle.emit("risk-briefing-content", &briefing);
                         }
                     }

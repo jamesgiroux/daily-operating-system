@@ -121,6 +121,10 @@ impl PropagationEngine {
                     log::debug!("Signal propagation: skipping archived entity {eid} ({etype})");
                     continue;
                 }
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = intel_q.enqueue(crate::intel_queue::IntelRequest::new(
                     eid.clone(),
                     etype.clone(),

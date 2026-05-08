@@ -87,6 +87,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
 
         // Emit initial count so sidebar badge is correct on launch
         let initial_count = count_inbox(&workspace);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app_handle.emit(
             "inbox-updated",
             InboxUpdate {
@@ -181,12 +185,20 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     .and_then(|n| n.to_str())
                                     .is_some_and(|n| n == "person.json")
                             }) {
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = tx.try_send(WatchSource::People(path.clone()));
                             }
                         } else if is_account_content {
                             // Content file changed in an account dir
                             for path in &event.paths {
                                 if path.starts_with(&accounts_dir_clone) {
+                                    #[allow(
+                                        clippy::let_underscore_must_use,
+                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                    )]
                                     let _ = tx.try_send(WatchSource::AccountContent(path.clone()));
                                 }
                             }
@@ -197,12 +209,20 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                         .and_then(|n| n.to_str())
                                         .is_some_and(|n| n == "dashboard.json")
                             }) {
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = tx.try_send(WatchSource::Accounts(path.clone()));
                             }
                         } else if is_project_content {
                             // Content file changed in a project dir
                             for path in &event.paths {
                                 if path.starts_with(&projects_dir_clone) {
+                                    #[allow(
+                                        clippy::let_underscore_must_use,
+                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                    )]
                                     let _ = tx.try_send(WatchSource::ProjectContent(path.clone()));
                                 }
                             }
@@ -213,6 +233,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                         .and_then(|n| n.to_str())
                                         .is_some_and(|n| n == "dashboard.json")
                             }) {
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = tx.try_send(WatchSource::Projects(path.clone()));
                             }
                         // Detect new or renamed directories under Accounts/ or Projects.
@@ -233,6 +257,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                     })
                             })
                         {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = tx.try_send(WatchSource::NewEntityDir);
                         } else if event
                             .paths
@@ -241,10 +269,18 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                         {
                             for path in &event.paths {
                                 if path.starts_with(&user_attachments_dir_clone) && path.is_file() {
+                                    #[allow(
+                                        clippy::let_underscore_must_use,
+                                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                    )]
                                     let _ = tx.try_send(WatchSource::UserAttachments(path.clone()));
                                 }
                             }
                         } else if event.paths.iter().any(|p| p.starts_with(&inbox_dir_clone)) {
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = tx.try_send(WatchSource::Inbox);
                         }
                     }
@@ -411,6 +447,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             if inbox_dirty {
                 let count = count_inbox(&workspace);
                 log::debug!("Watcher: inbox changed, count={}", count);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = app_handle.emit("inbox-updated", InboxUpdate { count });
                 inbox_dirty = false;
             }
@@ -418,6 +458,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             // Process people changes (external person.json edits)
             if !people_dirty.is_empty() {
                 handle_people_changes(&people_dirty, &state, &workspace);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = app_handle.emit("people-updated", ());
                 people_dirty.clear();
             }
@@ -425,6 +469,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             // Process account changes (external dashboard.json edits)
             if !accounts_dirty.is_empty() {
                 handle_account_changes(&accounts_dirty, &state, &workspace);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = app_handle.emit("accounts-updated", ());
                 accounts_dirty.clear();
             }
@@ -443,6 +491,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 requested_at: std::time::Instant::now(),
                             },
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = state
                             .intel_queue
                             .enqueue(crate::intel_queue::IntelRequest::new(
@@ -453,6 +505,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                     }
                     state.integrations.embedding_queue_wake.notify_one();
                     state.integrations.intel_queue_wake.notify_one();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = app_handle.emit("content-changed", payload.clone());
                 }
                 account_content_dirty.clear();
@@ -461,6 +517,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
             // Process project changes (external dashboard.json edits)
             if !projects_dirty.is_empty() {
                 handle_project_changes(&projects_dirty, &state, &workspace);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = app_handle.emit("projects-updated", ());
                 projects_dirty.clear();
             }
@@ -479,6 +539,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                                 requested_at: std::time::Instant::now(),
                             },
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = state
                             .intel_queue
                             .enqueue(crate::intel_queue::IntelRequest::new(
@@ -489,6 +553,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                     }
                     state.integrations.embedding_queue_wake.notify_one();
                     state.integrations.intel_queue_wake.notify_one();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = app_handle.emit("content-changed", payload.clone());
                 }
                 project_content_dirty.clear();
@@ -527,6 +595,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             "DOS-44: Bootstrapped {} new account(s) from workspace",
                             accounts_synced
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = app_handle.emit("accounts-updated", ());
                     }
                     if projects_synced > 0 {
@@ -534,6 +606,10 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                             "DOS-44: Bootstrapped {} new project(s) from workspace",
                             projects_synced
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = app_handle.emit("projects-updated", ());
                     }
                 }
@@ -587,8 +663,16 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
                 if db.upsert_person(&person).is_ok() {
                     // Restore entity links from JSON (ADR-0048)
                     for entity_id in &linked_entities {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.link_person_to_entity(&person.id, entity_id, "associated");
                     }
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = people::write_person_markdown(workspace, &person, &db);
                     log::info!("Watcher: synced external edit to {}", path.display());
                 }
@@ -632,6 +716,10 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
                     account.archived = existing.archived;
                 }
                 if db.upsert_account(&account).is_ok() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = accounts::write_account_markdown(workspace, &account, Some(&json), &db);
                     log::info!("Watcher: synced external edit to {}", path.display());
                 }
@@ -667,6 +755,10 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
         match projects::read_project_json(path) {
             Ok(projects::ReadProjectResult { project, json }) => {
                 if db.upsert_project(&project).is_ok() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = projects::write_project_markdown(workspace, &project, Some(&json), &db);
                     log::info!("Watcher: synced external edit to {}", path.display());
                 }

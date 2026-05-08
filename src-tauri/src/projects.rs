@@ -415,7 +415,15 @@ pub fn sync_projects_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
             let name = name_str;
             if let Ok(Some(db_project)) = db.get_project_by_name(&name) {
                 // Already in SQLite — generate files from DB
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = write_project_json(workspace, &db_project, None, db);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = write_project_markdown(workspace, &db_project, None, db);
                 synced += 1;
             } else {
@@ -431,7 +439,15 @@ pub fn sync_projects_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                     ..Default::default()
                 };
                 if db.upsert_project(&new_project).is_ok() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = write_project_json(workspace, &new_project, None, db);
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = write_project_markdown(workspace, &new_project, None, db);
                     log::info!("Bootstrapped project '{}' from existing folder", name);
                     synced += 1;
@@ -453,20 +469,44 @@ pub fn sync_projects_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
                             // workspace files don't know about it.
                             let mut project_to_sync = file_project.clone();
                             project_to_sync.archived = db_project.archived;
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = db.upsert_project(&project_to_sync);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ =
                                 write_project_markdown(workspace, &file_project, Some(&json), db);
                             synced += 1;
                         } else if db_project.updated_at > file_project.updated_at {
                             // SQLite is newer -- regen both files
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_project_json(workspace, &db_project, Some(&json), db);
+                            #[allow(
+                                clippy::let_underscore_must_use,
+                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                            )]
                             let _ = write_project_markdown(workspace, &db_project, Some(&json), db);
                             synced += 1;
                         }
                     }
                     Ok(None) => {
                         // New project from file -- insert to SQLite
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = db.upsert_project(&file_project);
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = write_project_markdown(workspace, &file_project, Some(&json), db);
                         synced += 1;
                     }
@@ -485,7 +525,15 @@ pub fn sync_projects_from_workspace(workspace: &Path, db: &ActionDb) -> Result<u
         for project in &all_projects {
             let dir = project_dir(workspace, &project.name);
             if !dir.exists() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = write_project_json(workspace, project, None, db);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = write_project_markdown(workspace, project, None, db);
                 synced += 1;
             }

@@ -173,6 +173,10 @@ pub fn emit_system_status(app: &AppHandle, status_type: &str, message: &str) {
         r#type: String,
         message: String,
     }
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app.emit(
         "system-status",
         SystemStatus {

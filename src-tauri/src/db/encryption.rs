@@ -65,6 +65,10 @@ pub fn get_or_create_db_key(db_path: &std::path::Path) -> Result<String, String>
     };
 
     // Cache for all future callers (race-safe: OnceLock ignores duplicate sets)
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = CACHED_KEY.set(key.clone());
     Ok(key)
 }
@@ -76,6 +80,10 @@ pub fn get_existing_db_key() -> Result<String, String> {
     }
 
     let key = get_key_from_keychain()?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = CACHED_KEY.set(key.clone());
     Ok(key)
 }
@@ -135,6 +143,10 @@ pub fn migrate_to_encrypted(plaintext_path: &std::path::Path, hex_key: &str) -> 
 
     // Checkpoint WAL to ensure all data is in the main file
     // best-effort: encryption export reads the main DB and handles an absent/empty WAL.
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = plain_conn.execute_batch("PRAGMA wal_checkpoint(TRUNCATE);");
 
     // Attach encrypted target
@@ -164,9 +176,21 @@ pub fn migrate_to_encrypted(plaintext_path: &std::path::Path, hex_key: &str) -> 
         .map_err(|e| format!("Failed to swap encrypted DB: {e}"))?;
 
     // Clean up WAL/SHM from the plaintext version
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(plaintext_path.with_extension("db-wal"));
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(plaintext_path.with_extension("db-shm"));
     // Remove the plaintext backup after successful swap
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(&backup_path);
 
     MIGRATION_PERFORMED.store(true, Ordering::Relaxed);
@@ -214,6 +238,10 @@ fn get_key_from_keychain() -> Result<String, String> {
 /// Store the encryption key in macOS Keychain via the `security` CLI.
 fn store_key_in_keychain(key: &str) -> Result<(), String> {
     // Delete existing entry first (add-generic-password fails if it exists)
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::process::Command::new("security")
         .args([
             "delete-generic-password",

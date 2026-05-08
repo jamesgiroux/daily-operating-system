@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 
 /// Project list item with computed fields for the list page.
@@ -58,6 +63,10 @@ pub struct ProjectChildSummary {
     pub open_action_count: usize,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_projects_list(
     state: State<'_, Arc<AppState>>,
@@ -66,6 +75,10 @@ pub async fn get_projects_list(
 }
 
 /// Get full detail for a project.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_project_detail(
     project_id: String,
@@ -75,6 +88,10 @@ pub async fn get_project_detail(
 }
 
 /// Get child projects for a parent project.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_child_projects_list(
     parent_id: String,
@@ -84,6 +101,10 @@ pub async fn get_child_projects_list(
 }
 
 /// Get ancestor projects for breadcrumb navigation.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_project_ancestors(
     project_id: String,
@@ -98,6 +119,10 @@ pub async fn get_project_ancestors(
 }
 
 /// Create a new project.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_project(
     name: String,
@@ -109,6 +134,10 @@ pub async fn create_project(
 }
 
 /// Update a single structured field on a project.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_project_field(
     project_id: String,
@@ -121,6 +150,10 @@ pub async fn update_project_field(
 }
 
 /// Update the notes field on a project.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_project_notes(
     project_id: String,
@@ -131,6 +164,10 @@ pub async fn update_project_notes(
 }
 
 /// Enrich a project via Claude Code intelligence enrichment.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn enrich_project(
     app_handle: tauri::AppHandle,
@@ -151,6 +188,10 @@ pub async fn enrich_project(
 
 // ── Database Backup & Rebuild ──────────────────────────────────
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn backup_database(state: tauri::State<'_, Arc<AppState>>) -> Result<String, String> {
     state.db_read(crate::db_backup::backup_database).await
@@ -168,6 +209,10 @@ pub fn list_database_backups() -> Result<Vec<crate::db_backup::BackupInfo>, Stri
     crate::db_backup::list_database_backups()
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn restore_database_from_backup(
     backup_path: String,
@@ -193,6 +238,10 @@ pub async fn restore_database_from_backup(
 
     if let Err(e) = crate::db_backup::restore_database_from_backup(Path::new(&backup_path)) {
         // Best-effort recovery: re-init DB service if restore failed.
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = state.init_db_service().await;
         return Err(e);
     }
@@ -208,6 +257,10 @@ pub async fn restore_database_from_backup(
     Ok(())
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn start_fresh_database(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
     // Drop async DB service before deleting files.
@@ -228,6 +281,10 @@ pub fn get_database_info() -> Result<crate::db_backup::DatabaseInfo, String> {
     crate::db_backup::get_database_info()
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn rebuild_database(
     state: tauri::State<'_, Arc<AppState>>,
@@ -345,6 +402,10 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
 }
 
 /// Detect potential duplicate people.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_duplicate_people(
     state: State<'_, Arc<AppState>>,
@@ -353,6 +414,10 @@ pub async fn get_duplicate_people(
 }
 
 /// Detect potential duplicate people for a specific person.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_duplicate_people_for_person(
     person_id: String,
@@ -374,6 +439,10 @@ pub async fn get_duplicate_people_for_person(
 // =============================================================================
 
 /// Archive or unarchive an account. Cascades to children when archiving.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn archive_account(
     id: String,
@@ -391,6 +460,10 @@ pub async fn archive_account(
 }
 
 /// Merge source account into target account.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn merge_accounts(
     from_id: String,
@@ -408,6 +481,10 @@ pub async fn merge_accounts(
 }
 
 /// Archive or unarchive a project.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn archive_project(
     id: String,
@@ -425,6 +502,10 @@ pub async fn archive_project(
 }
 
 /// Archive or unarchive a person.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn archive_person(
     id: String,
@@ -442,6 +523,10 @@ pub async fn archive_person(
 }
 
 /// Get archived accounts.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_archived_accounts(
     state: State<'_, Arc<AppState>>,
@@ -452,6 +537,10 @@ pub async fn get_archived_accounts(
 }
 
 /// Get archived projects.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_archived_projects(
     state: State<'_, Arc<AppState>>,
@@ -462,6 +551,10 @@ pub async fn get_archived_projects(
 }
 
 /// Get archived people with signals.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_archived_people(
     state: State<'_, Arc<AppState>>,
@@ -475,6 +568,10 @@ pub async fn get_archived_people(
 }
 
 /// Restore an archived account with optional child restoration.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn restore_account(
     account_id: String,
@@ -496,6 +593,10 @@ pub async fn restore_account(
 // =============================================================================
 
 /// Set multiple user domains for multi-org meeting classification.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_user_domains(
     domains: String,
@@ -510,6 +611,10 @@ pub async fn set_user_domains(
 // =============================================================================
 
 /// Bulk-create accounts from a list of names. Returns created account IDs.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn bulk_create_accounts(
     names: Vec<String>,
@@ -534,6 +639,10 @@ pub async fn bulk_create_accounts(
 }
 
 /// Bulk-create projects from a list of names. Returns created project IDs.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn bulk_create_projects(
     names: Vec<String>,
@@ -561,6 +670,10 @@ pub async fn bulk_create_projects(
 // =============================================================================
 
 /// Record an account lifecycle event (expansion, downsell, churn, etc.)
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn record_account_event(
     account_id: String,
@@ -590,6 +703,10 @@ pub async fn record_account_event(
 }
 
 /// Get account events for a given account.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_account_events(
     account_id: String,

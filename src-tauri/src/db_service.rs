@@ -70,9 +70,17 @@ struct PooledConnectionInner {
 
 impl PooledConnectionInner {
     fn shutdown(&self) {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.sender.send(CallMessage::Shutdown);
         let mut handle = self.handle.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(handle) = handle.take() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = handle.join();
         }
     }
@@ -112,9 +120,11 @@ impl PooledConnection {
                 while let Ok(message) = receiver.recv() {
                     match message {
                         CallMessage::Async { task, respond_to } => {
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = respond_to.send(run_task(task, &mut conn));
                         }
                         CallMessage::Sync { task, respond_to } => {
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = respond_to.send(run_task(task, &mut conn));
                         }
                         CallMessage::Shutdown => {

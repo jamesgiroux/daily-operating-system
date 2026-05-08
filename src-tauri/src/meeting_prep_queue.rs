@@ -375,6 +375,10 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
         match result {
             Ok(Ok(true)) => {
                 let meeting_id = request.meeting_id.clone();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = state
                     .db_write(move |db| {
                         let clock = crate::services::context::SystemClock;
@@ -395,12 +399,20 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                 // Audit: meeting prep generated
                 {
                     let mut audit = state.audit_log.lock();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = audit.append(
                         "ai",
                         "meeting_prep_generated",
                         serde_json::json!({"meeting_id": request.meeting_id}),
                     );
                 }
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = app.emit(
                     "prep-ready",
                     PrepReadyPayload {
@@ -449,6 +461,10 @@ pub async fn run_meeting_prep_processor(state: Arc<AppState>, app: AppHandle) {
                     let attempt = i32::from(request.attempt) + 1;
                     let error_type = classify_prep_error(&e).to_string();
                     let error_message = e.clone();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = state
                         .db_write(move |db| {
                             let clock = crate::services::context::SystemClock;
@@ -609,6 +625,10 @@ fn generate_mechanical_prep_with_inputs(
         .map_err(|e| format!("Failed to write prep_frozen_json: {}", e))?;
 
     let quality = crate::intelligence::assess_intelligence_quality(&db, meeting_id);
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = db.update_intelligence_state(
         meeting_id,
         "enriched",
@@ -886,6 +906,10 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
                 meeting_id
             );
             // Emit prep-ready again so the UI refreshes with the enriched version
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app.emit(
                 "prep-ready",
                 PrepReadyPayload {

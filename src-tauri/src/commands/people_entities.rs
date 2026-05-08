@@ -1,5 +1,14 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_people(
     relationship: Option<String>,
@@ -60,6 +69,10 @@ pub struct MeetingPreview {
 }
 
 /// Get full detail for a person (person + signals + entities + recent meetings).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_person_detail(
     person_id: String,
@@ -69,6 +82,10 @@ pub async fn get_person_detail(
 }
 
 /// Search people by name, email, or organization.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn search_people(
     query: String,
@@ -81,6 +98,10 @@ pub async fn search_people(
 
 /// Update a single field on a person (role, organization, notes, relationship).
 /// Also updates the person's workspace files.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_person(
     person_id: String,
@@ -102,6 +123,10 @@ pub async fn update_person(
 
 /// Link a person to an entity (account/project).
 /// Regenerates person.json so the link persists in the filesystem (ADR-0048).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn link_person_entity(
     person_id: String,
@@ -128,6 +153,10 @@ pub async fn link_person_entity(
 
 /// Unlink a person from an entity.
 /// Regenerates person.json so the removal persists in the filesystem (ADR-0048).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn unlink_person_entity(
     person_id: String,
@@ -147,6 +176,10 @@ pub async fn unlink_person_entity(
 }
 
 /// Get people linked to an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_people_for_entity(
     entity_id: String,
@@ -161,6 +194,10 @@ pub async fn get_people_for_entity(
 }
 
 /// Get people who attended a specific meeting.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_attendees(
     meeting_id: String,
@@ -181,6 +218,10 @@ pub async fn get_meeting_attendees(
 /// Link a meeting to an entity (account/project) via the junction table.
 /// ADR-0086: After relinking, clears prep_frozen_json and enqueues for
 /// mechanical re-assembly from the new entity's intelligence.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn link_meeting_entity(
     meeting_id: String,
@@ -203,6 +244,10 @@ pub async fn link_meeting_entity(
 /// Remove a meeting-entity link from the junction table.
 /// ADR-0086: After unlinking, clears prep_frozen_json and enqueues for
 /// mechanical re-assembly without the removed entity's intelligence.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn unlink_meeting_entity(
     meeting_id: String,
@@ -223,6 +268,10 @@ pub async fn unlink_meeting_entity(
 /// Dismiss an auto-resolved meeting entity. Unlinks it AND records
 /// a persistent dismissal so future calendar-sync / resolver sweeps do not
 /// re-link the same (meeting, entity, type) tuple.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_meeting_entity(
     meeting_id: String,
@@ -245,6 +294,10 @@ pub async fn dismiss_meeting_entity(
 
 /// Undo a previous dismissal. Removes the dismissal record so the
 /// entity can auto-link again on the next calendar-sync or resolver pass.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn restore_meeting_entity(
     meeting_id: String,
@@ -270,6 +323,10 @@ pub async fn restore_meeting_entity(
 
 /// Set (or clear) the primary entity for a meeting or email.
 /// Writes a source='user' row to linked_entities_raw (P1 override).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_entity_link_primary(
     owner_type: String,
@@ -299,6 +356,10 @@ pub async fn set_entity_link_primary(
 
 /// Dismiss a suggested entity link for a meeting or email.
 /// Writes a linking_dismissals tombstone + marks raw row as user_dismissed.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_entity_link(
     owner_type: String,
@@ -326,6 +387,10 @@ pub async fn dismiss_entity_link(
 }
 
 /// Undo a previous entity link dismissal.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn restore_entity_link(
     owner_type: String,
@@ -353,6 +418,10 @@ pub async fn restore_entity_link(
 }
 
 /// Get all entities linked to a meeting via the junction table.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_entities(
     meeting_id: String,
@@ -370,6 +439,10 @@ pub async fn get_meeting_entities(
 /// Clears existing entity links, sets the new one, and cascades to related tables.
 /// Emits `prep-ready` event on successful rebuild.
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_meeting_entity(
     meeting_id: String,
@@ -408,6 +481,10 @@ pub async fn update_meeting_entity(
 /// Unlike `update_meeting_entity` which clears-and-replaces, this is additive.
 /// Emits `prep-ready` event on successful rebuild.
 #[allow(clippy::too_many_arguments)]
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn add_meeting_entity(
     meeting_id: String,
@@ -440,6 +517,10 @@ pub async fn add_meeting_entity(
 
 /// Remove an entity link from a meeting with cleanup (legacy account_id, intelligence).
 /// Emits `prep-ready` event on successful rebuild.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn remove_meeting_entity(
     meeting_id: String,
@@ -464,6 +545,10 @@ pub async fn remove_meeting_entity(
 // =========================================================================
 
 /// Remove a keyword from a project's auto-extracted keyword list.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn remove_project_keyword(
     project_id: String,
@@ -480,6 +565,10 @@ pub async fn remove_project_keyword(
 }
 
 /// Remove a keyword from an account's auto-extracted keyword list.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn remove_account_keyword(
     account_id: String,
@@ -500,6 +589,10 @@ pub async fn remove_account_keyword(
 // =========================================================================
 
 /// Create a new person manually. Returns the generated person ID.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_person(
     email: String,
@@ -531,6 +624,10 @@ pub async fn create_person(
 
 /// Merge two people: transfer all references from `remove_id` to `keep_id`, then delete the removed person.
 /// Also cleans up filesystem directories and regenerates the kept person's files.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn merge_people(
     keep_id: String,
@@ -548,6 +645,10 @@ pub async fn merge_people(
 }
 
 /// Delete a person and all their references. Also removes their filesystem directory.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn delete_person(
     person_id: String,
@@ -565,6 +666,10 @@ pub async fn delete_person(
 
 /// Enrich a person with intelligence assessment (relationship intelligence).
 /// Uses split-lock pattern  — DB lock held only briefly during gather/write.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn enrich_person(
     app_handle: tauri::AppHandle,
@@ -588,6 +693,10 @@ pub async fn enrich_person(
 // =========================================================================
 
 /// Submit feedback (positive/negative) on an intelligence field for an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn submit_intelligence_feedback(
     entity_id: String,
@@ -641,6 +750,10 @@ pub struct SubmitIntelligenceCorrectionRequest {
     pub item_key: Option<String>,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn submit_intelligence_correction(
     request: SubmitIntelligenceCorrectionRequest,
@@ -670,6 +783,10 @@ pub async fn submit_intelligence_correction(
 }
 
 /// Get all feedback records for an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_entity_feedback(
     entity_id: String,
@@ -701,6 +818,10 @@ pub struct LinkedEntityDto {
 /// Returns primary + related entities from `linked_entities_raw` (excluding
 /// user_dismissed rows). Falls back to empty when no entries exist yet.
 /// The meeting chip uses the `role` field directly to render primary vs related.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_linked_entities_for_owner(
     owner_type: String,
@@ -755,6 +876,10 @@ pub async fn get_linked_entities_for_owner(
 ///
 /// Removes all rows where source='inferred'. User-entered ('user') and
 /// enrichment-sourced ('enrichment') domains are preserved.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn rebuild_account_domains(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let state_for_ctx = state.inner().clone();
@@ -768,6 +893,10 @@ pub async fn rebuild_account_domains(state: State<'_, Arc<AppState>>) -> Result<
 }
 
 /// Get all active suppression tombstones for an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_entity_suppressions(
     entity_id: String,

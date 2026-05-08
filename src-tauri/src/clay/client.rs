@@ -248,6 +248,10 @@ impl ClayClient {
             "method": "notifications/initialized",
         });
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = me
             .client
             .post(&me.endpoint)

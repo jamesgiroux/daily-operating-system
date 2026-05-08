@@ -53,6 +53,10 @@ pub fn evaluate_portfolio(
             continue;
         }
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = queue.enqueue(crate::intel_queue::IntelRequest::new(
             entity_id.clone(),
             entity_type.clone(),

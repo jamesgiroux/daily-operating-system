@@ -1871,6 +1871,10 @@ pub async fn generate_risk_briefing(
 
         // Store in reports table for unified tracking
         if let Ok(db) = crate::db::ActionDb::open() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ =
                 crate::reports::risk::store_risk_briefing_in_reports(&db, &account_id, &briefing);
         }

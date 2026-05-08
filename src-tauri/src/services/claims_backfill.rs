@@ -971,6 +971,10 @@ pub fn run_dos7_cutover_if_pending(
         }
         Err(e) => {
             // best-effort: preserve the original cutover error if rollback itself fails.
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = conn.execute_batch("ROLLBACK");
             return Err(e);
         }
@@ -1015,6 +1019,10 @@ pub fn run_dos7_cutover_if_pending(
     // Clear the started marker so the migration_state reflects only
     // the completed timestamp going forward.
     // best-effort: completed_at is authoritative; stale started_at is ignored after completion.
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = db.conn_ref().execute(
         "DELETE FROM migration_state WHERE key = ?1",
         [DOS7_CUTOVER_STARTED_AT_KEY],

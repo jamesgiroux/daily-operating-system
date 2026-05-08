@@ -836,7 +836,15 @@ pub fn clear_demo(db: &ActionDb, workspace: Option<&Path>) -> Result<(), String>
     // Remove demo fixture files (best-effort — don't fail if files don't exist)
     if let Some(ws) = workspace {
         let data_dir = ws.join("_today").join("data");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(data_dir.join("schedule.json"));
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_dir_all(data_dir.join("preps"));
     }
 

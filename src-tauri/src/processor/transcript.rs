@@ -144,6 +144,10 @@ struct TranscriptRoleReviewPayload {
 
 fn emit_transcript_progress(app_handle: Option<&AppHandle>, payload: TranscriptProgressPayload) {
     if let Some(app_handle) = app_handle {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app_handle.emit("transcript-progress", payload);
     }
 }
@@ -310,6 +314,10 @@ pub fn process_transcript_with_kind(
     };
 
     // Audit trail  — Phase 1
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ =
         crate::audit::write_audit_entry(workspace, "transcript-p1", &meeting.id, &phase1_output);
 
@@ -334,6 +342,7 @@ pub fn process_transcript_with_kind(
     // rejecting re-inserted actions during reprocessing (WAL visibility issue
     // between db_write and dedicated ActionDb::open connections).
     if let Some(db) = db {
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = db.conn.execute(
             "DELETE FROM actions WHERE source_id = ?1 AND source_type IN ('transcript', 'post_meeting')",
             rusqlite::params![meeting.id],
@@ -435,6 +444,10 @@ pub fn process_transcript_with_kind(
         match pty2.spawn_claude(workspace, &phase2_prompt) {
             Ok(o) => {
                 let phase2_output = o.stdout;
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::audit::write_audit_entry(
                     workspace,
                     "transcript-p2",
@@ -577,6 +590,10 @@ pub fn process_transcript_with_kind(
         match pty3.spawn_claude(workspace, &phase3_prompt) {
             Ok(o) => {
                 let phase3_output = o.stdout;
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::audit::write_audit_entry(
                     workspace,
                     "transcript-p3",
@@ -806,6 +823,10 @@ pub fn process_transcript_with_kind(
                             e
                         );
                     } else if let Some(app_handle) = app_handle {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = app_handle.emit(
                             "intelligence-updated",
                             serde_json::json!({
@@ -3225,6 +3246,10 @@ fn append_to_impact_log(workspace: &Path, meeting: &CalendarEvent, wins: &[Strin
     }
 
     // Atomic append — no read-modify-write race
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::OpenOptions::new()
         .create(true)
         .append(true)

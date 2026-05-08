@@ -153,6 +153,10 @@ fn poll_once(
 
                     // Reset any stale in-flight/failed row so this poll cycle can resume it.
                     if existing.state != "pending" {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = crate::quill::sync::transition_state(
                             &db,
                             &existing.id,
@@ -208,6 +212,10 @@ fn poll_once(
         emit_transcript_processed(state, app_handle, &matched.meeting_id);
 
         if let Ok((_, calendar_event)) = result {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ =
                 crate::notification::notify_transcript_ready(app_handle, &doc.title, None, state);
             linkable_events.push(calendar_event);
@@ -266,6 +274,10 @@ fn process_granola_document(
 
         // Mark as processing before leaving the DB lock. If the app exits mid-run,
         // the next poll can recover this row.
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::quill::sync::transition_state(
             &db,
             sync_id,
@@ -297,6 +309,10 @@ fn process_granola_document(
 
             let dest = tr.destination.as_deref().unwrap_or("");
             let processed_at = chrono::Utc::now().to_rfc3339();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.update_meeting_transcript_metadata(
                 &calendar_event.id,
                 dest,
@@ -308,6 +324,10 @@ fn process_granola_document(
             let meeting_account_id = resolve_meeting_account_id(&db, &calendar_event.id);
             let account = calendar_event.account.as_deref();
             for win in &tr.wins {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
@@ -317,6 +337,10 @@ fn process_granola_document(
                 );
             }
             for risk in &tr.risks {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
@@ -326,6 +350,10 @@ fn process_granola_document(
                 );
             }
             for decision in &tr.decisions {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.insert_capture(
                     &calendar_event.id,
                     &calendar_event.title,
@@ -414,6 +442,10 @@ fn process_granola_document(
             }
 
             // Transition sync state to completed
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::quill::sync::transition_state(
                 &db,
                 sync_id,
@@ -428,6 +460,10 @@ fn process_granola_document(
         }
         Err(error) => {
             if let Ok(db) = crate::db::ActionDb::open() {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::quill::sync::transition_state(
                     &db,
                     sync_id,
@@ -437,6 +473,10 @@ fn process_granola_document(
                     None,
                     Some(&error),
                 );
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::quill::sync::advance_attempt(&db, sync_id);
             }
             Err(error)
@@ -514,9 +554,17 @@ fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_
 
     match payload {
         Some(outcome) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app_handle.emit("transcript-processed", &outcome);
         }
         None => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app_handle.emit("transcript-processed", &meeting_id.to_string());
         }
     }
@@ -671,6 +719,10 @@ pub fn trigger_granola_sync_for_meeting(
                 .map_err(|e| e.to_string())?
             {
                 Some(existing) => {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = crate::quill::sync::transition_state(
                         &db,
                         &existing.id,

@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 use rusqlite::OptionalExtension;
 
@@ -39,6 +44,10 @@ pub struct AiUsageDiagnostics {
     pub trend: Vec<AiUsageTrendPoint>,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_processing_history(
     limit: Option<i32>,
@@ -58,6 +67,10 @@ pub async fn get_processing_history(
 ///
 /// Seeds curated accounts, actions, meetings, and people marked `is_demo = 1`.
 /// Writes fixture files if a workspace path is configured.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state.config.read().as_ref().and_then(|c| {
@@ -77,6 +90,10 @@ pub async fn install_demo_data(state: State<'_, Arc<AppState>>) -> Result<String
 }
 
 /// Clear all demo data and reset demo mode.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let workspace_path = state.config.read().as_ref().and_then(|c| {
@@ -96,6 +113,10 @@ pub async fn clear_demo_data(state: State<'_, Arc<AppState>>) -> Result<String, 
 }
 
 /// Get app-level state (demo mode, tour, wizard progress).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_app_state(
     state: State<'_, Arc<AppState>>,
@@ -104,6 +125,10 @@ pub async fn get_app_state(
 }
 
 /// Mark the post-wizard tour as completed.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_tour_completed(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     state.db_write(crate::demo::set_tour_completed).await?;
@@ -111,6 +136,10 @@ pub async fn set_tour_completed(state: State<'_, Arc<AppState>>) -> Result<Strin
 }
 
 /// Mark the wizard as completed with current timestamp.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_wizard_completed(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     state.db_write(crate::demo::set_wizard_completed).await?;
@@ -118,6 +147,10 @@ pub async fn set_wizard_completed(state: State<'_, Arc<AppState>>) -> Result<Str
 }
 
 /// Set wizard last step for mid-wizard resume.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_wizard_step(
     step: String,
@@ -139,6 +172,10 @@ pub async fn set_wizard_step(
 /// record (bridge pattern fires `ensure_entity_for_account` automatically).
 /// For each project: creates `Projects/{name}/` (filesystem only, no SQLite).
 /// DB errors are non-fatal; folder creation is the primary value.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn populate_workspace(
     accounts: Vec<String>,
@@ -226,6 +263,7 @@ pub async fn populate_workspace(
     let engine = std::sync::Arc::clone(&state.signals.engine);
     let wp = workspace_path.clone();
     let state_for_ctx = state.inner().clone();
+    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
     let _ = state
         .db_write(move |db| {
             let ctx = state_for_ctx.live_service_context();
@@ -324,7 +362,9 @@ pub async fn populate_workspace(
                     log::warn!("Failed to upsert project '{}': {}", db_project.name, e);
                 }
                 let json = crate::projects::default_project_json(db_project);
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::projects::write_project_json(workspace, db_project, Some(&json), db);
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ =
                     crate::projects::write_project_markdown(workspace, db_project, Some(&json), db);
             }
@@ -358,6 +398,10 @@ pub struct OnboardingPrimingContext {
     pub prompt: String,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_onboarding_priming_context(
     state: State<'_, Arc<AppState>>,
@@ -520,6 +564,10 @@ pub fn get_latency_rollups() -> crate::latency::LatencyRollupsPayload {
     crate::latency::get_rollups()
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_ai_usage_diagnostics(
     state: State<'_, Arc<AppState>>,
@@ -772,6 +820,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
     );
 
     // --- Download .pkg to temp file ---
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app.emit(
         "install-claude-progress",
         InstallProgress {
@@ -786,6 +838,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
             "Failed to download Node.js — check your internet connection: {}",
             e
         );
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -802,6 +858,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
             "Failed to download Node.js — server returned {}",
             response.status()
         );
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -815,6 +875,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
 
     let bytes = response.bytes().map_err(|e| {
         let msg = format!("Failed to download Node.js — connection interrupted: {}", e);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -839,6 +903,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
             NODE_PKG_SHA256,
             digest
         );
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -857,6 +925,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
         .map_err(|e| format!("Failed to write Node.js installer: {}", e))?;
 
     // --- Run macOS installer with admin privileges via osascript ---
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app.emit(
         "install-claude-progress",
         InstallProgress {
@@ -887,6 +959,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
         } else {
             format!("Node.js installation failed: {}", stderr.trim())
         };
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -904,6 +980,10 @@ fn install_nodejs_blocking(app: &tauri::AppHandle) -> Result<(), String> {
     // --- Verify Node is now available ---
     if crate::util::resolve_node_binary().is_none() {
         let msg = "Node.js installer completed but node binary not found on PATH".to_string();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -954,6 +1034,7 @@ pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
                         let msg =
                             "Node.js installed but npm not found — please restart and try again"
                                 .to_string();
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = app.emit(
                             "install-claude-progress",
                             InstallProgress {
@@ -969,6 +1050,7 @@ pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
         };
 
         // Step 2: Install Claude Code CLI
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -986,6 +1068,7 @@ pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
         if !output.status.success() {
             let stderr = String::from_utf8_lossy(&output.stderr);
             let msg = format!("npm install failed: {}", stderr.trim());
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = app.emit(
                 "install-claude-progress",
                 InstallProgress {
@@ -1000,6 +1083,7 @@ pub async fn install_claude_cli(app: tauri::AppHandle) -> Result<(), String> {
         // Step 3: Clear status cache so next check picks up the new install
         *claude_status_cache().lock() = None;
 
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = app.emit(
             "install-claude-progress",
             InstallProgress {
@@ -1054,6 +1138,10 @@ pub fn install_inbox_sample(state: State<'_, Arc<AppState>>) -> Result<String, S
 }
 
 /// Get frequent same-domain correspondents from Gmail sent mail.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_frequent_correspondents(
     user_email: String,
@@ -1078,6 +1166,10 @@ pub async fn get_frequent_correspondents(
 /// Async because it must reinitialize the DB connection pool after
 /// entering dev mode (the sync DB swaps immediately, but the async
 /// `DbService` readers/writers need to be reopened at the dev path).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dev_apply_scenario(
     scenario: String,
@@ -1139,6 +1231,10 @@ pub fn dev_run_today_full(state: State<'_, Arc<AppState>>) -> Result<String, Str
 ///
 /// Deactivates dev DB isolation, reopens the live database, reinitializes the
 /// async DB connection pool, and restores the original workspace path.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dev_restore_live(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     if !cfg!(debug_assertions) {
@@ -1196,6 +1292,10 @@ pub fn dev_set_auth_override(claude_mode: u8, google_mode: u8) -> Result<String,
 /// Apply a named onboarding scenario: reset wizard state + set auth overrides.
 ///
 /// Scenarios: fresh, auth_ready, no_claude, claude_unauthed, no_google, google_expired, nothing_works.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dev_onboarding_scenario(
     scenario: String,
@@ -1242,6 +1342,10 @@ pub fn build_outcome_data(
 }
 
 /// Compute executive intelligence signals.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_executive_intelligence(
     state: State<'_, Arc<AppState>>,
@@ -1260,6 +1364,10 @@ pub async fn get_executive_intelligence(
 // Global Search
 // =============================================================================
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn search_global(
     query: String,
@@ -1275,6 +1383,10 @@ pub async fn search_global(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn rebuild_search_index(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     use crate::db::search::SearchDb;
@@ -1291,6 +1403,10 @@ pub async fn rebuild_search_index(state: State<'_, Arc<AppState>>) -> Result<usi
 // Connectivity / Sync Freshness
 // =============================================================================
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_sync_freshness(
     state: State<'_, Arc<AppState>>,
@@ -1304,6 +1420,10 @@ pub async fn get_sync_freshness(
 // Data Export
 // =============================================================================
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn export_all_data(
     dest_path: String,
@@ -1319,6 +1439,10 @@ pub async fn export_all_data(
 // Privacy Controls
 // =============================================================================
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_data_summary(
     state: State<'_, Arc<AppState>>,
@@ -1326,6 +1450,10 @@ pub async fn get_data_summary(
     state.db_read(crate::privacy::get_data_summary).await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn clear_intelligence(
     state: State<'_, Arc<AppState>>,
@@ -1333,6 +1461,10 @@ pub async fn clear_intelligence(
     state.db_write(crate::privacy::clear_intelligence).await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), String> {
     // Get DB path from static method, close db_service before deleting.
@@ -1354,7 +1486,15 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
         // Also delete WAL and SHM files
         let wal = format!("{path}-wal");
         let shm = format!("{path}-shm");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(&wal);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(&shm);
     }
 
@@ -1362,6 +1502,10 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
     if let Some(home) = dirs::home_dir() {
         let workspace = home.join(".dailyos").join("_today");
         if workspace.exists() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::remove_dir_all(&workspace);
         }
     }
@@ -1376,6 +1520,10 @@ pub async fn delete_all_data(state: State<'_, Arc<AppState>>) -> Result<(), Stri
 /// Returns current feature flags. Reads from `config.features` so operators can
 /// opt individual installations in via the TOML config file. Falls back to the
 /// struct Default (all false) for any key not present in config.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_feature_flags(
     state: State<'_, Arc<AppState>>,
@@ -1402,6 +1550,10 @@ pub async fn get_feature_flags(
 // =============================================================================
 
 /// Return DB file size and row counts for key tables.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_db_growth_report(
     state: State<'_, Arc<AppState>>,
@@ -1424,6 +1576,10 @@ pub struct FeedbackDiagnostics {
 }
 
 /// Return feedback event count, active suppression count, and last feedback timestamp.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_feedback_diagnostics(
     state: State<'_, Arc<AppState>>,
@@ -1468,6 +1624,10 @@ pub async fn get_feedback_diagnostics(
 // =============================================================================
 
 /// Bulk recompute health scores for all accounts after formula fixes.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn bulk_recompute_health(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     state

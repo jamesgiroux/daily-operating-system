@@ -1079,6 +1079,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         entity_id,
                         entity_type,
                     } => {
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = crate::signals::feedback::record_removal(
                             db,
                             &meeting_id,
@@ -1132,8 +1133,10 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                 }
 
                 if let Ok(Some(old_path)) = db.invalidate_meeting_prep(&meeting_id) {
+                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                     let _ = std::fs::remove_file(&old_path);
                 }
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = db.update_intelligence_state(&meeting_id, "refreshing", None, None);
 
                 Ok::<MeetingEntityMutationOutcome, String>(result)
@@ -1147,10 +1150,12 @@ async fn mutate_meeting_entities_and_refresh_briefing(
         let old_ids = mutation_result.old_entity_ids.clone();
         let correction_target = mutation_result.correction_target.clone();
         let keyword_target = mutation_result.keyword_target.clone();
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = state
             .db_write(move |db| {
                 if let Some((new_id, entity_type)) = correction_target {
                     if !old_ids.is_empty() && old_ids.iter().all(|(id, _)| id != &new_id) {
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = crate::signals::feedback::record_correction(
                             db,
                             &meeting_id,
@@ -1168,6 +1173,7 @@ async fn mutate_meeting_entities_and_refresh_briefing(
                         let ext = crate::services::context::ExternalClients::default();
                         let ctx =
                             crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = crate::services::entities::auto_extract_title_keywords(
                             &ctx,
                             db,
@@ -1187,6 +1193,10 @@ async fn mutate_meeting_entities_and_refresh_briefing(
     entities_to_refresh.dedup();
     if !entities_to_refresh.is_empty() {
         for (entity_id, entity_type) in entities_to_refresh {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = state
                 .intel_queue
                 .enqueue(crate::intel_queue::IntelRequest::new(
@@ -1244,6 +1254,10 @@ async fn mutate_meeting_entities_and_refresh_briefing(
 
     if prep_rebuilt_sync {
         let meeting_id = meeting_id_s.clone();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = state
             .db_write(move |db| {
                 let quality = crate::intelligence::assess_intelligence_quality(db, &meeting_id);
@@ -1260,6 +1274,10 @@ async fn mutate_meeting_entities_and_refresh_briefing(
 
         // Emit prep-ready so MeetingDetailPage auto-refreshes.
         if let Some(app) = app_handle {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app.emit(
                 "prep-ready",
                 crate::meeting_prep_queue::PrepReadyPayload {
@@ -1542,6 +1560,7 @@ pub async fn capture_meeting_outcome(
     // Persist actions and captures to SQLite
     let outcome_clone = outcome.clone();
     let action_now = ctx.clock.now().to_rfc3339();
+    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
     let _ = state
         .db_write(move |db| {
             // Resolve stable entity IDs so post-meeting actions/captures attach even when
@@ -1624,6 +1643,7 @@ pub async fn capture_meeting_outcome(
             }
 
             for win in &outcome_clone.wins {
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = db.insert_capture_with_project(
                     &outcome_clone.meeting_id,
                     &outcome_clone.meeting_title,
@@ -1634,6 +1654,7 @@ pub async fn capture_meeting_outcome(
                 );
             }
             for risk in &outcome_clone.risks {
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = db.insert_capture_with_project(
                     &outcome_clone.meeting_id,
                     &outcome_clone.meeting_title,
@@ -1664,8 +1685,16 @@ pub async fn capture_meeting_outcome(
         }
         if impact_log.exists() {
             let existing = std::fs::read_to_string(&impact_log).unwrap_or_default();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::write(&impact_log, format!("{}{}", existing, content));
         } else {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::write(&impact_log, content);
         }
     }
@@ -2058,6 +2087,10 @@ pub async fn get_meeting_intelligence(
             let mtype = event.meeting_type.as_str().to_string();
             let title = event.title.clone();
             let eid = event.id.clone();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = state
                 .db_write(move |db| {
                     db.ensure_meeting_in_history(crate::db::EnsureMeetingHistoryInput {
@@ -2245,13 +2278,25 @@ pub async fn get_meeting_intelligence(
         .as_ref()
         .map(|p| p.title.clone())
         .unwrap_or_default();
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .db_write(move |db| {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.mark_prep_reviewed(
                 &write_meeting_id,
                 write_prep_event_id.as_deref(),
                 &write_prep_title,
             );
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.clear_meeting_new_signals(&write_meeting_id);
             Ok::<(), String>(())
         })
@@ -3106,6 +3151,10 @@ pub fn update_meeting_user_agenda(
                     json["userAgenda"] = serde_json::json!(layer.items);
                 }
                 if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = std::fs::write(&prep_path, updated);
                 }
             }
@@ -3185,6 +3234,10 @@ pub fn update_meeting_user_notes(
                     json["userNotes"] = serde_json::json!(notes);
                 }
                 if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = std::fs::write(&prep_path, updated);
                 }
             }
@@ -3572,6 +3625,10 @@ fn emit_briefing_refresh_progress(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if let Some(app) = app_handle {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app.emit("meeting-briefing-refresh-progress", &payload);
     }
     Ok(())
@@ -3641,6 +3698,10 @@ pub async fn refresh_meeting_briefing_full(
                 last_enriched_at: meeting.last_enriched_at.clone(),
             };
 
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.update_intelligence_state(&meeting_id_for_phase1, "enriching", None, None);
 
             let linked_entities = db
@@ -3906,6 +3967,7 @@ pub async fn refresh_meeting_briefing_full(
                     Some(quality.signal_count as i32),
                 )
                 .map_err(|e| e.to_string())?;
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = db.clear_meeting_new_signals(&meeting_id_for_phase4);
                 Ok::<IntelligenceQuality, String>(quality)
             })
@@ -4193,6 +4255,10 @@ pub async fn attach_meeting_transcript(
             let dest = transcript_destination.clone();
             let at = processed_at.clone();
             let summary = result.summary.clone();
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = state
                 .db_write(move |db| {
                     if let Err(e) =
@@ -4217,6 +4283,10 @@ pub async fn attach_meeting_transcript(
             {
                 let mut guard = state.capture.transcript_processed.lock();
                 guard.insert(meeting_id.clone(), record);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = crate::state::save_transcript_records(&guard);
             }
 
@@ -4226,6 +4296,10 @@ pub async fn attach_meeting_transcript(
             }
 
             let outcome_data = crate::commands::build_outcome_data(&meeting_id, &result, state);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app_handle.emit("transcript-processed", &outcome_data);
 
             // Emit transcript signals via the main DB connection so the
@@ -4277,6 +4351,7 @@ pub async fn attach_meeting_transcript(
                     .collect();
                 let risk_strings: Vec<String> = result.risks.clone();
                 let meeting_title = meeting.title.clone();
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = state
                     .db_write(move |db| {
                         let account_id: Option<String> =
@@ -4425,6 +4500,7 @@ pub async fn attach_meeting_transcript(
 
                         // Store sentiment as DB capture
                         if let Some(ref sj) = sentiment_json {
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = db.insert_capture(
                                 &mid,
                                 &meeting_title,
@@ -4442,11 +4518,19 @@ pub async fn attach_meeting_transcript(
             // No outcomes extracted — remove from guard so the user can retry.
             let mut guard = state.capture.transcript_processed.lock();
             guard.remove(&meeting_id);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::state::save_transcript_records(&guard);
         }
     } else {
         let mut guard = state.capture.transcript_processed.lock();
         guard.remove(&meeting_id);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::state::save_transcript_records(&guard);
     }
 

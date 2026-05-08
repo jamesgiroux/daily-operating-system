@@ -166,6 +166,10 @@ impl GleanCache {
         );
 
         // DB (best-effort — cache misses are not fatal)
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = db.conn_ref().execute(
             "INSERT OR REPLACE INTO glean_document_cache (cache_key, kind, content, cached_at)
              VALUES (?1, ?2, ?3, datetime('now'))",
@@ -191,6 +195,10 @@ impl GleanCache {
         let key = Self::cache_key(kind, id);
         self.memory.remove(&key);
         if let Some(db) = db {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.conn_ref().execute(
                 "DELETE FROM glean_document_cache WHERE cache_key = ?1",
                 [&key],
@@ -205,6 +213,7 @@ impl GleanCache {
 
     /// Purge expired entries from DB.
     pub fn purge_expired_db(&self, db: &ActionDb) {
+        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
         let _ = db.conn_ref().execute(
             "DELETE FROM glean_document_cache
              WHERE (kind = 'document' AND datetime(cached_at, '+3600 seconds') < datetime('now'))

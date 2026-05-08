@@ -139,7 +139,15 @@ pub async fn get_emails_enriched(
     if !thread_emails.is_empty() {
         let json_path = today_dir.join("data").join("emails.json");
         if let Ok(json) = serde_json::to_string_pretty(&emails) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::create_dir_all(today_dir.join("data"));
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::write(&json_path, json);
         }
     }
@@ -452,6 +460,10 @@ pub async fn get_emails_enriched(
     // with 7-day deduplication so the callout system can surface them.
     if !gone_quiet.is_empty() {
         let gq_accounts = gone_quiet.clone();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = state
             .db_read(move |db| {
                 let engine = crate::signals::propagation::PropagationEngine::default();
@@ -1585,6 +1597,10 @@ pub async fn sync_email_inbox_presence(
         .await?;
 
     if result.changed {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app_handle.emit("emails-updated", ());
     }
 
@@ -1637,6 +1653,10 @@ pub async fn archive_low_priority_emails(
 
     // Also mark as resolved in DB so they don't reappear on any page
     let ids_clone = ids.clone();
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .db_write(move |db| {
             db.mark_emails_resolved(&ids_clone)

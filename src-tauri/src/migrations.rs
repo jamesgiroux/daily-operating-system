@@ -942,6 +942,10 @@ fn prune_old_migration_backups(db_path: &Path, keep: usize) -> Result<(), String
     }
     let to_delete = backups.len() - keep;
     for path in backups.into_iter().take(to_delete) {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(path);
     }
     Ok(())
@@ -1171,6 +1175,10 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
 
     let db_path = PathBuf::from(db_path);
     let backup_path = migration_backup_path(&db_path);
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(&backup_path);
 
     let source_size_bytes = std::fs::metadata(&db_path).map(|m| m.len()).unwrap_or(0);
@@ -1207,6 +1215,10 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         create_backup_via_api(conn, &backup_path, None)
     };
     if let Err(err) = backup_result {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(&backup_path);
         // Last resort: sqlcipher_export (now transaction-wrapped). Only reached
         // if the Backup API itself reports an encryption incompatibility.
@@ -1229,6 +1241,10 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         .map(|m| m.len())
         .unwrap_or(0);
     if source_size > 128 * 1024 && backup_size < 64 * 1024 {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(&backup_path);
         return Err(format!(
             "Pre-migration backup is suspiciously small ({backup_size} bytes) for a \

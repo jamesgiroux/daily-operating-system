@@ -112,6 +112,10 @@ pub fn resolve_meeting_entities(
                         "outcome": "resolved",
                     })
                     .to_string();
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = signals::bus::emit_signal(
                         db,
                         entity.entity_type.as_str(),
@@ -197,6 +201,10 @@ pub fn resolve_meeting_entities(
             },
         })
         .to_string();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = signals::bus::emit_signal(
             db,
             entity.entity_type.as_str(),

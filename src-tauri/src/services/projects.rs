@@ -273,13 +273,17 @@ pub async fn create_project(
             if let Some(ref config) = config {
                 let workspace = Path::new(&config.workspace_path);
                 let project_dir = crate::projects::project_dir(workspace, &validated_name_clone);
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = std::fs::create_dir_all(&project_dir);
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::util::bootstrap_entity_directory(
                     &project_dir,
                     &validated_name_clone,
                     "project",
                 );
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::projects::write_project_json(workspace, &project, None, db);
+                #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                 let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
             }
 
@@ -331,6 +335,7 @@ pub async fn update_project_field(
             );
 
             // Self-healing: event-driven trigger evaluation
+            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
             let _ = crate::self_healing::scheduler::evaluate_on_signal(
                 db,
                 &project_id,
@@ -364,12 +369,14 @@ pub async fn update_project_field(
                     } else {
                         None
                     };
+                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                     let _ = crate::projects::write_project_json(
                         workspace,
                         &project,
                         existing_json.as_ref(),
                         db,
                     );
+                    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                     let _ = crate::projects::write_project_markdown(
                         workspace,
                         &project,
@@ -485,9 +492,25 @@ pub fn bulk_create_projects(
         db.upsert_project(&project).map_err(|e| e.to_string())?;
 
         let project_dir = crate::projects::project_dir(workspace, name);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::create_dir_all(&project_dir);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::util::bootstrap_entity_directory(&project_dir, name, "project");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::projects::write_project_json(workspace, &project, None, db);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::projects::write_project_markdown(workspace, &project, None, db);
 
         created_ids.push(id);

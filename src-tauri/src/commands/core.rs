@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 
 #[tauri::command]
@@ -16,6 +21,10 @@ pub fn reload_configuration(state: State<'_, Arc<AppState>>) -> Result<Config, S
 }
 
 /// Get dashboard data (DB-first, workspace JSON for today-specific data)
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_dashboard_data(
     state: State<'_, Arc<AppState>>,
@@ -181,6 +190,10 @@ pub(crate) fn collect_meeting_outcomes_from_db(
 }
 
 /// Unified meeting detail payload for current + historical meetings.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_intelligence(
     meeting_id: String,
@@ -195,6 +208,10 @@ pub async fn get_meeting_intelligence(
 ///
 /// Clears existing briefing, refreshes linked entity intelligence, and rebuilds
 /// meeting prep. Emits `meeting-briefing-refresh-progress` events as it runs.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn refresh_meeting_briefing(
     state: State<'_, Arc<AppState>>,
@@ -210,12 +227,20 @@ pub async fn refresh_meeting_briefing(
         Some(&app_handle),
     )
     .await?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("entity-updated", ());
     Ok(result)
 }
 
 /// Generate or refresh intelligence for a single meeting (ADR-0081).
 /// Pass `force: true` to clear existing intelligence and regenerate from scratch.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn generate_meeting_intelligence(
     state: State<'_, Arc<AppState>>,
@@ -234,6 +259,10 @@ pub async fn generate_meeting_intelligence(
             Some(&app_handle),
         )
         .await?;
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = app_handle.emit("entity-updated", ());
         return Ok(result.quality);
     }
@@ -242,6 +271,10 @@ pub async fn generate_meeting_intelligence(
         crate::intelligence::generate_meeting_intelligence(&state, &meeting_id, force_full)
             .await
             .map_err(|e| e.to_string())?;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("entity-updated", ());
     Ok(result)
 }
@@ -249,6 +282,10 @@ pub async fn generate_meeting_intelligence(
 /// Trigger background enrichment for a single meeting without blocking the caller.
 /// Returns immediately; enrichment runs asynchronously in a spawned task.
 /// Emits `intelligence-updated` with the meeting_id on completion.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn enrich_meeting_background(
     meeting_id: String,
@@ -259,6 +296,10 @@ pub async fn enrich_meeting_background(
     tokio::spawn(async move {
         match crate::intelligence::generate_meeting_intelligence(&state, &meeting_id, false).await {
             Ok(_) => {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = app_handle.emit("intelligence-updated", &meeting_id);
             }
             Err(e) => {
@@ -270,6 +311,10 @@ pub async fn enrich_meeting_background(
 }
 
 /// Compatibility wrapper while frontend migrates to get_meeting_intelligence.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_prep(
     meeting_id: String,
@@ -656,6 +701,10 @@ pub(crate) fn backfill_db_prep_contexts(
 /// Targets:
 /// - `_today/data/preps/*.json`
 /// - `meeting_prep.prep_context_json`
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn backfill_prep_semantics(
     dry_run: bool,
@@ -715,6 +764,10 @@ const WEEK_CACHE_STALE_SECS: u64 = 300; // 5 min: serve stale + background refre
 /// Uses a TTL cache to avoid hitting Google Calendar API on every call (W6).
 /// Fresh (<2 min): return cached. Stale (2-5 min): return cached + refresh in background.
 /// Expired (>5 min) or empty: wait for fresh fetch.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_live_proactive_suggestions(
     state: State<'_, Arc<AppState>>,
@@ -752,6 +805,10 @@ pub async fn get_live_proactive_suggestions(
                     let bg_config = config.clone();
                     let bg_hints = entity_hints.clone();
                     tokio::spawn(async move {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = refresh_week_calendar_cache(&bg_state, &bg_config, bg_hints).await;
                     });
                     return result;
@@ -782,6 +839,10 @@ async fn refresh_week_calendar_cache(
 ///
 /// Clears existing prep_frozen_json and enqueues all future meetings into the
 /// MeetingPrepQueue at Manual priority. Used by the WeekPage refresh button.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn refresh_meeting_preps(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let app_state = state.inner().clone();

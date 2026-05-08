@@ -92,8 +92,16 @@ fn assert_dev_mode_invariant() -> Result<(), String> {
         );
         // Force to live on invariant violation — safe default
         crate::db::set_dev_db_mode(false);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = restore_config_backup();
         if let Ok(s) = crate::state::dev_mode_sentinel_path() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::remove_file(&s);
         }
         return Err("Dev mode invariant violated — forced to live mode".into());
@@ -125,6 +133,10 @@ fn restore_config_backup() -> Result<(), String> {
     let backup = config.with_extension("json.dev-backup");
     if backup.exists() {
         std::fs::copy(&backup, &config).map_err(|e| format!("Config restore failed: {}", e))?;
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(&backup);
     }
     Ok(())
@@ -171,6 +183,10 @@ pub fn enter_dev_mode(state: &AppState) -> Result<(), String> {
     // 2. Write sentinel file
     let sentinel = crate::state::dev_mode_sentinel_path()?;
     if let Some(parent) = sentinel.parent() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::create_dir_all(parent);
     }
     std::fs::write(&sentinel, "active")
@@ -321,20 +337,36 @@ pub fn exit_dev_mode(state: &AppState) -> Result<(), String> {
 
     // 6. Delete sentinel file
     if let Ok(sentinel) = crate::state::dev_mode_sentinel_path() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(&sentinel);
     }
 
     // 7. Clean up dev config (or keep for next session — deleting is safer)
     if let Ok(dev_config) = crate::state::dev_config_path() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = std::fs::remove_file(&dev_config);
     }
 
     // 8. Clean up backup (no longer needed after successful exit)
     let backup = live_path.with_extension("json.dev-backup");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(&backup);
 
     // 8b. Clean up production snapshot (only after successful restore)
     let snapshot = live_path.with_extension("json.production-snapshot");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(&snapshot);
 
     // 9. Clear all in-memory volatile state so mock data doesn't bleed
@@ -927,10 +959,18 @@ fn reset_all(state: &AppState) -> Result<(), String> {
 
     for path in &files_to_delete {
         if path.exists() {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = std::fs::remove_file(path);
         }
     }
     // Also clear secure token storage (e.g. macOS Keychain).
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::google_api::token_store::delete_token();
 
     // 3. Clear workspace _today/data/ contents (not the dir itself)
@@ -941,8 +981,16 @@ fn reset_all(state: &AppState) -> Result<(), String> {
                 for entry in entries.flatten() {
                     let path = entry.path();
                     if path.is_dir() {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = std::fs::remove_dir_all(&path);
                     } else {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = std::fs::remove_file(&path);
                     }
                 }
@@ -1144,6 +1192,10 @@ fn patch_entity_intelligence(
                 }
             }
             if let Ok(updated) = serde_json::to_string(&intel) {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = conn.execute(
                     "UPDATE entity_assessment SET intelligence_json = ?1 WHERE entity_id = ?2",
                     rusqlite::params![updated, entity_id],

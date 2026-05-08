@@ -174,6 +174,10 @@ async fn clean_data_directory(today_dir: &Path) -> usize {
     // Remove preps/ directory
     let preps_dir = data_dir.join("preps");
     if preps_dir.exists() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = fs::remove_dir_all(&preps_dir).await;
         cleaned += 1;
     }

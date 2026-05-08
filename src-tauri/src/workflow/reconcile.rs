@@ -582,6 +582,10 @@ pub fn write_morning_flags(today_dir: &Path, result: &ReconciliationResult) -> R
 
     let data_dir = today_dir.join("data");
     // Ensure data/ exists (may have been cleaned, or may not exist yet)
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = fs::create_dir_all(&data_dir);
 
     fs::write(data_dir.join("next-morning-flags.json"), &json)
@@ -593,6 +597,10 @@ pub fn write_morning_flags(today_dir: &Path, result: &ReconciliationResult) -> R
         let rng = crate::services::context::SystemRng;
         let ext = crate::services::context::ExternalClients::default();
         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ =
             crate::services::mutations::upsert_app_state_kv_json(&ctx, &db, "morning_flags", &json);
     }

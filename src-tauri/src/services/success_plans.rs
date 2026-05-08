@@ -873,6 +873,10 @@ pub fn match_commitments_to_milestones(
                 // Backfill milestone target_date if commitment has one and milestone doesn't
                 if milestone.target_date.is_none() {
                     if let Some(ref td) = commit_target_date {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ =
                             db.update_milestone(&milestone.id, None, Some(td), None, None, None);
                     }

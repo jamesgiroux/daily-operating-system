@@ -64,6 +64,10 @@ impl Executor {
     }
 
     fn emit_email_sync_status(&self, status: &EmailSyncStatus) {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("email-sync-status", status);
     }
 
@@ -158,6 +162,10 @@ impl Executor {
                     &known_domains,
                 ) {
                     Ok(()) => {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = self.app_handle.emit(
                             "email-enrichment-warning",
                             "Email enrichment used synthesis fallback model",
@@ -443,6 +451,10 @@ impl Executor {
 
     async fn resolve_scheduled_workflow_failure(&self, workflow: WorkflowId) {
         let entity_id = workflow.to_string();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self
             .state
             .db_write(move |db| {
@@ -465,6 +477,10 @@ impl Executor {
         let entity_id = msg.workflow.to_string();
         let error_message = error.to_string();
         let attempt = i32::from(msg.retry_attempt) + 1;
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self
             .state
             .db_write(move |db| {
@@ -874,6 +890,10 @@ impl Executor {
         }
 
         // Emit inbox-updated so frontend refreshes
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("inbox-updated", ());
 
         Ok(())
@@ -918,6 +938,10 @@ impl Executor {
         log::info!("Week pipeline Step 2: mechanical delivery");
         crate::prepare::orchestrate::deliver_week(workspace)
             .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("operation-delivered", "week-overview");
 
         // --- Completion ---
@@ -947,6 +971,10 @@ impl Executor {
             },
         );
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = send_notification(
             &self.app_handle,
             "Your week is ready",
@@ -1013,6 +1041,10 @@ impl Executor {
             crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?
         };
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("operation-delivered", "schedule");
         log::info!("Today pipeline: schedule delivered");
         let actions_data = {
@@ -1020,6 +1052,10 @@ impl Executor {
             crate::workflow::deliver::deliver_actions(&directive, &data_dir, db_ref)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?
         };
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("operation-delivered", "actions");
         log::info!("Today pipeline: actions delivered");
 
@@ -1037,7 +1073,15 @@ impl Executor {
             let paths = crate::workflow::deliver::deliver_preps(&directive, &data_dir)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?;
             // reconcile hasPrep flags based on actual content
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::workflow::deliver::reconcile_prep_flags(&data_dir);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = self.app_handle.emit("operation-delivered", "preps");
             log::info!("Today pipeline: preps delivered");
             paths
@@ -1057,6 +1101,10 @@ impl Executor {
         let mut emails_data = if email_enabled {
             match crate::workflow::deliver::deliver_emails(&directive, &data_dir) {
                 Ok(data) => {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = self.app_handle.emit("operation-delivered", "emails");
                     log::info!("Today pipeline: emails delivered");
                     if let Some(sync) = crate::workflow::deliver::extract_email_sync_status(&data) {
@@ -1074,6 +1122,10 @@ impl Executor {
                         Some(data_dir.join("emails.json").exists()),
                     );
                     self.emit_email_sync_status(&sync);
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = self
                         .app_handle
                         .emit("email-error", format!("Email delivery failed: {}", e));
@@ -1167,6 +1219,10 @@ impl Executor {
                     emails_data = updated;
                 }
                 self.emit_email_sync_status(&sync);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = self.app_handle.emit(
                     "email-enrichment-warning",
                     format!("Email AI summaries unavailable: {}", e),
@@ -1182,6 +1238,10 @@ impl Executor {
                     log::warn!("Email signal sync failed (non-fatal): {}", e);
                 }
             }
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = self
                 .app_handle
                 .emit("operation-delivered", "emails-enriched");
@@ -1194,6 +1254,10 @@ impl Executor {
             {
                 log::warn!("Prep enrichment failed (non-fatal): {}", e);
             }
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = self
                 .app_handle
                 .emit("operation-delivered", "preps-enriched");
@@ -1209,6 +1273,10 @@ impl Executor {
         ) {
             log::warn!("Briefing narrative failed (non-fatal): {}", e);
         }
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("operation-delivered", "briefing");
 
         // Re-deliver schedule.json after all enrichment so the dashboard
@@ -1218,6 +1286,10 @@ impl Executor {
             crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)
                 .map_err(|e| ExecutionError::ScriptFailed { code: 1, stderr: e })?
         };
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self
             .app_handle
             .emit("operation-delivered", "schedule-refreshed");
@@ -1262,6 +1334,10 @@ impl Executor {
             },
         );
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = send_notification(
             &self.app_handle,
             "Your day is ready",
@@ -1333,8 +1409,16 @@ impl Executor {
                 Some(format!("Email refresh failed: {}", e)),
                 Some(data_dir.join("emails.json").exists()),
             );
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::workflow::deliver::set_email_sync_status(&data_dir, &sync);
             self.emit_email_sync_status(&sync);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = self
                 .app_handle
                 .emit("email-error", format!("Email refresh failed: {}", e));
@@ -1349,7 +1433,15 @@ impl Executor {
         // Step 2: Read refresh directive → build and write emails.json
         let _email_ids =
             crate::google::deliver_from_refresh_directive(&data_dir, &self.app_handle)?;
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("operation-delivered", "emails");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("emails-updated", ());
 
         // Step 4: AI enrichment (fault-tolerant)
@@ -1393,8 +1485,16 @@ impl Executor {
                 Some(format!("Email AI summaries unavailable: {}", e)),
                 Some(true),
             );
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = crate::workflow::deliver::set_email_sync_status(&data_dir, &sync);
             self.emit_email_sync_status(&sync);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = self.app_handle.emit(
                 "email-enrichment-warning",
                 format!("Email AI summaries unavailable: {}", e),
@@ -1408,9 +1508,17 @@ impl Executor {
             }
             Err(e) => log::warn!("Email refresh: email signal sync failed (non-fatal): {}", e),
         }
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self
             .app_handle
             .emit("operation-delivered", "emails-enriched");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("emails-updated", ());
 
         // Wake the email poller so it resets its sleep timer
@@ -1432,10 +1540,18 @@ impl Executor {
         }
 
         // Also emit generic workflow event
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.app_handle.emit("workflow-status", &status);
 
         // Emit completed event for dashboard refresh
         if matches!(status, WorkflowStatus::Completed { .. }) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = self.app_handle.emit("workflow-completed", workflow);
         }
     }

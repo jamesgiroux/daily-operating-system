@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 
 /// Account list item with computed fields for the list page.
@@ -139,6 +144,10 @@ pub struct AccountChildSummary {
     pub account_type: String,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_accounts_list(
     state: State<'_, Arc<AppState>>,
@@ -158,6 +167,10 @@ pub struct PickerAccount {
     pub account_type: crate::db::AccountType,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_accounts_for_picker(
     state: State<'_, Arc<AppState>>,
@@ -168,6 +181,10 @@ pub async fn get_accounts_for_picker(
 }
 
 /// Get child accounts for a parent.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_child_accounts_list(
     parent_id: String,
@@ -179,6 +196,10 @@ pub async fn get_child_accounts_list(
 }
 
 /// Get ancestor accounts for breadcrumb navigation.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_account_ancestors(
     account_id: String,
@@ -193,6 +214,10 @@ pub async fn get_account_ancestors(
 }
 
 /// Get all descendant accounts for a given ancestor.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_descendant_accounts(
     ancestor_id: String,
@@ -216,6 +241,10 @@ fn account_to_list_item(
 }
 
 /// Get full detail for an account (DB fields + narrative JSON + computed data).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_account_detail(
     account_id: String,
@@ -227,6 +256,10 @@ pub async fn get_account_detail(
 }
 
 /// Get account-team members.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_account_team(
     account_id: String,
@@ -238,6 +271,10 @@ pub async fn get_account_team(
 }
 
 /// Add a person-role pair to an account team.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn add_account_team_member(
     account_id: String,
@@ -263,6 +300,10 @@ pub async fn add_account_team_member(
 }
 
 /// Replace all roles for a team member (single-select role change).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_team_member_role(
     account_id: String,
@@ -288,6 +329,10 @@ pub async fn set_team_member_role(
 }
 
 /// Remove a person-role pair from an account team.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn remove_account_team_member(
     account_id: String,
@@ -314,6 +359,10 @@ pub async fn remove_account_team_member(
 
 /// Update a single structured field on an account.
 /// Writes to SQLite, then regenerates dashboard.json + dashboard.md.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_account_field(
     account_id: String,
@@ -341,6 +390,10 @@ pub async fn update_account_field(
 /// persist a single gap-row field on
 /// `account_technical_footprint` and return the refreshed account detail so
 /// the frontend can render the value without a follow-up fetch.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_technical_footprint_field(
     account_id: String,
@@ -367,6 +420,10 @@ pub async fn update_technical_footprint_field(
 
 //: Set the user's manual health sentiment on an account,
 /// optionally attaching a journal note.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_user_health_sentiment(
     account_id: String,
@@ -396,6 +453,10 @@ pub async fn set_user_health_sentiment(
 /// "Add more detail" flow — the user is augmenting the existing journal
 /// entry, not creating a new sentiment change. Falls back to insertion
 /// when no matching history row exists.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_latest_sentiment_note(
     account_id: String,
@@ -421,6 +482,10 @@ pub async fn update_latest_sentiment_note(
 /// Persist a triage-card snooze. `triage_key` is the frontend's
 /// stable card id; `days` is the snooze window (default 14 at the call
 /// site). Resolves silently — the UI refreshes after the call.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn snooze_triage_item(
     entity_type: String,
@@ -448,6 +513,10 @@ pub async fn snooze_triage_item(
 
 /// Mark a triage card resolved. Permanent for the lifetime of the
 /// card key — re-enrichment that emits a new key will re-surface.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn resolve_triage_item(
     entity_type: String,
@@ -474,6 +543,10 @@ pub async fn resolve_triage_item(
 
 /// Return the active snooze/resolution rows for an entity so the
 /// frontend can hide matching triage cards.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn list_triage_snoozes(
     entity_type: String,
@@ -490,6 +563,10 @@ pub async fn list_triage_snoozes(
 /// Regression guard: Retry a failed (or re-run a prior) risk-briefing job.
 /// Returns immediately; the user should refetch `get_account_detail` to see
 /// the `risk_briefing_job` row progress through enqueued → running → complete.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn retry_risk_briefing(
     account_id: String,
@@ -500,6 +577,10 @@ pub async fn retry_risk_briefing(
     crate::services::accounts::retry_risk_briefing(&ctx, &app_state, &account_id).await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn confirm_lifecycle_change(
     change_id: i64,
@@ -527,6 +608,10 @@ pub async fn confirm_lifecycle_change(
     }
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn correct_account_product(
     account_id: String,
@@ -555,6 +640,10 @@ pub async fn correct_account_product(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn correct_lifecycle_change(
     change_id: i64,
@@ -588,6 +677,10 @@ pub async fn correct_lifecycle_change(
     }
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn accept_account_field_conflict(
     account_id: String,
@@ -616,6 +709,10 @@ pub async fn accept_account_field_conflict(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_account_field_conflict(
     account_id: String,
@@ -646,6 +743,10 @@ pub async fn dismiss_account_field_conflict(
 
 /// Update account notes (narrative field — JSON only, not SQLite).
 /// Writes dashboard.json + regenerates dashboard.md.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_account_notes(
     account_id: String,
@@ -670,6 +771,10 @@ pub async fn update_account_notes(
 
 /// Update account strategic programs (narrative field — JSON only).
 /// Writes dashboard.json + regenerates dashboard.md.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_account_programs(
     account_id: String,
@@ -696,6 +801,10 @@ pub async fn update_account_programs(
 /// If `parent_id` is provided, creates a child (BU) account under that parent.
 /// If `account_type` is provided, uses that type; otherwise defaults to `customer`
 /// (or inherits from parent for child accounts).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_account(
     name: String,
@@ -759,6 +868,10 @@ pub struct CreateChildAccountResult {
     pub id: String,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_internal_team_setup_status(
     state: State<'_, Arc<AppState>>,
@@ -805,6 +918,10 @@ pub async fn get_internal_team_setup_status(
     })
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_internal_organization(
     company_name: String,
@@ -828,6 +945,10 @@ pub async fn create_internal_organization(
     .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_child_account(
     parent_id: String,
@@ -849,6 +970,10 @@ pub async fn create_child_account(
     .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_team(
     name: String,
@@ -874,6 +999,10 @@ pub async fn create_team(
     create_child_account(root_id, name, description, owner_person_id, state).await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn backfill_internal_meeting_associations(
     state: State<'_, Arc<AppState>>,
@@ -893,6 +1022,10 @@ pub async fn backfill_internal_meeting_associations(
 // =============================================================================
 
 /// Update engagement level for a stakeholder.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_stakeholder_engagement(
     account_id: String,
@@ -918,6 +1051,10 @@ pub async fn update_stakeholder_engagement(
 }
 
 /// Update assessment text for a stakeholder.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_stakeholder_assessment(
     account_id: String,
@@ -943,6 +1080,10 @@ pub async fn update_stakeholder_assessment(
 }
 
 /// Get all stakeholder roles for a person across all their linked accounts.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_person_stakeholder_roles(
     person_id: String,
@@ -957,6 +1098,10 @@ pub async fn get_person_stakeholder_roles(
 }
 
 /// Add a role to a stakeholder (multi-role).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn add_stakeholder_role(
     account_id: String,
@@ -982,6 +1127,10 @@ pub async fn add_stakeholder_role(
 }
 
 /// Remove a specific role from a stakeholder.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn remove_stakeholder_role(
     account_id: String,
@@ -1007,6 +1156,10 @@ pub async fn remove_stakeholder_role(
 }
 
 /// Get pending stakeholder suggestions for an account.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_stakeholder_suggestions(
     account_id: String,
@@ -1021,6 +1174,10 @@ pub async fn get_stakeholder_suggestions(
 }
 
 /// Accept a stakeholder suggestion.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn accept_stakeholder_suggestion(
     suggestion_id: i64,
@@ -1042,6 +1199,10 @@ pub async fn accept_stakeholder_suggestion(
 }
 
 /// Dismiss a stakeholder suggestion.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_stakeholder_suggestion(
     suggestion_id: i64,
@@ -1080,6 +1241,10 @@ pub struct PendingStakeholderRow {
 }
 
 /// Get pending stakeholder suggestions (status='pending_review') for an account.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_pending_stakeholder_suggestions(
     account_id: String,
@@ -1107,6 +1272,10 @@ pub async fn get_pending_stakeholder_suggestions(
 }
 
 /// Confirm a pending_review stakeholder: promotes status to 'active'.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn confirm_pending_stakeholder(
     account_id: String,
@@ -1125,6 +1294,10 @@ pub async fn confirm_pending_stakeholder(
 }
 
 /// Dismiss a pending_review stakeholder: sets status to 'dismissed'.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_pending_stakeholder(
     account_id: String,
@@ -1147,6 +1320,10 @@ pub async fn dismiss_pending_stakeholder(
 // =============================================================================
 
 /// Get indexed files for an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_entity_files(
     entity_id: String,
@@ -1161,6 +1338,10 @@ pub async fn get_entity_files(
 ///
 /// Supports accounts, projects, and people. The `entity_type` parameter
 /// determines which lookup and sync path to use.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn index_entity_files(
     entity_type: String,
@@ -1224,6 +1405,10 @@ pub async fn index_entity_files(
             requested_at: std::time::Instant::now(),
         });
     state.integrations.embedding_queue_wake.notify_one();
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = state
         .intel_queue
         .enqueue(crate::intel_queue::IntelRequest::new(
@@ -1462,6 +1647,10 @@ fn append_chat_exchange(
     )
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn chat_search_content(
     entity_id: String,
@@ -1503,6 +1692,10 @@ pub async fn chat_search_content(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn chat_query_entity(
     entity_id: String,
@@ -1612,6 +1805,10 @@ pub async fn chat_query_entity(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn chat_get_briefing(
     state: State<'_, Arc<AppState>>,
@@ -1647,6 +1844,10 @@ pub async fn chat_get_briefing(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn chat_list_entities(
     entity_type: Option<String>,
@@ -1714,6 +1915,10 @@ pub async fn chat_list_entities(
 // ──: Entity Intelligence Enrichment via Claude Code ────────
 
 /// Uses split-lock pattern  — DB lock held only briefly during gather/write.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn enrich_account(
     app_handle: tauri::AppHandle,

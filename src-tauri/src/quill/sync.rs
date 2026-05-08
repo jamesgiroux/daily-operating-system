@@ -175,6 +175,10 @@ pub fn process_fetched_transcript_without_db_with_kind(
     content_kind: crate::processor::transcript::TranscriptContentKind,
 ) -> Result<crate::types::TranscriptResult, String> {
     let temp_dir = workspace.join("_temp");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::create_dir_all(&temp_dir);
     let temp_path = temp_dir.join(format!("quill-transcript-{}.md", sync_id));
 
@@ -195,6 +199,10 @@ pub fn process_fetched_transcript_without_db_with_kind(
         content_kind,
     );
 
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(&temp_path);
 
     if result.status == "success" {
@@ -226,6 +234,10 @@ pub fn process_fetched_transcript(
 ) -> Result<String, String> {
     // Write transcript to temp file
     let temp_dir = workspace.join("_temp");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::create_dir_all(&temp_dir);
     let temp_path = temp_dir.join(format!("quill-transcript-{}.md", sync_id));
 
@@ -235,6 +247,10 @@ pub fn process_fetched_transcript(
     let temp_path_str = temp_path.display().to_string();
 
     // Transition to processing state
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = transition_state(db, sync_id, "processing", None, None, None, None);
 
     // Run through existing transcript pipeline
@@ -249,12 +265,20 @@ pub fn process_fetched_transcript(
     );
 
     // Clean up temp file
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::remove_file(&temp_path);
 
     if result.status == "success" {
         let dest = result.destination.clone().unwrap_or_default();
 
         // Update meeting record with transcript path
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = db.update_meeting_transcript_metadata(
             &meeting.id,
             &dest,
@@ -263,6 +287,10 @@ pub fn process_fetched_transcript(
         );
 
         // Mark sync as completed
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = transition_state(db, sync_id, "completed", None, None, Some(&dest), None);
 
         log::info!(
@@ -275,6 +303,10 @@ pub fn process_fetched_transcript(
         let error = result
             .message
             .unwrap_or_else(|| "Transcript processing failed".to_string());
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = transition_state(db, sync_id, "failed", None, None, None, Some(&error));
         Err(error)
     }

@@ -106,6 +106,10 @@ pub async fn get_user_entity(
 
     let (entity, needs_config_clear) = result;
     if needs_config_clear {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::state::create_or_update_config(state, |config| {
             config.user_name = None;
             config.user_company = None;
@@ -181,6 +185,7 @@ pub async fn update_user_entity_field(
                     let workspace = std::path::Path::new(&config.workspace_path);
                     let user_dir = workspace.join("_user");
                     if !user_dir.exists() {
+                        #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                         let _ = std::fs::create_dir_all(&user_dir);
                     }
                     if let Ok(entity) = get_user_entity_from_db(db) {
@@ -244,6 +249,7 @@ pub async fn update_user_entity_field(
                             serde_json::to_string_pretty(&serde_json::Value::Object(obj))
                         {
                             let path = user_dir.join("context.json");
+                            #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
                             let _ = crate::util::atomic_write_str(&path, &json);
                         }
                     }

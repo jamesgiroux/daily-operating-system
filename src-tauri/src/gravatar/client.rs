@@ -187,6 +187,10 @@ impl GravatarClient {
 
     /// Disconnect from the Gravatar MCP server.
     pub async fn disconnect(self) {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.service.cancel().await;
     }
 
@@ -249,6 +253,10 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                     .unwrap_or_default()
                     .join(".dailyos")
                     .join("avatars");
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = std::fs::create_dir_all(&data_dir);
 
                 for (email, person_id) in &emails_to_fetch {
@@ -295,6 +303,10 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                     };
 
                     if let Ok(db) = crate::db::ActionDb::open() {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = super::cache::upsert_cache(db.conn_ref(), &cache_entry);
 
                         // Write gravatar data to people table via unified profile update
@@ -307,6 +319,10 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                                     role: cache_entry.job_title.clone(),
                                     ..Default::default()
                                 };
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = db.update_person_profile(pid, &update, "gravatar");
 
                                 // Emit profile_discovered signal with propagation
@@ -316,6 +332,10 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                                     "job_title": cache_entry.job_title,
                                 })
                                 .to_string();
+                                #[allow(
+                                    clippy::let_underscore_must_use,
+                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                                )]
                                 let _ = crate::signals::bus::emit_signal_and_propagate(
                                     &db,
                                     &state.signals.engine,

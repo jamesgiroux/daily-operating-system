@@ -1830,6 +1830,10 @@ pub fn preserve_user_edits(new_intel: &mut IntelligenceJson, existing: &Intellig
 
         // Fallback: direct path restoration (non-array or identity match failed)
         if let Some(val) = get_json_path(&existing_val, &field_path) {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = set_json_path(&mut new_val, &field_path, val.clone());
         }
         updated_edits.push(crate::intelligence::io::UserEdit {
@@ -2695,12 +2699,20 @@ pub(crate) fn sync_content_index_for_entity(
                     content_type: content_type.to_string(),
                     priority,
                 };
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = db.upsert_content_file(&record);
                 updated += 1;
             } else if existing_record.summary.is_none() {
                 // Unchanged but never summarized — backfill summary
                 let (extracted_at_val, summary_val) = extract_and_summarize(path);
                 if summary_val.is_some() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = db.update_content_extraction(
                         &existing_record.id,
                         &extracted_at_val.unwrap_or_else(|| now.clone()),
@@ -2731,6 +2743,10 @@ pub(crate) fn sync_content_index_for_entity(
                 content_type: content_type.to_string(),
                 priority,
             };
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = db.upsert_content_file(&record);
             added += 1;
         }
@@ -2738,6 +2754,10 @@ pub(crate) fn sync_content_index_for_entity(
 
     // Any records left in db_map no longer have matching files — remove them
     for id in db_map.keys() {
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = db.delete_content_file(id);
         removed += 1;
     }

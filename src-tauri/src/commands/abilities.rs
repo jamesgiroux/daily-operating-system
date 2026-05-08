@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use std::sync::Arc;
 
 use tauri::State;
@@ -10,6 +15,10 @@ use crate::bridges::tauri::TauriAbilityBridge;
 use crate::bridges::{AbilityResponseJson, BridgeSurfaceError, ConfirmationToken};
 use crate::state::AppState;
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn invoke_ability(
     state: State<'_, Arc<AppState>>,

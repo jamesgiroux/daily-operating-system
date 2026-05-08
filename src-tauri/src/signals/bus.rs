@@ -147,6 +147,7 @@ pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError
     })?;
 
     // Flag upcoming meetings linked to this entity for intelligence refresh.
+    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
     let _ = db.conn_ref().execute(
         "UPDATE meeting_transcripts SET has_new_signals = 1
          WHERE meeting_id IN (
@@ -194,6 +195,7 @@ pub fn emit_signal(
 
     // Flag upcoming meetings linked to this entity for intelligence refresh.
     // Lightweight SQL UPDATE — scheduler picks these up every 30 min.
+    #[allow(clippy::let_underscore_must_use, reason = "intentional best-effort discard; preserves existing non-blocking behavior")]
     let _ = db.conn_ref().execute(
         "UPDATE meeting_transcripts SET has_new_signals = 1
          WHERE meeting_id IN (
@@ -334,6 +336,10 @@ pub fn emit_signal_propagate_and_evaluate(
     )?;
 
     // Self-healing: event-driven trigger evaluation
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::self_healing::scheduler::evaluate_on_signal(db, entity_id, entity_type, queue);
 
     Ok(result)

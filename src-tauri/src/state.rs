@@ -208,6 +208,10 @@ impl ConfirmationAttestationState {
         let Some(pending) = self.requests.lock().remove(&request_id) else {
             return;
         };
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = pending.decision.send(decision);
     }
 }
@@ -561,6 +565,10 @@ impl AppState {
 
         // Rotate old records on startup
         let (records_pruned, bytes_freed) = crate::audit_log::rotate_audit_log(&mut audit_logger);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit_logger.append(
             "system",
             "audit_log_rotated",
@@ -583,6 +591,10 @@ impl AppState {
                 } else {
                     "db_key_accessed"
                 };
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = audit_logger.append(
                     "security",
                     event,
@@ -591,11 +603,19 @@ impl AppState {
 
                 // Log migration events if a plaintext→encrypted migration happened
                 if crate::db::encryption::was_migration_performed() {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = audit_logger.append(
                         "security",
                         "db_migration_started",
                         serde_json::json!({"migration_type": "plaintext_to_encrypted"}),
                     );
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = audit_logger.append(
                         "security",
                         "db_migration_completed",
@@ -609,6 +629,10 @@ impl AppState {
                     "Encryption key missing for database at {db_path}. \
                      Showing recovery screen."
                 );
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = audit_logger.append(
                     "security",
                     "db_key_missing",
@@ -621,6 +645,10 @@ impl AppState {
                 log::warn!("Failed to open actions database: {e}. DB features disabled.");
                 let status = recovery_status_from_db_error(&e);
                 if status.required {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = audit_logger.append(
                         "security",
                         "db_recovery_required",
@@ -652,6 +680,10 @@ impl AppState {
                         log::info!(
                             "Startup repair: enabled Google polling for authenticated account"
                         );
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = audit_logger.append(
                             "config",
                             "google_enabled_repaired",
@@ -699,6 +731,10 @@ impl AppState {
         // the engine can push invalidated meeting IDs into the shared queue.
         let prep_queue = Arc::new(Mutex::new(Vec::new()));
         // Log app_started event
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit_logger.append(
             "system",
             "app_started",
@@ -1222,6 +1258,10 @@ impl AppState {
         }
 
         // Persist to disk (fire and forget)
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.save_execution_history();
     }
 
@@ -1235,6 +1275,10 @@ impl AppState {
         }
 
         // Persist to disk
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = self.save_execution_history();
     }
 
@@ -1360,6 +1404,10 @@ impl AppState {
             let guard = self.db_service.read().await;
             if guard.is_none() {
                 drop(guard);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = self.init_db_service().await;
             }
         }
@@ -1398,6 +1446,10 @@ impl AppState {
             let guard = self.db_service.read().await;
             if guard.is_none() {
                 drop(guard);
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = self.init_db_service().await;
             }
         }
@@ -1591,7 +1643,15 @@ fn recover_from_unclean_dev_exit() {
         if snapshot.exists() {
             match fs::copy(&snapshot, &config) {
                 Ok(_) => {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = fs::remove_file(&snapshot);
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = fs::remove_file(&backup);
                     log::info!("Live config restored from production snapshot");
                 }
@@ -1602,6 +1662,10 @@ fn recover_from_unclean_dev_exit() {
         } else if backup.exists() {
             match fs::copy(&backup, &config) {
                 Ok(_) => {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = fs::remove_file(&backup);
                     log::info!("Live config restored from backup");
                 }
@@ -1615,12 +1679,24 @@ fn recover_from_unclean_dev_exit() {
         crate::db::set_dev_db_mode(false);
 
         // Clean up sentinel file
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = fs::remove_file(&sentinel);
 
         // Clean up dev config
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = fs::remove_file(&dev_config);
 
         // Clean up snapshot if still present
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = fs::remove_file(dailyos_dir.join("config.json.production-snapshot"));
 
         log::info!("Dev mode recovery complete");

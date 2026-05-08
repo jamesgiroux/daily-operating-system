@@ -1163,6 +1163,10 @@ pub fn deliver_preps(directive: &Directive, data_dir: &Path) -> Result<Vec<Strin
             let name = entry.file_name();
             if let Some(name_str) = name.to_str() {
                 if name_str.ends_with(".json") && !new_filenames.contains(name_str) {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = fs::remove_file(entry.path());
                 }
             }
@@ -3033,11 +3037,19 @@ pub fn enrich_emails(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::audit::write_audit_entry(workspace, "email_batch", date_id, &output.stdout);
 
     let enrichments = parse_email_enrichment(&output.stdout);
     if enrichments.is_empty() {
         log::warn!("enrich_emails: no enrichments parsed from Claude output");
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = fs::remove_file(&context_path);
         return Err("No enrichments parsed from Claude output".to_string());
     }
@@ -3083,6 +3095,10 @@ pub fn enrich_emails(
         }
     }
 
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = fs::remove_file(&context_path);
     log::info!(
         "enrich_emails: enriched {}/{} selected emails",
@@ -3505,11 +3521,19 @@ pub fn enrich_briefing(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::audit::write_audit_entry(workspace, "daily_briefing", date_id, &output.stdout);
 
     let response = &output.stdout;
     let narrative = parse_briefing_narrative(response);
     let focus = parse_briefing_focus(response);
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = fs::remove_file(&context_path);
 
     let mut updated = false;
@@ -3889,6 +3913,10 @@ pub fn enrich_preps(
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or("unknown");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::audit::write_audit_entry(workspace, "meeting_prep", date_id, &output.stdout);
 
     let enrichments = parse_prep_enrichment(&output.stdout);
@@ -4170,6 +4198,10 @@ pub fn enrich_single_prep(prep: &Value, pty: &crate::pty::PtyManager, workspace:
     };
 
     // Audit trail
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::audit::write_audit_entry(
         workspace,
         "meeting_prep_enrichment",
@@ -4364,6 +4396,10 @@ pub fn deliver_manifest(
         let rng = crate::services::context::SystemRng;
         let ext = crate::services::context::ExternalClients::default();
         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = crate::services::mutations::upsert_app_state_kv_json(
             &ctx,
             &db,
@@ -4988,6 +5024,10 @@ pub fn enrich_week(
         .map_err(|e| format!("Claude week enrichment failed: {}", e))?;
 
     // Audit trail
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ =
         crate::audit::write_audit_entry(workspace, "week_forecast", week_number, &output.stdout);
 

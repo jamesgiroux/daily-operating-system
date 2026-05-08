@@ -28,12 +28,20 @@ fn run_with_transaction(conn: &Connection) -> Result<(), MigrationError> {
     match result {
         Ok(()) => {
             if let Err(error) = execute_batch(conn, "COMMIT;", "commit transaction") {
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = conn.execute_batch("ROLLBACK;");
                 return Err(error);
             }
             Ok(())
         }
         Err(error) => {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = conn.execute_batch("ROLLBACK;");
             Err(error)
         }

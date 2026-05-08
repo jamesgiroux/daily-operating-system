@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 
 use crate::services::integrations::ClaudeDesktopConfigResult;
@@ -174,6 +179,10 @@ pub fn get_cowork_plugins_status(app_handle: tauri::AppHandle) -> Vec<CoworkPlug
 /// Reads the file, applies the update via JSON path navigation, records a
 /// UserEdit entry (protecting the field from AI overwrite), and writes back
 /// to filesystem + SQLite cache.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_intelligence_field(
     entity_id: String,
@@ -196,6 +205,10 @@ pub async fn update_intelligence_field(
 }
 
 /// Dismiss an intelligence item, creating a tombstone to prevent re-creation.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_intelligence_item(
     entity_id: String,
@@ -218,6 +231,10 @@ pub async fn dismiss_intelligence_item(
 }
 
 /// Track (accept) a recommended action — creates a real action.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn track_recommendation(
     entity_id: String,
@@ -238,6 +255,10 @@ pub async fn track_recommendation(
 }
 
 /// Dismiss a recommended action — removes it from intelligence.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dismiss_recommendation(
     entity_id: String,
@@ -259,6 +280,10 @@ pub async fn dismiss_recommendation(
 
 ///  / Wave 0e: Mark an open commitment as done. Promotes the
 /// commitment into value-delivered and emits `commitment_completed`.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn mark_commitment_done(
     entity_id: String,
@@ -279,6 +304,10 @@ pub async fn mark_commitment_done(
 }
 
 /// Bulk-replace the stakeholder list in an entity's intelligence.json.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_stakeholders(
     entity_id: String,
@@ -305,6 +334,10 @@ pub async fn update_stakeholders(
 ///
 /// Used when a stakeholder card references someone who doesn't yet exist as
 /// a person entity. Creates with empty email, links to the parent entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_person_from_stakeholder(
     entity_id: String,
@@ -353,6 +386,10 @@ pub struct QuillStatus {
 }
 
 /// Get the current status of the Quill integration.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_quill_status(state: State<'_, Arc<AppState>>) -> Result<QuillStatus, String> {
     let config = state.config.read().as_ref().map(|c| c.quill.clone());
@@ -453,6 +490,10 @@ pub struct QuillBackfillResult {
 }
 
 /// Create Quill sync rows for past meetings that never had transcript sync.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn start_quill_backfill(
     days_back: Option<u32>,
@@ -497,6 +538,10 @@ pub fn set_quill_poll_interval(
 }
 
 /// Test the Quill MCP connection by spawning the bridge and verifying connectivity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     let bridge_path = state
@@ -520,6 +565,10 @@ pub async fn test_quill_connection(state: State<'_, Arc<AppState>>) -> Result<bo
 
 /// Trigger Quill transcript sync for a single meeting.
 /// Creates a sync row if none exists, or resets a failed/stale one to pending.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn trigger_quill_sync_for_meeting(
     meeting_id: String,
@@ -599,6 +648,10 @@ pub async fn trigger_quill_sync_for_meeting(
 }
 
 /// Get Quill sync states, optionally filtered by meeting ID.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_quill_sync_states(
     meeting_id: Option<String>,
@@ -646,6 +699,10 @@ pub struct GranolaManualSyncResponse {
 }
 
 /// Get the current status of the Granola integration.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<GranolaStatus, String> {
     let config = state.config.read().as_ref().map(|c| c.granola.clone());
@@ -705,6 +762,10 @@ pub async fn get_granola_status(state: State<'_, Arc<AppState>>) -> Result<Grano
 }
 
 /// Attempt an immediate Granola sync for a single meeting.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn trigger_granola_sync_for_meeting(
     meeting_id: String,
@@ -888,6 +949,10 @@ pub fn set_gravatar_api_key(
 }
 
 /// Fetch Gravatar data for a single person on demand.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn fetch_gravatar(
     person_id: String,
@@ -920,6 +985,10 @@ pub async fn fetch_gravatar(
         .unwrap_or_default()
         .join(".dailyos")
         .join("avatars");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::create_dir_all(&data_dir);
 
     let avatar_path = match client.get_avatar(&email, 200).await {
@@ -969,6 +1038,10 @@ pub async fn fetch_gravatar(
 }
 
 /// Batch fetch Gravatar data for all people with stale or missing cache.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn bulk_fetch_gravatars(state: State<'_, Arc<AppState>>) -> Result<usize, String> {
     let api_key = crate::gravatar::keychain::get_gravatar_api_key();
@@ -989,6 +1062,10 @@ pub async fn bulk_fetch_gravatars(state: State<'_, Arc<AppState>>) -> Result<usi
         .unwrap_or_default()
         .join(".dailyos")
         .join("avatars");
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = std::fs::create_dir_all(&data_dir);
 
     let mut fetched = 0;
@@ -1031,6 +1108,10 @@ pub async fn bulk_fetch_gravatars(state: State<'_, Arc<AppState>>) -> Result<usi
             person_id: person_id.clone(),
         };
 
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = state
             .db_write(move |db| crate::gravatar::cache::upsert_cache(db.conn_ref(), &cache_entry))
             .await;
@@ -1046,6 +1127,10 @@ pub async fn bulk_fetch_gravatars(state: State<'_, Arc<AppState>>) -> Result<usi
 
 /// Get avatar for a person as a data URL (base64-encoded PNG).
 /// Returns None if no cached avatar exists.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_person_avatar(
     person_id: String,
@@ -1089,6 +1174,10 @@ pub struct ClayStatusData {
 }
 
 /// Get Clay integration status.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_clay_status(state: State<'_, Arc<AppState>>) -> Result<ClayStatusData, String> {
     let config = state.config.read().as_ref().map(|c| c.clay.clone());
@@ -1182,6 +1271,10 @@ fn resolve_smithery_config(state: &AppState) -> Result<(String, String, String),
 }
 
 /// Test Clay connection by attempting to connect via Smithery.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn test_clay_connection(state: State<'_, Arc<AppState>>) -> Result<bool, String> {
     let (api_key, ns, conn) = resolve_smithery_config(&state)?;
@@ -1204,6 +1297,10 @@ pub struct EnrichmentResultData {
 }
 
 /// Enrich a single person from Clay on demand.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn enrich_person_from_clay(
     person_id: String,
@@ -1229,6 +1326,10 @@ pub async fn enrich_person_from_clay(
 }
 
 /// Enrich an account's company data from Clay (via linked people).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn enrich_account_from_clay(
     account_id: String,
@@ -1281,6 +1382,10 @@ pub struct BulkEnrichResult {
 }
 
 /// Start bulk Clay enrichment for all unenriched people.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn start_clay_bulk_enrich(
     state: State<'_, Arc<AppState>>,
@@ -1332,6 +1437,10 @@ pub struct EnrichmentLogEntry {
 }
 
 /// Get enrichment log entries for an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_enrichment_log(
     entity_id: String,
@@ -1591,6 +1700,10 @@ pub fn set_linear_api_key(
 }
 
 /// Test Linear connection by fetching the viewer.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn test_linear_connection(state: State<'_, Arc<AppState>>) -> Result<String, String> {
     let api_key = state
@@ -1613,6 +1726,10 @@ pub fn start_linear_sync(state: State<'_, Arc<AppState>>) -> Result<(), String> 
 }
 
 /// Get the 5 most recently synced Linear issues.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_linear_recent_issues(
     state: State<'_, Arc<AppState>>,
@@ -1643,6 +1760,10 @@ pub async fn get_linear_recent_issues(
 }
 
 /// Get all Linear entity links with project and entity names.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_linear_entity_links(
     state: State<'_, Arc<AppState>>,
@@ -1701,6 +1822,10 @@ fn fuzzy_name_similarity(a: &str, b: &str) -> f64 {
 
 /// Auto-detect entity links by fuzzy-matching Linear project names to entity names,
 /// plus domain-based suggestions from account_domains.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn run_linear_auto_link(
     state: State<'_, Arc<AppState>>,
@@ -1890,6 +2015,10 @@ pub async fn run_linear_auto_link(
 }
 
 /// Delete a Linear entity link.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn delete_linear_entity_link(
     state: State<'_, Arc<AppState>>,
@@ -1905,6 +2034,10 @@ pub async fn delete_linear_entity_link(
 }
 
 /// List all Linear projects for the manual link picker.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_linear_projects(
     state: State<'_, Arc<AppState>>,
@@ -1931,6 +2064,10 @@ pub async fn get_linear_projects(
 }
 
 /// Manually create a Linear entity link.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn create_linear_entity_link(
     services: State<'_, crate::services::ServiceLayer>,
@@ -1962,6 +2099,10 @@ pub async fn create_linear_entity_link(
 // =============================================================================
 
 /// Fetch teams from Linear for the push dialog.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_linear_teams(
     state: State<'_, Arc<AppState>>,
@@ -1978,6 +2119,10 @@ pub async fn get_linear_teams(
 }
 
 /// Push a DailyOS action to Linear as a new issue.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn push_action_to_linear(
     action_id: String,
@@ -2003,6 +2148,10 @@ pub async fn push_action_to_linear(
 // =============================================================================
 
 /// Set the active role preset.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_role(
     role: String,
@@ -2021,11 +2170,19 @@ pub async fn set_role(
     // update active preset and recompute merged signal/email config cache.
     state.set_active_preset(preset);
 
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("config-updated", ());
     Ok("ok".to_string())
 }
 
 /// Get the currently active role preset.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_active_preset(
     state: State<'_, Arc<AppState>>,
@@ -2044,6 +2201,10 @@ pub async fn get_available_presets() -> Result<Vec<(String, String, String)>, St
 // =============================================================================
 
 /// Update JSON metadata for an entity (account or project).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_entity_metadata(
     entity_type: String,
@@ -2072,6 +2233,10 @@ pub async fn update_entity_metadata(
 }
 
 /// Get JSON metadata for an entity (account or project).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_entity_metadata(
     entity_type: String,
@@ -2090,6 +2255,10 @@ pub async fn get_entity_metadata(
 /// Correct an email disposition.
 /// Records a feedback signal for Thompson Sampling priority recalibration.
 /// Does NOT un-archive the email (user can find it in Gmail "All Mail").
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn correct_email_disposition(
     email_id: String,
@@ -2151,6 +2320,10 @@ pub async fn correct_email_disposition(
 /// Always-live: if no future meetings exist in `meetings`, fetches from
 /// Google Calendar and upserts stubs so the timeline populates on first load
 /// without waiting for scheduled workflows.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_meeting_timeline(
     state: State<'_, Arc<AppState>>,
@@ -2400,6 +2573,10 @@ fn default_rel_source() -> String {
     "user_confirmed".to_string()
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn upsert_person_relationship(
     state: State<'_, Arc<AppState>>,
@@ -2441,6 +2618,10 @@ pub async fn upsert_person_relationship(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn delete_person_relationship(
     state: State<'_, Arc<AppState>>,
@@ -2456,6 +2637,10 @@ pub async fn delete_person_relationship(
         .await
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_person_relationships(
     state: State<'_, Arc<AppState>>,
@@ -2502,6 +2687,10 @@ pub fn get_google_client_id() -> String {
 }
 
 /// Get Google Drive integration status.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_google_drive_status(
     state: State<'_, Arc<AppState>>,
@@ -2575,6 +2764,10 @@ pub fn trigger_drive_sync_now(state: State<'_, Arc<AppState>>) -> Result<(), Str
 ///
 /// Downloads the file, converts to markdown, and saves to the entity's
 /// Documents/ folder. Does NOT create a watched source entry.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn import_google_drive_file(
     google_id: String,
@@ -2605,6 +2798,10 @@ pub async fn import_google_drive_file(
 }
 
 /// Add a watched Drive source linked to an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn add_google_drive_watch(
     google_id: String,
@@ -2636,6 +2833,10 @@ pub async fn add_google_drive_watch(
 }
 
 /// Remove a watched Drive source.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn remove_google_drive_watch(
     watch_id: String,
@@ -2647,6 +2848,10 @@ pub async fn remove_google_drive_watch(
 }
 
 /// Get all watched Drive sources.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_google_drive_watches(
     state: State<'_, Arc<AppState>>,
@@ -2751,6 +2956,10 @@ pub fn get_context_mode(state: State<'_, Arc<AppState>>) -> Result<serde_json::V
 /// the sync `with_db_read` / `with_db_write` helpers, which open a fresh
 /// `ActionDb` connection and can fail key verification under DbService's
 /// held-writer contention (v1.2.1 post-migration-108 regression).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn set_context_mode(
     mode: serde_json::Value,
@@ -2779,6 +2988,10 @@ pub async fn set_context_mode(
     };
     {
         let mut audit = state.audit_log.lock();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit.append(
             "config",
             "context_mode_changed",
@@ -2815,6 +3028,10 @@ pub async fn set_context_mode(
     {
         use crate::intel_queue::{IntelPriority, IntelRequest};
         for (id, typ) in &targets {
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = state.intel_queue.enqueue(IntelRequest::new(
                 id.clone(),
                 typ.clone(),
@@ -2836,6 +3053,10 @@ pub async fn set_context_mode(
 ///
 /// Uses MCP OAuth discovery + DCR from the Glean MCP endpoint URL.
 /// Returns `GleanAuthStatus::Authenticated` on success.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn start_glean_auth(
     endpoint: String,
@@ -2854,6 +3075,10 @@ pub async fn start_glean_auth(
             // Audit: oauth_connected
             {
                 let mut audit = state.audit_log.lock();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = audit.append(
                     "security",
                     "oauth_connected",
@@ -2883,6 +3108,10 @@ pub async fn start_glean_auth(
             // Audit: context mode auto-set
             {
                 let mut audit = state.audit_log.lock();
+                #[allow(
+                    clippy::let_underscore_must_use,
+                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                )]
                 let _ = audit.append(
                     "config",
                     "context_mode_changed",
@@ -2912,6 +3141,10 @@ pub async fn start_glean_auth(
                     use crate::intel_queue::{IntelPriority, IntelRequest};
                     let count = entities_to_enqueue.len();
                     for (entity_id, entity_type) in entities_to_enqueue {
+                        #[allow(
+                            clippy::let_underscore_must_use,
+                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                        )]
                         let _ = state.intel_queue.enqueue(IntelRequest::new(
                             entity_id,
                             entity_type,
@@ -2922,6 +3155,10 @@ pub async fn start_glean_auth(
                 }
             }
 
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app_handle.emit("glean-auth-changed", &status);
             Ok(status)
         }
@@ -2930,6 +3167,10 @@ pub async fn start_glean_auth(
         }
         Err(e) => {
             let message = format!("{}", e);
+            #[allow(
+                clippy::let_underscore_must_use,
+                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+            )]
             let _ = app_handle.emit(
                 "glean-auth-failed",
                 serde_json::json!({ "message": message }),
@@ -2950,6 +3191,10 @@ pub fn get_glean_auth_status() -> crate::glean::GleanAuthStatus {
 /// Uses async `db_write` (DbService pool) rather than sync `with_db_write`
 /// for the same reason as `set_context_mode` — fresh-open path fails key
 /// verification under DbService contention.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn disconnect_glean(
     state: State<'_, Arc<AppState>>,
@@ -2970,6 +3215,10 @@ pub async fn disconnect_glean(
     // Audit: oauth_revoked
     {
         let mut audit = state.audit_log.lock();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit.append(
             "security",
             "oauth_revoked",
@@ -2993,6 +3242,10 @@ pub async fn disconnect_glean(
     // Audit: context mode reverted
     {
         let mut audit = state.audit_log.lock();
+        #[allow(
+            clippy::let_underscore_must_use,
+            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+        )]
         let _ = audit.append(
             "config",
             "context_mode_changed",
@@ -3001,6 +3254,10 @@ pub async fn disconnect_glean(
     }
 
     let status = crate::glean::GleanAuthStatus::NotConfigured;
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = app_handle.emit("glean-auth-changed", &status);
 
     log::info!("Glean disconnected, context provider reverted to local");
@@ -3018,6 +3275,10 @@ pub async fn disconnect_glean(
 /// tests a structured query if an account name is provided.
 ///
 /// Returns a JSON report of everything discovered.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn dev_explore_glean_tools(
     account_name: Option<String>,
@@ -3645,6 +3906,10 @@ async fn import_account_from_glean_internal(
 /// Does not require the account to exist in the local database. If it does
 /// exist, `already_exists` is set to the entity ID so the frontend can link
 /// to the detail page instead.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn query_ephemeral_account(
     name: String,
@@ -3684,6 +3949,10 @@ pub async fn query_ephemeral_account(
     Ok(briefing)
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn import_account_from_glean(
     request: ImportAccountRequest,
@@ -3801,6 +4070,10 @@ fn parse_ephemeral_response(
 /// Returns a list of `DiscoveredAccount` items with `already_in_dailyos` set
 /// to `true` for any account whose name (case-insensitive) already exists in
 /// the local database.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn discover_accounts_from_glean(
     state: State<'_, Arc<AppState>>,
@@ -3952,6 +4225,10 @@ fn completed_onboarding_dimensions(intel: &crate::intelligence::IntelligenceJson
 
 /// Batch-create accounts from onboarding discovery. Emits entity_created signal
 /// for each and enqueues Glean enrichment at Onboarding priority.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn onboarding_import_accounts(
     #[allow(unused_variables)] account_names: Option<Vec<String>>,
@@ -4011,6 +4288,10 @@ pub struct UserProfileSuggestion {
     pub company: Option<String>,
 }
 
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn onboarding_prefill_profile(
     state: State<'_, Arc<AppState>>,
@@ -4092,6 +4373,10 @@ pub struct EnrichmentProgress {
 }
 
 /// Query enrichment status for recently created accounts (onboarding polling).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn onboarding_enrichment_status(
     account_names: Vec<String>,

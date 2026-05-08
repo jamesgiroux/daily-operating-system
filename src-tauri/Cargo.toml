@@ -2,6 +2,9 @@
 members = [".", "abilities-macro"]
 resolver = "2"
 
+[workspace.lints.clippy]
+let_underscore_must_use = "deny"
+
 [package]
 name = "dailyos"
 version = "1.2.1"
@@ -11,6 +14,9 @@ authors = ["DailyOS"]
 edition = "2021"
 autobins = false
 build = "build.rs"
+
+[lints]
+workspace = true
 
 [lib]
 name = "dailyos_lib"

@@ -101,6 +101,10 @@ pub fn enrich_file(
     };
 
     // Audit trail
+    #[allow(
+        clippy::let_underscore_must_use,
+        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+    )]
     let _ = crate::audit::write_audit_entry(workspace, "inbox_file", filename, &output);
 
     // Parse Claude's response

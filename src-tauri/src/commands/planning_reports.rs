@@ -1,3 +1,8 @@
+#![allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
+
 use super::*;
 // =============================================================================
 // User Agenda + Notes Editability (ADR-0065)
@@ -231,6 +236,10 @@ fn build_agenda_draft_result(
 }
 
 /// Apply AI-suggested prep additions in append + dedupe mode.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn apply_meeting_prep_prefill(
     meeting_id: String,
@@ -278,6 +287,10 @@ pub async fn apply_meeting_prep_prefill(
                     }
                 }
                 if let Ok(updated) = serde_json::to_string_pretty(&json) {
+                    #[allow(
+                        clippy::let_underscore_must_use,
+                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
+                    )]
                     let _ = std::fs::write(&prep_path, updated);
                 }
             }
@@ -288,6 +301,10 @@ pub async fn apply_meeting_prep_prefill(
 }
 
 /// Generate a draft agenda message from current prep context.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn generate_meeting_agenda_message_draft(
     meeting_id: String,
@@ -321,6 +338,10 @@ pub async fn generate_meeting_agenda_message_draft(
 }
 
 /// Update user-authored agenda items on a meeting prep file.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_meeting_user_agenda(
     meeting_id: String,
@@ -347,6 +368,10 @@ pub async fn update_meeting_user_agenda(
 }
 
 /// Update user-authored notes on a meeting prep file.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_meeting_user_notes(
     meeting_id: String,
@@ -369,6 +394,10 @@ pub async fn update_meeting_user_notes(
 }
 
 /// Update a single field in a meeting's frozen prep JSON (user correction).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn update_meeting_prep_field(
     meeting_id: String,
@@ -852,6 +881,10 @@ mod tests {
 /// and creates database records + entity links for meetings not already in the system.
 ///
 /// Returns (meetings_created, meetings_skipped, errors).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn backfill_historical_meetings(
     state: State<'_, Arc<AppState>>,
@@ -874,6 +907,10 @@ pub async fn backfill_historical_meetings(
 /// Walks all meeting_entities where entity_type='account', extracts attendee
 /// email domains, and merges them into account_domains. This populates the
 /// domain data that entity resolution and transcript routing depend on.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn backfill_account_domains(
     state: State<'_, Arc<AppState>>,
@@ -944,6 +981,10 @@ pub async fn backfill_account_domains(
 
 /// Re-route stranded transcripts and meeting records from _archive
 /// to their correct entity directories.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn recover_archived_transcripts(
     state: State<'_, Arc<AppState>>,
@@ -970,6 +1011,10 @@ pub async fn recover_archived_transcripts(
 /// All blocking work (DB lock + file I/O + PTY) runs in spawn_blocking
 /// so the async runtime stays responsive and the UI can render the
 /// progress page without beachballing.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn generate_risk_briefing(
     state: State<'_, Arc<AppState>>,
@@ -985,6 +1030,10 @@ pub async fn generate_risk_briefing(
 }
 
 /// Read a cached risk briefing for an account (fast, no AI).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_risk_briefing(
     state: State<'_, Arc<AppState>>,
@@ -1004,6 +1053,10 @@ pub async fn get_risk_briefing(
 
 /// Generate a report for an entity (async, PTY enrichment).
 /// AppHandle passed through for BoB progressive event emission.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn generate_report(
     state: State<'_, Arc<AppState>>,
@@ -1027,6 +1080,10 @@ pub async fn generate_report(
 }
 
 /// Read a cached report (fast, no AI).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_report(
     state: State<'_, Arc<AppState>>,
@@ -1042,6 +1099,10 @@ pub async fn get_report(
 }
 
 /// Save user edits to a report (persists content_json back to DB).
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn save_report(
     state: State<'_, Arc<AppState>>,
@@ -1067,6 +1128,10 @@ pub async fn save_report(
 }
 
 /// Fetch all reports for an entity.
+#[allow(
+    clippy::let_underscore_must_use,
+    reason = "tauri::command macro emits internal Result glue that discards generated metadata"
+)]
 #[tauri::command]
 pub async fn get_reports_for_entity(
     state: State<'_, Arc<AppState>>,
