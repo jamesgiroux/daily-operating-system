@@ -20,7 +20,7 @@ use std::sync::{Arc, OnceLock};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
 use parking_lot::Mutex;
-use rusqlite::{params, OptionalExtension};
+use rusqlite::{params, Connection, OptionalExtension, Params};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
 use serde::{Deserialize, Serialize};
@@ -157,6 +157,8 @@ pub enum ClaimError {
     },
     #[error("tombstone PRE-GATE: claim is tombstoned and cannot be re-committed")]
     TombstonedPreGate,
+    #[error("intelligence_claims UPDATE targets non-allowlisted columns: {0}")]
+    ImmutableColumnUpdate(String),
     #[error("transaction error: {0}")]
     Transaction(String),
     #[error("database error: {0}")]
@@ -169,6 +171,361 @@ pub enum ClaimError {
 
 pub type ClaimsError = ClaimError;
 pub type TrustVersion = i64;
+
+// DOS-7 amendment D: assertion columns are insert-only. These are the only
+// intelligence_claims columns the claim service may mutate in-place.
+const CLAIM_UPDATE_ALLOWED_COLUMNS: &[&str] = &[
+    "claim_state",
+    "surfacing_state",
+    "demotion_reason",
+    "reactivated_at",
+    "retraction_reason",
+    "expires_at",
+    "superseded_by",
+    "trust_score",
+    "trust_computed_at",
+    "trust_version",
+    "thread_id",
+    // DOS-294 typed feedback adds derived review state; it is mutable
+    // metadata, not assertion identity.
+    "verification_state",
+    "verification_reason",
+    "needs_user_decision_at",
+];
+
+fn execute_claims_update<P>(conn: &Connection, sql: &str, params: P) -> Result<usize, ClaimError>
+where
+    P: Params,
+{
+    check_claim_update_allowlist(sql)?;
+    Ok(conn.execute(sql, params)?)
+}
+
+fn execute_claims_update_sqlite<P>(
+    conn: &Connection,
+    sql: &str,
+    params: P,
+) -> rusqlite::Result<usize>
+where
+    P: Params,
+{
+    if check_claim_update_allowlist(sql).is_err() {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    conn.execute(sql, params)
+}
+
+fn check_claim_update_allowlist(sql: &str) -> Result<(), ClaimError> {
+    let mut forbidden: Vec<String> = claim_update_columns(sql)
+        .into_iter()
+        .filter(|column| !CLAIM_UPDATE_ALLOWED_COLUMNS.contains(&column.as_str()))
+        .collect();
+    forbidden.sort();
+    forbidden.dedup();
+
+    if forbidden.is_empty() {
+        Ok(())
+    } else {
+        Err(ClaimError::ImmutableColumnUpdate(forbidden.join(", ")))
+    }
+}
+
+fn claim_update_columns(sql: &str) -> Vec<String> {
+    let sql = strip_sql_comments(sql);
+    let lower = sql.to_ascii_lowercase();
+    let mut search_from = 0;
+
+    while let Some(relative_idx) = lower[search_from..].find("update") {
+        let update_idx = search_from + relative_idx;
+        if !is_keyword_at(&lower, update_idx, "update") {
+            search_from = update_idx + "update".len();
+            continue;
+        }
+
+        let mut cursor = skip_ws(&sql, update_idx + "update".len());
+        if is_keyword_at(&lower, cursor, "or") {
+            cursor = skip_ws(&sql, cursor + "or".len());
+            if let Some((_, next)) = parse_identifier(&sql, cursor) {
+                cursor = skip_ws(&sql, next);
+            }
+        }
+
+        let Some((first_ident, first_end)) = parse_identifier(&sql, cursor) else {
+            search_from = update_idx + "update".len();
+            continue;
+        };
+        cursor = skip_ws(&sql, first_end);
+
+        let (table_ident, table_end) = if sql[cursor..].starts_with('.') {
+            let next_start = skip_ws(&sql, cursor + 1);
+            match parse_identifier(&sql, next_start) {
+                Some((second_ident, second_end)) => (second_ident, second_end),
+                None => (first_ident, cursor),
+            }
+        } else {
+            (first_ident, cursor)
+        };
+
+        if table_ident != "intelligence_claims" {
+            search_from = update_idx + "update".len();
+            continue;
+        }
+
+        if let Some(set_idx) = find_keyword_from(&lower, "set", table_end) {
+            return parse_set_columns(&sql, set_idx + "set".len());
+        }
+
+        search_from = update_idx + "update".len();
+    }
+
+    Vec::new()
+}
+
+fn strip_sql_comments(sql: &str) -> String {
+    let mut out = String::with_capacity(sql.len());
+    let mut chars = sql.chars().peekable();
+    let mut in_single_quote = false;
+
+    while let Some(ch) = chars.next() {
+        if in_single_quote {
+            out.push(ch);
+            if ch == '\'' {
+                if chars.peek() == Some(&'\'') {
+                    out.push(chars.next().expect("peeked quote"));
+                } else {
+                    in_single_quote = false;
+                }
+            }
+            continue;
+        }
+
+        if ch == '\'' {
+            in_single_quote = true;
+            out.push(ch);
+            continue;
+        }
+
+        if ch == '-' && chars.peek() == Some(&'-') {
+            out.push(' ');
+            chars.next();
+            for comment_ch in chars.by_ref() {
+                if comment_ch == '\n' {
+                    out.push('\n');
+                    break;
+                }
+                out.push(' ');
+            }
+            continue;
+        }
+
+        if ch == '/' && chars.peek() == Some(&'*') {
+            out.push(' ');
+            chars.next();
+            let mut previous = '\0';
+            for comment_ch in chars.by_ref() {
+                out.push(if comment_ch == '\n' { '\n' } else { ' ' });
+                if previous == '*' && comment_ch == '/' {
+                    break;
+                }
+                previous = comment_ch;
+            }
+            continue;
+        }
+
+        out.push(ch);
+    }
+
+    out
+}
+
+fn parse_set_columns(sql: &str, mut cursor: usize) -> Vec<String> {
+    let mut columns = Vec::new();
+
+    while cursor < sql.len() {
+        cursor = skip_ws(sql, cursor);
+        if cursor >= sql.len() || top_level_clause_starts(sql, cursor) {
+            break;
+        }
+
+        let Some((mut column, mut next)) = parse_identifier(sql, cursor) else {
+            cursor += next_char_len(sql, cursor);
+            continue;
+        };
+
+        next = skip_ws(sql, next);
+        if sql[next..].starts_with('.') {
+            let qualified_start = skip_ws(sql, next + 1);
+            if let Some((qualified_column, qualified_next)) = parse_identifier(sql, qualified_start)
+            {
+                column = qualified_column;
+                next = skip_ws(sql, qualified_next);
+            }
+        }
+
+        if !sql[next..].starts_with('=') {
+            cursor = next + next_char_len(sql, next);
+            continue;
+        }
+
+        columns.push(column);
+        cursor = skip_expression(sql, next + 1);
+    }
+
+    columns
+}
+
+fn skip_expression(sql: &str, mut cursor: usize) -> usize {
+    let mut depth = 0usize;
+    let mut quote: Option<char> = None;
+
+    while cursor < sql.len() {
+        if quote.is_none() && depth == 0 && top_level_clause_starts(sql, cursor) {
+            return cursor;
+        }
+
+        let ch = sql[cursor..].chars().next().expect("cursor in bounds");
+        if let Some(active_quote) = quote {
+            cursor += ch.len_utf8();
+            if ch == active_quote {
+                if active_quote == '\'' && sql[cursor..].starts_with('\'') {
+                    cursor += 1;
+                } else {
+                    quote = None;
+                }
+            }
+            continue;
+        }
+
+        match ch {
+            '\'' | '"' | '`' => {
+                quote = Some(ch);
+                cursor += ch.len_utf8();
+            }
+            '[' => {
+                quote = Some(']');
+                cursor += ch.len_utf8();
+            }
+            '(' => {
+                depth += 1;
+                cursor += ch.len_utf8();
+            }
+            ')' => {
+                depth = depth.saturating_sub(1);
+                cursor += ch.len_utf8();
+            }
+            ',' if depth == 0 => return cursor + 1,
+            _ => cursor += ch.len_utf8(),
+        }
+    }
+
+    cursor
+}
+
+fn parse_identifier(sql: &str, cursor: usize) -> Option<(String, usize)> {
+    let cursor = skip_ws(sql, cursor);
+    let ch = sql[cursor..].chars().next()?;
+
+    match ch {
+        '"' | '`' => parse_quoted_identifier(sql, cursor, ch, ch),
+        '[' => parse_quoted_identifier(sql, cursor, '[', ']'),
+        _ if is_ident_start(ch) => {
+            let mut end = cursor + ch.len_utf8();
+            while end < sql.len() {
+                let next = sql[end..].chars().next().expect("end in bounds");
+                if is_ident_continue(next) {
+                    end += next.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            Some((sql[cursor..end].to_ascii_lowercase(), end))
+        }
+        _ => None,
+    }
+}
+
+fn parse_quoted_identifier(
+    sql: &str,
+    cursor: usize,
+    open: char,
+    close: char,
+) -> Option<(String, usize)> {
+    debug_assert_eq!(sql[cursor..].chars().next(), Some(open));
+    let mut ident = String::new();
+    let mut idx = cursor + open.len_utf8();
+
+    while idx < sql.len() {
+        let ch = sql[idx..].chars().next().expect("idx in bounds");
+        idx += ch.len_utf8();
+        if ch == close {
+            return Some((ident.to_ascii_lowercase(), idx));
+        }
+        ident.push(ch);
+    }
+
+    None
+}
+
+fn skip_ws(sql: &str, mut cursor: usize) -> usize {
+    while cursor < sql.len() {
+        let ch = sql[cursor..].chars().next().expect("cursor in bounds");
+        if ch.is_whitespace() || ch == '\\' {
+            cursor += ch.len_utf8();
+        } else {
+            break;
+        }
+    }
+    cursor
+}
+
+fn next_char_len(sql: &str, cursor: usize) -> usize {
+    sql[cursor..]
+        .chars()
+        .next()
+        .map(char::len_utf8)
+        .unwrap_or(1)
+}
+
+fn find_keyword_from(sql_lower: &str, keyword: &str, start: usize) -> Option<usize> {
+    let mut search_from = start;
+    while let Some(relative_idx) = sql_lower[search_from..].find(keyword) {
+        let idx = search_from + relative_idx;
+        if is_keyword_at(sql_lower, idx, keyword) {
+            return Some(idx);
+        }
+        search_from = idx + keyword.len();
+    }
+    None
+}
+
+fn top_level_clause_starts(sql: &str, cursor: usize) -> bool {
+    let lower = sql.to_ascii_lowercase();
+    ["where", "returning", "order", "limit"]
+        .iter()
+        .any(|keyword| is_keyword_at(&lower, cursor, keyword))
+}
+
+fn is_keyword_at(sql_lower: &str, idx: usize, keyword: &str) -> bool {
+    sql_lower[idx..].starts_with(keyword)
+        && is_keyword_boundary(sql_lower, idx.checked_sub(1))
+        && is_keyword_boundary(sql_lower, Some(idx + keyword.len()))
+}
+
+fn is_keyword_boundary(sql: &str, idx: Option<usize>) -> bool {
+    match idx {
+        None => true,
+        Some(i) if i >= sql.len() => true,
+        Some(i) => !sql[i..].chars().next().is_some_and(is_ident_continue),
+    }
+}
+
+fn is_ident_start(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphabetic()
+}
+
+fn is_ident_continue(ch: char) -> bool {
+    ch == '_' || ch.is_ascii_alphanumeric()
+}
 
 // ---------------------------------------------------------------------------
 // Per-key commit lock (ADR-0113 R2)
@@ -1350,7 +1707,8 @@ pub fn commit_claim(
             insert_claim_row(tx, &claim)?;
             project_legacy_state_for_claim(ctx, tx, &claim)?;
 
-            tx.conn_ref().execute(
+            execute_claims_update(
+                tx.conn_ref(),
                 "UPDATE intelligence_claims
                  SET claim_state = 'dormant',
                      surfacing_state = 'dormant',
@@ -1572,7 +1930,8 @@ pub fn withdraw_claim(
             || claim.surfacing_state != SurfacingState::Dormant
             || claim.retraction_reason.as_deref() != Some(reason)
         {
-            tx.conn_ref().execute(
+            execute_claims_update(
+                tx.conn_ref(),
                 "UPDATE intelligence_claims
                  SET claim_state = 'withdrawn',
                      surfacing_state = 'dormant',
@@ -1653,7 +2012,8 @@ pub fn record_claim_feedback(
 
         match (verification_changed, lifecycle_changed) {
             (true, true) => {
-                tx.conn_ref().execute(
+                execute_claims_update(
+                    tx.conn_ref(),
                     "UPDATE intelligence_claims
                      SET verification_state = ?1,
                          verification_reason = ?2,
@@ -1676,7 +2036,8 @@ pub fn record_claim_feedback(
                 )?;
             }
             (true, false) => {
-                tx.conn_ref().execute(
+                execute_claims_update(
+                    tx.conn_ref(),
                     "UPDATE intelligence_claims
                      SET verification_state = ?1,
                          verification_reason = ?2,
@@ -1691,7 +2052,8 @@ pub fn record_claim_feedback(
                 )?;
             }
             (false, true) => {
-                tx.conn_ref().execute(
+                execute_claims_update(
+                    tx.conn_ref(),
                     "UPDATE intelligence_claims
                      SET claim_state = ?1,
                          surfacing_state = ?2,
@@ -1942,7 +2304,8 @@ pub fn update_claim_trust(
 
     let trust_computed_at = ctx.clock.now().to_rfc3339();
     let trust_score = trust_score_db_value(trust_score);
-    let updated = db.conn_ref().execute(
+    let updated = execute_claims_update(
+        db.conn_ref(),
         "UPDATE intelligence_claims
          SET trust_score = ?1,
              trust_computed_at = ?2,
@@ -2513,7 +2876,8 @@ pub fn withdraw_all_tombstones_of_type(
     claim_type: &str,
     retraction_reason: &str,
 ) -> Result<usize, rusqlite::Error> {
-    db.conn_ref().execute(
+    execute_claims_update_sqlite(
+        db.conn_ref(),
         "UPDATE intelligence_claims /* dos7-allowed: bulk withdrawal helper */ \
          SET claim_state = 'withdrawn', \
              surfacing_state = 'dormant', \
@@ -2532,7 +2896,8 @@ pub fn withdraw_tombstones_for(
         return Ok(0);
     };
 
-    db.conn_ref().execute(
+    execute_claims_update_sqlite(
+        db.conn_ref(),
         "UPDATE intelligence_claims /* dos7-allowed: lifecycle withdrawal helper */ \
          SET claim_state = 'withdrawn', \
              surfacing_state = 'dormant', \
@@ -2572,6 +2937,81 @@ mod tests {
 
     const TS: &str = "2026-05-02T12:00:00+00:00";
     const SUBJECT: &str = r#"{"kind":"account","id":"acct-1"}"#;
+
+    #[test]
+    fn claim_update_allowlist_accepts_lifecycle_trust_and_feedback_columns() {
+        let sql = "UPDATE intelligence_claims
+             SET claim_state = 'dormant',
+                 surfacing_state = 'dormant',
+                 trust_score = ?1,
+                 trust_computed_at = ?2,
+                 trust_version = ?3,
+                 verification_state = ?4,
+                 verification_reason = ?5,
+                 needs_user_decision_at = ?6
+             WHERE text = ?7 AND claim_type = ?8";
+
+        assert_eq!(
+            claim_update_columns(sql),
+            vec![
+                "claim_state",
+                "surfacing_state",
+                "trust_score",
+                "trust_computed_at",
+                "trust_version",
+                "verification_state",
+                "verification_reason",
+                "needs_user_decision_at",
+            ]
+        );
+        assert!(check_claim_update_allowlist(sql).is_ok());
+    }
+
+    #[test]
+    fn claim_update_allowlist_rejects_non_leading_immutable_column() {
+        let sql = "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
+             SET claim_state = 'dormant',
+                 subject_ref = ?1
+             WHERE id = ?2";
+
+        let err = check_claim_update_allowlist(sql).expect_err("subject_ref must be rejected");
+        assert!(matches!(
+            err,
+            ClaimError::ImmutableColumnUpdate(ref columns) if columns == "subject_ref"
+        ));
+    }
+
+    #[test]
+    fn claim_update_allowlist_rejects_quoted_immutable_columns() {
+        let sql = "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
+             SET [created_at] = ?1,
+                 `text` = ?2,
+                 \"source_asof\" = ?3
+             WHERE id = ?4";
+
+        let err =
+            check_claim_update_allowlist(sql).expect_err("quoted immutable columns must reject");
+        assert!(matches!(
+            err,
+            ClaimError::ImmutableColumnUpdate(ref columns)
+                if columns == "created_at, source_asof, text"
+        ));
+    }
+
+    #[test]
+    fn claim_update_allowlist_rejects_identity_columns_even_with_allowed_where_filters() {
+        let sql = "UPDATE intelligence_claims /* dos7-allowed: parser regression fixture */
+             SET dedup_key = ?1
+             WHERE claim_type = ?2
+               AND text = ?3
+               AND subject_ref = ?4";
+
+        let err = check_claim_update_allowlist(sql).expect_err("dedup_key must be rejected");
+        assert!(matches!(
+            err,
+            ClaimError::ImmutableColumnUpdate(ref columns) if columns == "dedup_key"
+        ));
+    }
 
     fn ctx_parts() -> (FixedClock, SeedableRng, ExternalClients) {
         (

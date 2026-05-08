@@ -1832,7 +1832,7 @@ mod tests {
         // immutability lint).
         db.conn_ref()
             .execute(
-                "UPDATE intelligence_claims \
+                "UPDATE intelligence_claims /* dos7-allowed: test-only rekey fixture */ \
                  SET dedup_key = 'rekeyed-shape:acct-retry:dismissed_item:risks', \
                      item_hash = 'runtime-canonical-hash' \
                  WHERE id LIKE 'm9-acct-retry-%'",
