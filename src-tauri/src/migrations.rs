@@ -735,6 +735,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 144,
         apply: v144_audit_action_token::migrate_v144_audit_action_token,
     },
+    // entity_members.entity_id FK rebuild against entities; preserves orphan
+    // memberships in entity_members_migration_145_orphans for manual repair.
+    Migration::Sql {
+        version: 145,
+        sql: include_str!("migrations/145_dos_379_entity_members_entity_fk.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
