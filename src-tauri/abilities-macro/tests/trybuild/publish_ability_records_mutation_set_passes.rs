@@ -146,8 +146,6 @@ mod abilities {
 
         inventory::collect!(AbilityDescriptor);
 
-        pub fn close_schema_objects(_schema: &mut serde_json::Value) {}
-
         #[derive(Debug, Clone, PartialEq, Eq)]
         pub enum AbilityErrorKind {
             Validation,
