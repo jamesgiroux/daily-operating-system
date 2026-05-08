@@ -439,6 +439,242 @@ fn lint_immutability_catches_quoted_subject_ref_in_multi_column_set() {
     );
 }
 
+#[test]
+fn lint_immutability_catches_single_quoted_subject_ref_set() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let forbidden = "subject".to_string() + "_" + "ref";
+    let bad_sql = format!(
+        "let _ = conn.execute(\n\
+         \"UPDATE intelligence_claims SET claim_state = ?1, '{forbidden}' = ?2 WHERE id = ?3\",\n\
+         params,\n\
+         );\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_single_quoted.rs"), bad_sql)
+        .expect("write single-quoted bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on SQLite single-quoted forbidden identifier in SET target. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_immutability_catches_forbidden_column_in_row_value_set() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let forbidden = "source".to_string() + "_" + "asof";
+    let bad_sql = format!(
+        "fn bad(conn: &Connection) {{\n\
+         conn.execute(\n\
+         \"UPDATE intelligence_claims \\\n\
+          SET (claim_state, trust_score, {forbidden}) = \\\n\
+              (?1, ?2, ?3) \\\n\
+          WHERE id = ?4\",\n\
+         params,\n\
+         ).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/bad_row_value.rs"), bad_sql)
+        .expect("write row-value bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on row-value SET with a forbidden target. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_immutability_catches_forbidden_column_beyond_grep_window() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src")).expect("mkdir src");
+    let bad_sql = "fn bad(conn: &Connection) {
+        conn.execute(
+            \"UPDATE intelligence_claims
+             SET claim_state = ?1,
+                 surfacing_state = ?2,
+                 demotion_reason = ?3,
+                 reactivated_at = ?4,
+                 retraction_reason = ?5,
+                 expires_at = ?6,
+                 superseded_by = ?7,
+                 trust_score = ?8,
+                 created_at = ?9
+             WHERE id = ?10\",
+             params,
+        ).unwrap();
+    }";
+    std::fs::write(tmp.path().join("src/bad_long_update.rs"), bad_sql)
+        .expect("write long bad fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on forbidden SET target beyond a bounded grep window. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_immutability_allows_allowlisted_multiline_columns() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/services")).expect("mkdir src/services");
+    let good_sql = "fn good(conn: &Connection) {
+        conn.execute(
+            \"UPDATE intelligence_claims
+             SET claim_state = ?1,
+                 surfacing_state = ?2,
+                 trust_score = ?3,
+                 trust_computed_at = ?4,
+                 trust_version = ?5,
+                 verification_state = ?6,
+                 verification_reason = ?7,
+                 needs_user_decision_at = ?8
+             WHERE text = ?9 AND claim_type = ?10\",
+             params,
+        ).unwrap();
+    }";
+    std::fs::write(tmp.path().join("src/services/claims.rs"), good_sql)
+        .expect("write good fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        output.status.success(),
+        "lint must PASS on allowlisted mutable columns even with immutable WHERE filters. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_immutability_allows_marked_backfill_exception() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/services")).expect("mkdir src/services");
+    let forbidden = "source".to_string() + "_" + "asof";
+    let backfill_sql = format!(
+        "fn backfill(conn: &Connection) {{\n\
+         conn.execute(\n\
+         \"UPDATE intelligence_claims /* dos7-allowed: backfill fixture repairs legacy audit data */ \\\n\
+          SET {forbidden} = ?1 \\\n\
+          WHERE id = ?2\",\n\
+         params,\n\
+         ).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(
+        tmp.path().join("src/services/source_asof_backfill.rs"),
+        backfill_sql,
+    )
+    .expect("write marked backfill fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        output.status.success(),
+        "lint must PASS on a documented migration/backfill dos7-allowed exception. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_immutability_rejects_runtime_dos7_marker_on_forbidden_set() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/services")).expect("mkdir src/services");
+    let forbidden = "subject".to_string() + "_" + "ref";
+    let bad_sql = format!(
+        "fn bad(conn: &Connection) {{\n\
+         conn.execute(\n\
+         \"UPDATE intelligence_claims /* dos7-allowed: fake runtime exemption */ \\\n\
+          SET {forbidden} = ?1 \\\n\
+          WHERE id = ?2\",\n\
+         params,\n\
+         ).unwrap();\n\
+         }}\n"
+    );
+    std::fs::write(tmp.path().join("src/services/meetings.rs"), bad_sql)
+        .expect("write bad runtime marker fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on a runtime dos7-allowed marker hiding a forbidden SET target. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_immutability_rejects_direct_runtime_update_outside_claim_service() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    std::fs::create_dir_all(tmp.path().join("src/db")).expect("mkdir src/db");
+    let bad_sql = "fn bad(conn: &Connection) {
+        conn.execute(
+            \"UPDATE intelligence_claims
+             SET claim_state = 'withdrawn'
+             WHERE id = ?1\",
+             params,
+        ).unwrap();
+    }";
+    std::fs::write(tmp.path().join("src/db/data_lifecycle.rs"), bad_sql)
+        .expect("write direct runtime update fixture");
+
+    let lint_path = repo_root().join("src-tauri/scripts/check_claim_immutability_allowlist.sh");
+    let output = std::process::Command::new("bash")
+        .arg(&lint_path)
+        .current_dir(tmp.path())
+        .output()
+        .expect("run lint");
+    assert!(
+        !output.status.success(),
+        "lint must FAIL on direct runtime intelligence_claims UPDATE outside the claim service. \
+         stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
 /// L2 cycle-20 fix #2: prove the legacy dismissal pairing lint
 /// catches `UPDATE briefing_callouts SET other = ?, dismissed_at = ?`
 /// when `dismissed_at` is not the first SET target. Same blind

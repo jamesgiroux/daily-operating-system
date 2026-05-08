@@ -207,29 +207,11 @@ pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
         // purge. Run BEFORE the DELETE so we can still join against
         // `emails` to identify which email_ids are aging out.
         if claims_table_present {
-            // L2 cycle-6 fix #1: restrict the UPDATE to rows whose
-            // subject_ref is valid JSON BEFORE evaluating
-            // json_extract — SQLite's WHERE-clause AND chain doesn't
-            // reliably short-circuit, so a malformed historical
-            // subject_ref would otherwise raise "malformed JSON"
-            // mid-purge and roll the whole transaction back. The
-            // valid-rows subquery materializes the safe set first.
-            conn.execute(
-                "UPDATE intelligence_claims /* dos7-allowed: lifecycle column update for Email-subject purge */ \
-                 SET claim_state = 'withdrawn', \
-                     retraction_reason = coalesce(retraction_reason, 'subject_purged') \
-                 WHERE id IN ( \
-                     SELECT ic.id FROM intelligence_claims ic \
-                     WHERE json_valid(ic.subject_ref) = 1 \
-                       AND ic.claim_state IN ('active', 'tombstoned', 'dormant') \
-                       AND lower(json_extract(ic.subject_ref, '$.kind')) = 'email' \
-                       AND json_extract(ic.subject_ref, '$.id') IN ( \
-                           SELECT email_id FROM emails \
-                           WHERE resolved_at IS NOT NULL \
-                             AND resolved_at < datetime('now', ?1) \
-                       ) \
-                 )",
-                params![cutoff],
+            // L2 cycle-6 fix #1: the helper restricts the UPDATE to rows whose
+            // subject_ref is valid JSON before evaluating json_extract, so
+            // malformed historical subject_ref values do not abort the purge.
+            crate::services::claims::withdraw_email_subject_claims_for_aged_resolved_emails(
+                db, &cutoff,
             )
             .map_err(|e| {
                 DbError::Migration(format!("purge_aged_emails: withdraw email claims: {e}"))
@@ -603,23 +585,12 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                     // committed stale Email tombstones after the
                     // source rows were gone.
                     if table_exists(tx, "intelligence_claims") {
-                        // L2 cycle-6 fix #1: filter via subquery so
-                        // json_extract is only evaluated on rows
-                        // whose subject_ref is valid JSON. See
-                        // purge_aged_emails for the same pattern.
-                        tx.conn_ref().execute(
-                            "UPDATE intelligence_claims /* dos7-allowed: lifecycle column update for data-source purge */ \
-                             SET claim_state = 'withdrawn', \
-                                 retraction_reason = coalesce(retraction_reason, 'subject_purged') \
-                             WHERE id IN ( \
-                                 SELECT ic.id FROM intelligence_claims ic \
-                                 WHERE json_valid(ic.subject_ref) = 1 \
-                                   AND ic.claim_state IN ('active', 'tombstoned', 'dormant') \
-                                   AND lower(json_extract(ic.subject_ref, '$.kind')) = 'email' \
-                                   AND json_extract(ic.subject_ref, '$.id') IN \
-                                       (SELECT email_id FROM emails) \
-                             )",
-                            [],
+                        // L2 cycle-6 fix #1: the helper filters via subquery
+                        // so json_extract is only evaluated on rows whose
+                        // subject_ref is valid JSON. See purge_aged_emails for
+                        // the same pattern.
+                        crate::services::claims::withdraw_email_subject_claims_for_existing_emails(
+                            tx,
                         )
                         .map_err(|e| format!("withdraw email claims before purge failed: {e}"))?;
                     }

@@ -411,6 +411,7 @@ pub fn get_learned_reliability(
         Ok(Some((alpha, beta, update_count))) if update_count >= 5 => {
             super::sampling::sample_reliability(alpha, beta)
         }
+        Ok(Some(_)) => 0.5,
         _ => 0.5,
     }
 }
