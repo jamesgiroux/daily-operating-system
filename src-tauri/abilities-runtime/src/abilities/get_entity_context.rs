@@ -13,10 +13,11 @@ use crate::abilities::provenance::{
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
-use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
-use crate::db::claims::IntelligenceClaim;
-use crate::services::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
-use crate::types::{EntityContextEntry, EntityContextText};
+use crate::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
+use crate::types::{
+    claim_allowed_for_prompt_input, subject_ref_from_json, ClaimSubjectRef, EntityContextEntry,
+    EntityContextText, IntelligenceClaim,
+};
 
 const ABILITY_NAME: &str = "get_entity_context";
 const ABILITY_SCHEMA_VERSION: u32 = 1;
@@ -181,7 +182,7 @@ fn filter_claims_for_actor(actor: Actor, claims: Vec<IntelligenceClaim>) -> Vec<
 }
 
 fn agent_can_read_claim(claim: &IntelligenceClaim) -> bool {
-    crate::services::claims::claim_allowed_for_prompt_input(claim)
+    claim_allowed_for_prompt_input(claim)
 }
 
 fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
@@ -254,7 +255,7 @@ fn renderable_entity_context_text(
 fn claim_subject_identity(claim: &IntelligenceClaim) -> Result<(String, String), AbilityError> {
     let value: serde_json::Value = serde_json::from_str(&claim.subject_ref)
         .map_err(|error| validation_error(format!("invalid claim subject_ref JSON: {error}")))?;
-    match crate::services::claims::subject_ref_from_json(&value)
+    match subject_ref_from_json(&value)
         .map_err(|error| validation_error(format!("invalid claim subject_ref: {error}")))?
     {
         ClaimSubjectRef::Account { id } => Ok(("account".to_string(), id)),
@@ -400,7 +401,3 @@ fn provenance_error(error: impl std::fmt::Display) -> AbilityError {
 fn field_error(error: impl std::fmt::Display) -> AbilityError {
     validation_error(format!("field attribution path failed: {error}"))
 }
-
-#[cfg(test)]
-#[path = "get_entity_context/tests/mod.rs"]
-mod tests;

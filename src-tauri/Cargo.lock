@@ -9,6 +9,7 @@ dependencies = [
  "async-trait",
  "base64 0.22.1",
  "chrono",
+ "dailyos-abilities-macro",
  "hex",
  "http",
  "inventory",

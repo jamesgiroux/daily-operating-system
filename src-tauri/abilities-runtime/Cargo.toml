@@ -7,6 +7,7 @@ edition = "2021"
 async-trait = "0.1"
 base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
+dailyos-abilities-macro = { path = "../abilities-macro" }
 hex = "0.4"
 http = "1"
 inventory = "0.3"
@@ -25,6 +26,6 @@ uuid = { version = "1", features = ["v4", "serde"] }
 tokio = { version = "1", features = ["macros", "rt", "time"] }
 
 [features]
-experimental = []
+experimental = ["dailyos-abilities-macro/experimental"]
 harness-hermetic = []
 mcp = []

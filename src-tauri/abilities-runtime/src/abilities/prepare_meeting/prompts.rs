@@ -10,7 +10,7 @@ use crate::intelligence::provider::{
 pub const TEMPLATE_ID: &str = "prepare_meeting_prep";
 pub const TEMPLATE_VERSION: &str = "1.0.0";
 
-const TEMPLATE: &str = include_str!("../../../prompts/templates/prepare_meeting_prep.v1.txt");
+const TEMPLATE: &str = include_str!("../../../../prompts/templates/prepare_meeting_prep.v1.txt");
 
 pub struct RenderedPrompt {
     pub text: String,

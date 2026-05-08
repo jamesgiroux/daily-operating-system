@@ -190,6 +190,13 @@ pub fn prompt_input_sensitivity_allowed(sensitivity: &ClaimSensitivity) -> bool 
     )
 }
 
+pub fn prompt_input_sensitivity_name_allowed(sensitivity: &str) -> bool {
+    matches!(
+        sensitivity.trim().to_ascii_lowercase().as_str(),
+        "public" | "internal"
+    )
+}
+
 pub fn claim_allowed_for_prompt_input(claim: &IntelligenceClaim) -> bool {
     prompt_input_sensitivity_allowed(&claim.sensitivity)
 }

@@ -21,7 +21,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use crate::db::claims::{ClaimSensitivity, TemporalScope};
+use crate::types::{ClaimSensitivity, TemporalScope};
 
 /// Actor classes permitted to write a given claim type. The
 /// authorization grain at commit time: a claim type tagged with

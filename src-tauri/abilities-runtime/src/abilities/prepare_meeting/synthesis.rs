@@ -20,11 +20,12 @@ use crate::abilities::trust::TrustBand;
 use crate::abilities::{metadata_for_claim_type, AbilityCategory};
 use crate::abilities::{AbilityContext, AbilityError, AbilityErrorKind, AbilityResult};
 use crate::abilities::{Actor as RegistryActor, ClaimType};
-use crate::db::claim_invalidation::SubjectRef as ClaimSubjectRef;
-use crate::db::claims::{ClaimSensitivity, IntelligenceClaim, TemporalScope};
 use crate::intelligence::provider::{ModelTier, ProviderError};
 use crate::services::context::PrepareMeetingContextSnapshot;
-use crate::types::EntityContextEntry;
+use crate::types::{
+    claim_allowed_for_prompt_input, prompt_input_sensitivity_name_allowed, subject_ref_from_json,
+    ClaimSensitivity, ClaimSubjectRef, EntityContextEntry, IntelligenceClaim, TemporalScope,
+};
 
 const ABILITY_NAME: &str = "prepare_meeting";
 const SUBJECT_CONFIDENCE_FLOOR: f32 = 0.65;
@@ -415,7 +416,7 @@ fn filter_prompt_entity_entries(
 ) -> Vec<EntityContextEntry> {
     let prompt_allowed_claim_ids: BTreeSet<&str> = claims
         .iter()
-        .filter(|claim| crate::services::claims::claim_allowed_for_prompt_input(claim))
+        .filter(|claim| claim_allowed_for_prompt_input(claim))
         .map(|claim| claim.id.as_str())
         .collect();
 
@@ -472,7 +473,7 @@ impl MeetingBriefContext {
         let evidence = snapshot
             .claims
             .iter()
-            .filter(|claim| crate::services::claims::claim_allowed_for_prompt_input(claim))
+            .filter(|claim| claim_allowed_for_prompt_input(claim))
             .map(evidence_from_claim)
             .collect::<Result<Vec<_>, _>>()?;
         let entity_contexts = snapshot
@@ -529,7 +530,7 @@ fn brief_subject_from_claim(claim: &IntelligenceClaim) -> Result<BriefSubjectRef
             claim.id
         ))
     })?;
-    match crate::services::claims::subject_ref_from_json(&value).map_err(|error| {
+    match subject_ref_from_json(&value).map_err(|error| {
         validation_error(format!(
             "prepare_meeting claim `{}` has invalid subject_ref: {error}",
             claim.id
@@ -1531,7 +1532,7 @@ fn context_depth_levels(depth: u8) -> usize {
 }
 
 fn evidence_source_allowed_for_prompt_input(evidence: &EvidenceSource) -> bool {
-    crate::services::claims::prompt_input_sensitivity_name_allowed(&evidence.sensitivity)
+    prompt_input_sensitivity_name_allowed(&evidence.sensitivity)
 }
 
 fn config_for(
@@ -1654,7 +1655,6 @@ mod tests {
     use super::*;
     use crate::abilities::feedback::ClaimVerificationState;
     use crate::abilities::{AbilityRegistry, Actor, NOOP_ABILITY_TRACER};
-    use crate::db::claims::{ClaimState, SurfacingState};
     use crate::intelligence::provider::{
         Completion, FingerprintMetadata, IntelligenceProvider, ModelName, PromptInput, ProviderKind,
     };
@@ -1664,6 +1664,7 @@ mod tests {
         PrepareMeetingContextReadHandle, PrepareMeetingContextSnapshot, PrepareMeetingSnapshot,
         PrepareMeetingSubjectSnapshot, SeedableRng, ServiceContext,
     };
+    use crate::types::{ClaimState, SurfacingState};
 
     struct StaticProvider {
         completion: String,

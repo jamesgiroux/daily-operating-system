@@ -21,7 +21,7 @@ use std::collections::HashSet;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
-pub use abilities_runtime::sensitivity::ClaimVerificationState;
+pub use crate::sensitivity::ClaimVerificationState;
 
 /// Closed set of typed feedback actions a user may apply to a claim.
 /// The variant set is the contract: extending it is a substrate change
