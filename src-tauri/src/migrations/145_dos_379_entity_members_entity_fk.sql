@@ -4,17 +4,13 @@
 PRAGMA foreign_keys = OFF;
 BEGIN;
 
--- Legacy project rows may predate the project -> entities mirror. Restore the
--- mirror before the FK rebuild so valid project memberships are retained.
+-- Legacy project rows may predate the project -> entities mirror. Restore every
+-- missing mirror before the FK rebuild so project entities remain canonical
+-- even when the legacy project currently has no members.
 INSERT OR IGNORE INTO entities (id, name, entity_type, tracker_path, updated_at)
 SELECT p.id, p.name, 'project', p.tracker_path, COALESCE(p.updated_at, datetime('now'))
 FROM projects p
-WHERE EXISTS (
-    SELECT 1
-    FROM entity_members em
-    WHERE em.entity_id = p.id
-)
-  AND NOT EXISTS (
+WHERE NOT EXISTS (
     SELECT 1
     FROM entities e
     WHERE e.id = p.id

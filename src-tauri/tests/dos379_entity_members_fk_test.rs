@@ -120,6 +120,56 @@ fn migration_145_preserves_project_memberships_and_surfaces_unrecoverable_orphan
     );
 }
 
+#[test]
+fn migration_145_mirrors_zero_member_legacy_projects() {
+    let conn = Connection::open_in_memory().expect("open in-memory database");
+    setup_v144_migration_state(&conn);
+
+    conn.execute(
+        "INSERT INTO projects (id, name, tracker_path, updated_at)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![
+            "project-zero-members",
+            "Legacy Zero Member Project",
+            "/projects/zero-members",
+            "2026-05-08T13:00:00Z"
+        ],
+    )
+    .expect("seed zero-member project row without entity mirror");
+
+    let applied = run_migrations(&conn).expect("apply migration 145");
+    assert_eq!(applied, 1);
+
+    let mirrored_entity: (String, String, Option<String>) = conn
+        .query_row(
+            "SELECT name, entity_type, tracker_path
+             FROM entities
+             WHERE id = ?1",
+            params!["project-zero-members"],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .expect("zero-member legacy project should be mirrored into entities");
+    assert_eq!(
+        mirrored_entity,
+        (
+            "Legacy Zero Member Project".to_string(),
+            "project".to_string(),
+            Some("/projects/zero-members".to_string())
+        )
+    );
+
+    let member_count: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+             FROM entity_members
+             WHERE entity_id = ?1",
+            params!["project-zero-members"],
+            |row| row.get(0),
+        )
+        .expect("count zero-member project memberships");
+    assert_eq!(member_count, 0);
+}
+
 fn setup_v144_migration_state(conn: &Connection) {
     conn.execute_batch(
         "CREATE TABLE IF NOT EXISTS schema_version (
