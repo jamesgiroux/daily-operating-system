@@ -104,6 +104,7 @@ Run these BEFORE build verification. CI runs `pnpm audit --audit-level high` and
 - [ ] `cargo audit --file src-tauri/Cargo.lock` — no known vulnerabilities
 - [ ] No new `unwrap()` or `expect()` in IPC command handlers (use `Result` propagation)
 - [ ] Database migrations are forward-compatible and idempotent
+- [ ] Latest `Load Test` workflow run is green (signal coalescing + queue bounds + dead-letter rate). Trigger via `gh workflow run "Load Test"` or wait for the nightly cron.
 
 ## 7. Frontend
 
