@@ -144,6 +144,15 @@ pub fn run() {
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
+            if let Some(receiver) =
+                crate::services::fail_improve::install_unknown_signal_observation_worker()
+            {
+                tauri::async_runtime::spawn(async move {
+                    crate::services::fail_improve::run_unknown_signal_observation_worker(receiver)
+                        .await;
+                });
+            }
+
             // Create shared state
             let state = Arc::new(AppState::new());
             state.set_app_handle(app.handle().clone());
@@ -766,6 +775,8 @@ pub fn run() {
             commands::install_claude_cli,
             commands::get_latency_rollups,
             commands::get_ai_usage_diagnostics,
+            commands::fail_improve_generate_test_cases,
+            commands::get_fail_improve_diagnostics,
             commands::install_inbox_sample,
             commands::get_frequent_correspondents,
             // Dev Tools

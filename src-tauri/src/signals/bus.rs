@@ -30,7 +30,8 @@ use uuid::Uuid;
 use crate::db::{ActionDb, DbError};
 
 use super::policy_registry::{
-    policy_for, CoalescingPolicy, PropagationPolicy, SignalEmissionChannel, SignalType,
+    policy_for, CoalescingPolicy, PayloadPrivacy, PropagationPolicy, SignalEmissionChannel,
+    SignalType,
 };
 
 const COALESCING_STATE_MAX_KEYS: usize = 4_096;
@@ -470,7 +471,8 @@ fn emit_signal_event(
     db: &ActionDb,
     signal: EmitSignalEvent<'_>,
 ) -> Result<EmitSignalEventOutcome, DbError> {
-    let typed_signal = SignalType::from_name(signal.signal_type);
+    let typed_signal =
+        crate::services::fail_improve::FailImproveLoop::resolve_signal_type(signal.signal_type);
     let policy = policy_for(&typed_signal);
     if !policy.channel_eligibility.allows(signal.channel) {
         return Err(DbError::InvalidArgument(format!(
@@ -478,6 +480,7 @@ fn emit_signal_event(
             signal.channel, signal.signal_type
         )));
     }
+    record_unknown_signal_type_observation(&typed_signal, policy.payload_privacy, &signal);
 
     let coalescing_key = CoalescingKey::new(&typed_signal, signal.entity_id);
     let coalescing_window =
@@ -571,6 +574,37 @@ fn emit_signal_event(
         },
         coalesced: false,
     })
+}
+
+fn record_unknown_signal_type_observation(
+    typed_signal: &SignalType,
+    payload_privacy: PayloadPrivacy,
+    signal: &EmitSignalEvent<'_>,
+) {
+    if !matches!(typed_signal, SignalType::Legacy { .. }) {
+        return;
+    }
+
+    let payload = serde_json::json!({
+        "entityType": signal.entity_type,
+        "entityId": signal.entity_id,
+        "signalType": signal.signal_type,
+        "source": signal.source,
+        "value": signal.value,
+        "confidence": signal.confidence,
+        "sourceContext": signal.source_context,
+        "id": signal.id,
+        "createdAt": signal.created_at,
+        "decayHalfLifeDays": signal.decay_half_life_days,
+        "channel": format!("{:?}", signal.channel),
+        "refreshMeetings": signal.refresh_meetings,
+    });
+
+    crate::services::fail_improve::record_unknown_signal_type(
+        signal.signal_type,
+        payload,
+        payload_privacy,
+    );
 }
 
 fn propagation_coalescing_window(propagation: PropagationPolicy) -> Option<Duration> {
@@ -1068,6 +1102,195 @@ mod tests {
     }
 
     #[test]
+    fn dos262_emit_returns_when_fail_improve_worker_is_paused() {
+        let _env_guard = fail_improve_env_lock().lock().expect("env lock");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _restore = EnvRestore {
+            previous: std::env::var_os("DAILYOS_FAIL_IMPROVE_ROOT"),
+        };
+        std::env::set_var("DAILYOS_FAIL_IMPROVE_ROOT", tmp.path());
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let _sender_restore = UnknownSignalSenderRestore::replace(Some(tx));
+
+        let db = test_db();
+        let signal_type = format!("dos262_paused_{}", Uuid::new_v4().simple());
+        let id = emit_signal(
+            &db,
+            "account",
+            "dos262-paused-account",
+            &signal_type,
+            "unit_test",
+            Some("diagnostic payload"),
+            1.0,
+        )
+        .expect("emit unknown signal");
+
+        assert!(id.starts_with("sig-"));
+        let observation = recv_unknown_signal_observation_for_type(&mut rx, &signal_type);
+        assert_eq!(observation.signal_type, signal_type);
+        assert_eq!(
+            observation
+                .payload
+                .get("signalType")
+                .and_then(serde_json::Value::as_str),
+            Some(signal_type.as_str())
+        );
+        assert!(!tmp.path().join("unknown_signal_types.current").exists());
+    }
+
+    #[test]
+    fn dos262_unknown_signal_type_routes_through_fail_improve_jsonl() {
+        let _env_guard = fail_improve_env_lock().lock().expect("env lock");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _restore = EnvRestore {
+            previous: std::env::var_os("DAILYOS_FAIL_IMPROVE_ROOT"),
+        };
+        std::env::set_var("DAILYOS_FAIL_IMPROVE_ROOT", tmp.path());
+
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_time()
+            .build()
+            .expect("runtime");
+        runtime.block_on(async {
+            let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+            let sender_restore = UnknownSignalSenderRestore::replace(Some(tx));
+            let worker = tokio::spawn(
+                crate::services::fail_improve::run_unknown_signal_observation_worker(rx),
+            );
+
+            let db = test_db();
+            let signal_type = format!("dos262_unknown_{}", Uuid::new_v4().simple());
+            emit_signal(
+                &db,
+                "account",
+                "dos262-account",
+                &signal_type,
+                "unit_test",
+                None,
+                1.0,
+            )
+            .expect("emit unknown signal");
+
+            wait_for_unknown_signal_jsonl_entry(tmp.path(), &signal_type).await;
+
+            sender_restore.restore();
+            worker.await.expect("worker exits after channel closes");
+        });
+    }
+
+    #[test]
+    fn dos262_concurrent_unknown_signal_type_uses_single_llm_resolution_and_cache() {
+        let _env_guard = fail_improve_env_lock().lock().expect("env lock");
+        let _resolution_restore =
+            SignalTypeResolutionRestore::with_delay(std::time::Duration::from_millis(40));
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _restore = EnvRestore {
+            previous: std::env::var_os("DAILYOS_FAIL_IMPROVE_ROOT"),
+        };
+        std::env::set_var("DAILYOS_FAIL_IMPROVE_ROOT", tmp.path());
+
+        let signal_type = format!("dos262_cached_unknown_{}", Uuid::new_v4().simple());
+        let workers = 8;
+        let barrier = std::sync::Arc::new(std::sync::Barrier::new(workers));
+        let handles = (0..workers)
+            .map(|index| {
+                let barrier = std::sync::Arc::clone(&barrier);
+                let signal_type = signal_type.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    let db = test_db();
+                    emit_signal(
+                        &db,
+                        "account",
+                        &format!("dos262-concurrent-{index}"),
+                        &signal_type,
+                        "unit_test",
+                        None,
+                        1.0,
+                    )
+                    .expect("emit unknown signal");
+                })
+            })
+            .collect::<Vec<_>>();
+
+        for handle in handles {
+            handle.join().expect("worker thread joins");
+        }
+
+        assert_eq!(
+            crate::services::fail_improve::signal_type_llm_calls_for_test(),
+            1,
+            "concurrent misses for the same signal_type should share one LLM fallback"
+        );
+        let raw = wait_for_signal_typing_jsonl(tmp.path());
+        assert!(
+            raw.lines().any(|line| line.contains(&signal_type)),
+            "signal typing fallback should append a JSONL entry"
+        );
+
+        let db = test_db();
+        emit_signal(
+            &db,
+            "account",
+            "dos262-cache-hit",
+            &signal_type,
+            "unit_test",
+            None,
+            1.0,
+        )
+        .expect("emit cached unknown signal");
+        assert_eq!(
+            crate::services::fail_improve::signal_type_llm_calls_for_test(),
+            1,
+            "cached second emission should not call the LLM again"
+        );
+    }
+
+    #[test]
+    fn dos262_distinct_unknown_signal_types_do_not_coalesce() {
+        let _env_guard = fail_improve_env_lock().lock().expect("env lock");
+        *coalescing_state().lock() = CoalescingState::default();
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let _restore = EnvRestore {
+            previous: std::env::var_os("DAILYOS_FAIL_IMPROVE_ROOT"),
+        };
+        std::env::set_var("DAILYOS_FAIL_IMPROVE_ROOT", tmp.path());
+
+        let db = test_db();
+        let first = emit_signal(
+            &db,
+            "account",
+            "dos262-distinct-unknown",
+            "dos262_alpha_updated",
+            "unit_test",
+            None,
+            1.0,
+        )
+        .expect("first unknown emit");
+        let second = emit_signal(
+            &db,
+            "account",
+            "dos262-distinct-unknown",
+            "dos262_beta_updated",
+            "unit_test",
+            None,
+            1.0,
+        )
+        .expect("second unknown emit");
+
+        assert_ne!(first, second);
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM signal_events WHERE entity_id = 'dos262-distinct-unknown'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count signal rows");
+        assert_eq!(count, 2);
+    }
+
+    #[test]
     fn dos237_claim_rate_limit_extends_coalescing_window() {
         let mut state = CoalescingState::default();
         let key = CoalescingKey {
@@ -1138,5 +1361,137 @@ mod tests {
             (reliability - 0.5).abs() < 0.01,
             "uninformative prior should be 0.5"
         );
+    }
+
+    fn fail_improve_env_lock() -> &'static std::sync::Mutex<()> {
+        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
+        LOCK.get_or_init(|| std::sync::Mutex::new(()))
+    }
+
+    struct EnvRestore {
+        previous: Option<std::ffi::OsString>,
+    }
+
+    impl Drop for EnvRestore {
+        fn drop(&mut self) {
+            match &self.previous {
+                Some(value) => std::env::set_var("DAILYOS_FAIL_IMPROVE_ROOT", value),
+                None => std::env::remove_var("DAILYOS_FAIL_IMPROVE_ROOT"),
+            }
+        }
+    }
+
+    struct UnknownSignalSenderRestore {
+        previous: Option<
+            tokio::sync::mpsc::UnboundedSender<
+                crate::services::fail_improve::UnknownSignalObservation,
+            >,
+        >,
+    }
+
+    impl UnknownSignalSenderRestore {
+        fn replace(
+            sender: Option<
+                tokio::sync::mpsc::UnboundedSender<
+                    crate::services::fail_improve::UnknownSignalObservation,
+                >,
+            >,
+        ) -> Self {
+            Self {
+                previous: crate::services::fail_improve::replace_unknown_signal_observation_sender_for_test(sender),
+            }
+        }
+
+        fn restore(mut self) {
+            crate::services::fail_improve::replace_unknown_signal_observation_sender_for_test(
+                self.previous.take(),
+            );
+        }
+    }
+
+    impl Drop for UnknownSignalSenderRestore {
+        fn drop(&mut self) {
+            crate::services::fail_improve::replace_unknown_signal_observation_sender_for_test(
+                self.previous.take(),
+            );
+        }
+    }
+
+    struct SignalTypeResolutionRestore;
+
+    impl SignalTypeResolutionRestore {
+        fn with_delay(delay: std::time::Duration) -> Self {
+            crate::services::fail_improve::reset_signal_type_resolution_state_for_test();
+            crate::services::fail_improve::set_signal_type_llm_delay_for_test(delay);
+            Self
+        }
+    }
+
+    impl Drop for SignalTypeResolutionRestore {
+        fn drop(&mut self) {
+            crate::services::fail_improve::reset_signal_type_resolution_state_for_test();
+        }
+    }
+
+    fn recv_unknown_signal_observation_for_type(
+        rx: &mut tokio::sync::mpsc::UnboundedReceiver<
+            crate::services::fail_improve::UnknownSignalObservation,
+        >,
+        signal_type: &str,
+    ) -> crate::services::fail_improve::UnknownSignalObservation {
+        for _ in 0..100 {
+            while let Ok(observation) = rx.try_recv() {
+                if observation.signal_type == signal_type {
+                    return observation;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("unknown signal observation was not queued for {signal_type}");
+    }
+
+    async fn wait_for_unknown_signal_jsonl_entry(root: &std::path::Path, signal_type: &str) {
+        for _ in 0..50 {
+            if let Some(raw) = read_unknown_signal_jsonl(root) {
+                let found = raw.lines().any(|line| {
+                    let entry: crate::services::fail_improve::UnknownSignalTypeObservation =
+                        serde_json::from_str(line).expect("entry");
+                    entry.signal_type == signal_type
+                        && entry
+                            .payload
+                            .get("signalType")
+                            .and_then(serde_json::Value::as_str)
+                            == Some(signal_type)
+                });
+                if found {
+                    return;
+                }
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(10)).await;
+        }
+        panic!("unknown signal observation jsonl was not written");
+    }
+
+    fn wait_for_signal_typing_jsonl(root: &std::path::Path) -> String {
+        for _ in 0..100 {
+            if let Some(raw) = read_fail_improve_jsonl(root, "signal_typing") {
+                return raw;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        panic!("signal typing jsonl was not written");
+    }
+
+    fn read_unknown_signal_jsonl(root: &std::path::Path) -> Option<String> {
+        read_fail_improve_jsonl(root, "unknown_signal_types")
+    }
+
+    fn read_fail_improve_jsonl(root: &std::path::Path, operation: &str) -> Option<String> {
+        let bundle_id = std::fs::read_to_string(root.join(format!("{operation}.current"))).ok()?;
+        let path = root
+            .join(format!("{operation}.bundles"))
+            .join(bundle_id.trim())
+            .join(format!("{operation}.jsonl"));
+        std::fs::read_to_string(path).ok()
     }
 }

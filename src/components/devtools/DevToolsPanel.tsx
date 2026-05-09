@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { Wrench, RotateCcw, Database, Shield, Zap, Sun, Sparkles, Undo2, Trash2, UserX, AlertTriangle, Star, Link2, Brain, Package } from "lucide-react";
+import { Wrench, RotateCcw, Database, Shield, Zap, Sun, Sparkles, Undo2, Trash2, UserX, AlertTriangle, Star, Link2, Brain, Package, LineChart } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -43,6 +43,24 @@ interface DevState {
   hasDevWorkspace: boolean;
 }
 
+interface FailImproveTrendPoint {
+  ts: string;
+  totalCalls: number;
+  deterministicHits: number;
+  llmFallbacks: number;
+  deterministicRate: number;
+}
+
+interface FailImproveDiagnostics {
+  operation: string;
+  totalCalls: number;
+  deterministicHits: number;
+  llmFallbacks: number;
+  deterministicRate: number;
+  updatedAt: string;
+  trend: FailImproveTrendPoint[];
+}
+
 export function DevToolsPanel() {
   const [enabled, setEnabled] = useState(false);
 
@@ -81,6 +99,7 @@ function DevToolsPanelInner({
   const open = controlledOpen ?? internalOpen;
   const setOpen = controlledOnOpenChange ?? setInternalOpen;
   const [devState, setDevState] = useState<DevState | null>(null);
+  const [failImprove, setFailImprove] = useState<FailImproveDiagnostics[]>([]);
   const [loading, setLoading] = useState<string | null>(null);
 
   const refreshState = useCallback(async () => {
@@ -89,6 +108,12 @@ function DevToolsPanelInner({
       setDevState(state);
     } catch {
       // Silently fail — devtools not critical
+    }
+    try {
+      const diagnostics = await invoke<FailImproveDiagnostics[]>("get_fail_improve_diagnostics");
+      setFailImprove(diagnostics);
+    } catch {
+      setFailImprove([]);
     }
   }, []);
 
@@ -223,6 +248,49 @@ function DevToolsPanelInner({
               <p className="text-xs text-muted-foreground">
                 {devState.accountCount} accounts · {devState.peopleCount} people · {devState.meetingCount} meetings · {devState.actionCount} actions
               </p>
+            )}
+
+            {failImprove.length > 0 && (
+              <section>
+                <div className="mb-3 flex items-center gap-2 text-sm font-medium text-muted-foreground">
+                  <LineChart className="h-4 w-4" />
+                  Fail-Improve
+                </div>
+                <div className="space-y-2">
+                  {failImprove.map((item) => (
+                    <div key={item.operation} className="rounded-md border border-border bg-muted/20 p-3">
+                      <div className="mb-2 flex items-center justify-between gap-3">
+                        <span className="truncate text-sm font-medium">{item.operation}</span>
+                        <span className="text-xs tabular-nums text-muted-foreground">
+                          {Math.round(item.deterministicRate * 100)}%
+                        </span>
+                      </div>
+                      <div className="mb-2 h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div
+                          className="h-full rounded-full bg-emerald-500"
+                          style={{ width: `${Math.max(0, Math.min(100, item.deterministicRate * 100))}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-muted-foreground">
+                        <span>{item.deterministicHits}/{item.totalCalls} deterministic</span>
+                        <span>{item.llmFallbacks} fallbacks</span>
+                      </div>
+                      {item.trend.length > 1 && (
+                        <div className="mt-2 flex h-8 items-end gap-1">
+                          {item.trend.slice(-12).map((point) => (
+                            <div
+                              key={`${point.ts}-${point.totalCalls}`}
+                              className="min-w-1 flex-1 rounded-t bg-emerald-500/70"
+                              title={`${Math.round(point.deterministicRate * 100)}% deterministic`}
+                              style={{ height: `${Math.max(8, point.deterministicRate * 32)}px` }}
+                            />
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </section>
             )}
 
             {/* ═══════════ QUICK START ═══════════ */}
