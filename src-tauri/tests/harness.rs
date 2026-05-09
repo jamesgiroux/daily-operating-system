@@ -534,10 +534,10 @@ fn harness_replay_provider_missing_hash_is_hard_failure() {
     };
 
     match error {
-        ProviderError::ReplayFixtureMissing(actual_hash) => {
-            assert_eq!(actual_hash, expected_hash);
+        ProviderError::FixtureMissingCompletion { hash } => {
+            assert_eq!(hash, expected_hash);
         }
-        other => panic!("expected ReplayFixtureMissing, got {other:?}"),
+        other => panic!("expected FixtureMissingCompletion, got {other:?}"),
     }
 }
 

@@ -1,16 +1,16 @@
 use serde_json::{json, Value};
 
-use crate::abilities::provenance::{
-    HashValue, ModelName as ProvenanceModelName, PromptFingerprint, PromptTemplateId, PromptVersion,
+use crate::abilities::provenance::PromptFingerprint;
+use crate::intelligence::prompt_fingerprint::{
+    canonical_template_hash, prompt_fingerprint_from_completion,
 };
-use crate::intelligence::provider::{
-    canonical_prompt_hash, canonical_template_hash, CanonicalPromptRequest, Completion, PromptInput,
-};
+use crate::intelligence::provider::{Completion, PromptInput};
 
 pub const TEMPLATE_ID: &str = "prepare_meeting_prep";
 pub const TEMPLATE_VERSION: &str = "1.0.0";
 
-const TEMPLATE: &str = include_str!("../../../../prompts/templates/prepare_meeting_prep.v1.txt");
+const TEMPLATE: &str =
+    include_str!("../../../../src/abilities/prompts/prepare_meeting_prep.v1.0.0.txt");
 
 pub struct RenderedPrompt {
     pub text: String,
@@ -42,25 +42,8 @@ pub fn fingerprint_from_completion(
     completion: &Completion,
     rendered: &RenderedPrompt,
 ) -> PromptFingerprint {
-    let meta = &completion.fingerprint_metadata;
     let prompt = rendered.prompt_input();
-    let canonical_hash = canonical_prompt_hash(CanonicalPromptRequest {
-        prompt: &prompt,
-        fingerprint_metadata: meta,
-    });
-    PromptFingerprint {
-        provider: meta.provider.as_str().to_string(),
-        model: ProvenanceModelName(meta.model.as_str().to_string()),
-        prompt_template_id: PromptTemplateId(TEMPLATE_ID.to_string()),
-        prompt_template_version: PromptVersion(TEMPLATE_VERSION.to_string()),
-        canonical_prompt_hash: HashValue::new(canonical_hash),
-        temperature: meta.temperature,
-        top_p: meta.top_p,
-        seed: meta.seed,
-        tokens_input: meta.tokens_input,
-        tokens_output: meta.tokens_output,
-        provider_completion_id: meta.provider_completion_id.clone(),
-    }
+    prompt_fingerprint_from_completion(completion, &prompt, TEMPLATE_ID, TEMPLATE_VERSION)
 }
 
 fn canonical_prompt_inputs(context_json: &str, schema_version: u32) -> Value {

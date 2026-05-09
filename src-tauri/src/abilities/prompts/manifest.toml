@@ -1,0 +1,7 @@
+schema_version = 1
+
+[[template]]
+id = "prepare_meeting_prep"
+version = "1.0.0"
+path = "prepare_meeting_prep.v1.0.0.txt"
+sha256 = "94d1d6494eec239657053723612cd20b259841535f61563ba9a6107a689a68e4"

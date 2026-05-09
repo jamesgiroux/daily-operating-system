@@ -184,14 +184,16 @@ async fn evaluate_mode_replay_provider_never_falls_through_to_live() {
         .await
         .expect_err("empty replay must always error");
     match err {
-        dailyos_lib::intelligence::provider::ProviderError::ReplayFixtureMissing(_) => {}
-        other => panic!("expected ReplayFixtureMissing, got {:?}", other),
+        dailyos_lib::intelligence::provider::ProviderError::FixtureMissingCompletion { hash } => {
+            assert!(!hash.is_empty());
+        }
+        other => panic!("expected FixtureMissingCompletion, got {:?}", other),
     }
 }
 
 /// Regression: `select_provider` routes Live
 /// to the configured live provider, Evaluate to replay, and Simulate
-/// to fail-closed. Replaces the prior `select_provider_stub` that
+/// to replay. Replaces the prior `select_provider_stub` that
 /// always returned `ModeNotSupported` (which left the production
 /// route unable to actually return canned Evaluate completions and
 /// gave callers no way to enforce the no-live-PTY/no-live-HTTP
@@ -257,17 +259,22 @@ async fn select_provider_routes_live_evaluate_simulate_per_adr_0104() {
         Err(dailyos_lib::intelligence::provider::ProviderError::ModeNotSupported)
     ));
 
-    // Simulate mode → always fail-closed, no provider invoked.
-    let res = select_provider(
+    // Simulate mode → replay provider returned; never falls through to live.
+    let chosen = select_provider(
         ExecutionMode::Simulate,
         Arc::clone(&live),
         Some(Arc::clone(&replay)),
         ModelTier::Synthesis,
-    );
-    assert!(matches!(
-        res,
-        Err(dailyos_lib::intelligence::provider::ProviderError::ModeNotSupported)
-    ));
+    )
+    .expect("Simulate mode resolves when replay is configured");
+    let got = chosen
+        .complete(
+            dailyos_lib::intelligence::provider::PromptInput::new("p"),
+            ModelTier::Synthesis,
+        )
+        .await
+        .expect("Replay provider returns");
+    assert_eq!(got.text, "replay-response");
 }
 
 /// Regression: ProviderError must surface

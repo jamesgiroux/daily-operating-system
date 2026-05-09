@@ -204,4 +204,9 @@ if [ -n "$ERRORS" ]; then
   exit 2
 fi
 
+# W2-A (DOS-213): prompt template / fingerprint boundary checks.
+ROOT_DIR="$(git rev-parse --show-toplevel)"
+"$ROOT_DIR/scripts/check_prompt_template_registry.sh"
+"$ROOT_DIR/scripts/check_prompt_fingerprint_boundary.sh"
+
 exit 0

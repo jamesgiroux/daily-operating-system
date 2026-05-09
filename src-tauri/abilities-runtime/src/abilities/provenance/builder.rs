@@ -570,9 +570,14 @@ pub enum ProvenanceError {
 mod tests {
     use super::*;
     use crate::abilities::provenance::{
-        Confidence, DataSource, FieldAttribution, FieldPath, PromptTemplateId, PromptVersion,
-        SanitizedExplanation, SourceAttribution, SubjectBindingKind, SubjectFitAssessment,
-        SubjectRef,
+        Confidence, DataSource, FieldAttribution, FieldPath, SanitizedExplanation,
+        SourceAttribution, SubjectBindingKind, SubjectFitAssessment, SubjectRef,
+    };
+    use crate::intelligence::prompt_fingerprint::{
+        canonical_template_hash, prompt_fingerprint_from_completion,
+    };
+    use crate::intelligence::provider::{
+        Completion, FingerprintMetadata, ModelName, PromptInput, ProviderKind,
     };
     use chrono::TimeZone;
     use serde::Serialize;
@@ -720,19 +725,30 @@ mod tests {
         builder
             .pass_through(FieldPath::new("/name").unwrap(), subject(), source_index)
             .unwrap();
-        builder.set_prompt_fingerprint(PromptFingerprint {
-            provider: "replay".into(),
-            model: crate::abilities::provenance::ModelName("replay".into()),
-            prompt_template_id: PromptTemplateId("fixture".into()),
-            prompt_template_version: PromptVersion("1.0.0".into()),
-            canonical_prompt_hash: crate::abilities::provenance::HashValue::new("hash"),
-            temperature: 0.0,
-            top_p: None,
-            seed: Some(42),
-            tokens_input: None,
-            tokens_output: None,
-            provider_completion_id: None,
-        });
+        let prompt = PromptInput::new("fixture prompt").with_template(
+            "fixture",
+            "1.0.0",
+            canonical_template_hash("fixture prompt\n"),
+        );
+        let completion = Completion {
+            text: "fixture completion".to_string(),
+            fingerprint_metadata: FingerprintMetadata {
+                provider: ProviderKind::Other("replay"),
+                model: ModelName::new("replay"),
+                temperature: 0.0,
+                top_p: None,
+                seed: Some(42),
+                tokens_input: None,
+                tokens_output: None,
+                provider_completion_id: None,
+            },
+        };
+        builder.set_prompt_fingerprint(prompt_fingerprint_from_completion(
+            &completion,
+            &prompt,
+            "fixture",
+            "1.0.0",
+        ));
 
         let output = builder.finalize(json!({ "name": "acct-1" })).unwrap();
 

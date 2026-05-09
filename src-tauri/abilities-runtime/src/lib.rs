@@ -2,6 +2,7 @@
 
 pub mod abilities;
 pub mod intelligence {
+    pub mod prompt_fingerprint;
     pub mod provider;
 }
 pub mod observability;

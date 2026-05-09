@@ -2297,7 +2297,7 @@
     "mode": "evaluate",
     "produced_at": "2026-05-06T12:00:00Z",
     "prompt_fingerprint": {
-      "canonical_prompt_hash": "9592e589d1f462500307957d83ffdf1f3b725062aba193539acfa1138458a8f1",
+      "canonical_prompt_hash": "7bee69f87a2a0e6e3b6aef7a4afe48a05b93f01f98bf9339edb63730a45d3ff4",
       "model": "replay",
       "prompt_template_id": "prepare_meeting_prep",
       "prompt_template_version": "1.0.0",

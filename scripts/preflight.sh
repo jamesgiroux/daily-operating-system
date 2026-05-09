@@ -108,6 +108,8 @@ run_step "write_fence usage" ./scripts/check_write_fence_usage.sh
 run_step "ability surface drift" bash src-tauri/scripts/check_ability_surface_drift.sh
 run_step "no live external clients in eval" bash src-tauri/scripts/check_no_live_external_clients_in_eval.sh
 run_step "fixture anonymization" bash src-tauri/scripts/check_fixture_anonymization.sh
+run_step "prompt template registry" ./scripts/check_prompt_template_registry.sh
+run_step "prompt fingerprint boundary" ./scripts/check_prompt_fingerprint_boundary.sh
 
 # 7. durable source comments — ephemeral issue refs banned in code comments
 run_step "durable source comments" ./scripts/check_no_ephemeral_issue_refs_in_comments.sh

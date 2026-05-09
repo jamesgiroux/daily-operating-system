@@ -2,7 +2,7 @@
   "version": 1,
   "fixtures": [
     {
-      "canonical_prompt_hash": "9592e589d1f462500307957d83ffdf1f3b725062aba193539acfa1138458a8f1",
+      "canonical_prompt_hash": "7bee69f87a2a0e6e3b6aef7a4afe48a05b93f01f98bf9339edb63730a45d3ff4",
       "completion": "{\n  \"topics\": [],\n  \"attendee_context\": [\n    {\n      \"attendee\": \"Riley Rivera\",\n      \"context\": \"Riley Rivera is new to the workspace and asked for a concise first-call agenda.\",\n      \"subject\": {\n        \"kind\": \"person\",\n        \"id\": \"person-b5-riley\"\n      },\n      \"source_ids\": [\n        \"src-b5-intro-note\"\n      ],\n      \"confidence\": 0.92\n    },\n    {\n      \"attendee\": \"Riley Rivera\",\n      \"context\": \"Riley Rivera asked to start with a written agenda and confirm next ownership.\",\n      \"subject\": {\n        \"kind\": \"person\",\n        \"id\": \"person-b5-riley\"\n      },\n      \"source_ids\": [\n        \"src-b5-user-edited-preference\"\n      ],\n      \"confidence\": 0.96\n    },\n    {\n      \"attendee\": \"Riley Rivera\",\n      \"context\": \"Riley wants onboarding steps summarized before follow-up.\",\n      \"subject\": {\n        \"kind\": \"person\",\n        \"id\": \"person-b5-riley\"\n      },\n      \"source_ids\": [\n        \"src-b5-agenda-dup-canonical\"\n      ],\n      \"confidence\": 0.82\n    }\n  ],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
     }
   ]

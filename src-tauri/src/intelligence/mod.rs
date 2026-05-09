@@ -9,6 +9,7 @@ pub mod health_scoring;
 pub mod io;
 pub mod lifecycle;
 pub mod predictions;
+pub mod prompt_fingerprint;
 pub mod prompts;
 pub mod provider;
 pub mod pty_provider;
