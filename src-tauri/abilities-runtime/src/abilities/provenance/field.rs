@@ -2,7 +2,7 @@ use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
 use super::envelope::CompositionId;
-use super::source::SourceIndex;
+use super::source::{DataSource, SourceIdentifier, SourceIndex};
 use super::subject::SubjectAttribution;
 use crate::abilities::trust::TrustBand;
 
@@ -54,6 +54,14 @@ impl FieldPath {
 pub enum SourceRef {
     Source {
         source_index: SourceIndex,
+    },
+    Direct {
+        data_source: DataSource,
+        identifier: SourceIdentifier,
+        #[schemars(with = "String")]
+        observed_at: chrono::DateTime<chrono::Utc>,
+        #[schemars(with = "Option<String>")]
+        source_asof: Option<chrono::DateTime<chrono::Utc>>,
     },
     Child {
         composition_id: CompositionId,

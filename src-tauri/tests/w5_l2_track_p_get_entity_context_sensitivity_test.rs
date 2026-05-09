@@ -85,7 +85,7 @@ async fn invoke_get_entity_context(
             &ctx,
             "get_entity_context",
             json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "entity_type": ENTITY_TYPE,
                 "entity_id": ENTITY_ID,
                 "depth": "standard",
@@ -94,7 +94,8 @@ async fn invoke_get_entity_context(
         .await
         .expect("erased get_entity_context succeeds");
 
-    serde_json::from_value(value["data"].clone()).expect("entity context data deserializes")
+    serde_json::from_value(value["data"]["entries"].clone())
+        .expect("entity context entries deserialize")
 }
 
 fn seeded_claims() -> Vec<IntelligenceClaim> {

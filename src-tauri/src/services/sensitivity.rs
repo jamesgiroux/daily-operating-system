@@ -976,7 +976,7 @@ struct McpAbilityMetadataPathRule {
 }
 
 const MCP_ABILITY_METADATA_STRING_ALLOWLIST: &[McpAbilityMetadataPathRule] = &[
-    // get_entity_context data is a top-level EntityContextEntry array.
+    // get_entity_context legacy data was a top-level EntityContextEntry array.
     McpAbilityMetadataPathRule {
         pattern: &["*", "id"],
         value_class: McpAbilityMetadataValueClass::Identifier,
@@ -996,6 +996,114 @@ const MCP_ABILITY_METADATA_STRING_ALLOWLIST: &[McpAbilityMetadataPathRule] = &[
     McpAbilityMetadataPathRule {
         pattern: &["*", "updatedAt"],
         value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    // get_entity_context data now carries entries plus optional trajectories.
+    McpAbilityMetadataPathRule {
+        pattern: &["entries", "*", "id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["entries", "*", "entityType"],
+        value_class: McpAbilityMetadataValueClass::EntityKind,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["entries", "*", "entityId"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["entries", "*", "createdAt"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["entries", "*", "updatedAt"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["trajectory", "engagement_curve", "kind"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["trajectory", "engagement_curve", "entity_id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["trajectory", "engagement_curve", "computed_at"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["trajectory", "engagement_curve", "series", "*", "at"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["trajectory", "role_progression", "kind"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["trajectory", "role_progression", "entity_id"],
+        value_class: McpAbilityMetadataValueClass::Identifier,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["trajectory", "role_progression", "computed_at"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &["trajectory", "role_progression", "series", "*", "at"],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "trajectory",
+            "role_progression",
+            "series",
+            "*",
+            "value",
+            "started_at",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "trajectory",
+            "role_progression",
+            "series",
+            "*",
+            "value",
+            "ended_at",
+        ],
+        value_class: McpAbilityMetadataValueClass::Timestamp,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "trajectory",
+            "role_progression",
+            "series",
+            "*",
+            "value",
+            "title",
+        ],
+        value_class: McpAbilityMetadataValueClass::EntityName,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "trajectory",
+            "role_progression",
+            "series",
+            "*",
+            "value",
+            "org",
+        ],
+        value_class: McpAbilityMetadataValueClass::EntityName,
+    },
+    McpAbilityMetadataPathRule {
+        pattern: &[
+            "trajectory",
+            "role_progression",
+            "series",
+            "*",
+            "value",
+            "seniority",
+        ],
+        value_class: McpAbilityMetadataValueClass::EntityName,
     },
     // prepare_meeting meeting metadata.
     McpAbilityMetadataPathRule {

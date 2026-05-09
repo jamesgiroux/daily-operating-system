@@ -306,6 +306,7 @@ impl ProvenanceBuilder {
                             });
                         }
                     }
+                    SourceRef::Direct { .. } => {}
                     SourceRef::Child { composition_id, .. } => {
                         if !child_ids.contains(composition_id) {
                             return Err(ProvenanceError::InvalidCompositionId {
@@ -347,6 +348,7 @@ impl ProvenanceBuilder {
                 SourceRef::Source { source_index } => {
                     bands.push(*self.source_trust_bands.get(source_index)?);
                 }
+                SourceRef::Direct { .. } => {}
                 SourceRef::Child {
                     composition_id,
                     field_path,

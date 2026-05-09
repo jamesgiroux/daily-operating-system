@@ -509,6 +509,7 @@ fn resolve_source_refs(
                     entity_link_evidence,
                 });
             }
+            SourceRef::Direct { .. } => {}
             SourceRef::Child {
                 composition_id,
                 field_path: child_field_path,
@@ -632,6 +633,7 @@ fn identifier_is_in_policy_scope(
         }
         SourceIdentifier::Signal { .. }
         | SourceIdentifier::EmailThread { .. }
+        | SourceIdentifier::EmailMessage { .. }
         | SourceIdentifier::Document { .. }
         | SourceIdentifier::UserEntry { .. }
         | SourceIdentifier::GleanAssessment { .. }
@@ -648,6 +650,7 @@ fn identifier_matches_subject(identifier: &SourceIdentifier, subject: &SubjectRe
         }
         SourceIdentifier::Signal { .. }
         | SourceIdentifier::EmailThread { .. }
+        | SourceIdentifier::EmailMessage { .. }
         | SourceIdentifier::Document { .. }
         | SourceIdentifier::UserEntry { .. }
         | SourceIdentifier::GleanAssessment { .. }
@@ -891,6 +894,7 @@ fn explicit_source_subjects(
             }
             SourceIdentifier::Signal { .. }
             | SourceIdentifier::EmailThread { .. }
+            | SourceIdentifier::EmailMessage { .. }
             | SourceIdentifier::Document { .. }
             | SourceIdentifier::UserEntry { .. }
             | SourceIdentifier::GleanAssessment { .. }

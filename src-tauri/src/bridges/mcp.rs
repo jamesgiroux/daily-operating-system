@@ -2,6 +2,11 @@ use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex};
 
 use crate::abilities::provenance::InvocationId;
+use crate::abilities::temporal::{
+    DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
+    RefreshEngagementCurveResult, TemporalMaintenanceFuture, TemporalMaintenanceHandle,
+    TrajectoryQueryDepth, TrajectoryReadFuture, TrajectoryReadHandle,
+};
 use crate::abilities::{AbilityDescriptor, AbilityRegistry, Actor};
 use crate::abilities::{AbilityTracer, NoopAbilityTracer};
 use crate::bridges::tauri::TauriAbilityBridge;
@@ -40,6 +45,8 @@ pub struct McpWorkspaceReaders {
     entity_context_reader: Arc<dyn EntityContextReadHandle>,
     entity_context_claim_reader: Arc<dyn EntityContextClaimReadHandle>,
     prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle>,
+    trajectory_reader: Arc<dyn TrajectoryReadHandle>,
+    temporal_maintenance: Arc<dyn TemporalMaintenanceHandle>,
 }
 
 impl McpWorkspaceReaders {
@@ -47,12 +54,17 @@ impl McpWorkspaceReaders {
         let reader = Arc::new(McpActionDbWorkspaceReader { db });
         let entity_context_reader: Arc<dyn EntityContextReadHandle> = reader.clone();
         let entity_context_claim_reader: Arc<dyn EntityContextClaimReadHandle> = reader.clone();
-        let prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle> = reader;
+        let prepare_meeting_context_reader: Arc<dyn PrepareMeetingContextReadHandle> =
+            reader.clone();
+        let trajectory_reader: Arc<dyn TrajectoryReadHandle> = reader.clone();
+        let temporal_maintenance: Arc<dyn TemporalMaintenanceHandle> = reader;
 
         Self {
             entity_context_reader,
             entity_context_claim_reader,
             prepare_meeting_context_reader,
+            trajectory_reader,
+            temporal_maintenance,
         }
     }
 
@@ -60,6 +72,8 @@ impl McpWorkspaceReaders {
         ctx.with_entity_context_reader(self.entity_context_reader.clone())
             .with_entity_context_claim_reader(self.entity_context_claim_reader.clone())
             .with_prepare_meeting_context_reader(self.prepare_meeting_context_reader.clone())
+            .with_trajectory_reader(self.trajectory_reader.clone())
+            .with_temporal_maintenance(self.temporal_maintenance.clone())
     }
 }
 
@@ -116,6 +130,50 @@ impl PrepareMeetingContextReadHandle for McpActionDbWorkspaceReader {
             crate::services::meetings::load_prepare_meeting_context_snapshot(&db, &meeting_id)
         };
         Box::pin(std::future::ready(result))
+    }
+}
+
+impl TrajectoryReadHandle for McpActionDbWorkspaceReader {
+    fn read_trajectory_bundle<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        depth: TrajectoryQueryDepth,
+        computed_at: chrono::DateTime<chrono::Utc>,
+    ) -> TrajectoryReadFuture<'a> {
+        let result = {
+            let db = self.db.lock();
+            crate::services::temporal::read_trajectory_bundle_from_db(
+                &db,
+                &entity_type,
+                &entity_id,
+                depth,
+                computed_at,
+            )
+        };
+        Box::pin(std::future::ready(result))
+    }
+}
+
+impl TemporalMaintenanceHandle for McpActionDbWorkspaceReader {
+    fn refresh_engagement_curve<'a>(
+        &'a self,
+        _input: RefreshEngagementCurveInput,
+        _computed_at: chrono::DateTime<chrono::Utc>,
+    ) -> TemporalMaintenanceFuture<'a, RefreshEngagementCurveResult> {
+        Box::pin(std::future::ready(Err(
+            "MCP workspace readers are read-only for temporal maintenance".to_string(),
+        )))
+    }
+
+    fn detect_role_change<'a>(
+        &'a self,
+        _input: DetectRoleChangeInput,
+        _computed_at: chrono::DateTime<chrono::Utc>,
+    ) -> TemporalMaintenanceFuture<'a, DetectRoleChangeResult> {
+        Box::pin(std::future::ready(Err(
+            "MCP workspace readers are read-only for temporal maintenance".to_string(),
+        )))
     }
 }
 

@@ -183,6 +183,7 @@ source_by_path = {path: path.read_text() for root in ROOTS for path in ([root] i
 combined = "\n".join(source_by_path.values())
 
 SAFE_STRING_FIELDS = {
+    "GetEntityContextOutput": {},
     "EntityContextEntry": {
         "id": "identifier metadata",
         "entity_type": "enum metadata",
@@ -233,9 +234,26 @@ SAFE_STRING_FIELDS = {
         "window_start": "timestamp metadata",
         "window_end": "timestamp metadata",
     },
+    "TrajectorySnapshot": {
+        "entity_type": "enum metadata",
+    },
+    "RoleEntry": {
+        "title": "role title metadata",
+        "org": "organization metadata",
+        "seniority": "role level metadata",
+    },
 }
 
 NESTED_OUTPUT_STRUCTS = {
+    "GetEntityContextOutput": [
+        "EntityContextEntry",
+        "TrajectoryBundle",
+    ],
+    "TrajectoryBundle": [
+        "TrajectorySnapshot",
+        "EngagementWindow",
+        "RoleEntry",
+    ],
     "MeetingBrief": [
         "MeetingSummary",
         "Topic",
@@ -253,7 +271,7 @@ NESTED_OUTPUT_STRUCTS = {
 }
 
 EXPECTED_AGENT_OUTPUTS = {
-    "get_entity_context": "EntityContextEntry",
+    "get_entity_context": "GetEntityContextOutput",
     "prepare_meeting": "MeetingBrief",
 }
 

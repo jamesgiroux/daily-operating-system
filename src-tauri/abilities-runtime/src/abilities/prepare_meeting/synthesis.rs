@@ -220,14 +220,14 @@ async fn build_meeting_brief_from_context(
         let child = get_entity_context(
             ctx,
             GetEntityContextInput {
-                schema_version: 1,
+                schema_version: 2,
                 entity_type: entity_context.subject.kind.clone(),
                 entity_id: entity_context.subject.id.clone(),
                 depth: depth.clone(),
             },
         )
         .await?;
-        let (entries, provenance) = child.into_parts();
+        let (context_output, provenance) = child.into_parts();
         let entry_claims = ctx
             .services()
             .read_entity_context_claims(
@@ -240,8 +240,11 @@ async fn build_meeting_brief_from_context(
                 kind: AbilityErrorKind::HardError("entity_context_claim_read".into()),
                 message: error,
             })?;
-        let entries =
-            filter_prompt_entity_entries(entries, &entry_claims, &prompt_allowed_subjects);
+        let entries = filter_prompt_entity_entries(
+            context_output.entries,
+            &entry_claims,
+            &prompt_allowed_subjects,
+        );
         composed_children.push(ComposedEntityContext {
             subject: entity_context.subject.clone(),
             entries,

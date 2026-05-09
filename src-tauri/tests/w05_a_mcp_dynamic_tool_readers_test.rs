@@ -78,7 +78,7 @@ async fn mcp_dynamic_get_entity_context_uses_readonly_actiondb_readers() {
             McpSessionId::from_uuid(uuid::Uuid::from_u128(349)),
             "get_entity_context",
             json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "entity_type": "person",
                 "entity_id": PERSON_ID,
                 "depth": "standard",
@@ -92,8 +92,9 @@ async fn mcp_dynamic_get_entity_context_uses_readonly_actiondb_readers() {
     assert_eq!(response.ability_name, "get_entity_context");
     let entries = response
         .data
-        .as_array()
-        .expect("get_entity_context data remains an array after MCP rendering");
+        .get("entries")
+        .and_then(serde_json::Value::as_array)
+        .expect("get_entity_context data carries entries after MCP rendering");
     assert_eq!(entries.len(), 1);
     assert_eq!(entries[0]["id"], claim_id);
     assert_eq!(entries[0]["entityType"], "person");

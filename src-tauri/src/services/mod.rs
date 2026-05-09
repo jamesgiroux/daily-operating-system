@@ -33,6 +33,7 @@ pub mod signals;
 pub mod source_asof_backfill;
 pub mod stakeholder_writer;
 pub mod success_plans;
+pub mod temporal;
 pub mod threads;
 pub mod trust_extraction;
 pub mod user_entity;

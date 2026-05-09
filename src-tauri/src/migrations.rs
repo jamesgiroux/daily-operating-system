@@ -755,6 +755,26 @@ const MIGRATIONS: &[Migration] = &[
         version: 148,
         sql: include_str!("migrations/148_dos_265_claim_edges.sql"),
     },
+    // Phase 1 temporal trajectory primitives.
+    Migration::Sql {
+        version: 149,
+        sql: include_str!("migrations/149_dos_215_temporal_primitives.sql"),
+    },
+    // Resumable temporal maintenance backfill cursors.
+    Migration::Sql {
+        version: 150,
+        sql: include_str!("migrations/150_dos_215_temporal_backfill_state.sql"),
+    },
+    // Temporal rows remember revoked-source invalidation for ADR-0109 filtering.
+    Migration::Sql {
+        version: 151,
+        sql: include_str!("migrations/151_dos_215_temporal_source_invalidation.sql"),
+    },
+    // Temporal rows are keyed by entity type as well as id to avoid cross-type id collisions.
+    Migration::Sql {
+        version: 152,
+        sql: include_str!("migrations/152_dos_215_temporal_entity_type_keys.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -965,6 +985,86 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
         if signal_cols.contains("source") {
             return Err(
                 "Schema integrity check failed: legacy column signal_events.source still exists"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 149 {
+        for table in ["entity_engagement_curve", "person_role_progression"] {
+            if !table_exists(conn, table)? {
+                return Err(format!(
+                    "Schema integrity check failed: missing required table '{table}'"
+                ));
+            }
+        }
+
+        let engagement_cols = table_columns(conn, "entity_engagement_curve")?;
+        for col in [
+            "entity_type",
+            "entity_id",
+            "week_start",
+            "meetings_count",
+            "emails_count",
+            "bidirectional_ratio",
+            "source_refs_json",
+        ] {
+            if !engagement_cols.contains(col) {
+                return Err(format!(
+                    "Schema integrity check failed: missing column entity_engagement_curve.{col}"
+                ));
+            }
+        }
+
+        let role_cols = table_columns(conn, "person_role_progression")?;
+        for col in [
+            "entity_type",
+            "entity_id",
+            "started_at",
+            "ended_at",
+            "title",
+            "org",
+            "seniority",
+            "source_refs_json",
+        ] {
+            if !role_cols.contains(col) {
+                return Err(format!(
+                    "Schema integrity check failed: missing column person_role_progression.{col}"
+                ));
+            }
+        }
+    }
+
+    if version >= 150 && !table_exists(conn, "temporal_backfill_state")? {
+        return Err(
+            "Schema integrity check failed: missing required table 'temporal_backfill_state'"
+                .to_string(),
+        );
+    }
+
+    if version >= 152 {
+        let backfill_cols = table_columns(conn, "temporal_backfill_state")?;
+        if !backfill_cols.contains("entity_type") {
+            return Err(
+                "Schema integrity check failed: missing column temporal_backfill_state.entity_type"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 151 {
+        let engagement_cols = table_columns(conn, "entity_engagement_curve")?;
+        if !engagement_cols.contains("source_invalidated_at") {
+            return Err(
+                "Schema integrity check failed: missing column entity_engagement_curve.source_invalidated_at"
+                    .to_string(),
+            );
+        }
+
+        let role_cols = table_columns(conn, "person_role_progression")?;
+        if !role_cols.contains("source_invalidated_at") {
+            return Err(
+                "Schema integrity check failed: missing column person_role_progression.source_invalidated_at"
                     .to_string(),
             );
         }

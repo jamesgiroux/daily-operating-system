@@ -41,6 +41,11 @@ use serde::de::DeserializeOwned;
 use serde::de::Error as _;
 use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
+use crate::abilities::temporal::{
+    DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
+    RefreshEngagementCurveResult, TemporalMaintenanceHandle, TrajectoryBundle,
+    TrajectoryQueryDepth, TrajectoryReadHandle,
+};
 use crate::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
 use crate::services::external_replay::{
     AuthScopeId, ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
@@ -830,6 +835,8 @@ pub struct ServiceContext<'a> {
     entity_context_reader: Option<Arc<dyn EntityContextReadHandle>>,
     entity_context_claim_reader: Option<Arc<dyn EntityContextClaimReadHandle>>,
     prepare_meeting_context_reader: Option<Arc<dyn PrepareMeetingContextReadHandle>>,
+    trajectory_reader: Option<Arc<dyn TrajectoryReadHandle>>,
+    temporal_maintenance: Option<Arc<dyn TemporalMaintenanceHandle>>,
 }
 
 pub type EntityContextReadFuture<'a> =
@@ -956,6 +963,8 @@ impl<'a> ServiceContext<'a> {
             entity_context_reader: None,
             entity_context_claim_reader: None,
             prepare_meeting_context_reader: None,
+            trajectory_reader: None,
+            temporal_maintenance: None,
         }
     }
 
@@ -976,6 +985,8 @@ impl<'a> ServiceContext<'a> {
             entity_context_reader: None,
             entity_context_claim_reader: None,
             prepare_meeting_context_reader: None,
+            trajectory_reader: None,
+            temporal_maintenance: None,
         }
     }
 
@@ -1007,6 +1018,8 @@ impl<'a> ServiceContext<'a> {
             entity_context_reader: None,
             entity_context_claim_reader: None,
             prepare_meeting_context_reader: None,
+            trajectory_reader: None,
+            temporal_maintenance: None,
         }
     }
 
@@ -1043,6 +1056,19 @@ impl<'a> ServiceContext<'a> {
         self
     }
 
+    pub fn with_trajectory_reader(mut self, reader: Arc<dyn TrajectoryReadHandle>) -> Self {
+        self.trajectory_reader = Some(reader);
+        self
+    }
+
+    pub fn with_temporal_maintenance(
+        mut self,
+        maintenance: Arc<dyn TemporalMaintenanceHandle>,
+    ) -> Self {
+        self.temporal_maintenance = Some(maintenance);
+        self
+    }
+
     pub async fn read_prepare_meeting_context(
         &self,
         meeting_id: String,
@@ -1067,6 +1093,51 @@ impl<'a> ServiceContext<'a> {
         }
 
         Err(self.missing_reader_error("entity_context_claim_reader"))
+    }
+
+    pub async fn read_trajectory_bundle(
+        &self,
+        entity_type: String,
+        entity_id: String,
+        depth: TrajectoryQueryDepth,
+    ) -> Result<TrajectoryBundle, String> {
+        if matches!(depth, TrajectoryQueryDepth::None) {
+            return Ok(TrajectoryBundle::default());
+        }
+
+        if let Some(reader) = &self.trajectory_reader {
+            return reader
+                .read_trajectory_bundle(entity_type, entity_id, depth, self.clock.now())
+                .await;
+        }
+
+        Ok(TrajectoryBundle::default())
+    }
+
+    pub async fn refresh_engagement_curve(
+        &self,
+        input: RefreshEngagementCurveInput,
+        computed_at: DateTime<Utc>,
+    ) -> Result<RefreshEngagementCurveResult, String> {
+        if let Some(maintenance) = &self.temporal_maintenance {
+            return maintenance
+                .refresh_engagement_curve(input, computed_at)
+                .await;
+        }
+
+        Err(self.missing_reader_error("temporal_maintenance"))
+    }
+
+    pub async fn detect_role_change(
+        &self,
+        input: DetectRoleChangeInput,
+        computed_at: DateTime<Utc>,
+    ) -> Result<DetectRoleChangeResult, String> {
+        if let Some(maintenance) = &self.temporal_maintenance {
+            return maintenance.detect_role_change(input, computed_at).await;
+        }
+
+        Err(self.missing_reader_error("temporal_maintenance"))
     }
 
     pub async fn read_entity_context_claim_entries(

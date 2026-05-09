@@ -9,14 +9,23 @@ use std::sync::Arc;
 
 pub use abilities_runtime::services::context::*;
 
+use crate::abilities::temporal::{
+    DetectRoleChangeInput, DetectRoleChangeResult, RefreshEngagementCurveInput,
+    RefreshEngagementCurveResult, TemporalMaintenanceFuture, TemporalMaintenanceHandle,
+    TrajectoryQueryDepth, TrajectoryReadFuture, TrajectoryReadHandle,
+};
+
 pub struct LiveEntityContextReader;
 pub struct LiveEntityContextClaimReader;
 pub struct LivePrepareMeetingContextReader;
+pub struct LiveTemporalWorkspaceReader;
 
 pub fn attach_live_workspace_readers(ctx: ServiceContext<'_>) -> ServiceContext<'_> {
     ctx.with_entity_context_reader(Arc::new(LiveEntityContextReader))
         .with_entity_context_claim_reader(Arc::new(LiveEntityContextClaimReader))
         .with_prepare_meeting_context_reader(Arc::new(LivePrepareMeetingContextReader))
+        .with_trajectory_reader(Arc::new(LiveTemporalWorkspaceReader))
+        .with_temporal_maintenance(Arc::new(LiveTemporalWorkspaceReader))
 }
 
 impl EntityContextReadHandle for LiveEntityContextReader {
@@ -78,6 +87,66 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
             })
             .await
             .map_err(|error| format!("prepare_meeting context read task failed: {error}"))?
+        })
+    }
+}
+
+impl TrajectoryReadHandle for LiveTemporalWorkspaceReader {
+    fn read_trajectory_bundle<'a>(
+        &'a self,
+        entity_type: String,
+        entity_id: String,
+        depth: TrajectoryQueryDepth,
+        computed_at: chrono::DateTime<chrono::Utc>,
+    ) -> TrajectoryReadFuture<'a> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|error| format!("Database unavailable: {error}"))?;
+                crate::services::temporal::read_trajectory_bundle_from_db(
+                    &db,
+                    &entity_type,
+                    &entity_id,
+                    depth,
+                    computed_at,
+                )
+            })
+            .await
+            .map_err(|error| format!("trajectory read task failed: {error}"))?
+        })
+    }
+}
+
+impl TemporalMaintenanceHandle for LiveTemporalWorkspaceReader {
+    fn refresh_engagement_curve<'a>(
+        &'a self,
+        input: RefreshEngagementCurveInput,
+        computed_at: chrono::DateTime<chrono::Utc>,
+    ) -> TemporalMaintenanceFuture<'a, RefreshEngagementCurveResult> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|error| format!("Database unavailable: {error}"))?;
+                crate::services::temporal::refresh_engagement_curve_in_db(&db, input, computed_at)
+            })
+            .await
+            .map_err(|error| format!("refresh_engagement_curve task failed: {error}"))?
+        })
+    }
+
+    fn detect_role_change<'a>(
+        &'a self,
+        input: DetectRoleChangeInput,
+        computed_at: chrono::DateTime<chrono::Utc>,
+    ) -> TemporalMaintenanceFuture<'a, DetectRoleChangeResult> {
+        Box::pin(async move {
+            tokio::task::spawn_blocking(move || {
+                let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|error| format!("Database unavailable: {error}"))?;
+                crate::services::temporal::detect_role_change_in_db(&db, input, computed_at)
+            })
+            .await
+            .map_err(|error| format!("detect_role_change task failed: {error}"))?
         })
     }
 }

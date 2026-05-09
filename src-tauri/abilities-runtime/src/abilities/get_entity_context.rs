@@ -1,3 +1,5 @@
+use std::collections::BTreeMap;
+
 use dailyos_abilities_macro::ability;
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
@@ -5,11 +7,12 @@ use serde::{Deserialize, Serialize};
 use crate::abilities::provenance::source_time::{parse_source_timestamp, SourceTimestampStatus};
 use crate::abilities::provenance::trust::claim_trust_band_from_score;
 use crate::abilities::provenance::{
-    AbilityExecutionMode, AbilityVersion, ChunkId, ContextEntryId, DataSource, DocumentId,
-    EntityId, FieldAttribution, FieldPath, GleanDownstream, MeetingId, ProvenanceBuilder,
-    ProvenanceBuilderConfig, SchemaVersion, SourceAttribution, SourceIdentifier, SourceName,
-    SubjectAttribution, SubjectRef,
+    AbilityExecutionMode, AbilityVersion, ChunkId, Confidence, ContextEntryId, DataSource,
+    DocumentId, EntityId, FieldAttribution, FieldPath, GleanDownstream, MeetingId,
+    ProvenanceBuilder, ProvenanceBuilderConfig, SchemaVersion, SourceAttribution, SourceIdentifier,
+    SourceIndex, SourceName, SourceRef, SubjectAttribution, SubjectRef,
 };
+use crate::abilities::temporal::{TrajectoryBundle, TrajectoryQueryDepth, DEEP_LIMIT_WEEKS};
 use crate::abilities::{
     AbilityCategory, AbilityContext, AbilityError, AbilityErrorKind, AbilityResult, Actor,
 };
@@ -20,7 +23,7 @@ use crate::types::{
 };
 
 const ABILITY_NAME: &str = "get_entity_context";
-const ABILITY_SCHEMA_VERSION: u32 = 1;
+const ABILITY_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Deserialize, Serialize, JsonSchema, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -38,11 +41,19 @@ pub struct GetEntityContextInput {
     pub depth: ContextDepth,
 }
 
+#[derive(Debug, Clone, Deserialize, Serialize, JsonSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetEntityContextOutput {
+    pub entries: Vec<EntityContextEntry>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub trajectory: Option<TrajectoryBundle>,
+}
+
 #[ability(
     name = "get_entity_context",
     category = Read,
     version = "1.0.0",
-    schema_version = 1,
+    schema_version = 2,
     allowed_actors = [User, Agent, System],
     allowed_modes = [Live, Evaluate],
     requires_confirmation = false,
@@ -54,7 +65,7 @@ pub struct GetEntityContextInput {
 pub async fn get_entity_context(
     ctx: &AbilityContext<'_>,
     input: GetEntityContextInput,
-) -> AbilityResult<Vec<EntityContextEntry>> {
+) -> AbilityResult<GetEntityContextOutput> {
     validate_schema_version(input.schema_version)?;
     let subject_ref = subject_ref_for(&input.entity_type, &input.entity_id)?;
     let subject = SubjectAttribution::direct_confident(subject_ref.clone());
@@ -63,7 +74,7 @@ pub async fn get_entity_context(
         .read_entity_context_claims(
             input.entity_type.clone(),
             input.entity_id.clone(),
-            input.depth.levels(),
+            input.depth.claim_levels(),
         )
         .await
         .map_err(|error| hard_error("entity context claim read failed", error))?;
@@ -73,14 +84,15 @@ pub async fn get_entity_context(
         .iter()
         .map(|claim| entry_for_claim(claim, &render_actor))
         .collect::<Result<Vec<_>, _>>()?;
+    let mut trajectory = trajectory_for_depth(ctx, &input).await?;
 
     let mut builder = ProvenanceBuilder::new(provenance_config(ctx, input.schema_version));
     builder.set_subject(envelope_subject(subject_ref, &entries)?);
 
-    if claims.is_empty() {
+    if entries.is_empty() {
         builder
             .attribute(
-                FieldPath::root(),
+                FieldPath::new("/entries").map_err(field_error)?,
                 FieldAttribution::constant(subject.clone()),
             )
             .map_err(provenance_error)?;
@@ -95,13 +107,30 @@ pub async fn get_entity_context(
         builder.set_source_trust_band(source_index, claim_trust_band_from_score(claim.trust_score));
         builder
             .attribute_subtree(
-                FieldPath::new(format!("/{index}")).map_err(field_error)?,
+                FieldPath::new(format!("/entries/{index}")).map_err(field_error)?,
                 FieldAttribution::direct(entry_subject, source_index),
             )
             .map_err(provenance_error)?;
     }
 
-    builder.finalize(entries).map_err(provenance_error)
+    if let Some(bundle) = trajectory.as_mut() {
+        if bundle.is_empty() {
+            builder
+                .attribute(
+                    FieldPath::new("/trajectory").map_err(field_error)?,
+                    FieldAttribution::constant(subject),
+                )
+                .map_err(provenance_error)?;
+        } else {
+            attribute_trajectory(&mut builder, bundle, subject, ctx.services().clock.now())?;
+        }
+    }
+
+    let output = GetEntityContextOutput {
+        entries,
+        trajectory,
+    };
+    builder.finalize(output).map_err(provenance_error)
 }
 
 fn validate_schema_version(schema_version: u32) -> Result<(), AbilityError> {
@@ -115,11 +144,210 @@ fn validate_schema_version(schema_version: u32) -> Result<(), AbilityError> {
 }
 
 impl ContextDepth {
-    fn levels(&self) -> usize {
+    fn claim_levels(&self) -> usize {
         match self {
             Self::Shallow => 1,
             Self::Standard => 2,
             Self::Deep => 3,
+        }
+    }
+
+    fn trajectory_depth(&self) -> TrajectoryQueryDepth {
+        match self {
+            Self::Shallow => TrajectoryQueryDepth::None,
+            Self::Standard => TrajectoryQueryDepth::Latest,
+            Self::Deep => TrajectoryQueryDepth::Weeks(DEEP_LIMIT_WEEKS),
+        }
+    }
+}
+
+async fn trajectory_for_depth(
+    ctx: &AbilityContext<'_>,
+    input: &GetEntityContextInput,
+) -> Result<Option<TrajectoryBundle>, AbilityError> {
+    let depth = input.depth.trajectory_depth();
+    if matches!(depth, TrajectoryQueryDepth::None) {
+        return Ok(None);
+    }
+
+    ctx.services()
+        .read_trajectory_bundle(input.entity_type.clone(), input.entity_id.clone(), depth)
+        .await
+        .map(Some)
+        .map_err(|error| hard_error("trajectory read failed", error))
+}
+
+fn attribute_trajectory(
+    builder: &mut ProvenanceBuilder,
+    bundle: &TrajectoryBundle,
+    subject: SubjectAttribution,
+    legacy_observed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<(), AbilityError> {
+    let mut source_indexes = BTreeMap::<String, SourceIndex>::new();
+
+    if let Some(snapshot) = bundle.engagement_curve.as_ref() {
+        let refs = snapshot
+            .series
+            .iter()
+            .flat_map(|point| point.source_refs.iter())
+            .collect::<Vec<_>>();
+        let attribution = attribution_for_trajectory_refs(
+            builder,
+            &mut source_indexes,
+            &subject,
+            &refs,
+            "temporal_engagement_curve",
+            legacy_observed_at,
+        )?;
+        builder
+            .attribute_subtree(
+                FieldPath::new("/trajectory/engagement_curve").map_err(field_error)?,
+                attribution,
+            )
+            .map_err(provenance_error)?;
+
+        for (index, point) in snapshot.series.iter().enumerate() {
+            let refs = point.source_refs.iter().collect::<Vec<_>>();
+            let attribution = attribution_for_trajectory_refs(
+                builder,
+                &mut source_indexes,
+                &subject,
+                &refs,
+                "temporal_engagement_curve_point",
+                legacy_observed_at,
+            )?;
+            builder
+                .attribute_subtree(
+                    FieldPath::new(format!("/trajectory/engagement_curve/series/{index}"))
+                        .map_err(field_error)?,
+                    attribution,
+                )
+                .map_err(provenance_error)?;
+        }
+    }
+
+    if let Some(snapshot) = bundle.role_progression.as_ref() {
+        let refs = snapshot
+            .series
+            .iter()
+            .flat_map(|point| point.source_refs.iter())
+            .collect::<Vec<_>>();
+        let attribution = attribution_for_trajectory_refs(
+            builder,
+            &mut source_indexes,
+            &subject,
+            &refs,
+            "temporal_role_progression",
+            legacy_observed_at,
+        )?;
+        builder
+            .attribute_subtree(
+                FieldPath::new("/trajectory/role_progression").map_err(field_error)?,
+                attribution,
+            )
+            .map_err(provenance_error)?;
+
+        for (index, point) in snapshot.series.iter().enumerate() {
+            let refs = point.source_refs.iter().collect::<Vec<_>>();
+            let attribution = attribution_for_trajectory_refs(
+                builder,
+                &mut source_indexes,
+                &subject,
+                &refs,
+                "temporal_role_progression_point",
+                legacy_observed_at,
+            )?;
+            builder
+                .attribute_subtree(
+                    FieldPath::new(format!("/trajectory/role_progression/series/{index}"))
+                        .map_err(field_error)?,
+                    attribution,
+                )
+                .map_err(provenance_error)?;
+        }
+    }
+
+    Ok(())
+}
+
+fn attribution_for_trajectory_refs(
+    builder: &mut ProvenanceBuilder,
+    source_indexes: &mut BTreeMap<String, SourceIndex>,
+    subject: &SubjectAttribution,
+    refs: &[&SourceRef],
+    algorithm: &'static str,
+    legacy_observed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<FieldAttribution, AbilityError> {
+    let mut indexes = Vec::new();
+    for source_ref in refs {
+        let source_index = builder_source_index_for_trajectory_ref(
+            builder,
+            source_indexes,
+            source_ref,
+            legacy_observed_at,
+        )?;
+        if !indexes.contains(&source_index) {
+            indexes.push(source_index);
+        }
+    }
+
+    match indexes.as_slice() {
+        [] => Ok(FieldAttribution::constant(subject.clone())),
+        [source_index] => Ok(FieldAttribution::direct(subject.clone(), *source_index)),
+        _ => FieldAttribution::computed(
+            subject.clone(),
+            algorithm,
+            indexes
+                .into_iter()
+                .map(|source_index| SourceRef::Source { source_index })
+                .collect(),
+            Confidence::computed(1.0).map_err(provenance_error)?,
+        )
+        .map_err(provenance_error),
+    }
+}
+
+fn builder_source_index_for_trajectory_ref(
+    builder: &mut ProvenanceBuilder,
+    source_indexes: &mut BTreeMap<String, SourceIndex>,
+    source_ref: &SourceRef,
+    legacy_observed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<SourceIndex, AbilityError> {
+    let key = serde_json::to_string(source_ref)
+        .map_err(|error| validation_error(format!("serialize trajectory source ref: {error}")))?;
+    if let Some(index) = source_indexes.get(&key) {
+        return Ok(*index);
+    }
+
+    let source = source_attribution_for_trajectory_ref(source_ref, legacy_observed_at)?;
+    let source_index = builder.add_source(source);
+    source_indexes.insert(key, source_index);
+    Ok(source_index)
+}
+
+fn source_attribution_for_trajectory_ref(
+    source_ref: &SourceRef,
+    legacy_observed_at: chrono::DateTime<chrono::Utc>,
+) -> Result<SourceAttribution, AbilityError> {
+    match source_ref {
+        SourceRef::Direct {
+            data_source,
+            identifier,
+            observed_at,
+            source_asof,
+        } => SourceAttribution::new(
+            data_source.clone(),
+            vec![identifier.clone()],
+            *observed_at,
+            *source_asof,
+            1.0,
+            None,
+        )
+        .map_err(|error| validation_error(format!("invalid trajectory source: {error}"))),
+        SourceRef::Source { .. } | SourceRef::Child { .. } => {
+            SourceAttribution::legacy_unattributed(legacy_observed_at).map_err(|error| {
+                validation_error(format!("invalid legacy trajectory source: {error}"))
+            })
         }
     }
 }
@@ -185,7 +413,7 @@ fn agent_can_read_claim(claim: &IntelligenceClaim) -> bool {
     claim_allowed_for_prompt_input(claim)
 }
 
-fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
+pub(crate) fn provenance_actor(actor: Actor) -> crate::abilities::provenance::Actor {
     match actor {
         Actor::User => crate::abilities::provenance::Actor::User,
         Actor::Agent => crate::abilities::provenance::Actor::Agent {
