@@ -1,0 +1,16 @@
+error: no rules expected `}`
+  --> tests/trybuild/frontmatter_link_map_shape_missing_subject_type_fails.rs:45:9
+   |
+45 |         },
+   |         ^ no rules expected this token in macro call
+   |
+  ::: src/services/claims/link_map_macro.rs
+   |
+   | macro_rules! frontmatter_link_map {
+   | --------------------------------- when calling this macro
+   |
+note: while trying to match `subject_type`
+  --> src/services/claims/link_map_macro.rs
+   |
+   |                     subject_type: $subject_type:path $(,)?
+   |                     ^^^^^^^^^^^^
