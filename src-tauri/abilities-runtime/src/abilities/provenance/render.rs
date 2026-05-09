@@ -5,7 +5,7 @@
 //! has serialized JSON should use `render_serialized_provenance_for`, which
 //! falls back to the same surface rules for older/minimal test envelopes.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::sync::OnceLock;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -18,7 +18,7 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    Actor, ComposedProvenance, DataSource, FieldAttribution, FieldPath, Provenance,
+    Actor, ComposedProvenance, CompositionId, DataSource, FieldAttribution, FieldPath, Provenance,
     ProvenanceMaskReason, ProvenanceMasked, ProvenanceOrMasked, ProvenanceWarning, ScoringClass,
     SourceAttribution, SourceIdentifier,
 };
@@ -93,6 +93,26 @@ pub struct ChildElided {
 #[derive(Debug, Default)]
 struct RenderContext {
     warnings: Vec<ProvenanceWarning>,
+    composition_labels: BTreeMap<String, String>,
+    next_composition_label: usize,
+}
+
+impl RenderContext {
+    fn opaque_composition_label(&mut self, composition_id: &CompositionId) -> String {
+        self.opaque_composition_label_for_raw(composition_id.as_str())
+    }
+
+    fn opaque_composition_label_for_raw(&mut self, composition_id: &str) -> String {
+        if let Some(label) = self.composition_labels.get(composition_id) {
+            return label.clone();
+        }
+
+        self.next_composition_label += 1;
+        let label = format!("c{}", self.next_composition_label);
+        self.composition_labels
+            .insert(composition_id.to_string(), label.clone());
+        label
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -301,7 +321,8 @@ pub fn render_provenance_for_with_options(
     let value = if surface == Surface::LogStructured {
         value
     } else {
-        attach_render_warnings(value, prov, &actor, surface, ctx.warnings)
+        let render_warnings = std::mem::take(&mut ctx.warnings);
+        attach_render_warnings(value, prov, &actor, surface, render_warnings, &mut ctx)
     };
     enforce_render_budget(RenderedProvenance::new(surface, value))
 }
@@ -356,7 +377,7 @@ fn project_provenance_for_render(
         .unwrap_or_else(|_| json!({ "error": "provenance_unserializable" }));
     normalize_projected_provenance_value(&mut value);
     let mut value = project_value_to_allowlist(value, &allowlist).unwrap_or_else(|| json!({}));
-    sanitize_projected_warning_fields(&mut value, prov, actor, surface);
+    sanitize_projected_warning_fields(&mut value, prov, actor, surface, ctx);
     sanitize_explanations_in_value(value, ctx)
 }
 
@@ -714,7 +735,7 @@ fn render_tauri_app(prov: &Provenance, actor: &Actor, ctx: &mut RenderContext) -
     });
     let details = json!({
         "sources": render_sources_for_tauri(&prov.sources),
-        "field_attributions": render_field_attributions_for_mcp(&prov.field_attributions, ctx),
+        "field_attributions": render_field_attributions_for_mcp(&prov.field_attributions, Surface::TauriApp, ctx),
         "children": prov.children.iter().map(|child| render_child_for_tauri(child, actor, ctx)).collect::<Vec<_>>(),
     });
     let full_json = project_provenance_for_render(prov, actor, Surface::TauriApp, ctx);
@@ -971,7 +992,7 @@ fn render_mcp_provenance(
     if policy.allows(McpProvenanceField::FieldAttributions) {
         object.insert(
             "field_attributions".to_string(),
-            render_field_attributions_for_mcp(&prov.field_attributions, ctx),
+            render_field_attributions_for_mcp(&prov.field_attributions, surface, ctx),
         );
     }
     if policy.allows(McpProvenanceField::FieldAttributionCount) {
@@ -1222,7 +1243,7 @@ fn render_p2_publication(
             "requires_user_confirmation": true,
             "included": true,
             "sources": render_sources_for_p2_detail(&prov.sources),
-            "field_attributions": render_field_attributions_for_mcp(&prov.field_attributions, ctx),
+            "field_attributions": render_field_attributions_for_mcp(&prov.field_attributions, Surface::P2Publication, ctx),
         })
     } else {
         json!({
@@ -1369,8 +1390,9 @@ fn render_child_for_mcp(
         });
     }
 
+    let composition_id = ctx.opaque_composition_label(&child.composition_id);
     json!({
-        "composition_id": child.composition_id,
+        "composition_id": composition_id,
         "provenance_schema_version": child.provenance.provenance_schema_version,
         "ability_name": child.provenance.ability_name,
         "ability_version": child.provenance.ability_version,
@@ -1383,7 +1405,7 @@ fn render_child_for_mcp(
                 .iter()
                 .map(|grandchild| render_child_for_mcp(grandchild, depth + 1, ctx))
                 .collect::<Vec<_>>(),
-        "field_attributions": render_field_attributions_for_mcp(&child.provenance.field_attributions, ctx),
+        "field_attributions": render_field_attributions_for_mcp(&child.provenance.field_attributions, Surface::McpToolDetail, ctx),
         "subject": render_subject_redacted(),
     })
 }
@@ -1413,10 +1435,14 @@ fn render_field_attributions(
 
 fn render_field_attributions_for_mcp(
     field_attributions: &std::collections::BTreeMap<FieldPath, FieldAttribution>,
+    surface: Surface,
     ctx: &mut RenderContext,
 ) -> Value {
     let mut value = render_field_attributions(field_attributions, ctx);
     redact_subjects_in_value(&mut value);
+    if surface_redacts_composition_ids(surface) {
+        redact_composition_ids_in_value(&mut value, ctx);
+    }
     value
 }
 
@@ -1425,6 +1451,51 @@ fn render_mcp_trust(prov: &Provenance) -> Value {
         "effective": prov.trust.effective,
         "contains_stored_synthesis": prov.trust.contains_stored_synthesis,
     })
+}
+
+fn surface_redacts_composition_ids(surface: Surface) -> bool {
+    matches!(
+        surface,
+        Surface::McpTool | Surface::McpToolDetail | Surface::P2Publication
+    )
+}
+
+fn render_composition_id_for_surface(
+    composition_id: &CompositionId,
+    surface: Surface,
+    ctx: &mut RenderContext,
+) -> Value {
+    if surface_redacts_composition_ids(surface) {
+        Value::String(ctx.opaque_composition_label(composition_id))
+    } else {
+        json!(composition_id)
+    }
+}
+
+fn redact_composition_ids_in_value(value: &mut Value, ctx: &mut RenderContext) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                redact_composition_ids_in_value(item, ctx);
+            }
+        }
+        Value::Object(object) => {
+            if let Some(raw) = object
+                .get("composition_id")
+                .and_then(Value::as_str)
+                .map(str::to_string)
+            {
+                object.insert(
+                    "composition_id".to_string(),
+                    Value::String(ctx.opaque_composition_label_for_raw(&raw)),
+                );
+            }
+            for item in object.values_mut() {
+                redact_composition_ids_in_value(item, ctx);
+            }
+        }
+        _ => {}
+    }
 }
 
 fn redact_subjects_in_value(value: &mut Value) {
@@ -1541,13 +1612,14 @@ fn attach_render_warnings(
     actor: &Actor,
     surface: Surface,
     render_warnings: Vec<ProvenanceWarning>,
+    ctx: &mut RenderContext,
 ) -> Value {
-    let warnings = prov
-        .warnings
-        .iter()
-        .chain(render_warnings.iter())
-        .map(|warning| render_warning_for_surface(warning, prov, actor, surface))
-        .collect::<Vec<_>>();
+    let mut warnings = Vec::new();
+    for warning in prov.warnings.iter().chain(render_warnings.iter()) {
+        warnings.push(render_warning_for_surface(
+            warning, prov, actor, surface, ctx,
+        ));
+    }
     if let Value::Object(object) = &mut value {
         object.insert("warnings".to_string(), Value::Array(warnings));
     }
@@ -1559,6 +1631,7 @@ fn sanitize_projected_warning_fields(
     prov: &Provenance,
     actor: &Actor,
     surface: Surface,
+    ctx: &mut RenderContext,
 ) {
     let Value::Object(object) = value else {
         return;
@@ -1570,7 +1643,7 @@ fn sanitize_projected_warning_fields(
             Value::Array(
                 prov.warnings
                     .iter()
-                    .map(|warning| render_warning_for_surface(warning, prov, actor, surface))
+                    .map(|warning| render_warning_for_surface(warning, prov, actor, surface, ctx))
                     .collect(),
             ),
         );
@@ -1578,20 +1651,27 @@ fn sanitize_projected_warning_fields(
 
     if let Some(Value::Array(children)) = object.get_mut("children") {
         for (child_value, child) in children.iter_mut().zip(prov.children.iter()) {
-            sanitize_projected_warning_fields(child_value, child.provenance.as_ref(), actor, surface);
+            sanitize_projected_warning_fields(
+                child_value,
+                child.provenance.as_ref(),
+                actor,
+                surface,
+                ctx,
+            );
             if let Some(provenance_value) = child_value.get_mut("provenance") {
                 sanitize_projected_warning_fields(
                     provenance_value,
                     child.provenance.as_ref(),
                     actor,
                     surface,
+                    ctx,
                 );
             }
         }
     }
 
     if let Some(provenance_value) = object.get_mut("provenance") {
-        sanitize_projected_warning_fields(provenance_value, prov, actor, surface);
+        sanitize_projected_warning_fields(provenance_value, prov, actor, surface, ctx);
     }
 }
 
@@ -1600,6 +1680,7 @@ fn render_warning_for_surface(
     prov: &Provenance,
     actor: &Actor,
     surface: Surface,
+    ctx: &mut RenderContext,
 ) -> Value {
     let include_full_details = allows_full_warning_details(actor, surface);
     let include_composition_id = include_full_details
@@ -1707,7 +1788,10 @@ fn render_warning_for_surface(
         } => {
             let mut object = warning_object("optional_composed_read_failed");
             if include_composition_id {
-                object.insert("composition_id".to_string(), json!(composition_id));
+                object.insert(
+                    "composition_id".to_string(),
+                    render_composition_id_for_surface(composition_id, surface, ctx),
+                );
             }
             if include_full_details {
                 object.insert("reason".to_string(), json!(reason));
@@ -1752,7 +1836,10 @@ fn allows_full_warning_details(actor: &Actor, surface: Surface) -> bool {
         )
 }
 
-fn warning_source_class(prov: &Provenance, source_index: crate::abilities::provenance::SourceIndex) -> String {
+fn warning_source_class(
+    prov: &Provenance,
+    source_index: crate::abilities::provenance::SourceIndex,
+) -> String {
     prov.sources
         .get(source_index.as_usize())
         .map(|source| canonical_data_source_class(&source.data_source))
@@ -1820,7 +1907,8 @@ fn add_truncation_warning(
     budget_bytes: usize,
     original_bytes: usize,
 ) {
-    let warning = truncated_for_render_warning_value(surface.as_str(), budget_bytes, original_bytes);
+    let warning =
+        truncated_for_render_warning_value(surface.as_str(), budget_bytes, original_bytes);
 
     let Value::Object(object) = value else {
         return;
@@ -2282,6 +2370,111 @@ mod tests {
     }
 
     #[test]
+    fn mcp_and_p2_detail_use_opaque_composition_labels() {
+        let secret_composition_id = CompositionId::new("get_entity_context:account:acct-secret");
+        let mut child = provenance();
+        child.field_attributions.insert(
+            FieldPath::new("/child_composed").unwrap(),
+            FieldAttribution::composed(
+                subject(),
+                secret_composition_id.clone(),
+                FieldPath::new("/summary").unwrap(),
+                Confidence::composed_min(0.8).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let mut provenance = provenance();
+        provenance.children.push(ComposedProvenance::new(
+            secret_composition_id.clone(),
+            child,
+        ));
+        provenance.field_attributions.insert(
+            FieldPath::new("/child_summary").unwrap(),
+            FieldAttribution::composed(
+                subject(),
+                secret_composition_id,
+                FieldPath::new("/summary").unwrap(),
+                Confidence::composed_min(0.8).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let mcp_rendered = render_provenance_for(
+            &provenance,
+            Actor::Agent {
+                name: "mcp".to_string(),
+                version: "test".to_string(),
+            },
+            Surface::McpToolDetail,
+        );
+        let mcp_serialized = serde_json::to_string(&mcp_rendered).unwrap();
+
+        assert!(!mcp_serialized.contains("account:acct-secret"));
+        assert_eq!(
+            mcp_rendered.value["children"][0]["composition_id"],
+            json!("c1")
+        );
+        assert_eq!(
+            mcp_rendered
+                .value
+                .pointer("/field_attributions/~1child_summary/derivation/composed/composition_id")
+                .cloned(),
+            Some(json!("c1"))
+        );
+        assert_eq!(
+            mcp_rendered
+                .value
+                .pointer("/field_attributions/~1child_summary/source_refs/0/child/composition_id")
+                .cloned(),
+            Some(json!("c1"))
+        );
+        assert_eq!(
+            mcp_rendered
+                .value
+                .pointer("/children/0/field_attributions/~1child_composed/derivation/composed/composition_id")
+                .cloned(),
+            Some(json!("c1"))
+        );
+        assert_eq!(
+            mcp_rendered
+                .value
+                .pointer("/children/0/field_attributions/~1child_composed/source_refs/0/child/composition_id")
+                .cloned(),
+            Some(json!("c1"))
+        );
+
+        let p2_token = valid_p2_detail_token(&provenance, "user-1");
+        let p2_rendered = render_provenance_for_with_options(
+            &provenance,
+            human_actor("user-1"),
+            Surface::P2Publication,
+            RenderOptions::with_p2_detail_confirmation(p2_token),
+        );
+        let p2_serialized = serde_json::to_string(&p2_rendered).unwrap();
+
+        assert!(!p2_serialized.contains("account:acct-secret"));
+        assert_eq!(
+            p2_rendered
+                .value
+                .pointer(
+                    "/detail/field_attributions/~1child_summary/derivation/composed/composition_id"
+                )
+                .cloned(),
+            Some(json!("c1"))
+        );
+        assert_eq!(
+            p2_rendered
+                .value
+                .pointer(
+                    "/detail/field_attributions/~1child_summary/source_refs/0/child/composition_id"
+                )
+                .cloned(),
+            Some(json!("c1"))
+        );
+    }
+
+    #[test]
     fn mcp_policy_matrix_filters_by_actor_and_surface() {
         let provenance = provenance();
         let agent_summary = render_provenance_for(
@@ -2345,11 +2538,11 @@ mod tests {
     #[test]
     fn surface_actor_render_tuples_never_emit_provenance_secrets() {
         let mut prov = provenance();
-        prov
-            .sources
-            .push(other_source("secret-source-name-214"));
+        prov.sources.push(other_source("secret-source-name-214"));
         let mut child = provenance();
-        child.sources.push(other_source("child-secret-source-name-214"));
+        child
+            .sources
+            .push(other_source("child-secret-source-name-214"));
         prov.children.push(ComposedProvenance::new(
             crate::abilities::provenance::CompositionId::new("child"),
             child,
@@ -2397,10 +2590,7 @@ mod tests {
         }
     }
 
-    fn assert_render_omits_forbidden_provenance_fields(
-        label: &str,
-        rendered: &RenderedProvenance,
-    ) {
+    fn assert_render_omits_forbidden_provenance_fields(label: &str, rendered: &RenderedProvenance) {
         let serialized = serde_json::to_string(rendered).unwrap();
         for forbidden in [
             "prompt_fingerprint",
@@ -2565,7 +2755,10 @@ mod tests {
                 "source_class": "extracted",
             })
         );
-        assert_eq!(rendered.value["sources_masked"][0]["source_class"], json!("glean"));
+        assert_eq!(
+            rendered.value["sources_masked"][0]["source_class"],
+            json!("glean")
+        );
         assert_eq!(
             rendered.value["sources_masked"][1]["source_class"],
             json!("extracted")
