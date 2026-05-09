@@ -1,0 +1,61 @@
+#!/usr/bin/env bash
+# .githooks/pre-push — full battery before push.
+#
+# Runs the heavy checks unconditionally, catching anything that incremental
+# pre-commit skipped via WIP=1 or path-aware skipping.
+#
+# This is the safety net. By the time code leaves your machine, it has
+# faced the full clippy + cargo test --lib + tsc gauntlet.
+#
+# Bypass: git push --no-verify (use sparingly, surface to user)
+
+set -euo pipefail
+
+CWD="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$CWD"
+
+BACKEND_DIR="${CWD}/src-tauri"
+ERRORS=""
+
+append_error() {
+  if [ -z "$ERRORS" ]; then
+    ERRORS="$1"
+  else
+    ERRORS="${ERRORS}"$'\n'"$1"
+  fi
+}
+
+# Same Tauri sidecar stub setup the pre-commit does.
+if [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scripts/build-mcp.sh" ]; then
+  if ! ls "${BACKEND_DIR}/binaries/"dailyos-mcp-* >/dev/null 2>&1; then
+    bash "${BACKEND_DIR}/scripts/build-mcp.sh" --stub >/dev/null 2>&1 || true
+  fi
+fi
+
+if [ -d "$BACKEND_DIR" ]; then
+  echo "pre-push: cargo clippy -- -D warnings" >&2
+  if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings; then
+    append_error "❌ cargo clippy -- -D warnings FAILED"
+  fi
+
+  echo "pre-push: cargo test --lib" >&2
+  if ! cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml"; then
+    append_error "❌ cargo test --lib FAILED"
+  fi
+fi
+
+if [ -f "${CWD}/package.json" ]; then
+  echo "pre-push: pnpm tsc --noEmit" >&2
+  if ! pnpm tsc --noEmit; then
+    append_error "❌ pnpm tsc --noEmit FAILED"
+  fi
+fi
+
+if [ -n "$ERRORS" ]; then
+  printf '🚫 Pre-push gate FAILED. Fix before pushing:\n%s\n' "$ERRORS" >&2
+  echo "" >&2
+  echo "If you really need to push (rare), bypass with: git push --no-verify" >&2
+  exit 1
+fi
+
+exit 0
