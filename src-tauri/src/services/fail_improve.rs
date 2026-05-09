@@ -7,7 +7,7 @@
 use std::collections::{BTreeSet, HashMap};
 use std::future::Future;
 use std::io::Write;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -21,6 +21,9 @@ use tokio::sync::{
 };
 use uuid::Uuid;
 
+#[cfg(test)]
+use crate::intelligence::provider::Completion;
+use crate::intelligence::provider::{IntelligenceProvider, ModelTier, PromptInput, ProviderError};
 use crate::services::context::ServiceContext;
 use crate::signals::policy_registry::PayloadPrivacy;
 use crate::signals::policy_registry::SignalType;
@@ -272,16 +275,7 @@ impl FailImproveLoop {
         let ext = crate::services::context::ExternalClients::default();
         let ctx = ServiceContext::new_live(&clock, &rng, &ext);
 
-        match execute_registry_signal_typing(
-            input,
-            |input| {
-                let input = input.clone();
-                async move { classify_registry_signal_type_with_llm(&input).await }
-            },
-            &ctx,
-        )
-        .await
-        {
+        match classify_registry_signal_type_with_llm(&input, &ctx).await {
             Ok(signal_type) => SignalType::from_name(&signal_type),
             Err(err) => {
                 log::warn!("signal type LLM fallback failed for `{name}`: {err}");
@@ -738,17 +732,37 @@ pub struct SignalTypingInput {
 
 pub const SIGNAL_TYPING_OPERATION: &str = "signal_typing";
 
-/// First wrapped operation: ADR-0115 registry signal typing.
-pub async fn execute_registry_signal_typing<L, LFut>(
+/// Complete ADR-0115 registry signal typing at the IntelligenceProvider boundary.
+///
+/// The deterministic registry check runs before provider completion. A registry
+/// miss calls `IntelligenceProvider::complete`, parses the provider response,
+/// and records the miss as a fail-improve artifact.
+pub async fn complete_registry_signal_typing<P>(
+    provider: &P,
     input: SignalTypingInput,
-    llm_fallback: L,
+    prompt: PromptInput,
+    tier: ModelTier,
     ctx: &ServiceContext<'_>,
 ) -> Result<String>
 where
-    L: FnOnce(&SignalTypingInput) -> LFut,
-    LFut: Future<Output = Result<String>>,
+    P: IntelligenceProvider + ?Sized,
 {
-    FailImproveLoop::default()
+    let loop_ = FailImproveLoop::default();
+    complete_registry_signal_typing_with_loop(&loop_, provider, input, prompt, tier, ctx).await
+}
+
+async fn complete_registry_signal_typing_with_loop<P>(
+    loop_: &FailImproveLoop,
+    provider: &P,
+    input: SignalTypingInput,
+    prompt: PromptInput,
+    tier: ModelTier,
+    ctx: &ServiceContext<'_>,
+) -> Result<String>
+where
+    P: IntelligenceProvider + ?Sized,
+{
+    loop_
         .execute(
             SIGNAL_TYPING_OPERATION,
             input,
@@ -756,10 +770,33 @@ where
                 let result = deterministic_registry_signal_type(input);
                 async move { Ok(result) }
             },
-            llm_fallback,
+            move |input| {
+                let original = input.signal_type.clone();
+                async move {
+                    let completion = provider
+                        .complete(prompt, tier)
+                        .await
+                        .map_err(provider_error_to_fail_improve)?;
+                    parse_registry_signal_typing_response(&original, &completion.text)
+                }
+            },
             ctx,
         )
         .await
+}
+
+/// Legacy direct-fallback adapter. Registry signal typing fail-improve wrapping
+/// lives at `IntelligenceProvider::complete` via `complete_registry_signal_typing`.
+pub async fn execute_registry_signal_typing<L, LFut>(
+    input: SignalTypingInput,
+    llm_fallback: L,
+    _ctx: &ServiceContext<'_>,
+) -> Result<String>
+where
+    L: FnOnce(&SignalTypingInput) -> LFut,
+    LFut: Future<Output = Result<String>>,
+{
+    llm_fallback(&input).await
 }
 
 pub fn record_unknown_signal_type(
@@ -789,52 +826,45 @@ pub fn deterministic_registry_signal_type(input: &SignalTypingInput) -> Option<S
 }
 
 #[cfg(not(test))]
-pub async fn classify_registry_signal_type_with_llm(input: &SignalTypingInput) -> Result<String> {
-    let signal_type = input.signal_type.trim().to_string();
-    let prompt = registry_signal_typing_prompt(&signal_type);
+pub async fn classify_registry_signal_type_with_llm(
+    input: &SignalTypingInput,
+    ctx: &ServiceContext<'_>,
+) -> Result<String> {
+    let config = crate::state::load_config().ok();
+    let ai_models = config
+        .as_ref()
+        .map(|config| config.ai_models.clone())
+        .unwrap_or_default();
+    let workspace = config
+        .as_ref()
+        .map(|config| PathBuf::from(&config.workspace_path))
+        .filter(|path| path.exists())
+        .or_else(|| std::env::current_dir().ok())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let provider = crate::intelligence::pty_provider::PtyClaudeCode::new(
+        Arc::new(ai_models),
+        workspace.clone(),
+        crate::pty::AiUsageContext::new("signals", SIGNAL_TYPING_OPERATION)
+            .with_trigger("fail_improve_llm_fallback")
+            .with_tier(ModelTier::Mechanical),
+    );
+    let prompt = registry_signal_typing_prompt_input(input, Some(&workspace));
 
-    tokio::task::spawn_blocking(move || {
-        let config = crate::state::load_config().ok();
-        let ai_models = config
-            .as_ref()
-            .map(|config| config.ai_models.clone())
-            .unwrap_or_default();
-        let workspace = config
-            .as_ref()
-            .map(|config| PathBuf::from(&config.workspace_path))
-            .filter(|path| path.exists())
-            .or_else(|| std::env::current_dir().ok())
-            .unwrap_or_else(|| PathBuf::from("."));
-
-        let output =
-            crate::pty::PtyManager::for_tier(crate::pty::ModelTier::Mechanical, &ai_models)
-                .with_usage_context(
-                    crate::pty::AiUsageContext::new("signals", SIGNAL_TYPING_OPERATION)
-                        .with_trigger("fail_improve_llm_fallback")
-                        .with_tier(crate::pty::ModelTier::Mechanical),
-                )
-                .with_timeout(90)
-                .with_nice_priority(10)
-                .spawn_claude(&workspace, &prompt)
-                .map_err(|err| FailImproveError::Llm(format!("{err:?}")))?;
-
-        parse_registry_signal_typing_response(&signal_type, &output.stdout)
-    })
-    .await
-    .map_err(|err| FailImproveError::Llm(format!("LLM task failed: {err}")))?
+    complete_registry_signal_typing(&provider, input.clone(), prompt, ModelTier::Mechanical, ctx)
+        .await
 }
 
 #[cfg(test)]
-pub async fn classify_registry_signal_type_with_llm(input: &SignalTypingInput) -> Result<String> {
-    SIGNAL_TYPE_LLM_CALLS_FOR_TEST.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    let delay_ms = SIGNAL_TYPE_LLM_DELAY_MS_FOR_TEST.load(std::sync::atomic::Ordering::SeqCst);
-    if delay_ms > 0 {
-        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
-    }
-    Ok(input.signal_type.clone())
+pub async fn classify_registry_signal_type_with_llm(
+    input: &SignalTypingInput,
+    ctx: &ServiceContext<'_>,
+) -> Result<String> {
+    let provider = SignalTypingTestProvider;
+    let prompt = registry_signal_typing_prompt_input(input, None);
+    complete_registry_signal_typing(&provider, input.clone(), prompt, ModelTier::Mechanical, ctx)
+        .await
 }
 
-#[cfg(not(test))]
 fn registry_signal_typing_prompt(signal_type: &str) -> String {
     let allowed = crate::signals::policy_registry::known_signal_type_names().join(", ");
     format!(
@@ -846,7 +876,71 @@ fn registry_signal_typing_prompt(signal_type: &str) -> String {
     )
 }
 
-#[cfg(not(test))]
+fn registry_signal_typing_prompt_input(
+    input: &SignalTypingInput,
+    workspace: Option<&Path>,
+) -> PromptInput {
+    let mut prompt = PromptInput::new(registry_signal_typing_prompt(input.signal_type.trim()))
+        .with_template(
+            "signals.registry_signal_typing",
+            "1",
+            "registry_signal_typing_prompt_v1",
+        )
+        .with_canonical_json_inputs(serde_json::json!({
+            "signal_type": input.signal_type.trim(),
+        }));
+    if let Some(workspace) = workspace {
+        prompt = prompt.with_workspace(workspace);
+    }
+    prompt
+}
+
+fn provider_error_to_fail_improve(error: ProviderError) -> FailImproveError {
+    FailImproveError::Llm(error.to_string())
+}
+
+#[cfg(test)]
+struct SignalTypingTestProvider;
+
+#[cfg(test)]
+#[async_trait::async_trait]
+impl IntelligenceProvider for SignalTypingTestProvider {
+    async fn complete(
+        &self,
+        prompt: PromptInput,
+        _tier: ModelTier,
+    ) -> std::result::Result<Completion, ProviderError> {
+        SIGNAL_TYPE_LLM_CALLS_FOR_TEST.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        let delay_ms = SIGNAL_TYPE_LLM_DELAY_MS_FOR_TEST.load(std::sync::atomic::Ordering::SeqCst);
+        if delay_ms > 0 {
+            tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+        }
+
+        let signal_type = prompt
+            .canonical_json_inputs
+            .as_ref()
+            .and_then(|value| value.get("signal_type"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        let response = serde_json::json!({
+            "signal_type": serde_json::Value::Null,
+            "original": signal_type,
+        });
+        Ok(Completion {
+            text: response.to_string(),
+            fingerprint_metadata: Default::default(),
+        })
+    }
+
+    fn provider_kind(&self) -> crate::intelligence::provider::ProviderKind {
+        crate::intelligence::provider::ProviderKind::Other("fail_improve_test")
+    }
+
+    fn current_model(&self, _tier: ModelTier) -> crate::intelligence::provider::ModelName {
+        crate::intelligence::provider::ModelName::new("fail-improve-test")
+    }
+}
+
 fn parse_registry_signal_typing_response(original: &str, output: &str) -> Result<String> {
     #[derive(Deserialize)]
     struct Response {
@@ -1123,6 +1217,33 @@ mod tests {
             .expect("counts json")
     }
 
+    struct RegistryCompletionFixtureProvider;
+
+    #[async_trait::async_trait]
+    impl IntelligenceProvider for RegistryCompletionFixtureProvider {
+        async fn complete(
+            &self,
+            _prompt: PromptInput,
+            _tier: ModelTier,
+        ) -> std::result::Result<Completion, ProviderError> {
+            Ok(Completion {
+                text: serde_json::json!({
+                    "signal_type": "account_risk",
+                })
+                .to_string(),
+                fingerprint_metadata: Default::default(),
+            })
+        }
+
+        fn provider_kind(&self) -> crate::intelligence::provider::ProviderKind {
+            crate::intelligence::provider::ProviderKind::Other("fixture")
+        }
+
+        fn current_model(&self, _tier: ModelTier) -> crate::intelligence::provider::ModelName {
+            crate::intelligence::provider::ModelName::new("fixture")
+        }
+    }
+
     #[tokio::test]
     async fn deterministic_hit_updates_counts_without_jsonl_entry() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -1204,6 +1325,42 @@ mod tests {
         assert_eq!(counts.deterministic_hits, 0);
         assert_eq!(counts.llm_fallbacks, 1);
         assert_eq!(counts.deterministic_rate, 0.0);
+    }
+
+    #[tokio::test]
+    async fn intelligence_provider_completion_miss_records_fail_improve_artifact() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let loop_ = FailImproveLoop::new(tmp.path().to_path_buf());
+        let (clock, rng, ext) = test_ctx();
+        let ctx = ServiceContext::new_live(&clock, &rng, &ext);
+        let input = SignalTypingInput {
+            signal_type: "customer-health-risk".to_string(),
+        };
+        let prompt = registry_signal_typing_prompt_input(&input, None);
+        let provider = RegistryCompletionFixtureProvider;
+
+        let output = complete_registry_signal_typing_with_loop(
+            &loop_,
+            &provider,
+            input.clone(),
+            prompt,
+            ModelTier::Mechanical,
+            &ctx,
+        )
+        .await
+        .expect("provider completion");
+
+        assert_eq!(output, "account_risk");
+        let raw = read_artifact(&loop_, SIGNAL_TYPING_OPERATION, ArtifactKind::Jsonl);
+        let entry: FailImproveEntry =
+            serde_json::from_str(raw.lines().next().expect("jsonl line")).expect("entry");
+        assert_eq!(
+            entry.input,
+            serde_json::json!({
+                "signal_type": input.signal_type,
+            })
+        );
+        assert_eq!(entry.llm_result, Value::String("account_risk".to_string()));
     }
 
     #[test]

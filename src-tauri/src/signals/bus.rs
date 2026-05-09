@@ -587,17 +587,11 @@ fn record_unknown_signal_type_observation(
 
     let payload = serde_json::json!({
         "entityType": signal.entity_type,
-        "entityId": signal.entity_id,
         "signalType": signal.signal_type,
         "source": signal.source,
-        "value": signal.value,
-        "confidence": signal.confidence,
-        "sourceContext": signal.source_context,
-        "id": signal.id,
         "createdAt": signal.created_at,
-        "decayHalfLifeDays": signal.decay_half_life_days,
         "channel": format!("{:?}", signal.channel),
-        "refreshMeetings": signal.refresh_meetings,
+        "observedAt": Utc::now().to_rfc3339(),
     });
 
     crate::services::fail_improve::record_unknown_signal_type(
@@ -1136,6 +1130,68 @@ mod tests {
             Some(signal_type.as_str())
         );
         assert!(!tmp.path().join("unknown_signal_types.current").exists());
+    }
+
+    #[test]
+    fn dos262_unknown_signal_observation_redacts_legacy_payload_body() {
+        let _env_guard = fail_improve_env_lock().lock().expect("env lock");
+        let _resolution_restore =
+            SignalTypeResolutionRestore::with_delay(std::time::Duration::from_millis(0));
+        let (tx, mut rx) = tokio::sync::mpsc::unbounded_channel();
+        let _sender_restore = UnknownSignalSenderRestore::replace(Some(tx));
+
+        let db = test_db();
+        let signal_type = format!("dos262_field_updated_{}", Uuid::new_v4().simple());
+        emit_signal_event(
+            &db,
+            EmitSignalEvent {
+                entity_type: "account",
+                entity_id: "acct-redacted",
+                signal_type: &signal_type,
+                source: "unit_test",
+                value: Some("user edited field body"),
+                confidence: 1.0,
+                source_context: Some("private source context"),
+                id: Some("sig-redacted"),
+                created_at: Some("2026-05-09T14:30:00Z"),
+                decay_half_life_days: Some(7),
+                insert_mode: SignalInsertMode::Insert,
+                channel: SignalEmissionChannel::ServiceFacade,
+                refresh_meetings: false,
+            },
+        )
+        .expect("emit unknown updated signal");
+
+        let observation = recv_unknown_signal_observation_for_type(&mut rx, &signal_type);
+        assert_eq!(observation.payload_privacy, PayloadPrivacy::NonPiiMetadata);
+        let payload = observation.payload.as_object().expect("payload object");
+        let keys = payload
+            .keys()
+            .map(String::as_str)
+            .collect::<std::collections::BTreeSet<_>>();
+        assert_eq!(
+            keys,
+            std::collections::BTreeSet::from([
+                "channel",
+                "createdAt",
+                "entityType",
+                "observedAt",
+                "signalType",
+                "source",
+            ])
+        );
+        assert_eq!(
+            payload.get("signalType").and_then(serde_json::Value::as_str),
+            Some(signal_type.as_str())
+        );
+        assert_eq!(
+            payload.get("createdAt").and_then(serde_json::Value::as_str),
+            Some("2026-05-09T14:30:00Z")
+        );
+        assert!(payload
+            .get("observedAt")
+            .and_then(serde_json::Value::as_str)
+            .is_some());
     }
 
     #[test]
