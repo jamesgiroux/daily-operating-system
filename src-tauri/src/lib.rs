@@ -86,6 +86,7 @@ mod migrations;
 mod notification;
 pub mod oauth;
 pub mod observability;
+pub mod operations;
 mod parser;
 pub mod people;
 pub mod prepare;
@@ -616,6 +617,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             // Abilities
             commands::invoke_ability,
+            operations::invoke_operation,
             // sensitivity reveal audit
             commands::reveal_sensitive_claim_text,
             // Core
