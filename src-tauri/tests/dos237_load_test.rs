@@ -152,3 +152,99 @@ fn dos237_synthetic_signal_load_stays_coalesced_and_bounded() {
     assert_eq!(dead_lettered, 0);
     assert_eq!(completed, terminalized);
 }
+
+/// Multi-subject phase: 200 distinct accounts × 5 ClaimTrustChanged each = 1000
+/// emissions that cannot all coalesce into a single job. Exercises the queue
+/// behavior under non-coalescible load — verifies the cap is respected, every
+/// emission either lands a job or aggressive-coalesces, and dead-letter rate
+/// stays clean. Without this phase, the single-subject test above can never
+/// reach the queue cap because everything folds to one pending job.
+#[test]
+fn dos237_multi_subject_load_respects_queue_cap_and_coalesces_per_subject() {
+    let db = load_test_db();
+
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let ext = ExternalClients::default();
+    let ctx = ServiceContext::new_live(&clock, &rng, &ext);
+
+    let subject_count = 200usize;
+    let events_per_subject = 5usize;
+    let total_emissions = subject_count * events_per_subject;
+
+    for s in 0..subject_count {
+        let account_id = format!("dos237-multi-{s}");
+        seed_account(&db, &account_id);
+    }
+
+    for round in 0..events_per_subject {
+        for s in 0..subject_count {
+            let account_id = format!("dos237-multi-{s}");
+            db.with_transaction(|tx| {
+                tx.conn_ref()
+                    .execute(
+                        "UPDATE accounts
+                         SET claim_version = claim_version + 1
+                         WHERE id = ?1",
+                        params![account_id],
+                    )
+                    .map_err(|e| e.to_string())?;
+                let signal_id = dailyos_lib::services::signals::emit_in_transaction(
+                    &ctx,
+                    tx,
+                    "account",
+                    &account_id,
+                    "ClaimTrustChanged",
+                    "dos237_multi_load_test",
+                    json!({ "round": round, "subject": s }),
+                )?;
+                enqueue_signal_claim_recompute_in_tx(tx, &signal_id, "account", &account_id)?;
+                Ok(())
+            })
+            .expect("multi-subject claim trust transaction");
+        }
+    }
+
+    let pending_jobs = count(
+        &db,
+        "SELECT count(*) FROM invalidation_jobs WHERE status = 'pending'",
+    );
+    let dead_lettered = count(
+        &db,
+        "SELECT count(*) FROM invalidation_jobs WHERE status = 'dead_lettered'",
+    );
+    let total_jobs = count(&db, "SELECT count(*) FROM invalidation_jobs").max(1);
+
+    // Each of the N subjects coalesces into 1 pending job (5 events/subject
+    // collapse) — pending count should equal subject_count, well under the
+    // 10000 default cap and proves per-subject coalescing is per-subject keyed.
+    assert!(
+        pending_jobs <= subject_count as i64,
+        "expected per-subject coalescing: pending_jobs={pending_jobs} > subjects={subject_count}"
+    );
+    assert!(
+        pending_jobs < 10_000,
+        "queue exceeded pending bound under multi-subject load"
+    );
+    assert!(
+        (dead_lettered as f64 / total_jobs as f64) < 0.001,
+        "dead-letter rate must stay below 0.1% under multi-subject load"
+    );
+
+    // All raw signal emissions should be aggregated into the per-subject jobs;
+    // total raw_signal_count across pending jobs ≥ total_emissions proves no
+    // emission silently dropped (some may aggressive-coalesce into running
+    // jobs which is also fine).
+    let aggregated: i64 = db
+        .conn_ref()
+        .query_row(
+            "SELECT COALESCE(SUM(raw_signal_count), 0) FROM invalidation_jobs",
+            [],
+            |row| row.get(0),
+        )
+        .expect("sum raw signal counts");
+    assert!(
+        aggregated >= total_emissions as i64,
+        "raw_signal_count aggregated={aggregated} < total emissions={total_emissions} — silent drop"
+    );
+}

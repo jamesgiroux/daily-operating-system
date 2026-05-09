@@ -75,7 +75,7 @@
 | `focus_prioritization.rs` | 398 | 1 | — |
 | `google.rs` | 1829 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 493 | 12 | — |
-| `intel_queue.rs` | 5811 | 8 | Background intelligence enrichment queue. |
+| `intel_queue.rs` | 5827 | 8 | Background intelligence enrichment queue. |
 | `json_loader.rs` | 426 | 1 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics. |
 | `lib.rs` | 1101 | 1 | App setup, command registration, plugin init |

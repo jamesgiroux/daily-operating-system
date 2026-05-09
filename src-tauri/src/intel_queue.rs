@@ -3651,19 +3651,35 @@ fn emit_claim_trust_changed_signal(
     };
 
     // Enqueue durable invalidation job so downstream outputs recompute or are
-    // marked stale. Coalescing + queue cap are enforced inside; failure here is
-    // logged but does not retroactively roll back the signal emission.
+    // marked stale. Coalescing + queue cap enforced inside the enqueue path.
+    // If the queue is over-capacity AND no aggressive-coalesce target exists,
+    // enqueue returns InvalidArgument. The signal row is already committed at
+    // this point, so swallowing the error would create a silent-stale path
+    // (signal recorded → no recompute → downstream outputs drift). Instead,
+    // record a durable pipeline_failure so the failure is queryable and
+    // surfaces in operator-visible state — preserves the no-silent-stale
+    // contract for trust recompute under queue overload.
     if let Err(e) = crate::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx(
         db,
         &signal_id,
         &input.entity_type,
         &input.entity_id,
     ) {
-        log::warn!(
+        log::error!(
             "TrustRecompute: failed to enqueue claim_recompute job for signal {} (claim {}): {}",
             signal_id,
             claim.id,
             e
+        );
+        record_trust_recompute_pipeline_failure(
+            ctx,
+            db,
+            input,
+            "invalidation_enqueue_failed",
+            Some(&format!(
+                "claim_id={} signal_id={signal_id} error={e}",
+                claim.id
+            )),
         );
     }
 }
