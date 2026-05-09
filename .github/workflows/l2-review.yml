@@ -1,0 +1,526 @@
+name: L2 Review
+
+# L2 reviewer panel — runs at PR-open as the formal merge gate.
+#
+# Architecture (v4, post-L2-cycle-3 fixes):
+#   - Reviewer jobs collapsed to a composite action at .github/actions/l2-reviewer-job/.
+#     One source-of-truth for the marker contract, comment fetch, verdict parse.
+#     Adding a new reviewer = one matrix.yml entry + one tiny job block.
+#   - Marker fetch tightened to startswith (not contains) — quoted markers in
+#     comment bodies can no longer satisfy the gate.
+#   - Changed-files lists include `previous_filename` so renames out of fenced
+#     or trigger paths are detected.
+#   - parse-verdict is a Python script with deterministic regex; ambiguous
+#     verdicts within OR across first/last-25 buckets fail-closed.
+#   - configure-branch-protection.sh uses GET → merge → PUT (per-field endpoints
+#     don't exist for several fields). Required check is app-bound to
+#     GitHub Actions (app_id=15368) so third-party statuses can't spoof it.
+#
+# Known trust assumption (security cycle-2 medium, accepted at single-admin scope):
+#   `pull_request.base.sha` is read from the GitHub event payload. If the base
+#   branch is force-pushed between event firing and workflow start, workflow
+#   reads the new base. Re-evaluate before Phase 5 (cloud routine PRs).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - dev
+      - trunk
+
+permissions:
+  contents: read
+
+concurrency:
+  group: l2-review-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  # ─── Path-fence: block PRs that modify the L2 gate's own config ─────────
+  config-fence:
+    name: L2 / config-fence
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      changed_files_path: ${{ steps.changed.outputs.path }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+
+      - id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/changed-files.txt"
+          # Include both filename AND previous_filename for renames so
+          # gate-config files renamed OUT of fenced paths are still caught.
+          gh api --paginate "repos/${REPO}/pulls/${PR}/files" \
+            --jq '.[] | [.filename, (.previous_filename // empty)] | .[]' \
+            | sort -u > "$OUT"
+          REPORTED=$(gh api "repos/${REPO}/pulls/${PR}" --jq '.changed_files')
+          ACTUAL=$(gh api --paginate "repos/${REPO}/pulls/${PR}/files" --jq '.[].filename' | wc -l | tr -d '[:space:]')
+          if [ "$REPORTED" != "$ACTUAL" ]; then
+            echo "::error::changed-files count mismatch (reported=$REPORTED, fetched=$ACTUAL)"
+            exit 2
+          fi
+          echo "Fetched $ACTUAL changed file(s); evaluating $(wc -l < "$OUT" | tr -d '[:space:]') unique paths (incl. renames)."
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+
+      - name: Run config-fence (with Dependabot carve-out)
+        env:
+          CHANGED_FILES_PATH: ${{ steps.changed.outputs.path }}
+          PR_AUTHOR: ${{ github.event.pull_request.user.login }}
+        run: |
+          set -euo pipefail
+          if [ "$PR_AUTHOR" = "dependabot[bot]" ]; then
+            non_workflow=$(grep -v '^\.github/workflows/' "$CHANGED_FILES_PATH" || true)
+            if [ -z "$non_workflow" ]; then
+              echo "Dependabot action-bump PR (workflow files only); fence skipped."
+              exit 0
+            fi
+            echo "Dependabot PR touches non-workflow paths; fence applies normally."
+          fi
+
+          FENCED_PATTERNS=(
+            ".github/workflows/l2-review.yml"
+            ".github/scripts/configure-branch-protection.sh"
+          )
+
+          FENCED_PREFIXES=(
+            ".github/reviewer-prompts/"
+            ".github/scripts/"
+            ".github/actions/"
+            ".claude/git-hooks/"
+          )
+
+          FENCED_FILES=(
+            ".claude/scripts/blocklist-scan.sh"
+          )
+
+          hits=()
+
+          while IFS= read -r path; do
+            [ -z "$path" ] && continue
+
+            for pat in "${FENCED_PATTERNS[@]}"; do
+              if [ "$path" = "$pat" ]; then
+                hits+=("$path")
+                continue 2
+              fi
+            done
+
+            for pre in "${FENCED_PREFIXES[@]}"; do
+              case "$path" in
+                "${pre}"*) hits+=("$path"); continue 2 ;;
+              esac
+            done
+
+            for f in "${FENCED_FILES[@]}"; do
+              if [ "$path" = "$f" ]; then
+                hits+=("$path")
+                continue 2
+              fi
+            done
+          done < "$CHANGED_FILES_PATH"
+
+          if [ "${#hits[@]}" -eq 0 ]; then
+            exit 0
+          fi
+
+          cat >&2 <<EOF
+          🔒 config-fence: this PR modifies one or more L2 gate configuration files.
+
+          The L2 gate cannot review a PR that modifies its own configuration, the modified
+          version would be reviewing itself, defeating the trust boundary.
+
+          Fenced paths touched in this PR:
+          $(printf '   - %s\n' "${hits[@]}")
+
+          Resolution:
+            1. Land the gate-configuration change as its own PR with maintainer co-sign
+               and admin override (this PR's only path through to merge today).
+            2. Once merged on dev, the new configuration becomes the base for subsequent
+               reviews. Open the original work as a fresh PR.
+
+          For the long-term fix (a path that handles config + non-config changes safely
+          in a single PR), see Phase 2.1 in v1-lite §4.
+          EOF
+
+          exit 2
+
+  # ─── Resolve which reviewers should run ─────────────────────────────────
+  resolve-matrix:
+    name: L2 / resolve-matrix
+    runs-on: ubuntu-latest
+    needs: config-fence
+    permissions:
+      contents: read
+    outputs:
+      reviewers: ${{ steps.pick.outputs.reviewers }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - run: pip install 'pyyaml==6.0.1'
+      - id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/changed-files.txt"
+          gh api --paginate "repos/${REPO}/pulls/${PR}/files" \
+            --jq '.[] | [.filename, (.previous_filename // empty)] | .[]' \
+            | sort -u > "$OUT"
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+      - id: pick
+        env:
+          CHANGED_FILES_PATH: ${{ steps.changed.outputs.path }}
+        run: |
+          set -euo pipefail
+          REVIEWERS=$(python3 .github/scripts/resolve-reviewers.py \
+            .github/reviewer-prompts/matrix.yml < "$CHANGED_FILES_PATH")
+          if [ -z "$REVIEWERS" ]; then
+            echo "::error::resolver returned empty reviewer list"
+            exit 1
+          fi
+          echo "Reviewers: $REVIEWERS"
+          echo "reviewers=$REVIEWERS" >> "$GITHUB_OUTPUT"
+
+  # ─── PR-template validator (matrix.yml is the SSOT for trigger paths) ───
+  validate-pr-template:
+    name: L2 / validate-pr-template
+    runs-on: ubuntu-latest
+    needs: config-fence
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+      - run: pip install 'pyyaml==6.0.1'
+      - id: changed
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/changed-files.txt"
+          gh api --paginate "repos/${REPO}/pulls/${PR}/files" \
+            --jq '.[] | [.filename, (.previous_filename // empty)] | .[]' \
+            | sort -u > "$OUT"
+          echo "path=$OUT" >> "$GITHUB_OUTPUT"
+      - name: Materialize PR body
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+        run: |
+          set -euo pipefail
+          OUT="${RUNNER_TEMP}/pr-body.txt"
+          printf '%s\n' "$PR_BODY" > "$OUT"
+          echo "PR_BODY_PATH=$OUT" >> "$GITHUB_ENV"
+      - name: Validate
+        env:
+          CHANGED_FILES_PATH: ${{ steps.changed.outputs.path }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/validate-pr-template.py \
+            "$PR_BODY_PATH" \
+            .github/reviewer-prompts/matrix.yml \
+            < "$CHANGED_FILES_PATH"
+
+  # ─── Blocklist scan ─────────────────────────────────────────────────────
+  blocklist-scan:
+    name: L2 / blocklist-scan
+    runs-on: ubuntu-latest
+    needs: config-fence
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+          ref: ${{ github.event.pull_request.head.sha }}
+      - name: Fetch base ref
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          git fetch --no-tags --depth=1 origin "$BASE_SHA"
+      - name: Use BASE-ref scanner
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/scanner"
+          git show "${BASE_SHA}:.claude/scripts/blocklist-scan.sh" \
+            > "${RUNNER_TEMP}/scanner/blocklist-scan.sh"
+          chmod +x "${RUNNER_TEMP}/scanner/blocklist-scan.sh"
+      - name: Materialize blocklist (RUNNER_TEMP)
+        env:
+          PII_BLOCKLIST: ${{ secrets.PII_BLOCKLIST }}
+        run: |
+          set -euo pipefail
+          if [ -z "$PII_BLOCKLIST" ]; then
+            echo "::error::PII_BLOCKLIST secret is empty or missing on this repo."
+            exit 1
+          fi
+          STAGE="${RUNNER_TEMP}/scan-stage"
+          mkdir -p "${STAGE}/.claude"
+          printf '%s\n' "$PII_BLOCKLIST" > "${STAGE}/.claude/pii-blocklist.txt"
+          echo "STAGE=${STAGE}" >> "$GITHUB_ENV"
+      - name: Scan PR commit range
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          ln -sf "${STAGE}/.claude/pii-blocklist.txt" .claude/pii-blocklist.txt
+          bash -c "
+            source ${RUNNER_TEMP}/scanner/blocklist-scan.sh
+            scan_commit_range \"${BASE_SHA}..${HEAD_SHA}\"
+          "
+
+  # ─── Reviewer jobs (composite action — no more 5x duplication) ──────────
+
+  code-reviewer:
+    name: L2 / code-reviewer
+    runs-on: ubuntu-latest
+    needs: [config-fence, resolve-matrix]
+    if: contains(needs.resolve-matrix.outputs.reviewers, 'code-reviewer')
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: workflow-checkout-for-action
+      - uses: ./workflow-checkout-for-action/.github/actions/l2-reviewer-job
+        with:
+          reviewer-name: code-reviewer
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          pr-number: ${{ github.event.pull_request.number }}
+          run-id: ${{ github.run_id }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ github.token }}
+
+  architect-reviewer:
+    name: L2 / architect-reviewer
+    runs-on: ubuntu-latest
+    needs: [config-fence, resolve-matrix]
+    if: contains(needs.resolve-matrix.outputs.reviewers, 'architect-reviewer')
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: workflow-checkout-for-action
+      - uses: ./workflow-checkout-for-action/.github/actions/l2-reviewer-job
+        with:
+          reviewer-name: architect-reviewer
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          pr-number: ${{ github.event.pull_request.number }}
+          run-id: ${{ github.run_id }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ github.token }}
+
+  security-auditor:
+    name: L2 / security-auditor
+    runs-on: ubuntu-latest
+    needs: [config-fence, resolve-matrix]
+    if: contains(needs.resolve-matrix.outputs.reviewers, 'security-auditor')
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: workflow-checkout-for-action
+      - uses: ./workflow-checkout-for-action/.github/actions/l2-reviewer-job
+        with:
+          reviewer-name: security-auditor
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          pr-number: ${{ github.event.pull_request.number }}
+          run-id: ${{ github.run_id }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ github.token }}
+
+  performance-engineer:
+    name: L2 / performance-engineer
+    runs-on: ubuntu-latest
+    needs: [config-fence, resolve-matrix]
+    if: contains(needs.resolve-matrix.outputs.reviewers, 'performance-engineer')
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: workflow-checkout-for-action
+      - uses: ./workflow-checkout-for-action/.github/actions/l2-reviewer-job
+        with:
+          reviewer-name: performance-engineer
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          pr-number: ${{ github.event.pull_request.number }}
+          run-id: ${{ github.run_id }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ github.token }}
+
+  accessibility-tester:
+    name: L2 / accessibility-tester
+    runs-on: ubuntu-latest
+    needs: [config-fence, resolve-matrix]
+    if: contains(needs.resolve-matrix.outputs.reviewers, 'accessibility-tester')
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: workflow-checkout-for-action
+      - uses: ./workflow-checkout-for-action/.github/actions/l2-reviewer-job
+        with:
+          reviewer-name: accessibility-tester
+          base-sha: ${{ github.event.pull_request.base.sha }}
+          head-sha: ${{ github.event.pull_request.head.sha }}
+          pr-number: ${{ github.event.pull_request.number }}
+          run-id: ${{ github.run_id }}
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github-token: ${{ github.token }}
+
+  # ─── Aggregator — the only required status check ────────────────────────
+  l2-summary:
+    name: L2 / l2-summary
+    runs-on: ubuntu-latest
+    needs:
+      - config-fence
+      - resolve-matrix
+      - blocklist-scan
+      - validate-pr-template
+      - code-reviewer
+      - architect-reviewer
+      - security-auditor
+      - performance-engineer
+      - accessibility-tester
+    if: always()
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Aggregate panel results
+        env:
+          CONFIG_FENCE: ${{ needs.config-fence.result }}
+          RESOLVE_MATRIX: ${{ needs.resolve-matrix.result }}
+          BLOCKLIST_SCAN: ${{ needs.blocklist-scan.result }}
+          VALIDATE_PR_TEMPLATE: ${{ needs.validate-pr-template.result }}
+          CODE_REVIEWER: ${{ needs.code-reviewer.result }}
+          ARCHITECT_REVIEWER: ${{ needs.architect-reviewer.result }}
+          SECURITY_AUDITOR: ${{ needs.security-auditor.result }}
+          PERFORMANCE_ENGINEER: ${{ needs.performance-engineer.result }}
+          ACCESSIBILITY_TESTER: ${{ needs.accessibility-tester.result }}
+        run: |
+          set -euo pipefail
+          echo "Panel results:"
+          echo "  config-fence:         $CONFIG_FENCE"
+          echo "  resolve-matrix:       $RESOLVE_MATRIX"
+          echo "  blocklist-scan:       $BLOCKLIST_SCAN"
+          echo "  validate-pr-template: $VALIDATE_PR_TEMPLATE"
+          echo "  code-reviewer:        $CODE_REVIEWER"
+          echo "  architect-reviewer:   $ARCHITECT_REVIEWER"
+          echo "  security-auditor:     $SECURITY_AUDITOR"
+          echo "  performance-engineer: $PERFORMANCE_ENGINEER"
+          echo "  accessibility-tester: $ACCESSIBILITY_TESTER"
+          echo ""
+
+          # Always-required (matrix.yml declares always: true): config-fence,
+          # resolve-matrix, blocklist-scan, validate-pr-template, code-reviewer,
+          # architect-reviewer.
+          for required in CONFIG_FENCE RESOLVE_MATRIX BLOCKLIST_SCAN VALIDATE_PR_TEMPLATE CODE_REVIEWER ARCHITECT_REVIEWER; do
+            val="${!required}"
+            if [ "$val" != "success" ]; then
+              echo "::error::required job $required result was '$val' (expected 'success')"
+              exit 1
+            fi
+          done
+
+          # Conditional (matrix-gated): success or skipped.
+          for conditional in SECURITY_AUDITOR PERFORMANCE_ENGINEER ACCESSIBILITY_TESTER; do
+            val="${!conditional}"
+            case "$val" in
+              success|skipped) ;;
+              *)
+                echo "::error::conditional job $conditional result was '$val'"
+                exit 1
+                ;;
+            esac
+          done
+
+          echo "All upstream jobs passed or were cleanly skipped. L2 panel: APPROVE."
+
+      - name: Comment summary on PR
+        if: always()
+        uses: actions/github-script@60a0d83039c74a4aee543508d2ffcb1c3799cdea # v7.0.1
+        env:
+          CONFIG_FENCE: ${{ needs.config-fence.result }}
+          RESOLVE_MATRIX: ${{ needs.resolve-matrix.result }}
+          BLOCKLIST_SCAN: ${{ needs.blocklist-scan.result }}
+          VALIDATE_PR_TEMPLATE: ${{ needs.validate-pr-template.result }}
+          CODE_REVIEWER: ${{ needs.code-reviewer.result }}
+          ARCHITECT_REVIEWER: ${{ needs.architect-reviewer.result }}
+          SECURITY_AUDITOR: ${{ needs.security-auditor.result }}
+          PERFORMANCE_ENGINEER: ${{ needs.performance-engineer.result }}
+          ACCESSIBILITY_TESTER: ${{ needs.accessibility-tester.result }}
+        with:
+          script: |
+            const r = (s) => process.env[s] || 'not-run';
+            const status = '${{ job.status }}';
+            const lines = [
+              '## L2 / l2-summary',
+              '',
+              `**Verdict:** ${status === 'success' ? 'approve' : 'reject'}`,
+              '',
+              '| Reviewer | Result |',
+              '|---|---|',
+              `| config-fence | ${r('CONFIG_FENCE')} |`,
+              `| resolve-matrix | ${r('RESOLVE_MATRIX')} |`,
+              `| blocklist-scan | ${r('BLOCKLIST_SCAN')} |`,
+              `| validate-pr-template | ${r('VALIDATE_PR_TEMPLATE')} |`,
+              `| code-reviewer | ${r('CODE_REVIEWER')} |`,
+              `| architect-reviewer | ${r('ARCHITECT_REVIEWER')} |`,
+              `| security-auditor | ${r('SECURITY_AUDITOR')} |`,
+              `| performance-engineer | ${r('PERFORMANCE_ENGINEER')} |`,
+              `| accessibility-tester | ${r('ACCESSIBILITY_TESTER')} |`,
+              '',
+              status === 'success'
+                ? 'All required reviewers passed; conditional reviewers passed or were cleanly skipped.'
+                : 'One or more reviewers requested changes or rejected. Address findings in the per-reviewer comments above and re-push.',
+            ];
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.payload.pull_request.number,
+              body: lines.join('\n'),
+            });
+
+# ─── codex review ─ acknowledged Phase 5 precondition gap ───────────────
+# Per v1.4.0-waves.md line 90, the L2 trio is /codex review + code-reviewer +
+# domain reviewer. Phase 2 ships without the codex slot; running codex CLI in
+# a runner needs auth + packaging that's a Phase 2.1 follow-up.
+# Phase 5 (impl-driver / wave-driver auto-merge authority) is GATED on this
+# slot existing.
