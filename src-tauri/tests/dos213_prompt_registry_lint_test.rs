@@ -17,6 +17,7 @@ fn run_script(script: &str, root: &Path) -> (bool, String, String) {
 fn run_script_with_env(script: &str, root: &Path, envs: &[(&str, &str)]) -> (bool, String, String) {
     let mut command = Command::new("bash");
     command.arg(repo_root().join(script)).arg(root);
+    command.env_remove("GITHUB_BASE_REF").env_remove("BASE_REF");
     for (key, value) in envs {
         command.env(key, value);
     }
