@@ -1505,7 +1505,15 @@ pub fn apply_entity_intelligence_render_policy(
     })
     .to_string();
 
-    let Ok(claims) = crate::services::claims::load_claims_active_for_surface(
+    let Ok(all_active_claims) = crate::services::claims::load_claims_active(db, &subject_ref, None)
+    else {
+        return;
+    };
+    if all_active_claims.is_empty() {
+        return;
+    }
+
+    let Ok(surface_claims) = crate::services::claims::load_claims_active_for_surface(
         db,
         &subject_ref,
         None,
@@ -1513,83 +1521,114 @@ pub fn apply_entity_intelligence_render_policy(
     ) else {
         return;
     };
-    let rendered_summary = claims
-        .iter()
-        .filter(|claim| claim.claim_type == "entity_summary")
-        .find_map(|claim| {
-            let text = claim_projection_text(claim);
-            renderable_claim_text_with_value(claim, &text, surface, actor)
-        });
-    intelligence.executive_assessment = rendered_summary.as_ref().map(|text| text.text.clone());
-    intelligence.executive_assessment_render_policy = rendered_summary
-        .as_ref()
-        .and_then(|text| serde_json::to_value(&text.policy).ok());
 
-    let risks = rendered_json_values_for_claim_type(&claims, "entity_risk", "text", surface, actor)
+    if claim_type_is_owned_by_active_substrate(&all_active_claims, "entity_summary") {
+        let rendered_summary = surface_claims
+            .iter()
+            .filter(|claim| claim.claim_type == "entity_summary")
+            .find_map(|claim| {
+                let text = claim_projection_text(claim);
+                renderable_claim_text_with_value(claim, &text, surface, actor)
+            });
+        intelligence.executive_assessment = rendered_summary.as_ref().map(|text| text.text.clone());
+        intelligence.executive_assessment_render_policy = rendered_summary
+            .as_ref()
+            .and_then(|text| serde_json::to_value(&text.policy).ok());
+    }
+
+    if claim_type_is_owned_by_active_substrate(&all_active_claims, "entity_risk") {
+        let risks = rendered_json_values_for_claim_type(
+            &surface_claims,
+            "entity_risk",
+            "text",
+            surface,
+            actor,
+        )
         .unwrap_or_default();
-    intelligence.risks = risks
-        .into_iter()
-        .filter_map(|value| serde_json::from_value::<IntelRisk>(value).ok())
-        .collect();
+        intelligence.risks = risks
+            .into_iter()
+            .filter_map(|value| serde_json::from_value::<IntelRisk>(value).ok())
+            .collect();
+    }
 
-    let wins = rendered_json_values_for_claim_type(&claims, "entity_win", "text", surface, actor)
+    if claim_type_is_owned_by_active_substrate(&all_active_claims, "entity_win") {
+        let wins = rendered_json_values_for_claim_type(
+            &surface_claims,
+            "entity_win",
+            "text",
+            surface,
+            actor,
+        )
         .unwrap_or_default();
-    intelligence.recent_wins = wins
-        .into_iter()
-        .filter_map(|value| serde_json::from_value::<IntelWin>(value).ok())
-        .collect();
+        intelligence.recent_wins = wins
+            .into_iter()
+            .filter_map(|value| serde_json::from_value::<IntelWin>(value).ok())
+            .collect();
+    }
 
-    let values = rendered_json_values_for_claim_type(
-        &claims,
-        "value_delivered",
-        "statement",
-        surface,
-        actor,
-    )
-    .unwrap_or_default();
-    intelligence.value_delivered = values
-        .into_iter()
-        .filter_map(|value| serde_json::from_value::<ValueItem>(value).ok())
-        .collect();
+    if claim_type_is_owned_by_active_substrate(&all_active_claims, "value_delivered") {
+        let values = rendered_json_values_for_claim_type(
+            &surface_claims,
+            "value_delivered",
+            "statement",
+            surface,
+            actor,
+        )
+        .unwrap_or_default();
+        intelligence.value_delivered = values
+            .into_iter()
+            .filter_map(|value| serde_json::from_value::<ValueItem>(value).ok())
+            .collect();
+    }
 
-    let stakeholders = rendered_json_values_for_claim_type(
-        &claims,
-        "stakeholder_engagement",
-        "engagement",
-        surface,
-        actor,
-    )
-    .unwrap_or_default();
-    intelligence.stakeholder_insights = stakeholders
-        .into_iter()
-        .filter_map(|value| serde_json::from_value::<StakeholderInsight>(value).ok())
-        .collect();
+    if claim_type_is_owned_by_active_substrate(&all_active_claims, "stakeholder_engagement") {
+        let stakeholders = rendered_json_values_for_claim_type(
+            &surface_claims,
+            "stakeholder_engagement",
+            "engagement",
+            surface,
+            actor,
+        )
+        .unwrap_or_default();
+        intelligence.stakeholder_insights = stakeholders
+            .into_iter()
+            .filter_map(|value| serde_json::from_value::<StakeholderInsight>(value).ok())
+            .collect();
+    }
 
-    let current_state =
-        rendered_texts_for_claim_type(&claims, "entity_current_state", surface, actor)
-            .unwrap_or_default();
-    intelligence.current_state = if current_state.is_empty() {
-        None
-    } else {
-        Some(CurrentState {
-            working: current_state,
-            not_working: Vec::new(),
-            unknowns: Vec::new(),
-        })
-    };
+    if claim_type_is_owned_by_active_substrate(&all_active_claims, "entity_current_state") {
+        let current_state =
+            rendered_texts_for_claim_type(&surface_claims, "entity_current_state", surface, actor)
+                .unwrap_or_default();
+        intelligence.current_state = if current_state.is_empty() {
+            None
+        } else {
+            Some(CurrentState {
+                working: current_state,
+                not_working: Vec::new(),
+                unknowns: Vec::new(),
+            })
+        };
+    }
 
-    let company_context = rendered_json_values_for_claim_type(
-        &claims,
-        "company_context",
-        "description",
-        surface,
-        actor,
-    )
-    .unwrap_or_default();
-    intelligence.company_context = company_context
-        .into_iter()
-        .next()
-        .and_then(|value| serde_json::from_value::<CompanyContext>(value).ok());
+    if claim_type_is_owned_by_active_substrate(&all_active_claims, "company_context") {
+        let company_context = rendered_json_values_for_claim_type(
+            &surface_claims,
+            "company_context",
+            "description",
+            surface,
+            actor,
+        )
+        .unwrap_or_default();
+        intelligence.company_context = company_context
+            .into_iter()
+            .next()
+            .and_then(|value| serde_json::from_value::<CompanyContext>(value).ok());
+    }
+}
+
+fn claim_type_is_owned_by_active_substrate(claims: &[IntelligenceClaim], claim_type: &str) -> bool {
+    claims.iter().any(|claim| claim.claim_type == claim_type)
 }
 
 fn render_surface_dismissal_key(surface: RenderSurface) -> &'static str {
@@ -2049,13 +2088,121 @@ CREATE TABLE accounts (
     }
 
     #[test]
-    fn entity_intelligence_render_policy_clears_projection_when_all_claims_dismissed() {
+    fn entity_intelligence_render_policy_preserves_legacy_row_when_claim_substrate_empty() {
+        let db = fresh_claim_projection_db();
+        let mut intelligence = stale_intelligence();
+
+        apply_entity_intelligence_render_policy(
+            &db,
+            "account",
+            TEST_ENTITY_ID,
+            &mut intelligence,
+            RenderSurface::TauriEntityDetail,
+            &RenderActor::user("user", Some("user")),
+        );
+
+        assert_eq!(
+            intelligence.executive_assessment.as_deref(),
+            Some("stale assessment")
+        );
+        assert_eq!(
+            intelligence.executive_assessment_render_policy,
+            Some(serde_json::json!({ "stale": true }))
+        );
+        assert_eq!(intelligence.risks[0].text, "stale risk");
+        assert_eq!(intelligence.recent_wins[0].text, "stale win");
+        assert_eq!(intelligence.value_delivered[0].statement, "stale value");
+        assert_eq!(
+            intelligence.stakeholder_insights[0].engagement.as_deref(),
+            Some("stale engagement")
+        );
+        assert_eq!(
+            intelligence
+                .current_state
+                .as_ref()
+                .and_then(|state| state.working.first())
+                .map(String::as_str),
+            Some("stale current state")
+        );
+        assert_eq!(
+            intelligence
+                .company_context
+                .as_ref()
+                .and_then(|context| context.description.as_deref()),
+            Some("stale company context")
+        );
+    }
+
+    #[test]
+    fn entity_intelligence_render_policy_preserves_unprojected_types() {
+        let db = fresh_claim_projection_db();
+        seed_projection_claim(
+            &db,
+            "claim-projection-visible-risk-only",
+            "entity_risk",
+            "visible risk replaces owned type",
+        );
+        let mut intelligence = stale_intelligence();
+
+        apply_entity_intelligence_render_policy(
+            &db,
+            "account",
+            TEST_ENTITY_ID,
+            &mut intelligence,
+            RenderSurface::TauriEntityDetail,
+            &RenderActor::user("user", Some("user")),
+        );
+
+        assert_eq!(
+            intelligence.executive_assessment.as_deref(),
+            Some("stale assessment")
+        );
+        assert_eq!(
+            intelligence.executive_assessment_render_policy,
+            Some(serde_json::json!({ "stale": true }))
+        );
+        assert_eq!(intelligence.risks.len(), 1);
+        assert_eq!(
+            intelligence.risks[0].text,
+            "visible risk replaces owned type"
+        );
+        assert_eq!(intelligence.recent_wins[0].text, "stale win");
+        assert_eq!(intelligence.value_delivered[0].statement, "stale value");
+        assert_eq!(
+            intelligence.stakeholder_insights[0].engagement.as_deref(),
+            Some("stale engagement")
+        );
+        assert_eq!(
+            intelligence
+                .current_state
+                .as_ref()
+                .and_then(|state| state.working.first())
+                .map(String::as_str),
+            Some("stale current state")
+        );
+        assert_eq!(
+            intelligence
+                .company_context
+                .as_ref()
+                .and_then(|context| context.description.as_deref()),
+            Some("stale company context")
+        );
+    }
+
+    #[test]
+    fn entity_intelligence_render_policy_clears_only_surface_filtered_owned_type() {
         let db = fresh_claim_projection_db();
         let claim_id = seed_projection_claim(
             &db,
             "claim-projection-dismissed-summary",
             "entity_summary",
             "fresh summary hidden on entity detail",
+        );
+        seed_projection_claim(
+            &db,
+            "claim-projection-visible-risk",
+            "entity_risk",
+            "visible risk still projects",
         );
         dismiss_claim_on_surface(&db, &claim_id, "tauri_entity_detail");
         let mut intelligence = stale_intelligence();
@@ -2071,45 +2218,28 @@ CREATE TABLE accounts (
 
         assert_eq!(intelligence.executive_assessment, None);
         assert_eq!(intelligence.executive_assessment_render_policy, None);
-        assert!(intelligence.risks.is_empty());
-        assert!(intelligence.recent_wins.is_empty());
-        assert!(intelligence.value_delivered.is_empty());
-        assert!(intelligence.stakeholder_insights.is_empty());
-        assert!(intelligence.current_state.is_none());
-        assert!(intelligence.company_context.is_none());
-    }
-
-    #[test]
-    fn entity_intelligence_render_policy_clears_filtered_type_while_projecting_visible_claims() {
-        let db = fresh_claim_projection_db();
-        let summary_id = seed_projection_claim(
-            &db,
-            "claim-projection-dismissed-summary-only",
-            "entity_summary",
-            "summary hidden on entity detail",
-        );
-        seed_projection_claim(
-            &db,
-            "claim-projection-visible-risk",
-            "entity_risk",
-            "visible risk still projects",
-        );
-        dismiss_claim_on_surface(&db, &summary_id, "tauri_entity_detail");
-        let mut intelligence = stale_intelligence();
-
-        apply_entity_intelligence_render_policy(
-            &db,
-            "account",
-            TEST_ENTITY_ID,
-            &mut intelligence,
-            RenderSurface::TauriEntityDetail,
-            &RenderActor::user("user", Some("user")),
-        );
-
-        assert_eq!(intelligence.executive_assessment, None);
-        assert_eq!(intelligence.executive_assessment_render_policy, None);
         assert_eq!(intelligence.risks.len(), 1);
         assert_eq!(intelligence.risks[0].text, "visible risk still projects");
-        assert!(intelligence.recent_wins.is_empty());
+        assert_eq!(intelligence.recent_wins[0].text, "stale win");
+        assert_eq!(intelligence.value_delivered[0].statement, "stale value");
+        assert_eq!(
+            intelligence.stakeholder_insights[0].engagement.as_deref(),
+            Some("stale engagement")
+        );
+        assert_eq!(
+            intelligence
+                .current_state
+                .as_ref()
+                .and_then(|state| state.working.first())
+                .map(String::as_str),
+            Some("stale current state")
+        );
+        assert_eq!(
+            intelligence
+                .company_context
+                .as_ref()
+                .and_then(|context| context.description.as_deref()),
+            Some("stale company context")
+        );
     }
 }
