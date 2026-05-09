@@ -35,6 +35,10 @@ source on every build: names must be kebab-case, schema files referenced through
 the Tauri surface must expose only `operations::invoke_operation` for operation
 dispatch.
 
-MCP discovery uses `mcp_tool_list()`, which filters to `remote=true` operations.
-The round-trip test asserts that every advertised tool maps back to an operation
-and that `remote=false` operations are excluded.
+`mcp_tool_list()` defines the operation-contract MCP tool view and filters to
+`remote=true` operations. Live MCP server discovery still uses the ability
+bridge descriptor list; wiring that surface to `mcp_tool_list()` is a DOS-W
+maintenance follow-up tracked as DOS-264 and is out of scope for path-alpha.
+The contract test asserts that every operation-contract tool maps back to an
+operation and that `remote=false` operations are excluded. An ignored marker test
+documents the live MCP wiring gap until DOS-264 is implemented.

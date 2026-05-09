@@ -121,6 +121,11 @@ pub fn operation_by_name(name: &str) -> Option<&'static OperationDef> {
     OPERATIONS.iter().find(|operation| operation.name == name)
 }
 
+/// Returns the operation-contract MCP tool view for remote-capable operations.
+///
+/// Live MCP server discovery still uses the ability bridge descriptor list.
+/// Wiring `src-tauri/src/mcp/main.rs` to this contract helper is intentionally
+/// out of scope; tracked as a maintenance follow-up.
 pub fn mcp_tool_list() -> Vec<McpOperationTool> {
     OPERATIONS
         .iter()
@@ -319,7 +324,7 @@ mod tests {
     const TEST_SCHEMA: &str = "{}";
 
     #[test]
-    fn operation_registry_round_trip_mcp_tool_list_excludes_remote_false_operations() {
+    fn operation_registry_contract_mcp_tool_list_excludes_remote_false_operations() {
         let tools = mcp_tool_list();
         let names = tools
             .iter()
@@ -338,6 +343,10 @@ mod tests {
             assert!(tool.output_schema.is_object());
         }
     }
+
+    #[test]
+    #[ignore = "maintenance follow-up: wire live MCP discovery to operations::mcp_tool_list()"]
+    fn mcp_discovery_wiring_uses_operations_contract_follow_up() {}
 
     #[test]
     fn operations_use_kebab_case_names() {
