@@ -1,9 +1,9 @@
 # Module Map
 
 > Rust backend module inventory (`src-tauri/src/`).
-> **Auto-generated:** 2026-05-08 by `.docs/generators/gen-module-map.sh`
+> **Auto-generated:** 2026-05-09 by `.docs/generators/gen-module-map.sh`
 
-**312** Rust files across **37** module directories and **45** standalone modules.
+**314** Rust files across **37** module directories and **45** standalone modules.
 
 ---
 
@@ -17,7 +17,7 @@
 | `clay/` | 5 | 6 | Clay.earth MCP integration for contact and company enrichment. |
 | `commands/` | 12 | 399 | Tauri IPC command handlers |
 | `context_provider/` | 4 | 2 | Context provider abstraction for dual-mode operation (ADR-0095). |
-| `db/` | 25 | 26 | SQLite database modules |
+| `db/` | 26 | 28 | SQLite database modules |
 | `devtools/` | 1 | 11 | Dev tools for scenario switching and mock data. |
 | `glean/` | 3 | 10 | Glean OAuth module — MCP OAuth discovery + DCR for Glean's MCP server. |
 | `google_api/` | 6 | 27 | Native Google API client (ADR-0049: Eliminate Python runtime) |
@@ -40,7 +40,7 @@
 | `quill/` | 5 | 12 | Quill MCP client integration for automatic transcript sync. |
 | `reports/` | 11 | 38 | Report infrastructure for v0.15.0. |
 | `self_healing/` | 6 | 19 | Intelligence self-healing (–). |
-| `services/` | 62 | 365 | ServiceLayer — mandatory mutation boundary |
+| `services/` | 63 | 369 | ServiceLayer — mandatory mutation boundary |
 | `signals/` | 22 | 58 | Universal signal bus for intelligence fusion (ADR-0080 Phase 2). |
 | `workflow/` | 10 | 46 | Workflow definitions |
 
@@ -75,12 +75,12 @@
 | `focus_prioritization.rs` | 398 | 1 | — |
 | `google.rs` | 1829 | 5 | Google authentication and calendar polling |
 | `helpers.rs` | 493 | 12 | — |
-| `intel_queue.rs` | 5790 | 8 | Background intelligence enrichment queue. |
+| `intel_queue.rs` | 5811 | 8 | Background intelligence enrichment queue. |
 | `json_loader.rs` | 426 | 1 | JSON data loader with markdown fallback |
 | `latency.rs` | 186 | 3 | Lightweight in-memory latency rollups for hot command diagnostics. |
-| `lib.rs` | 1100 | 1 | App setup, command registration, plugin init |
+| `lib.rs` | 1101 | 1 | App setup, command registration, plugin init |
 | `meeting_prep_queue.rs` | 1068 | 7 | Background meeting prep queue. |
-| `migrations.rs` | 2819 | 1 | Schema migration framework (ADR-0071). |
+| `migrations.rs` | 2958 | 1 | Schema migration framework (ADR-0071). |
 | `notification.rs` | 262 | 6 | Native notification wrapper |
 | `parser.rs` | 2404 | 14 | Structured data parsing |
 | `people.rs` | 667 | 7 | People workspace file I/O (ADR-0047). |

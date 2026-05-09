@@ -3629,7 +3629,7 @@ fn emit_claim_trust_changed_signal(
     })
     .to_string();
 
-    if let Err(e) = crate::services::signals::emit(
+    let signal_id = match crate::services::signals::emit(
         ctx,
         db,
         &input.entity_type,
@@ -3639,8 +3639,29 @@ fn emit_claim_trust_changed_signal(
         Some(&payload),
         1.0,
     ) {
+        Ok(id) => id,
+        Err(e) => {
+            log::warn!(
+                "TrustRecompute: failed to emit ClaimTrustChanged for claim {}: {}",
+                claim.id,
+                e
+            );
+            return;
+        }
+    };
+
+    // Enqueue durable invalidation job so downstream outputs recompute or are
+    // marked stale. Coalescing + queue cap are enforced inside; failure here is
+    // logged but does not retroactively roll back the signal emission.
+    if let Err(e) = crate::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx(
+        db,
+        &signal_id,
+        &input.entity_type,
+        &input.entity_id,
+    ) {
         log::warn!(
-            "TrustRecompute: failed to emit ClaimTrustChanged for claim {}: {}",
+            "TrustRecompute: failed to enqueue claim_recompute job for signal {} (claim {}): {}",
+            signal_id,
             claim.id,
             e
         );

@@ -241,7 +241,7 @@ pub fn emit_enriched_email_signals(
         .prepare(
             "SELECT DISTINCT se.entity_type || ':' || json_extract(se.value, '$.email_id')
              FROM signal_events se
-             WHERE se.source = 'email_enrichment'
+             WHERE se.data_source = 'email_enrichment'
                AND se.superseded_by IS NULL
                AND json_extract(se.value, '$.email_id') IS NOT NULL",
         )

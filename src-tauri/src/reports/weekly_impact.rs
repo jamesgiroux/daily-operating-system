@@ -137,7 +137,7 @@ fn build_weekly_impact_prompt(
     let signals: String = db
         .conn_ref()
         .prepare(
-            "SELECT se.signal_type, se.value, se.source, se.confidence, se.created_at,
+            "SELECT se.signal_type, se.value, se.data_source, se.confidence, se.created_at,
                     COALESCE(a.name, p.name, '') as entity_name
              FROM signal_events se
              LEFT JOIN accounts a ON se.entity_id = a.id AND se.entity_type = 'account'

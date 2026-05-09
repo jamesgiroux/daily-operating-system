@@ -1,0 +1,43 @@
+name: Load Test
+
+# Runs the signal coalescing + queue bounds load test on a nightly
+# schedule and on demand. The test exercises 1000 ClaimTrustChanged plus 100
+# AbilityOutputChanged emissions per minute and asserts coalescing
+# effectiveness, queue cap enforcement, dead-letter rate under 0.1%, and
+# no-silent-stale semantics. Gated as scheduled rather than per-PR because
+# the wall-clock cost is meaningful and the substrate it covers does not
+# change on every PR. The release checklist references this workflow as
+# the load-test ship gate.
+
+on:
+  schedule:
+    - cron: '17 7 * * *'
+  workflow_dispatch:
+
+jobs:
+  load-test:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install ripgrep
+        run: brew install ripgrep
+
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+
+      - name: Create sidecar stub for Tauri externalBin validation
+        run: |
+          mkdir -p src-tauri/binaries
+          TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
+          touch "src-tauri/binaries/dailyos-mcp-$TARGET"
+
+      - name: Run DOS-237 load test
+        run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --features load-test --test dos237_load_test -- --nocapture
