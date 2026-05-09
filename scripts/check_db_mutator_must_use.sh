@@ -10,8 +10,8 @@
 # Why this lint exists: Result is already #[must_use], but explicit annotations
 # document the intent at the call site, lower the cost of a wrapper trait or type
 # alias accidentally erasing the implicit must_use, and create an audit trail for
-# DB mutation semantics. DOS-342 promised "every public DB mutation method that
-# returns Result" carries an explicit annotation; this lint guards that promise
+# DB mutation semantics. The contract is that every public DB mutation method
+# returning Result carries an explicit annotation; this lint guards that promise
 # against drift.
 #
 # Run: bash scripts/check_db_mutator_must_use.sh
