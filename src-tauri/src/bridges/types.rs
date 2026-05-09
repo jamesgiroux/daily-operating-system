@@ -7,7 +7,10 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
-use crate::abilities::provenance::InvocationId;
+use crate::abilities::provenance::{
+    render_serialized_provenance_for, Actor as ProvenanceActor, InvocationId,
+    RenderedProvenance as RuntimeRenderedProvenance, Surface as ProvenanceSurface,
+};
 use crate::abilities::tracer::{AbilityTracer, SpanHandle};
 use crate::abilities::{
     validate_schema_closure_for_ability, AbilityCategory, AbilityContext, AbilityDescriptor,
@@ -177,6 +180,26 @@ pub struct AbilityResponseJson {
     pub data: serde_json::Value,
     pub rendered_provenance: RenderedProvenance,
     pub diagnostics: serde_json::Value,
+    #[serde(skip)]
+    raw_provenance: Option<serde_json::Value>,
+}
+
+impl AbilityResponseJson {
+    #[doc(hidden)]
+    pub fn raw_provenance_value(&self) -> &serde_json::Value {
+        self.raw_provenance
+            .as_ref()
+            .unwrap_or(&self.rendered_provenance.value)
+    }
+
+    pub(crate) fn render_cached_provenance(
+        &self,
+        actor: BridgeActor,
+        surface: BridgeSurface,
+    ) -> RenderedProvenance {
+        let raw = self.raw_provenance_value().clone();
+        render_provenance(actor, surface, raw)
+    }
 }
 
 impl Serialize for AbilityResponseJson {
@@ -307,6 +330,7 @@ pub(crate) async fn invoke_registry_json<'a>(
         canonical_ability_name,
         ability_version,
         schema_version,
+        invocation.actor,
         invocation.surface,
         output_json,
     )
@@ -571,6 +595,7 @@ fn ability_response_from_output_json(
     ability_name: String,
     ability_version: String,
     schema_version: u32,
+    actor: BridgeActor,
     surface: BridgeSurface,
     output_json: serde_json::Value,
 ) -> Result<AbilityResponseJson, AbilityInvokeError> {
@@ -597,8 +622,9 @@ fn ability_response_from_output_json(
         ability_version,
         schema_version,
         data: render_ability_data(surface, data, &provenance),
-        rendered_provenance: render_provenance(surface, provenance),
+        rendered_provenance: render_provenance(actor, surface, provenance.clone()),
         diagnostics: render_diagnostics(surface, diagnostics),
+        raw_provenance: Some(provenance),
     })
 }
 
@@ -610,12 +636,46 @@ fn parse_invocation_id(provenance: &serde_json::Value) -> Result<InvocationId, A
     InvocationId::parse(invocation_id).map_err(|_| AbilityInvokeError::InvalidEnvelope)
 }
 
-fn render_provenance(surface: BridgeSurface, provenance: serde_json::Value) -> RenderedProvenance {
-    let value = match surface {
-        BridgeSurface::McpTool | BridgeSurface::McpToolDetail => redact_mcp_provenance(provenance),
-        BridgeSurface::TauriApp | BridgeSurface::Worker | BridgeSurface::Eval => provenance,
+fn render_provenance(
+    actor: BridgeActor,
+    surface: BridgeSurface,
+    provenance: serde_json::Value,
+) -> RenderedProvenance {
+    let Some(render_surface) = provenance_surface_for_bridge(surface) else {
+        return RenderedProvenance::new(surface, provenance);
     };
+    let RuntimeRenderedProvenance { value, .. } = render_serialized_provenance_for(
+        provenance,
+        provenance_actor_for_bridge(actor),
+        render_surface,
+    );
     RenderedProvenance::new(surface, value)
+}
+
+fn provenance_surface_for_bridge(surface: BridgeSurface) -> Option<ProvenanceSurface> {
+    match surface {
+        BridgeSurface::TauriApp => Some(ProvenanceSurface::TauriApp),
+        BridgeSurface::McpTool => Some(ProvenanceSurface::McpTool),
+        BridgeSurface::McpToolDetail => Some(ProvenanceSurface::McpToolDetail),
+        BridgeSurface::Worker | BridgeSurface::Eval => None,
+    }
+}
+
+fn provenance_actor_for_bridge(actor: BridgeActor) -> ProvenanceActor {
+    match actor {
+        BridgeActor::User => ProvenanceActor::User,
+        BridgeActor::Agent => ProvenanceActor::Agent {
+            name: "dailyos-mcp".to_string(),
+            version: env!("CARGO_PKG_VERSION").to_string(),
+        },
+        BridgeActor::Admin => ProvenanceActor::Human {
+            role: "admin".to_string(),
+            id: "local-admin".to_string(),
+        },
+        BridgeActor::System => ProvenanceActor::System {
+            component: "dailyos".to_string(),
+        },
+    }
 }
 
 fn render_ability_data(
@@ -873,48 +933,6 @@ fn single_schema_type_matches(schema_type: &str, input: &serde_json::Value) -> b
         "string" => input.is_string(),
         _ => true,
     }
-}
-
-fn redact_mcp_provenance(value: serde_json::Value) -> serde_json::Value {
-    match value {
-        serde_json::Value::Object(object) => serde_json::Value::Object(
-            object
-                .into_iter()
-                .filter_map(|(key, value)| {
-                    if should_redact_mcp_provenance_key(&key) {
-                        None
-                    } else {
-                        Some((key, redact_mcp_provenance(value)))
-                    }
-                })
-                .collect(),
-        ),
-        serde_json::Value::Array(values) => {
-            serde_json::Value::Array(values.into_iter().map(redact_mcp_provenance).collect())
-        }
-        scalar => scalar,
-    }
-}
-
-fn should_redact_mcp_provenance_key(key: &str) -> bool {
-    matches!(
-        key,
-        "children"
-            | "child_spans"
-            | "completion"
-            | "completions"
-            | "internal_id"
-            | "internal_ids"
-            | "prompt"
-            | "prompts"
-            | "prompt_hash"
-            | "raw_completion"
-            | "raw_prompt"
-            | "seed"
-    ) || key.ends_with("_internal_id")
-        || key.ends_with("_internal_ids")
-        || key.ends_with("_prompt_hash")
-        || key.ends_with("_seed")
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]

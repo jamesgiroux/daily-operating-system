@@ -4,6 +4,7 @@ pub mod builder;
 pub mod envelope;
 pub mod field;
 pub mod ownership;
+pub mod render;
 pub mod source;
 pub mod source_time;
 pub mod subject;
@@ -13,6 +14,7 @@ pub use builder::*;
 pub use envelope::*;
 pub use field::*;
 pub use ownership::*;
+pub use render::*;
 pub use source::*;
 pub use source_time::{
     parse_source_timestamp, SourceTimestampImplausibleReason, SourceTimestampMalformedReason,
