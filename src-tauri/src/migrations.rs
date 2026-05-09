@@ -780,6 +780,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 153,
         sql: include_str!("migrations/153_targeted_repair_invalidation_jobs.sql"),
     },
+    Migration::Sql {
+        version: 154,
+        sql: include_str!("migrations/154_claim_surface_dismissals.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
