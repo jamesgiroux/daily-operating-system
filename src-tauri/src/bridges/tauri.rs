@@ -7,8 +7,8 @@ use std::time::Duration;
 use chrono::{DateTime, Utc};
 use parking_lot::Mutex;
 
-use crate::abilities::AbilityRegistry;
 use crate::abilities::NOOP_ABILITY_TRACER;
+use crate::abilities::{AbilityRegistry, Actor};
 use crate::bridges::types::{invoke_registry_json, provider_from_context_snapshot, surface_error};
 use crate::bridges::{
     AbilityResponseJson, AttestationRequestId, BridgeActor, BridgeSurface, BridgeSurfaceError,
@@ -83,6 +83,34 @@ pub struct TauriAbilityBridge<'registry> {
     confirmation_store: Arc<TauriConfirmationStore>,
 }
 
+#[derive(Clone, Copy)]
+pub struct TauriInvokeContext<'a> {
+    pub actor: Actor,
+    pub surface: BridgeSurface,
+    pub dry_run: bool,
+    pub confirmation: Option<&'a ConfirmationToken>,
+}
+
+impl<'a> TauriInvokeContext<'a> {
+    pub fn new(
+        actor: Actor,
+        surface: BridgeSurface,
+        dry_run: bool,
+        confirmation: Option<&'a ConfirmationToken>,
+    ) -> Self {
+        Self {
+            actor,
+            surface,
+            dry_run,
+            confirmation,
+        }
+    }
+
+    pub fn tauri_app_user(dry_run: bool, confirmation: Option<&'a ConfirmationToken>) -> Self {
+        Self::new(Actor::User, BridgeSurface::TauriApp, dry_run, confirmation)
+    }
+}
+
 impl<'registry> TauriAbilityBridge<'registry> {
     pub fn new(registry: &'registry AbilityRegistry) -> Self {
         Self::new_with_attestation_host(registry, Arc::new(PendingUserAttestationHost))
@@ -105,8 +133,7 @@ impl<'registry> TauriAbilityBridge<'registry> {
         state: &AppState,
         ability_name: &str,
         input_json: serde_json::Value,
-        dry_run: bool,
-        confirmation: Option<&ConfirmationToken>,
+        context: TauriInvokeContext<'_>,
     ) -> Result<AbilityResponseJson, BridgeSurfaceError> {
         if state.lock_state.lock().is_locked {
             return Err(BridgeSurfaceError::AbilityUnavailable);
@@ -114,15 +141,23 @@ impl<'registry> TauriAbilityBridge<'registry> {
 
         let snapshot = state.context_snapshot();
         let provider = provider_from_context_snapshot(&snapshot);
-        let services = state.live_service_context().with_actor("user");
+        let bridge_actor = BridgeActor::from_registry_actor(context.actor);
+        let services = state
+            .live_service_context()
+            .with_actor(service_actor_label(bridge_actor));
         let store_ref: &dyn ConfirmationTokenStore = self.confirmation_store.as_ref();
+        let confirmation_store = if context.surface == BridgeSurface::TauriApp {
+            Some(store_ref)
+        } else {
+            None
+        };
         let invocation = InvocationContext {
-            actor: BridgeActor::User,
+            actor: bridge_actor,
             mode: ExecutionMode::Live,
-            surface: BridgeSurface::TauriApp,
-            dry_run,
-            confirmation,
-            confirmation_store: Some(store_ref),
+            surface: context.surface,
+            dry_run: context.dry_run,
+            confirmation: context.confirmation,
+            confirmation_store,
         };
 
         invoke_registry_json(
@@ -138,6 +173,23 @@ impl<'registry> TauriAbilityBridge<'registry> {
         .map_err(surface_error)
     }
 
+    pub async fn invoke_tauri_app(
+        &self,
+        state: &AppState,
+        ability_name: &str,
+        input_json: serde_json::Value,
+        dry_run: bool,
+        confirmation: Option<&ConfirmationToken>,
+    ) -> Result<AbilityResponseJson, BridgeSurfaceError> {
+        self.invoke(
+            state,
+            ability_name,
+            input_json,
+            TauriInvokeContext::tauri_app_user(dry_run, confirmation),
+        )
+        .await
+    }
+
     #[cfg(feature = "test-harness")]
     #[doc(hidden)]
     pub async fn invoke_with_service_context_for_tests<'a>(
@@ -147,10 +199,32 @@ impl<'registry> TauriAbilityBridge<'registry> {
         ability_name: &str,
         input_json: serde_json::Value,
     ) -> Result<AbilityResponseJson, crate::bridges::types::AbilityInvokeError> {
+        self.invoke_with_service_context_for_tests_as(
+            services,
+            provider,
+            Actor::User,
+            BridgeSurface::TauriApp,
+            ability_name,
+            input_json,
+        )
+        .await
+    }
+
+    #[cfg(feature = "test-harness")]
+    #[doc(hidden)]
+    pub async fn invoke_with_service_context_for_tests_as<'a>(
+        &self,
+        services: &'a crate::services::context::ServiceContext<'a>,
+        provider: &'a dyn crate::intelligence::provider::IntelligenceProvider,
+        actor: Actor,
+        surface: BridgeSurface,
+        ability_name: &str,
+        input_json: serde_json::Value,
+    ) -> Result<AbilityResponseJson, crate::bridges::types::AbilityInvokeError> {
         let invocation = InvocationContext {
-            actor: BridgeActor::User,
+            actor: BridgeActor::from_registry_actor(actor),
             mode: services.mode,
-            surface: BridgeSurface::TauriApp,
+            surface,
             dry_run: false,
             confirmation: None,
             confirmation_store: None,
@@ -276,6 +350,15 @@ impl<'registry> TauriAbilityBridge<'registry> {
 
         window.count += 1;
         Ok(())
+    }
+}
+
+fn service_actor_label(actor: BridgeActor) -> &'static str {
+    match actor {
+        BridgeActor::User => "user",
+        BridgeActor::Agent => "agent:mcp",
+        BridgeActor::Admin => "admin",
+        BridgeActor::System => "system",
     }
 }
 
@@ -613,7 +696,7 @@ mod tests {
         let state = AppState::new();
         let bridge = TauriAbilityBridge::new(&registry);
         let err = bridge
-            .invoke(&state, ability_name, json!({}), false, None)
+            .invoke_tauri_app(&state, ability_name, json!({}), false, None)
             .await
             .unwrap_err();
         serde_json::to_vec(&err).unwrap()
@@ -888,7 +971,7 @@ mod tests {
         state.lock_state.lock().is_locked = true;
 
         let err = TauriAbilityBridge::new(&registry)
-            .invoke(&state, "missing", json!({}), false, None)
+            .invoke_tauri_app(&state, "missing", json!({}), false, None)
             .await
             .unwrap_err();
 
@@ -908,7 +991,7 @@ mod tests {
         let bridge = TauriAbilityBridge::new(&registry);
 
         let err = bridge
-            .invoke(&state, "not_registered", json!({}), false, None)
+            .invoke_tauri_app(&state, "not_registered", json!({}), false, None)
             .await
             .unwrap_err();
         let serialized = serde_json::to_vec(&err).unwrap();
@@ -929,7 +1012,7 @@ mod tests {
         let state = AppState::new();
         let bridge = TauriAbilityBridge::new(&registry);
 
-        let invoke = bridge.invoke(&state, "pre_admission", json!({}), false, None);
+        let invoke = bridge.invoke_tauri_app(&state, "pre_admission", json!({}), false, None);
         let lock_after_admission = async {
             PRE_ADMISSION_STARTED.notified().await;
             state.lock_state.lock().is_locked = true;
@@ -966,7 +1049,7 @@ mod tests {
         state.swap_intelligence_provider(Some(first_provider));
         let bridge = TauriAbilityBridge::new(&registry);
 
-        let invoke = bridge.invoke(&state, "provider_snapshot", json!({}), false, None);
+        let invoke = bridge.invoke_tauri_app(&state, "provider_snapshot", json!({}), false, None);
         let swap_after_snapshot = async {
             PROVIDER_SNAPSHOT_STARTED.notified().await;
             state.swap_intelligence_provider(Some(second_provider));
@@ -1000,7 +1083,7 @@ mod tests {
         let bridge = TauriAbilityBridge::new(&registry);
 
         let err = bridge
-            .invoke(
+            .invoke_tauri_app(
                 &state,
                 "strict_subject",
                 json!({ "subject": 217 }),
@@ -1029,7 +1112,7 @@ mod tests {
         let bridge = TauriAbilityBridge::new(&registry);
 
         let err = bridge
-            .invoke(
+            .invoke_tauri_app(
                 &state,
                 "actor_echo",
                 json!({ "actor": "System" }),
@@ -1055,7 +1138,7 @@ mod tests {
         let bridge = TauriAbilityBridge::new(&registry);
 
         let response = bridge
-            .invoke(&state, "tauri_response", json!({}), false, None)
+            .invoke_tauri_app(&state, "tauri_response", json!({}), false, None)
             .await
             .unwrap();
 
@@ -1091,7 +1174,7 @@ mod tests {
         let bridge = TauriAbilityBridge::new(&registry);
 
         let response = bridge
-            .invoke(&state, "rendered_surface_only", json!({}), false, None)
+            .invoke_tauri_app(&state, "rendered_surface_only", json!({}), false, None)
             .await
             .unwrap();
 
@@ -1118,7 +1201,7 @@ mod tests {
         let secret = "PROMPT_SECRET_DOS_217";
 
         let err = bridge
-            .invoke(
+            .invoke_tauri_app(
                 &state,
                 "leaking_error",
                 json!({ "prompt": secret }),
@@ -1305,7 +1388,7 @@ mod tests {
         };
 
         let err = bridge
-            .invoke(&state, "publish_ability", input, false, Some(&forged))
+            .invoke_tauri_app(&state, "publish_ability", input, false, Some(&forged))
             .await
             .unwrap_err();
 
@@ -1353,7 +1436,7 @@ mod tests {
             .expect("issue token");
 
         let first = bridge
-            .invoke(
+            .invoke_tauri_app(
                 &state,
                 "publish_ability",
                 input.clone(),
@@ -1364,7 +1447,7 @@ mod tests {
         assert!(first.is_ok(), "first use of issued token must succeed");
 
         let second = bridge
-            .invoke(&state, "publish_ability", input, false, Some(&token))
+            .invoke_tauri_app(&state, "publish_ability", input, false, Some(&token))
             .await
             .unwrap_err();
         assert_eq!(

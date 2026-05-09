@@ -3,8 +3,9 @@
 use std::sync::{Arc, Mutex};
 
 use chrono::{TimeZone, Utc};
-use dailyos_lib::abilities::AbilityRegistry;
+use dailyos_lib::abilities::{AbilityRegistry, Actor};
 use dailyos_lib::bridges::tauri::TauriAbilityBridge;
+use dailyos_lib::bridges::BridgeSurface;
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::intelligence::provider::ReplayProvider;
@@ -53,6 +54,8 @@ CREATE TABLE accounts (
 
 const ACCOUNT_ID: &str = "acct-dos412-kk-example";
 const CONFIDENTIAL_TEXT: &str = "confidential entity context risk for example.com.";
+const INTERNAL_TEXT: &str = "internal entity context note for example.com.";
+const USER_ONLY_TEXT: &str = "user-only entity context note for example.com.";
 
 struct SqliteClaimReader {
     conn: Arc<Mutex<Connection>>,
@@ -154,6 +157,84 @@ async fn get_entity_context_tauri_bridge_wraps_confidential_claim_text_with_reve
     }
 }
 
+#[tokio::test]
+async fn get_entity_context_agent_mcp_bridge_filters_user_only_claims() {
+    let conn = Arc::new(Mutex::new(fresh_claims_conn()));
+    let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 6, 12, 0, 0).unwrap());
+    let rng = SeedableRng::new(264);
+    let external = ExternalClients::default();
+    let seed_ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
+    {
+        let conn = conn.lock().expect("seed DB lock");
+        seed_entity_context_claim(
+            &seed_ctx,
+            &conn,
+            "claim-dos264-agent-readable",
+            INTERNAL_TEXT,
+            ClaimSensitivity::Internal,
+            "agent:test",
+        );
+        seed_entity_context_claim(
+            &seed_ctx,
+            &conn,
+            "claim-dos264-user-only",
+            USER_ONLY_TEXT,
+            ClaimSensitivity::UserOnly,
+            "user",
+        );
+    }
+
+    let services = ServiceContext::new_live(&clock, &rng, &external)
+        .with_actor("user")
+        .with_entity_context_claim_reader(Arc::new(SqliteClaimReader {
+            conn: Arc::clone(&conn),
+        }));
+    let provider = ReplayProvider::new(std::collections::HashMap::new());
+    let registry = AbilityRegistry::from_inventory_checked().expect("ability registry builds");
+    let bridge = TauriAbilityBridge::new(&registry);
+    let input = json!({
+        "schema_version": 1,
+        "entity_type": "account",
+        "entity_id": ACCOUNT_ID,
+        "depth": "standard",
+    });
+
+    let user_response = bridge
+        .invoke_with_service_context_for_tests(
+            &services,
+            &provider,
+            "get_entity_context",
+            input.clone(),
+        )
+        .await
+        .expect("User/Tauri ability bridge invocation succeeds");
+    let agent_response = bridge
+        .invoke_with_service_context_for_tests_as(
+            &services,
+            &provider,
+            Actor::Agent,
+            BridgeSurface::McpTool,
+            "get_entity_context",
+            input,
+        )
+        .await
+        .expect("Agent/MCP ability bridge invocation succeeds");
+
+    assert_eq!(
+        response_entry_ids(&user_response.data),
+        vec!["claim-dos264-agent-readable", "claim-dos264-user-only"]
+    );
+    assert_eq!(
+        response_entry_ids(&agent_response.data),
+        vec!["claim-dos264-agent-readable"],
+        "Agent/MCP context must not receive the full User view"
+    );
+    assert_eq!(
+        agent_response.rendered_provenance.surface,
+        BridgeSurface::McpTool
+    );
+}
+
 fn fresh_claims_conn() -> Connection {
     let conn = Connection::open_in_memory().expect("open in-memory DB");
     conn.execute_batch(MINIMAL_ENTITY_SCHEMA_SQL)
@@ -213,6 +294,80 @@ fn seed_confidential_entity_context_claim(ctx: &ServiceContext<'_>, conn: &Conne
         CommittedClaim::Inserted { claim } => claim.id,
         other => panic!("expected inserted claim, got {other:?}"),
     }
+}
+
+fn seed_entity_context_claim(
+    ctx: &ServiceContext<'_>,
+    conn: &Connection,
+    id: &str,
+    text: &str,
+    sensitivity: ClaimSensitivity,
+    actor: &str,
+) -> String {
+    let claim_type = if sensitivity == ClaimSensitivity::UserOnly {
+        "user_note"
+    } else {
+        "entity_summary"
+    };
+    let field_path = if sensitivity == ClaimSensitivity::UserOnly {
+        None
+    } else {
+        Some(format!("context.{id}"))
+    };
+    let committed = commit_claim(
+        ctx,
+        ActionDb::from_conn(conn),
+        ClaimProposal {
+            id: Some(id.to_string()),
+            subject_ref: json!({
+                "kind": "account",
+                "id": ACCOUNT_ID,
+            })
+            .to_string(),
+            claim_type: claim_type.to_string(),
+            field_path,
+            topic_key: None,
+            text: text.to_string(),
+            actor: actor.to_string(),
+            data_source: "user".to_string(),
+            source_ref: Some(format!("fixture:example.com/{id}")),
+            source_asof: Some("2026-05-06T12:00:00Z".to_string()),
+            observed_at: "2026-05-06T12:00:00Z".to_string(),
+            provenance_json: json!({
+                "source": "dos264-cycle2-regression",
+                "domain": "example.com"
+            })
+            .to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: Some(TemporalScope::State),
+            sensitivity: Some(sensitivity),
+            supersedes: None,
+            tombstone: None,
+        },
+    )
+    .expect("commit entity context claim");
+
+    match committed {
+        CommittedClaim::Inserted { claim } => claim.id,
+        other => panic!("expected inserted claim, got {other:?}"),
+    }
+}
+
+fn response_entry_ids(data: &serde_json::Value) -> Vec<&str> {
+    let mut ids = data
+        .as_array()
+        .expect("response data is an array")
+        .iter()
+        .map(|entry| {
+            entry
+                .get("id")
+                .and_then(serde_json::Value::as_str)
+                .expect("entry has id")
+        })
+        .collect::<Vec<_>>();
+    ids.sort_unstable();
+    ids
 }
 
 fn assert_confidential_click_to_reveal_carrier(

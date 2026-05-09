@@ -1,0 +1,46 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "InternalDebugDumpOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "operationCount",
+    "remoteOperationCount",
+    "contextProvider",
+    "contextRemote",
+    "dataSummary",
+    "latencyRollups"
+  ],
+  "properties": {
+    "schemaVersion": { "type": "integer", "const": 1 },
+    "operationCount": { "type": "integer" },
+    "remoteOperationCount": { "type": "integer" },
+    "contextProvider": { "type": "string" },
+    "contextRemote": { "type": "boolean" },
+    "dataSummary": {
+      "oneOf": [
+        { "type": "null" },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["accounts", "people", "projects", "meetings", "actions", "insights", "signals", "emails"],
+          "properties": {
+            "accounts": { "type": "integer" },
+            "people": { "type": "integer" },
+            "projects": { "type": "integer" },
+            "meetings": { "type": "integer" },
+            "actions": { "type": "integer" },
+            "insights": { "type": "integer" },
+            "signals": { "type": "integer" },
+            "emails": { "type": "integer" }
+          }
+        }
+      ]
+    },
+    "latencyRollups": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

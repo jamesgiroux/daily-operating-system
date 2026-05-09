@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "GetEntityContextOperationOutput",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "invocation_id",
+    "ability_name",
+    "ability_version",
+    "schema_version",
+    "data",
+    "rendered_provenance",
+    "diagnostics"
+  ],
+  "properties": {
+    "invocation_id": { "type": "string" },
+    "ability_name": { "type": "string", "const": "get_entity_context" },
+    "ability_version": { "type": "string" },
+    "schema_version": { "type": "integer", "const": 1 },
+    "data": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "entityType", "entityId", "title", "content", "createdAt", "updatedAt"],
+        "properties": {
+          "id": { "type": "string" },
+          "entityType": { "type": "string" },
+          "entityId": { "type": "string" },
+          "title": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "content": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "additionalProperties": true
+              }
+            ]
+          },
+          "createdAt": { "type": "string" },
+          "updatedAt": { "type": "string" }
+        }
+      }
+    },
+    "rendered_provenance": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "diagnostics": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

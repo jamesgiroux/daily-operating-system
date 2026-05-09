@@ -721,6 +721,8 @@ pub fn list_hybrid_tools_for_bridge(ability_bridge: &McpAbilityBridge<'_>) -> Ve
     if ability_bridge.confirmation_enabled() {
         tools.push(request_confirmation_tool_descriptor());
     }
+    // Keep this descriptor-based listing until the deferred MCP server migration
+    // moves tool discovery to the contract-first operation registry.
     tools.extend(
         ability_bridge
             .list_descriptors()

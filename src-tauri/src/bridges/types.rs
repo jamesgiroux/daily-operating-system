@@ -49,6 +49,15 @@ impl BridgeActor {
             Self::System => Actor::System,
         }
     }
+
+    pub fn from_registry_actor(actor: Actor) -> Self {
+        match actor {
+            Actor::User => Self::User,
+            Actor::Agent => Self::Agent,
+            Actor::Admin => Self::Admin,
+            Actor::System => Self::System,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
@@ -233,6 +242,8 @@ impl Serialize for AbilityResponseJson {
 pub enum BridgeSurfaceError {
     #[error("ability unavailable")]
     AbilityUnavailable,
+    #[error("{0}")]
+    Validation(String),
     #[error("ownership validation failed: {0}")]
     Ownership(#[from] crate::abilities::provenance::OwnershipError),
 }
