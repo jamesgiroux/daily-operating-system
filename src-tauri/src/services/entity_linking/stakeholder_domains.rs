@@ -73,7 +73,7 @@ fn filter_domain(email: &str, user_domains: &[String]) -> Option<String> {
 /// is idempotent).
 ///
 /// For each newly-inserted domain a `account_domains_updated` signal is
-/// emitted with `source="stakeholder_inference"`. No signal fires when the
+/// emitted with `data_source="stakeholder_inference"`. No signal fires when the
 /// merge is a no-op.
 pub fn backfill_domains_for_account(
     ctx: &ServiceContext<'_>,
@@ -283,7 +283,7 @@ mod tests {
                 "SELECT COUNT(*) FROM signal_events \
                  WHERE entity_type = 'account' AND entity_id = ?1 \
                    AND signal_type = 'account_domains_updated' \
-                   AND source = 'stakeholder_inference'",
+                   AND data_source = 'stakeholder_inference'",
                 params![account_id],
                 |row| row.get::<_, i64>(0),
             )

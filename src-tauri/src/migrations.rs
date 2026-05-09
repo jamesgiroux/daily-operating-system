@@ -741,6 +741,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 145,
         sql: include_str!("migrations/145_dos_379_entity_members_entity_fk.sql"),
     },
+    // Canonicalize signal event provenance naming per ADR-0107.
+    Migration::Sql {
+        version: 146,
+        sql: include_str!("migrations/146_dos_212_signal_events_data_source.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -794,6 +799,50 @@ fn table_columns(conn: &Connection, table_name: &str) -> Result<HashSet<String>,
         out.insert(col.map_err(|e| format!("Failed reading column metadata: {e}"))?);
     }
     Ok(out)
+}
+
+fn apply_migration_146_signal_events_data_source(
+    conn: &Connection,
+    sql: &'static str,
+) -> Result<(), String> {
+    if !table_exists(conn, "signal_events")? {
+        return Err("signal_events table is missing".to_string());
+    }
+
+    let columns = table_columns(conn, "signal_events")?;
+    let has_source = columns.contains("source");
+    let has_data_source = columns.contains("data_source");
+
+    match (has_source, has_data_source) {
+        (true, false) => conn
+            .execute_batch(sql)
+            .map_err(|e| format!("rename signal_events.source to data_source: {e}")),
+        (false, true) => conn
+            .execute_batch(
+                "BEGIN;
+                 DROP INDEX IF EXISTS idx_signal_events_source;
+                 CREATE INDEX IF NOT EXISTS idx_signal_events_data_source
+                     ON signal_events(data_source, signal_type);
+                 COMMIT;",
+            )
+            .map_err(|e| format!("ensure signal_events.data_source index: {e}")),
+        (true, true) => conn
+            .execute_batch(
+                "BEGIN;
+                 DROP INDEX IF EXISTS idx_signal_events_source;
+                 UPDATE signal_events
+                    SET data_source = source
+                  WHERE data_source IS NULL;
+                 ALTER TABLE signal_events DROP COLUMN source;
+                 CREATE INDEX IF NOT EXISTS idx_signal_events_data_source
+                     ON signal_events(data_source, signal_type);
+                 COMMIT;",
+            )
+            .map_err(|e| format!("deduplicate signal_events source columns: {e}")),
+        (false, false) => {
+            Err("signal_events has neither source nor data_source column".to_string())
+        }
+    }
 }
 
 fn verify_required_schema(conn: &Connection) -> Result<(), String> {
@@ -891,6 +940,22 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
         if !assessment_cols.contains("success_plan_signals_json") {
             return Err(
                 "Schema integrity check failed: missing column entity_assessment.success_plan_signals_json"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 146 {
+        let signal_cols = table_columns(conn, "signal_events")?;
+        if !signal_cols.contains("data_source") {
+            return Err(
+                "Schema integrity check failed: missing column signal_events.data_source"
+                    .to_string(),
+            );
+        }
+        if signal_cols.contains("source") {
+            return Err(
+                "Schema integrity check failed: legacy column signal_events.source still exists"
                     .to_string(),
             );
         }
@@ -1384,6 +1449,9 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
                 let apply_result = if version == 141 {
                     apply_migration_141_user_note_backfill(conn, sql)
                         .map_err(rusqlite::Error::InvalidParameterName)
+                } else if version == 146 {
+                    apply_migration_146_signal_events_data_source(conn, sql)
+                        .map_err(rusqlite::Error::InvalidParameterName)
                 } else {
                     conn.execute_batch(sql)
                 };
@@ -1846,7 +1914,7 @@ mod tests {
 
         // Verify signal_events table (migration 018)
         conn.execute(
-            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days)
+            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, data_source, value, confidence, decay_half_life_days)
              VALUES ('sig-1', 'account', 'a1', 'entity_resolution', 'keyword', 'matched by name', 0.8, 30)",
             [],
         )
@@ -1878,7 +1946,7 @@ mod tests {
 
         // Verify source_context column on signal_events (migration 019)
         conn.execute(
-            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, source, confidence, decay_half_life_days, source_context)
+            "INSERT INTO signal_events (id, entity_type, entity_id, signal_type, data_source, confidence, decay_half_life_days, source_context)
              VALUES ('sig-2', 'account', 'a1', 'entity_resolution', 'keyword', 0.8, 30, 'inbound_email')",
             [],
         )
@@ -2394,6 +2462,72 @@ mod tests {
         // Version should match the highest migration
         let version = current_version(&conn).expect("version query");
         assert_eq!(version, MIGRATIONS.last().unwrap().version());
+    }
+
+    #[test]
+    fn signal_events_data_source_migration_renames_and_preserves_rows() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE signal_events (
+                id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                signal_type TEXT NOT NULL,
+                source TEXT NOT NULL,
+                value TEXT,
+                confidence REAL DEFAULT 1.0,
+                decay_half_life_days INTEGER DEFAULT 90,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                superseded_by TEXT,
+                source_context TEXT
+            );
+            CREATE INDEX idx_signal_events_source ON signal_events(source, signal_type);
+            INSERT INTO signal_events
+                (id, entity_type, entity_id, signal_type, source, value, confidence)
+            VALUES
+                ('sig-pre', 'account', 'acct-pre', 'glean_document', 'glean_search', 'doc', 0.8);",
+        )
+        .expect("seed pre-migration signal_events");
+
+        let migration = MIGRATIONS
+            .iter()
+            .find(|migration| migration.version() == 146)
+            .expect("migration 146 registered");
+        conn.execute_batch(migration.sql().expect("migration 146 should be SQL"))
+            .expect("migration 146 applies cleanly");
+
+        let columns = table_columns(&conn, "signal_events").expect("signal_events columns");
+        assert!(columns.contains("data_source"));
+        assert!(!columns.contains("source"));
+
+        let data_source: String = conn
+            .query_row(
+                "SELECT data_source FROM signal_events WHERE id = 'sig-pre'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read migrated data_source");
+        assert_eq!(data_source, "glean_search");
+
+        let old_index_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_signal_events_source'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read old index count");
+        assert_eq!(old_index_count, 0);
+
+        let new_index_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM sqlite_master
+                 WHERE type = 'index' AND name = 'idx_signal_events_data_source'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read new index count");
+        assert_eq!(new_index_count, 1);
     }
 
     #[test]

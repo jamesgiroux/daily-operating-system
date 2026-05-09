@@ -158,7 +158,7 @@ pub fn purge_aged_signals(db: &ActionDb, days: i64) -> Result<usize, DbError> {
         .execute(
             "DELETE FROM signal_events
              WHERE created_at < datetime('now', ?1)
-               AND source != 'user_correction'",
+               AND data_source != 'user_correction'",
             params![format!("-{days} days")],
         )
         .map_err(|e| DbError::Migration(format!("purge_aged_signals: {e}")))
@@ -521,7 +521,7 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             tx.conn_ref()
                 .execute(
                     "DELETE FROM signal_events
-                     WHERE source IN (
+                     WHERE data_source IN (
                         'glean',
                         'glean_search',
                         'glean_org',
@@ -536,7 +536,7 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
                 .map_err(|e| format!("purge signal_events failed: {e}"))?
         } else {
             tx.conn_ref()
-                .execute("DELETE FROM signal_events WHERE source = ?1", [source_str])
+                .execute("DELETE FROM signal_events WHERE data_source = ?1", [source_str])
                 .map_err(|e| format!("purge signal_events failed: {e}"))?
         };
 
@@ -811,7 +811,7 @@ mod tests {
         let remaining_user_signals: i64 = db
             .conn_ref()
             .query_row(
-                "SELECT COUNT(*) FROM signal_events WHERE source = 'user'",
+                "SELECT COUNT(*) FROM signal_events WHERE data_source = 'user'",
                 [],
                 |row| row.get(0),
             )

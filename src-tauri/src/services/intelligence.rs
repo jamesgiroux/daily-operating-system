@@ -3820,7 +3820,7 @@ mod inferred_relationship_tests {
                  WHERE entity_type = 'account'
                    AND entity_id = 'acc-1'
                    AND signal_type = 'relationship_inferred'
-                   AND source = 'ai_enrichment'",
+                   AND data_source = 'ai_enrichment'",
                 [],
                 |row| row.get(0),
             )
@@ -4671,7 +4671,7 @@ mod live_acceptance_tests {
         let user_signals_before: i64 = snapshot_db
             .conn_ref()
             .query_row(
-                "SELECT COUNT(*) FROM signal_events WHERE source = 'user'",
+                "SELECT COUNT(*) FROM signal_events WHERE data_source = 'user'",
                 [],
                 |row| row.get(0),
             )
@@ -4794,7 +4794,7 @@ mod live_acceptance_tests {
         let glean_signals_left: i64 = snapshot_db
             .conn_ref()
             .query_row(
-                "SELECT COUNT(*) FROM signal_events WHERE source = 'glean'",
+                "SELECT COUNT(*) FROM signal_events WHERE data_source = 'glean'",
                 [],
                 |row| row.get(0),
             )
@@ -4822,7 +4822,7 @@ mod live_acceptance_tests {
         let user_signals_mid: i64 = snapshot_db
             .conn_ref()
             .query_row(
-                "SELECT COUNT(*) FROM signal_events WHERE source = 'user'",
+                "SELECT COUNT(*) FROM signal_events WHERE data_source = 'user'",
                 [],
                 |row| row.get(0),
             )
@@ -4859,7 +4859,7 @@ mod live_acceptance_tests {
         let google_signals_left: i64 = snapshot_db
             .conn_ref()
             .query_row(
-                "SELECT COUNT(*) FROM signal_events WHERE source = 'google'",
+                "SELECT COUNT(*) FROM signal_events WHERE data_source = 'google'",
                 [],
                 |row| row.get(0),
             )
@@ -4887,7 +4887,7 @@ mod live_acceptance_tests {
         let user_signals_after: i64 = snapshot_db
             .conn_ref()
             .query_row(
-                "SELECT COUNT(*) FROM signal_events WHERE source = 'user'",
+                "SELECT COUNT(*) FROM signal_events WHERE data_source = 'user'",
                 [],
                 |row| row.get(0),
             )
@@ -5007,7 +5007,7 @@ mod live_acceptance_tests {
                              WHERE entity_type = 'account'
                                AND entity_id = ?1
                                AND signal_type = 'relationship_inferred'
-                               AND source = 'ai_enrichment'",
+                               AND data_source = 'ai_enrichment'",
                             params![account_id],
                             |row| row.get(0),
                         )
@@ -5105,7 +5105,7 @@ mod live_acceptance_tests {
                              WHERE entity_type = 'account'
                                AND entity_id = ?1
                                AND signal_type = 'relationship_inferred'
-                               AND source = 'ai_enrichment'",
+                               AND data_source = 'ai_enrichment'",
                             params![account_id],
                             |row| row.get(0),
                         )

@@ -595,12 +595,12 @@ impl ActionDb {
         signal_type: &str,
         hours: i64,
     ) -> Vec<super::bus::SignalEvent> {
-        let sql = "SELECT id, entity_type, entity_id, signal_type, source, value, confidence,
+        let sql = "SELECT id, entity_type, entity_id, signal_type, data_source, value, confidence,
                    decay_half_life_days, created_at, superseded_by, source_context
                    FROM signal_events
                    WHERE entity_id = ?1 AND signal_type = ?2
                    AND created_at > datetime('now', ?3 || ' hours')
-                   AND source NOT LIKE '%propagation:hierarchy%'
+                   AND data_source NOT LIKE '%propagation:hierarchy%'
                    ORDER BY created_at DESC";
         let hours_str = format!("-{}", hours);
         let conn = self.conn_ref();

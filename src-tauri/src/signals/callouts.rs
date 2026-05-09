@@ -792,7 +792,7 @@ impl ActionDb {
             .map(|(i, _)| format!("?{}", i + 2))
             .collect();
         let sql = format!(
-            "SELECT id, entity_type, entity_id, signal_type, source, value,
+            "SELECT id, entity_type, entity_id, signal_type, data_source, value,
                     confidence, decay_half_life_days, created_at, superseded_by,
                     source_context
              FROM signal_events

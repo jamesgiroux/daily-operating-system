@@ -89,10 +89,10 @@ fn resolve_intelligence_source(
 
     // 2. Coarse: most recent enrichment-class signal for this entity.
     // Covers Glean-sourced items on accounts/projects and chapter-level fields on people.
-    // Enrichment signals have source in: glean, intel_queue, clay, gravatar, ai
+    // Enrichment signals have data_source in: glean, intel_queue, clay, gravatar, ai
     let coarse = db.conn_ref()
         .query_row(
-            "SELECT source FROM signal_events \
+            "SELECT data_source FROM signal_events \
              WHERE entity_id = ?1 AND entity_type = ?2 \
              AND signal_type IN ('entity_enriched', 'intelligence_refreshed', 'glean_document', 'enrichment_complete') \
              AND superseded_by IS NULL \

@@ -24,6 +24,10 @@ impl SourceName {
     pub fn new(value: impl Into<String>) -> Self {
         Self(value.into())
     }
+
+    pub fn as_str(&self) -> &str {
+        self.0.as_str()
+    }
 }
 
 #[derive(
@@ -84,7 +88,7 @@ impl DataSource {
             | DataSource::Google
             | DataSource::Glean {
                 downstream:
-                    GleanDownstream::REDACTED
+                    GleanDownstream::Salesforce
                     | GleanDownstream::Zendesk
                     | GleanDownstream::Gong
                     | GleanDownstream::OrgDirectory,
@@ -108,7 +112,7 @@ impl DataSource {
             DataSource::User
                 | DataSource::Google
                 | DataSource::Glean {
-                    downstream: GleanDownstream::REDACTED
+                    downstream: GleanDownstream::Salesforce
                         | GleanDownstream::Zendesk
                         | GleanDownstream::Gong
                         | GleanDownstream::OrgDirectory
@@ -118,12 +122,40 @@ impl DataSource {
                 | DataSource::LocalEnrichment
         )
     }
+
+    pub fn lifecycle_behavior(&self) -> LifecycleBehavior {
+        match self {
+            DataSource::User => LifecycleBehavior::UserControlled,
+            DataSource::Google
+            | DataSource::Clay
+            | DataSource::CoAttendance
+            | DataSource::LocalEnrichment => LifecycleBehavior::Purge,
+            DataSource::Glean { .. } | DataSource::Other(_) => LifecycleBehavior::Mask,
+            DataSource::Ai | DataSource::LegacyUnattributed => {
+                LifecycleBehavior::FlagForReEnrichment
+            }
+        }
+    }
+
+    pub fn display_name(&self) -> String {
+        match self {
+            DataSource::User => "User".to_string(),
+            DataSource::Google => "Google".to_string(),
+            DataSource::Glean { downstream } => format!("Glean {}", downstream.display_name()),
+            DataSource::Clay => "Clay".to_string(),
+            DataSource::Ai => "AI".to_string(),
+            DataSource::CoAttendance => "Co-attendance".to_string(),
+            DataSource::LocalEnrichment => "Local enrichment".to_string(),
+            DataSource::Other(name) => name.as_str().to_string(),
+            DataSource::LegacyUnattributed => "Legacy unattributed".to_string(),
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum GleanDownstream {
-    REDACTED,
+    Salesforce,
     Zendesk,
     Gong,
     Slack,
@@ -134,12 +166,37 @@ pub enum GleanDownstream {
     Unknown,
 }
 
+impl GleanDownstream {
+    pub fn display_name(&self) -> &'static str {
+        match self {
+            GleanDownstream::Salesforce => "Salesforce",
+            GleanDownstream::Zendesk => "Zendesk",
+            GleanDownstream::Gong => "Gong",
+            GleanDownstream::Slack => "Slack",
+            GleanDownstream::P2 => "P2",
+            GleanDownstream::Wordpress => "WordPress",
+            GleanDownstream::OrgDirectory => "org directory",
+            GleanDownstream::Documents => "documents",
+            GleanDownstream::Unknown => "unknown",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
 #[serde(rename_all = "snake_case")]
 pub enum ScoringClass {
     Scoring,
     Context,
     Reference,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum LifecycleBehavior {
+    Purge,
+    Mask,
+    FlagForReEnrichment,
+    UserControlled,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
@@ -289,6 +346,25 @@ mod tests {
         .unwrap();
 
         assert_eq!(source.scoring_class, ScoringClass::Context);
+    }
+
+    #[test]
+    fn data_source_roundtrip_and_derived_properties_follow_taxonomy() {
+        let source = DataSource::Glean {
+            downstream: GleanDownstream::Salesforce,
+        };
+
+        let encoded = serde_json::to_string(&source).unwrap();
+        let decoded: DataSource = serde_json::from_str(&encoded).unwrap();
+
+        assert_eq!(decoded, source);
+        assert_eq!(decoded.scoring_class(), ScoringClass::Scoring);
+        assert_eq!(decoded.lifecycle_behavior(), LifecycleBehavior::Mask);
+        assert_eq!(decoded.display_name(), "Glean Salesforce");
+        assert_eq!(
+            DataSource::Ai.lifecycle_behavior(),
+            LifecycleBehavior::FlagForReEnrichment
+        );
     }
 
     #[test]

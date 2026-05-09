@@ -380,12 +380,12 @@ fn emit_signal_insert_event_row(
     let sql = match mode {
         SignalInsertMode::Insert => {
             "INSERT INTO signal_events
-                (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at, source_context)
+                (id, entity_type, entity_id, signal_type, data_source, value, confidence, decay_half_life_days, created_at, source_context)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
         }
         SignalInsertMode::InsertOrReplace => {
             "INSERT OR REPLACE INTO signal_events
-                (id, entity_type, entity_id, signal_type, source, value, confidence, decay_half_life_days, created_at, source_context)
+                (id, entity_type, entity_id, signal_type, data_source, value, confidence, decay_half_life_days, created_at, source_context)
              VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)"
         }
     };
@@ -608,7 +608,7 @@ impl ActionDb {
     /// Map a row from `signal_events` to a `SignalEvent`.
     ///
     /// Expected column order:
-    /// `id, entity_type, entity_id, signal_type, source, value,
+    /// `id, entity_type, entity_id, signal_type, data_source, value,
     ///  confidence, decay_half_life_days, created_at, superseded_by, source_context`
     pub fn map_signal_event_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<SignalEvent> {
         Ok(SignalEvent {
@@ -635,7 +635,7 @@ impl ActionDb {
     ) -> Result<Vec<SignalEvent>, DbError> {
         let (sql, params_vec): (&str, Vec<Box<dyn rusqlite::types::ToSql>>) = match signal_type {
             Some(st) => (
-                "SELECT id, entity_type, entity_id, signal_type, source, value,
+                "SELECT id, entity_type, entity_id, signal_type, data_source, value,
                         confidence, decay_half_life_days, created_at, superseded_by,
                         source_context
                  FROM signal_events
@@ -649,7 +649,7 @@ impl ActionDb {
                 ],
             ),
             None => (
-                "SELECT id, entity_type, entity_id, signal_type, source, value,
+                "SELECT id, entity_type, entity_id, signal_type, data_source, value,
                         confidence, decay_half_life_days, created_at, superseded_by,
                         source_context
                  FROM signal_events
