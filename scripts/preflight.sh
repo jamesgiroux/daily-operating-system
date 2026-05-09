@@ -98,6 +98,9 @@ run_step "service-layer boundary" ./scripts/check_service_layer_boundary.sh
 # 4. must_use on DB mutation methods
 run_step "db mutator must_use" ./scripts/check_db_mutator_must_use.sh
 
+# 4b. stakeholder graph writer signal helper
+run_step "stakeholder writer signal helper" ./scripts/check_stakeholder_writer_emits_signal.sh
+
 # 5. write_intelligence_json fence
 run_step "write_fence usage" ./scripts/check_write_fence_usage.sh
 
