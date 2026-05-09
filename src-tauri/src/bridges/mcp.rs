@@ -108,11 +108,12 @@ impl EntityContextClaimReadHandle for McpActionDbWorkspaceReader {
     ) -> EntityContextClaimReadFuture<'a> {
         let result = {
             let db = self.db.lock();
-            crate::services::claims::load_entity_context_claims_active(
+            crate::services::claims::load_entity_context_claims_active_for_surface(
                 &db,
                 &entity_type,
                 &entity_id,
                 depth,
+                "mcp_tool",
             )
             .map_err(|error| format!("Entity context claim read failed: {error}"))
         };
@@ -603,7 +604,8 @@ mod tests {
     use std::pin::Pin;
     use std::sync::Arc;
 
-    use chrono::Utc;
+    use chrono::{TimeZone, Utc};
+    use rusqlite::Connection;
     use serde_json::json;
 
     use super::*;
@@ -615,6 +617,9 @@ mod tests {
     use crate::abilities::{AbilityCategory, AbilityContext, AbilityError};
     use crate::bridges::tauri::UserAttestationHost;
     use crate::bridges::UserAttestationRequest;
+    use crate::db::claims::{ClaimSensitivity, TemporalScope};
+    use crate::services::claims::{commit_claim, ClaimProposal, CommittedClaim};
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 
     const AGENT_ACTORS: &[Actor] = &[Actor::Agent];
     const USER_ACTORS: &[Actor] = &[Actor::User];
@@ -622,6 +627,20 @@ mod tests {
     const AGENT_SYSTEM_ACTORS: &[Actor] = &[Actor::Agent, Actor::System];
     const LIVE_MODES: &[ExecutionMode] = &[ExecutionMode::Live];
     const EVALUATE_MODES: &[ExecutionMode] = &[ExecutionMode::Evaluate];
+    const MCP_ENTITY_ID: &str = "acct-mcp-dismissed-context";
+    const CLAIMS_SCHEMA_SQL: &str = include_str!("../migrations/129_dos_7_claims_schema.sql");
+    const PROJECTION_STATUS_SQL: &str =
+        include_str!("../migrations/134_dos_301_claim_projection_status.sql");
+    const TYPED_FEEDBACK_SQL: &str =
+        include_str!("../migrations/135_dos_294_typed_feedback_schema.sql");
+    const CLAIM_SURFACE_DISMISSALS_SQL: &str =
+        include_str!("../migrations/154_claim_surface_dismissals.sql");
+    const MINIMAL_ENTITY_SCHEMA_SQL: &str = r#"
+CREATE TABLE accounts (
+    id TEXT PRIMARY KEY,
+    claim_version INTEGER NOT NULL DEFAULT 0
+);
+"#;
 
     type ErasedFuture<'a> =
         Pin<Box<dyn Future<Output = Result<serde_json::Value, AbilityError>> + Send + 'a>>;
@@ -831,6 +850,78 @@ mod tests {
             ttl_seconds,
             token: "fixture-token".to_string(),
         }
+    }
+
+    fn fresh_mcp_claims_db() -> ActionDb {
+        let conn = Connection::open_in_memory().expect("open in-memory MCP claims DB");
+        conn.execute_batch(MINIMAL_ENTITY_SCHEMA_SQL)
+            .expect("apply minimal entity schema");
+        conn.execute(
+            "INSERT INTO accounts (id, claim_version) VALUES (?1, 0)",
+            [MCP_ENTITY_ID],
+        )
+        .expect("seed MCP account");
+        conn.execute_batch(CLAIMS_SCHEMA_SQL)
+            .expect("apply claims schema");
+        conn.execute_batch(TYPED_FEEDBACK_SQL)
+            .expect("apply typed feedback schema");
+        conn.execute_batch(PROJECTION_STATUS_SQL)
+            .expect("apply projection status schema");
+        conn.execute_batch(CLAIM_SURFACE_DISMISSALS_SQL)
+            .expect("apply claim surface dismissals schema");
+        ActionDb::from_connection_for_tests(conn)
+    }
+
+    fn seed_mcp_entity_context_claim(db: &ActionDb) -> String {
+        let clock = FixedClock::new(Utc.with_ymd_and_hms(2026, 5, 9, 12, 0, 0).unwrap());
+        let rng = SeedableRng::new(309);
+        let external = ExternalClients::default();
+        let ctx = ServiceContext::new_live(&clock, &rng, &external).with_actor("agent:test");
+        let committed = commit_claim(
+            &ctx,
+            db,
+            ClaimProposal {
+                id: Some("claim-mcp-dismissed-context".to_string()),
+                subject_ref: json!({
+                    "kind": "account",
+                    "id": MCP_ENTITY_ID,
+                })
+                .to_string(),
+                claim_type: "entity_summary".to_string(),
+                field_path: Some("context.summary".to_string()),
+                topic_key: None,
+                text: "MCP-visible context that must be hidden after dismissal".to_string(),
+                actor: "agent:test".to_string(),
+                data_source: "user".to_string(),
+                source_ref: Some("fixture:mcp-dismissed-context".to_string()),
+                source_asof: Some("2026-05-09T12:00:00Z".to_string()),
+                observed_at: "2026-05-09T12:00:00Z".to_string(),
+                provenance_json: json!({ "source": "mcp-dismissal-regression" }).to_string(),
+                metadata_json: None,
+                thread_id: None,
+                temporal_scope: Some(TemporalScope::State),
+                sensitivity: Some(ClaimSensitivity::Internal),
+                supersedes: None,
+                tombstone: None,
+            },
+        )
+        .expect("commit MCP entity context claim");
+
+        match committed {
+            CommittedClaim::Inserted { claim } => claim.id,
+            other => panic!("expected inserted claim, got {other:?}"),
+        }
+    }
+
+    fn dismiss_claim_on_surface(db: &ActionDb, claim_id: &str, surface: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_surface_dismissals (
+                    claim_id, surface, actor, dismissed_at
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                rusqlite::params![claim_id, surface, "agent:test", "2026-05-09T12:01:00Z"],
+            )
+            .expect("insert claim surface dismissal");
     }
 
     fn with_invoke_erased(
@@ -1312,6 +1403,43 @@ mod tests {
         assert_eq!(response.rendered_provenance.surface, BridgeSurface::McpTool);
         assert_eq!(response.rendered_provenance.value["actor"], "agent");
         assert_eq!(response.rendered_provenance.value["mode"], "live");
+    }
+
+    #[tokio::test]
+    async fn mcp_get_entity_context_honors_mcp_tool_surface_dismissals() {
+        let db = fresh_mcp_claims_db();
+        let claim_id = seed_mcp_entity_context_claim(&db);
+        dismiss_claim_on_surface(&db, &claim_id, "mcp_tool");
+
+        let registry = AbilityRegistry::from_inventory_checked().expect("registry builds");
+        let bridge = McpAbilityBridge::new_with_action_db_readers(
+            &registry,
+            Arc::new(ParkingMutex::new(db)),
+        );
+
+        let response = bridge
+            .invoke_ability(
+                session(309),
+                "get_entity_context",
+                json!({
+                    "schema_version": 2,
+                    "entity_type": "account",
+                    "entity_id": MCP_ENTITY_ID,
+                    "depth": "shallow",
+                }),
+                false,
+                None,
+            )
+            .await
+            .expect("MCP get_entity_context succeeds");
+
+        let entries = response.data["entries"]
+            .as_array()
+            .expect("get_entity_context data contains entries");
+        assert!(
+            entries.is_empty(),
+            "mcp_tool dismissal must hide claim-backed entity context entries"
+        );
     }
 
     #[test]

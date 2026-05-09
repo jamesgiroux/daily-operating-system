@@ -59,11 +59,12 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
                 let db =
                     crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
                         .map_err(|error| format!("Database unavailable: {error}"))?;
-                crate::services::claims::load_entity_context_claims_active(
+                crate::services::claims::load_entity_context_claims_active_for_surface(
                     &db,
                     &entity_type,
                     &entity_id,
                     depth,
+                    "tauri_entity_detail",
                 )
                 .map_err(|error| format!("Entity context claim read failed: {error}"))
             })

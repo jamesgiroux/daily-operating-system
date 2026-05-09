@@ -6,8 +6,8 @@ use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::feedback::FeedbackAction;
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::claims::{
-    commit_claim, load_entity_context_claims_active, record_claim_feedback, ClaimFeedbackInput,
-    ClaimProposal, CommittedClaim,
+    commit_claim, load_entity_context_claims_active_for_surface, record_claim_feedback,
+    ClaimFeedbackInput, ClaimProposal, CommittedClaim,
 };
 use dailyos_lib::services::context::{
     EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
@@ -41,11 +41,12 @@ impl EntityContextClaimReadHandle for SqliteClaimReader {
     ) -> EntityContextClaimReadFuture<'a> {
         let result = {
             let conn = self.conn.lock().expect("claim reader db lock");
-            load_entity_context_claims_active(
+            load_entity_context_claims_active_for_surface(
                 ActionDb::from_conn(&conn),
                 &entity_type,
                 &entity_id,
                 depth,
+                "tauri_entity_detail",
             )
             .map_err(|error| format!("claim read failed: {error}"))
         };

@@ -4509,12 +4509,13 @@ struct EntityContextSubject {
 /// immediate related subjects, and so on. Claim row filtering stays routed
 /// through `load_claims_active_for_surface`, preserving the
 /// `claim_state='active' AND surfacing_state='active'` contract and entity
-/// detail dismissal boundary.
-pub fn load_entity_context_claims_active(
+/// context dismissal boundary for the caller's actual surface.
+pub fn load_entity_context_claims_active_for_surface(
     db: &ActionDb,
     entity_type: &str,
     entity_id: &str,
     depth: usize,
+    surface: &str,
 ) -> Result<Vec<IntelligenceClaim>, ClaimError> {
     let root = entity_context_subject(entity_type, entity_id)?;
     let subjects = entity_context_subjects_within_depth(db, root, depth.max(1))?;
@@ -4523,8 +4524,7 @@ pub fn load_entity_context_claims_active(
 
     for subject in subjects {
         let subject_ref = entity_context_subject_ref_json(&subject);
-        for claim in load_claims_active_for_surface(db, &subject_ref, None, "tauri_entity_detail")?
-        {
+        for claim in load_claims_active_for_surface(db, &subject_ref, None, surface)? {
             if seen_claims.insert(claim.id.clone()) {
                 claims.push(claim);
             }
