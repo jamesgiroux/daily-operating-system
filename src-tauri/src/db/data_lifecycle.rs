@@ -149,6 +149,7 @@ impl AgePurgeReport {
 ///
 /// User corrections (source = 'user_correction') are never purged regardless
 /// of age because they represent explicit user intent with confidence 1.0.
+#[must_use = "check whether aged signals were purged before reporting retained signal volume"]
 pub fn purge_aged_signals(db: &ActionDb, days: i64) -> Result<usize, DbError> {
     if !table_exists(db, "signal_events") {
         return Ok(0);
@@ -164,6 +165,7 @@ pub fn purge_aged_signals(db: &ActionDb, days: i64) -> Result<usize, DbError> {
 }
 
 /// Purge deactivated email_signals older than `days`.
+#[must_use = "check whether aged email signals were purged before reporting retained email signal volume"]
 pub fn purge_aged_email_signals(db: &ActionDb, days: i64) -> Result<usize, DbError> {
     if !table_exists(db, "email_signals") {
         return Ok(0);
@@ -191,6 +193,7 @@ pub fn purge_aged_email_signals(db: &ActionDb, days: i64) -> Result<usize, DbErr
 /// a single SQLite transaction (`BEGIN IMMEDIATE` / `COMMIT`) so a
 /// crash or DELETE failure between them no longer leaves still-present
 /// resolved emails with their claims already withdrawn.
+#[must_use = "check whether aged emails were purged before reporting retained email storage"]
 pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
     if !table_exists(db, "emails") {
         return Ok(0);
@@ -246,6 +249,7 @@ pub fn purge_aged_emails(db: &ActionDb, days: i64) -> Result<usize, DbError> {
 }
 
 /// Purge content_embeddings for content_files that no longer exist.
+#[must_use = "check whether orphaned embeddings were purged before reporting embedding cleanup"]
 pub fn purge_orphaned_embeddings(db: &ActionDb) -> Result<usize, DbError> {
     if !table_exists(db, "content_embeddings") || !table_exists(db, "content_index") {
         return Ok(0);
@@ -454,6 +458,7 @@ fn table_exists(db: &ActionDb, table: &str) -> bool {
 ///
 /// Notes:
 /// - User-entered data (`DataSource::User`) is never purged.
+#[must_use = "check whether the source purge completed before treating imported data as removed"]
 pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, DbError> {
     if source == DataSource::User {
         return Ok(PurgeReport {

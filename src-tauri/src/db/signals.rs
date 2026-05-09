@@ -112,6 +112,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Insert a processing log entry.
+    #[must_use = "check whether processing log entry was stored before reporting processing status"]
     pub fn insert_processing_log(&self, entry: &DbProcessingLog) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO processing_log (id, filename, source_path, destination_path, classification, status, processed_at, error_message, created_at)
@@ -214,6 +215,7 @@ impl ActionDb {
     }
 
     /// Insert a capture (win, risk, or action) from a post-meeting prompt.
+    #[must_use = "check whether the capture was stored before showing account or meeting signals"]
     pub fn insert_capture(
         &self,
         meeting_id: &str,
@@ -233,6 +235,7 @@ impl ActionDb {
     }
 
     /// Insert a capture with optional project_id.
+    #[must_use = "check whether the project capture was stored before showing project signals"]
     pub fn insert_capture_with_project(
         &self,
         meeting_id: &str,
@@ -253,6 +256,7 @@ impl ActionDb {
     }
 
     /// Insert an enriched capture with metadata columns.
+    #[must_use = "check whether the enriched capture was stored before using derived signal context"]
     pub fn insert_capture_enriched(&self, input: &CaptureInput<'_>) -> Result<(), DbError> {
         let id = uuid::Uuid::new_v4().to_string();
         let now = Utc::now().to_rfc3339();
@@ -374,6 +378,7 @@ impl ActionDb {
     const VALID_ENTITY_TYPES: &'static [&'static str] = &["account", "project"];
 
     /// Insert an email signal, returning `true` if a new row was inserted.
+    #[must_use = "check whether the email signal was saved before relying on email-derived account signals"]
     pub fn upsert_email_signal(&self, input: &EmailSignalInput<'_>) -> Result<bool, DbError> {
         if !Self::VALID_SIGNAL_TYPES.contains(&input.signal_type) {
             log::warn!(
@@ -437,6 +442,7 @@ impl ActionDb {
 
     /// Dismiss a single email signal by setting `deactivated_at`.
     /// Returns (entity_id, entity_type, signal_type, email_id) for signal bus emission.
+    #[must_use = "check whether the email signal was dismissed before hiding it from recommendations"]
     pub fn dismiss_email_signal(
         &self,
         signal_id: i64,
@@ -548,6 +554,7 @@ impl ActionDb {
 
     /// Deactivate propagated email signals (person_id IS NOT NULL) for all accounts.
     /// One-time cleanup to remove the 14.6x fan-out noise.
+    #[must_use = "check whether propagated email signals were deactivated before recalculating active signals"]
     pub fn deactivate_propagated_email_signals(&self) -> Result<usize, DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
@@ -616,6 +623,7 @@ impl ActionDb {
     // ================================================================
 
     /// Record a user dismissal of an email-extracted item for relevance learning.
+    #[must_use = "check whether the email item dismissal was saved before suppressing repeated hygiene prompts"]
     pub fn dismiss_email_item(
         &self,
         item_type: &str,
@@ -667,6 +675,7 @@ impl ActionDb {
     }
 
     /// Truncate all email dismissal records (reset).
+    #[must_use = "check whether email dismissals were reset before resurfacing dismissed email signals"]
     pub fn reset_email_dismissals(&self) -> Result<u64, DbError> {
         let count = self.conn.execute("DELETE FROM email_dismissals", [])?;
         Ok(count as u64)
@@ -677,6 +686,7 @@ impl ActionDb {
     // ================================================================
 
     /// Upsert an email thread position record.
+    #[must_use = "check whether the email thread was saved before relying on awaiting-reply state"]
     pub fn upsert_email_thread(
         &self,
         thread_id: &str,
@@ -740,6 +750,7 @@ impl ActionDb {
     // ================================================================
 
     /// Log a hygiene action triggered by a signal.
+    #[must_use = "check whether the hygiene action was logged before auditing automated signal handling"]
     pub fn log_hygiene_action(
         &self,
         source_signal_id: Option<&str>,
@@ -780,6 +791,7 @@ impl ActionDb {
     }
 
     /// Update the content of a capture (win/risk/decision).
+    #[must_use = "check whether the capture content changed before showing edited signal text"]
     pub fn update_capture(&self, id: &str, content: &str) -> Result<(), DbError> {
         self.conn.execute(
             "UPDATE captures SET content = ?1 WHERE id = ?2",
@@ -791,6 +803,7 @@ impl ActionDb {
     /// Deactivate email signals for resolved emails.
     /// Sets `deactivated_at` to now for all signals linked to the given email IDs.
     /// Returns the number of signals deactivated.
+    #[must_use = "check whether email-linked signals were deactivated before treating deleted emails as inactive"]
     pub fn deactivate_signals_for_emails(&self, email_ids: &[String]) -> Result<usize, String> {
         if email_ids.is_empty() {
             return Ok(0);

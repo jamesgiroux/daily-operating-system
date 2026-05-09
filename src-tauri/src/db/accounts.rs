@@ -7,6 +7,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Insert or update an account. Also mirrors to the `entities` table (ADR-0045).
+    #[must_use = "check whether the account and entity mirror were saved before assuming account state changed"]
     pub fn upsert_account(&self, account: &DbAccount) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO accounts (
@@ -55,6 +56,7 @@ impl ActionDb {
     ///
     /// Matches by ID or by case-insensitive name. Returns `true` if a row
     /// was updated, `false` if no account matched.
+    #[must_use = "check whether last_contact was updated before treating the account as recently contacted"]
     pub fn touch_account_last_contact(&self, account_name: &str) -> Result<bool, DbError> {
         let now = Utc::now().to_rfc3339();
         let rows = self.conn.execute(
@@ -172,6 +174,7 @@ impl ActionDb {
 
     /// Set domains for an account (replace-all). Writes source='user' — this is
     /// the explicit user-entry path (account settings page, onboarding setup).
+    #[must_use = "check whether account domains were replaced before relying on domain matching"]
     pub fn set_account_domains(&self, account_id: &str, domains: &[String]) -> Result<(), DbError> {
         let normalized = crate::helpers::normalize_domains(domains);
         self.conn.execute(
@@ -191,6 +194,7 @@ impl ActionDb {
     /// Additively merge domains from meeting attendee inference. Uses the
     /// default source='inferred', meaning these can be purged by
     /// `raw_rebuild_account_domains` before the account-domain rebuild cutover.
+    #[must_use = "check whether merged domains were persisted before relying on enriched account matching"]
     pub fn merge_account_domains(
         &self,
         account_id: &str,
@@ -209,6 +213,7 @@ impl ActionDb {
     /// Additively merge domains from a trusted enrichment provider (Clay, Glean, Google).
     /// Writes source='enrichment' so `raw_rebuild_account_domains` preserves these
     /// while purging attendee-inferred domains.
+    #[must_use = "check whether enrichment domains were persisted before using them for account resolution"]
     pub fn merge_account_domains_enrichment(
         &self,
         account_id: &str,
@@ -393,6 +398,7 @@ impl ActionDb {
 
     /// Copy domains from parent to child (idempotent).
     /// Copy domains from parent to child, preserving the source column.
+    #[must_use = "check whether parent domains copied before assuming the child account can match by domain"]
     pub fn copy_account_domains(&self, parent_id: &str, child_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT OR IGNORE INTO account_domains (account_id, domain, source)
@@ -409,6 +415,7 @@ impl ActionDb {
     /// Returns count of account→domain mappings created.
     ///
     /// Safe to run multiple times (idempotent via INSERT OR IGNORE).
+    #[must_use = "check whether meeting-derived domains were backfilled before trusting account domain coverage"]
     pub fn backfill_account_domains_from_meetings(&self) -> Result<usize, DbError> {
         // Domain-base matching: only store a domain on an account when the domain
         // base (before first dot) matches the account's normalized name or slug.
@@ -750,6 +757,7 @@ impl ActionDb {
 
     /// Add an account team member with a role (idempotent).
     /// Inserts into account_stakeholders (the link) + account_stakeholder_roles (the role).
+    #[must_use = "check whether the team membership was inserted before showing the stakeholder on the account"]
     pub fn add_account_team_member(
         &self,
         account_id: &str,
@@ -794,6 +802,7 @@ impl ActionDb {
     ///
     /// `new_role` empty → remove the user's pinned role(s) entirely;
     /// person stays as stakeholder with any AI-surfaced roles intact.
+    #[must_use = "check whether the stakeholder role changed before relying on account team permissions"]
     pub fn set_team_member_role(
         &self,
         account_id: &str,
@@ -837,6 +846,7 @@ impl ActionDb {
     ///
     /// Sets `last_seen_in_glean` on insert/update. Does NOT overwrite `data_source`
     /// on the role if the existing role was user-owned (`data_source = 'user'`).
+    #[must_use = "check whether the sourced account-person link was saved before using stakeholder attribution"]
     pub fn link_person_to_account_with_source(
         &self,
         account_id: &str,
@@ -870,6 +880,7 @@ impl ActionDb {
     }
 
     /// Remove an account team member link and all their roles.
+    #[must_use = "check whether the team membership was removed before hiding the stakeholder from the account"]
     pub fn remove_account_team_member(
         &self,
         account_id: &str,
@@ -1242,6 +1253,7 @@ impl ActionDb {
     }
 
     /// Update a single whitelisted field on an account.
+    #[must_use = "check whether the account field was updated before assuming the profile changed"]
     pub fn update_account_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         // JSON-typed columns: validate non-empty values parse as JSON to prevent
@@ -1356,6 +1368,7 @@ impl ActionDb {
     }
 
     /// Set the renewal stage for an account and update updated_at.
+    #[must_use = "check whether the renewal stage was saved before using account lifecycle state"]
     pub fn set_account_renewal_stage(
         &self,
         account_id: &str,
@@ -1372,6 +1385,7 @@ impl ActionDb {
     }
 
     /// Persist provenance metadata for a tracked account field.
+    #[must_use = "check whether field provenance was saved before trusting account source attribution"]
     pub fn set_account_field_provenance(
         &self,
         account_id: &str,
@@ -1460,6 +1474,7 @@ impl ActionDb {
 
     /// Insert a lifecycle change log entry and return the new ID.
     #[allow(clippy::too_many_arguments)]
+    #[must_use = "check whether the lifecycle change was recorded before notifying or auditing the transition"]
     pub fn insert_lifecycle_change(
         &self,
         account_id: &str,
@@ -1500,6 +1515,7 @@ impl ActionDb {
     }
 
     /// Update the user response for a lifecycle change.
+    #[must_use = "check whether the lifecycle response was saved before treating the change as acknowledged"]
     pub fn set_lifecycle_change_response(
         &self,
         change_id: i64,
@@ -1523,6 +1539,7 @@ impl ActionDb {
     /// clicks), 1 means a fresh transition. Callers gate downstream side
     /// effects (source-weight increments, signal emission) on the rows count
     /// so a duplicate command doesn't double-apply.
+    #[must_use = "check whether a pending lifecycle response was saved before treating the change as resolved"]
     pub fn set_lifecycle_change_response_if_pending(
         &self,
         change_id: i64,
@@ -1696,6 +1713,7 @@ impl ActionDb {
 
     /// Insert or update a product for an account using source-priority merge logic.
     #[allow(clippy::too_many_arguments)]
+    #[must_use = "check whether the account product was saved before relying on product coverage"]
     pub fn upsert_account_product(
         &self,
         account_id: &str,
@@ -1761,6 +1779,7 @@ impl ActionDb {
     }
 
     /// Update a specific product row.
+    #[must_use = "check whether the account product update persisted before showing product changes"]
     pub fn update_account_product(
         &self,
         product_id: i64,
@@ -1821,6 +1840,7 @@ impl ActionDb {
     /// account), 1 = expected. Callers that pass both ids must check this
     /// before applying downstream side-effects (source weights, signals).
     #[allow(clippy::too_many_arguments)]
+    #[must_use = "check whether the scoped product update affected a row before trusting source-scoped edits"]
     pub fn update_account_product_scoped(
         &self,
         account_id: &str,
@@ -1855,6 +1875,7 @@ impl ActionDb {
     }
 
     /// Delete a product row.
+    #[must_use = "check whether the account product was deleted before removing it from product state"]
     pub fn delete_account_product(&self, product_id: i64) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM account_products WHERE id = ?1",
@@ -1866,6 +1887,7 @@ impl ActionDb {
     /// Upsert product classification from Glean/REDACTED.
     /// Uses (account_id, product_type, data_source) as the upsert key.
     /// Idempotent: calling twice with same data produces one row.
+    #[must_use = "check whether product classification was saved before using classification-driven account signals"]
     pub fn upsert_product_classification(
         &self,
         account_id: &str,
@@ -1940,6 +1962,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Update JSON metadata for an entity (account or project).
+    #[must_use = "check whether entity metadata was updated before relying on metadata-dependent views"]
     pub fn update_entity_metadata(
         &self,
         entity_type: &str,
@@ -1985,6 +2008,7 @@ impl ActionDb {
     /// Reclassify all people's relationship based on current user domains.
     /// People whose email domain matches ANY domain → "internal", otherwise → "external".
     /// Returns the number of people whose relationship changed.
+    #[must_use = "check whether people were reclassified before relying on internal versus external relationships"]
     pub fn reclassify_people_for_domains(&self, user_domains: &[String]) -> Result<usize, DbError> {
         if user_domains.is_empty() {
             return Ok(0);
@@ -2028,6 +2052,7 @@ impl ActionDb {
     /// Only touches domain-dependent types (customer, external, one_on_one, internal).
     /// Title-derived types (qbr, training, all_hands, team_sync, personal) are left alone
     /// since they don't depend on domain classification.
+    #[must_use = "check whether meeting types were reclassified before trusting attendee-derived meeting labels"]
     pub fn reclassify_meeting_types_from_attendees(&self) -> Result<usize, DbError> {
         let mut total = 0;
 
@@ -2536,6 +2561,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Archive or unarchive an account. Cascade: archiving a parent archives all children.
+    #[must_use = "check whether the account archive flag changed before hiding or restoring the account"]
     pub fn archive_account(&self, id: &str, archived: bool) -> Result<usize, DbError> {
         let val = if archived { 1 } else { 0 };
         let now = Utc::now().to_rfc3339();
@@ -2558,6 +2584,7 @@ impl ActionDb {
     }
 
     /// Archive or unarchive a project. Cascade: archiving a parent archives all children.
+    #[must_use = "check whether the project archive flag changed before hiding or restoring the project"]
     pub fn archive_project(&self, id: &str, archived: bool) -> Result<usize, DbError> {
         let val = if archived { 1 } else { 0 };
         let now = Utc::now().to_rfc3339();
@@ -2578,6 +2605,7 @@ impl ActionDb {
     }
 
     /// Archive or unarchive a person.
+    #[must_use = "check whether the person archive flag changed before hiding or restoring the person"]
     pub fn archive_person(&self, id: &str, archived: bool) -> Result<usize, DbError> {
         let val = if archived { 1 } else { 0 };
         let now = Utc::now().to_rfc3339();
@@ -2589,6 +2617,7 @@ impl ActionDb {
 
     /// Restore an archived account, optionally restoring archived children.
     /// Returns the number of child accounts restored.
+    #[must_use = "check whether the account restore completed before showing restored account hierarchy"]
     pub fn restore_account(&self, id: &str, restore_children: bool) -> Result<usize, DbError> {
         let now = Utc::now().to_rfc3339();
 
@@ -2618,6 +2647,7 @@ impl ActionDb {
     /// Merge source account into target account.
     /// Reassigns all associated records and archives the source.
     /// Wrapped in a transaction for atomicity.
+    #[must_use = "check whether account merge counts were applied before deleting or redirecting merged account state"]
     pub fn merge_accounts(&self, from_id: &str, into_id: &str) -> Result<MergeResult, DbError> {
         self.with_transaction(|tx| {
             let conn = tx.conn_ref();
@@ -2834,6 +2864,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Record a lifecycle event for an account.
+    #[must_use = "check whether the account event was recorded before auditing churn and lifecycle history"]
     pub fn record_account_event(
         &self,
         account_id: &str,
@@ -2924,6 +2955,7 @@ impl ActionDb {
 
     /// Upsert the technical footprint row for an account.
     #[allow(clippy::too_many_arguments)]
+    #[must_use = "check whether the technical footprint was saved before relying on integration and adoption data"]
     pub fn upsert_account_technical_footprint(
         &self,
         account_id: &str,
@@ -2982,6 +3014,7 @@ impl ActionDb {
     /// bootstrap. Bumps `updated_at`; stamps `source = 'user_edit'` and
     /// `sourced_at = now` so downstream signal emitters see a fresh user-
     /// authored footprint.
+    #[must_use = "check whether the footprint field was updated before trusting technical account metadata"]
     pub fn update_technical_footprint_field(
         &self,
         account_id: &str,
@@ -3154,6 +3187,7 @@ impl ActionDb {
     ///
     /// Returns `Ok(true)` if the field was updated, `Ok(false)` if skipped due to
     /// lower source priority.
+    #[must_use = "check whether the account fact changed before relying on fact freshness and provenance"]
     pub fn upsert_account_fact(
         &self,
         account_id: &str,
@@ -3238,6 +3272,7 @@ impl ActionDb {
     ///
     /// Records provenance for a fact value: which system provided it, when it was
     /// observed, and an optional reference to the source record.
+    #[must_use = "check whether the account source reference was saved before relying on source traceability"]
     pub fn upsert_account_source_ref(
         &self,
         ref_data: &AccountSourceRef<'_>,
@@ -3268,6 +3303,7 @@ impl ActionDb {
 
     /// Insert a sentiment journal entry (value + optional note + timestamp).
     /// Computed band and score at set-time are stored for divergence analysis.
+    #[must_use = "check whether the sentiment journal entry was recorded before showing sentiment history"]
     pub fn insert_sentiment_journal_entry(
         &self,
         account_id: &str,
@@ -3375,6 +3411,7 @@ impl ActionDb {
     /// journal entry rather than creating a new one. Returns `true` if a row
     /// was updated, `false` when there is no matching history row (caller
     /// should fall back to a fresh `insert_sentiment_journal_entry`).
+    #[must_use = "check whether the latest sentiment note changed before showing updated account sentiment"]
     pub fn update_latest_sentiment_note(
         &self,
         account_id: &str,
@@ -3428,6 +3465,7 @@ impl ActionDb {
     /// Upsert a snooze for a triage card. `snoozed_until` is an ISO-8601 UTC
     /// timestamp; rendering-time filter hides cards whose snoozed_until is
     /// still in the future.
+    #[must_use = "check whether the triage snooze was saved before suppressing the triage item"]
     pub fn snooze_triage_item(
         &self,
         entity_type: &str,
@@ -3449,6 +3487,7 @@ impl ActionDb {
 
     /// Mark a triage card resolved. Resolution is permanent for the lifetime
     /// of the card key (stable until re-enrichment emits a new one).
+    #[must_use = "check whether the triage item was resolved before removing it from active triage"]
     pub fn resolve_triage_item(
         &self,
         entity_type: &str,
@@ -3537,6 +3576,7 @@ impl ActionDb {
     /// the attempt_id column lets a superseding
     /// retry invalidate a prior lifecycle runner's updates instead of
     /// last-write-wins corruption when two retries race.
+    #[must_use = "check whether the risk briefing job was enqueued before assuming recompute work is scheduled"]
     pub fn upsert_risk_briefing_job_enqueued(
         &self,
         account_id: &str,
@@ -3563,6 +3603,7 @@ impl ActionDb {
     /// the lifecycle. Returns false if superseded (another retry has
     /// stamped a newer attempt_id), in which case the caller must exit
     /// without further writes.
+    #[must_use = "check whether the risk briefing job was marked running before suppressing duplicate work"]
     pub fn mark_risk_briefing_job_running(
         &self,
         account_id: &str,
@@ -3579,6 +3620,7 @@ impl ActionDb {
 
     /// Compare-and-set terminal transition to `complete`. Returns true if
     /// this runner's attempt is still current.
+    #[must_use = "check whether the risk briefing job was marked complete before showing fresh briefing data"]
     pub fn mark_risk_briefing_job_complete(
         &self,
         account_id: &str,
@@ -3596,6 +3638,7 @@ impl ActionDb {
 
     /// Compare-and-set terminal transition to `failed` with a truncated
     /// error message (>2000 chars are clipped to keep rows compact).
+    #[must_use = "check whether the risk briefing job failure was recorded before relying on retry state"]
     pub fn mark_risk_briefing_job_failed(
         &self,
         account_id: &str,
@@ -3667,6 +3710,7 @@ impl ActionDb {
 
     /// Mark a pending health recompute for `account_id`. Idempotent — stamps
     /// `requested_at` on each call so diagnostics can show staleness.
+    #[must_use = "check whether health recompute was marked pending before assuming health scoring will refresh"]
     pub fn mark_health_recompute_pending(&self, account_id: &str) -> Result<(), DbError> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn.execute(
@@ -3680,6 +3724,7 @@ impl ActionDb {
 
     /// Clear the pending marker for `account_id`. Called after a successful
     /// recompute so the drain on next startup won't redo the work.
+    #[must_use = "check whether health recompute pending was cleared before treating health scoring as current"]
     pub fn clear_health_recompute_pending(&self, account_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM health_recompute_pending WHERE account_id = ?1",

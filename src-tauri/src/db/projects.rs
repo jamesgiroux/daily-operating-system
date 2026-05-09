@@ -34,6 +34,7 @@ impl ActionDb {
     }
 
     /// Insert or update a project. Also mirrors to the `entities` table.
+    #[must_use = "check whether the project and entity mirror were saved before relying on project state"]
     pub fn upsert_project(&self, project: &DbProject) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO projects (
@@ -69,6 +70,7 @@ impl ActionDb {
     }
 
     /// Mirror a project to the entities table (bridge pattern).
+    #[must_use = "check whether the project entity mirror was ensured before resolving project links"]
     pub fn ensure_entity_for_project(&self, project: &DbProject) -> Result<(), DbError> {
         let entity = DbEntity {
             id: project.id.clone(),
@@ -126,6 +128,7 @@ impl ActionDb {
     }
 
     /// Update a single whitelisted field on a project.
+    #[must_use = "check whether the project field changed before showing updated project data"]
     pub fn update_project_field(&self, id: &str, field: &str, value: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         // parent_id uses NULL for empty values (top-level projects)
@@ -267,6 +270,7 @@ impl ActionDb {
     }
 
     /// Update keywords for a project.
+    #[must_use = "check whether project keywords were saved before using keyword-based matching"]
     pub fn update_project_keywords(
         &self,
         project_id: &str,
@@ -282,6 +286,7 @@ impl ActionDb {
     }
 
     /// Update keywords for an account.
+    #[must_use = "check whether account keywords were saved before using keyword-based matching"]
     pub fn update_account_keywords(
         &self,
         account_id: &str,
@@ -297,6 +302,7 @@ impl ActionDb {
     }
 
     /// Remove a keyword from a project's keyword list (user curation).
+    #[must_use = "check whether the project keyword was removed before changing project match behavior"]
     pub fn remove_project_keyword(&self, project_id: &str, keyword: &str) -> Result<(), DbError> {
         let current: Option<String> = self
             .conn
@@ -323,6 +329,7 @@ impl ActionDb {
     }
 
     /// Remove a keyword from an account's keyword list (user curation).
+    #[must_use = "check whether the account keyword was removed before changing account match behavior"]
     pub fn remove_account_keyword(&self, account_id: &str, keyword: &str) -> Result<(), DbError> {
         let current: Option<String> = self
             .conn
@@ -350,6 +357,7 @@ impl ActionDb {
 
     /// Invalidate meeting prep data (prep invalidation on entity correction).
     /// NULLs prep columns and returns the old prep_snapshot_path for disk cleanup.
+    #[must_use = "check whether meeting prep was invalidated before assuming stale prep will regenerate"]
     pub fn invalidate_meeting_prep(&self, meeting_id: &str) -> Result<Option<String>, DbError> {
         let old_path: Option<String> = self
             .conn
@@ -471,6 +479,7 @@ impl ActionDb {
     }
 
     /// Link a meeting to a project in the meeting_entities junction table.
+    #[must_use = "check whether the meeting was linked to the project before showing project meeting history"]
     pub fn link_meeting_to_project(
         &self,
         meeting_id: &str,
@@ -480,6 +489,7 @@ impl ActionDb {
     }
 
     /// Link a meeting to any entity in the junction table (generic).
+    #[must_use = "check whether the meeting-entity link was saved before relying on meeting context"]
     pub fn link_meeting_entity(
         &self,
         meeting_id: &str,
@@ -510,6 +520,7 @@ impl ActionDb {
     /// assumption. When `is_primary = false`, no demotion is performed
     /// (suggestion writes cannot steal primaryhood, and we must still not
     /// downgrade an existing primary via the upsert path).
+    #[must_use = "check whether the confident meeting-entity link was saved before using entity attribution"]
     pub fn link_meeting_entity_with_confidence(
         &self,
         meeting_id: &str,
@@ -556,6 +567,7 @@ impl ActionDb {
     }
 
     /// Remove a meeting-entity link from the junction table.
+    #[must_use = "check whether the meeting-entity link was removed before treating the entity as unlinked"]
     pub fn unlink_meeting_entity(&self, meeting_id: &str, entity_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM meeting_entities WHERE meeting_id = ?1 AND entity_id = ?2",
@@ -569,6 +581,7 @@ impl ActionDb {
     /// resolver sweeps so the entity will not silently re-link on its own.
     /// The accompanying `unlink_meeting_entity` call is the caller's job —
     /// this helper only writes the dictionary entry.
+    #[must_use = "check whether the meeting-entity dismissal was recorded before suppressing the suggestion"]
     pub fn record_meeting_entity_dismissal(
         &self,
         meeting_id: &str,
@@ -591,6 +604,7 @@ impl ActionDb {
 
     /// Remove a dismissal record so the entity can auto-link again
     /// on the next resolver pass. Used by the undo / restore flow.
+    #[must_use = "check whether the meeting-entity dismissal was removed before resurfacing the suggestion"]
     pub fn remove_meeting_entity_dismissal(
         &self,
         meeting_id: &str,
@@ -766,6 +780,7 @@ impl ActionDb {
     }
 
     /// Clear all entity links for a given meeting.
+    #[must_use = "check whether meeting entity links were cleared before rebuilding meeting attribution"]
     pub fn clear_meeting_entities(&self, meeting_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM meeting_entities WHERE meeting_id = ?1",
@@ -775,6 +790,7 @@ impl ActionDb {
     }
 
     /// Cascade entity reassignment to actions linked to this meeting.
+    #[must_use = "check whether meeting entity attribution cascaded to actions before trusting action context"]
     pub fn cascade_meeting_entity_to_actions(
         &self,
         meeting_id: &str,
@@ -794,6 +810,7 @@ impl ActionDb {
     }
 
     /// Cascade entity reassignment to captures linked to this meeting.
+    #[must_use = "check whether meeting entity attribution cascaded to captures before trusting capture context"]
     pub fn cascade_meeting_entity_to_captures(
         &self,
         meeting_id: &str,
@@ -817,6 +834,7 @@ impl ActionDb {
     /// external attendees to that entity via the appropriate junction table.
     ///
     /// Returns the number of new person-entity links created (excludes existing links).
+    #[must_use = "check whether meeting entity attribution cascaded to people before trusting stakeholder links"]
     pub fn cascade_meeting_entity_to_people(
         &self,
         meeting_id: &str,
