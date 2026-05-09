@@ -18,6 +18,7 @@ pub struct GlobalSearchResult {
 
 pub trait SearchDb {
     fn search_global(&self, query: &str, limit: i32) -> Result<Vec<GlobalSearchResult>, DbError>;
+    #[must_use = "rebuild_search_index returns the count of indexed rows; ignoring it can mask FTS rebuild failures and leave search results stale"]
     fn rebuild_search_index(&self) -> Result<usize, DbError>;
 }
 
