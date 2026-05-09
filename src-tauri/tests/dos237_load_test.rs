@@ -279,6 +279,7 @@ fn dos237_low_cap_load_surfaces_rejections_without_silent_drop() {
     let mut emit_attempts = 0usize;
     let mut enqueue_rejections = 0usize;
     let mut enqueue_successes = 0usize;
+    let mut other_errors: Vec<String> = Vec::new();
 
     for s in 0..subject_count {
         let account_id = format!("dos237-cap-{s}");
@@ -314,26 +315,53 @@ fn dos237_low_cap_load_surfaces_rejections_without_silent_drop() {
 
         match outcome {
             Ok(_) => enqueue_successes += 1,
-            Err(_) => enqueue_rejections += 1,
+            Err(e) => {
+                // The cap rejection from invalidation_jobs surfaces as a
+                // DbError::InvalidArgument that includes "enqueue rejected"
+                // in its message. Anything else is a real test failure (DB
+                // lock, schema mismatch, etc.) and should not be conflated
+                // with the cap-rejection acceptance path.
+                if e.contains("enqueue rejected")
+                    || e.contains("pending cap")
+                    || e.contains("InvalidArgument")
+                {
+                    enqueue_rejections += 1;
+                } else {
+                    other_errors.push(e);
+                }
+            }
         }
     }
+
+    assert!(
+        other_errors.is_empty(),
+        "unexpected non-cap errors in low-cap test: {other_errors:?}"
+    );
 
     let pending_jobs = count(
         &db,
         "SELECT count(*) FROM invalidation_jobs WHERE status = 'pending'",
     );
     let total_jobs = count(&db, "SELECT count(*) FROM invalidation_jobs");
+    let signal_rows = count(&db, "SELECT count(*) FROM signal_events");
 
-    // The cap path was actually hit — pending count cannot exceed the explicit
-    // cap of 5. Some subjects DID get rejected (proves the cap-path is live).
-    assert!(
-        pending_jobs <= cap_config.pending_cap,
-        "pending_jobs={pending_jobs} exceeded explicit cap={}",
+    // Cap actually saturated. With 50 distinct subjects and cap=5, the queue
+    // must reach exactly the cap (not just stay under it).
+    assert_eq!(
+        pending_jobs, cap_config.pending_cap,
+        "pending_jobs={pending_jobs} != cap={} — cap path not exercised",
         cap_config.pending_cap
     );
+
+    // Cap path actually fires (50 subjects, cap 5 → at least 45 rejections).
     assert!(
-        enqueue_rejections > 0,
-        "expected at least one cap-driven rejection across {subject_count} subjects with cap={}",
+        enqueue_rejections >= (subject_count - cap_config.pending_cap as usize),
+        "expected >= {} cap-driven rejections, got {enqueue_rejections}",
+        subject_count - cap_config.pending_cap as usize
+    );
+    assert!(
+        enqueue_successes >= cap_config.pending_cap as usize,
+        "expected >= {} successful enqueues, got {enqueue_successes} — proof cap-path was reachable, not just every subject erroring",
         cap_config.pending_cap
     );
 
@@ -345,6 +373,13 @@ fn dos237_low_cap_load_surfaces_rejections_without_silent_drop() {
         emit_attempts,
         enqueue_successes + enqueue_rejections,
         "{emit_attempts} attempts != {enqueue_successes} success + {enqueue_rejections} rejections"
+    );
+
+    // No orphan signals: rejected transactions roll back the signal_events
+    // INSERT too. signal_events count must match successful enqueues.
+    assert_eq!(
+        signal_rows as usize, enqueue_successes,
+        "signal_events count {signal_rows} != enqueue_successes {enqueue_successes} — orphan signals from rolled-back txs"
     );
     assert!(
         total_jobs >= enqueue_successes as i64,
