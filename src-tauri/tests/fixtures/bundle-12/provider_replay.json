@@ -2,7 +2,7 @@
   "version": 1,
   "fixtures": [
     {
-      "canonical_prompt_hash": "7c3b35d69cbac84816ac28d7d2a4659b3dd58c377b6741a70ae70ad144dbce36",
+      "canonical_prompt_hash": "06bdb560180534c0f9aa4b7bd9e0463916fa531717d7ff7728f60a7663cc00cf",
       "completion": "{\n  \"topics\": [],\n  \"attendee_context\": [],\n  \"open_loops\": [],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
     }
   ]

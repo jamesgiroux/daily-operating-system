@@ -21,11 +21,17 @@
 //! on next dequeue"). When `AbilityContext` lands those callers migrate
 //! to `select_provider(ability_ctx, tier)`.
 
-use std::collections::BTreeMap;
 use std::sync::Arc;
 
 use async_trait::async_trait;
-use serde_json::{Map, Value};
+use serde_json::Value;
+
+#[allow(deprecated)]
+pub use super::prompt_fingerprint::{
+    canonical_prompt_hash, canonical_template_hash, prompt_fingerprint_from_completion,
+    replay_fixture_key, CanonicalPromptRequest,
+};
+use super::prompt_fingerprint::canonicalize_json_value;
 
 /// Model tier for AI operations.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -255,9 +261,9 @@ pub enum ProviderError {
     PromptTooLarge { tokens: u32, limit: u32 },
 
     /// Replay fixture did not contain a matching completion.
-    /// Used by `ReplayProvider` in `Evaluate` mode; never falls through to live.
-    #[error("replay fixture missing for prompt hash {0}")]
-    ReplayFixtureMissing(String),
+    /// Used by `ReplayProvider` in `Simulate`/`Evaluate` mode; never falls through to live.
+    #[error("fixture missing completion for prompt hash {hash}")]
+    FixtureMissingCompletion { hash: String },
 
     /// Mode routing rejected the call (e.g., `Simulate` invoked a
     /// generative path, or `Evaluate` was requested with no replay
@@ -300,152 +306,11 @@ pub fn prompt_replay_hash(prompt: &PromptInput) -> String {
     hex::encode(hasher.finalize())
 }
 
-#[derive(Debug, Clone, Copy)]
-pub struct CanonicalPromptRequest<'a> {
-    pub prompt: &'a PromptInput,
-    pub fingerprint_metadata: &'a FingerprintMetadata,
-}
-
-/// ADR-0106 canonical prompt hash shared by provenance and replay lookup.
-///
-/// The hash is intentionally computed from separated fields, not from a single
-/// rendered prompt string: template identity/version, canonicalized template
-/// bytes hash, canonical JSON inputs, provider, model, temperature, top_p, and
-/// seed. Ad-hoc prompts without template metadata are treated as a synthetic
-/// `adhoc` template whose bytes are the rendered prompt text.
-pub fn canonical_prompt_hash(request: CanonicalPromptRequest<'_>) -> String {
-    use sha2::{Digest, Sha256};
-
-    let canonical = canonical_prompt_request_value(request);
-    let canonical = canonical_json_string(&canonical);
-    let mut hasher = Sha256::new();
-    hasher.update(canonical.as_bytes());
-    hex::encode(hasher.finalize())
-}
-
-pub fn canonical_template_hash(template_bytes: &str) -> String {
-    use sha2::{Digest, Sha256};
-
-    let mut hasher = Sha256::new();
-    hasher.update(canonical_prompt_text(template_bytes).as_bytes());
-    hex::encode(hasher.finalize())
-}
-
-fn canonical_prompt_request_value(request: CanonicalPromptRequest<'_>) -> Value {
-    let prompt = request.prompt;
-    let meta = request.fingerprint_metadata;
-    let template_hash = prompt
-        .template_hash
-        .clone()
-        .unwrap_or_else(|| canonical_template_hash(&prompt.text));
-    let inputs = prompt
-        .canonical_json_inputs
-        .as_ref()
-        .map(canonicalize_json_value)
-        .unwrap_or(Value::Null);
-
-    let mut object = Map::new();
-    object.insert(
-        "schema".to_string(),
-        Value::String("adr-0106-canonical-prompt-v1".to_string()),
-    );
-    object.insert(
-        "template_id".to_string(),
-        Value::String(
-            prompt
-                .template_id
-                .clone()
-                .unwrap_or_else(|| "adhoc".to_string()),
-        ),
-    );
-    object.insert(
-        "template_version".to_string(),
-        Value::String(
-            prompt
-                .template_version
-                .clone()
-                .unwrap_or_else(|| "unversioned".to_string()),
-        ),
-    );
-    object.insert("template_hash".to_string(), Value::String(template_hash));
-    object.insert("canonical_json_inputs".to_string(), inputs);
-    object.insert(
-        "provider".to_string(),
-        Value::String(meta.provider.as_str().to_string()),
-    );
-    object.insert(
-        "model".to_string(),
-        Value::String(meta.model.as_str().to_string()),
-    );
-    object.insert(
-        "temperature".to_string(),
-        Value::String(canonical_f32(meta.temperature)),
-    );
-    object.insert(
-        "top_p".to_string(),
-        meta.top_p
-            .map(canonical_f32)
-            .map(Value::String)
-            .unwrap_or(Value::Null),
-    );
-    object.insert(
-        "seed".to_string(),
-        meta.seed.map(Value::from).unwrap_or(Value::Null),
-    );
-
-    Value::Object(object)
-}
-
-fn canonical_prompt_text(text: &str) -> String {
-    text.lines()
-        .map(str::trim_end)
-        .collect::<Vec<_>>()
-        .join("\n")
-}
-
-fn canonicalize_json_value(value: &Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.iter().map(canonicalize_json_value).collect()),
-        Value::Object(object) => {
-            let sorted = object
-                .iter()
-                .map(|(key, value)| (key.clone(), canonicalize_json_value(value)))
-                .collect::<BTreeMap<_, _>>();
-            Value::Object(sorted.into_iter().collect())
-        }
-        other => other.clone(),
-    }
-}
-
-fn canonical_json_string(value: &Value) -> String {
-    serde_json::to_string(&canonicalize_json_value(value))
-        .unwrap_or_else(|error| format!("{{\"canonicalization_error\":\"{error}\"}}"))
-}
-
-fn canonical_f32(value: f32) -> String {
-    if !value.is_finite() {
-        return value.to_string();
-    }
-
-    let mut formatted = format!("{value:.8}");
-    while formatted.contains('.') && formatted.ends_with('0') {
-        formatted.pop();
-    }
-    if formatted.ends_with('.') {
-        formatted.pop();
-    }
-    if formatted == "-0" {
-        "0".to_string()
-    } else {
-        formatted
-    }
-}
-
 /// In-memory replay provider for tests + `Evaluate` mode.
 ///
 /// Stores `(hash, completion)` pairs supplied at construction. On
 /// `complete()`, computes the ADR-0106 canonical prompt hash and looks it up;
-/// returns `ProviderError::ReplayFixtureMissing` if absent — never falls
+/// returns `ProviderError::FixtureMissingCompletion` if absent — never falls
 /// through to a live path.
 pub struct ReplayProvider {
     fixtures: std::collections::HashMap<String, Completion>,
@@ -480,10 +345,7 @@ impl ReplayProvider {
         let mut fixtures = std::collections::HashMap::new();
         for (prompt_text, completion_text) in pairs {
             let p = PromptInput::new(prompt_text);
-            let key = canonical_prompt_hash(CanonicalPromptRequest {
-                prompt: &p,
-                fingerprint_metadata: &FingerprintMetadata::default(),
-            });
+            let key = replay_fixture_key(&p, &FingerprintMetadata::default());
             fixtures.insert(
                 key,
                 Completion {
@@ -539,10 +401,7 @@ impl IntelligenceProvider for ReplayProvider {
         tier: ModelTier,
     ) -> Result<Completion, ProviderError> {
         let metadata = self.fingerprint_metadata_for_tier(tier);
-        let key = canonical_prompt_hash(CanonicalPromptRequest {
-            prompt: &prompt,
-            fingerprint_metadata: &metadata,
-        });
+        let key = replay_fixture_key(&prompt, &metadata);
         self.fixtures
             .get(&key)
             .cloned()
@@ -550,7 +409,7 @@ impl IntelligenceProvider for ReplayProvider {
                 completion.fingerprint_metadata = metadata;
                 completion
             })
-            .ok_or(ProviderError::ReplayFixtureMissing(key))
+            .ok_or(ProviderError::FixtureMissingCompletion { hash: key })
     }
 
     fn provider_kind(&self) -> ProviderKind {
@@ -597,7 +456,9 @@ pub enum ExecutionMode {
 /// - `Evaluate` → returns the supplied replay provider, or
 ///   `Err(ModeNotSupported)` if no fixture is configured (NEVER falls
 ///   through to live)
-/// - `Simulate` → always `Err(ModeNotSupported)` (fail-closed)
+/// - `Simulate` → returns the supplied replay provider, or
+///   `Err(ModeNotSupported)` if no fixture is configured (NEVER falls
+///   through to live)
 pub fn select_provider(
     mode: ExecutionMode,
     live_provider: Arc<dyn IntelligenceProvider>,
@@ -606,8 +467,9 @@ pub fn select_provider(
 ) -> Result<Arc<dyn IntelligenceProvider>, ProviderError> {
     match mode {
         ExecutionMode::Live => Ok(live_provider),
-        ExecutionMode::Evaluate => replay_provider.ok_or(ProviderError::ModeNotSupported),
-        ExecutionMode::Simulate => Err(ProviderError::ModeNotSupported),
+        ExecutionMode::Evaluate | ExecutionMode::Simulate => {
+            replay_provider.ok_or(ProviderError::ModeNotSupported)
+        }
     }
 }
 
@@ -643,7 +505,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn replay_provider_fixture_miss_returns_replay_fixture_missing() {
+    async fn replay_provider_fixture_miss_returns_fixture_missing_completion() {
         let provider = ReplayProvider::from_prompt_pairs([("known", "ok")]);
         let prompt = PromptInput::new("unknown prompt");
         let err = provider
@@ -651,8 +513,8 @@ mod tests {
             .await
             .expect_err("missing fixture must error");
         match err {
-            ProviderError::ReplayFixtureMissing(_) => (),
-            other => panic!("expected ReplayFixtureMissing, got {:?}", other),
+            ProviderError::FixtureMissingCompletion { hash } => assert!(!hash.is_empty()),
+            other => panic!("expected FixtureMissingCompletion, got {:?}", other),
         }
     }
 
@@ -667,7 +529,10 @@ mod tests {
             .complete(prompt, ModelTier::Synthesis)
             .await
             .expect_err("empty replay must always error");
-        assert!(matches!(err, ProviderError::ReplayFixtureMissing(_)));
+        assert!(matches!(
+            err,
+            ProviderError::FixtureMissingCompletion { .. }
+        ));
     }
 
     #[tokio::test]
@@ -678,10 +543,7 @@ mod tests {
         for i in 0..32u32 {
             let p = PromptInput::new(format!("prompt-{i}"));
             fixtures.insert(
-                canonical_prompt_hash(CanonicalPromptRequest {
-                    prompt: &p,
-                    fingerprint_metadata: &FingerprintMetadata::default(),
-                }),
+                replay_fixture_key(&p, &FingerprintMetadata::default()),
                 fixture_completion(&format!("r-{i}")),
             );
         }
@@ -706,14 +568,8 @@ mod tests {
         let b = PromptInput::new("same prompt");
         let meta = FingerprintMetadata::default();
         assert_eq!(
-            canonical_prompt_hash(CanonicalPromptRequest {
-                prompt: &a,
-                fingerprint_metadata: &meta,
-            }),
-            canonical_prompt_hash(CanonicalPromptRequest {
-                prompt: &b,
-                fingerprint_metadata: &meta,
-            })
+            replay_fixture_key(&a, &meta),
+            replay_fixture_key(&b, &meta)
         );
     }
 
@@ -737,14 +593,8 @@ mod tests {
             provider_completion_id: None,
         };
         assert_ne!(
-            canonical_prompt_hash(CanonicalPromptRequest {
-                prompt: &a,
-                fingerprint_metadata: &meta,
-            }),
-            canonical_prompt_hash(CanonicalPromptRequest {
-                prompt: &b,
-                fingerprint_metadata: &meta,
-            })
+            replay_fixture_key(&a, &meta),
+            replay_fixture_key(&b, &meta)
         );
     }
 
@@ -767,8 +617,7 @@ mod tests {
     async fn select_provider_routes_modes_to_correct_arc() {
         // Replaced the prior select_provider_stub with a real
         // mode-bearing selector.
-        // Live → live; Evaluate → replay (or fail-closed if unset);
-        // Simulate → fail-closed.
+        // Live → live; Evaluate/Simulate → replay (or fail-closed if unset).
         let live: Arc<dyn IntelligenceProvider> =
             Arc::new(ReplayProvider::from_prompt_pairs([("p", "live")]));
         let replay: Arc<dyn IntelligenceProvider> =
@@ -809,13 +658,18 @@ mod tests {
         );
         assert!(matches!(res, Err(ProviderError::ModeNotSupported)));
 
-        // Simulate → always fail-closed.
-        let res = select_provider(
+        // Simulate also resolves to replay; it never falls through to live.
+        let chosen = select_provider(
             ExecutionMode::Simulate,
             live,
             Some(replay),
             ModelTier::Synthesis,
-        );
-        assert!(matches!(res, Err(ProviderError::ModeNotSupported)));
+        )
+        .expect("Simulate with replay configured must resolve");
+        let got = chosen
+            .complete(PromptInput::new("p"), ModelTier::Synthesis)
+            .await
+            .unwrap();
+        assert_eq!(got.text, "replay");
     }
 }

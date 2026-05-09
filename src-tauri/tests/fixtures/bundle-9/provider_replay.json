@@ -2,7 +2,7 @@
   "version": 1,
   "fixtures": [
     {
-      "canonical_prompt_hash": "c4d3a0a422b5e3416aff30a451ea4102602e4f8c70c580ce74af10638c4a269f",
+      "canonical_prompt_hash": "6e313d8ae562c9dacbcbd8c561d1727a281c3c41013adf9cbc9ef89e9c5ade7f",
       "completion": "{\n  \"topics\": [],\n  \"attendee_context\": [],\n  \"open_loops\": [\n    {\n      \"description\": \"Morgan Malik still needs the rollout checklist from last week's one-on-one.\",\n      \"owner\": \"Morgan Malik\",\n      \"subject\": {\n        \"kind\": \"person\",\n        \"id\": \"person-b9-morgan\"\n      },\n      \"source_ids\": [\n        \"src-b9-prior-action\"\n      ],\n      \"confidence\": 0.9\n    }\n  ],\n  \"what_changed_since_last\": [],\n  \"suggested_outcomes\": []\n}"
     }
   ]
