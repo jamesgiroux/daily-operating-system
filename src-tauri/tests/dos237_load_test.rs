@@ -323,9 +323,7 @@ fn dos237_low_cap_load_surfaces_rejections_without_silent_drop() {
                 // sources (schema validation, FK violations stringified
                 // through the same variant, etc.) that would also contain
                 // "InvalidArgument" but are NOT the cap-rejection branch.
-                if e.contains("invalidation queue pending cap")
-                    && e.contains("enqueue rejected")
-                {
+                if e.contains("invalidation queue pending cap") && e.contains("enqueue rejected") {
                     enqueue_rejections += 1;
                 } else {
                     other_errors.push(e);

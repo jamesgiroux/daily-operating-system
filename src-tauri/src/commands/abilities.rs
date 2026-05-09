@@ -50,11 +50,11 @@ pub async fn invoke_ability(
     let policy = build_ownership_policy_for_invocation(
         ability_meta,
         &input_for_policy,
-        &response.rendered_provenance.value,
+        response.raw_provenance_value(),
     )?;
     validate_serialized_subject_ownership(
         response.data.clone(),
-        response.rendered_provenance.value.clone(),
+        response.raw_provenance_value().clone(),
         response.diagnostics.clone(),
         &[],
         policy,

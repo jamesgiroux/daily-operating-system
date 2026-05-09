@@ -281,6 +281,7 @@ impl<'registry> TauriAbilityBridge<'registry> {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
@@ -292,6 +293,10 @@ mod tests {
     use tokio::sync::Notify;
 
     use super::*;
+    use crate::abilities::provenance::{
+        provenance_for_test, AbilityExecutionMode, Actor as ProvenanceActor, InvocationId,
+        SubjectAttribution, SubjectRef,
+    };
     use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
     use crate::abilities::{
         AbilityCategory, AbilityContext, AbilityDescriptor, AbilityError, AbilityErrorKind, Actor,
@@ -402,16 +407,51 @@ mod tests {
             "data": data,
             "ability_version": { "major": 1, "minor": 0 },
             "diagnostics": { "warnings": [] },
-            "provenance": {
-                "invocation_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
-                "ability_name": "fixture",
-                "ability_version": { "major": 1, "minor": 0 },
-                "ability_schema_version": 1,
-                "actor": format!("{:?}", ctx.actor),
-                "mode": ctx.mode().as_str(),
-                "warnings": []
-            }
+            "provenance": typed_provenance_json(ctx)
         })
+    }
+
+    fn typed_provenance_json(ctx: &AbilityContext<'_>) -> serde_json::Value {
+        let mut provenance = provenance_for_test(
+            "fixture",
+            Utc::now(),
+            SubjectAttribution::direct_confident(SubjectRef::Global),
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+            None,
+            Vec::new(),
+        );
+        provenance.invocation_id = InvocationId::parse("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+            .expect("test invocation id is valid");
+        provenance.actor = provenance_actor_for_test(ctx.actor);
+        provenance.mode = provenance_mode_for_test(ctx.mode());
+        serde_json::to_value(provenance).expect("test provenance serializes")
+    }
+
+    fn provenance_actor_for_test(actor: Actor) -> ProvenanceActor {
+        match actor {
+            Actor::User => ProvenanceActor::User,
+            Actor::Agent => ProvenanceActor::Agent {
+                name: "fixture-agent".to_string(),
+                version: "1.0.0".to_string(),
+            },
+            Actor::Admin => ProvenanceActor::Human {
+                role: "admin".to_string(),
+                id: "fixture-admin".to_string(),
+            },
+            Actor::System => ProvenanceActor::System {
+                component: "fixture-system".to_string(),
+            },
+        }
+    }
+
+    fn provenance_mode_for_test(mode: ExecutionMode) -> AbilityExecutionMode {
+        match mode {
+            ExecutionMode::Live => AbilityExecutionMode::Live,
+            ExecutionMode::Simulate => AbilityExecutionMode::Simulate,
+            ExecutionMode::Evaluate => AbilityExecutionMode::Evaluate,
+        }
     }
 
     fn descriptor(
@@ -1028,7 +1068,14 @@ mod tests {
             response.rendered_provenance.surface,
             BridgeSurface::TauriApp
         );
-        assert_eq!(response.rendered_provenance.value["actor"], "User");
+        assert_eq!(
+            response.rendered_provenance.value["ability_name"],
+            "fixture"
+        );
+        assert_eq!(
+            response.rendered_provenance.value["about_this"]["summary"]["source_count"],
+            json!(0)
+        );
     }
 
     #[tokio::test]
@@ -1050,8 +1097,11 @@ mod tests {
 
         let rendered = response.rendered_provenance;
         assert_eq!(rendered.surface, BridgeSurface::TauriApp);
-        assert_eq!(rendered.value["mode"], "live");
         assert_eq!(rendered.value["ability_name"], "fixture");
+        assert_eq!(
+            rendered.value["about_this"]["summary"]["source_count"],
+            json!(0)
+        );
     }
 
     #[tokio::test]

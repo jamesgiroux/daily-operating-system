@@ -861,13 +861,13 @@ pub async fn invoke_mcp_ability_tool(
         let policy = build_ownership_policy_for_invocation(
             ability_meta,
             &input_for_policy,
-            &response.rendered_provenance.value,
+            response.raw_provenance_value(),
         )
         .map_err(|error| mcp_error_from_bridge_surface_error(BridgeSurfaceError::Ownership(error)))?
         .rejecting_sources_outside_subject_scope();
         validate_serialized_subject_ownership(
             response.data.clone(),
-            response.rendered_provenance.value.clone(),
+            response.raw_provenance_value().clone(),
             response.diagnostics.clone(),
             &[],
             policy,

@@ -60,7 +60,10 @@ fn migration_145_preserves_project_memberships_and_surfaces_unrecoverable_orphan
     .expect("seed unrecoverable membership");
 
     let applied = run_migrations(&conn).expect("apply migration 145");
-    assert!(applied >= 1, "expected at least migration 145, got {applied}");
+    assert!(
+        applied >= 1,
+        "expected at least migration 145, got {applied}"
+    );
 
     let recovered_relationship: String = conn
         .query_row(
@@ -138,7 +141,10 @@ fn migration_145_mirrors_zero_member_legacy_projects() {
     .expect("seed zero-member project row without entity mirror");
 
     let applied = run_migrations(&conn).expect("apply migration 145");
-    assert!(applied >= 1, "expected at least migration 145, got {applied}");
+    assert!(
+        applied >= 1,
+        "expected at least migration 145, got {applied}"
+    );
 
     let mirrored_entity: (String, String, Option<String>) = conn
         .query_row(

@@ -362,10 +362,7 @@ impl<'registry> McpAbilityBridge<'registry> {
         self.insert_provenance(
             session,
             response.invocation_id,
-            RenderedProvenance::new(
-                BridgeSurface::McpToolDetail,
-                response.rendered_provenance.value.clone(),
-            ),
+            response.render_cached_provenance(BridgeActor::Agent, BridgeSurface::McpToolDetail),
         );
 
         Ok(response)
@@ -394,7 +391,7 @@ impl<'registry> McpAbilityBridge<'registry> {
             Some(provenance) => {
                 let detail =
                     RenderedProvenance::new(BridgeSurface::McpToolDetail, provenance.value);
-                CallToolResult::success(vec![json_content(detail)])
+                bounded_provenance_tool_response(detail)
             }
             None => {
                 CallToolResult::error(vec![json_content(BridgeSurfaceError::AbilityUnavailable)])
@@ -496,6 +493,45 @@ fn json_content<T: serde::Serialize>(value: T) -> Content {
     }
 }
 
+fn bounded_provenance_tool_response(detail: RenderedProvenance) -> CallToolResult {
+    let result = CallToolResult::success(vec![json_content(detail)]);
+    let Ok(original_bytes) = serialized_call_tool_result_len(&result) else {
+        return truncated_provenance_tool_response(0);
+    };
+    if original_bytes <= MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP {
+        return result;
+    }
+
+    truncated_provenance_tool_response(original_bytes)
+}
+
+fn serialized_call_tool_result_len(result: &CallToolResult) -> Result<usize, serde_json::Error> {
+    serde_json::to_vec(result).map(|bytes| bytes.len())
+}
+
+fn truncated_provenance_tool_response(original_bytes: usize) -> CallToolResult {
+    let detail = RenderedProvenance::new(
+        BridgeSurface::McpToolDetail,
+        serde_json::json!({
+            "summary": "Provenance truncated for render budget",
+            "warnings": [{
+                "kind": "truncated_for_render",
+                "surface": "mcp_tool_detail",
+                "budget_bytes": MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP,
+                "original_bytes": original_bytes,
+            }],
+        }),
+    );
+    let result = CallToolResult::success(vec![json_content(detail)]);
+    let final_bytes = serialized_call_tool_result_len(&result)
+        .expect("truncated MCP provenance tool response serializes");
+    assert!(
+        final_bytes <= MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP,
+        "truncated MCP provenance tool response exceeded 10KB budget: {final_bytes}"
+    );
+    result
+}
+
 fn mcp_error_from_bridge_surface_error(error: BridgeSurfaceError) -> McpError {
     let data = serde_json::to_value(&error)
         .unwrap_or_else(|_| serde_json::Value::String("ability_unavailable".to_string()));
@@ -504,6 +540,7 @@ fn mcp_error_from_bridge_surface_error(error: BridgeSurfaceError) -> McpError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
     use std::future::Future;
     use std::pin::Pin;
     use std::sync::Arc;
@@ -512,6 +549,10 @@ mod tests {
     use serde_json::json;
 
     use super::*;
+    use crate::abilities::provenance::{
+        provenance_for_test, AbilityExecutionMode, Actor as ProvenanceActor, SubjectAttribution,
+        SubjectRef,
+    };
     use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
     use crate::abilities::{AbilityCategory, AbilityContext, AbilityError};
     use crate::bridges::tauri::UserAttestationHost;
@@ -559,7 +600,6 @@ mod tests {
             envelope["provenance"]["internal_id"] = json!("internal-account-217");
             envelope["provenance"]["prompt_hash"] = json!("prompt-hash-217");
             envelope["provenance"]["seed"] = json!(217);
-            envelope["provenance"]["children"] = json!([{ "internal_id": "child-217" }]);
             Ok(envelope)
         })
     }
@@ -574,16 +614,51 @@ mod tests {
             "data": data,
             "ability_version": { "major": 1, "minor": 0 },
             "diagnostics": { "warnings": [] },
-            "provenance": {
-                "invocation_id": invocation_id,
-                "ability_name": "fixture",
-                "ability_version": { "major": 1, "minor": 0 },
-                "ability_schema_version": 1,
-                "actor": format!("{:?}", ctx.actor),
-                "mode": ctx.mode().as_str(),
-                "warnings": []
-            }
+            "provenance": typed_provenance_json(ctx, invocation_id)
         })
+    }
+
+    fn typed_provenance_json(ctx: &AbilityContext<'_>, invocation_id: &str) -> serde_json::Value {
+        let mut provenance = provenance_for_test(
+            "fixture",
+            Utc::now(),
+            SubjectAttribution::direct_confident(SubjectRef::Global),
+            Vec::new(),
+            Vec::new(),
+            BTreeMap::new(),
+            None,
+            Vec::new(),
+        );
+        provenance.invocation_id =
+            InvocationId::parse(invocation_id).expect("test invocation id is valid");
+        provenance.actor = provenance_actor_for_test(ctx.actor);
+        provenance.mode = provenance_mode_for_test(ctx.mode());
+        serde_json::to_value(provenance).expect("test provenance serializes")
+    }
+
+    fn provenance_actor_for_test(actor: Actor) -> ProvenanceActor {
+        match actor {
+            Actor::User => ProvenanceActor::User,
+            Actor::Agent => ProvenanceActor::Agent {
+                name: "fixture-agent".to_string(),
+                version: "1.0.0".to_string(),
+            },
+            Actor::Admin => ProvenanceActor::Human {
+                role: "admin".to_string(),
+                id: "fixture-admin".to_string(),
+            },
+            Actor::System => ProvenanceActor::System {
+                component: "fixture-system".to_string(),
+            },
+        }
+    }
+
+    fn provenance_mode_for_test(mode: ExecutionMode) -> AbilityExecutionMode {
+        match mode {
+            ExecutionMode::Live => AbilityExecutionMode::Live,
+            ExecutionMode::Simulate => AbilityExecutionMode::Simulate,
+            ExecutionMode::Evaluate => AbilityExecutionMode::Evaluate,
+        }
     }
 
     fn descriptor(
@@ -1149,7 +1224,16 @@ mod tests {
             .get_provenance(session, response.invocation_id)
             .expect("successful MCP invoke should cache provenance");
         assert_eq!(cached.surface, BridgeSurface::McpToolDetail);
-        assert_eq!(cached.value, response.rendered_provenance.value);
+        assert_eq!(
+            response.rendered_provenance.value["render_level"],
+            json!("summary")
+        );
+        assert_eq!(
+            response.rendered_provenance.value["detail_available"],
+            json!(true)
+        );
+        assert_ne!(cached.value, response.rendered_provenance.value);
+        assert_eq!(cached.value["ability_schema_version"], json!(1));
     }
 
     #[tokio::test]
@@ -1168,7 +1252,7 @@ mod tests {
             .unwrap();
 
         assert_eq!(response.rendered_provenance.surface, BridgeSurface::McpTool);
-        assert_eq!(response.rendered_provenance.value["actor"], "Agent");
+        assert_eq!(response.rendered_provenance.value["actor"], "agent");
         assert_eq!(response.rendered_provenance.value["mode"], "live");
     }
 
@@ -1217,12 +1301,13 @@ mod tests {
             assert!(rendered.get("internal_id").is_none());
             assert!(rendered.get("prompt_hash").is_none());
             assert!(rendered.get("seed").is_none());
-            assert!(rendered.get("children").is_none());
             assert_eq!(
                 rendered["invocation_id"],
                 "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"
             );
         }
+        assert!(response.rendered_provenance.value.get("children").is_none());
+        assert_eq!(detail.value["children"], json!([]));
     }
 
     #[test]
@@ -1353,6 +1438,49 @@ mod tests {
         let result = bridge.get_provenance_tool_response(session(1), invocation(1));
         let bytes = serde_json::to_vec(&result).unwrap();
         assert!(bytes.len() < MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP);
+    }
+
+    #[test]
+    fn mcp_bridge_get_provenance_tool_response_truncates_when_wrapper_exceeds_10kb() {
+        let registry = registry_with_abilities(vec![]);
+        let bridge = McpAbilityBridge::new(&registry);
+        let payload_len = (0..MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP)
+            .rev()
+            .find(|payload_len| {
+                let provenance = rendered_with_payload(1, *payload_len);
+                let inner_fits = provenance
+                    .serialized_len()
+                    .is_ok_and(|len| len <= MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP);
+                let wrapped = CallToolResult::success(vec![json_content(RenderedProvenance::new(
+                    BridgeSurface::McpToolDetail,
+                    provenance.value,
+                ))]);
+                let wrapped_exceeds = serialized_call_tool_result_len(&wrapped)
+                    .is_ok_and(|len| len > MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP);
+                inner_fits && wrapped_exceeds
+            })
+            .expect("fixture payload crosses only after CallToolResult wrapping");
+
+        bridge.insert_provenance(
+            session(1),
+            invocation(1),
+            rendered_with_payload(1, payload_len),
+        );
+
+        let result = bridge.get_provenance_tool_response(session(1), invocation(1));
+        let bytes = serde_json::to_vec(&result).unwrap();
+        let value = tool_result_json(&result);
+
+        assert!(bytes.len() <= MCP_INVOCATION_CACHE_ENTRY_BYTE_CAP);
+        assert_eq!(
+            value["value"]["summary"],
+            json!("Provenance truncated for render budget")
+        );
+        assert_eq!(
+            value["value"]["warnings"][0]["kind"],
+            json!("truncated_for_render")
+        );
+        assert!(value["value"].get("payload").is_none());
     }
 
     #[tokio::test]

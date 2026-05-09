@@ -9,6 +9,7 @@ use serde::{Deserialize, Deserializer, Serialize, Serializer};
 
 use super::field::{FieldAttribution, FieldPath};
 use super::source::{EntityId, SourceAttribution, SourceIndex};
+use super::source::DataSource;
 use super::subject::SubjectAttribution;
 use super::trust::{EffectiveTrust, TrustAssessment};
 use crate::abilities::registry::AbilityCategory;
@@ -457,6 +458,15 @@ pub enum ProvenanceWarning {
         bytes: usize,
         soft_budget_bytes: usize,
     },
+    ExplanationFiltered {
+        field: FieldPath,
+        reason: String,
+    },
+    TruncatedForRender {
+        surface: String,
+        budget_bytes: usize,
+        original_bytes: usize,
+    },
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
@@ -473,6 +483,34 @@ pub enum MaskReason {
     ActorNotAuthorized,
     Sensitive,
     Other(String),
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ProvenanceMaskReason {
+    SourceRevoked { data_source: DataSource },
+    GleanDisconnected,
+    UserDeletedEntry,
+    RetentionExpired,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ProvenanceMasked {
+    pub original_invocation_id: InvocationId,
+    pub original_ability_name: String,
+    #[schemars(with = "String")]
+    pub original_produced_at: DateTime<Utc>,
+    #[schemars(with = "String")]
+    pub masked_at: DateTime<Utc>,
+    pub mask_reason: ProvenanceMaskReason,
+    pub sources_masked: Vec<DataSource>,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case", tag = "kind", content = "value")]
+pub enum ProvenanceOrMasked {
+    Full(Box<Provenance>),
+    Masked(ProvenanceMasked),
 }
 
 #[allow(clippy::too_many_arguments)]
