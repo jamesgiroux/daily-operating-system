@@ -185,8 +185,9 @@ fn canonicalize_url(url: &str) -> String {
         return canonicalize_unparsed_url(url);
     };
 
-    let _ = parsed.set_username("");
-    let _ = parsed.set_password(None);
+    if parsed.set_username("").is_err() || parsed.set_password(None).is_err() {
+        return canonicalize_unparsed_url(url);
+    }
     parsed.set_fragment(None);
 
     if parsed.query().is_some() {

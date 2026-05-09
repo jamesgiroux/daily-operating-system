@@ -95,13 +95,10 @@ run_step "Tauri externalBin sidecar stub" bash -c '
 # 3. Service-layer boundary
 run_step "service-layer boundary" ./scripts/check_service_layer_boundary.sh
 
-# 4. let _ feedback/tombstone/file-write
-run_step "let _ feedback lint" ./scripts/check_no_let_underscore_feedback.sh
-
-# 5. write_intelligence_json fence
+# 4. write_intelligence_json fence
 run_step "write_fence usage" ./scripts/check_write_fence_usage.sh
 
-# 6. ability surface drift + live external clients + fixture anonymization
+# 5. ability surface drift + live external clients + fixture anonymization
 run_step "ability surface drift" bash src-tauri/scripts/check_ability_surface_drift.sh
 run_step "no live external clients in eval" bash src-tauri/scripts/check_no_live_external_clients_in_eval.sh
 run_step "fixture anonymization" bash src-tauri/scripts/check_fixture_anonymization.sh

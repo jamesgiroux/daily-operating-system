@@ -1,0 +1,9 @@
+error: non-binding `let` on an expression with `#[must_use]` type
+ --> tests/trybuild/lints/let_underscore_must_use.rs:6:5
+  |
+6 |     let _ = fallible_side_effect();
+  |     ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = help: consider explicitly using expression value
+  = help: for further information visit https://rust-lang.github.io/rust-clippy/rust-1.95.0/index.html#let_underscore_must_use
+  = note: requested on the command line with `-D clippy::let-underscore-must-use`
