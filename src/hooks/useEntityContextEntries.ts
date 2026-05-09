@@ -31,6 +31,7 @@ export function useEntityContextEntries(entityType: string, entityId: string | n
           entity_id: entityId,
           depth: "standard",
         },
+        renderSurface: "tauri_entity_detail",
         dryRun: false,
         confirmation: null,
       });

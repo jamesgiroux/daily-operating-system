@@ -48,6 +48,7 @@ impl<'registry> WorkerAbilityBridge<'registry> {
             actor: BridgeActor::System,
             mode: ExecutionMode::Live,
             surface: BridgeSurface::Worker,
+            claim_dismissal_surface: crate::services::context::ClaimDismissalSurface::Worker,
             dry_run,
             confirmation,
             confirmation_store: None,

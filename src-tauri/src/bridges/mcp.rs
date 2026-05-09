@@ -402,6 +402,7 @@ impl<'registry> McpAbilityBridge<'registry> {
             actor: BridgeActor::Agent,
             mode: ExecutionMode::Live,
             surface: BridgeSurface::McpTool,
+            claim_dismissal_surface: crate::services::context::ClaimDismissalSurface::McpTool,
             dry_run,
             confirmation: confirmation.as_ref(),
             confirmation_store: None,

@@ -89,6 +89,7 @@ describe("useEntityContextEntries", () => {
         entity_id: "acct-1",
         depth: "standard",
       },
+      renderSurface: "tauri_entity_detail",
       dryRun: false,
       confirmation: null,
     });

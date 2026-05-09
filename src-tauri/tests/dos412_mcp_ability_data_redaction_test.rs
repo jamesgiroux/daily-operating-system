@@ -12,7 +12,7 @@ use dailyos_lib::bridges::McpSessionId;
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::claims::{commit_claim, withdraw_claim, ClaimProposal, CommittedClaim};
-use dailyos_lib::services::context::ExecutionMode;
+use dailyos_lib::services::context::{ClaimDismissalSurface, ExecutionMode};
 use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use dailyos_lib::services::sensitivity::{
     render_mcp_ability_data_for_surface, render_mcp_ability_data_for_surface_with_provenance,
@@ -133,6 +133,7 @@ async fn mcp_ability_data_redacts_tagged_private_claim_text_while_tauri_stays_ra
             &state,
             "dos412_synthetic_claim_text",
             json!({}),
+            ClaimDismissalSurface::TauriEntityDetail,
             false,
             None,
         )
@@ -189,6 +190,7 @@ async fn mcp_ability_response_drops_diagnostics_warnings_while_tauri_keeps_them(
             &state,
             "dos412_synthetic_claim_text",
             json!({}),
+            ClaimDismissalSurface::TauriEntityDetail,
             false,
             None,
         )

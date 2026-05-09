@@ -239,13 +239,8 @@ fn run_claim_recompute(
     job: &InvalidationJob,
 ) -> Result<(), String> {
     let subject_ref = subject_ref_json(&job.subject_type, &job.subject_id)?;
-    let _claims = crate::services::claims::load_claims_active_for_surface(
-        db,
-        &subject_ref,
-        None,
-        crate::services::context::ClaimDismissalSurface::TauriReport.as_str(),
-    )
-    .map_err(|e| format!("load active claims for recompute: {e}"))?;
+    let _claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
+        .map_err(|e| format!("load active claims for recompute: {e}"))?;
 
     if job.subject_type.eq_ignore_ascii_case("account") {
         crate::services::intelligence::recompute_entity_health(

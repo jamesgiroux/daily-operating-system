@@ -38,6 +38,7 @@ impl<'registry, 'deps> EvalAbilityBridge<'registry, 'deps> {
             actor: BridgeActor::System,
             mode: ExecutionMode::Evaluate,
             surface: BridgeSurface::Eval,
+            claim_dismissal_surface: crate::services::context::ClaimDismissalSurface::Eval,
             dry_run,
             confirmation: None,
             confirmation_store: None,

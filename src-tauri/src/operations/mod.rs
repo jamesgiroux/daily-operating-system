@@ -19,8 +19,12 @@ use crate::abilities::provenance::{
     build_ownership_policy_for_invocation, validate_serialized_subject_ownership,
 };
 use crate::abilities::{AbilityRegistry, Actor};
-use crate::bridges::tauri::{TauriAbilityBridge, TauriInvokeContext};
+use crate::bridges::tauri::{
+    parse_tauri_claim_dismissal_surface, validate_claim_dismissal_surface_for_bridge,
+    TauriAbilityBridge, TauriInvokeContext,
+};
 use crate::bridges::{BridgeSurface, BridgeSurfaceError, ConfirmationToken};
+use crate::services::context::ClaimDismissalSurface;
 use crate::state::AppState;
 
 pub type OperationFuture = Pin<Box<dyn Future<Output = OperationResult> + Send>>;
@@ -53,9 +57,31 @@ pub struct OperationInvocation {
     pub state: Arc<AppState>,
     pub actor: Actor,
     pub surface: BridgeSurface,
+    pub claim_dismissal_surface: ClaimDismissalSurface,
     pub input_json: serde_json::Value,
     pub dry_run: bool,
     pub confirmation: Option<ConfirmationToken>,
+}
+
+#[derive(Debug, Clone, Copy)]
+pub struct OperationBridgeContext {
+    pub actor: Actor,
+    pub surface: BridgeSurface,
+    pub claim_dismissal_surface: ClaimDismissalSurface,
+}
+
+impl OperationBridgeContext {
+    pub const fn new(
+        actor: Actor,
+        surface: BridgeSurface,
+        claim_dismissal_surface: ClaimDismissalSurface,
+    ) -> Self {
+        Self {
+            actor,
+            surface,
+            claim_dismissal_surface,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -146,6 +172,7 @@ pub async fn invoke_operation(
     state: State<'_, Arc<AppState>>,
     operation_name: String,
     input_json: serde_json::Value,
+    render_surface: String,
     dry_run: Option<bool>,
     confirmation: Option<ConfirmationToken>,
 ) -> OperationResult {
@@ -159,8 +186,11 @@ pub async fn invoke_operation(
         input_json,
         dry_run.unwrap_or(false),
         confirmation,
-        Actor::User,
-        BridgeSurface::TauriApp,
+        OperationBridgeContext::new(
+            Actor::User,
+            BridgeSurface::TauriApp,
+            parse_tauri_claim_dismissal_surface(&render_surface)?,
+        ),
     )
     .await
 }
@@ -171,12 +201,17 @@ pub async fn invoke_operation_for_surface(
     input_json: Value,
     dry_run: bool,
     confirmation: Option<ConfirmationToken>,
-    actor: Actor,
-    surface: BridgeSurface,
+    bridge_context: OperationBridgeContext,
 ) -> OperationResult {
     let operation =
         operation_by_name(&operation_name).ok_or(BridgeSurfaceError::AbilityUnavailable)?;
-    if !operation.remote && (is_remote_bound_surface(surface) || actor == Actor::Agent) {
+    validate_claim_dismissal_surface_for_bridge(
+        bridge_context.surface,
+        bridge_context.claim_dismissal_surface,
+    )?;
+    if !operation.remote
+        && (is_remote_bound_surface(bridge_context.surface) || bridge_context.actor == Actor::Agent)
+    {
         return Err(BridgeSurfaceError::Validation(format!(
             "operation {} is not remote-invokable",
             operation.name
@@ -188,8 +223,7 @@ pub async fn invoke_operation_for_surface(
         input_json,
         dry_run,
         confirmation,
-        actor,
-        surface,
+        bridge_context,
     )
     .await
 }
@@ -207,20 +241,20 @@ async fn invoke_operation_with_def(
     input_json: Value,
     dry_run: bool,
     confirmation: Option<ConfirmationToken>,
-    actor: Actor,
-    surface: BridgeSurface,
+    bridge_context: OperationBridgeContext,
 ) -> OperationResult {
     let input_for_policy = input_json.clone();
     let response = (operation.executor)(OperationInvocation {
         state,
-        actor,
-        surface,
+        actor: bridge_context.actor,
+        surface: bridge_context.surface,
+        claim_dismissal_surface: bridge_context.claim_dismissal_surface,
         input_json,
         dry_run,
         confirmation,
     })
     .await?;
-    validate_operation_response_ownership(actor, &input_for_policy, &response)?;
+    validate_operation_response_ownership(bridge_context.actor, &input_for_policy, &response)?;
     Ok(response)
 }
 
@@ -271,6 +305,7 @@ fn read_get_entity_context_executor(invocation: OperationInvocation) -> Operatio
                 TauriInvokeContext::new(
                     invocation.actor,
                     invocation.surface,
+                    invocation.claim_dismissal_surface,
                     invocation.dry_run,
                     invocation.confirmation.as_ref(),
                 ),
@@ -388,8 +423,11 @@ mod tests {
             input_json,
             false,
             None,
-            Actor::User,
-            BridgeSurface::TauriApp,
+            OperationBridgeContext::new(
+                Actor::User,
+                BridgeSurface::TauriApp,
+                ClaimDismissalSurface::TauriEntityDetail,
+            ),
         )
         .await
         .expect_err("ownership validation must reject the serialized response");
@@ -425,8 +463,11 @@ mod tests {
             input_json.clone(),
             false,
             None,
-            Actor::User,
-            BridgeSurface::TauriApp,
+            OperationBridgeContext::new(
+                Actor::User,
+                BridgeSurface::TauriApp,
+                ClaimDismissalSurface::TauriEntityDetail,
+            ),
         )
         .await
         .expect("user operation response passes ownership validation");
@@ -436,8 +477,11 @@ mod tests {
             input_json,
             false,
             None,
-            Actor::Agent,
-            BridgeSurface::McpTool,
+            OperationBridgeContext::new(
+                Actor::Agent,
+                BridgeSurface::McpTool,
+                ClaimDismissalSurface::McpTool,
+            ),
         )
         .await
         .expect("agent MCP operation response passes ownership validation");
@@ -473,8 +517,17 @@ mod tests {
                 json!({}),
                 false,
                 None,
-                actor,
-                surface,
+                OperationBridgeContext::new(
+                    actor,
+                    surface,
+                    match surface {
+                        BridgeSurface::TauriApp => ClaimDismissalSurface::TauriEntityDetail,
+                        BridgeSurface::McpTool => ClaimDismissalSurface::McpTool,
+                        BridgeSurface::McpToolDetail => ClaimDismissalSurface::McpToolDetail,
+                        BridgeSurface::Worker => ClaimDismissalSurface::Worker,
+                        BridgeSurface::Eval => ClaimDismissalSurface::Eval,
+                    },
+                ),
             )
             .await
             .expect_err("remote=false operation should be rejected for MCP or agent callers");
@@ -496,8 +549,11 @@ mod tests {
             json!({}),
             false,
             None,
-            Actor::User,
-            BridgeSurface::McpToolDetail,
+            OperationBridgeContext::new(
+                Actor::User,
+                BridgeSurface::McpToolDetail,
+                ClaimDismissalSurface::McpToolDetail,
+            ),
         )
         .await
         .expect_err("remote=false operation should be rejected for MCP detail callers");
@@ -518,8 +574,11 @@ mod tests {
             json!({}),
             false,
             None,
-            Actor::User,
-            BridgeSurface::TauriApp,
+            OperationBridgeContext::new(
+                Actor::User,
+                BridgeSurface::TauriApp,
+                ClaimDismissalSurface::TauriEntityDetail,
+            ),
         )
         .await
         .expect("Tauri/User callers may invoke local-only operations");

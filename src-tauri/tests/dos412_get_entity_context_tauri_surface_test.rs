@@ -4,7 +4,7 @@ use std::sync::{Arc, Mutex};
 
 use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::{AbilityRegistry, Actor};
-use dailyos_lib::bridges::tauri::TauriAbilityBridge;
+use dailyos_lib::bridges::tauri::{TauriAbilityBridge, TauriTestInvokeContext};
 use dailyos_lib::bridges::BridgeSurface;
 use dailyos_lib::db::claims::{ClaimSensitivity, TemporalScope};
 use dailyos_lib::db::ActionDb;
@@ -213,8 +213,11 @@ async fn get_entity_context_agent_mcp_bridge_filters_user_only_claims() {
         .invoke_with_service_context_for_tests_as(
             &services,
             &provider,
-            Actor::Agent,
-            BridgeSurface::McpTool,
+            TauriTestInvokeContext::new(
+                Actor::Agent,
+                BridgeSurface::McpTool,
+                ClaimDismissalSurface::McpTool,
+            ),
             "get_entity_context",
             input,
         )
