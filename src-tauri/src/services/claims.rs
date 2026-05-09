@@ -4463,7 +4463,7 @@ pub fn is_claim_dismissed_on_surface(
 ) -> Result<bool, ClaimError> {
     let surface = normalize_claim_surface(surface)?;
     let surface = surface.as_str();
-    let found = db
+    let found = match db
         .conn_ref()
         .query_row(
             "SELECT 1
@@ -4474,8 +4474,31 @@ pub fn is_claim_dismissed_on_surface(
             params![claim_id, surface],
             |row| row.get::<_, i64>(0),
         )
-        .optional()?;
+        .optional()
+    {
+        Ok(found) => found,
+        Err(error) if is_missing_claim_surface_dismissals_table_error(&error) => return Ok(false),
+        Err(error) => return Err(error.into()),
+    };
     Ok(found.is_some())
+}
+
+fn is_missing_claim_surface_dismissals_table_error(error: &rusqlite::Error) -> bool {
+    sqlite_error_message(error)
+        .map(|message| {
+            message
+                .trim()
+                .eq_ignore_ascii_case("no such table: claim_surface_dismissals")
+        })
+        .unwrap_or(false)
+}
+
+fn sqlite_error_message(error: &rusqlite::Error) -> Option<&str> {
+    match error {
+        rusqlite::Error::SqliteFailure(_, Some(message)) => Some(message.as_str()),
+        rusqlite::Error::SqlInputError { msg, .. } => Some(msg.as_str()),
+        _ => None,
+    }
 }
 
 /// Default reader by source reference: active + surfaced claims only.
