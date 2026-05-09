@@ -1,9 +1,9 @@
 # DailyBriefingDSpine
 
 **Tier:** surface
-**Status:** proposed reference candidate for v1.4.0
+**Status:** proposed reference candidate for v1.4.3 route-cutover review
 **Owner:** James
-**Last updated:** 2026-05-06
+**Last updated:** 2026-05-09
 **`data-ds-name`:** `DailyBriefingDSpine`
 **`data-ds-spec`:** `surfaces/DailyBriefingDSpine.md`
 **Reference:** `.docs/design/reference/surfaces/briefing-d-spine.html`
@@ -17,7 +17,7 @@ tokens, typography, margin grid, and inspector contracts while replacing the
 current meeting list emphasis with a schedule-as-spine reading flow.
 
 This is not a routed parity surface yet. It is an iteration surface for deciding
-whether and how the D-spine redesign rolls into v1.4.0.
+whether and how the D-spine redesign rolls into the v1.4.3 Daily Briefing route.
 
 ## Layout regions
 
@@ -84,12 +84,13 @@ Current shipped DailyBriefing remains:
 
 ## Release gates
 
-- Reference QA at desktop and mobile widths.
+- Reference QA at realistic macOS app window sizes and states; no mobile
+  responsive gate applies to this surface.
 - Inspector overlay shows all major primitives/patterns and the proposed
   `DailyBriefingDSpine` surface tag.
 - DayStrip must be reviewed as a deliberate exception to the previous
   FloatingNavIsland-only local-nav stance before route cutover.
-- No production route switch until a v1.4.0 implementation plan clears the
+- No production route switch until a v1.4.3 implementation plan clears the
   user-facing surface review gate.
 - If the redesign ships, routed DailyBriefing must either consume the extracted
   `MeetingSpineItem`/`DayChart` patterns or deliberately document why a local
@@ -102,3 +103,5 @@ Current shipped DailyBriefing remains:
 - 2026-05-06 - Iteration removed Ask/ThreadMark, added DayStrip, moved
   MeetingSpineItem state tags into the time rail, switched DayChart labels to
   tooltips, and simplified Moving/Watch.
+- 2026-05-09 - Route-cutover review moved to v1.4.3 Linear planning; QA gate
+  clarified as macOS app-window only.
