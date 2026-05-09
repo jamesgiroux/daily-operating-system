@@ -396,3 +396,5 @@ get_entity_feedback
 get_entity_suppressions
 submit_intelligence_correction
 get_feedback_diagnostics
+fail_improve_generate_test_cases
+get_fail_improve_diagnostics

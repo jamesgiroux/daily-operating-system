@@ -680,6 +680,33 @@ pub async fn get_ai_usage_diagnostics(
         .await
 }
 
+#[tauri::command]
+pub fn fail_improve_generate_test_cases(
+    operation: String,
+) -> Result<Vec<crate::services::fail_improve::TestCase>, String> {
+    ensure_fail_improve_ipc_allowed(cfg!(debug_assertions))?;
+    crate::services::fail_improve::FailImproveLoop::default()
+        .generate_test_cases(&operation)
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn get_fail_improve_diagnostics(
+) -> Result<Vec<crate::services::fail_improve::FailImproveOperationDiagnostics>, String> {
+    ensure_fail_improve_ipc_allowed(cfg!(debug_assertions))?;
+    crate::services::fail_improve::FailImproveLoop::default()
+        .diagnostics()
+        .map_err(|e| e.to_string())
+}
+
+fn ensure_fail_improve_ipc_allowed(is_debug_build: bool) -> Result<(), String> {
+    if is_debug_build {
+        Ok(())
+    } else {
+        Err("Fail-improve diagnostics not available in release builds".into())
+    }
+}
+
 /// Cache Claude status checks to avoid shelling out on every focus event.
 ///
 /// The subprocess spawn (`claude --print hello`) runs on a blocking thread
@@ -1669,5 +1696,11 @@ mod tests {
         assert!(json.contains("\"step\""));
         assert!(json.contains("\"status\""));
         assert!(json.contains("\"message\""));
+    }
+
+    #[test]
+    fn fail_improve_ipc_denies_release_builds() {
+        let error = ensure_fail_improve_ipc_allowed(false).expect_err("release denied");
+        assert!(error.contains("not available in release builds"));
     }
 }
