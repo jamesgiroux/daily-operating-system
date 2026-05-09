@@ -116,6 +116,7 @@ harness-hermetic = ["abilities-runtime/harness-hermetic"]
 test-harness = []
 release-gate = []
 mcp = ["dep:anyhow"]
+load-test = ["test-harness"]
 
 [[bin]]
 name = "dailyos"

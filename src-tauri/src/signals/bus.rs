@@ -17,14 +17,27 @@
 //! dismiss) records user preference without penalizing—the AI wasn't necessarily
 //! wrong, the user just doesn't need that item.
 
+use std::collections::{HashMap, VecDeque};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
 use chrono::Utc;
+use parking_lot::Mutex;
 use rusqlite::params;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::db::{ActionDb, DbError};
 
-use super::policy_registry::{policy_for, SignalEmissionChannel, SignalType};
+use super::policy_registry::{
+    policy_for, CoalescingPolicy, PropagationPolicy, SignalEmissionChannel, SignalType,
+};
+
+const COALESCING_STATE_MAX_KEYS: usize = 4_096;
+const COALESCING_STATE_PRUNE_AFTER: Duration = Duration::from_secs(60);
+const CLAIM_RATE_LIMIT_PER_MINUTE: usize = 50;
+const CLAIM_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60);
+const CLAIM_ADAPTIVE_COALESCE_WINDOW: Duration = Duration::from_secs(60);
 
 // ---------------------------------------------------------------------------
 // Types
@@ -53,6 +66,141 @@ pub struct SignalEvent {
 enum SignalInsertMode {
     Insert,
     InsertOrReplace,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SignalEmitOutcome {
+    pub id: String,
+    pub coalesced: bool,
+}
+
+#[derive(Debug)]
+struct EmitSignalEventOutcome {
+    event: SignalEvent,
+    coalesced: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct CoalescingKey {
+    signal_type: String,
+    entity_id: String,
+}
+
+impl CoalescingKey {
+    fn new(signal_type: &SignalType, entity_id: &str) -> Self {
+        Self {
+            signal_type: signal_type.canonical_name().to_string(),
+            entity_id: entity_id.to_string(),
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+struct CoalescingEntry {
+    signal_id: String,
+    emitted_at: Instant,
+}
+
+#[derive(Debug, Default)]
+pub(crate) struct CoalescingState {
+    recent: HashMap<CoalescingKey, CoalescingEntry>,
+    order: VecDeque<(CoalescingKey, Instant)>,
+    claim_attempts_by_entity: HashMap<String, VecDeque<Instant>>,
+    adaptive_claim_entities: HashMap<String, Instant>,
+}
+
+impl CoalescingState {
+    fn coalesced_signal_id(
+        &mut self,
+        key: &CoalescingKey,
+        is_claim_rate_limited: bool,
+        now: Instant,
+        base_window: Duration,
+    ) -> Option<String> {
+        self.prune(now);
+        let adaptive = is_claim_rate_limited && self.observe_claim_attempt(&key.entity_id, now);
+        let window = if adaptive && CLAIM_ADAPTIVE_COALESCE_WINDOW > base_window {
+            CLAIM_ADAPTIVE_COALESCE_WINDOW
+        } else {
+            base_window
+        };
+
+        self.recent.get(key).and_then(|entry| {
+            (now.duration_since(entry.emitted_at) <= window).then(|| entry.signal_id.clone())
+        })
+    }
+
+    fn record_emit(&mut self, key: CoalescingKey, signal_id: String, now: Instant) {
+        self.recent.insert(
+            key.clone(),
+            CoalescingEntry {
+                signal_id,
+                emitted_at: now,
+            },
+        );
+        self.order.push_back((key, now));
+        self.prune(now);
+    }
+
+    fn observe_claim_attempt(&mut self, entity_id: &str, now: Instant) -> bool {
+        let attempts = self
+            .claim_attempts_by_entity
+            .entry(entity_id.to_string())
+            .or_default();
+        prune_instants(attempts, now, CLAIM_RATE_LIMIT_WINDOW);
+        attempts.push_back(now);
+
+        if attempts.len() > CLAIM_RATE_LIMIT_PER_MINUTE {
+            self.adaptive_claim_entities
+                .insert(entity_id.to_string(), now + CLAIM_RATE_LIMIT_WINDOW);
+            return true;
+        }
+
+        self.adaptive_claim_entities
+            .get(entity_id)
+            .is_some_and(|expires_at| *expires_at > now)
+    }
+
+    fn prune(&mut self, now: Instant) {
+        while let Some((_, emitted_at)) = self.order.front() {
+            let expired = now.duration_since(*emitted_at) > COALESCING_STATE_PRUNE_AFTER;
+            let over_capacity = self.order.len() > COALESCING_STATE_MAX_KEYS;
+            if !expired && !over_capacity {
+                break;
+            }
+
+            let (key, emitted_at) = self.order.pop_front().expect("front exists");
+            if self
+                .recent
+                .get(&key)
+                .is_some_and(|entry| entry.emitted_at == emitted_at)
+            {
+                self.recent.remove(&key);
+            }
+        }
+
+        self.claim_attempts_by_entity.retain(|_, attempts| {
+            prune_instants(attempts, now, CLAIM_RATE_LIMIT_WINDOW);
+            !attempts.is_empty()
+        });
+        self.adaptive_claim_entities
+            .retain(|_, expires_at| *expires_at > now);
+    }
+}
+
+fn prune_instants(instants: &mut VecDeque<Instant>, now: Instant, window: Duration) {
+    while instants
+        .front()
+        .is_some_and(|instant| now.duration_since(*instant) > window)
+    {
+        instants.pop_front();
+    }
+}
+
+static COALESCING_STATE: OnceLock<Mutex<CoalescingState>> = OnceLock::new();
+
+fn coalescing_state() -> &'static Mutex<CoalescingState> {
+    COALESCING_STATE.get_or_init(|| Mutex::new(CoalescingState::default()))
 }
 
 // ---------------------------------------------------------------------------
@@ -141,7 +289,7 @@ pub struct SignalEmission<'a> {
 
 /// Emit a signal using the builder struct. Returns the generated signal ID.
 pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError> {
-    let event = emit_signal_event(
+    let outcome = emit_signal_event(
         db,
         EmitSignalEvent {
             entity_type: signal.entity_type,
@@ -159,7 +307,7 @@ pub fn emit(db: &ActionDb, signal: SignalEmission<'_>) -> Result<String, DbError
             refresh_meetings: true,
         },
     )?;
-    Ok(event.id)
+    Ok(outcome.event.id)
 }
 
 // ---------------------------------------------------------------------------
@@ -178,7 +326,7 @@ pub fn emit_signal(
     value: Option<&str>,
     confidence: f64,
 ) -> Result<String, DbError> {
-    let event = emit_signal_event(
+    let outcome = emit_signal_event(
         db,
         EmitSignalEvent {
             entity_type,
@@ -196,7 +344,7 @@ pub fn emit_signal(
             refresh_meetings: true,
         },
     )?;
-    Ok(event.id)
+    Ok(outcome.event.id)
 }
 
 /// Emit a signal row inside the caller's active transaction.
@@ -211,9 +359,9 @@ pub fn emit_signal_in_active_tx(
     signal_type: &str,
     source: &str,
     payload: &serde_json::Value,
-) -> Result<String, DbError> {
+) -> Result<SignalEmitOutcome, DbError> {
     let value = payload.to_string();
-    let event = emit_signal_event(
+    let outcome = emit_signal_event(
         db,
         EmitSignalEvent {
             entity_type,
@@ -232,7 +380,10 @@ pub fn emit_signal_in_active_tx(
         },
     )?;
 
-    Ok(event.id)
+    Ok(SignalEmitOutcome {
+        id: outcome.event.id,
+        coalesced: outcome.coalesced,
+    })
 }
 
 pub(crate) fn emit_signal_derived_in_active_tx(
@@ -262,6 +413,7 @@ pub(crate) fn emit_signal_derived_in_active_tx(
             refresh_meetings: false,
         },
     )
+    .map(|outcome| outcome.event)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -277,7 +429,7 @@ pub fn emit_signal_fixture_event(
     decay_half_life_days: Option<i32>,
     created_at: &str,
 ) -> Result<String, DbError> {
-    let event = emit_signal_event(
+    let outcome = emit_signal_event(
         db,
         EmitSignalEvent {
             entity_type,
@@ -295,7 +447,7 @@ pub fn emit_signal_fixture_event(
             refresh_meetings: false,
         },
     )?;
-    Ok(event.id)
+    Ok(outcome.event.id)
 }
 
 struct EmitSignalEvent<'a> {
@@ -314,7 +466,10 @@ struct EmitSignalEvent<'a> {
     refresh_meetings: bool,
 }
 
-fn emit_signal_event(db: &ActionDb, signal: EmitSignalEvent<'_>) -> Result<SignalEvent, DbError> {
+fn emit_signal_event(
+    db: &ActionDb,
+    signal: EmitSignalEvent<'_>,
+) -> Result<EmitSignalEventOutcome, DbError> {
     let typed_signal = SignalType::from_name(signal.signal_type);
     let policy = policy_for(&typed_signal);
     if !policy.channel_eligibility.allows(signal.channel) {
@@ -322,6 +477,43 @@ fn emit_signal_event(db: &ActionDb, signal: EmitSignalEvent<'_>) -> Result<Signa
             "signal channel {:?} is not eligible for {}",
             signal.channel, signal.signal_type
         )));
+    }
+
+    let coalescing_key = CoalescingKey::new(&typed_signal, signal.entity_id);
+    let coalescing_window =
+        if typed_signal.uses_emit_path_coalescing() && channel_allows_coalescing(signal.channel) {
+            propagation_coalescing_window(policy.propagation)
+        } else {
+            None
+        };
+    let emitted_at = Instant::now();
+    if let Some(window) = coalescing_window {
+        if let Some(id) = coalescing_state().lock().coalesced_signal_id(
+            &coalescing_key,
+            typed_signal.is_claim_rate_limited(),
+            emitted_at,
+            window,
+        ) {
+            let event = SignalEvent {
+                id,
+                entity_type: signal.entity_type.to_string(),
+                entity_id: signal.entity_id.to_string(),
+                signal_type: signal.signal_type.to_string(),
+                source: signal.source.to_string(),
+                value: signal.value.map(str::to_string),
+                confidence: signal.confidence,
+                decay_half_life_days: signal
+                    .decay_half_life_days
+                    .unwrap_or_else(|| default_half_life(signal.source)),
+                created_at: Utc::now().to_rfc3339(),
+                superseded_by: None,
+                source_context: signal.source_context.map(str::to_string),
+            };
+            return Ok(EmitSignalEventOutcome {
+                event,
+                coalesced: true,
+            });
+        }
     }
 
     let id = signal
@@ -353,23 +545,56 @@ fn emit_signal_event(db: &ActionDb, signal: EmitSignalEvent<'_>) -> Result<Signa
         signal.insert_mode,
     )?;
 
+    if coalescing_window.is_some() {
+        coalescing_state()
+            .lock()
+            .record_emit(coalescing_key, id.clone(), emitted_at);
+    }
+
     if signal.refresh_meetings {
         emit_signal_flag_upcoming_meetings(db, signal.entity_type, signal.entity_id);
     }
 
-    Ok(SignalEvent {
-        id,
-        entity_type: signal.entity_type.to_string(),
-        entity_id: signal.entity_id.to_string(),
-        signal_type: signal.signal_type.to_string(),
-        source: signal.source.to_string(),
-        value: signal.value.map(str::to_string),
-        confidence: signal.confidence,
-        decay_half_life_days,
-        created_at,
-        superseded_by: None,
-        source_context: signal.source_context.map(str::to_string),
+    Ok(EmitSignalEventOutcome {
+        event: SignalEvent {
+            id,
+            entity_type: signal.entity_type.to_string(),
+            entity_id: signal.entity_id.to_string(),
+            signal_type: signal.signal_type.to_string(),
+            source: signal.source.to_string(),
+            value: signal.value.map(str::to_string),
+            confidence: signal.confidence,
+            decay_half_life_days,
+            created_at,
+            superseded_by: None,
+            source_context: signal.source_context.map(str::to_string),
+        },
+        coalesced: false,
     })
+}
+
+fn propagation_coalescing_window(propagation: PropagationPolicy) -> Option<Duration> {
+    let PropagationPolicy::PropagateAsync {
+        coalesce: Some(policy),
+    } = propagation
+    else {
+        return None;
+    };
+
+    Some(match policy {
+        CoalescingPolicy::EntitySignal { window }
+        | CoalescingPolicy::SubjectAbilityInput { window }
+        | CoalescingPolicy::SourceVersion { window } => window,
+    })
+}
+
+fn channel_allows_coalescing(channel: SignalEmissionChannel) -> bool {
+    matches!(
+        channel,
+        SignalEmissionChannel::ServiceFacade
+            | SignalEmissionChannel::Infrastructure
+            | SignalEmissionChannel::ActiveTransaction
+    )
 }
 
 fn emit_signal_insert_event_row(
@@ -451,7 +676,7 @@ pub fn emit_signal_and_propagate(
     confidence: f64,
 ) -> Result<(String, Vec<String>), DbError> {
     db.with_transaction(|tx_db| {
-        let signal = emit_signal_event(
+        let outcome = emit_signal_event(
             tx_db,
             EmitSignalEvent {
                 entity_type,
@@ -470,7 +695,11 @@ pub fn emit_signal_and_propagate(
             },
         )
         .map_err(|e| e.to_string())?;
+        let signal = outcome.event;
         let id = signal.id.clone();
+        if outcome.coalesced {
+            return Ok((id, Vec::new()));
+        }
 
         let derived_ids = engine
             .propagate(tx_db, &signal)
@@ -518,7 +747,13 @@ pub fn emit_signal_propagate_and_evaluate(
         clippy::let_underscore_must_use,
         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
     )]
-    let _ = crate::self_healing::scheduler::evaluate_on_signal(db, entity_id, entity_type, queue);
+    let _ = crate::self_healing::scheduler::evaluate_on_signal(
+        db,
+        entity_id,
+        entity_type,
+        signal_type,
+        queue,
+    );
 
     Ok(result)
 }
@@ -766,16 +1001,103 @@ mod tests {
     #[test]
     fn test_supersede_excludes_old() {
         let db = test_db();
-        let old_id = emit_signal(&db, "person", "p1", "profile_update", "clay", None, 0.7)
-            .expect("emit old");
-        let new_id = emit_signal(&db, "person", "p1", "profile_update", "clay", None, 0.85)
-            .expect("emit new");
+        let old_id = emit_signal(
+            &db,
+            "person",
+            "p1",
+            "read_model_materialized",
+            "clay",
+            None,
+            0.7,
+        )
+        .expect("emit old");
+        let new_id = emit_signal(
+            &db,
+            "person",
+            "p1",
+            "read_model_materialized",
+            "clay",
+            None,
+            0.85,
+        )
+        .expect("emit new");
 
         supersede_signal(&db, &old_id, &new_id).expect("supersede");
 
         let active = get_active_signals(&db, "person", "p1").expect("get");
         assert_eq!(active.len(), 1);
         assert_eq!(active[0].id, new_id);
+    }
+
+    #[test]
+    fn dos237_coalesces_duplicate_entity_signals_inside_window() {
+        *coalescing_state().lock() = CoalescingState::default();
+        let db = test_db();
+
+        let first = emit_signal(
+            &db,
+            "account",
+            "dos237-coalesce",
+            "EntityUpdated",
+            "unit_test",
+            None,
+            1.0,
+        )
+        .expect("first emit");
+        let second = emit_signal(
+            &db,
+            "account",
+            "dos237-coalesce",
+            "EntityUpdated",
+            "unit_test",
+            None,
+            1.0,
+        )
+        .expect("second emit");
+
+        assert_eq!(second, first);
+        let count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM signal_events WHERE entity_id = 'dos237-coalesce'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count signal rows");
+        assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn dos237_claim_rate_limit_extends_coalescing_window() {
+        let mut state = CoalescingState::default();
+        let key = CoalescingKey {
+            signal_type: "claim_trust_changed".to_string(),
+            entity_id: "dos237-rate".to_string(),
+        };
+        let start = Instant::now();
+        state.record_emit(key.clone(), "sig-first".to_string(), start);
+
+        for offset in 1..=CLAIM_RATE_LIMIT_PER_MINUTE {
+            assert_eq!(
+                state.coalesced_signal_id(
+                    &key,
+                    true,
+                    start + Duration::from_millis(600 * offset as u64),
+                    Duration::from_millis(500),
+                ),
+                None
+            );
+        }
+
+        assert_eq!(
+            state.coalesced_signal_id(
+                &key,
+                true,
+                start + Duration::from_millis(600 * (CLAIM_RATE_LIMIT_PER_MINUTE as u64 + 1)),
+                Duration::from_millis(500),
+            ),
+            Some("sig-first".to_string())
+        );
     }
 
     #[test]

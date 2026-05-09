@@ -9,12 +9,66 @@
 //! - If window > 72h: auto-expire block, reset and allow retry
 //! - If window > 24h but < 72h: reset count, start new window
 
+use std::collections::{HashMap, VecDeque};
+use std::sync::OnceLock;
+use std::time::{Duration, Instant};
+
+use parking_lot::Mutex;
+
 use crate::db::ActionDb;
 use crate::embeddings::EmbeddingModel;
 use crate::intel_queue::IntelligenceQueue;
 
 /// Max retries within a 24h window before blocking.
 const MAX_RETRIES_PER_WINDOW: i64 = 3;
+const MAX_HEALING_INVOCATIONS_PER_HOUR: usize = 3;
+const HEALING_RATE_LIMIT_WINDOW: Duration = Duration::from_secs(60 * 60);
+
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+struct HealingInvocationKey {
+    entity_type: String,
+    entity_id: String,
+    signal_type: String,
+}
+
+#[derive(Debug, Default)]
+struct HealingRateLimiter {
+    invocations: HashMap<HealingInvocationKey, VecDeque<Instant>>,
+}
+
+impl HealingRateLimiter {
+    fn allow(
+        &mut self,
+        entity_type: &str,
+        entity_id: &str,
+        signal_type: &str,
+        now: Instant,
+    ) -> bool {
+        let key = HealingInvocationKey {
+            entity_type: entity_type.to_string(),
+            entity_id: entity_id.to_string(),
+            signal_type: signal_type.to_string(),
+        };
+        let invocations = self.invocations.entry(key).or_default();
+        while invocations
+            .front()
+            .is_some_and(|instant| now.duration_since(*instant) > HEALING_RATE_LIMIT_WINDOW)
+        {
+            invocations.pop_front();
+        }
+        if invocations.len() >= MAX_HEALING_INVOCATIONS_PER_HOUR {
+            return false;
+        }
+        invocations.push_back(now);
+        true
+    }
+}
+
+static HEALING_RATE_LIMITER: OnceLock<Mutex<HealingRateLimiter>> = OnceLock::new();
+
+fn healing_rate_limiter() -> &'static Mutex<HealingRateLimiter> {
+    HEALING_RATE_LIMITER.get_or_init(|| Mutex::new(HealingRateLimiter::default()))
+}
 
 /// Check if an entity is coherence-blocked (circuit breaker tripped).
 pub fn check_circuit_breaker(db: &ActionDb, entity_id: &str) -> bool {
@@ -46,11 +100,22 @@ pub fn evaluate_on_signal(
     db: &ActionDb,
     entity_id: &str,
     entity_type: &str,
+    signal_type: &str,
     queue: &IntelligenceQueue,
 ) -> Result<bool, String> {
     let score = super::remediation::compute_enrichment_trigger_score(db, entity_id, entity_type);
 
     if score > 0.7 && !check_circuit_breaker(db, entity_id) {
+        if !healing_rate_limiter()
+            .lock()
+            .allow(entity_type, entity_id, signal_type, Instant::now())
+        {
+            log::warn!(
+                "SelfHealing: rate-limited healing invocation for {entity_type}:{entity_id} from {signal_type}"
+            );
+            return Ok(false);
+        }
+
         // best-effort: signal-triggered enrichments are advisory and the
         // underlying signal will be observed again after transient pauses.
         #[allow(
@@ -345,7 +410,8 @@ mod tests {
             )
             .unwrap();
 
-        let enqueued = evaluate_on_signal(&db, "acme", "account", &queue).unwrap();
+        let enqueued =
+            evaluate_on_signal(&db, "acme", "account", "entity_updated", &queue).unwrap();
         assert!(!enqueued);
     }
 
@@ -354,5 +420,43 @@ mod tests {
         let db = test_db();
         // No quality row exists — should not be considered blocked
         assert!(!check_circuit_breaker(&db, "nonexistent"));
+    }
+
+    #[test]
+    fn healing_rate_limiter_allows_three_per_entity_signal_per_hour() {
+        let mut limiter = HealingRateLimiter::default();
+        let now = std::time::Instant::now();
+
+        assert!(limiter.allow("account", "acme", "entity_updated", now));
+        assert!(limiter.allow(
+            "account",
+            "acme",
+            "entity_updated",
+            now + std::time::Duration::from_secs(1)
+        ));
+        assert!(limiter.allow(
+            "account",
+            "acme",
+            "entity_updated",
+            now + std::time::Duration::from_secs(2)
+        ));
+        assert!(!limiter.allow(
+            "account",
+            "acme",
+            "entity_updated",
+            now + std::time::Duration::from_secs(3)
+        ));
+        assert!(limiter.allow(
+            "account",
+            "acme",
+            "claim_trust_changed",
+            now + std::time::Duration::from_secs(4)
+        ));
+        assert!(limiter.allow(
+            "account",
+            "acme",
+            "entity_updated",
+            now + HEALING_RATE_LIMIT_WINDOW + std::time::Duration::from_secs(1)
+        ));
     }
 }
