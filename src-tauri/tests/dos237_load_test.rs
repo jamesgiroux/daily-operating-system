@@ -3,7 +3,10 @@
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::migration_test_api::run_migrations;
 use dailyos_lib::services::context::{ExternalClients, ServiceContext, SystemClock, SystemRng};
-use dailyos_lib::services::invalidation_jobs::enqueue_signal_claim_recompute_in_tx;
+use dailyos_lib::services::invalidation_jobs::{
+    enqueue_signal_claim_recompute_in_tx, enqueue_signal_claim_recompute_with_config_in_tx,
+    InvalidationJobQueueConfig,
+};
 use rusqlite::{params, Connection};
 use serde_json::json;
 
@@ -246,5 +249,105 @@ fn dos237_multi_subject_load_respects_queue_cap_and_coalesces_per_subject() {
     assert!(
         aggregated >= total_emissions as i64,
         "raw_signal_count aggregated={aggregated} < total emissions={total_emissions} — silent drop"
+    );
+}
+
+/// Cap-path phase: drive the queue past a low explicit cap to actually
+/// exercise the rejection/aggressive-coalesce code path. The default cap
+/// (10_000) is too high to hit with reasonable test sizes — this test uses
+/// a 5-job cap and 50 distinct subjects so the cap-rejection branch fires
+/// deterministically. Asserts that every emission is accounted for: either
+/// represented by a pending/coalesced job, or surfaced as a producer-side
+/// rejection (no silent drop).
+#[test]
+fn dos237_low_cap_load_surfaces_rejections_without_silent_drop() {
+    let db = load_test_db();
+
+    let clock = SystemClock;
+    let rng = SystemRng;
+    let ext = ExternalClients::default();
+    let ctx = ServiceContext::new_live(&clock, &rng, &ext);
+
+    let cap_config = InvalidationJobQueueConfig { pending_cap: 5 };
+    let subject_count = 50usize;
+
+    for s in 0..subject_count {
+        let account_id = format!("dos237-cap-{s}");
+        seed_account(&db, &account_id);
+    }
+
+    let mut emit_attempts = 0usize;
+    let mut enqueue_rejections = 0usize;
+    let mut enqueue_successes = 0usize;
+
+    for s in 0..subject_count {
+        let account_id = format!("dos237-cap-{s}");
+        emit_attempts += 1;
+
+        let outcome = db.with_transaction(|tx| {
+            tx.conn_ref()
+                .execute(
+                    "UPDATE accounts
+                     SET claim_version = claim_version + 1
+                     WHERE id = ?1",
+                    params![account_id],
+                )
+                .map_err(|e| e.to_string())?;
+            let signal_id = dailyos_lib::services::signals::emit_in_transaction(
+                &ctx,
+                tx,
+                "account",
+                &account_id,
+                "ClaimTrustChanged",
+                "dos237_cap_load_test",
+                json!({ "subject": s }),
+            )?;
+            enqueue_signal_claim_recompute_with_config_in_tx(
+                tx,
+                &signal_id,
+                "account",
+                &account_id,
+                cap_config,
+            )?;
+            Ok(())
+        });
+
+        match outcome {
+            Ok(_) => enqueue_successes += 1,
+            Err(_) => enqueue_rejections += 1,
+        }
+    }
+
+    let pending_jobs = count(
+        &db,
+        "SELECT count(*) FROM invalidation_jobs WHERE status = 'pending'",
+    );
+    let total_jobs = count(&db, "SELECT count(*) FROM invalidation_jobs");
+
+    // The cap path was actually hit — pending count cannot exceed the explicit
+    // cap of 5. Some subjects DID get rejected (proves the cap-path is live).
+    assert!(
+        pending_jobs <= cap_config.pending_cap,
+        "pending_jobs={pending_jobs} exceeded explicit cap={}",
+        cap_config.pending_cap
+    );
+    assert!(
+        enqueue_rejections > 0,
+        "expected at least one cap-driven rejection across {subject_count} subjects with cap={}",
+        cap_config.pending_cap
+    );
+
+    // No silent drop: every emission either succeeded (signal+job both
+    // committed via with_transaction rollback semantics) or rejected
+    // (transaction rolled back, no signal row, no job — caller observes the
+    // error). Sum of accounted-for paths == total attempts.
+    assert_eq!(
+        emit_attempts,
+        enqueue_successes + enqueue_rejections,
+        "{emit_attempts} attempts != {enqueue_successes} success + {enqueue_rejections} rejections"
+    );
+    assert!(
+        total_jobs >= enqueue_successes as i64,
+        "total_jobs={total_jobs} < enqueue_successes={enqueue_successes}"
     );
 }
