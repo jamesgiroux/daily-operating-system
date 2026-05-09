@@ -35,7 +35,9 @@ pub enum ClaimDismissalSurface {
     P2Publication,
     LogStructured,
     PushNotification,
+    /// Read-context only; no dismissal-table writes today.
     Worker,
+    /// Read-context only; no dismissal-table writes today.
     Eval,
 }
 

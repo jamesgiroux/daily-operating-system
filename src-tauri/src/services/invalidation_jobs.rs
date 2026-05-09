@@ -243,7 +243,7 @@ fn run_claim_recompute(
         db,
         &subject_ref,
         None,
-        "account_health",
+        crate::services::context::ClaimDismissalSurface::TauriReport.as_str(),
     )
     .map_err(|e| format!("load active claims for recompute: {e}"))?;
 

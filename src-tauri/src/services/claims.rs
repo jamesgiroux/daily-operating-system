@@ -41,7 +41,7 @@ use crate::db::claims::{
 };
 use crate::db::{ActionDb, DbError};
 use crate::intelligence::canonicalization::{item_hash, ItemKind};
-use crate::services::context::ServiceContext;
+use crate::services::context::{ClaimDismissalSurface, ServiceContext};
 
 pub mod link_map;
 mod link_map_macro;
@@ -1594,14 +1594,19 @@ fn payload_string(payload_json: Option<&str>, key: &str) -> Result<Option<String
         .map(str::to_string))
 }
 
-fn normalize_claim_surface(surface: &str) -> Result<String, ClaimError> {
-    let surface = surface.trim();
-    if surface.is_empty() {
-        return Err(ClaimError::InvalidFeedback(
-            "surface dismissal requires a non-empty surface".to_string(),
-        ));
-    }
-    Ok(surface.to_ascii_lowercase())
+fn normalize_claim_surface(surface: &str) -> Result<ClaimDismissalSurface, ClaimError> {
+    ClaimDismissalSurface::from_name(surface).ok_or_else(|| {
+        let surface = surface.trim();
+        if surface.is_empty() {
+            ClaimError::InvalidFeedback(
+                "surface dismissal requires a non-empty surface".to_string(),
+            )
+        } else {
+            ClaimError::InvalidFeedback(format!(
+                "surface dismissal requires a known ClaimDismissalSurface, got '{surface}'"
+            ))
+        }
+    })
 }
 
 fn feedback_metadata_for_claim(
@@ -3769,6 +3774,7 @@ fn targeted_repair_apply_policy_repair(
             )
         })
         .and_then(|surface| normalize_claim_surface(&surface))?;
+    let surface = surface.as_str();
 
     tx.conn_ref().execute(
         "INSERT INTO claim_surface_dismissals (
@@ -3778,7 +3784,7 @@ fn targeted_repair_apply_policy_repair(
              feedback_id = excluded.feedback_id,
              actor = excluded.actor,
              dismissed_at = excluded.dismissed_at",
-        params![&claim.id, &surface, &feedback.id, &feedback.actor, now],
+        params![&claim.id, surface, &feedback.id, &feedback.actor, now],
     )?;
     bump_invalidation_for_claim_id(tx, &claim.id)?;
     Ok(TargetedRepairClaimDelta {
@@ -4456,6 +4462,7 @@ pub fn is_claim_dismissed_on_surface(
     surface: &str,
 ) -> Result<bool, ClaimError> {
     let surface = normalize_claim_surface(surface)?;
+    let surface = surface.as_str();
     let found = db
         .conn_ref()
         .query_row(
@@ -7243,7 +7250,12 @@ mod tests {
         assert_eq!(retraction_reason, None);
 
         assert!(is_claim_dismissed_on_surface(&db, &claim_id, "briefing").unwrap());
-        assert!(!is_claim_dismissed_on_surface(&db, &claim_id, "account_health").unwrap());
+        assert!(!is_claim_dismissed_on_surface(
+            &db,
+            &claim_id,
+            ClaimDismissalSurface::TauriReport.as_str()
+        )
+        .unwrap());
 
         let briefing_ids = load_claims_active_for_surface(&db, SUBJECT, Some("risk"), "briefing")
             .unwrap()
@@ -7252,13 +7264,73 @@ mod tests {
             .collect::<Vec<_>>();
         assert!(!briefing_ids.contains(&claim_id));
 
-        let account_health_ids =
-            load_claims_active_for_surface(&db, SUBJECT, Some("risk"), "account_health")
-                .unwrap()
-                .into_iter()
-                .map(|claim| claim.id)
-                .collect::<Vec<_>>();
+        let account_health_ids = load_claims_active_for_surface(
+            &db,
+            SUBJECT,
+            Some("risk"),
+            ClaimDismissalSurface::TauriReport.as_str(),
+        )
+        .unwrap()
+        .into_iter()
+        .map(|claim| claim.id)
+        .collect::<Vec<_>>();
         assert!(account_health_ids.contains(&claim_id));
+    }
+
+    #[test]
+    fn targeted_repair_surface_inappropriate_canonicalizes_alias_surface() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Briefing alias dismissal regression")).unwrap(),
+        );
+
+        let mut input = feedback_input(&claim_id, FeedbackAction::SurfaceInappropriate);
+        input.payload_json =
+            Some(serde_json::json!({ "surface": "tauri_briefing_prep" }).to_string());
+        record_claim_feedback(&ctx, &db, input).unwrap();
+        targeted_repair_process_next_job(&ctx, &db, "repair-worker-policy-alias")
+            .expect("process surface policy repair");
+
+        let persisted_surface: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT surface
+                 FROM claim_surface_dismissals
+                 WHERE claim_id = ?1",
+                params![&claim_id],
+                |row| row.get(0),
+            )
+            .expect("read persisted dismissal surface");
+        assert_eq!(persisted_surface, ClaimDismissalSurface::Briefing.as_str());
+
+        let briefing_ids = load_entity_context_claims_active_for_surface(
+            &db,
+            "account",
+            "acct-1",
+            1,
+            ClaimDismissalSurface::Briefing.as_str(),
+        )
+        .unwrap()
+        .into_iter()
+        .map(|claim| claim.id)
+        .collect::<Vec<_>>();
+        assert!(!briefing_ids.contains(&claim_id));
+
+        let entity_detail_ids = load_entity_context_claims_active_for_surface(
+            &db,
+            "account",
+            "acct-1",
+            1,
+            ClaimDismissalSurface::TauriEntityDetail.as_str(),
+        )
+        .unwrap()
+        .into_iter()
+        .map(|claim| claim.id)
+        .collect::<Vec<_>>();
+        assert!(entity_detail_ids.contains(&claim_id));
     }
 
     #[test]

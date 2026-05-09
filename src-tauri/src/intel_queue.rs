@@ -2730,7 +2730,7 @@ fn run_finalize_trust_recompute(
         db,
         &subject_ref,
         None,
-        "account_health",
+        crate::services::context::ClaimDismissalSurface::TauriReport.as_str(),
     )
     .map_err(|e| format!("load claims for trust recompute: {e}"))?;
     if claims.is_empty() {
@@ -4538,7 +4538,7 @@ mod tests {
             db,
             &subject_ref,
             None,
-            "account_health",
+            crate::services::context::ClaimDismissalSurface::TauriReport.as_str(),
         )
         .expect("load active trust claims");
         assert_eq!(claims.len(), 1, "expected one active trust claim");

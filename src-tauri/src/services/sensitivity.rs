@@ -1912,6 +1912,9 @@ CREATE TABLE accounts (
     }
 
     fn dismiss_claim_on_surface(db: &ActionDb, claim_id: &str, surface: &str) {
+        let surface = ClaimDismissalSurface::from_name(surface)
+            .expect("test dismissal surface must be canonicalizable")
+            .as_str();
         db.conn_ref()
             .execute(
                 "INSERT INTO claim_surface_dismissals (
