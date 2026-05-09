@@ -255,7 +255,7 @@ fn setup_migration_runner_state(conn: &Connection) {
 
 fn run_pending_from_v143(conn: &Connection) {
     let applied = run_migrations(conn).expect("action token migration applies");
-    assert!(applied >= 1);
+    assert!(applied >= 2, "expected at least v144+v145, got {applied}");
 }
 
 fn reveal_audit_columns(conn: &Connection) -> Vec<String> {
