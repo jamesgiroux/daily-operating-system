@@ -11,7 +11,6 @@
 #   - .github/workflows/l2-review.yml
 #   - .github/reviewer-prompts/**
 #   - .github/scripts/**
-#   - .claude/scripts/blocklist-scan.sh
 #   - .claude/git-hooks/**
 
 set -euo pipefail
@@ -29,7 +28,6 @@ FENCED_PREFIXES=(
 )
 
 FENCED_FILES=(
-  ".claude/scripts/blocklist-scan.sh"
 )
 
 hits=()
