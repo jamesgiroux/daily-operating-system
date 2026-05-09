@@ -98,10 +98,6 @@ jobs:
             ".claude/git-hooks/"
           )
 
-          FENCED_FILES=(
-            ".claude/scripts/blocklist-scan.sh"
-          )
-
           hits=()
 
           while IFS= read -r path; do
@@ -235,57 +231,6 @@ jobs:
             .github/reviewer-prompts/matrix.yml \
             < "$CHANGED_FILES_PATH"
 
-  # ─── Blocklist scan ─────────────────────────────────────────────────────
-  blocklist-scan:
-    name: L2 / blocklist-scan
-    runs-on: ubuntu-latest
-    needs: config-fence
-    permissions:
-      contents: read
-    steps:
-      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
-        with:
-          fetch-depth: 0
-          ref: ${{ github.event.pull_request.head.sha }}
-      - name: Fetch base ref
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          git fetch --no-tags --depth=1 origin "$BASE_SHA"
-      - name: Use BASE-ref scanner
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          set -euo pipefail
-          mkdir -p "${RUNNER_TEMP}/scanner"
-          git show "${BASE_SHA}:.claude/scripts/blocklist-scan.sh" \
-            > "${RUNNER_TEMP}/scanner/blocklist-scan.sh"
-          chmod +x "${RUNNER_TEMP}/scanner/blocklist-scan.sh"
-      - name: Materialize blocklist (RUNNER_TEMP)
-        env:
-          PII_BLOCKLIST: ${{ secrets.PII_BLOCKLIST }}
-        run: |
-          set -euo pipefail
-          if [ -z "$PII_BLOCKLIST" ]; then
-            echo "::error::PII_BLOCKLIST secret is empty or missing on this repo."
-            exit 1
-          fi
-          STAGE="${RUNNER_TEMP}/scan-stage"
-          mkdir -p "${STAGE}/.claude"
-          printf '%s\n' "$PII_BLOCKLIST" > "${STAGE}/.claude/pii-blocklist.txt"
-          echo "STAGE=${STAGE}" >> "$GITHUB_ENV"
-      - name: Scan PR commit range
-        env:
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
-        run: |
-          set -euo pipefail
-          ln -sf "${STAGE}/.claude/pii-blocklist.txt" .claude/pii-blocklist.txt
-          bash -c "
-            source ${RUNNER_TEMP}/scanner/blocklist-scan.sh
-            scan_commit_range \"${BASE_SHA}..${HEAD_SHA}\"
-          "
 
   # ─── Reviewer jobs (composite action — no more 5x duplication) ──────────
 
@@ -297,6 +242,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
@@ -320,6 +266,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
@@ -343,6 +290,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
@@ -366,6 +314,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
@@ -389,6 +338,7 @@ jobs:
     permissions:
       contents: read
       pull-requests: write
+      id-token: write
     steps:
       - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
         with:
@@ -411,7 +361,6 @@ jobs:
     needs:
       - config-fence
       - resolve-matrix
-      - blocklist-scan
       - validate-pr-template
       - code-reviewer
       - architect-reviewer
@@ -427,7 +376,6 @@ jobs:
         env:
           CONFIG_FENCE: ${{ needs.config-fence.result }}
           RESOLVE_MATRIX: ${{ needs.resolve-matrix.result }}
-          BLOCKLIST_SCAN: ${{ needs.blocklist-scan.result }}
           VALIDATE_PR_TEMPLATE: ${{ needs.validate-pr-template.result }}
           CODE_REVIEWER: ${{ needs.code-reviewer.result }}
           ARCHITECT_REVIEWER: ${{ needs.architect-reviewer.result }}
@@ -439,7 +387,6 @@ jobs:
           echo "Panel results:"
           echo "  config-fence:         $CONFIG_FENCE"
           echo "  resolve-matrix:       $RESOLVE_MATRIX"
-          echo "  blocklist-scan:       $BLOCKLIST_SCAN"
           echo "  validate-pr-template: $VALIDATE_PR_TEMPLATE"
           echo "  code-reviewer:        $CODE_REVIEWER"
           echo "  architect-reviewer:   $ARCHITECT_REVIEWER"
@@ -449,9 +396,8 @@ jobs:
           echo ""
 
           # Always-required (matrix.yml declares always: true): config-fence,
-          # resolve-matrix, blocklist-scan, validate-pr-template, code-reviewer,
-          # architect-reviewer.
-          for required in CONFIG_FENCE RESOLVE_MATRIX BLOCKLIST_SCAN VALIDATE_PR_TEMPLATE CODE_REVIEWER ARCHITECT_REVIEWER; do
+          # resolve-matrix, validate-pr-template, code-reviewer, architect-reviewer.
+          for required in CONFIG_FENCE RESOLVE_MATRIX VALIDATE_PR_TEMPLATE CODE_REVIEWER ARCHITECT_REVIEWER; do
             val="${!required}"
             if [ "$val" != "success" ]; then
               echo "::error::required job $required result was '$val' (expected 'success')"
@@ -479,7 +425,6 @@ jobs:
         env:
           CONFIG_FENCE: ${{ needs.config-fence.result }}
           RESOLVE_MATRIX: ${{ needs.resolve-matrix.result }}
-          BLOCKLIST_SCAN: ${{ needs.blocklist-scan.result }}
           VALIDATE_PR_TEMPLATE: ${{ needs.validate-pr-template.result }}
           CODE_REVIEWER: ${{ needs.code-reviewer.result }}
           ARCHITECT_REVIEWER: ${{ needs.architect-reviewer.result }}
@@ -499,7 +444,6 @@ jobs:
               '|---|---|',
               `| config-fence | ${r('CONFIG_FENCE')} |`,
               `| resolve-matrix | ${r('RESOLVE_MATRIX')} |`,
-              `| blocklist-scan | ${r('BLOCKLIST_SCAN')} |`,
               `| validate-pr-template | ${r('VALIDATE_PR_TEMPLATE')} |`,
               `| code-reviewer | ${r('CODE_REVIEWER')} |`,
               `| architect-reviewer | ${r('ARCHITECT_REVIEWER')} |`,

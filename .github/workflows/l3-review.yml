@@ -2,7 +2,7 @@ name: L3 Release Review
 
 # L3 — Adversarial review of a release bundle.
 #
-# Fires on PR open/sync against `trunk`. The integrated diff is `trunk..dev`
+# Fires on PR open/sync against `main`. The integrated diff is `main..dev`
 # (or whatever the PR's base..head is). Reviews the entire release-worth
 # of work in one pass — naturally bundles whatever waves / Linear projects /
 # ad-hoc work shipped this cycle.
@@ -106,6 +106,57 @@ jobs:
           range="${base_sha}..${head_sha}"
           echo "range=$range" >> "$GITHUB_OUTPUT"
           echo "Integrated range: $range ($(git rev-list --count $range) commits)" >&2
+
+      - name: Run config-fence
+        # Refuses to review a release that modifies L3's own gate config.
+        # The fenced version would be reviewing itself, defeating the trust
+        # boundary. Resolution: ship the gate-config change as its own
+        # release with admin override, then re-cut the actual release PR.
+        env:
+          RANGE: ${{ steps.range.outputs.range }}
+        run: |
+          set -euo pipefail
+          mapfile -t changed < <(git diff --name-only $RANGE)
+
+          FENCED_PATTERNS=(
+            ".github/workflows/l3-review.yml"
+          )
+          FENCED_PREFIXES=(
+            ".github/actions/l3-reviewer-job/"
+          )
+          FENCED_GLOBS=(
+            ".github/reviewer-prompts/l3-*.md"
+            "scripts/suite-*.sh"
+          )
+
+          hits=()
+          for path in "${changed[@]}"; do
+            [ -z "$path" ] && continue
+            for pat in "${FENCED_PATTERNS[@]}"; do
+              [ "$path" = "$pat" ] && hits+=("$path") && continue 2
+            done
+            for pre in "${FENCED_PREFIXES[@]}"; do
+              case "$path" in "$pre"*) hits+=("$path"); continue 2 ;; esac
+            done
+            for glob in "${FENCED_GLOBS[@]}"; do
+              case "$path" in $glob) hits+=("$path"); continue 2 ;; esac
+            done
+          done
+
+          if [ ${#hits[@]} -gt 0 ]; then
+            echo "::error::L3 config-fence: this release modifies L3 gate configuration"
+            echo ""
+            echo "Fenced paths touched in the integrated range:"
+            for h in "${hits[@]}"; do echo "   - $h"; done
+            echo ""
+            echo "Resolution:"
+            echo "  1. Land the L3 gate-config change as its own release with admin override."
+            echo "  2. Once merged, re-cut the actual release PR; L3 will then run on a"
+            echo "     clean diff using the new gate config."
+            exit 2
+          fi
+
+          echo "config-fence: no L3 gate-config paths in the integrated range"
 
   panel-codex:
     name: L3 / panel / codex-challenge

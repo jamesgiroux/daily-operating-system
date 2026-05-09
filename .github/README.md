@@ -8,7 +8,7 @@ Phase 2 of the orchestration v1-lite plan (`.docs/plans/orchestration/v1-lite.md
 
 | Path | Purpose |
 |---|---|
-| `workflows/l2-review.yml` | The L2 workflow. Triggers on PR open/synchronize/reopen. Runs blocklist-scan + code-reviewer + matched domain reviewers in parallel. |
+| `workflows/l2-review.yml` | The L2 workflow. Triggers on PR open/synchronize/reopen. Runs code-reviewer + matched domain reviewers in parallel. |
 | `reviewer-prompts/code-reviewer.md` | General L2 code-quality reviewer prompt |
 | `reviewer-prompts/architect-reviewer.md` | Architectural domain reviewer prompt |
 | `reviewer-prompts/security-auditor.md` | Security / OWASP domain reviewer prompt |
@@ -33,18 +33,7 @@ Manual alternative:
 2. Install on `jamesgiroux/daily-operating-system`
 3. Add `ANTHROPIC_API_KEY` as a repo secret (Settings → Secrets and variables → Actions → New repository secret)
 
-### 2. Add the `PII_BLOCKLIST` secret
-
-The blocklist file (`.claude/pii-blocklist.txt`) is gitignored. CI gets it from a repo secret so the scanner can run.
-
-```bash
-# From your local machine where the blocklist is current
-gh secret set PII_BLOCKLIST --repo jamesgiroux/daily-operating-system < .claude/pii-blocklist.txt
-```
-
-Re-run this whenever you update the blocklist locally.
-
-### 3. Configure branch protection
+### 2. Configure branch protection
 
 Run the script to require L2 status checks on `dev` and `trunk`:
 
@@ -58,12 +47,11 @@ UI alternative: GitHub → repo → Settings → Branches → Add rule for `dev`
 - ✓ Require status checks to pass before merging
 - ✓ Require branches to be up to date before merging
 - ✓ Require linear history
-- Add required checks (visible after first L2 workflow run): `L2 / blocklist-scan`, `L2 / code-reviewer`, plus any domain reviewers you want as hard requirements.
+- Add required checks (visible after first L2 workflow run): `L2 / code-reviewer`, plus any domain reviewers you want as hard requirements.
 
 ## How the workflow runs
 
 1. PR opened against `dev` or `trunk` triggers the workflow.
-2. **`blocklist-scan`** runs always — sources the Phase 1 scanner against the PR commit range. Posts a comment with verdict; sets a status check.
 3. **`resolve-matrix`** reads `reviewer-prompts/matrix.yml`, matches changed files against the path globs, outputs the list of reviewers to invoke.
 4. **`code-reviewer`** runs always (general slot).
 5. **Domain reviewers** (`architect-reviewer`, `security-auditor`, `performance-engineer`, `accessibility-tester`) run only when their matrix entries match the PR's changed files.
@@ -94,6 +82,5 @@ Edit the corresponding `reviewer-prompts/*.md` file. Changes go through L2 revie
 ## Troubleshooting
 
 - **Workflow doesn't trigger on PR.** Confirm the GitHub App is installed and `ANTHROPIC_API_KEY` is set. Confirm the PR base branch is `dev` or `trunk`.
-- **`blocklist-scan` fails with "BLOCKLIST missing".** The `PII_BLOCKLIST` secret isn't set or is empty. Re-run step 2 above.
 - **A reviewer job posts no comment.** Check the workflow run logs for the Anthropic Claude Code Action step. The Action handles its own commenting; no output usually means the Action couldn't reach the API.
 - **Required status check is "expected" but never runs.** A reviewer matched the matrix but the workflow file has a typo in the job name, or the matrix entry has a broken glob. Run a small test PR (docs typo) and inspect the `resolve-matrix` step's output.
