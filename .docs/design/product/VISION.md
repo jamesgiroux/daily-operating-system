@@ -35,7 +35,7 @@ We integrate with your calendar; we don't replace it. Google Calendar stays. We 
 DailyOS is for the alone part of work—individual execution, preparation, synthesis. Collaboration happens in Slack, Docs, meetings. We prepare you for those.
 
 **Not an enterprise knowledge tool.**
-Glean, Microsoft Copilot, and similar platforms index what the *organisation* knows — tickets, docs, CRM records, calls across every system. They answer "what does the company know about this account?" DailyOS answers "what do *you* know about this account?" These are different questions requiring different architectures. Glean is the org's knowledge graph. DailyOS is yours. They complement each other; DailyOS can consume Glean context as an enrichment source (via MCP), but DailyOS does not feed personal intelligence back into shared indexes.
+Enterprise search and workplace AI platforms such as Glean, Microsoft Copilot, and similar tools index what the *organisation* knows — tickets, docs, CRM records, calls across every system. They answer "what does the company know about this account?" DailyOS answers "what do *you* know about this account?" These are different questions requiring different architectures. Organisational context systems are the company's knowledge graph. DailyOS is yours. They complement each other; DailyOS can consume organisational context as an enrichment source via connectors or MCP, but DailyOS does not feed personal intelligence back into shared indexes.
 
 **Not a Claude Code replacement.**
 Power users who want full control can still use Claude Code directly. DailyOS is the consumption layer on top of the same primitives.
@@ -51,7 +51,7 @@ Power users who want full control can still use Claude Code directly. DailyOS is
 They know how to ask a question and get output. That's the extent of their AI literacy. They don't know how to build systems, write sophisticated prompts, or structure workflows.
 
 **Their day looks like this:**
-- Move from app to app (REDACTED → Glean → Gong → Slack → Docs)
+- Move from app to app (Salesforce → Glean → Gong → Slack → Docs)
 - Collect information from each silo manually
 - Synthesize in their head
 - Action toward some outcome
@@ -260,6 +260,8 @@ DailyOS is for the alone part of knowledge work. The boundary is where individua
 
 DailyOS doesn't need to do everything. It needs to be the operational memory layer — the system that proactively maintains your readiness so you never have to ask "what do I need to know?"
 
+DailyOS is memory plus judgment: it remembers what happened, understands what still matters, and helps the user decide what deserves attention.
+
 **It should just know.** That's the promise. Not "ask me anything" — that's a chatbot. Not "search your files" — that's a search engine. DailyOS should know what you need before you need it, because it's been watching, connecting, and maintaining intelligence continuously across time.
 
 What makes this possible is the combination of **personal context** (your calendar, your email, your meetings — signals no enterprise tool has permission to synthesize together) and **continuity across time** (not just what's happening now, but what happened last week, last month, last quarter, and what that means for tomorrow).
@@ -268,11 +270,11 @@ What makes this possible is the combination of **personal context** (your calend
 
 | Layer | What | Examples |
 |-------|------|---------|
-| Domain intelligence | Tools authoritative in their domain — CRM, transcripts, project tracking, support | Gong, REDACTED, Gainsight, Linear, Zendesk |
+| Domain intelligence | Tools authoritative in their domain — CRM, transcripts, project tracking, support | Gong, Salesforce, Gainsight, Linear, Zendesk |
 | Operational memory | DailyOS maintains readiness with continuity — briefings, preps, entity intelligence, actions, relationship history | The app |
 | Creative/analytical | AI tools consume the archive for deeper work — reports, strategies, content, analysis | Claude Desktop, ChatGPT |
 
-There is also an adjacent but distinct layer: **organisational context** (Glean, Microsoft Copilot). This layer indexes what the entire organisation knows across all its tools. DailyOS and organisational context tools are complements: Glean knows what VIP knows about an account; DailyOS knows what *you* know. The integration model is one-way consumption — DailyOS can pull Glean context as an enrichment source, enriching entity intelligence with what VIP's systems record. DailyOS does not push personal signals into Glean.
+There is also an adjacent but distinct layer: **organisational context**. Enterprise search and workplace AI systems index what a company knows across its tools. DailyOS and organisational context tools are complements: those systems know what the organisation has recorded about an account; DailyOS knows what *you* know. The integration model is one-way consumption — DailyOS can pull organisational context as an enrichment source, enriching entity intelligence with what company systems record. DailyOS does not push personal signals into shared organisational indexes.
 
 This distinction is important because the most valuable context in DailyOS is irreducibly personal. The brief's quality depends on it being honest, unfiltered, and built from your specific signals — your relationship history, your judgment patterns, your coaching observations. That quality disappears if the intelligence is shared into an organisational layer where users know colleagues and systems can see it.
 
@@ -294,7 +296,7 @@ But knowledge work varies. A CS leader needs different intelligence than a VP of
 
 **Intelligence:** Analytical perspectives layered on top. Executive Intelligence adds decision framing and delegation tracking. ProDev Intelligence captures personal impact and career narrative.
 
-**Integrations:** Data source connectors via MCP. Gong for transcripts. REDACTED for CRM data. Linear for project tracking.
+**Integrations:** Data source connectors via MCP. Gong for transcripts. Salesforce for CRM data. Linear for project tracking.
 
 **Fork and Own:** It's open source (GPL-3.0). Your data is markdown. Take it all and go.
 

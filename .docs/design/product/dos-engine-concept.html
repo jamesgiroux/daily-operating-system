@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>DOS Engine Concept · DailyOS Foundation</title>
+  <link rel="stylesheet" href="../reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../reference/_shared/chrome.css">
+  <link rel="stylesheet" href="../reference/_shared/inspector.css">
+  <link rel="stylesheet" href="foundation.css">
+</head>
+<body
+  data-folio-label="Foundation"
+  data-folio-crumbs="Reference > Product Foundation > DOS Engine"
+  data-folio-status="Memory plus judgment"
+  data-tint="olive"
+  data-active-page="today"
+  data-nav-base="../reference/surfaces"
+  data-chapters="a-personal-intelligence-engine-not-just-an-app:star:A personal intelligence engine, not just an app|core-thesis:eye:Core thesis|what-the-dos-engine-is:crosshair:What the DOS engine is|what-makes-this-different-from-a-typical-agent-stack:lightbulb:What makes this different from a typical agent stack|the-portable-primitives:compass:The portable primitives|product-architecture-model:network:Product architecture model|why-wordpress-is-the-right-first-external-environment:star:Why WordPress is the right first external environment|what-a-wordpress-domain-pack-might-look-like:eye:What a WordPress domain pack might look like">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="foundation-shell">
+<nav class="foundation-topnav" aria-label="Product foundation">
+  <a class="foundation-mark" href="index.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg> Product foundation</a>
+  <div class="foundation-links"><a href="mission.html">Mission</a>
+<a href="vision.html">Vision</a>
+<a href="product-thesis.html">Product Thesis</a>
+<a href="philosophy.html">Philosophy</a>
+<a href="principles.html">Principles</a>
+<a href="dos-engine-concept.html" data-active="true">DOS Engine</a></div>
+</nav>
+<section class="foundation-cover">
+  <p class="foundation-eyebrow">DOS Engine · Product foundation</p>
+  <h1 class="foundation-title">DOS Engine Concept</h1>
+  <p class="foundation-lede">## A personal intelligence engine, not just an app</p>
+  <div class="foundation-meta">
+    <span>14 sections</span>
+    <span>Source: DOS-ENGINE-CONCEPT.md</span>
+  </div>
+</section>
+<div class="foundation-layout">
+  <aside class="foundation-toc"><p class="foundation-toc-title">In this document</p><a href="#a-personal-intelligence-engine-not-just-an-app">A personal intelligence engine, not just an app</a><a href="#core-thesis">Core thesis</a><a href="#what-the-dos-engine-is">What the DOS engine is</a><a href="#what-makes-this-different-from-a-typical-agent-stack">What makes this different from a typical agent stack</a><a href="#the-portable-primitives">The portable primitives</a><a href="#product-architecture-model">Product architecture model</a><a href="#why-wordpress-is-the-right-first-external-environment">Why WordPress is the right first external environment</a><a href="#what-a-wordpress-domain-pack-might-look-like">What a WordPress domain pack might look like</a><a href="#what-user-facing-value-could-look-like-in-wordpress">What user-facing value could look like in WordPress</a><a href="#why-trust-can-generalize-across-sources">Why trust can generalize across sources</a><a href="#what-success-would-prove">What success would prove</a><a href="#what-would-need-to-be-proven-in-practice">What would need to be proven in practice</a><a href="#strategic-implication">Strategic implication</a><a href="#closing">Closing</a></aside>
+  <article class="foundation-document">
+    <h2 id="a-personal-intelligence-engine-not-just-an-app">A personal intelligence engine, not just an app</h2>
+<p>DailyOS should be understood in two ways at once.</p>
+<p>First, it is an opinionated product with its own surfaces: briefings, prep, readiness, action memory, reports, and trust-aware context.</p>
+<p>Second, and potentially more importantly, it points toward something deeper: a portable personal intelligence engine that could be embedded into other environments and make them materially more trustworthy.</p>
+<p>This document describes that second idea.</p>
+<h2 id="core-thesis">Core thesis</h2>
+<p>The most valuable part of DailyOS may not be any single UI surface, workflow, or vertical.</p>
+<p>It may be the underlying engine that can:</p>
+<ul><li>ingest heterogeneous signals</li><li>maintain a working model of a user's world</li><li>track provenance and uncertainty</li><li>revise beliefs over time</li><li>learn from corrections</li><li>surface the right context at the right time</li><li>preserve user ownership of personal context</li></ul>
+<p>If that engine is real, then it should not be limited to the current DailyOS app shell.</p>
+<p>It should be portable.</p>
+<h2 id="what-the-dos-engine-is">What the DOS engine is</h2>
+<p>The DOS engine is a trust-oriented personal intelligence runtime.</p>
+<p>Its job is to convert scattered signals into personal intelligence that is:</p>
+<ul><li>timely</li><li>trustworthy</li><li>revisable</li><li>context-aware</li><li>grounded in the user's actual work</li></ul>
+<p>It does not depend on any one source system such as Glean, Salesforce, Gong, or Linear. Those are useful sources, not the source of trust itself.</p>
+<p>Trust should emerge from the engine's behavior:</p>
+<ul><li>provenance</li><li>corroboration</li><li>contradiction handling</li><li>freshness</li><li>source reliability weighting</li><li>user correction</li><li>explainability</li><li>longitudinal learning</li></ul>
+<p>This is the key design principle.</p>
+<p>The engine should be able to work with rich enterprise systems, sparse local systems, or consumer/prosumer tools. The signal quality may vary. The trust framework should remain coherent.</p>
+<h2 id="what-makes-this-different-from-a-typical-agent-stack">What makes this different from a typical agent stack</h2>
+<p>Most AI systems today are composed from some mix of:</p>
+<ul><li>chat</li><li>retrieval</li><li>tools</li><li>memory</li><li>prompts</li><li>workflows</li><li>evals</li></ul>
+<p>Those are useful ingredients, but they do not automatically produce trustworthy personal intelligence.</p>
+<p>A typical agent stack is often good at:</p>
+<ul><li>answering questions</li><li>taking actions</li><li>searching across sources</li><li>synthesizing a response</li></ul>
+<p>What it is often worse at is:</p>
+<ul><li>maintaining revisable claims over time</li><li>separating fact from inference from stale context</li><li>tracking why a belief exists</li><li>learning the right lesson from user correction</li><li>explaining why something surfaced now</li><li>adapting salience and trust behavior over repeated use</li></ul>
+<p>The DOS engine should be strongest in exactly those areas.</p>
+<h2 id="the-portable-primitives">The portable primitives</h2>
+<p>If the engine is to travel across products and environments, its portable value should sit in a small set of primitives.</p>
+<h3 id="1-signal-normalization">1. Signal normalization</h3>
+<p>Inputs arrive from many systems in inconsistent shapes. The engine should normalize them into a common intelligence substrate.</p>
+<p>Examples of signal types:</p>
+<ul><li>messages</li><li>emails</li><li>calendar events</li><li>documents</li><li>tickets</li><li>tasks</li><li>notes</li><li>web captures</li><li>application events</li><li>structured records</li></ul>
+<p>The point is not to flatten everything into one blob. It is to preserve enough structure that downstream trust, relevance, and revision logic can work.</p>
+<h3 id="2-claims-and-evidence">2. Claims and evidence</h3>
+<p>The engine should represent useful intelligence as claims supported by evidence, not just generated summaries.</p>
+<p>A claim can be:</p>
+<ul><li>factual</li><li>inferred</li><li>provisional</li><li>superseded</li><li>contradicted</li><li>user-confirmed</li><li>user-corrected</li></ul>
+<p>This makes intelligence inspectable and revisable instead of disposable.</p>
+<h3 id="3-provenance">3. Provenance</h3>
+<p>Every meaningful output should know where it came from.</p>
+<p>That includes:</p>
+<ul><li>source systems</li><li>contributing artifacts</li><li>inference path</li><li>model or prompt lineage where relevant</li><li>time context</li><li>confidence/trust band</li></ul>
+<p>Without provenance, trust becomes mostly rhetorical.</p>
+<h3 id="4-trust-scoring">4. Trust scoring</h3>
+<p>Trust should not be borrowed from a single source or a single model run.</p>
+<p>The engine should combine signals such as:</p>
+<ul><li>source reliability</li><li>freshness</li><li>corroboration</li><li>contradiction</li><li>user feedback</li><li>contextual relevance</li></ul>
+<p>This can be Bayesian or probabilistic in spirit, but the important part is not the branding of the math. It is that the system should update belief quality over time instead of pretending certainty is static.</p>
+<h3 id="5-belief-revision">5. Belief revision</h3>
+<p>This is one of the most important primitives.</p>
+<p>The engine should be able to:</p>
+<ul><li>supersede stale understanding</li><li>downgrade confidence when evidence weakens</li><li>detect contradiction</li><li>distinguish outdated from false</li><li>distinguish wrong attribution from wrong content</li><li>expose what changed and why</li></ul>
+<p>This is where personal intelligence becomes more than retrieval plus summarization.</p>
+<h3 id="6-salience-and-surfacing">6. Salience and surfacing</h3>
+<p>Not all intelligence should be shown all the time.</p>
+<p>The engine should decide:</p>
+<ul><li>what deserves proactive surfacing</li><li>what should stay quiet</li><li>what belongs only in contextual prep</li><li>what should decay out of attention</li></ul>
+<p>This is where personal intelligence becomes useful instead of noisy.</p>
+<h3 id="7-correction-aware-learning">7. Correction-aware learning</h3>
+<p>User feedback should update the right layer of the engine.</p>
+<p>Examples:</p>
+<ul><li>false claim -&gt; trust / contradiction path</li><li>outdated claim -&gt; freshness / decay path</li><li>wrong entity -&gt; entity resolution path</li><li>wrong source -&gt; provenance path</li><li>not useful -&gt; surfacing / salience path</li></ul>
+<p>This is how the engine gets better instead of merely accumulating more data.</p>
+<h2 id="product-architecture-model">Product architecture model</h2>
+<p>The engine can be thought of as four layers.</p>
+<h3 id="layer-1-signal-adapters">Layer 1. Signal adapters</h3>
+<p>Connectors and ingestion paths for whatever environment the host product lives in.</p>
+<p>Examples:</p>
+<ul><li>email</li><li>calendar</li><li>docs</li><li>messaging</li><li>CRM</li><li>tickets</li><li>local files</li><li>application events</li><li>product-specific domain records</li></ul>
+<h3 id="layer-2-intelligence-core">Layer 2. Intelligence core</h3>
+<p>The portable DOS engine itself.</p>
+<p>Core responsibilities:</p>
+<ul><li>claims</li><li>evidence</li><li>provenance</li><li>trust scoring</li><li>belief revision</li><li>salience</li><li>correction handling</li><li>evaluation hooks</li><li>observability</li></ul>
+<h3 id="layer-3-domain-pack">Layer 3. Domain pack</h3>
+<p>The ontology and interpretation layer for a specific work domain.</p>
+<p>This includes:</p>
+<ul><li>entities</li><li>event types</li><li>relationship types</li><li>trust heuristics</li><li>salience heuristics</li><li>workflow semantics</li></ul>
+<h3 id="layer-4-surface-layer">Layer 4. Surface layer</h3>
+<p>The user-facing manifestations of the engine.</p>
+<p>Examples:</p>
+<ul><li>briefings</li><li>readiness views</li><li>inline context in another app</li><li>proactive alerts</li><li>meeting prep</li><li>reports</li><li>operational dashboards</li><li>assistive chat</li></ul>
+<p>This decomposition is important because it creates a path for reuse without losing sharpness.</p>
+<h2 id="why-wordpress-is-the-right-first-external-environment">Why WordPress is the right first external environment</h2>
+<p>If DailyOS is going to prove that the engine can travel outside the current app shell, WordPress is a strong first context.</p>
+<p>Why:</p>
+<ul><li>it is a real operating environment, not a toy integration</li><li>it has rich, heterogeneous signals</li><li>it is familiar to James and aligned with his current world at Automattic</li><li>it provides a domain where trust matters and noisy output is costly</li><li>it opens both professional and platform-level use cases</li></ul>
+<p>WordPress is not just a CMS. In practice it is an operational environment full of changing state, user intent, technical risk, content workflows, and relationship context.</p>
+<p>That makes it a good stress test for whether the DOS engine is truly portable.</p>
+<h2 id="what-a-wordpress-domain-pack-might-look-like">What a WordPress domain pack might look like</h2>
+<p>A WordPress-oriented DOS engine would not reuse the CS/account ontology unchanged. It would need its own domain pack.</p>
+<p>Likely entities:</p>
+<ul><li>site</li><li>plugin</li><li>theme</li><li>post/page/content object</li><li>author/editor</li><li>client/team</li><li>host/environment</li><li>incident</li><li>release/update</li><li>workflow / editorial calendar item</li><li>support conversation</li></ul>
+<p>Likely signals:</p>
+<ul><li>plugin/theme update events</li><li>failed updates</li><li>security notices</li><li>site uptime/performance changes</li><li>content publishing activity</li><li>editorial deadlines</li><li>comment/moderation signals</li><li>support tickets or threads</li><li>deployment/release events</li><li>user/admin actions</li><li>analytics anomalies</li><li>notes and messages about site work</li></ul>
+<p>Likely personal intelligence questions:</p>
+<ul><li>Which sites need my attention this week?</li><li>What changed since I last touched this site?</li><li>Which updates are routine versus risky?</li><li>Which client or team promises are still open?</li><li>What content, maintenance, or incident context should I know before I log in?</li><li>What should be trusted automatically, and what needs verification before action?</li></ul>
+<p>This is exactly the kind of context-heavy environment where the engine's trust and salience behavior should matter.</p>
+<h2 id="what-user-facing-value-could-look-like-in-wordpress">What user-facing value could look like in WordPress</h2>
+<p>If embedded well, the DOS engine could create a more trustworthy WordPress working experience.</p>
+<p>Examples:</p>
+<ul><li>a trust-aware site briefing before opening wp-admin</li><li>a summary of what changed since the last session, with confidence and provenance</li><li>proactive detection of risky update combinations</li><li>surfacing unresolved promises or pending follow-through tied to a site or client</li><li>editorial readiness summaries for upcoming publish windows</li><li>support or maintenance context assembled before taking action</li><li>clearer separation between known system facts, inferred risks, and suggested actions</li></ul>
+<p>This is useful not because it adds more AI text, but because it reduces reconstruction work and uncertainty.</p>
+<h2 id="why-trust-can-generalize-across-sources">Why trust can generalize across sources</h2>
+<p>A core strategic question is whether trust depends on privileged enterprise data sources.</p>
+<p>The answer should be no.</p>
+<p>The engine should be able to generate trustworthy behavior from many different source environments because trust should come from the runtime logic, not from any one upstream system.</p>
+<p>That means:</p>
+<ul><li>strong sources improve the quality ceiling</li><li>sparse sources reduce confidence and depth</li><li>mixed-quality sources require stronger provenance and uncertainty handling</li><li>user correction remains important in every environment</li></ul>
+<p>In other words, the system's trust behavior should scale gracefully with source quality rather than collapse without a preferred stack.</p>
+<h2 id="what-success-would-prove">What success would prove</h2>
+<p>If the DOS engine can be embedded into a WordPress environment and make the user experience materially more trustworthy, that would prove several important things.</p>
+<h3 id="1-the-core-is-real">1. The core is real</h3>
+<p>It would suggest the value is in the engine, not only in the current app shell.</p>
+<h3 id="2-trust-behavior-generalizes">2. Trust behavior generalizes</h3>
+<p>It would show that provenance, revision, and correction-aware learning can work beyond one workflow category.</p>
+<h3 id="3-new-surfaces-are-possible-without-losing-coherence">3. New surfaces are possible without losing coherence</h3>
+<p>It would open the door to other environments and products while keeping the same conceptual core.</p>
+<h3 id="4-dailyos-may-be-a-substrate-as-well-as-a-product">4. DailyOS may be a substrate as well as a product</h3>
+<p>That is a much more powerful strategic position than being only a standalone app.</p>
+<h2 id="what-would-need-to-be-proven-in-practice">What would need to be proven in practice</h2>
+<p>This idea should be treated as a hypothesis until it is demonstrated.</p>
+<p>Key proof questions:</p>
+<ul><li>Does the engine produce meaningfully better trust behavior than a generic assistant layer?</li><li>Do users feel more confident acting on its outputs?</li><li>Do corrections improve future output quality in visible ways?</li><li>Does salience improve, or does the system become noisy?</li><li>Can the engine adapt to a different ontology without losing coherence?</li><li>Can the host environment expose the engine's value in a user-friendly way?</li></ul>
+<p>Without that proof, the platform idea remains conceptually attractive but unearned.</p>
+<h2 id="strategic-implication">Strategic implication</h2>
+<p>If this works, DailyOS should be thought of not only as an application, but as a personal intelligence substrate.</p>
+<p>Its deepest value would not be in owning every end-user surface.</p>
+<p>It would be in providing the trust, revision, provenance, and salience behaviors that make AI systems more useful in real work contexts.</p>
+<p>That is the larger opportunity.</p>
+<h2 id="closing">Closing</h2>
+<p>The DOS engine is the idea that personal intelligence can be portable.</p>
+<p>Not because every domain is the same. Not because one ontology fits all contexts. Not because more AI text solves the problem.</p>
+<p>But because the underlying challenge appears again and again across environments: people work inside messy systems, do not trust shallow outputs, and need help forming a trustworthy understanding of what matters now.</p>
+<p>If DailyOS can solve that well enough that its core can improve environments like WordPress, then the engine may matter as much as the app itself.</p>
+    <nav class="foundation-next" aria-label="Adjacent foundation documents">
+      <a href="principles.html"><span class="foundation-next-label">Previous</span><span class="foundation-next-title">Principles</span></a>
+      <a href="mission.html"><span class="foundation-next-label">Next</span><span class="foundation-next-title">Mission</span></a>
+    </nav>
+  </article>
+</div>
+<section class="finis">
+  <div class="finis-mark">✱ ✱ ✱</div>
+  <p class="finis-caption">Memory plus judgment.</p>
+</section>
+</div>
+</main>
+</div>
+<script src="../reference/_shared/chrome.js"></script>
+<script src="../reference/_shared/inspector.js"></script>
+</body>
+</html>

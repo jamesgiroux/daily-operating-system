@@ -269,7 +269,7 @@ The most valuable context a professional has is irreducibly personal — their r
 
 ## Principle 13: The Three Knowledge Layers
 
-Enterprise AI (Glean, Copilot) addresses the organisational knowledge layer. DailyOS addresses the individual context layer. They are complementary, not competing:
+Enterprise AI tools such as Glean, Copilot, and similar platforms address the organisational knowledge layer. DailyOS addresses the individual context layer. They are complementary, not competing:
 
 | Layer | What it holds | Who owns it |
 |-------|--------------|-------------|
@@ -280,9 +280,9 @@ Enterprise AI (Glean, Copilot) addresses the organisational knowledge layer. Dai
 DailyOS is the layer 3 tool. Building toward layer 2 — feeding personal intelligence into shared indexes, creating team visibility into personal signals — would undermine the privacy model that makes layer 3 intelligence honest and valuable.
 
 **What this means in practice:**
-- Glean integration (I340) is a *consumer* relationship: DailyOS pulls org context from Glean to enrich individual intelligence
-- DailyOS does not push personal signals into Glean or any shared index
-- The Glean integration improves the brief by adding what the org knows; it does not share what the individual knows
+- Organisational context integrations are *consumer* relationships: DailyOS pulls org context to enrich individual intelligence
+- DailyOS does not push personal signals into enterprise search, workplace AI, or any shared index
+- These integrations improve the brief by adding what the org knows; they do not share what the individual knows
 
 **The test:** Does this feature move intelligence from layer 3 to layer 2? If yes, it requires explicit user-initiated action (like publishing a report), never automatic pipelines.
 
