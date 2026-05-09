@@ -751,6 +751,10 @@ const MIGRATIONS: &[Migration] = &[
         version: 147,
         sql: include_str!("migrations/147_invalidation_jobs.sql"),
     },
+    Migration::Sql {
+        version: 148,
+        sql: include_str!("migrations/148_dos_265_claim_edges.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

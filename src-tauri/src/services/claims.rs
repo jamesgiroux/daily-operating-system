@@ -43,6 +43,9 @@ use crate::db::{ActionDb, DbError};
 use crate::intelligence::canonicalization::{item_hash, ItemKind};
 use crate::services::context::ServiceContext;
 
+pub mod link_map;
+mod link_map_macro;
+
 // ---------------------------------------------------------------------------
 // Public types: proposal + committed shape
 // ---------------------------------------------------------------------------
@@ -1021,6 +1024,130 @@ fn insert_claim_row(tx: &ActionDb, claim: &IntelligenceClaim) -> Result<(), Clai
     Ok(())
 }
 
+fn insert_claim_edges(tx: &ActionDb, claim: &IntelligenceClaim) -> Result<(), ClaimError> {
+    let edges = link_map::compile_edges_from_claim(claim);
+    if edges.is_empty() || !claim_edges_table_exists(tx)? {
+        return Ok(());
+    }
+
+    for edge in edges {
+        tx.conn_ref().execute(
+            "INSERT OR IGNORE INTO claim_edges (
+                id, from_entity_id, to_entity_id, edge_type, origin_claim_id,
+                link_source, weight, confidence, superseded_by, tombstoned_at, created_at
+             ) VALUES (
+                ?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, NULL, NULL, ?9
+             )",
+            params![
+                &edge.id,
+                &edge.from_entity_id,
+                &edge.to_entity_id,
+                &edge.edge_type,
+                &edge.origin_claim_id,
+                edge.link_source,
+                edge.weight,
+                edge.confidence,
+                &claim.created_at,
+            ],
+        )?;
+    }
+    Ok(())
+}
+
+fn claim_edges_table_exists(tx: &ActionDb) -> Result<bool, ClaimError> {
+    Ok(tx
+        .conn_ref()
+        .query_row(
+            "SELECT 1
+             FROM sqlite_master
+             WHERE type = 'table'
+               AND name = 'claim_edges'
+             LIMIT 1",
+            [],
+            |_| Ok(()),
+        )
+        .optional()?
+        .is_some())
+}
+
+fn mark_claim_edges_superseded_by_claim(
+    tx: &ActionDb,
+    origin_claim_id: &str,
+    replacement_claim_id: &str,
+) -> Result<(), ClaimError> {
+    if !claim_edges_table_exists(tx)? {
+        return Ok(());
+    }
+
+    tx.conn_ref().execute(
+        "UPDATE claim_edges
+         SET superseded_by = ?1
+         WHERE origin_claim_id = ?2
+           AND superseded_by IS NULL
+           AND tombstoned_at IS NULL",
+        params![replacement_claim_id, origin_claim_id],
+    )?;
+    Ok(())
+}
+
+fn mark_claim_edges_tombstoned(
+    tx: &ActionDb,
+    origin_claim_id: &str,
+    tombstoned_at: &str,
+) -> Result<(), ClaimError> {
+    if !claim_edges_table_exists(tx)? {
+        return Ok(());
+    }
+
+    tx.conn_ref().execute(
+        "UPDATE claim_edges
+         SET tombstoned_at = ?1
+         WHERE origin_claim_id = ?2
+           AND superseded_by IS NULL
+           AND tombstoned_at IS NULL",
+        params![tombstoned_at, origin_claim_id],
+    )?;
+    Ok(())
+}
+
+fn mark_claim_edges_tombstoned_for_identity(
+    tx: &ActionDb,
+    subject: &SubjectRef,
+    claim_type: &str,
+    field_path: Option<&str>,
+    tombstoned_at: &str,
+) -> Result<(), ClaimError> {
+    if !claim_edges_table_exists(tx)? {
+        return Ok(());
+    }
+
+    let Some(kind) = subject_kind_label(subject) else {
+        return Ok(());
+    };
+    let Some(id) = subject_id_for_lookup(subject) else {
+        return Ok(());
+    };
+    let field = field_path.unwrap_or("");
+
+    tx.conn_ref().execute(
+        "UPDATE claim_edges
+         SET tombstoned_at = ?1
+         WHERE superseded_by IS NULL
+           AND tombstoned_at IS NULL
+           AND origin_claim_id IN (
+               SELECT ic.id
+               FROM intelligence_claims ic
+               WHERE ic.claim_type = ?2
+                 AND coalesce(ic.field_path, '') = coalesce(?3, '')
+                 AND json_valid(ic.subject_ref) = 1
+                 AND lower(json_extract(ic.subject_ref, '$.kind')) = lower(?4)
+                 AND json_extract(ic.subject_ref, '$.id') = ?5
+           )",
+        params![tombstoned_at, claim_type, field, kind, id],
+    )?;
+    Ok(())
+}
+
 fn project_legacy_state_for_claim(
     ctx: &ServiceContext<'_>,
     tx: &ActionDb,
@@ -1688,6 +1815,11 @@ pub fn commit_claim(
 
     with_claim_transaction(db, |tx| {
         let now = ctx.clock.now().to_rfc3339();
+        let claim_metadata_json = link_map::metadata_with_structured_field(
+            proposal.metadata_json.as_deref(),
+            proposal.field_path.as_deref(),
+            &proposal.text,
+        );
         if proposal.tombstone.is_some() && proposal.supersedes.is_some() {
             return Err(ClaimError::InvalidSupersession(
                 "tombstone commits cannot also supersede another claim".to_string(),
@@ -1722,6 +1854,25 @@ pub fn commit_claim(
                     superseded.id
                 )));
             }
+            if pre_gate_blocking_tombstone_exists(
+                tx.conn_ref(),
+                &superseded_subject,
+                &superseded.claim_type,
+                superseded.field_path.as_deref(),
+                superseded.item_hash.as_deref().unwrap_or(""),
+                &superseded.text,
+                &now,
+            )? || pre_gate_blocking_tombstone_exists(
+                tx.conn_ref(),
+                &subject,
+                &proposal.claim_type,
+                proposal.field_path.as_deref(),
+                &computed_hash,
+                &canonical_text,
+                &now,
+            )? {
+                return Err(ClaimError::TombstonedPreGate);
+            }
 
             let new_id = proposal
                 .id
@@ -1743,7 +1894,7 @@ pub fn commit_claim(
                 observed_at: proposal.observed_at.clone(),
                 created_at: now.clone(),
                 provenance_json: proposal.provenance_json.clone(),
-                metadata_json: proposal.metadata_json.clone(),
+                metadata_json: claim_metadata_json.clone(),
                 claim_state: ClaimState::Active,
                 surfacing_state: SurfacingState::Active,
                 demotion_reason: None,
@@ -1763,6 +1914,7 @@ pub fn commit_claim(
             };
             insert_claim_row(tx, &claim)?;
             project_legacy_state_for_claim(ctx, tx, &claim)?;
+            insert_claim_edges(tx, &claim)?;
 
             execute_claims_update(
                 tx.conn_ref(),
@@ -1774,6 +1926,7 @@ pub fn commit_claim(
                  WHERE id = ?2",
                 params![&new_id, superseded_id],
             )?;
+            mark_claim_edges_superseded_by_claim(tx, superseded_id, &new_id)?;
 
             let contradiction_id = uuid::Uuid::new_v4().to_string();
             tx.conn_ref().execute(
@@ -1819,6 +1972,13 @@ pub fn commit_claim(
                     Some("same_meaning_merge"),
                     &now,
                 )?;
+                let mut edge_claim = existing.clone();
+                edge_claim.metadata_json = link_map::metadata_with_structured_field(
+                    edge_claim.metadata_json.as_deref(),
+                    proposal.field_path.as_deref(),
+                    &proposal.text,
+                );
+                insert_claim_edges(tx, &edge_claim)?;
                 tx.bump_for_subject(&subject)?;
                 return Ok(CommittedClaim::Reinforced {
                     claim: existing,
@@ -1860,7 +2020,7 @@ pub fn commit_claim(
                     observed_at: proposal.observed_at.clone(),
                     created_at: now.clone(),
                     provenance_json: proposal.provenance_json.clone(),
-                    metadata_json: proposal.metadata_json.clone(),
+                    metadata_json: claim_metadata_json.clone(),
                     claim_state: ClaimState::Active,
                     surfacing_state: SurfacingState::Active,
                     demotion_reason: None,
@@ -1880,6 +2040,7 @@ pub fn commit_claim(
                 };
                 insert_claim_row(tx, &contradicting)?;
                 project_legacy_state_for_claim(ctx, tx, &contradicting)?;
+                insert_claim_edges(tx, &contradicting)?;
 
                 let contradiction_id = uuid::Uuid::new_v4().to_string();
                 tx.conn_ref().execute(
@@ -1930,7 +2091,7 @@ pub fn commit_claim(
             observed_at: proposal.observed_at.clone(),
             created_at: now.clone(),
             provenance_json: proposal.provenance_json.clone(),
-            metadata_json: proposal.metadata_json.clone(),
+            metadata_json: claim_metadata_json,
             claim_state,
             surfacing_state,
             demotion_reason: None,
@@ -1951,6 +2112,17 @@ pub fn commit_claim(
 
         insert_claim_row(tx, &claim)?;
         project_legacy_state_for_claim(ctx, tx, &claim)?;
+        if proposal.tombstone.is_some() {
+            mark_claim_edges_tombstoned_for_identity(
+                tx,
+                &subject,
+                &proposal.claim_type,
+                proposal.field_path.as_deref(),
+                &now,
+            )?;
+        } else {
+            insert_claim_edges(tx, &claim)?;
+        }
         tx.bump_for_subject(&subject)?;
 
         if proposal.tombstone.is_some() {
@@ -1996,6 +2168,7 @@ pub fn withdraw_claim(
                  WHERE id = ?2",
                 params![reason, claim_id],
             )?;
+            mark_claim_edges_tombstoned(tx, claim_id, &ctx.clock.now().to_rfc3339())?;
             tx.bump_for_subject(&subject)?;
         }
 
@@ -2127,6 +2300,14 @@ pub fn record_claim_feedback(
                 )?;
             }
             (false, false) => {}
+        }
+
+        if matches!(
+            lifecycle_update.claim_state,
+            ClaimState::Tombstoned | ClaimState::Withdrawn
+        ) || lifecycle_update.surfacing_state == SurfacingState::Dormant
+        {
+            mark_claim_edges_tombstoned(tx, &input.claim_id, &now)?;
         }
 
         let repair_job_id =
@@ -3300,6 +3481,44 @@ mod tests {
             .expect("read temporal_scope")
     }
 
+    fn edge_proposal(text: &str) -> ClaimProposal {
+        let mut p = proposal(text);
+        p.field_path = Some("stakeholders".to_string());
+        p
+    }
+
+    fn active_claim_edges(db: &ActionDb) -> Vec<(String, String, String, String)> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT from_entity_id, to_entity_id, edge_type, origin_claim_id
+                 FROM claim_edges_active
+                 ORDER BY from_entity_id, to_entity_id, edge_type, origin_claim_id",
+            )
+            .expect("prepare active claim edge query");
+        stmt.query_map([], |row| {
+            Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?))
+        })
+        .expect("query active claim edges")
+        .collect::<Result<Vec<_>, _>>()
+        .expect("map active claim edges")
+    }
+
+    fn edge_lifecycle_for_origin(
+        db: &ActionDb,
+        origin_claim_id: &str,
+    ) -> (Option<String>, Option<String>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT superseded_by, tombstoned_at
+                 FROM claim_edges
+                 WHERE origin_claim_id = ?1",
+                params![origin_claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read claim edge lifecycle")
+    }
+
     fn read_claim_sensitivity(db: &ActionDb, claim_id: &str) -> String {
         db.conn_ref()
             .query_row(
@@ -3798,6 +4017,220 @@ mod tests {
             claim.item_hash,
             Some(item_hash(ItemKind::Risk, &claim.text))
         );
+    }
+
+    #[test]
+    fn claim_edges_schema_exposes_active_and_backlinks_views() {
+        let db = test_db();
+        let object_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*)
+                 FROM sqlite_master
+                 WHERE name IN ('claim_edges', 'claim_edges_active', 'backlinks')",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(object_count, 3);
+    }
+
+    #[test]
+    fn commit_claim_populates_frontmatter_edges_in_same_transaction() {
+        let db = test_db();
+        seed_account(&db);
+        seed_person(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let id =
+            inserted_claim_id(commit_claim(&ctx, &db, edge_proposal(r#"["person-1"]"#)).unwrap());
+
+        assert_eq!(
+            active_claim_edges(&db),
+            vec![(
+                "acct-1".to_string(),
+                "person-1".to_string(),
+                "has_stakeholder".to_string(),
+                id
+            )]
+        );
+    }
+
+    #[test]
+    fn same_meaning_reinforcement_backfills_missing_frontmatter_edges() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let raw_targets = r#"["Person-MixedCase"]"#;
+        let canonical_text = canonicalize_for_dos280(raw_targets);
+        let subject_ref = compact_subject_ref_str(SUBJECT).expect("compact subject");
+        let hash = item_hash(item_kind_for_claim_type("risk"), &canonical_text);
+        let dedup_key = compute_dedup_key(&hash, &subject_ref, "risk", Some("stakeholders"));
+        let existing = IntelligenceClaim {
+            id: "claim-pre-edge".to_string(),
+            subject_ref,
+            claim_type: "risk".to_string(),
+            field_path: Some("stakeholders".to_string()),
+            topic_key: None,
+            text: canonical_text,
+            dedup_key,
+            item_hash: Some(hash),
+            actor: "agent:test".to_string(),
+            data_source: "unit_test".to_string(),
+            source_ref: None,
+            source_asof: Some(TS.to_string()),
+            observed_at: TS.to_string(),
+            created_at: TS.to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            claim_state: ClaimState::Active,
+            surfacing_state: SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score: None,
+            trust_computed_at: None,
+            trust_version: None,
+            thread_id: None,
+            temporal_scope: TemporalScope::State,
+            sensitivity: ClaimSensitivity::Internal,
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
+        };
+        insert_claim_row(&db, &existing).expect("seed pre-edge claim");
+
+        let result = commit_claim(&ctx, &db, edge_proposal(raw_targets)).unwrap();
+        match result {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, existing.id),
+            other => panic!("expected same-meaning reinforcement, got {other:?}"),
+        }
+
+        assert_eq!(
+            active_claim_edges(&db),
+            vec![(
+                "acct-1".to_string(),
+                "Person-MixedCase".to_string(),
+                "has_stakeholder".to_string(),
+                "claim-pre-edge".to_string()
+            )]
+        );
+    }
+
+    #[test]
+    fn supersede_marks_prior_claim_edges_superseded_by_replacement_claim() {
+        let db = test_db();
+        seed_account(&db);
+        seed_person(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id =
+            inserted_claim_id(commit_claim(&ctx, &db, edge_proposal(r#"["person-1"]"#)).unwrap());
+        let mut replacement = edge_proposal(r#"["person-2"]"#);
+        replacement.supersedes = Some(first_id.clone());
+        let replacement_id = inserted_claim_id(commit_claim(&ctx, &db, replacement).unwrap());
+
+        assert_eq!(
+            edge_lifecycle_for_origin(&db, &first_id),
+            (Some(replacement_id.clone()), None)
+        );
+        assert_eq!(
+            active_claim_edges(&db),
+            vec![(
+                "acct-1".to_string(),
+                "person-2".to_string(),
+                "has_stakeholder".to_string(),
+                replacement_id
+            )]
+        );
+    }
+
+    #[test]
+    fn tombstone_resurrection_keeps_edges_out_of_active_view() {
+        let db = test_db();
+        seed_account(&db);
+        seed_person(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id =
+            inserted_claim_id(commit_claim(&ctx, &db, edge_proposal(r#"["person-1"]"#)).unwrap());
+        let mut tombstone = edge_proposal("<keyless>");
+        tombstone.actor = "user".to_string();
+        tombstone.data_source = "user_input".to_string();
+        tombstone.tombstone = Some(TombstoneSpec {
+            retraction_reason: "user_removal".to_string(),
+            expires_at: None,
+        });
+        commit_claim(&ctx, &db, tombstone).unwrap();
+
+        let (_, tombstoned_at) = edge_lifecycle_for_origin(&db, &first_id);
+        assert!(tombstoned_at.is_some());
+        assert!(active_claim_edges(&db).is_empty());
+
+        let err = commit_claim(&ctx, &db, edge_proposal(r#"["person-1"]"#))
+            .expect_err("field tombstone must block re-enrichment");
+        assert!(matches!(err, ClaimError::TombstonedPreGate));
+        assert!(active_claim_edges(&db).is_empty());
+    }
+
+    #[test]
+    fn tombstoned_field_blocks_explicit_supersession_edges() {
+        let db = test_db();
+        seed_account(&db);
+        seed_person(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id =
+            inserted_claim_id(commit_claim(&ctx, &db, edge_proposal(r#"["person-1"]"#)).unwrap());
+        let mut tombstone = edge_proposal("<keyless>");
+        tombstone.actor = "user".to_string();
+        tombstone.data_source = "user_input".to_string();
+        tombstone.tombstone = Some(TombstoneSpec {
+            retraction_reason: "user_removal".to_string(),
+            expires_at: None,
+        });
+        commit_claim(&ctx, &db, tombstone).unwrap();
+
+        assert!(active_claim_edges(&db).is_empty());
+
+        let mut replacement = edge_proposal(r#"["person-2"]"#);
+        replacement.supersedes = Some(first_id);
+        let err = commit_claim(&ctx, &db, replacement)
+            .expect_err("field tombstone must block explicit supersession");
+
+        assert!(matches!(err, ClaimError::TombstonedPreGate));
+        assert!(active_claim_edges(&db).is_empty());
+    }
+
+    #[test]
+    fn dormant_feedback_tombstones_claim_edges() {
+        let db = test_db();
+        seed_account(&db);
+        seed_person(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, edge_proposal(r#"["person-1"]"#)).unwrap());
+        assert_eq!(active_claim_edges(&db).len(), 1);
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::MarkOutdated),
+        )
+        .unwrap();
+
+        let (_, tombstoned_at) = edge_lifecycle_for_origin(&db, &claim_id);
+        assert!(tombstoned_at.is_some());
+        assert!(active_claim_edges(&db).is_empty());
     }
 
     #[test]
