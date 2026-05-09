@@ -361,7 +361,9 @@ impl GleanIntelligenceProvider {
                         if dim_name == "commercial_financial" && entity_type == "account" {
                             if let Ok(Some(products)) = extract_products_from_response(&partial) {
                                 // Best-effort upsert — log but don't fail enrichment if products fail
-                                match crate::db::ActionDb::open() {
+                                match crate::db::ActionDb::open(std::sync::Arc::new(
+                                    crate::db::LocalKeychain::new(),
+                                )) {
                                     Ok(db) => {
                                         match upsert_products_to_db(&db, entity_id, products) {
                                             Ok(count) => {
@@ -533,9 +535,10 @@ impl GleanIntelligenceProvider {
 
         // Source-aware reconciliation with existing DB intelligence
         let intel = {
-            let existing = crate::db::ActionDb::open()
-                .ok()
-                .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
+            let existing =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .ok()
+                    .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
             match existing {
                 Some(mut existing) => {
                     // Protect stakeholder_insights when user has designated
@@ -543,7 +546,7 @@ impl GleanIntelligenceProvider {
                     // data_source='user'). Inject synthetic user_edits so
                     // reconcile_enrichment skips the stakeholder array.
                     if entity_type == "account" {
-                        let has_user_stakeholders = crate::db::ActionDb::open()
+                        let has_user_stakeholders = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
                             .ok()
                             .and_then(|db| {
                                 db.conn_ref()
@@ -682,9 +685,10 @@ impl GleanIntelligenceProvider {
         // Source-aware reconciliation with existing intelligence.
         // Preserves user corrections, transcript items, and dismissed tombstones.
         let intel = {
-            let existing = crate::db::ActionDb::open()
-                .ok()
-                .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
+            let existing =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .ok()
+                    .and_then(|db| db.get_entity_intelligence(entity_id).ok().flatten());
             match existing {
                 Some(existing) => reconcile_enrichment(
                     existing,
@@ -1040,7 +1044,7 @@ fn write_progressive_glean_dimension(
     entity_type: &str,
     combined: &IntelligenceJson,
 ) {
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
             log::warn!(

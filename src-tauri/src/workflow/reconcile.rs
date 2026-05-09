@@ -592,7 +592,8 @@ pub fn write_morning_flags(today_dir: &Path, result: &ReconciliationResult) -> R
         .map_err(|e| format!("Failed to write next-morning-flags.json: {}", e))?;
 
     // Also store in app_state_kv for DB-based reads
-    if let Ok(db) = crate::db::ActionDb::open() {
+    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         let clock = crate::services::context::SystemClock;
         let rng = crate::services::context::SystemRng;
         let ext = crate::services::context::ExternalClients::default();

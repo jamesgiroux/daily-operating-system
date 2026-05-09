@@ -1323,8 +1323,8 @@ async fn main() -> anyhow::Result<()> {
     let config =
         load_config().map_err(|e| anyhow::anyhow!("Failed to load DailyOS config: {e}"))?;
 
-    let db =
-        ActionDb::open_readonly().map_err(|e| anyhow::anyhow!("Failed to open database: {e}"))?;
+    let db = ActionDb::open_readonly(std::sync::Arc::new(dailyos_lib::db::LocalKeychain::new()))
+        .map_err(|e| anyhow::anyhow!("Failed to open database: {e}"))?;
 
     // Initialize embedding model synchronously — MCP server starts before any
     // tool calls so this won't block user interaction.

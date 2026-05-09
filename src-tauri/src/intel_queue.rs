@@ -635,22 +635,23 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
         // ActionDb::open() is the standard processor-loop pattern (see
         // gather_enrichment_input which also opens its own handle); the
         // FenceCycle is a short-lived read against migration_state.
-        let _fence_cycle = match crate::db::ActionDb::open() {
-            Ok(db) => match crate::intelligence::write_fence::FenceCycle::capture(&db) {
-                Ok(c) => Some(c),
-                Err(e) => {
-                    log::warn!(
-                        "IntelProcessor: failed to capture schema_epoch for batch ({e}); \
+        let _fence_cycle =
+            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
+                Ok(db) => match crate::intelligence::write_fence::FenceCycle::capture(&db) {
+                    Ok(c) => Some(c),
+                    Err(e) => {
+                        log::warn!(
+                            "IntelProcessor: failed to capture schema_epoch for batch ({e}); \
                          processing without fence — migration must not run during this batch"
-                    );
+                        );
+                        None
+                    }
+                },
+                Err(e) => {
+                    log::warn!("IntelProcessor: failed to open db for FenceCycle capture: {e}");
                     None
                 }
-            },
-            Err(e) => {
-                log::warn!("IntelProcessor: failed to open db for FenceCycle capture: {e}");
-                None
-            }
-        };
+            };
 
         let entity_names: Vec<&str> = batch.iter().map(|r| r.entity_id.as_str()).collect();
         log::info!(
@@ -686,7 +687,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
 
         // Emit background work status for frontend indicator only when
         // the batch survives TTL/background guards and will do real work.
-        let display_names: Vec<String> = if let Ok(db) = crate::db::ActionDb::open() {
+        let display_names: Vec<String> = if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             batch
                 .iter()
                 .filter_map(|r| {
@@ -871,7 +874,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                     });
                 } else if !succeeded.contains(original.entity_id.as_str()) {
                     // Record claude_code sync failure
-                    if let Ok(db) = crate::db::ActionDb::open() {
+                    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
+                        crate::db::LocalKeychain::new(),
+                    )) {
                         #[allow(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -974,7 +979,9 @@ pub async fn run_intel_processor(state: Arc<AppState>, app: AppHandle) {
                 }
             }
 
-            let db = match crate::db::ActionDb::open() {
+            let db = match crate::db::ActionDb::open(std::sync::Arc::new(
+                crate::db::LocalKeychain::new(),
+            )) {
                 Ok(db) => db,
                 Err(e) => {
                     log::warn!(
@@ -1099,7 +1106,8 @@ fn enrichment_age_check(enriched_at: &str, entity_id: &str) -> Option<String> {
 /// `enriched_at` timestamp. Returns `Some(message)` if the entity should be
 /// skipped, `None` if it should proceed.
 fn check_enrichment_ttl(_state: &AppState, request: &IntelRequest) -> Option<String> {
-    let db = crate::db::ActionDb::open().ok()?;
+    let db =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
     let intel = db
         .get_entity_intelligence(&request.entity_id)
         .ok()
@@ -1124,7 +1132,8 @@ pub fn gather_enrichment_input(
         PathBuf::from(&config.workspace_path)
     };
 
-    let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("Failed to open DB: {}", e))?;
 
     // Look up the entity
     let account = if request.entity_type == "account" {
@@ -1806,7 +1815,9 @@ fn run_parallel_enrichment(
     if let Some(keywords_json) =
         crate::intelligence::extract_keywords_from_response(&all_raw_output)
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
@@ -1852,7 +1863,7 @@ fn run_parallel_enrichment(
 /// new combined state, and writes back. Non-fatal on error — the committed
 /// enrichment persistence path is the authoritative write.
 fn write_progressive_dimension(entity_id: &str, entity_type: &str, combined: &IntelligenceJson) {
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
             log::warn!(
@@ -1929,7 +1940,9 @@ fn run_enrichment_legacy(
     // Extract and persist keywords from the raw AI response
     if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let clock = crate::services::context::SystemClock;
             let rng = crate::services::context::SystemRng;
             let ext = crate::services::context::ExternalClients::default();
@@ -3828,7 +3841,9 @@ fn spawn_queue_worker_supplemental_glean_finalize(
             .await
         {
             Ok(signals) => {
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     let ctx = state_for_spawn.live_service_context();
                     if let Err(e) = crate::services::intelligence::upsert_health_outlook_signals(
                         &ctx,
@@ -3881,7 +3896,9 @@ fn spawn_queue_worker_supplemental_glean_finalize(
         // failures leave peer_benchmark unset without user-visible noise.
         match provider.enrich_peer_benchmark(&entity_name).await {
             Ok(peer_benchmark) => {
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     match db.get_entity_intelligence(&entity_id) {
                         Ok(Some(mut current)) => {
                             let ctx = state_for_spawn.live_service_context();
@@ -4171,7 +4188,7 @@ fn merge_missing_core_fields_from_existing(
 /// mechanically. When it changes, affected briefings must regenerate to pull the
 /// latest intelligence data.
 pub(crate) fn invalidate_and_requeue_meeting_preps(state: &AppState, entity_id: &str) {
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
             log::warn!(

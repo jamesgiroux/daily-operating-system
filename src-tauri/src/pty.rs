@@ -168,7 +168,8 @@ fn record_daily_token_usage(db: &crate::db::ActionDb, tokens: u32) {
 /// to decide whether to allow the call. Because we charge the actual measured
 /// token count post-call via `record_ai_usage`, a slight mismatch is acceptable.
 pub fn check_daily_budget(estimated_call_tokens: u32) -> Result<(), crate::error::ExecutionError> {
-    let Ok(db) = crate::db::ActionDb::open() else {
+    let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    else {
         // DB unavailable — don't block; budget enforcement requires storage.
         return Ok(());
     };
@@ -463,7 +464,9 @@ fn build_background_pause_status(
 fn background_pause_reason(status: &BackgroundAiPauseStatus) -> Option<String> {
     // Use a 4h window threshold = 50% of the configured daily budget.
     // Read the budget synchronously if DB is available, else fall back to the default.
-    let window_threshold = if let Ok(db) = crate::db::ActionDb::open() {
+    let window_threshold = if let Ok(db) =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         read_configured_daily_budget(&db) / 2
     } else {
         DEFAULT_DAILY_AI_TOKEN_BUDGET / 2
@@ -524,7 +527,8 @@ fn maybe_refresh_background_ai_guard(db: &crate::db::ActionDb) -> BackgroundAiPa
 }
 
 pub fn current_background_ai_pause_status() -> BackgroundAiPauseStatus {
-    let Ok(db) = crate::db::ActionDb::open() else {
+    let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    else {
         return BackgroundAiPauseStatus {
             paused: false,
             paused_until: None,
@@ -581,7 +585,8 @@ fn record_ai_usage(
         log::warn!("append AI usage audit entry failed: {e}");
     }
 
-    let Ok(db) = crate::db::ActionDb::open() else {
+    let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    else {
         return;
     };
     let mut ledger: AiUsageLedger = read_json_kv(&db, AI_USAGE_DAILY_KEY).unwrap_or_default();

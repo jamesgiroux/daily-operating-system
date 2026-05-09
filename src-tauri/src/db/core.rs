@@ -8,9 +8,11 @@
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 
 use super::types::*;
 use crate::db::encryption;
+use crate::db::key_provider::{DbKeyProvider, EncryptionKey, UserIdentity};
 use rusqlite::{params, Connection, OpenFlags};
 
 // ---------------------------------------------------------------------------
@@ -103,7 +105,10 @@ impl ActionDb {
         }
     }
 
-    fn prepare_encrypted_connection(path: &Path) -> Result<(Connection, String), DbError> {
+    fn prepare_encrypted_connection(
+        path: &Path,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<(Connection, EncryptionKey), DbError> {
         // Ensure parent directory exists
         if let Some(parent) = path.parent() {
             if !parent.exists() {
@@ -112,18 +117,22 @@ impl ActionDb {
         }
 
         // Get or create encryption key from Keychain
-        let hex_key = encryption::get_or_create_db_key(path).map_err(Self::map_key_error)?;
+        let user = UserIdentity::local(path.to_path_buf());
+        let encryption_key = key_provider
+            .get_or_create_key(&user)
+            .map_err(Self::map_key_error)?;
 
         // Migrate plaintext DB if it exists (ADR-0092)
         if path.exists() && encryption::is_database_plaintext(path) {
             log::info!("Detected plaintext database, migrating to encrypted...");
-            encryption::migrate_to_encrypted(path, &hex_key).map_err(DbError::Encryption)?;
+            encryption::migrate_to_encrypted(path, encryption_key.as_hex())
+                .map_err(DbError::Encryption)?;
         }
 
         let conn = Connection::open(path)?;
 
         // PRAGMA key MUST be first — before any other PRAGMA (ADR-0092)
-        conn.execute_batch(&encryption::key_to_pragma(&hex_key))?;
+        conn.execute_batch(&encryption_key.to_pragma())?;
 
         // Validate that the key can read the database by touching schema metadata.
         // This avoids engine-specific SQLCipher functions (e.g. sqlcipher_version)
@@ -150,7 +159,8 @@ impl ActionDb {
         conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
 
         // Run schema migrations (ADR-0071)
-        crate::migrations::run_migrations(&conn).map_err(DbError::Migration)?;
+        crate::migrations::run_migrations_with_key(&conn, Some(&encryption_key))
+            .map_err(DbError::Migration)?;
 
         // Enable FK constraint enforcement. Set after migrations since
         // migration 010 uses PRAGMA foreign_keys = OFF for table recreation.
@@ -184,13 +194,14 @@ impl ActionDb {
         )]
         let _ = Self::dismiss_internal_stakeholder_suggestions(&conn);
 
-        Ok((conn, hex_key))
+        Ok((conn, encryption_key))
     }
 
     pub(crate) fn open_encrypted_connection(
         path: PathBuf,
-    ) -> Result<(Connection, String), DbError> {
-        let (conn, hex_key) = Self::prepare_encrypted_connection(&path)?;
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<(Connection, EncryptionKey), DbError> {
+        let (conn, encryption_key) = Self::prepare_encrypted_connection(&path, key_provider)?;
         let db = Self { conn };
 
         // One-time initialization tasks (guarded by init_tasks table).
@@ -201,7 +212,7 @@ impl ActionDb {
         )]
         let _ = db.run_guarded_init_backfill_account_domains();
 
-        Ok((db.conn, hex_key))
+        Ok((db.conn, encryption_key))
     }
 
     /// Open (or create) the database at `~/.dailyos/dailyos.db` and apply the schema.
@@ -210,11 +221,23 @@ impl ActionDb {
     /// a global `DbService` is installed, the fresh-open path is executed on
     /// the writer's dedicated thread to avoid SQLCipher WAL key-verification races
     /// (SQLITE_NOTADB) while preserving a non-shared ownership contract.
-    pub fn open() -> Result<Self, DbError> {
+    pub fn open(key_provider: Arc<dyn DbKeyProvider>) -> Result<Self, DbError> {
         let path = Self::db_path()?;
+        Self::open_resolved_path(path, key_provider)
+    }
+
+    fn open_resolved_path(
+        path: PathBuf,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<Self, DbError> {
+        let rotation_lock = crate::db::key_provider::rotation_lock_read();
         if let Some(svc) = crate::db_service::try_global() {
-            let hex_key = encryption::get_or_create_db_key(&path).map_err(Self::map_key_error)?;
-            let conn = svc.open_fresh_serialized(path.clone(), hex_key)?;
+            let user = UserIdentity::local(path.clone());
+            let encryption_key = key_provider
+                .get_or_create_key(&user)
+                .map_err(Self::map_key_error)?;
+            let conn = svc.open_fresh_serialized(path.clone(), encryption_key)?;
+            drop(rotation_lock);
             let db = Self { conn };
             #[allow(
                 clippy::let_underscore_must_use,
@@ -224,12 +247,23 @@ impl ActionDb {
             return Ok(db);
         }
 
-        Self::open_at(path)
+        Self::open_at(path, key_provider)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn open_resolved_path_for_tests(
+        path: PathBuf,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<Self, DbError> {
+        Self::open_resolved_path(path, key_provider)
     }
 
     /// Open a database at an explicit path. Useful for testing.
-    pub(crate) fn open_at(path: PathBuf) -> Result<Self, DbError> {
-        let (conn, _) = Self::open_encrypted_connection(path)?;
+    pub(crate) fn open_at(
+        path: PathBuf,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<Self, DbError> {
+        let (conn, _) = Self::open_encrypted_connection(path, key_provider)?;
         Ok(Self { conn })
     }
 
@@ -259,14 +293,18 @@ impl ActionDb {
 
     /// Open the database in read-only mode. Used by the MCP binary for safe
     /// concurrent reads while the Tauri app owns writes.
-    pub fn open_readonly() -> Result<Self, DbError> {
+    pub fn open_readonly(key_provider: Arc<dyn DbKeyProvider>) -> Result<Self, DbError> {
         let path = Self::db_path()?;
-        Self::open_readonly_at(&path)
+        Self::open_readonly_at(&path, key_provider)
     }
 
     /// Open a database at an explicit path in read-only mode.
-    pub fn open_readonly_at(path: &std::path::Path) -> Result<Self, DbError> {
-        let hex_key = encryption::get_or_create_db_key(path).map_err(|e| {
+    pub fn open_readonly_at(
+        path: &std::path::Path,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<Self, DbError> {
+        let user = UserIdentity::local(path.to_path_buf());
+        let encryption_key = key_provider.get_or_create_key(&user).map_err(|e| {
             if e.starts_with("KEY_MISSING:") {
                 DbError::KeyMissing {
                     db_path: e.trim_start_matches("KEY_MISSING:").to_string(),
@@ -282,7 +320,7 @@ impl ActionDb {
         )?;
 
         // PRAGMA key MUST be first
-        conn.execute_batch(&encryption::key_to_pragma(&hex_key))?;
+        conn.execute_batch(&encryption_key.to_pragma())?;
 
         conn.execute_batch("PRAGMA journal_mode=WAL;")?;
         conn.execute_batch("PRAGMA busy_timeout = 5000;")?;

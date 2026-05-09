@@ -190,7 +190,8 @@ fn log_scan_report(report: &HygieneReport) {
 }
 
 fn run_daily_purge(state: &AppState, app: &AppHandle) {
-    if let Ok(db) = crate::db::ActionDb::open() {
+    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         let purge_report = crate::db::data_lifecycle::run_age_based_purge(&db);
         if purge_report.total() > 0 {
             log::info!(
@@ -235,7 +236,8 @@ fn run_daily_purge(state: &AppState, app: &AppHandle) {
 /// Run overnight scan with expanded budget.
 fn try_run_overnight(state: &AppState) -> Option<narrative::OvernightReport> {
     let config = state.config.read().clone()?;
-    let db = crate::db::ActionDb::open().ok()?;
+    let db =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
     let workspace = std::path::Path::new(&config.workspace_path);
     Some(narrative::run_overnight_scan(
         &db,
@@ -248,7 +250,8 @@ fn try_run_overnight(state: &AppState) -> Option<narrative::OvernightReport> {
 /// Synchronous scan attempt — releases everything when done.
 fn try_run_scan(state: &AppState) -> Option<HygieneReport> {
     let config = state.config.read().clone()?;
-    let db = crate::db::ActionDb::open().ok()?;
+    let db =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
 
     let first_run = !state
         .hygiene

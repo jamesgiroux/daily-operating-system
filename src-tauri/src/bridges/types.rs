@@ -635,7 +635,7 @@ fn render_mcp_ability_data_with_authoritative_claims(
     data: serde_json::Value,
     provenance: &serde_json::Value,
 ) -> serde_json::Value {
-    match ActionDb::open_readonly() {
+    match ActionDb::open_readonly(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => render_mcp_ability_data_for_surface_with_provenance(&db, data, provenance),
         Err(error) => {
             log::warn!(

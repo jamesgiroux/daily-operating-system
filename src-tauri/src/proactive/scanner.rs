@@ -12,7 +12,8 @@ use super::engine::{self, DetectorContext};
 ///
 /// Called from hygiene loop and pre-briefing hook.
 pub fn run_proactive_scan(state: &AppState) -> Result<usize, String> {
-    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
 
     let (profile, user_domains) = {
         let config_guard = state.config.read();

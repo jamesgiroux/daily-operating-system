@@ -80,8 +80,8 @@ fn read_schema_version(path: &Path) -> Option<i64> {
     // Apply an existing encryption key only for encrypted-looking files.
     // Schema reads must not create Keychain entries as a side effect.
     if !crate::db::encryption::is_database_plaintext(path) {
-        if let Ok(hex_key) = crate::db::encryption::get_existing_db_key() {
-            if let Err(e) = conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key)) {
+        if let Ok(encryption_key) = crate::db::encryption::get_existing_db_key() {
+            if let Err(e) = conn.execute_batch(&encryption_key.to_pragma()) {
                 log::warn!("apply encryption key while reading backup schema failed: {e}");
             }
         }
@@ -206,10 +206,12 @@ pub fn backup_database(db: &ActionDb) -> Result<String, String> {
         .map_err(|e| format!("Failed to open backup file: {}", e))?;
 
     // Apply encryption key to backup destination so.bak is also encrypted
-    let hex_key = crate::db::encryption::get_or_create_db_key(&backup_path)
+    let provider = crate::db::LocalKeychain::new();
+    let user = crate::db::UserIdentity::local(backup_path.clone());
+    let encryption_key = crate::db::DbKeyProvider::get_or_create_key(&provider, &user)
         .map_err(|e| format!("Failed to get encryption key for backup: {e}"))?;
     backup_conn
-        .execute_batch(&crate::db::encryption::key_to_pragma(&hex_key))
+        .execute_batch(&encryption_key.to_pragma())
         .map_err(|e| format!("Failed to set backup encryption key: {e}"))?;
 
     let backup = rusqlite::backup::Backup::new(db.conn_ref(), &mut backup_conn)
@@ -394,9 +396,10 @@ pub fn validate_backup(path: &Path) -> Result<(), String> {
         let conn =
             rusqlite::Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
                 .ok()?;
-        if let Ok(hex_key) = crate::db::encryption::get_or_create_db_key(path) {
-            conn.execute_batch(&crate::db::encryption::key_to_pragma(&hex_key))
-                .ok()?;
+        let provider = crate::db::LocalKeychain::new();
+        let user = crate::db::UserIdentity::local(path.to_path_buf());
+        if let Ok(encryption_key) = crate::db::DbKeyProvider::get_or_create_key(&provider, &user) {
+            conn.execute_batch(&encryption_key.to_pragma()).ok()?;
         }
         conn.pragma_query_value(None, "integrity_check", |row| row.get::<_, String>(0))
             .ok()

@@ -95,7 +95,8 @@ async fn poll_calendar(state: &AppState) -> Result<Vec<CalendarEvent>, PollError
 
 /// Build entity hints from DB for meeting classification.
 fn build_entity_hints_from_state(_state: &AppState) -> Vec<google_api::classify::EntityHint> {
-    if let Ok(db) = crate::db::ActionDb::open() {
+    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         return crate::helpers::build_entity_hints(&db);
     }
     Vec::new()
@@ -107,7 +108,7 @@ fn save_attendee_display_names(
     raw_events: &[google_api::calendar::GoogleCalendarEvent],
     _state: &AppState,
 ) {
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(d) => d,
         Err(_) => return,
     };
@@ -350,7 +351,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                 // Pre-meeting intelligence refresh (ADR-0058)
                 let cfg_for_hygiene = state.config.read().clone();
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     let refreshed = crate::hygiene::check_upcoming_meeting_readiness(
                         &db,
                         &state.intel_queue,
@@ -365,7 +368,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
                 }
 
                 // Record successful calendar sync
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     #[allow(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -398,7 +403,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             Err(PollError::AuthExpired) => {
                 log::warn!("Calendar poll: token expired");
                 // Record calendar sync failure
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     #[allow(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -431,7 +438,9 @@ pub async fn run_calendar_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(PollError::ApiError(ref e)) => {
                 // Record calendar sync failure
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     #[allow(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -466,7 +475,8 @@ fn get_poll_interval(state: &AppState) -> u64 {
 }
 
 fn load_last_sync_success(source: &str) -> Option<DateTime<Utc>> {
-    let db = crate::db::ActionDb::open().ok()?;
+    let db =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
     let raw: Option<String> = db
         .conn_ref()
         .query_row(
@@ -570,7 +580,9 @@ fn generate_preps_for_new_meetings(
             }
 
             // Try to pull account data from SQLite
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 enrich_prep_from_db(&mut prep, account, &db);
             }
         }
@@ -719,7 +731,7 @@ fn populate_people_from_events(
         changed_meetings: Vec::new(),
     };
 
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(d) => d,
         Err(_) => return empty_result,
     };
@@ -967,7 +979,7 @@ fn detect_cancelled_meetings(current_events: &[CalendarEvent], state: &AppState)
     let range_start = today.to_string(); // "YYYY-MM-DD"
     let range_end = (today + chrono::Duration::days(8)).to_string();
 
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(d) => d,
         Err(_) => return,
     };
@@ -1223,7 +1235,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
         match google_api::get_valid_access_token().await {
             Ok(token) => match google_api::gmail::fetch_inbox_message_ids(&token, 100).await {
                 Ok(inbox_ids) => {
-                    if let Ok(db) = crate::db::ActionDb::open() {
+                    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
+                        crate::db::LocalKeychain::new(),
+                    )) {
                         let active = db.get_all_active_emails().unwrap_or_default();
                         let db_ids: std::collections::HashSet<String> =
                             active.iter().map(|e| e.email_id.clone()).collect();
@@ -1369,7 +1383,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                             );
                         }
                         // Record successful gmail sync
-                        if let Ok(db) = crate::db::ActionDb::open() {
+                        if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
+                            crate::db::LocalKeychain::new(),
+                        )) {
                             #[allow(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -1482,12 +1498,16 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
 
                                 // Re-score after enrichment so new intelligence is reflected.
                                 let scores = {
-                                    let active = crate::db::ActionDb::open()
-                                        .ok()
-                                        .and_then(|db| db.get_all_active_emails().ok())
-                                        .unwrap_or_default();
+                                    let active = crate::db::ActionDb::open(std::sync::Arc::new(
+                                        crate::db::LocalKeychain::new(),
+                                    ))
+                                    .ok()
+                                    .and_then(|db| db.get_all_active_emails().ok())
+                                    .unwrap_or_default();
                                     if !active.is_empty() {
-                                        match crate::db::ActionDb::open() {
+                                        match crate::db::ActionDb::open(std::sync::Arc::new(
+                                            crate::db::LocalKeychain::new(),
+                                        )) {
                                             Ok(scoring_db) => {
                                                 let model = state.embedding_model.clone();
                                                 let merged_kws = state
@@ -1513,7 +1533,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                                     }
                                 };
                                 if !scores.is_empty() {
-                                    if let Ok(db) = crate::db::ActionDb::open() {
+                                    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
+                                        crate::db::LocalKeychain::new(),
+                                    )) {
                                         for (email_id, score, reason) in &scores {
                                             #[allow(
                                                 clippy::let_underscore_must_use,
@@ -1543,7 +1565,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
                     }
                     Err(ref e) => {
                         // Record gmail sync failure (delivery)
-                        if let Ok(db) = crate::db::ActionDb::open() {
+                        if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
+                            crate::db::LocalKeychain::new(),
+                        )) {
                             #[allow(
                                 clippy::let_underscore_must_use,
                                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -1560,7 +1584,9 @@ pub async fn run_email_poller(state: Arc<AppState>, app_handle: AppHandle) {
             }
             Err(ref e) => {
                 // Record gmail sync failure (fetch)
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     #[allow(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"

@@ -1328,7 +1328,7 @@ pub fn build_outcome_data(
     _state: &AppState,
 ) -> crate::types::MeetingOutcomeData {
     // Try to get actions from DB for richer data
-    let actions = crate::db::ActionDb::open()
+    let actions = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
         .ok()
         .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
         .unwrap_or_default();

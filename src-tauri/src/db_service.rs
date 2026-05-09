@@ -21,7 +21,7 @@
 
 use std::any::Any;
 use std::panic::{self, AssertUnwindSafe};
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{mpsc, Arc, Mutex as StdMutex};
 use std::thread;
@@ -29,6 +29,7 @@ use std::thread;
 use rusqlite::Connection;
 use tokio::sync::oneshot;
 
+use crate::db::key_provider::{rekey_database_standalone, DbKeyProvider, EncryptionKey};
 use crate::db::DbError;
 
 /// Number of read connections in the pool.
@@ -195,8 +196,12 @@ impl PooledConnection {
 
 /// Apply standard pragmas to a connection. `read_only` adds `query_only=ON`.
 /// PRAGMA key MUST be first for SQLCipher (ADR-0092).
-fn apply_pragmas(conn: &Connection, read_only: bool, hex_key: &str) -> Result<(), rusqlite::Error> {
-    conn.execute_batch(&crate::db::encryption::key_to_pragma(hex_key))?;
+fn apply_pragmas(
+    conn: &Connection,
+    read_only: bool,
+    encryption_key: &EncryptionKey,
+) -> Result<(), rusqlite::Error> {
+    conn.execute_batch(&encryption_key.to_pragma())?;
     conn.execute_batch("PRAGMA journal_mode = WAL;")?;
     conn.execute_batch("PRAGMA busy_timeout = 5000;")?;
     conn.execute_batch("PRAGMA synchronous = NORMAL;")?;
@@ -211,11 +216,11 @@ fn apply_pragmas(conn: &Connection, read_only: bool, hex_key: &str) -> Result<()
 /// `ActionDb::open` (key, verification query, WAL/busy/sync setup, migrations).
 fn open_encrypted_fresh(
     path: &str,
-    hex_key: &str,
+    encryption_key: &EncryptionKey,
     read_only: bool,
 ) -> rusqlite::Result<Connection> {
     let conn = Connection::open(path)?;
-    apply_pragmas(&conn, read_only, hex_key)?;
+    apply_pragmas(&conn, read_only, encryption_key)?;
     conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
         row.get::<_, i64>(0)
     })?;
@@ -228,39 +233,78 @@ fn open_encrypted_fresh(
             )
             .is_ok();
         if !has_accounts_table {
-            crate::migrations::run_migrations(&conn).map_err(|e| {
-                rusqlite::Error::InvalidParameterName(format!("migration failed: {e}"))
-            })?;
+            crate::migrations::run_migrations_with_key(&conn, Some(encryption_key)).map_err(
+                |e| rusqlite::Error::InvalidParameterName(format!("migration failed: {e}")),
+            )?;
             conn.execute_batch("PRAGMA foreign_keys = ON;")?;
         }
     }
     Ok(conn)
 }
 
-/// The service itself. Hold as `Arc<DbService>` and share freely.
-pub struct DbService {
+struct DbConnectionPool {
     writer: PooledConnection,
     readers: Vec<PooledConnection>,
+}
+
+impl DbConnectionPool {
+    fn from_connections(writer: Connection, readers: Vec<Connection>) -> Result<Self, DbError> {
+        let writer = PooledConnection::new(writer)?;
+        let readers = readers
+            .into_iter()
+            .map(PooledConnection::new)
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(Self { writer, readers })
+    }
+
+    fn open_existing(path: &Path, encryption_key: &EncryptionKey) -> Result<Self, DbError> {
+        let path = path.to_string_lossy().to_string();
+        let writer = open_encrypted_fresh(&path, encryption_key, false)?;
+        let mut readers = Vec::with_capacity(NUM_READERS);
+        for _ in 0..NUM_READERS {
+            let conn = Connection::open(&path)?;
+            apply_pragmas(&conn, true, encryption_key)?;
+            readers.push(conn);
+        }
+        Self::from_connections(writer, readers)
+    }
+
+    fn shutdown(&self) {
+        self.writer.shutdown();
+        for reader in &self.readers {
+            reader.shutdown();
+        }
+    }
+}
+
+/// The service itself. Hold as `Arc<DbService>` and share freely.
+pub struct DbService {
+    path: PathBuf,
+    pool: parking_lot::RwLock<DbConnectionPool>,
     read_idx: AtomicUsize,
 }
 
 impl DbService {
     /// Open a DbService at the standard path.
-    pub async fn open() -> Result<Arc<Self>, DbError> {
+    pub async fn open(key_provider: Arc<dyn DbKeyProvider>) -> Result<Arc<Self>, DbError> {
         let path = crate::db::ActionDb::db_path_public()?;
-        Self::open_at(path).await
+        Self::open_at(path, key_provider).await
     }
 
     /// Open a DbService at an explicit path. Encrypted via SQLCipher.
-    pub async fn open_at(path: PathBuf) -> Result<Arc<Self>, DbError> {
+    pub async fn open_at(
+        path: PathBuf,
+        key_provider: Arc<dyn DbKeyProvider>,
+    ) -> Result<Arc<Self>, DbError> {
         let path_for_writer = path.clone();
         let path_for_readers = path.to_string_lossy().to_string();
+        let writer_key_provider = key_provider.clone();
 
         // Build the writer on a blocking thread so filesystem checks,
         // Keychain access, plaintext migration, open, and migrations do not
         // stall the Tokio runtime.
         let (writer, hex_key) = tokio::task::spawn_blocking(move || {
-            crate::db::ActionDb::open_encrypted_connection(path_for_writer)
+            crate::db::ActionDb::open_encrypted_connection(path_for_writer, writer_key_provider)
         })
         .await
         .map_err(|e| DbError::Migration(format!("writer spawn join: {e}")))??;
@@ -268,7 +312,7 @@ impl DbService {
         let key_for_readers = hex_key.clone();
 
         // Readers: no migrations, just pragmas + query_only.
-        let mut readers = Vec::with_capacity(NUM_READERS);
+        let mut reader_conns = Vec::with_capacity(NUM_READERS);
         for _ in 0..NUM_READERS {
             let path_clone = path_for_readers.clone();
             let key_clone = key_for_readers.clone();
@@ -279,12 +323,13 @@ impl DbService {
             })
             .await
             .map_err(|e| DbError::Migration(format!("reader spawn join: {e}")))??;
-            readers.push(PooledConnection::new(r)?);
+            reader_conns.push(r);
         }
 
+        let pool = DbConnectionPool::from_connections(writer, reader_conns)?;
         Ok(Arc::new(Self {
-            writer: PooledConnection::new(writer)?,
-            readers,
+            path,
+            pool: parking_lot::RwLock::new(pool),
             read_idx: AtomicUsize::new(0),
         }))
     }
@@ -319,7 +364,7 @@ impl DbService {
         .await
         .map_err(|e| DbError::Migration(format!("writer spawn join: {e}")))??;
 
-        let mut readers = Vec::with_capacity(NUM_READERS);
+        let mut reader_conns = Vec::with_capacity(NUM_READERS);
         for _ in 0..NUM_READERS {
             let path_clone = path_for_readers.clone();
             let r = tokio::task::spawn_blocking(move || -> Result<Connection, DbError> {
@@ -333,12 +378,13 @@ impl DbService {
             })
             .await
             .map_err(|e| DbError::Migration(format!("reader spawn join: {e}")))??;
-            readers.push(PooledConnection::new(r)?);
+            reader_conns.push(r);
         }
 
+        let pool = DbConnectionPool::from_connections(writer, reader_conns)?;
         Ok(Arc::new(Self {
-            writer: PooledConnection::new(writer)?,
-            readers,
+            path,
+            pool: parking_lot::RwLock::new(pool),
             read_idx: AtomicUsize::new(0),
         }))
     }
@@ -354,12 +400,11 @@ impl DbService {
     pub fn open_fresh_serialized(
         &self,
         path: PathBuf,
-        hex_key: String,
+        encryption_key: EncryptionKey,
     ) -> Result<Connection, DbError> {
         let path = path.to_string_lossy().to_string();
-        let result = self
-            .writer
-            .call_sync(move |_| open_encrypted_fresh(&path, &hex_key, false));
+        let writer = self.writer();
+        let result = writer.call_sync(move |_| open_encrypted_fresh(&path, &encryption_key, false));
         match result {
             Ok(conn) => Ok(conn),
             Err(PooledCallError::Rusqlite(error)) => Err(DbError::Sqlite(error)),
@@ -375,24 +420,84 @@ impl DbService {
         }
     }
 
+    pub fn db_path(&self) -> &Path {
+        &self.path
+    }
+
+    pub(crate) fn rekey_database(
+        &self,
+        db_path: &Path,
+        old_key: &EncryptionKey,
+        new_key: &EncryptionKey,
+    ) -> Result<(), String> {
+        if self.path != db_path {
+            return Err(format!(
+                "DbService rotation path mismatch: service={}, requested={}",
+                self.path.display(),
+                db_path.display()
+            ));
+        }
+
+        let mut pool = self.pool.write();
+        pool.shutdown();
+
+        match rekey_database_standalone(db_path, old_key, new_key) {
+            Ok(()) => match DbConnectionPool::open_existing(db_path, new_key) {
+                Ok(new_pool) => {
+                    *pool = new_pool;
+                    self.read_idx.store(0, Ordering::Relaxed);
+                    Ok(())
+                }
+                Err(reopen_new_error) => {
+                    let rollback = rekey_database_standalone(db_path, new_key, old_key);
+                    match rollback {
+                        Ok(()) => match DbConnectionPool::open_existing(db_path, old_key) {
+                            Ok(old_pool) => {
+                                *pool = old_pool;
+                                self.read_idx.store(0, Ordering::Relaxed);
+                                Err(format!(
+                                    "DB rekey succeeded but reopening DbService with the new key failed: {reopen_new_error}; rollback to original key succeeded"
+                                ))
+                            }
+                            Err(reopen_old_error) => Err(format!(
+                                "DB rekey succeeded but reopening DbService with the new key failed: {reopen_new_error}; rollback to original key succeeded but reopening the original pool failed: {reopen_old_error}"
+                            )),
+                        },
+                        Err(rollback_error) => Err(format!(
+                            "DB rekey succeeded but reopening DbService with the new key failed: {reopen_new_error}; rollback to original key failed: {rollback_error}"
+                        )),
+                    }
+                }
+            },
+            Err(rekey_error) => match DbConnectionPool::open_existing(db_path, old_key) {
+                Ok(old_pool) => {
+                    *pool = old_pool;
+                    self.read_idx.store(0, Ordering::Relaxed);
+                    Err(rekey_error)
+                }
+                Err(reopen_old_error) => Err(format!(
+                    "{rekey_error}; failed to reopen DbService with the original key after failed rotation: {reopen_old_error}"
+                )),
+            },
+        }
+    }
+
     /// Writer connection. Serialized: one write at a time.
-    pub fn writer(&self) -> &PooledConnection {
-        &self.writer
+    pub fn writer(&self) -> PooledConnection {
+        self.pool.read().writer.clone()
     }
 
     /// Reader connection, round-robin. Concurrent reads under WAL.
-    pub fn reader(&self) -> &PooledConnection {
-        let idx = self.read_idx.fetch_add(1, Ordering::Relaxed) % self.readers.len();
-        &self.readers[idx]
+    pub fn reader(&self) -> PooledConnection {
+        let pool = self.pool.read();
+        let idx = self.read_idx.fetch_add(1, Ordering::Relaxed) % pool.readers.len();
+        pool.readers[idx].clone()
     }
 }
 
 impl Drop for DbService {
     fn drop(&mut self) {
-        self.writer.shutdown();
-        for reader in &self.readers {
-            reader.shutdown();
-        }
+        self.pool.write().shutdown();
     }
 }
 
@@ -426,7 +531,10 @@ mod tests {
     //! reads through the long-lived reader pool. Without the fix, the
     //! `query_only=ON` reader connections could serve a stale WAL snapshot.
     use super::*;
-    use crate::db::ActionDb;
+    use crate::db::{ActionDb, DbKeyProvider, LocalKeychain, UserIdentity};
+    use parking_lot::Mutex;
+    use std::sync::mpsc;
+    use std::time::Duration;
 
     fn sample_email(id: &str, entity_id: &str) -> crate::db::DbEmail {
         let now = chrono::Utc::now().to_rfc3339();
@@ -465,6 +573,84 @@ mod tests {
             to_recipients: None,
             cc_recipients: None,
         }
+    }
+
+    struct GetBlocker {
+        key_fetched: mpsc::Sender<()>,
+        release_get: mpsc::Receiver<()>,
+    }
+
+    struct RotatingFixtureKeyProvider {
+        current: Mutex<EncryptionKey>,
+        next: EncryptionKey,
+        block_next_get: Mutex<Option<GetBlocker>>,
+    }
+
+    impl RotatingFixtureKeyProvider {
+        fn new(current: &str, next: &str) -> Self {
+            Self {
+                current: Mutex::new(EncryptionKey::from_hex(current.to_string())),
+                next: EncryptionKey::from_hex(next.to_string()),
+                block_next_get: Mutex::new(None),
+            }
+        }
+
+        fn block_next_get(&self, key_fetched: mpsc::Sender<()>, release_get: mpsc::Receiver<()>) {
+            *self.block_next_get.lock() = Some(GetBlocker {
+                key_fetched,
+                release_get,
+            });
+        }
+    }
+
+    impl DbKeyProvider for RotatingFixtureKeyProvider {
+        fn get_or_create_key(
+            &self,
+            _user: &UserIdentity,
+        ) -> crate::db::key_provider::Result<EncryptionKey> {
+            let key = self.current.lock().clone();
+            let blocker = self.block_next_get.lock().take();
+            if let Some(blocker) = blocker {
+                blocker.key_fetched.send(()).expect("signal key fetched");
+                blocker
+                    .release_get
+                    .recv()
+                    .expect("wait for get_or_create release");
+            }
+            Ok(key)
+        }
+
+        fn rotate_key(
+            &self,
+            user: &UserIdentity,
+        ) -> crate::db::key_provider::Result<EncryptionKey> {
+            let _rotation_lock = crate::db::key_provider::rotation_lock_write();
+            let mut current = self.current.lock();
+            crate::db::key_provider::rekey_database(user.db_path(), &current, &self.next)?;
+            *current = self.next.clone();
+            Ok(current.clone())
+        }
+    }
+
+    struct GlobalServiceGuard;
+
+    impl Drop for GlobalServiceGuard {
+        fn drop(&mut self) {
+            uninstall_global();
+        }
+    }
+
+    fn encrypted_db_can_read(path: &std::path::Path, key: &EncryptionKey) -> bool {
+        let Ok(conn) = Connection::open(path) else {
+            return false;
+        };
+        if conn.execute_batch(&key.to_pragma()).is_err() {
+            return false;
+        }
+        conn.query_row("SELECT count(*) FROM sqlite_master LIMIT 1", [], |row| {
+            row.get::<_, i64>(0)
+        })
+        .is_ok()
     }
 
     #[cfg(target_os = "macos")]
@@ -569,6 +755,138 @@ mod tests {
         assert_eq!(rows[0].entity_id.as_deref(), Some("acc-1"));
     }
 
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn key_rotation_reopens_active_db_service_pool() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("pool_rotation.db");
+        let old_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let new_key = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let provider = Arc::new(RotatingFixtureKeyProvider::new(old_key, new_key));
+        let svc = DbService::open_at(path.clone(), provider.clone())
+            .await
+            .expect("open svc");
+
+        let email = sample_email("em-rotate-before", "acc-before");
+        svc.writer()
+            .call(move |conn| {
+                let db = ActionDb::from_conn(conn);
+                db.upsert_email(&email).expect("upsert before rotation");
+                Ok(())
+            })
+            .await
+            .expect("writer call before rotation");
+
+        install_global(svc.clone());
+        let _global_guard = GlobalServiceGuard;
+        let rotated = provider
+            .rotate_key(&UserIdentity::local(path.clone()))
+            .expect("rotate through global DbService");
+        assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
+        uninstall_global();
+
+        let email = sample_email("em-rotate-after", "acc-after");
+        svc.writer()
+            .call(move |conn| {
+                let db = ActionDb::from_conn(conn);
+                db.upsert_email(&email).expect("upsert after rotation");
+                Ok(())
+            })
+            .await
+            .expect("writer call after rotation");
+
+        let rows = svc
+            .reader()
+            .call(|conn| {
+                let db = ActionDb::from_conn(conn);
+                Ok(db.get_all_active_emails().expect("read after rotation"))
+            })
+            .await
+            .expect("reader call after rotation");
+        assert_eq!(rows.len(), 2);
+        assert!(!encrypted_db_can_read(
+            &path,
+            &EncryptionKey::from_hex(old_key.to_string())
+        ));
+        assert!(encrypted_db_can_read(
+            &path,
+            &EncryptionKey::from_hex(new_key.to_string())
+        ));
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn action_db_open_key_fetch_and_fresh_open_are_rotation_atomic() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().join("open_rotation_atomic.db");
+        let old_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
+        let new_key = "abcdef0123456789abcdef0123456789abcdef0123456789abcdef0123456789";
+        let provider = Arc::new(RotatingFixtureKeyProvider::new(old_key, new_key));
+        let svc = DbService::open_at(path.clone(), provider.clone())
+            .await
+            .expect("open svc");
+
+        install_global(svc);
+        let _global_guard = GlobalServiceGuard;
+
+        let (key_fetched_tx, key_fetched_rx) = mpsc::channel();
+        let (release_get_tx, release_get_rx) = mpsc::channel();
+        provider.block_next_get(key_fetched_tx, release_get_rx);
+
+        let open_provider = provider.clone();
+        let open_path = path.clone();
+        let open_handle = std::thread::spawn(move || {
+            let db = ActionDb::open_resolved_path_for_tests(open_path, open_provider)?;
+            drop(db);
+            Ok::<(), DbError>(())
+        });
+
+        key_fetched_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("open fetched key before rotation attempt");
+
+        let rotate_provider = provider.clone();
+        let rotate_user = UserIdentity::local(path.clone());
+        let (rotation_started_tx, rotation_started_rx) = mpsc::channel();
+        let (rotation_done_tx, rotation_done_rx) = mpsc::channel();
+        let rotate_handle = std::thread::spawn(move || {
+            rotation_started_tx
+                .send(())
+                .expect("signal rotation started");
+            let result = rotate_provider.rotate_key(&rotate_user);
+            rotation_done_tx.send(()).expect("signal rotation done");
+            result
+        });
+
+        rotation_started_rx
+            .recv_timeout(Duration::from_secs(2))
+            .expect("rotation thread started");
+        assert!(
+            rotation_done_rx
+                .recv_timeout(Duration::from_millis(100))
+                .is_err(),
+            "rotation completed while ActionDb::open held a fetched key"
+        );
+
+        release_get_tx.send(()).expect("release blocked key fetch");
+        open_handle
+            .join()
+            .expect("open thread joined")
+            .expect("open should complete with the pre-rotation key");
+
+        let rotated = rotate_handle
+            .join()
+            .expect("rotation thread joined")
+            .expect("rotation completed after open connection acquisition");
+        assert_eq!(rotated, EncryptionKey::from_hex(new_key.to_string()));
+        assert!(!encrypted_db_can_read(
+            &path,
+            &EncryptionKey::from_hex(old_key.to_string())
+        ));
+        assert!(encrypted_db_can_read(
+            &path,
+            &EncryptionKey::from_hex(new_key.to_string())
+        ));
+    }
+
     #[cfg(target_os = "macos")]
     #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
     async fn dos_229_sqlcipher_open_fresh_serialized_no_notadb() {
@@ -577,8 +895,12 @@ mod tests {
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("fresh_open_fallback.db");
 
-        let svc = DbService::open_at(path.clone()).await.expect("open svc");
-        let hex_key = crate::db::encryption::get_or_create_db_key(&path).expect("db key");
+        let provider = Arc::new(LocalKeychain::new());
+        let svc = DbService::open_at(path.clone(), provider.clone())
+            .await
+            .expect("open svc");
+        let user = UserIdentity::local(path.clone());
+        let encryption_key = provider.get_or_create_key(&user).expect("db key");
 
         let writer = svc.clone();
         let writer_task = tokio::task::spawn_blocking(move || -> Result<(), String> {
@@ -599,7 +921,7 @@ mod tests {
         let mut open_tasks = Vec::with_capacity(200);
         for _ in 0..200 {
             let svc = svc.clone();
-            let key = hex_key.clone();
+            let key = encryption_key.clone();
             let path = path.clone();
             open_tasks.push(tokio::spawn(async move {
                 svc.open_fresh_serialized(path.clone(), key)
@@ -639,11 +961,15 @@ mod tests {
         let service_path = dir.path().join("service.db");
         let fresh_path = dir.path().join("fresh_missing_schema.db");
 
-        let svc = DbService::open_at(service_path).await.expect("open svc");
-        let hex_key = crate::db::encryption::get_or_create_db_key(&fresh_path).expect("db key");
+        let provider = Arc::new(LocalKeychain::new());
+        let svc = DbService::open_at(service_path, provider.clone())
+            .await
+            .expect("open svc");
+        let user = UserIdentity::local(fresh_path.clone());
+        let encryption_key = provider.get_or_create_key(&user).expect("db key");
 
         let conn = svc
-            .open_fresh_serialized(fresh_path, hex_key)
+            .open_fresh_serialized(fresh_path, encryption_key)
             .expect("fresh serialized open");
 
         let account_count: i64 = conn

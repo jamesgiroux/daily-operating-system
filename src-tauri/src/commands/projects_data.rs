@@ -361,7 +361,8 @@ pub fn run_hygiene_scan_now(state: State<'_, Arc<AppState>>) -> Result<HygieneSt
             .clone()
             .ok_or("No configuration loaded".to_string())?;
 
-        let db = crate::db::ActionDb::open().map_err(|e| e.to_string())?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| e.to_string())?;
         let workspace = std::path::Path::new(&config.workspace_path);
         let report = crate::hygiene::run_hygiene_scan(
             &db,

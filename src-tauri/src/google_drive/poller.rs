@@ -51,13 +51,14 @@ pub async fn run_drive_poller(state: Arc<AppState>) {
         }
 
         // Get watched sources
-        let sources = match crate::db::ActionDb::open() {
-            Ok(db) => sync::get_all_watched_sources(&db).unwrap_or_default(),
-            Err(e) => {
-                log::warn!("GoogleDrivePoller: DB open failed: {e}");
-                Vec::new()
-            }
-        };
+        let sources =
+            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
+                Ok(db) => sync::get_all_watched_sources(&db).unwrap_or_default(),
+                Err(e) => {
+                    log::warn!("GoogleDrivePoller: DB open failed: {e}");
+                    Vec::new()
+                }
+            };
 
         if sources.is_empty() {
             // No watches, sleep longer
@@ -112,7 +113,9 @@ async fn sync_watched_source(
 
         // Get a start page token so future polls use the Changes API
         let start_token = client::get_start_page_token().await?;
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             #[allow(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -165,7 +168,9 @@ async fn sync_watched_source(
 
     // Update the changes token
     if !next_token.is_empty() {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             #[allow(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"

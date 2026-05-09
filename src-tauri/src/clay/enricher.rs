@@ -41,7 +41,8 @@ pub async fn enrich_person_from_clay_with_client(
 ) -> Result<EnrichmentResult, String> {
     // Phase 1: Load person under lock, then release
     let (email, name, org, old_title_history, old_org, old_linkedin, old_twitter) = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
         let person = db
             .get_person(person_id)
             .map_err(|e| e.to_string())?
@@ -162,7 +163,8 @@ pub async fn enrich_person_from_clay_with_client(
     };
 
     let fields_updated = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
         let result = db
             .update_person_profile(person_id, &update, "clay")
             .map_err(|e| e.to_string())?;
@@ -172,7 +174,8 @@ pub async fn enrich_person_from_clay_with_client(
     // Emit change signals to the signal bus
     let signal_names: Vec<String> = signals.iter().map(|s| s.signal_type.clone()).collect();
     {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
         let ctx = state.live_service_context();
         for signal in &signals {
             let value = serde_json::json!({

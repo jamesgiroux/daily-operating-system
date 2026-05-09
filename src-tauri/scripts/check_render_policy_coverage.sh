@@ -34,7 +34,7 @@ if "render_ability_data(surface, data, &provenance)" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: AbilityResponseJson.data is not built from render_ability_data(surface, data, &provenance)")
 if not re.search(r"BridgeSurface::McpTool\s*\|\s*BridgeSurface::McpToolDetail\s*=>\s*\{?\s*render_mcp_ability_data_with_authoritative_claims", bridge, re.S):
     violations.append("src-tauri/src/bridges/types.rs: MCP surfaces do not call the authoritative ability-data redactor")
-if "ActionDb::open_readonly()" not in bridge or "render_mcp_ability_data_for_surface_with_provenance(&db, data, provenance)" not in bridge:
+if not re.search(r"ActionDb::open_readonly\s*\(", bridge) or "render_mcp_ability_data_for_surface_with_provenance(&db, data, provenance)" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor does not pass ActionDb and provenance into render_mcp_ability_data_for_surface_with_provenance")
 if "render_mcp_ability_data_without_claim_lookup(data)" not in bridge:
     violations.append("src-tauri/src/bridges/types.rs: MCP ability data redactor lacks fail-closed no-claim-lookup fallback")

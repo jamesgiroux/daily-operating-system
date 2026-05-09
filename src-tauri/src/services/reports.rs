@@ -53,7 +53,9 @@ pub async fn generate_report(
         }
 
         let mut input = {
-            let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|e| format!("DB open failed: {e}"))?;
 
             let config_guard = state.config.read();
             let config = config_guard.as_ref().ok_or("Config not initialized")?;
@@ -117,7 +119,9 @@ pub async fn generate_report(
         };
 
         // Phase 1.5: Inject relevant user context into prompt.
-        if let Ok(db_ctx) = crate::db::ActionDb::open() {
+        if let Ok(db_ctx) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             crate::reports::prompts::append_user_context(
                 &mut input.prompt,
                 &db_ctx,
@@ -162,7 +166,8 @@ pub async fn generate_report(
         };
 
         // Phase 3: Write to DB
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
 
         let report_id = upsert_report(
             &db,
@@ -197,7 +202,8 @@ fn generate_swot_report(
 ) -> Result<ReportRow, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let gathered = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
 
         let config_guard = state.config.read();
         let config = config_guard.as_ref().ok_or("Config not initialized")?;
@@ -220,7 +226,8 @@ fn generate_swot_report(
     let content_json =
         serde_json::to_string(&content).map_err(|e| format!("Failed to serialize SWOT: {}", e))?;
 
-    let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
 
     let report_id = upsert_report(
         &db,
@@ -253,7 +260,8 @@ fn generate_book_of_business(
 
     // Phase 1: Gather data under brief DB lock
     let mut gather = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
 
         let config_guard = state.config.read();
         let config = config_guard.as_ref().ok_or("Config not initialized")?;
@@ -272,7 +280,9 @@ fn generate_book_of_business(
 
     // Phase 1.5: Pre-compute user context block (semantic search).
     // Fresh DB connection so the Phase 1 lock is already released.
-    if let Ok(db_ctx) = crate::db::ActionDb::open() {
+    if let Ok(db_ctx) =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         let mut ctx_buf = String::new();
         crate::reports::prompts::append_user_context(
             &mut ctx_buf,
@@ -358,7 +368,8 @@ fn generate_book_of_business(
         &content_json,
     );
 
-    let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
 
     let report_id = upsert_report(
         &db,
@@ -402,7 +413,8 @@ pub async fn generate_monthly_wrapped_if_needed(
     let intel_hash_key = format!("month-{}", month_start.format("%Y-%m"));
 
     let already_exists = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
 
         let user_id: String = db
             .conn_ref()
@@ -459,7 +471,8 @@ pub async fn generate_weekly_impact_if_needed(
 
     // Check if we already have a report for this week
     let already_exists = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
 
         // Get user entity ID as string
         let user_id: String = db

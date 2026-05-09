@@ -27,8 +27,9 @@ impl EntityContextReadHandle for LiveEntityContextReader {
     ) -> EntityContextReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db = crate::db::ActionDb::open()
-                    .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| format!("Database unavailable: {error}"))?;
                 read_entity_context_entries_from_db(&db, &entity_type, &entity_id)
             })
             .await
@@ -46,8 +47,9 @@ impl EntityContextClaimReadHandle for LiveEntityContextClaimReader {
     ) -> EntityContextClaimReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db = crate::db::ActionDb::open()
-                    .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::claims::load_entity_context_claims_active(
                     &db,
                     &entity_type,
@@ -69,8 +71,9 @@ impl PrepareMeetingContextReadHandle for LivePrepareMeetingContextReader {
     ) -> PrepareMeetingContextReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db = crate::db::ActionDb::open()
-                    .map_err(|error| format!("Database unavailable: {error}"))?;
+                let db =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::meetings::load_prepare_meeting_context_snapshot(&db, &meeting_id)
             })
             .await

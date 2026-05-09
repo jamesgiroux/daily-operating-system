@@ -283,10 +283,11 @@ pub fn enrich_pending_emails_two_phase(
 ) -> usize {
     // Phase 1: Get pending emails + resolve entities (short DB lock)
     let pending: Vec<(DbEmail, Option<String>, Option<String>)> = {
-        let db = match crate::db::ActionDb::open() {
-            Ok(d) => d,
-            Err(_) => return 0,
-        };
+        let db =
+            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
+                Ok(d) => d,
+                Err(_) => return 0,
+            };
         let emails = match db.get_pending_enrichment(limit) {
             Ok(e) => e,
             Err(e) => {
@@ -337,7 +338,9 @@ pub fn enrich_pending_emails_two_phase(
         }
         // Build context prompt — needs DB for relationship context
         let prompt = {
-            let db = match crate::db::ActionDb::open() {
+            let db = match crate::db::ActionDb::open(std::sync::Arc::new(
+                crate::db::LocalKeychain::new(),
+            )) {
                 Ok(d) => d,
                 Err(_) => continue,
             };
@@ -376,7 +379,9 @@ pub fn enrich_pending_emails_two_phase(
         };
 
         // Phase 3: Persist result (short DB lock per email)
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             match ai_result {
                 Ok(result) => {
                     let update = result.as_db_update();

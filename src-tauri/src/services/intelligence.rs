@@ -731,7 +731,7 @@ pub async fn enrich_entity(
         }
     };
 
-    let db = ActionDb::open().map_err(|e| {
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).map_err(|e| {
         let e = format!("Failed to open DB: {e}");
         emit_manual_refresh_failed_best_effort(
             ctx,
@@ -1849,7 +1849,8 @@ pub async fn generate_risk_briefing(
     let task = tauri::async_runtime::spawn_blocking(move || {
         let input = {
             let db =
-                crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|e| format!("Database unavailable: {e}"))?;
 
             let config_guard = app_state.config.read();
             let config = config_guard
@@ -1870,7 +1871,9 @@ pub async fn generate_risk_briefing(
         let briefing = crate::risk_briefing::run_risk_enrichment(&input, progress_handle.as_ref())?;
 
         // Store in reports table for unified tracking
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             #[allow(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -4216,7 +4219,8 @@ mod live_acceptance_tests {
             active_preset: None,
         };
 
-        let db = ActionDb::open().expect("open DB for first enrichment persistence");
+        let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .expect("open DB for first enrichment persistence");
         let ctx = state.live_service_context();
         let first_prepared =
             compose_enrichment_intelligence(&state, &db, &input, &contradictory, None)
@@ -4267,7 +4271,8 @@ mod live_acceptance_tests {
             executive_assessment: Some("Fresh validated summary from later refresh.".to_string()),
             ..Default::default()
         };
-        let db = ActionDb::open().expect("open DB for second enrichment persistence");
+        let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .expect("open DB for second enrichment persistence");
         let ctx = state.live_service_context();
         let second_prepared = compose_enrichment_intelligence(&state, &db, &input, &clean, None)
             .expect("second compose_enrichment_intelligence failed");
@@ -4423,10 +4428,14 @@ mod live_acceptance_tests {
     #[test]
     #[ignore = "Live validation: uses real DB snapshot and performs destructive purge checks on snapshot only"]
     fn wave1_live_snapshot_i503_i528_acceptance() {
-        let live_db = ActionDb::open().expect("open live DB");
+        let live_db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .expect("open live DB");
         let backup_path = crate::db_backup::backup_database(&live_db).expect("create live backup");
-        let snapshot_db =
-            ActionDb::open_at(PathBuf::from(&backup_path)).expect("open snapshot backup DB");
+        let snapshot_db = ActionDb::open_at(
+            PathBuf::from(&backup_path),
+            std::sync::Arc::new(crate::db::LocalKeychain::new()),
+        )
+        .expect("open snapshot backup DB");
 
         // ---------------------------------------------------------------------
         // structured health write/read + legacy compatibility

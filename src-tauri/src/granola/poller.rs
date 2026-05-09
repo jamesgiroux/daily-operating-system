@@ -121,7 +121,8 @@ fn poll_once(
 
     // Get recent meetings from DB for matching (last 90 days)
     let meetings_for_matching = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
         get_recent_meetings_for_matching(&db, 90)?
     };
 
@@ -140,7 +141,9 @@ fn poll_once(
         // (which skipped any existing row), we must resume non-completed rows so
         // app restarts don't strand pending Granola transcripts forever.
         let sync_id = {
-            let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|e| format!("DB open failed: {e}"))?;
 
             match db
                 .get_quill_sync_state_by_source(&matched.meeting_id, "granola")
@@ -247,7 +250,8 @@ fn process_granola_document(
 ) -> Result<(String, crate::types::CalendarEvent), String> {
     // Phase 1: Read data with lock, then drop
     let (calendar_event, workspace, profile, ai_config) = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
 
         let meeting = db
             .get_meeting_by_id(meeting_id)
@@ -305,7 +309,9 @@ fn process_granola_document(
     // Phase 3: Re-acquire lock to write results
     match result {
         Ok(tr) => {
-            let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|e| format!("DB open failed: {e}"))?;
 
             let dest = tr.destination.as_deref().unwrap_or("");
             let processed_at = chrono::Utc::now().to_rfc3339();
@@ -459,7 +465,9 @@ fn process_granola_document(
             Ok((dest.to_string(), calendar_event))
         }
         Err(error) => {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -543,14 +551,16 @@ fn get_recent_meetings_for_matching(
 
 /// Emit transcript-processed event with full MeetingOutcomeData payload when available.
 fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
-    let payload = crate::db::ActionDb::open().ok().and_then(|db| {
-        db.get_meeting_by_id(meeting_id)
-            .ok()
-            .flatten()
-            .and_then(|meeting| {
-                crate::services::meetings::collect_meeting_outcomes_from_db(&db, &meeting)
-            })
-    });
+    let payload = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .ok()
+        .and_then(|db| {
+            db.get_meeting_by_id(meeting_id)
+                .ok()
+                .flatten()
+                .and_then(|meeting| {
+                    crate::services::meetings::collect_meeting_outcomes_from_db(&db, &meeting)
+                })
+        });
 
     match payload {
         Some(outcome) => {
@@ -586,7 +596,8 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
     let eligible = documents.len();
 
     let meetings_for_matching = {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
         get_recent_meetings_for_matching(&db, days_back)?
     };
 
@@ -600,7 +611,9 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
         };
 
         let already_synced = {
-            let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .map_err(|e| format!("DB open failed: {e}"))?;
             db.get_quill_sync_state_by_source(&matched.meeting_id, "granola")
                 .map_err(|e| e.to_string())?
                 .is_some()
@@ -610,7 +623,8 @@ pub fn run_granola_backfill(state: &AppState, days_back: i32) -> Result<(usize, 
             continue;
         }
 
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open failed: {e}"))?;
         if db
             .insert_quill_sync_state_with_source(&matched.meeting_id, "granola")
             .is_ok()
@@ -663,7 +677,8 @@ pub fn trigger_granola_sync_for_meeting(
 
     // Check for existing sync state
     if !force {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("Database unavailable: {e}"))?;
         if let Some(existing) = db
             .get_quill_sync_state_by_source(meeting_id, "granola")
             .map_err(|e| e.to_string())?
@@ -697,7 +712,8 @@ pub fn trigger_granola_sync_for_meeting(
     }
 
     // Get meeting from DB for matching
-    let db = crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("Database unavailable: {e}"))?;
     let meeting = db
         .get_meeting_by_id(meeting_id)
         .map_err(|e| e.to_string())?

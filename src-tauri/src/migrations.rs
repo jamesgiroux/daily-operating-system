@@ -1024,13 +1024,13 @@ fn prune_old_migration_backups(db_path: &Path, keep: usize) -> Result<(), String
 fn create_backup_via_api(
     conn: &Connection,
     backup_path: &Path,
-    destination_key: Option<&str>,
+    destination_key: Option<&crate::db::EncryptionKey>,
 ) -> Result<(), String> {
     let mut backup_conn = rusqlite::Connection::open(backup_path)
         .map_err(|e| format!("Failed to open backup file: {e}"))?;
-    if let Some(hex_key) = destination_key {
+    if let Some(encryption_key) = destination_key {
         backup_conn
-            .execute_batch(&crate::db::encryption::key_to_pragma(hex_key))
+            .execute_batch(&encryption_key.to_pragma())
             .map_err(|e| format!("Failed to set pre-migration backup encryption key: {e}"))?;
     }
     let backup = rusqlite::backup::Backup::new(conn, &mut backup_conn)
@@ -1233,7 +1233,10 @@ fn bootstrap_existing_db(conn: &Connection) -> Result<bool, String> {
 ///
 /// Uses SQLite's online backup API to create a hot copy at
 /// `<db_path>.pre-migration.bak`. Only called when there are pending migrations.
-fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
+fn backup_before_migration(
+    conn: &Connection,
+    encryption_key: Option<&crate::db::EncryptionKey>,
+) -> Result<PathBuf, String> {
     let db_path: String = conn
         .query_row("PRAGMA database_list", [], |row| row.get(2))
         .map_err(|e| format!("Failed to get database path: {}", e))?;
@@ -1261,10 +1264,15 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
 
     let encrypted = db_path.exists() && !crate::db::encryption::is_database_plaintext(&db_path);
     let encryption_key = if encrypted {
-        Some(
-            crate::db::encryption::get_or_create_db_key(&db_path)
-                .map_err(|e| format!("Failed to get DB encryption key for backup: {e}"))?,
-        )
+        Some(match encryption_key {
+            Some(key) => key.clone(),
+            None => {
+                let provider = crate::db::LocalKeychain::new();
+                let user = crate::db::UserIdentity::local(db_path.clone());
+                crate::db::DbKeyProvider::get_or_create_key(&provider, &user)
+                    .map_err(|e| format!("Failed to get DB encryption key for backup: {e}"))?
+            }
+        })
     } else {
         None
     };
@@ -1278,7 +1286,7 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
     // not the WAL. The Backup API reads through the WAL correctly.
     let backup_result = if encrypted {
         let key = encryption_key
-            .as_deref()
+            .as_ref()
             .ok_or_else(|| "Missing encryption key for backup".to_string())?;
         create_backup_via_api(conn, &backup_path, Some(key))
     } else {
@@ -1294,9 +1302,9 @@ fn backup_before_migration(conn: &Connection) -> Result<PathBuf, String> {
         // if the Backup API itself reports an encryption incompatibility.
         if should_try_encrypted_backup_fallback(encrypted, &err) {
             let key = encryption_key
-                .as_deref()
+                .as_ref()
                 .ok_or_else(|| "Missing encryption key for fallback backup".to_string())?;
-            create_backup_via_sqlcipher_export(conn, &backup_path, key)?;
+            create_backup_via_sqlcipher_export(conn, &backup_path, key.as_hex())?;
         } else {
             return Err(err);
         }
@@ -1381,6 +1389,13 @@ fn apply_migration_141_user_note_backfill(
 /// Forward-compat guard: if the database has a higher version than the highest
 /// known migration, returns an error telling the user to update DailyOS.
 pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
+    run_migrations_with_key(conn, None)
+}
+
+pub(crate) fn run_migrations_with_key(
+    conn: &Connection,
+    encryption_key: Option<&crate::db::EncryptionKey>,
+) -> Result<usize, String> {
     ensure_schema_version_table(conn)?;
     bootstrap_existing_db(conn)?;
 
@@ -1438,7 +1453,7 @@ pub fn run_migrations(conn: &Connection) -> Result<usize, String> {
     }
 
     // Backup before applying any migrations
-    let backup_path = backup_before_migration(conn)?;
+    let backup_path = backup_before_migration(conn, encryption_key)?;
     if backup_path.to_string_lossy() != ":memory:" {
         log::info!(
             "Migration safety backup ready at {}",

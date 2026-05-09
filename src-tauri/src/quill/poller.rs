@@ -107,10 +107,11 @@ async fn process_sync_row(
 ) {
     // Step 1: Get meeting details and attendee emails from DB
     let (meeting, attendee_emails) = {
-        let db = match crate::db::ActionDb::open() {
-            Ok(d) => d,
-            Err(_) => return,
-        };
+        let db =
+            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
+                Ok(d) => d,
+                Err(_) => return,
+            };
 
         // Transition to polling state
         #[allow(
@@ -176,7 +177,9 @@ async fn process_sync_row(
         Ok(c) => c,
         Err(e) => {
             log::warn!("Quill sync: failed to connect: {}", e);
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -210,7 +213,9 @@ async fn process_sync_row(
         Err(e) => {
             log::warn!("Quill sync: search_meetings failed: {}", e);
             client.disconnect().await;
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -238,7 +243,9 @@ async fn process_sync_row(
                 meeting.title
             );
             client.disconnect().await;
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -258,7 +265,9 @@ async fn process_sync_row(
 
     // Step 4: Fetch transcript
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             #[allow(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -280,7 +289,9 @@ async fn process_sync_row(
         Err(e) => {
             log::warn!("Quill sync: get_transcript failed: {}", e);
             client.disconnect().await;
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 #[allow(
                     clippy::let_underscore_must_use,
                     reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -312,7 +323,8 @@ async fn process_sync_row(
     // Hydrate linked entities + attendees so the processor routes the
     // markdown to the right account dir and emits entity IDs in the
     // YAML frontmatter.
-    if let Ok(db) = crate::db::ActionDb::open() {
+    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         crate::processor::transcript::enrich_meeting_from_db(&mut calendar_event, &db);
     }
 
@@ -326,7 +338,9 @@ async fn process_sync_row(
             ),
             None => {
                 log::warn!("Quill sync: config not available for transcript processing");
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     #[allow(
                         clippy::let_underscore_must_use,
                         reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -348,7 +362,9 @@ async fn process_sync_row(
 
     // Transition to "processing" state
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             #[allow(
                 clippy::let_underscore_must_use,
                 reason = "intentional best-effort discard; preserves existing non-blocking behavior"
@@ -369,7 +385,9 @@ async fn process_sync_row(
 
     // Write results + captures
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             match &result {
                 Ok(tr) => {
                     let dest = tr.destination.as_deref().unwrap_or("");
@@ -587,16 +605,19 @@ async fn process_sync_row(
 
 /// Get pending quill sync rows from DB.
 fn get_pending_syncs(_state: &AppState) -> Option<Vec<DbQuillSyncState>> {
-    let db = crate::db::ActionDb::open().ok()?;
+    let db =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
     db.get_pending_quill_syncs().ok()
 }
 
 /// Emit transcript-processed event with full MeetingOutcomeData payload when available.
 fn emit_transcript_processed(_state: &AppState, app_handle: &AppHandle, meeting_id: &str) {
-    let payload = crate::db::ActionDb::open().ok().and_then(|db| {
-        let meeting = db.get_meeting_by_id(meeting_id).ok()??;
-        crate::services::meetings::collect_meeting_outcomes_from_db(&db, &meeting)
-    });
+    let payload = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .ok()
+        .and_then(|db| {
+            let meeting = db.get_meeting_by_id(meeting_id).ok()??;
+            crate::services::meetings::collect_meeting_outcomes_from_db(&db, &meeting)
+        });
 
     match payload {
         Some(outcome) => {
@@ -651,7 +672,7 @@ pub fn check_ended_meetings_for_sync(state: &AppState) {
 
     let events = state.calendar.events.read().clone();
 
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(d) => d,
         Err(_) => return,
     };

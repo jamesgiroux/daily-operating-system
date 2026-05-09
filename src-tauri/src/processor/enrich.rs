@@ -113,7 +113,9 @@ pub fn enrich_file(
     // Extract actions if any
     if let Some(ref actions_text) = parsed.actions_text {
         if let Some(_state) = state {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 extract_actions_from_ai(actions_text, filename, &db, parsed.account.as_deref());
             }
         }
@@ -142,7 +144,8 @@ pub fn enrich_file(
         _ => Classification::Unknown,
     };
 
-    let enrich_db = crate::db::ActionDb::open().ok();
+    let enrich_db =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
     let inferred_tracker_path = if entity_tracker_path.is_none() {
         super::router::infer_entity_tracker_path(
             workspace,
@@ -226,7 +229,9 @@ pub fn enrich_file(
                 // Match meeting_notes to historical meetings
                 if file_type == "meeting_notes" {
                     if let Some(_state) = state {
-                        if let Ok(db) = crate::db::ActionDb::open() {
+                        if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
+                            crate::db::LocalKeychain::new(),
+                        )) {
                             let classification = Classification::MeetingNotes {
                                 account: account.clone(),
                             };
@@ -289,7 +294,9 @@ pub fn enrich_file(
     // Run post-enrichment hooks (skip for NeedsEntity — file hasn't been routed yet)
     if !matches!(result, EnrichResult::NeedsEntity { .. }) {
         if let Some(_state) = state {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 let ctx = super::hooks::EnrichmentContext {
                     workspace: workspace.to_path_buf(),
                     filename: filename.to_string(),
@@ -322,7 +329,9 @@ pub fn enrich_file(
 
     // Log to database
     if let Some(_state) = state {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let log_entry = DbProcessingLog {
                 id: uuid::Uuid::new_v4().to_string(),
                 filename: filename.to_string(),

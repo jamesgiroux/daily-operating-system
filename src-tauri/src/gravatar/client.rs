@@ -229,7 +229,7 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
 
         // Get people needing fetch
         let emails_to_fetch: Vec<(String, Option<String>)> = {
-            match crate::db::ActionDb::open() {
+            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
                 Ok(db) => super::cache::get_stale_emails(db.conn_ref(), 50).unwrap_or_default(),
                 Err(_) => Vec::new(),
             }
@@ -302,7 +302,9 @@ pub async fn run_gravatar_fetcher(state: Arc<AppState>) {
                         person_id: person_id.clone(),
                     };
 
-                    if let Ok(db) = crate::db::ActionDb::open() {
+                    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
+                        crate::db::LocalKeychain::new(),
+                    )) {
                         #[allow(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"

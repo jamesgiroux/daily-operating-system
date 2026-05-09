@@ -286,7 +286,10 @@ pub async fn run_capture_loop(state: Arc<AppState>, app_handle: AppHandle) {
 
                             // Open own DB connection to avoid holding state.db Mutex
                             // during PTY subprocess (which can run for minutes).
-                            let own_db = crate::db::ActionDb::open().ok();
+                            let own_db = crate::db::ActionDb::open(std::sync::Arc::new(
+                                crate::db::LocalKeychain::new(),
+                            ))
+                            .ok();
                             let db_ref = own_db.as_ref();
 
                             let result = crate::processor::transcript::process_transcript(
@@ -379,7 +382,7 @@ fn build_auto_outcome(
     result: &crate::types::TranscriptResult,
     state: &AppState,
 ) -> crate::types::MeetingOutcomeData {
-    let actions = crate::db::ActionDb::open()
+    let actions = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
         .ok()
         .and_then(|db| db.get_actions_for_meeting(meeting_id).ok())
         .unwrap_or_default();

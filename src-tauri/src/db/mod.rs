@@ -21,6 +21,7 @@ pub mod feedback;
 pub mod hardening;
 pub mod intelligence_feedback;
 pub mod invalidation_jobs;
+pub mod key_provider;
 pub mod meetings;
 pub mod people;
 pub mod person_relationships;
@@ -32,4 +33,5 @@ pub mod success_plans;
 pub mod types;
 
 pub use core::*;
+pub use key_provider::{DbKeyProvider, EncryptionKey, LocalKeychain, UserIdentity};
 pub use types::*;
