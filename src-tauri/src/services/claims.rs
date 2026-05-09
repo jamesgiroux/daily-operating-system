@@ -2411,10 +2411,9 @@ pub fn record_claim_feedback(
             mark_claim_edges_tombstoned(tx, &input.claim_id, &now)?;
         }
 
+        bump_invalidation_for_claim_id(tx, &input.claim_id)?;
         let repair_job_id =
             targeted_repair_enqueue_job(ctx, tx, &claim, &feedback_id, metadata.repair)?;
-
-        bump_invalidation_for_claim_id(tx, &input.claim_id)?;
         let verification_state_after = enum_to_db(&new_verification_state)?;
 
         Ok(ClaimFeedbackWriteOutcome {
@@ -3013,6 +3012,7 @@ fn targeted_repair_coalescing_key(
 fn targeted_repair_prompt_fingerprint(input_snapshot_hash: &str) -> String {
     let prompt = targeted_repair_prompt_input(input_snapshot_hash);
     let fingerprint_metadata = targeted_repair_fingerprint_metadata();
+    #[allow(deprecated)]
     crate::intelligence::provider::canonical_prompt_hash(
         crate::intelligence::provider::CanonicalPromptRequest {
             prompt: &prompt,
@@ -3239,6 +3239,10 @@ fn targeted_repair_process_invalidation_job(
     summary: &mut TargetedRepairRunSummary,
 ) -> Result<(), ClaimError> {
     let payload = targeted_repair_payload(job)?;
+    if targeted_repair_reschedule_if_stale(tx, job, &payload)? {
+        return Ok(());
+    }
+
     let delta = targeted_repair_apply_claim_job(ctx, tx, &payload, now)?;
     summary.repair_jobs_processed += 1;
     summary.claims_changed += delta.claims_changed;
@@ -3249,6 +3253,45 @@ fn targeted_repair_process_invalidation_job(
         }
     }
     Ok(())
+}
+
+fn targeted_repair_reschedule_if_stale(
+    tx: &ActionDb,
+    job: &TargetedRepairInvalidationJob,
+    payload: &TargetedRepairPayload,
+) -> Result<bool, ClaimError> {
+    let current_source_claim_version =
+        tx.current_claim_version_for_subject(&job.subject_type, &job.subject_id)?;
+    if current_source_claim_version <= job.latest_source_claim_version {
+        return Ok(false);
+    }
+
+    let subject = targeted_repair_subject_from_job(job)?;
+    targeted_repair_enqueue_invalidation(
+        tx,
+        None,
+        &subject,
+        &payload.claim_id,
+        &payload.feedback_id,
+        payload.repair_action,
+    )?;
+    Ok(true)
+}
+
+fn targeted_repair_subject_from_job(
+    job: &TargetedRepairInvalidationJob,
+) -> Result<SubjectRef, ClaimError> {
+    let id = job.subject_id.clone();
+    match job.subject_type.trim().to_ascii_lowercase().as_str() {
+        "account" | "accounts" => Ok(SubjectRef::Account { id }),
+        "meeting" | "meetings" => Ok(SubjectRef::Meeting { id }),
+        "person" | "people" => Ok(SubjectRef::Person { id }),
+        "project" | "projects" => Ok(SubjectRef::Project { id }),
+        "email" | "emails" => Ok(SubjectRef::Email { id }),
+        other => Err(ClaimError::SubjectRef(format!(
+            "targeted repair cannot reschedule unsupported subject type: {other}"
+        ))),
+    }
 }
 
 #[derive(Debug, Default)]
@@ -4393,6 +4436,20 @@ pub fn load_claims_active_for_surface(
     Ok(visible)
 }
 
+pub fn load_claims_active_by_source_ref_for_surface(
+    db: &ActionDb,
+    source_ref: &str,
+    surface: &str,
+) -> Result<Vec<IntelligenceClaim>, ClaimError> {
+    let mut visible = Vec::new();
+    for claim in load_claims_active_by_source_ref(db, source_ref)? {
+        if !is_claim_dismissed_on_surface(db, &claim.id, surface)? {
+            visible.push(claim);
+        }
+    }
+    Ok(visible)
+}
+
 pub fn is_claim_dismissed_on_surface(
     db: &ActionDb,
     claim_id: &str,
@@ -4450,8 +4507,9 @@ struct EntityContextSubject {
 ///
 /// `depth` is level-based: 1 means only the requested entity, 2 adds
 /// immediate related subjects, and so on. Claim row filtering stays routed
-/// through `load_claims_active`, preserving the
-/// `claim_state='active' AND surfacing_state='active'` contract.
+/// through `load_claims_active_for_surface`, preserving the
+/// `claim_state='active' AND surfacing_state='active'` contract and entity
+/// detail dismissal boundary.
 pub fn load_entity_context_claims_active(
     db: &ActionDb,
     entity_type: &str,
@@ -4465,7 +4523,8 @@ pub fn load_entity_context_claims_active(
 
     for subject in subjects {
         let subject_ref = entity_context_subject_ref_json(&subject);
-        for claim in load_claims_active(db, &subject_ref, None)? {
+        for claim in load_claims_active_for_surface(db, &subject_ref, None, "tauri_entity_detail")?
+        {
             if seen_claims.insert(claim.id.clone()) {
                 claims.push(claim);
             }
@@ -5524,6 +5583,57 @@ mod tests {
                 },
             )
             .expect("read invalidation job")
+    }
+
+    fn invalidation_job_versions(db: &ActionDb, job_id: &str) -> (i64, i64) {
+        db.conn_ref()
+            .query_row(
+                "SELECT source_claim_version, latest_source_claim_version
+                 FROM invalidation_jobs
+                 WHERE id = ?1",
+                params![job_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read invalidation job versions")
+    }
+
+    #[derive(Debug)]
+    struct RepairJobSnapshot {
+        id: String,
+        status: String,
+        latest_source_claim_version: i64,
+        stale_marker_json: Option<String>,
+        successor_of_job_id: Option<String>,
+    }
+
+    fn repair_job_snapshots_for_claim(db: &ActionDb, claim_id: &str) -> Vec<RepairJobSnapshot> {
+        let mut stmt = db
+            .conn_ref()
+            .prepare(
+                "SELECT id, status, latest_source_claim_version, stale_marker_json,
+                        successor_of_job_id
+                 FROM invalidation_jobs
+                 WHERE job_kind = ?1
+                   AND json_extract(payload_json, '$.claim_id') = ?2
+                 ORDER BY created_at ASC, id ASC",
+            )
+            .expect("prepare repair job snapshot query");
+        let rows = stmt
+            .query_map(
+                params![crate::db::invalidation_jobs::KIND_TARGETED_REPAIR, claim_id],
+                |row| {
+                    Ok(RepairJobSnapshot {
+                        id: row.get(0)?,
+                        status: row.get(1)?,
+                        latest_source_claim_version: row.get(2)?,
+                        stale_marker_json: row.get(3)?,
+                        successor_of_job_id: row.get(4)?,
+                    })
+                },
+            )
+            .expect("query repair job snapshots");
+        rows.map(|row| row.expect("read repair job snapshot"))
+            .collect()
     }
 
     fn signal_count(db: &ActionDb, signal_type: &str) -> i64 {
@@ -6736,6 +6846,35 @@ mod tests {
     }
 
     #[test]
+    fn record_claim_feedback_enqueues_repair_with_post_feedback_claim_version() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk needing repair")).unwrap());
+        let after_commit = read_account_claim_version(&db);
+
+        let outcome = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+
+        let after_feedback = read_account_claim_version(&db);
+        assert_eq!(after_feedback, after_commit + 1);
+        let repair_job_id = outcome
+            .repair_job_id
+            .as_deref()
+            .expect("repair job id should be returned");
+        let (source_claim_version, latest_source_claim_version) =
+            invalidation_job_versions(&db, repair_job_id);
+        assert_eq!(source_claim_version, after_feedback);
+        assert_eq!(latest_source_claim_version, after_feedback);
+    }
+
+    #[test]
     fn record_claim_feedback_propagates_invalidation_queue_cap_rejection() {
         with_targeted_repair_pending_cap_override(1, || {
             let db = test_db();
@@ -6864,6 +7003,59 @@ mod tests {
             Some(second.feedback_id.as_str())
         );
         assert_eq!(second.repair_job_id, first.repair_job_id);
+    }
+
+    #[test]
+    fn targeted_repair_stale_job_reschedules_without_applying() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Risk hidden from briefing")).unwrap(),
+        );
+        let mut input = feedback_input(&claim_id, FeedbackAction::SurfaceInappropriate);
+        input.payload_json = Some(serde_json::json!({ "surface": "briefing" }).to_string());
+        let outcome = record_claim_feedback(&ctx, &db, input).unwrap();
+        let original_job_id = outcome
+            .repair_job_id
+            .expect("surface repair should enqueue");
+
+        db.bump_for_subject(&SubjectRef::Account {
+            id: "acct-1".to_string(),
+        })
+        .expect("advance claim version");
+        let current_claim_version = read_account_claim_version(&db);
+
+        let outcome = targeted_repair_process_next_job(&ctx, &db, "repair-worker-stale")
+            .expect("stale worker run should complete");
+        assert_eq!(
+            outcome,
+            TargetedRepairProcessOutcome::Completed {
+                job_id: original_job_id.clone(),
+                repair_jobs_processed: 0,
+                claims_changed: 0,
+                contradictions_reconciled: 0,
+            }
+        );
+        assert!(
+            !is_claim_dismissed_on_surface(&db, &claim_id, "briefing").unwrap(),
+            "stale job must not apply the surface dismissal"
+        );
+
+        let jobs = repair_job_snapshots_for_claim(&db, &claim_id);
+        assert_eq!(jobs.len(), 2);
+        assert_eq!(jobs[0].id, original_job_id);
+        assert_eq!(jobs[0].status, "completed");
+        assert!(jobs[0].stale_marker_json.as_deref().is_some_and(
+            |marker| marker.contains("targeted_repair_completed_with_newer_claim_version")
+        ));
+        assert_eq!(jobs[1].status, "pending");
+        assert_eq!(jobs[1].latest_source_claim_version, current_claim_version);
+        assert_eq!(
+            jobs[1].successor_of_job_id.as_deref(),
+            Some(jobs[0].id.as_str())
+        );
     }
 
     #[test]

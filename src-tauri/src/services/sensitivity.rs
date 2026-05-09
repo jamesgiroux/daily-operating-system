@@ -1505,7 +1505,12 @@ pub fn apply_entity_intelligence_render_policy(
     })
     .to_string();
 
-    let Ok(claims) = crate::services::claims::load_claims_active(db, &subject_ref, None) else {
+    let Ok(claims) = crate::services::claims::load_claims_active_for_surface(
+        db,
+        &subject_ref,
+        None,
+        render_surface_dismissal_key(surface),
+    ) else {
         return;
     };
     if claims.is_empty() {
@@ -1599,6 +1604,23 @@ pub fn apply_entity_intelligence_render_policy(
             .into_iter()
             .next()
             .and_then(|value| serde_json::from_value::<CompanyContext>(value).ok());
+    }
+}
+
+fn render_surface_dismissal_key(surface: RenderSurface) -> &'static str {
+    match surface {
+        RenderSurface::TauriEntityDetail => "tauri_entity_detail",
+        RenderSurface::TauriBriefingPrep => "briefing",
+        RenderSurface::TauriMeetingDetail => "tauri_meeting_detail",
+        RenderSurface::TauriEmailSummary => "tauri_email_summary",
+        RenderSurface::TauriProvenance => "tauri_provenance",
+        RenderSurface::TauriReport => "tauri_report",
+        RenderSurface::TauriChat => "tauri_chat",
+        RenderSurface::McpTool => "mcp_tool",
+        RenderSurface::McpToolDetail => "mcp_tool_detail",
+        RenderSurface::P2Publication => "p2_publication",
+        RenderSurface::LogStructured => "log_structured",
+        RenderSurface::PushNotification => "push_notification",
     }
 }
 

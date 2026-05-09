@@ -540,8 +540,13 @@ fn rebuild_entity_assessment_from_claims(
     claim: &IntelligenceClaim,
 ) -> Result<(), ProjectionErrorClass> {
     let (entity_id, entity_type) = entity_identity_from_subject_ref(&claim.subject_ref)?;
-    let claims = crate::services::claims::load_claims_active(tx, &claim.subject_ref, None)
-        .map_err(|_| ProjectionErrorClass::ValidationError)?;
+    let claims = crate::services::claims::load_claims_active_for_surface(
+        tx,
+        &claim.subject_ref,
+        None,
+        "tauri_entity_detail",
+    )
+    .map_err(|_| ProjectionErrorClass::ValidationError)?;
     let projected = EntityAssessmentProjection::from_claims(&claims);
     if let Some((existing_entity_type, existing_projected)) =
         existing_entity_assessment_projection(tx, &entity_id)?
@@ -684,10 +689,11 @@ pub(crate) fn rebuild_stakeholder_insights_cache_for_entity_inner(
             "id": person_id,
         })
         .to_string();
-        let mut person_claims = crate::services::claims::load_claims_active(
+        let mut person_claims = crate::services::claims::load_claims_active_for_surface(
             tx,
             &subject_ref,
             Some("stakeholder_engagement"),
+            "tauri_entity_detail",
         )
         .map_err(|_| ProjectionErrorClass::ValidationError)?;
         claims.append(&mut person_claims);
@@ -811,10 +817,11 @@ fn rebuild_account_columns_from_claims(
         return Err(ProjectionErrorClass::ValidationError);
     }
 
-    let claims = crate::services::claims::load_claims_active(
+    let claims = crate::services::claims::load_claims_active_for_surface(
         tx,
         &claim.subject_ref,
         Some("company_context"),
+        "tauri_entity_detail",
     )
     .map_err(|_| ProjectionErrorClass::ValidationError)?;
     let projected = EntityAssessmentProjection::from_claims(&claims).company_context_json;

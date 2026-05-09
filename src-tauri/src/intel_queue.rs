@@ -2726,8 +2726,13 @@ fn run_finalize_trust_recompute(
         return Ok(());
     };
 
-    let claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
-        .map_err(|e| format!("load claims for trust recompute: {e}"))?;
+    let claims = crate::services::claims::load_claims_active_for_surface(
+        db,
+        &subject_ref,
+        None,
+        "account_health",
+    )
+    .map_err(|e| format!("load claims for trust recompute: {e}"))?;
     if claims.is_empty() {
         return Ok(());
     }
@@ -4529,8 +4534,13 @@ mod tests {
     ) -> crate::db::claims::IntelligenceClaim {
         let subject_ref =
             claim_subject_ref_json_for_entity("account", account_id).expect("account subject ref");
-        let mut claims = crate::services::claims::load_claims_active(db, &subject_ref, None)
-            .expect("load active trust claims");
+        let mut claims = crate::services::claims::load_claims_active_for_surface(
+            db,
+            &subject_ref,
+            None,
+            "account_health",
+        )
+        .expect("load active trust claims");
         assert_eq!(claims.len(), 1, "expected one active trust claim");
         claims.remove(0)
     }

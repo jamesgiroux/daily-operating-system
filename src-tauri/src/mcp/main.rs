@@ -1091,9 +1091,13 @@ fn mcp_entity_summary(
         "id": entity_id,
     })
     .to_string();
-    let claims =
-        dailyos_lib::services::claims::load_claims_active(db, &subject_ref, Some("entity_summary"))
-            .ok()?;
+    let claims = dailyos_lib::services::claims::load_claims_active_for_surface(
+        db,
+        &subject_ref,
+        Some("entity_summary"),
+        "mcp_tool",
+    )
+    .ok()?;
     if claims.is_empty() {
         return None;
     }
