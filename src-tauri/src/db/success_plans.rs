@@ -104,6 +104,7 @@ impl ActionDb {
         Ok(objective)
     }
 
+    #[must_use = "check whether the objective was created before showing success plan state"]
     pub fn create_objective(
         &self,
         account_id: &str,
@@ -130,6 +131,7 @@ impl ActionDb {
         })
     }
 
+    #[must_use = "check whether objective updates persisted before showing success plan state"]
     pub fn update_objective(
         &self,
         objective_id: &str,
@@ -181,6 +183,7 @@ impl ActionDb {
         })
     }
 
+    #[must_use = "check whether objective completion persisted before showing completed success plan"]
     pub fn complete_objective(&self, objective_id: &str) -> Result<AccountObjective, DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -194,6 +197,7 @@ impl ActionDb {
         })
     }
 
+    #[must_use = "check whether objective abandonment persisted before removing it from active plans"]
     pub fn abandon_objective(&self, objective_id: &str) -> Result<AccountObjective, DbError> {
         self.conn.execute(
             "UPDATE account_objectives
@@ -206,6 +210,7 @@ impl ActionDb {
         })
     }
 
+    #[must_use = "check whether the objective was deleted before removing it from success plans"]
     pub fn delete_objective(&self, objective_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM account_objectives WHERE id = ?1",
@@ -243,6 +248,7 @@ impl ActionDb {
             .optional()?)
     }
 
+    #[must_use = "check whether the milestone was created before showing success plan progress"]
     pub fn create_milestone(
         &self,
         objective_id: &str,
@@ -273,6 +279,7 @@ impl ActionDb {
         })
     }
 
+    #[must_use = "check whether milestone updates persisted before showing success plan progress"]
     pub fn update_milestone(
         &self,
         milestone_id: &str,
@@ -326,6 +333,7 @@ impl ActionDb {
         })
     }
 
+    #[must_use = "check whether milestone completion and objective rollup persisted before showing progress"]
     pub fn complete_milestone(
         &self,
         milestone_id: &str,
@@ -333,6 +341,7 @@ impl ActionDb {
         self.complete_milestone_with_metadata(milestone_id, None, None)
     }
 
+    #[must_use = "check whether milestone completion metadata persisted before showing auto-completion"]
     pub fn complete_milestone_with_metadata(
         &self,
         milestone_id: &str,
@@ -357,6 +366,7 @@ impl ActionDb {
         Ok((milestone, objective))
     }
 
+    #[must_use = "check whether milestone skip persisted before removing it from pending progress"]
     pub fn skip_milestone(
         &self,
         milestone_id: &str,
@@ -374,6 +384,7 @@ impl ActionDb {
         Ok((milestone, objective))
     }
 
+    #[must_use = "check whether the milestone was deleted before removing it from success plans"]
     pub fn delete_milestone(&self, milestone_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM account_milestones WHERE id = ?1",
@@ -403,6 +414,7 @@ impl ActionDb {
         Ok(None)
     }
 
+    #[must_use = "check whether action-objective link was saved before showing linked work"]
     pub fn link_action_to_objective(
         &self,
         action_id: &str,
@@ -416,6 +428,7 @@ impl ActionDb {
         Ok(())
     }
 
+    #[must_use = "check whether action-objective link was removed before hiding linked work"]
     pub fn unlink_action_from_objective(
         &self,
         action_id: &str,
@@ -452,6 +465,7 @@ impl ActionDb {
         Ok(actions)
     }
 
+    #[must_use = "check whether objective ordering persisted before showing reordered plans"]
     pub fn reorder_objectives(
         &self,
         account_id: &str,
@@ -473,6 +487,7 @@ impl ActionDb {
         Ok(())
     }
 
+    #[must_use = "check whether milestone ordering persisted before showing reordered milestones"]
     pub fn reorder_milestones(
         &self,
         objective_id: &str,
@@ -548,6 +563,7 @@ impl ActionDb {
         Ok(commitments)
     }
 
+    #[must_use = "check whether commitments were marked consumed before hiding suggestions"]
     pub fn mark_commitments_consumed(&self, commitment_ids: &[String]) -> Result<(), DbError> {
         for commitment_id in commitment_ids {
             self.conn.execute(
@@ -579,6 +595,7 @@ impl ActionDb {
         }
     }
 
+    #[must_use = "check which account-event milestones completed before showing timeline updates"]
     pub fn complete_milestones_for_account_event(
         &self,
         account_id: &str,
@@ -647,6 +664,7 @@ impl ActionDb {
         Ok(results)
     }
 
+    #[must_use = "check which triggered milestones completed before showing success plan progress"]
     pub fn complete_milestones_for_completion_trigger(
         &self,
         account_id: &str,

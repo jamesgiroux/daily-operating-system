@@ -82,6 +82,9 @@ jobs:
       - name: Enforce durable source comments
         run: ./scripts/check_no_ephemeral_issue_refs_in_comments.sh
 
+      - name: Enforce must_use on DB mutation methods
+        run: ./scripts/check_db_mutator_must_use.sh
+
       - name: Track legacy AI projection writers
         continue-on-error: true
         run: src-tauri/scripts/check_dos301_legacy_projection_writers.sh

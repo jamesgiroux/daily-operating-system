@@ -127,6 +127,7 @@ pub struct UpsertRelationship<'a> {
 
 impl ActionDb {
     /// Upsert a person relationship by id.
+    #[must_use = "check whether the person relationship was saved before showing relationship context"]
     pub fn upsert_person_relationship(&self, rel: &UpsertRelationship<'_>) -> Result<(), DbError> {
         self.conn_ref().execute(
             "INSERT INTO person_relationships (id, from_person_id, to_person_id, relationship_type,
@@ -179,6 +180,7 @@ impl ActionDb {
     }
 
     /// Delete a person relationship by ID.
+    #[must_use = "check whether the person relationship was deleted before removing it from relationship views"]
     pub fn delete_person_relationship(&self, id: &str) -> Result<(), DbError> {
         self.conn_ref().execute(
             "DELETE FROM person_relationships WHERE id = ?1",

@@ -39,6 +39,7 @@ impl ActionDb {
     /// Wrapped in `with_transaction` so the per-row write + sibling sync
     /// commit atomically; a partial commit would leave the new row with stale
     /// auto-classifier values that the user would then see as a revert.
+    #[must_use = "check whether the email row and thread inheritance were saved before showing inbox state"]
     pub fn upsert_email(&self, email: &DbEmail) -> Result<(), DbError> {
         self.with_transaction(|tx| {
             let now = Utc::now().to_rfc3339();
@@ -200,6 +201,7 @@ impl ActionDb {
     ///  rescue: clear the noise flag on an email so it surfaces again in
     /// inbox / Records. Used by the user-facing "this isn't noise" affordance
     /// (will wire the UI). Idempotent.
+    #[must_use = "check whether the email was unsuppressed before resurfacing it"]
     pub fn unsuppress_email(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn
@@ -213,6 +215,7 @@ impl ActionDb {
 
     /// Mark emails as resolved (vanished from inbox). Sets `resolved_at` to now.
     /// Returns the number of rows updated.
+    #[must_use = "check how many emails were resolved before hiding vanished inbox rows"]
     pub fn mark_emails_resolved(&self, vanished_ids: &[String]) -> Result<usize, DbError> {
         if vanished_ids.is_empty() {
             return Ok(0);
@@ -237,6 +240,7 @@ impl ActionDb {
 
     /// Unmark resolved emails that reappeared in inbox. Sets `resolved_at` to NULL.
     /// Returns the number of rows updated.
+    #[must_use = "check how many emails were restored before showing reappeared inbox rows"]
     pub fn unmark_resolved(&self, reappeared_ids: &[String]) -> Result<usize, DbError> {
         if reappeared_ids.is_empty() {
             return Ok(0);
@@ -294,6 +298,7 @@ impl ActionDb {
     }
 
     /// Set enrichment state and related fields for an email.
+    #[must_use = "check whether enrichment state was saved before advancing the enrichment pipeline"]
     pub fn set_enrichment_state(
         &self,
         email_id: &str,
@@ -395,6 +400,7 @@ impl ActionDb {
     }
 
     /// Update thread position tracking for a thread.
+    #[must_use = "check whether thread position changed before using reply-debt state"]
     pub fn update_thread_position(
         &self,
         thread_id: &str,
@@ -509,6 +515,7 @@ impl ActionDb {
     /// seed state, and assert exactly one row was written as a defense in
     /// depth against a future schema change (e.g. losing the `id = 1`
     /// singleton PK check).
+    #[must_use = "check whether fetch watermark was saved before reporting sync freshness"]
     pub fn set_last_successful_fetch_at(&self) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let rows = self
@@ -566,6 +573,7 @@ impl ActionDb {
     /// All writes (per-row entity update + per-row signal cascade) run in a
     /// single transaction so a partial cascade can't leave the thread in
     /// inconsistent state.
+    #[must_use = "check whether the email entity cascade persisted before trusting classification"]
     pub fn update_email_entity(
         &self,
         email_id: &str,
@@ -697,6 +705,7 @@ impl ActionDb {
     /// thread-collapse rationale — the same reversion pattern applies to
     /// sentiment, which is also a per-row column read through the
     /// thread-collapsed inbox view.
+    #[must_use = "check whether the email sentiment cascade persisted before showing sentiment"]
     pub fn update_email_sentiment(
         &self,
         email_id: &str,
@@ -744,6 +753,7 @@ impl ActionDb {
     /// Mark an email as replied to by the user (reply debt).
     /// Sets `user_is_last_sender = 1` on the email row and the corresponding
     /// email_threads row (if any).
+    #[must_use = "check whether reply-sent state was saved before clearing reply debt"]
     pub fn mark_reply_sent(&self, email_id: &str) -> Result<Option<(String, String)>, DbError> {
         let now = chrono::Utc::now().to_rfc3339();
 
@@ -782,6 +792,7 @@ impl ActionDb {
     /// Archive an email thread by setting resolved_at on every row in the thread.
     /// The inbox UI is thread-collapsed, so archiving only one message can let an
     /// older unresolved message in the same thread leak back into view.
+    #[must_use = "check whether the email thread was archived before hiding it from inbox"]
     pub fn archive_email(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let thread_id = self.get_thread_id(email_id)?;
@@ -799,6 +810,7 @@ impl ActionDb {
     }
 
     /// Unarchive an email thread by clearing resolved_at on every row in the thread.
+    #[must_use = "check whether the email thread was restored before showing it in inbox"]
     pub fn unarchive_email(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let thread_id = self.get_thread_id(email_id)?;
@@ -859,6 +871,7 @@ impl ActionDb {
 
     /// Toggle pin on an email. If pinned, clears; if not pinned, sets to now.
     /// Returns the new pinned state (true = pinned).
+    #[must_use = "check the new pin state before rendering pinned email ordering"]
     pub fn toggle_pin_email(&self, email_id: &str) -> Result<bool, DbError> {
         let now = Utc::now().to_rfc3339();
         let current_pinned: Option<String> = self
@@ -890,6 +903,7 @@ impl ActionDb {
     }
 
     /// Set the relevance score and reason for an email.
+    #[must_use = "check whether the relevance score was saved before sorting by score"]
     pub fn set_relevance_score(
         &self,
         email_id: &str,
@@ -987,6 +1001,7 @@ impl ActionDb {
     /// until the refresh outcome is known.
     ///
     /// Returns the number of rows transitioned.
+    #[must_use = "check how many failed emails entered retry before starting refresh"]
     pub fn mark_failed_for_retry(&self, batch_id: &str) -> Result<usize, DbError> {
         // wrap in `with_transaction` so the state flip + batch_id stamp
         // + started_at stamp commit atomically. Today this is a single UPDATE so
@@ -1023,6 +1038,7 @@ impl ActionDb {
     /// cannot accidentally adopt rows owned by refresh B.
     ///
     /// Returns the number of rows transitioned.
+    #[must_use = "check how many retry rows were finalized before running enrichment"]
     pub fn finalize_pending_retry_success(&self, batch_id: &str) -> Result<usize, DbError> {
         // transactional so the state flip + attempts reset + batch_id
         // clear commit together. Splitting these would let a crash mid-finalize
@@ -1055,6 +1071,7 @@ impl ActionDb {
     /// finding 2) so concurrent refreshes cannot clobber each other.
     ///
     /// Returns the number of rows transitioned.
+    #[must_use = "check how many retry rows rolled back before surfacing retry failure"]
     pub fn rollback_pending_retry(&self, batch_id: &str) -> Result<usize, DbError> {
         // transactional rollback. If we're going to surface the
         // rollback error to the caller (Codex finding 2), the rollback itself
@@ -1091,6 +1108,7 @@ impl ActionDb {
     /// - its `retry_started_at` is older than `stale_after_seconds`.
     ///
     /// Returns the number of rows rolled back to `failed`.
+    #[must_use = "check how many stale retry rows rolled back before starting a new retry"]
     pub fn rollback_stale_pending_retry(&self, stale_after_seconds: i64) -> Result<usize, DbError> {
         let now = Utc::now();
         let cutoff = now - chrono::Duration::seconds(stale_after_seconds);
@@ -1136,6 +1154,7 @@ impl ActionDb {
     /// fallback for rows that never recorded an enrichment attempt.
     ///
     /// Returns the number of rows promoted to `pending`.
+    #[must_use = "check how many stale failures were retried before reporting recovery"]
     pub fn auto_retry_stale_failed(
         &self,
         stale_after_seconds: i64,
@@ -1228,6 +1247,7 @@ impl ActionDb {
     /// they leave the failed-count entirely. The Gmail message stays in
     /// the inbox; we just stop trying to enrich it and stop surfacing it
     /// as a failure. Returns rows affected.
+    #[must_use = "check how many failed emails were skipped before clearing failure notices"]
     pub fn skip_failed_emails(&self, email_ids: &[String]) -> Result<usize, DbError> {
         if email_ids.is_empty() {
             return Ok(0);
@@ -1277,6 +1297,7 @@ impl ActionDb {
 
     /// Mark an email as enriched, setting `enriched_at` to now.
     /// Used after successful enrichment to support Gate 0 deduplication.
+    #[must_use = "check whether enriched watermark was saved before applying deduplication"]
     pub fn mark_email_enriched(&self, email_id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn

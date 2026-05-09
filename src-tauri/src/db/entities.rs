@@ -6,6 +6,7 @@ impl ActionDb {
     // =========================================================================
 
     /// Insert or update a profile-agnostic entity.
+    #[must_use = "check whether the entity was saved before resolving cross-record links"]
     pub fn upsert_entity(&self, entity: &DbEntity) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO entities (id, name, entity_type, tracker_path, updated_at)
@@ -54,6 +55,7 @@ impl ActionDb {
     ///
     /// Matches by ID or by case-insensitive name. Returns `true` if a row
     /// was updated, `false` if no entity matched.
+    #[must_use = "check whether last-contact timestamp changed before treating entity as contacted"]
     pub fn touch_entity_last_contact(&self, name: &str) -> Result<bool, DbError> {
         let now = Utc::now().to_rfc3339();
         let rows = self.conn.execute(
@@ -93,6 +95,7 @@ impl ActionDb {
     /// Upsert an entity row that mirrors a CS account.
     ///
     /// Called from `upsert_account()` to keep the entity layer in sync.
+    #[must_use = "check whether account entity mirror was saved before resolving account links"]
     pub fn ensure_entity_for_account(&self, account: &DbAccount) -> Result<(), DbError> {
         let entity = DbEntity {
             id: account.id.clone(),

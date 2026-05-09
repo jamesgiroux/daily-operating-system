@@ -345,6 +345,7 @@ impl ActionDb {
     }
 
     /// Mark an action as completed with the current timestamp.
+    #[must_use = "check whether the action was completed before hiding it from active work"]
     pub fn complete_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -356,6 +357,7 @@ impl ActionDb {
     }
 
     /// Reopen a completed action, clearing the completed_at timestamp.
+    #[must_use = "check whether the action was reopened before showing it as active work"]
     pub fn reopen_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -465,6 +467,7 @@ impl ActionDb {
     /// 2. **ID-based guard**: If an action with this exact ID is already completed, skip.
     ///
     /// This ensures that daily briefing syncs don't resurrect completed actions.
+    #[must_use = "check whether the action was inserted or skipped before relying on deduped action state"]
     pub fn upsert_action_if_not_completed_with_status(
         &self,
         action: &DbAction,
@@ -546,12 +549,14 @@ impl ActionDb {
         Ok(true)
     }
 
+    #[must_use = "check whether the action upsert ran before relying on pending action state"]
     pub fn upsert_action_if_not_completed(&self, action: &DbAction) -> Result<(), DbError> {
         self.upsert_action_if_not_completed_with_status(action)
             .map(|_| ())
     }
 
     /// Insert or update an action. Uses SQLite `ON CONFLICT` (upsert).
+    #[must_use = "check whether the action was saved before showing or linking it"]
     pub fn upsert_action(&self, action: &DbAction) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO actions (
@@ -766,6 +771,7 @@ impl ActionDb {
     }
 
     /// Accept a suggested action, moving it to pending status.
+    #[must_use = "check whether the suggestion was accepted before moving it into pending work"]
     pub fn accept_suggested_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let changed = self.conn.execute(
@@ -780,11 +786,13 @@ impl ActionDb {
     }
 
     /// Reject a suggested action by archiving it and recording the rejection signal.
+    #[must_use = "check whether the suggestion was rejected before suppressing it from recommendations"]
     pub fn reject_suggested_action(&self, id: &str) -> Result<(), DbError> {
         self.reject_suggested_action_with_source(id, "unknown")
     }
 
     /// Reject a suggested action, recording the source surface for correction learning.
+    #[must_use = "check whether the sourced rejection was recorded before learning from suggestion feedback"]
     pub fn reject_suggested_action_with_source(
         &self,
         id: &str,
@@ -804,6 +812,7 @@ impl ActionDb {
     }
 
     /// Archive an action (any status -> archived).
+    #[must_use = "check whether the action was archived before removing it from active views"]
     pub fn archive_action(&self, id: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -819,6 +828,7 @@ impl ActionDb {
     ///
     ///  zero-guilt exemptions: P1/Urgent (priority=1), waiting_on set,
     /// or objective-linked actions are never auto-archived.
+    #[must_use = "check how many stale actions were archived before reporting cleanup"]
     pub fn archive_stale_actions(&self, days: i64) -> Result<usize, DbError> {
         let now = Utc::now().to_rfc3339();
         let cutoff_param = format!("-{} days", days);
@@ -841,6 +851,7 @@ impl ActionDb {
 
     /// Auto-archive suggested actions older than N days.
     /// Returns the number of actions archived.
+    #[must_use = "check how many old suggestions were archived before reporting suggestion cleanup"]
     pub fn auto_archive_old_suggested(&self, days: i64) -> Result<usize, DbError> {
         let now = Utc::now().to_rfc3339();
         let cutoff_param = format!("-{} days", days);
@@ -919,6 +930,7 @@ impl ActionDb {
     }
 
     /// Update an action's priority.
+    #[must_use = "check whether the action priority changed before showing reordered work"]
     pub fn update_action_priority(&self, id: &str, priority: &str) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         self.conn.execute(
@@ -1055,6 +1067,7 @@ impl ActionDb {
 
     /// Flag an action as needing a decision. Called by AI enrichment during
     /// briefing generation to mark actions that require user decisions.
+    #[must_use = "check whether the action was flagged before surfacing it as a decision"]
     pub fn flag_action_as_decision(&self, id: &str) -> Result<bool, DbError> {
         let rows = self.conn.execute(
             "UPDATE actions SET needs_decision = 1 WHERE id = ?1",
@@ -1065,6 +1078,7 @@ impl ActionDb {
 
     /// Clear all decision flags. Called before re-flagging during enrichment
     /// so that stale flags from previous runs are removed.
+    #[must_use = "check whether stale decision flags were cleared before reflagging decisions"]
     pub fn clear_decision_flags(&self) -> Result<(), DbError> {
         self.conn.execute(
             "UPDATE actions SET needs_decision = 0 WHERE needs_decision = 1",
@@ -1074,6 +1088,7 @@ impl ActionDb {
     }
 
     /// Resolve a decision: clear needs_decision flag.
+    #[must_use = "check whether the decision flag was cleared before hiding the decision"]
     pub fn resolve_decision(&self, id: &str) -> Result<bool, DbError> {
         let rows = self.conn.execute(
             "UPDATE actions SET needs_decision = 0 WHERE id = ?1 AND needs_decision = 1",
@@ -1085,6 +1100,7 @@ impl ActionDb {
     /// Scan unstarted actions for decision-indicating keywords and flag matches.
     ///
     /// Returns the number of actions newly flagged.
+    #[must_use = "check how many decisions were flagged before showing decision counts"]
     pub fn scan_and_flag_decisions(&self) -> Result<usize, DbError> {
         let keywords = [
             "approval",
@@ -1255,6 +1271,7 @@ impl ActionDb {
     /// - `exact_title`: always suppressed after first rejection
     /// - `source_fatigue`: suppressed when >70% of source's actions for this account are rejected
     /// - `keyword`: suppressed when 3+ actions with the keyword have been rejected
+    #[must_use = "check whether rejection patterns were recorded before suppressing future suggestions"]
     pub fn record_rejection_pattern(&self, action: &DbAction) -> Result<(), DbError> {
         let now = Utc::now().to_rfc3339();
         let normalized_title = action.title.to_lowercase().trim().to_string();

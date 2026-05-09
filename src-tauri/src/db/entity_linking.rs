@@ -456,6 +456,7 @@ impl ActionDb {
     // -----------------------------------------------------------------------
 
     /// Upsert a row into linked_entities_raw.
+    #[must_use = "check whether raw entity link was saved before trusting graph attribution"]
     pub fn upsert_linked_entity_raw(&self, row: &LinkedEntityRawWrite) -> Result<(), String> {
         let now = chrono::Utc::now().to_rfc3339();
         self.conn_ref()
@@ -499,6 +500,7 @@ impl ActionDb {
     ///
     /// Without preserving user_dismissed, a concurrent recompute could delete
     /// the tombstone and then re-insert the dismissed entity on its next pass.
+    #[must_use = "check whether auto links were cleared before rebuilding owner attribution"]
     pub fn delete_auto_links_for_owner(
         &self,
         owner_type: &str,
@@ -516,6 +518,7 @@ impl ActionDb {
     }
 
     /// Mark a specific link as dismissed (source='user_dismissed').
+    #[must_use = "check whether link dismissal tombstone was saved before suppressing link"]
     pub fn set_link_user_dismissed(
         &self,
         owner_type: &str,
@@ -535,6 +538,7 @@ impl ActionDb {
     }
 
     /// Append a row to entity_linking_evaluations (append-only audit).
+    #[must_use = "check whether linking evaluation was recorded before auditing graph decisions"]
     pub fn insert_linking_evaluation(&self, ev: &LinkingEvaluationWrite) -> Result<(), String> {
         self.conn_ref()
             .execute(
@@ -559,6 +563,7 @@ impl ActionDb {
     }
 
     /// Write a dismissal row to linking_dismissals.
+    #[must_use = "check whether linking dismissal was saved before hiding suggestion"]
     pub fn upsert_linking_dismissal(
         &self,
         owner_type: &str,
@@ -587,6 +592,7 @@ impl ActionDb {
     }
 
     /// Remove a dismissal row (undo dismiss).
+    #[must_use = "check whether linking dismissal was removed before resurfacing suggestion"]
     pub fn delete_linking_dismissal(
         &self,
         owner_type: &str,
@@ -607,6 +613,7 @@ impl ActionDb {
 
     /// Queue a person as a pending stakeholder suggestion for an account.
     /// INSERT OR IGNORE — does not overwrite if already exists in any status.
+    #[must_use = "check how many stakeholder suggestions were queued before showing review queue"]
     pub fn suggest_stakeholder_pending(
         &self,
         account_id: &str,
@@ -625,6 +632,7 @@ impl ActionDb {
     }
 
     /// Promote a pending_review suggestion to active.
+    #[must_use = "check whether stakeholder confirmation changed a row before showing active stakeholder"]
     pub fn confirm_stakeholder(&self, account_id: &str, person_id: &str) -> Result<usize, String> {
         self.conn_ref()
             .execute(
@@ -636,6 +644,7 @@ impl ActionDb {
     }
 
     /// Dismiss a pending_review suggestion.
+    #[must_use = "check whether stakeholder suggestion was dismissed before hiding it"]
     pub fn dismiss_stakeholder_suggestion(
         &self,
         account_id: &str,
@@ -717,6 +726,7 @@ impl ActionDb {
     }
 
     /// Queue a child email for deferred thread inheritance (P2 late-arrival).
+    #[must_use = "check whether thread inheritance was queued before relying on deferred linking"]
     pub fn enqueue_thread_inheritance(
         &self,
         thread_id: &str,
@@ -734,6 +744,7 @@ impl ActionDb {
     }
 
     /// Pop and return child emails waiting for a thread's primary to be set.
+    #[must_use = "check which inherited children were drained before deleting the queue"]
     pub fn drain_thread_inheritance_queue(&self, thread_id: &str) -> Result<Vec<String>, String> {
         let mut children = Vec::new();
         {

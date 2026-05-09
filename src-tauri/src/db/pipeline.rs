@@ -2,6 +2,7 @@ use super::ActionDb;
 use rusqlite::params;
 
 impl ActionDb {
+    #[must_use = "inserting a pipeline failure persists DB state; dropping this Result hides the failure-id and any insert error"]
     pub fn insert_pipeline_failure(
         &self,
         pipeline: &str,
@@ -31,6 +32,7 @@ impl ActionDb {
         Ok(id)
     }
 
+    #[must_use = "resolving pipeline failures mutates DB state; dropping this Result hides the count of resolved rows and any update error"]
     pub fn resolve_pipeline_failures(
         &self,
         pipeline: &str,

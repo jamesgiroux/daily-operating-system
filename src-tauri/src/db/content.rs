@@ -7,6 +7,7 @@ impl ActionDb {
 
     /// Upsert a content file record. Preserves existing `extracted_at` / `summary`
     /// when the incoming record has `None` for those fields (COALESCE pattern).
+    #[must_use = "check whether content file index was saved before relying on content search"]
     pub fn upsert_content_file(&self, file: &DbContentFile) -> Result<(), DbError> {
         self.conn.execute(
             "INSERT INTO content_index (
@@ -80,6 +81,7 @@ impl ActionDb {
     }
 
     /// Delete a single content file record by ID.
+    #[must_use = "check whether content file was deleted before removing it from indexed content"]
     pub fn delete_content_file(&self, id: &str) -> Result<(), DbError> {
         self.conn
             .execute("DELETE FROM content_index WHERE id = ?1", params![id])?;
@@ -87,6 +89,7 @@ impl ActionDb {
     }
 
     /// Delete all content file records for an entity.
+    #[must_use = "check whether entity files were deleted before rebuilding content index"]
     pub fn delete_entity_files(&self, entity_id: &str) -> Result<(), DbError> {
         self.conn.execute(
             "DELETE FROM content_index WHERE entity_id = ?1",
@@ -96,6 +99,7 @@ impl ActionDb {
     }
 
     /// Update extraction results for a content file: summary, content_type, and priority.
+    #[must_use = "check whether extraction results were saved before showing content summary"]
     pub fn update_content_extraction(
         &self,
         id: &str,
@@ -115,6 +119,7 @@ impl ActionDb {
     }
 
     /// Update the embeddings watermark for a content file.
+    #[must_use = "check whether embedding watermark was saved before skipping embedding work"]
     pub fn set_embeddings_generated_at(
         &self,
         id: &str,
@@ -130,6 +135,7 @@ impl ActionDb {
     }
 
     /// Replace all embedding chunks for a file atomically.
+    #[must_use = "check whether embeddings were replaced before using semantic search"]
     pub fn replace_content_embeddings_for_file(
         &self,
         content_file_id: &str,
@@ -246,6 +252,7 @@ impl ActionDb {
     // Chat Sessions (Sprint 26)
     // =========================================================================
 
+    #[must_use = "check whether chat session was created before appending turns"]
     pub fn create_chat_session(
         &self,
         id: &str,
@@ -314,6 +321,7 @@ impl ActionDb {
         Ok(idx)
     }
 
+    #[must_use = "check whether chat turn was appended before updating session stats"]
     pub fn append_chat_turn(
         &self,
         id: &str,
@@ -331,6 +339,7 @@ impl ActionDb {
         Ok(())
     }
 
+    #[must_use = "check whether chat session stats changed before showing chat summary"]
     pub fn bump_chat_session_stats(
         &self,
         session_id: &str,

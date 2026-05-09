@@ -59,6 +59,7 @@ impl ActionDb {
 
     /// Execute a closure within a SQLite transaction.
     /// Commits on Ok, rolls back on Err.
+    #[must_use = "the closure may write to the DB; dropping this Result silently swallows transaction failure or rollback"]
     pub fn with_transaction<F, T>(&self, f: F) -> Result<T, String>
     where
         F: FnOnce(&Self) -> Result<T, String>,
@@ -833,6 +834,7 @@ impl ActionDb {
     /// Iterates accounts with `tracker_path IS NOT NULL AND company_overview IS NULL`,
     /// reads their dashboard.json, and writes the fields to DB.
     /// Same for projects.
+    #[must_use = "check how many dashboard fields were backfilled before trusting DB narrative columns"]
     pub fn backfill_dashboard_json_to_db(&self, workspace: &Path) -> Result<usize, DbError> {
         const TASK_NAME: &str = "backfill_dashboard_json_to_db_v1";
 

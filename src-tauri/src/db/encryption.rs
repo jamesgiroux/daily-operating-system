@@ -46,6 +46,7 @@ pub(crate) fn set_cached_db_key_for_tests(hex_key: &str) {
 /// Keychain entry is found, this returns `Err` instead of generating a new key.
 /// A new key would silently fail to decrypt the existing data. The caller must
 /// surface this as a recovery screen, not swallow it.
+#[must_use = "check whether DB key was loaded or created before opening encrypted database"]
 pub fn get_or_create_db_key(db_path: &std::path::Path) -> Result<String, String> {
     let key = match get_existing_db_key() {
         Ok(key) => key,
@@ -94,6 +95,7 @@ pub fn has_db_key() -> bool {
 }
 
 /// Delete the DB key from Keychain. Used for testing/recovery only.
+#[must_use = "check whether keychain entry was deleted before treating encrypted DB as reset"]
 pub fn delete_db_key() -> Result<(), String> {
     let output = std::process::Command::new("security")
         .args([
@@ -132,6 +134,7 @@ pub fn is_database_plaintext(path: &std::path::Path) -> bool {
 }
 
 /// Migrate a plaintext database to an encrypted one using sqlcipher_export().
+#[must_use = "check whether plaintext database was migrated before opening encrypted storage"]
 pub fn migrate_to_encrypted(plaintext_path: &std::path::Path, hex_key: &str) -> Result<(), String> {
     use rusqlite::Connection;
 
