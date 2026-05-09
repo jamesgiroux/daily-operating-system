@@ -101,7 +101,7 @@ impl TrajectoryReadHandle for LiveTemporalWorkspaceReader {
     ) -> TrajectoryReadFuture<'a> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db = crate::db::ActionDb::open()
+                let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
                     .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::temporal::read_trajectory_bundle_from_db(
                     &db,
@@ -125,7 +125,7 @@ impl TemporalMaintenanceHandle for LiveTemporalWorkspaceReader {
     ) -> TemporalMaintenanceFuture<'a, RefreshEngagementCurveResult> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db = crate::db::ActionDb::open()
+                let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
                     .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::temporal::refresh_engagement_curve_in_db(&db, input, computed_at)
             })
@@ -141,7 +141,7 @@ impl TemporalMaintenanceHandle for LiveTemporalWorkspaceReader {
     ) -> TemporalMaintenanceFuture<'a, DetectRoleChangeResult> {
         Box::pin(async move {
             tokio::task::spawn_blocking(move || {
-                let db = crate::db::ActionDb::open()
+                let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
                     .map_err(|error| format!("Database unavailable: {error}"))?;
                 crate::services::temporal::detect_role_change_in_db(&db, input, computed_at)
             })
