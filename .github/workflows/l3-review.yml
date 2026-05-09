@@ -123,6 +123,7 @@ jobs:
           )
           FENCED_PREFIXES=(
             ".github/actions/l3-reviewer-job/"
+            ".githooks/"
           )
           FENCED_GLOBS=(
             ".github/reviewer-prompts/l3-*.md"

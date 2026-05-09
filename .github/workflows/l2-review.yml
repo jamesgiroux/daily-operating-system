@@ -96,6 +96,7 @@ jobs:
             ".github/scripts/"
             ".github/actions/"
             ".claude/git-hooks/"
+            ".githooks/"
           )
 
           hits=()
