@@ -21,7 +21,7 @@ use crate::abilities::{metadata_for_claim_type, AbilityCategory};
 use crate::abilities::{AbilityContext, AbilityError, AbilityErrorKind, AbilityResult};
 use crate::abilities::{Actor as RegistryActor, ClaimType};
 use crate::intelligence::provider::{ModelTier, ProviderError};
-use crate::services::context::PrepareMeetingContextSnapshot;
+use crate::services::context::{ClaimDismissalSurface, PrepareMeetingContextSnapshot};
 use crate::types::{
     claim_allowed_for_prompt_input, prompt_input_sensitivity_name_allowed, subject_ref_from_json,
     ClaimSensitivity, ClaimSubjectRef, EntityContextEntry, IntelligenceClaim, TemporalScope,
@@ -215,10 +215,11 @@ async fn build_meeting_brief_from_context(
 
     let prompt_allowed_subjects = meeting_scope_source_subjects(&context);
     let mut composed_children = Vec::new();
+    let briefing_ctx = ctx.for_entity_context_claim_surface(ClaimDismissalSurface::Briefing);
     for entity_context in &context.entity_contexts {
         let depth = context_depth(input.depth);
         let child = get_entity_context(
-            ctx,
+            &briefing_ctx,
             GetEntityContextInput {
                 schema_version: 2,
                 entity_type: entity_context.subject.kind.clone(),
@@ -233,6 +234,7 @@ async fn build_meeting_brief_from_context(
             .read_entity_context_claims(
                 entity_context.subject.kind.clone(),
                 entity_context.subject.id.clone(),
+                ClaimDismissalSurface::Briefing,
                 context_depth_levels(input.depth),
             )
             .await
@@ -1723,6 +1725,7 @@ mod tests {
     struct FixtureEntityContextClaimReader {
         claims: Vec<IntelligenceClaim>,
         related_subjects: BTreeMap<String, Vec<BriefSubjectRef>>,
+        dismissed_surfaces: BTreeMap<String, BTreeSet<ClaimDismissalSurface>>,
     }
 
     impl FixtureEntityContextClaimReader {
@@ -1730,6 +1733,7 @@ mod tests {
             Self {
                 claims,
                 related_subjects: BTreeMap::new(),
+                dismissed_surfaces: BTreeMap::new(),
             }
         }
 
@@ -1740,7 +1744,16 @@ mod tests {
             Self {
                 claims,
                 related_subjects,
+                dismissed_surfaces: BTreeMap::new(),
             }
+        }
+
+        fn dismissed_on(mut self, claim_id: &str, surface: ClaimDismissalSurface) -> Self {
+            self.dismissed_surfaces
+                .entry(claim_id.to_string())
+                .or_default()
+                .insert(surface);
+            self
         }
 
         fn subjects_within_depth(
@@ -1778,6 +1791,7 @@ mod tests {
             &'a self,
             entity_type: String,
             entity_id: String,
+            surface: ClaimDismissalSurface,
             depth: usize,
         ) -> EntityContextClaimReadFuture<'a> {
             Box::pin(async move {
@@ -1788,6 +1802,11 @@ mod tests {
                     .filter(|claim| {
                         claim.claim_state == ClaimState::Active
                             && claim.surfacing_state == SurfacingState::Active
+                            && !self
+                                .dismissed_surfaces
+                                .get(&claim.id)
+                                .map(|surfaces| surfaces.contains(&surface))
+                                .unwrap_or(false)
                             && brief_subject_from_claim(claim)
                                 .map(|subject| subjects.contains(&subject.key()))
                                 .unwrap_or(false)
@@ -1847,6 +1866,19 @@ mod tests {
             self
         }
 
+        fn with_claim_dismissal(
+            mut self,
+            claim_id: &str,
+            surface: ClaimDismissalSurface,
+        ) -> Self {
+            self.claim_reader = Arc::new(
+                (*self.claim_reader)
+                    .clone()
+                    .dismissed_on(claim_id, surface),
+            );
+            self
+        }
+
         fn with_related_subjects(
             mut self,
             related_subjects: BTreeMap<String, Vec<BriefSubjectRef>>,
@@ -1873,6 +1905,7 @@ mod tests {
                 &NOOP_ABILITY_TRACER,
                 Actor::User,
                 None,
+                ClaimDismissalSurface::Eval,
             );
             build_meeting_brief(&ctx, input).await
         }
@@ -1895,6 +1928,7 @@ mod tests {
                 &NOOP_ABILITY_TRACER,
                 Actor::Agent,
                 None,
+                ClaimDismissalSurface::Worker,
             );
             let registry = AbilityRegistry::from_inventory_checked().expect("registry builds");
             registry
@@ -2087,6 +2121,69 @@ mod tests {
             .to_rfc3339();
 
         assert_eq!(child_source_asof, "2026-04-28T12:00:00+00:00");
+    }
+
+    #[tokio::test]
+    async fn prepare_meeting_honors_briefing_surface_dismissal_for_composed_entity_context() {
+        let dismissed_text = "Dismissed briefing context must not enter meeting prep prompts.";
+        let dismissed_claim = fixture_claim(
+            "claim-briefing-dismissed",
+            "account",
+            "acct-briefing-dismissal",
+            dismissed_text,
+            "2026-05-05T15:30:00Z",
+            Some("2026-05-05T15:30:00Z"),
+        );
+        let snapshot = fixture_meeting_snapshot(
+            "meeting-briefing-dismissal",
+            vec![PrepareMeetingAttendeeSnapshot {
+                name: "Casey Example".into(),
+                email: Some("casey@example.com".into()),
+                person_id: None,
+                account_id: Some("acct-briefing-dismissal".into()),
+                domain: Some("example.com".into()),
+            }],
+            vec![PrepareMeetingSubjectSnapshot {
+                kind: "account".into(),
+                id: "acct-briefing-dismissal".into(),
+                display_name: "Briefing Dismissal Co".into(),
+            }],
+            vec![dismissed_claim],
+        );
+        let harness = Harness::new(empty_completion())
+            .with_claims(snapshot.claims.clone())
+            .with_meeting_context(snapshot)
+            .with_claim_dismissal("claim-briefing-dismissed", ClaimDismissalSurface::Briefing);
+
+        let tauri_claims = harness
+            .claim_reader
+            .read_entity_context_claims(
+                "account".into(),
+                "acct-briefing-dismissal".into(),
+                ClaimDismissalSurface::TauriEntityDetail,
+                1,
+            )
+            .await
+            .expect("tauri entity-detail read succeeds");
+        assert_eq!(tauri_claims.len(), 1);
+        assert_eq!(tauri_claims[0].id, "claim-briefing-dismissed");
+
+        harness
+            .run(public_input("meeting-briefing-dismissal"))
+            .await
+            .unwrap();
+        let entity_contexts = captured_entity_contexts(&harness);
+        let serialized =
+            serde_json::to_string(&entity_contexts).expect("entity contexts serialize");
+
+        assert!(
+            !serialized.contains("claim-briefing-dismissed"),
+            "briefing-dismissed claim id must be absent from PromptContext.entity_contexts"
+        );
+        assert!(
+            !serialized.contains(dismissed_text),
+            "briefing-dismissed claim text must be absent from PromptContext.entity_contexts"
+        );
     }
 
     #[tokio::test]

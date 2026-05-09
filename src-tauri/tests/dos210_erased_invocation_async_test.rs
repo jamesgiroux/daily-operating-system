@@ -8,7 +8,9 @@ use dailyos_lib::abilities::{
     AbilityContext, AbilityRegistry, AbilityResult, Actor, NOOP_ABILITY_TRACER,
 };
 use dailyos_lib::intelligence::provider::ReplayProvider;
-use dailyos_lib::services::context::{FixedClock, SeedableRng, ServiceContext};
+use dailyos_lib::services::context::{
+    ClaimDismissalSurface, FixedClock, SeedableRng, ServiceContext,
+};
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
@@ -96,6 +98,7 @@ async fn invoke_by_name_json_works_inside_async_runtime() {
         &NOOP_ABILITY_TRACER,
         Actor::User,
         None,
+        ClaimDismissalSurface::Eval,
     );
 
     let value = registry

@@ -24,7 +24,7 @@ use crate::intelligence::provider::{
 use crate::services::context::{ExecutionMode, ServiceContext};
 use crate::services::sensitivity::{
     render_mcp_ability_data_for_surface_with_provenance,
-    render_mcp_ability_data_without_claim_lookup,
+    render_mcp_ability_data_without_claim_lookup, ClaimDismissalSurface,
 };
 use crate::state::ContextSnapshot;
 
@@ -332,6 +332,7 @@ pub(crate) async fn invoke_registry_json<'a>(
         tracer,
         invocation.actor.registry_actor(),
         confirmation,
+        claim_dismissal_surface_for_bridge(invocation.surface),
     );
     let output_json = registry
         .invoke_by_name_json(&ability_context, ability_name, input_json)
@@ -345,6 +346,16 @@ pub(crate) async fn invoke_registry_json<'a>(
         invocation.surface,
         output_json,
     )
+}
+
+fn claim_dismissal_surface_for_bridge(surface: BridgeSurface) -> ClaimDismissalSurface {
+    match surface {
+        BridgeSurface::TauriApp => ClaimDismissalSurface::TauriEntityDetail,
+        BridgeSurface::McpTool => ClaimDismissalSurface::McpTool,
+        BridgeSurface::McpToolDetail => ClaimDismissalSurface::McpToolDetail,
+        BridgeSurface::Worker => ClaimDismissalSurface::Worker,
+        BridgeSurface::Eval => ClaimDismissalSurface::Eval,
+    }
 }
 
 #[derive(Debug, Default)]

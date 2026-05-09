@@ -46,6 +46,7 @@ use crate::abilities::temporal::{
     RefreshEngagementCurveResult, TemporalMaintenanceHandle, TrajectoryBundle,
     TrajectoryQueryDepth, TrajectoryReadHandle,
 };
+pub use crate::sensitivity::ClaimDismissalSurface;
 use crate::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
 use crate::services::external_replay::{
     AuthScopeId, ExternalReplayFixture, ExternalReplayFixtureMissing, JsonExternalReplayFixture,
@@ -859,10 +860,15 @@ pub type EntityContextClaimReadFuture<'a> =
 /// Claims-backed read handle. Tests can inject this without
 /// exposing raw database handles to ability code.
 pub trait EntityContextClaimReadHandle: Send + Sync {
+    /// Read active entity-context claims for the caller's actual render context.
+    /// The `surface` MUST match where the returned claims will be rendered or
+    /// used as prompt input; passing a broader surface can resurface dismissed
+    /// claims in narrower contexts such as briefing prep.
     fn read_entity_context_claims<'a>(
         &'a self,
         entity_type: String,
         entity_id: String,
+        surface: ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a>;
 }
@@ -1092,15 +1098,20 @@ impl<'a> ServiceContext<'a> {
         Err(self.missing_reader_error("prepare_meeting_context_reader"))
     }
 
+    /// Read active entity-context claims for the caller's actual render context.
+    /// The `surface` MUST match where the returned claims will be rendered or
+    /// used as prompt input; passing a broader surface can resurface dismissed
+    /// claims in narrower contexts such as briefing prep.
     pub async fn read_entity_context_claims(
         &self,
         entity_type: String,
         entity_id: String,
+        surface: ClaimDismissalSurface,
         depth: usize,
     ) -> Result<Vec<IntelligenceClaim>, String> {
         if let Some(reader) = &self.entity_context_claim_reader {
             return reader
-                .read_entity_context_claims(entity_type, entity_id, depth)
+                .read_entity_context_claims(entity_type, entity_id, surface, depth)
                 .await;
         }
 
@@ -1156,9 +1167,10 @@ impl<'a> ServiceContext<'a> {
         &self,
         entity_type: String,
         entity_id: String,
+        surface: ClaimDismissalSurface,
         depth: usize,
     ) -> Result<Vec<EntityContextEntry>, String> {
-        self.read_entity_context_claims(entity_type, entity_id, depth)
+        self.read_entity_context_claims(entity_type, entity_id, surface, depth)
             .await?
             .into_iter()
             .map(entity_context_entry_for_claim)

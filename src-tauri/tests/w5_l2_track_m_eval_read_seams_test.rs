@@ -10,7 +10,7 @@ mod w5_l2_track_m_eval_read_seams_test {
     };
     use dailyos_lib::intelligence::provider::ReplayProvider;
     use dailyos_lib::services::context::{
-        ExternalClients, FixedClock, SeedableRng, ServiceContext,
+        ClaimDismissalSurface, ExternalClients, FixedClock, SeedableRng, ServiceContext,
     };
     use dailyos_lib::services::external_replay::JsonExternalReplayFixture;
     use serde_json::json;
@@ -69,6 +69,7 @@ mod w5_l2_track_m_eval_read_seams_test {
             &NOOP_ABILITY_TRACER,
             Actor::User,
             None,
+            ClaimDismissalSurface::Eval,
         );
 
         let err = get_entity_context(
@@ -104,6 +105,7 @@ mod w5_l2_track_m_eval_read_seams_test {
             &NOOP_ABILITY_TRACER,
             Actor::User,
             None,
+            ClaimDismissalSurface::Eval,
         );
 
         let err = registry

@@ -10,8 +10,8 @@ use dailyos_lib::services::claims::{
     ClaimFeedbackInput, ClaimProposal, CommittedClaim,
 };
 use dailyos_lib::services::context::{
-    EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
-    SeedableRng, ServiceContext,
+    ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
+    ExternalClients, FixedClock, SeedableRng, ServiceContext,
 };
 use dailyos_lib::state::AppState;
 use rusqlite::Connection;
@@ -37,6 +37,7 @@ impl EntityContextClaimReadHandle for SqliteClaimReader {
         &'a self,
         entity_type: String,
         entity_id: String,
+        surface: ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a> {
         let result = {
@@ -46,7 +47,7 @@ impl EntityContextClaimReadHandle for SqliteClaimReader {
                 &entity_type,
                 &entity_id,
                 depth,
-                "tauri_entity_detail",
+                surface.as_str(),
             )
             .map_err(|error| format!("claim read failed: {error}"))
         };
@@ -182,7 +183,12 @@ async fn workspace_entity_context_handler_filters_inactive_claim_rows() {
         .with_entity_context_claim_reader(reader);
 
     let entries = services
-        .read_entity_context_claim_entries("person".to_string(), "person-track-e".to_string(), 1)
+        .read_entity_context_claim_entries(
+            "person".to_string(),
+            "person-track-e".to_string(),
+            ClaimDismissalSurface::TauriEntityDetail,
+            1,
+        )
         .await
         .expect("workspace entity context handler read succeeds");
 

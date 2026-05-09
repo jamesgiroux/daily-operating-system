@@ -74,6 +74,7 @@ pub async fn get_entity_context(
         .read_entity_context_claims(
             input.entity_type.clone(),
             input.entity_id.clone(),
+            ctx.entity_context_claim_surface(),
             input.depth.claim_levels(),
         )
         .await

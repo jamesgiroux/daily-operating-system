@@ -20,6 +20,85 @@ pub enum RenderSurface {
     PushNotification,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimDismissalSurface {
+    TauriEntityDetail,
+    Briefing,
+    TauriMeetingDetail,
+    TauriEmailSummary,
+    TauriProvenance,
+    TauriReport,
+    TauriChat,
+    McpTool,
+    McpToolDetail,
+    P2Publication,
+    LogStructured,
+    PushNotification,
+    Worker,
+    Eval,
+}
+
+impl ClaimDismissalSurface {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::TauriEntityDetail => "tauri_entity_detail",
+            Self::Briefing => "briefing",
+            Self::TauriMeetingDetail => "tauri_meeting_detail",
+            Self::TauriEmailSummary => "tauri_email_summary",
+            Self::TauriProvenance => "tauri_provenance",
+            Self::TauriReport => "tauri_report",
+            Self::TauriChat => "tauri_chat",
+            Self::McpTool => "mcp_tool",
+            Self::McpToolDetail => "mcp_tool_detail",
+            Self::P2Publication => "p2_publication",
+            Self::LogStructured => "log_structured",
+            Self::PushNotification => "push_notification",
+            Self::Worker => "worker",
+            Self::Eval => "eval",
+        }
+    }
+
+    pub fn from_name(value: &str) -> Option<Self> {
+        match value.trim().to_ascii_lowercase().as_str() {
+            "tauri_entity_detail" | "entity_detail" => Some(Self::TauriEntityDetail),
+            "briefing" | "tauri_briefing_prep" | "briefing_prep" => Some(Self::Briefing),
+            "tauri_meeting_detail" | "meeting_detail" => Some(Self::TauriMeetingDetail),
+            "tauri_email_summary" | "email_summary" => Some(Self::TauriEmailSummary),
+            "tauri_provenance" | "provenance" => Some(Self::TauriProvenance),
+            "tauri_report" | "report" => Some(Self::TauriReport),
+            "tauri_chat" | "chat" => Some(Self::TauriChat),
+            "mcp_tool" => Some(Self::McpTool),
+            "mcp_tool_detail" => Some(Self::McpToolDetail),
+            "p2_publication" => Some(Self::P2Publication),
+            "log_structured" => Some(Self::LogStructured),
+            "push_notification" => Some(Self::PushNotification),
+            "worker" => Some(Self::Worker),
+            "eval" => Some(Self::Eval),
+            _ => None,
+        }
+    }
+}
+
+impl From<RenderSurface> for ClaimDismissalSurface {
+    fn from(surface: RenderSurface) -> Self {
+        match surface {
+            RenderSurface::TauriEntityDetail => Self::TauriEntityDetail,
+            RenderSurface::TauriBriefingPrep => Self::Briefing,
+            RenderSurface::TauriMeetingDetail => Self::TauriMeetingDetail,
+            RenderSurface::TauriEmailSummary => Self::TauriEmailSummary,
+            RenderSurface::TauriProvenance => Self::TauriProvenance,
+            RenderSurface::TauriReport => Self::TauriReport,
+            RenderSurface::TauriChat => Self::TauriChat,
+            RenderSurface::McpTool => Self::McpTool,
+            RenderSurface::McpToolDetail => Self::McpToolDetail,
+            RenderSurface::P2Publication => Self::P2Publication,
+            RenderSurface::LogStructured => Self::LogStructured,
+            RenderSurface::PushNotification => Self::PushNotification,
+        }
+    }
+}
+
 impl RenderSurface {
     pub fn from_name(value: &str) -> Option<Self> {
         match value.trim().to_ascii_lowercase().as_str() {

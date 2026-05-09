@@ -15,7 +15,7 @@ use serde::{Deserialize, Serialize};
 use crate::abilities::provenance::{AbilityOutput, CompositionId};
 use crate::abilities::tracer::AbilityTracer;
 use crate::intelligence::provider::IntelligenceProvider;
-use crate::services::context::{ExecutionMode, ServiceContext};
+use crate::services::context::{ClaimDismissalSurface, ExecutionMode, ServiceContext};
 
 const UNKNOWN_SCHEMA_ABILITY: &str = "<unknown>";
 
@@ -124,6 +124,7 @@ pub struct AbilityContext<'a> {
     pub tracer: &'a dyn AbilityTracer,
     pub actor: Actor,
     pub confirmation: Option<&'a dyn ConfirmationProof>,
+    entity_context_claim_surface: ClaimDismissalSurface,
 }
 
 impl<'a> AbilityContext<'a> {
@@ -133,6 +134,7 @@ impl<'a> AbilityContext<'a> {
         tracer: &'a dyn AbilityTracer,
         actor: Actor,
         confirmation: Option<&'a dyn ConfirmationProof>,
+        entity_context_claim_surface: ClaimDismissalSurface,
     ) -> Self {
         Self {
             services,
@@ -140,6 +142,7 @@ impl<'a> AbilityContext<'a> {
             tracer,
             actor,
             confirmation,
+            entity_context_claim_surface,
         }
     }
 
@@ -149,6 +152,24 @@ impl<'a> AbilityContext<'a> {
 
     pub fn mode(&self) -> ExecutionMode {
         self.services.mode
+    }
+
+    pub fn entity_context_claim_surface(&self) -> ClaimDismissalSurface {
+        self.entity_context_claim_surface
+    }
+
+    pub fn for_entity_context_claim_surface(
+        &self,
+        entity_context_claim_surface: ClaimDismissalSurface,
+    ) -> Self {
+        Self {
+            services: self.services,
+            provider: self.provider,
+            tracer: self.tracer,
+            actor: self.actor,
+            confirmation: self.confirmation,
+            entity_context_claim_surface,
+        }
     }
 }
 
@@ -1160,7 +1181,14 @@ mod tests {
         provider: &'a ReplayProvider,
         tracer: &'a dyn AbilityTracer,
     ) -> AbilityContext<'a> {
-        AbilityContext::new(services, provider, tracer, actor, confirmation)
+        AbilityContext::new(
+            services,
+            provider,
+            tracer,
+            actor,
+            confirmation,
+            ClaimDismissalSurface::Eval,
+        )
     }
 
     fn services<'a>(
@@ -1354,7 +1382,14 @@ mod tests {
         let provider = fixture_provider();
         let tracer = RecordingTracer::default();
 
-        let ctx = AbilityContext::new(&services, &provider, &tracer, Actor::User, None);
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &tracer,
+            Actor::User,
+            None,
+            ClaimDismissalSurface::TauriEntityDetail,
+        );
         let span = ctx.tracer.start_span("ability_context");
         ctx.tracer
             .record_event(&span, "provider_visible", serde_json::json!({}));
@@ -1382,7 +1417,14 @@ mod tests {
         let provider = fixture_provider();
         let tracer = RecordingTracer::default();
 
-        let ctx = AbilityContext::new(&services, &provider, &tracer, Actor::Agent, None);
+        let ctx = AbilityContext::new(
+            &services,
+            &provider,
+            &tracer,
+            Actor::Agent,
+            None,
+            ClaimDismissalSurface::TauriEntityDetail,
+        );
 
         assert_eq!(ctx.actor, Actor::Agent);
         assert_eq!(ctx.mode(), ExecutionMode::Live);

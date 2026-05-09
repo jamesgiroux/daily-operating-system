@@ -17,6 +17,7 @@ use dailyos_lib::db::claims::{
     TemporalScope,
 };
 use dailyos_lib::db::ActionDb;
+use dailyos_lib::services::context::ClaimDismissalSurface;
 use dailyos_lib::services::trust_extraction::{extract_target_footprint, ExtractionOutcome};
 use rusqlite::Connection;
 use serde_json::{json, Value};
@@ -177,6 +178,7 @@ fn bundle13_prepare_meeting_output_passes_validator_without_adjacent_subject() {
         &NOOP_ABILITY_TRACER,
         Actor::User,
         None,
+        ClaimDismissalSurface::Eval,
     );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

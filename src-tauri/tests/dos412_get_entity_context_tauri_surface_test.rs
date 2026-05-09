@@ -13,8 +13,8 @@ use dailyos_lib::services::claims::{
     commit_claim, load_claims_active, ClaimProposal, CommittedClaim,
 };
 use dailyos_lib::services::context::{
-    EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
-    SeedableRng, ServiceContext,
+    ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
+    ExternalClients, FixedClock, SeedableRng, ServiceContext,
 };
 use dailyos_lib::services::sensitivity::{
     reveal_claim_text_for_tauri, RenderActor, RenderPolicyKind, RenderSurface,
@@ -66,6 +66,7 @@ impl EntityContextClaimReadHandle for SqliteClaimReader {
         &'a self,
         entity_type: String,
         entity_id: String,
+        _surface: ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a> {
         let result = {

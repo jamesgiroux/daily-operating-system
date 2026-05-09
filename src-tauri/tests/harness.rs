@@ -26,8 +26,8 @@ use dailyos_lib::intelligence::provider::{
     IntelligenceProvider, ModelName, ModelTier, PromptInput, ProviderError, ProviderKind,
 };
 use dailyos_lib::services::context::{
-    ExecutionMode, ExternalClientError, GleanAccountFacts, GleanClientHandle, SeedableRng,
-    SeededRng,
+    ClaimDismissalSurface, ExecutionMode, ExternalClientError, GleanAccountFacts,
+    GleanClientHandle, SeedableRng, SeededRng,
 };
 use harness::{
     baseline_fingerprint_for_fixture, canonical_json_eq, diff_internal_provenance,
@@ -133,6 +133,7 @@ fn prepare_meeting_public_fixtures_execute_without_private_context() {
             &NOOP_ABILITY_TRACER,
             Actor::User,
             None,
+            ClaimDismissalSurface::Eval,
         );
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
@@ -196,6 +197,7 @@ fn prepare_meeting_bundle13_filters_adjacent_source_ref_claim_from_prompt_input(
         &NOOP_ABILITY_TRACER,
         Actor::User,
         None,
+        ClaimDismissalSurface::Eval,
     );
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_all()

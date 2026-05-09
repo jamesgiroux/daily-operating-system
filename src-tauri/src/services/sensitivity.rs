@@ -13,8 +13,8 @@ use crate::intelligence::{
     ValueItem,
 };
 pub use abilities_runtime::sensitivity::{
-    RedactionAffordance, RenderActor, RenderDecision, RenderPolicy, RenderPolicyKind,
-    RenderSurface, RenderableClaimText,
+    ClaimDismissalSurface, RedactionAffordance, RenderActor, RenderDecision, RenderPolicy,
+    RenderPolicyKind, RenderSurface, RenderableClaimText,
 };
 use chrono::Utc;
 use schemars::JsonSchema;
@@ -1593,20 +1593,7 @@ pub fn apply_entity_intelligence_render_policy(
 }
 
 fn render_surface_dismissal_key(surface: RenderSurface) -> &'static str {
-    match surface {
-        RenderSurface::TauriEntityDetail => "tauri_entity_detail",
-        RenderSurface::TauriBriefingPrep => "briefing",
-        RenderSurface::TauriMeetingDetail => "tauri_meeting_detail",
-        RenderSurface::TauriEmailSummary => "tauri_email_summary",
-        RenderSurface::TauriProvenance => "tauri_provenance",
-        RenderSurface::TauriReport => "tauri_report",
-        RenderSurface::TauriChat => "tauri_chat",
-        RenderSurface::McpTool => "mcp_tool",
-        RenderSurface::McpToolDetail => "mcp_tool_detail",
-        RenderSurface::P2Publication => "p2_publication",
-        RenderSurface::LogStructured => "log_structured",
-        RenderSurface::PushNotification => "push_notification",
-    }
+    ClaimDismissalSurface::from(surface).as_str()
 }
 
 fn public_policy(surface: RenderSurface) -> RenderDecision {

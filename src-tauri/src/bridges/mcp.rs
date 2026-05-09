@@ -104,6 +104,7 @@ impl EntityContextClaimReadHandle for McpActionDbWorkspaceReader {
         &'a self,
         entity_type: String,
         entity_id: String,
+        surface: crate::services::context::ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a> {
         let result = {
@@ -113,7 +114,7 @@ impl EntityContextClaimReadHandle for McpActionDbWorkspaceReader {
                 &entity_type,
                 &entity_id,
                 depth,
-                "mcp_tool",
+                surface.as_str(),
             )
             .map_err(|error| format!("Entity context claim read failed: {error}"))
         };

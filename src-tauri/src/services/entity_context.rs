@@ -10,7 +10,9 @@ use crate::services::claims::{
     commit_claim, load_claim_by_id, load_entity_context_claims_active_for_surface,
     subject_ref_from_json, withdraw_claim, ClaimProposal, CommittedClaim,
 };
-use crate::services::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
+use crate::services::sensitivity::{
+    renderable_claim_text_with_value, ClaimDismissalSurface, RenderActor, RenderSurface,
+};
 use crate::state::AppState;
 use crate::types::{EntityContextEntry, EntityContextText};
 
@@ -49,7 +51,7 @@ pub async fn get_entries(
                 &entity_type,
                 &entity_id,
                 1,
-                "tauri_entity_detail",
+                ClaimDismissalSurface::TauriEntityDetail.as_str(),
             )
             .map_err(|error| format!("Failed to read entity context claims: {error}"))?;
             claims
