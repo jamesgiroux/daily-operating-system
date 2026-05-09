@@ -316,14 +316,15 @@ fn dos237_low_cap_load_surfaces_rejections_without_silent_drop() {
         match outcome {
             Ok(_) => enqueue_successes += 1,
             Err(e) => {
-                // The cap rejection from invalidation_jobs surfaces as a
-                // DbError::InvalidArgument that includes "enqueue rejected"
-                // in its message. Anything else is a real test failure (DB
-                // lock, schema mismatch, etc.) and should not be conflated
-                // with the cap-rejection acceptance path.
-                if e.contains("enqueue rejected")
-                    || e.contains("pending cap")
-                    || e.contains("InvalidArgument")
+                // The cap rejection emits the exact message "invalidation
+                // queue pending cap N reached; enqueue rejected" from
+                // db/invalidation_jobs.rs. Match BOTH halves of that
+                // signature to rule out other DbError::InvalidArgument
+                // sources (schema validation, FK violations stringified
+                // through the same variant, etc.) that would also contain
+                // "InvalidArgument" but are NOT the cap-rejection branch.
+                if e.contains("invalidation queue pending cap")
+                    && e.contains("enqueue rejected")
                 {
                     enqueue_rejections += 1;
                 } else {
