@@ -660,21 +660,19 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
                         crate::util::classify_relationship_multi(&person.email, &user_domains);
                 }
 
-                if db.upsert_person(&person).is_ok() {
-                    // Restore entity links from JSON (ADR-0048)
-                    for entity_id in &linked_entities {
+                match people::upsert_person_and_restore_entity_links(&db, &person, &linked_entities)
+                {
+                    Ok(()) => {
                         #[allow(
                             clippy::let_underscore_must_use,
                             reason = "intentional best-effort discard; preserves existing non-blocking behavior"
                         )]
-                        let _ = db.link_person_to_entity(&person.id, entity_id, "associated");
+                        let _ = people::write_person_markdown(workspace, &person, &db);
+                        log::info!("Watcher: synced external edit to {}", path.display());
                     }
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
-                    let _ = people::write_person_markdown(workspace, &person, &db);
-                    log::info!("Watcher: synced external edit to {}", path.display());
+                    Err(e) => {
+                        log::warn!("Watcher: failed to sync {}: {}", path.display(), e);
+                    }
                 }
             }
             Err(e) => {

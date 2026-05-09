@@ -14,6 +14,7 @@ is_allowlisted_writer_file() {
     src-tauri/src/db/accounts.rs) return 0 ;;
     src-tauri/src/db/core.rs) return 0 ;;
     src-tauri/src/db/entity_linking.rs) return 0 ;;
+    src-tauri/src/db/mod_tests.rs) return 0 ;;
     src-tauri/src/db/people.rs) return 0 ;;
     src-tauri/src/db/projects.rs) return 0 ;;
   esac
@@ -25,9 +26,13 @@ failures=0
 while IFS= read -r -d '' file; do
   rel="${file#"$ROOT_DIR"/}"
   case "$rel" in
+    # derived_state is the downstream cache/projection subscriber this lint protects.
     src-tauri/src/services/derived_state.rs) continue ;;
+    # demo fixtures can seed stakeholder examples without participating in production cache semantics.
     src-tauri/src/demo.rs) continue ;;
+    # migrations perform one-time schema/data shaping before service-layer writers are available.
     src-tauri/src/migrations.rs) continue ;;
+    # devtools are operator/debug utilities, not production service-layer mutation paths.
     src-tauri/src/devtools/*) continue ;;
   esac
 
@@ -107,6 +112,10 @@ while IFS= read -r -d '' file; do
     }
     function is_stakeholder_emit_helper_call(line) {
       return syntax_lines[line] ~ /(^|[^[:alnum:]_:])((crate::services::)?stakeholder_writer::)?emit_stakeholders_changed(_for_entities)?[[:space:]]*\(/
+    }
+    function is_direct_actiondb_graph_method_call(line) {
+      return syntax_lines[line] ~ /(^|[^[:alnum:]_])[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\.[[:space:]]*(link_person_to_entity|unlink_person_from_entity|merge_people|add_team_member|add_account_team_member)[[:space:]]*\(/ ||
+        syntax_lines[line] ~ /(^|[^[:alnum:]_:])ActionDb::(link_person_to_entity|unlink_person_from_entity|merge_people|add_team_member|add_account_team_member)[[:space:]]*\(/
     }
     function call_span_stop(start,    j, depth) {
       depth = 0
@@ -199,6 +208,12 @@ while IFS= read -r -d '' file; do
       scan_line($0)
       code_lines[NR] = clean_line
       syntax_lines[NR] = syntax_line
+      in_cfg_test_line[NR] = test_stack_len > 0 || pending_cfg_test
+
+      if (syntax_line ~ /^[[:space:]]*#\[[^]]*cfg[[:space:]]*\([[:space:]]*test[[:space:]]*\)/) {
+        pending_cfg_test = 1
+        in_cfg_test_line[NR] = 1
+      }
 
       if (!pending_fn && is_function_decl(syntax_line)) {
         pending_fn = 1
@@ -219,10 +234,21 @@ while IFS= read -r -d '' file; do
         pending_fn = 0
       }
 
+      if (pending_cfg_test && syntax_line ~ /(^|[^[:alnum:]_])mod[[:space:]]+[A-Za-z_][A-Za-z0-9_]*[[:space:]]*\{/ && opens > 0) {
+        test_stack_len++
+        test_depth[test_stack_len] = brace_depth + 1
+        pending_cfg_test = 0
+      } else if (pending_cfg_test && syntax_line !~ /^[[:space:]]*#\[/ && syntax_line !~ /^[[:space:]]*$/ && syntax_line !~ /(^|[^[:alnum:]_])mod[[:space:]]+/) {
+        pending_cfg_test = 0
+      }
+
       brace_depth += opens - closes
       while (stack_len > 0 && brace_depth < fn_depth[fn_stack[stack_len]]) {
         fn_end[fn_stack[stack_len]] = NR
         stack_len--
+      }
+      while (test_stack_len > 0 && brace_depth < test_depth[test_stack_len]) {
+        test_stack_len--
       }
     }
     END {
@@ -246,6 +272,19 @@ while IFS= read -r -d '' file; do
           continue
         }
         printf "%s:%d: stakeholder graph write must be covered at the write site by stakeholder_writer::write_with_stakeholders_changed/emit_stakeholders_changed or use an allowlisted DB writer\n", file, i
+        failures++
+      }
+
+      for (i = 1; i <= n; i++) {
+        if (!is_direct_actiondb_graph_method_call(i)) {
+          continue
+        }
+        fn_idx = enclosing_function(i)
+        if (in_cfg_test_line[i] || allowlisted_writer || helper_file ||
+            has_write_level_stakeholder_signal(i, fn_idx)) {
+          continue
+        }
+        printf "%s:%d: direct ActionDb stakeholder graph method call must be covered at the call site by stakeholder_writer::write_with_stakeholders_changed/emit_stakeholders_changed or use an allowlisted DB writer\n", file, i
         failures++
       }
 

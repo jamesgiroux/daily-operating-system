@@ -268,3 +268,64 @@ fn bad_emit(ctx: &ServiceContext<'_>, tx: &ActionDb) {
         String::from_utf8_lossy(&output.stderr),
     );
 }
+
+#[test]
+fn lint_stakeholder_writer_rejects_direct_actiondb_graph_method() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src_dir = tmp.path().join("src-tauri/src/services");
+    std::fs::create_dir_all(&src_dir).expect("mkdir fixture");
+    std::fs::write(
+        src_dir.join("bad_direct_method.rs"),
+        r#"
+fn bad(tx: &ActionDb) {
+    tx.link_person_to_entity("p-1", "acc-1", "associated").unwrap();
+}
+"#,
+    )
+    .expect("write fixture");
+
+    let output = run_lint(tmp.path());
+
+    assert!(
+        !output.status.success(),
+        "lint must reject raw ActionDb stakeholder graph methods. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
+
+#[test]
+fn lint_stakeholder_writer_allows_direct_actiondb_graph_method_inside_wrapper() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let src_dir = tmp.path().join("src-tauri/src/services");
+    std::fs::create_dir_all(&src_dir).expect("mkdir fixture");
+    std::fs::write(
+        src_dir.join("good_direct_method.rs"),
+        r#"
+fn good(ctx: &ServiceContext<'_>, tx: &ActionDb) {
+    crate::services::stakeholder_writer::write_with_stakeholders_changed(
+        ctx,
+        tx,
+        "account",
+        "acc-1",
+        "fixture",
+        |tx| {
+            tx.link_person_to_entity("p-1", "acc-1", "associated").unwrap();
+            Ok(())
+        },
+    )
+    .unwrap();
+}
+"#,
+    )
+    .expect("write fixture");
+
+    let output = run_lint(tmp.path());
+
+    assert!(
+        output.status.success(),
+        "lint must allow raw ActionDb graph methods inside the canonical wrapper call. stdout: {}, stderr: {}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr),
+    );
+}
