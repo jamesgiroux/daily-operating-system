@@ -760,7 +760,14 @@ fn hygiene_check_person_duplicate(signal: &SignalEvent, db: &ActionDb) -> Option
             } else {
                 (&person.id, &other.id)
             };
-            match db.merge_people(keep_id, merge_id) {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+
+            match crate::services::people::merge_people_with_stakeholder_cache_rebuild(
+                &ctx, db, keep_id, merge_id,
+            ) {
                 Ok(_) => {
                     log::info!(
                         "I353: auto-merged duplicate person {} into {} (signal: {})",
@@ -845,28 +852,47 @@ fn hygiene_link_co_attendance(signal: &SignalEvent, db: &ActionDb) -> Option<Str
         return None;
     }
 
-    // Find people from attendee emails and link them to the resolved entity
-    let mut linked = 0;
-    for email in &attendees {
-        if let Ok(Some(person)) = db.get_person_by_email_or_alias(email) {
-            // Link person to the resolved entity if not already linked
-            if let Ok(existing) = db.get_entities_for_person(&person.id) {
-                let already_linked = existing.iter().any(|e| e.id == signal.entity_id);
-                if !already_linked {
-                    #[allow(
-                        clippy::let_underscore_must_use,
-                        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                    )]
-                    let _ = db.link_person_to_entity(
-                        &person.id,
-                        &signal.entity_id,
-                        &signal.entity_type,
-                    );
-                    linked += 1;
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+
+    // Find people from attendee emails and link them to the resolved entity.
+    let linked_result = db.with_transaction(|tx| {
+        let mut linked = 0;
+        for email in &attendees {
+            if let Ok(Some(person)) = tx.get_person_by_email_or_alias(email) {
+                // Link person to the resolved entity if not already linked
+                if let Ok(existing) = tx.get_entities_for_person(&person.id) {
+                    let already_linked = existing.iter().any(|e| e.id == signal.entity_id);
+                    if !already_linked {
+                        crate::services::people::link_person_to_entity_with_stakeholder_cache_rebuild(
+                            &ctx,
+                            tx,
+                            &person.id,
+                            &signal.entity_id,
+                            &signal.entity_type,
+                        )?;
+                        linked += 1;
+                    }
                 }
             }
         }
-    }
+        Ok(linked)
+    });
+
+    let linked = match linked_result {
+        Ok(linked) => linked,
+        Err(e) => {
+            log::warn!(
+                "I353: co-attendance link failed for entity {} (signal: {}): {}",
+                signal.entity_id,
+                signal.id,
+                e
+            );
+            return Some(format!("link_failed: {}", e));
+        }
+    };
 
     if linked > 0 {
         log::info!(

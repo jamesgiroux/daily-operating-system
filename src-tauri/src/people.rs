@@ -457,28 +457,12 @@ pub fn sync_people_from_workspace(
                             file_person.meeting_count = db_person.meeting_count;
                             file_person.first_seen = db_person.first_seen.clone();
                             file_person.last_seen = db_person.last_seen.clone();
-                            #[allow(
-                                clippy::let_underscore_must_use,
-                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                            )]
-                            let _ = db.upsert_person(&file_person);
-                            // Restore entity links from JSON (ADR-0048)
-                            for entity_id in &linked_entities {
-                                #[allow(
-                                    clippy::let_underscore_must_use,
-                                    reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                                )]
-                                let _ = db.link_person_to_entity(
-                                    &file_person.id,
-                                    entity_id,
-                                    "associated",
-                                );
-                            }
-                            #[allow(
-                                clippy::let_underscore_must_use,
-                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                            )]
-                            let _ = write_person_markdown(workspace, &file_person, db);
+                            upsert_person_and_restore_entity_links(
+                                db,
+                                &file_person,
+                                &linked_entities,
+                            )?;
+                            write_person_markdown(workspace, &file_person, db)?;
                             synced += 1;
                         } else if db_person.updated_at > file_person.updated_at {
                             // SQLite is newer — regenerate files from SQLite
@@ -499,25 +483,8 @@ pub fn sync_people_from_workspace(
                     Ok(None) => {
                         // New person from file — insert to SQLite
                         file_person.first_seen = Some(Utc::now().to_rfc3339());
-                        #[allow(
-                            clippy::let_underscore_must_use,
-                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                        )]
-                        let _ = db.upsert_person(&file_person);
-                        // Restore entity links from JSON (ADR-0048)
-                        for entity_id in &linked_entities {
-                            #[allow(
-                                clippy::let_underscore_must_use,
-                                reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                            )]
-                            let _ =
-                                db.link_person_to_entity(&file_person.id, entity_id, "associated");
-                        }
-                        #[allow(
-                            clippy::let_underscore_must_use,
-                            reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-                        )]
-                        let _ = write_person_markdown(workspace, &file_person, db);
+                        upsert_person_and_restore_entity_links(db, &file_person, &linked_entities)?;
+                        write_person_markdown(workspace, &file_person, db)?;
                         synced += 1;
                     }
                     Err(_) => continue,
@@ -531,6 +498,35 @@ pub fn sync_people_from_workspace(
     }
 
     Ok(synced)
+}
+
+pub(crate) fn upsert_person_and_restore_entity_links(
+    db: &ActionDb,
+    person: &DbPerson,
+    linked_entities: &[String],
+) -> Result<(), String> {
+    let clock = crate::services::context::SystemClock;
+    let rng = crate::services::context::SystemRng;
+    let ext = crate::services::context::ExternalClients::default();
+    let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+
+    db.with_transaction(|tx| {
+        tx.upsert_person(person).map_err(|e| e.to_string())?;
+
+        // Restore entity links from JSON (ADR-0048) through the stakeholder
+        // writer path so the cache invalidation signal is committed with the link.
+        for entity_id in linked_entities {
+            crate::services::people::link_person_to_entity_with_stakeholder_cache_rebuild(
+                &ctx,
+                tx,
+                &person.id,
+                entity_id,
+                "associated",
+            )?;
+        }
+
+        Ok(())
+    })
 }
 
 #[cfg(test)]
