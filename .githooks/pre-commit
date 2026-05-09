@@ -1,0 +1,207 @@
+#!/usr/bin/env bash
+# .githooks/pre-commit — repo-wide pre-commit gate.
+#
+# Codex/Claude/CLI compatible. Replaces the per-developer
+# .claude/hooks/pre-commit-gate.sh as the single committed source of
+# truth so every session and clone runs the same checks.
+#
+# Two-tier model:
+#   - Always runs (cheap, <1s):
+#       PII blocklist scan, stub/TODO scan, schema/mock sync, ADR-0101 boundary,
+#       reference fidelity gate.
+#   - Path-aware heavy checks (only run if relevant files staged):
+#       clippy + cargo test --lib (only if .rs / Cargo.* staged)
+#       pnpm tsc --noEmit         (only if .ts/.tsx/.js/.jsx / package.json staged)
+#
+# Escape hatches:
+#   WIP=1 git commit ...        — skip heavy checks for incremental WIP work
+#                                  (.githooks/pre-push runs them at push time)
+#   git commit --no-verify      — skip the gate entirely; surface to user
+#
+# Bypassing the cheap checks is rarely safe; bypassing the heavy ones via
+# WIP=1 is fine because pre-push catches them before they leave your machine.
+
+set -euo pipefail
+
+CWD="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
+cd "$CWD"
+
+BACKEND_DIR="${CWD}/src-tauri"
+ERRORS=""
+STAGED_FILES="$(git diff --cached --name-only --diff-filter=ACM 2>/dev/null || true)"
+
+append_error() {
+  if [ -z "$ERRORS" ]; then
+    ERRORS="$1"
+  else
+    ERRORS="${ERRORS}"$'\n'"$1"
+  fi
+}
+
+staged_added_lines() {
+  git diff --cached -U0 -- "$1" 2>/dev/null \
+    | grep -E '^\+' \
+    | grep -v '^\+\+\+' \
+    || true
+}
+
+# No staged file content means there is nothing for this gate to inspect.
+[ -z "$STAGED_FILES" ] && exit 0
+
+# Path-aware heavy-check gates. Compute these once.
+HAS_RUST=false
+HAS_FRONTEND=false
+if echo "$STAGED_FILES" | grep -qE '\.rs$|^src-tauri/Cargo\.(toml|lock)$'; then
+  HAS_RUST=true
+fi
+if echo "$STAGED_FILES" | grep -qE '\.(ts|tsx|js|jsx)$|^package\.json$|^pnpm-lock\.yaml$'; then
+  HAS_FRONTEND=true
+fi
+
+# WIP escape hatch.
+WIP_MODE=false
+if [ "${WIP:-0}" = "1" ]; then
+  WIP_MODE=true
+  echo "pre-commit: WIP=1 set — skipping heavy checks (clippy/test/tsc). pre-push will catch them." >&2
+fi
+
+# 0. Ensure Tauri externalBin stub exists (required for cargo build/clippy/test).
+if [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scripts/build-mcp.sh" ]; then
+  if ! ls "${BACKEND_DIR}/binaries/"dailyos-mcp-* >/dev/null 2>&1; then
+    bash "${BACKEND_DIR}/scripts/build-mcp.sh" --stub >/dev/null 2>&1 || true
+  fi
+fi
+
+# 1. Clippy — only if Rust files staged AND not in WIP mode.
+if [ "$HAS_RUST" = true ] && [ "$WIP_MODE" = false ] && [ -d "$BACKEND_DIR" ]; then
+  if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings >/dev/null 2>&1; then
+    append_error "❌ cargo clippy -- -D warnings FAILED"
+  fi
+fi
+
+# 2. Cargo test — only if Rust files staged AND not in WIP mode.
+if [ "$HAS_RUST" = true ] && [ "$WIP_MODE" = false ] && [ -d "$BACKEND_DIR" ]; then
+  if ! cargo test --lib --manifest-path "$BACKEND_DIR/Cargo.toml" >/dev/null 2>&1; then
+    append_error "❌ cargo test --lib FAILED"
+  fi
+fi
+
+# 3. TypeScript type check — only if frontend files staged AND not in WIP mode.
+if [ "$HAS_FRONTEND" = true ] && [ "$WIP_MODE" = false ] && [ -f "${CWD}/package.json" ]; then
+  if ! pnpm tsc --noEmit >/dev/null 2>&1; then
+    append_error "❌ pnpm tsc --noEmit FAILED"
+  fi
+fi
+
+# 4. Stub/TODO scan in staged diff (cheap, always runs)
+STUB_PATTERNS='TODO|FIXME|HACK|unimplemented!\(\)|todo!\(\)|Phase 2|// stub|// deferred|// placeholder'
+
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  matches="$(staged_added_lines "$file" | grep -nE "$STUB_PATTERNS" 2>/dev/null || true)"
+  if [ -n "$matches" ]; then
+    append_error "⚠️  Stubs/TODOs found in staged diff of ${file}:"
+    append_error "$matches"
+  fi
+done <<< "$STAGED_FILES"
+
+# 5. Schema ↔ mock data sync (cheap)
+HAS_SCHEMA_CHANGE=false
+HAS_MOCKDATA_CHANGE=false
+HAS_UI_TYPE_CHANGE=false
+
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  case "$file" in
+    src-tauri/src/migrations/*.sql)
+      HAS_SCHEMA_CHANGE=true
+      ;;
+    src-tauri/src/db/*.rs|src-tauri/src/types.rs|src-tauri/src/intelligence/io.rs)
+      added_lines="$(staged_added_lines "$file")"
+      if printf '%s\n' "$added_lines" | grep -qiE 'CREATE TABLE|ALTER TABLE|DROP TABLE|ADD COLUMN|DROP COLUMN|CREATE INDEX|DROP INDEX|^\+[[:space:]]*pub (struct|enum) |INSERT (INTO|OR)|UPDATE [a-zA-Z_]+ SET|DELETE FROM'; then
+        HAS_SCHEMA_CHANGE=true
+      fi
+      ;;
+    src/types/*.ts|src/types/index.ts)
+      HAS_UI_TYPE_CHANGE=true
+      ;;
+    src-tauri/src/devtools/*|src-tauri/src/demo.rs)
+      HAS_MOCKDATA_CHANGE=true
+      ;;
+  esac
+done <<< "$STAGED_FILES"
+
+if [ "$HAS_SCHEMA_CHANGE" = true ] && [ "$HAS_MOCKDATA_CHANGE" = false ]; then
+  schema_files="$(printf '%s\n' "$STAGED_FILES" | grep -E 'migrations/|db/|types\.rs|intelligence/io' | tr '\n' ' ' || true)"
+  append_error "⚠️  Schema/DB change detected without mock data update."
+  append_error "   Staged schema files: ${schema_files}"
+  append_error "   Expected changes in: src-tauri/src/devtools/ or src-tauri/src/demo.rs"
+  append_error "   Rule: Every new table/column needs mock data seeds + frontend verification."
+fi
+
+if [ "$HAS_UI_TYPE_CHANGE" = true ] && [ "$HAS_SCHEMA_CHANGE" = false ] && [ "$HAS_MOCKDATA_CHANGE" = false ]; then
+  append_error "⚠️  Frontend type change without corresponding backend or mock data update."
+  append_error "   If adding new fields to UI types, ensure backend + mock data match."
+fi
+
+# 6. ADR-0101: Service boundary (cheap)
+while IFS= read -r file; do
+  [ -z "$file" ] && continue
+  case "$file" in
+    src-tauri/src/db/*|src-tauri/src/services/*|src-tauri/src/db_service.rs|src-tauri/src/db_backup.rs)
+      ;;
+    *.rs)
+      new_opens="$(staged_added_lines "$file" | grep 'ActionDb::open' 2>/dev/null || true)"
+      if [ -n "$new_opens" ]; then
+        append_error "❌ ADR-0101: New ActionDb::open() in ${file} (service boundary violation)"
+        append_error "   Only db/ and services/ may open DB connections. Call a service function instead."
+        append_error "   Diff: ${new_opens}"
+      fi
+      ;;
+  esac
+done <<< "$STAGED_FILES"
+
+# 7. PII blocklist scan (cheap, always runs)
+PII_BLOCKLIST="${CWD}/.claude/pii-blocklist.txt"
+if [ -f "$PII_BLOCKLIST" ]; then
+  PII_TERMS="$(grep -v '^[[:space:]]*#' "$PII_BLOCKLIST" | grep -v '^[[:space:]]*$' | sed 's/[][(){}.*+?^$|\\]/\\&/g' | paste -sd '|' - || true)"
+  if [ -n "$PII_TERMS" ]; then
+    bad_paths="$(printf '%s\n' "$STAGED_FILES" | grep -iwE "$PII_TERMS" 2>/dev/null || true)"
+    if [ -n "$bad_paths" ]; then
+      append_error "🔒 PII check: staged filename(s) match blocklist:"
+      append_error "$(printf '%s\n' "$bad_paths" | sed 's/^/   /')"
+      append_error "   Rule: no PII (customer names, domains, account IDs) in filenames. Rename before committing."
+    fi
+
+    while IFS= read -r file; do
+      [ -z "$file" ] && continue
+      [ "$file" = ".claude/pii-blocklist.txt" ] && continue
+      bad_content="$(staged_added_lines "$file" | grep -iwE "$PII_TERMS" 2>/dev/null || true)"
+      if [ -n "$bad_content" ]; then
+        append_error "🔒 PII check: staged diff in ${file} contains blocklisted term(s):"
+        append_error "$(printf '%s\n' "$bad_content" | head -5 | sed 's/^/   /')"
+        append_error "   Rule: no PII in source, fixtures, or mockups. Use generic placeholders."
+      fi
+    done <<< "$STAGED_FILES"
+  fi
+fi
+
+# 8. Reference fidelity gate (cheap unless audit script does heavy work)
+if printf '%s\n' "$STAGED_FILES" | grep -qE '\.docs/design/reference/(surfaces|_shared)/|^src/(pages|components)/.*\.(tsx|module\.css)$'; then
+  AUDIT_SCRIPT="${CWD}/.docs/design/_audits/audit-reference.py"
+  if [ -f "$AUDIT_SCRIPT" ]; then
+    if ! python3 "$AUDIT_SCRIPT" --enforce-baseline 2>&1; then
+      append_error "❌ Reference fidelity regressed (see output above)."
+      append_error "   Either fix the reference HTML, or if the regression is intentional,"
+      append_error "   re-baseline:  python3 .docs/design/_audits/audit-reference.py --write-baseline"
+    fi
+  fi
+fi
+
+# Block commit if any errors.
+if [ -n "$ERRORS" ]; then
+  printf '🚫 Pre-commit gate FAILED. Fix these before committing:\n%s\n' "$ERRORS" >&2
+  exit 2
+fi
+
+exit 0
