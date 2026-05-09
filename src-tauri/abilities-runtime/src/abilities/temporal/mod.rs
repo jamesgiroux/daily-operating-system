@@ -308,12 +308,10 @@ fn validate_entity_id(entity_id: &str) -> Result<(), AbilityError> {
 }
 
 fn validate_entity_type(entity_type: &str) -> Result<(), AbilityError> {
-    match entity_type.trim() {
-        "account" | "project" | "person" => Ok(()),
-        "" => Err(validation_error("entity_type must be non-empty")),
-        other => Err(validation_error(format!(
-            "unsupported entity_type `{other}` for temporal maintenance"
-        ))),
+    if entity_type.trim().is_empty() {
+        Err(validation_error("entity_type must be non-empty"))
+    } else {
+        Ok(())
     }
 }
 
