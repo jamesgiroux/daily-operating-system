@@ -470,26 +470,30 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
         }
         "full" => {
             install_mock_data(state, true)?;
-            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .map_err(|e| format!("DB open failed: {e}"))?;
             seed_intelligence_data(&db)?;
             Ok("Full mock data installed — DB + intelligence + signals".into())
         }
         "no_connectors" => {
             install_mock_data(state, false)?;
-            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .map_err(|e| format!("DB open failed: {e}"))?;
             seed_intelligence_data(&db)?;
             Ok("Mock data installed without Google auth — full DB data".into())
         }
         "pipeline" => {
             install_mock_data(state, true)?;
-            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .map_err(|e| format!("DB open failed: {e}"))?;
             seed_intelligence_data(&db)?;
             install_simulate_briefing(state)?;
             Ok("Pipeline test: full data + directive fixtures seeded".into())
         }
         "golden" => {
             install_mock_data(state, true)?;
-            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .map_err(|e| format!("DB open failed: {e}"))?;
             seed_intelligence_data(&db)?;
             seed_linear_mock_data(&db)?;
             seed_glean_enriched_data(&db)?;
@@ -497,14 +501,16 @@ pub fn apply_scenario(scenario: &str, state: &AppState) -> Result<String, String
         }
         "linear_connected" => {
             install_mock_data(state, true)?;
-            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .map_err(|e| format!("DB open failed: {e}"))?;
             seed_intelligence_data(&db)?;
             seed_linear_mock_data(&db)?;
             Ok("Linear connected: mock issues + projects + entity links".into())
         }
         "glean_enriched" => {
             install_mock_data(state, true)?;
-            let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+            let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .map_err(|e| format!("DB open failed: {e}"))?;
             seed_intelligence_data(&db)?;
             seed_glean_enriched_data(&db)?;
             Ok("Glean enriched: Gong summaries + REDACTED context + source attribution".into())
@@ -626,7 +632,8 @@ pub fn purge_mock_data(_state: &AppState) -> Result<String, String> {
     }
     assert_dev_db()?;
 
-    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
     let conn = db.conn_ref();
 
     let mut summary = Vec::new();
@@ -844,7 +851,7 @@ pub fn get_dev_state(state: &AppState) -> Result<DevState, String> {
         .unwrap_or(false);
 
     let (has_database, action_count, account_count, project_count, meeting_count, people_count) =
-        match ActionDb::open() {
+        match ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
             Ok(db) => {
                 let actions = db
                     .conn_ref()
@@ -1035,7 +1042,8 @@ fn install_mock_data(state: &AppState, with_auth: bool) -> Result<(), String> {
     crate::state::initialize_workspace(&workspace, "both")?;
 
     // Seed SQLite
-    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
     seed_database(&db)?;
 
     // Seed transcript record for today's past Acme meeting (#1)
@@ -1250,7 +1258,8 @@ pub fn run_today_mechanical(state: &AppState) -> Result<String, String> {
     let directive = crate::json_loader::load_directive(&today_dir)
         .map_err(|e| format!("Failed to load directive: {}", e))?;
 
-    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
     let db_ref = Some(&db);
 
     let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;
@@ -1298,7 +1307,8 @@ pub fn run_today_full(state: &AppState) -> Result<String, String> {
         .map_err(|e| format!("Failed to load directive: {}", e))?;
 
     // --- Mechanical delivery ---
-    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
     let db_ref = Some(&db);
 
     let schedule_data = crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)?;

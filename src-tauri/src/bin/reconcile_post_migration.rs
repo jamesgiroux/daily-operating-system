@@ -49,7 +49,9 @@ fn main() -> ExitCode {
         }
     };
 
-    let db = match dailyos_lib::db::ActionDb::open() {
+    let db = match dailyos_lib::db::ActionDb::open(std::sync::Arc::new(
+        dailyos_lib::db::LocalKeychain::new(),
+    )) {
         Ok(d) => d,
         Err(e) => {
             log::error!("Failed to open workspace DB: {e}");

@@ -1491,8 +1491,10 @@ impl ContextProvider for GleanContextProvider {
                     .and_then(|rt| {
                         rt.block_on(async {
                             // Open a fresh DB connection for this thread (ActionDb is !Send)
-                            let thread_db = crate::db::ActionDb::open()
-                                .map_err(|e| ContextError::Db(format!("Thread DB: {}", e)))?;
+                            let thread_db = crate::db::ActionDb::open(std::sync::Arc::new(
+                                crate::db::LocalKeychain::new(),
+                            ))
+                            .map_err(|e| ContextError::Db(format!("Thread DB: {}", e)))?;
                             gather_glean_context_standalone(
                                 &endpoint,
                                 &cache,

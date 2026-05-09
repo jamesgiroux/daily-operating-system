@@ -915,10 +915,11 @@ pub fn get_gravatar_status(state: State<'_, Arc<AppState>>) -> GravatarStatus {
 
     let gravatar_config = config.unwrap_or_default();
 
-    let cached_count = crate::db::ActionDb::open()
-        .ok()
-        .map(|db| crate::gravatar::cache::count_cached(db.conn_ref()))
-        .unwrap_or(0);
+    let cached_count =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .ok()
+            .map(|db| crate::gravatar::cache::count_cached(db.conn_ref()))
+            .unwrap_or(0);
 
     GravatarStatus {
         enabled: gravatar_config.enabled,
@@ -1647,26 +1648,27 @@ pub fn get_linear_status(state: State<'_, Arc<AppState>>) -> LinearStatusData {
 
     let linear_config = config.unwrap_or_default();
 
-    let (issue_count, project_count, last_sync) = crate::db::ActionDb::open()
-        .ok()
-        .map(|db| {
-            let issues: i64 = db
-                .conn_ref()
-                .query_row("SELECT COUNT(*) FROM linear_issues", [], |row| row.get(0))
-                .unwrap_or(0);
-            let projects: i64 = db
-                .conn_ref()
-                .query_row("SELECT COUNT(*) FROM linear_projects", [], |row| row.get(0))
-                .unwrap_or(0);
-            let last: Option<String> = db
-                .conn_ref()
-                .query_row("SELECT MAX(synced_at) FROM linear_issues", [], |row| {
-                    row.get(0)
-                })
-                .unwrap_or(None);
-            (issues, projects, last)
-        })
-        .unwrap_or((0, 0, None));
+    let (issue_count, project_count, last_sync) =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .ok()
+            .map(|db| {
+                let issues: i64 = db
+                    .conn_ref()
+                    .query_row("SELECT COUNT(*) FROM linear_issues", [], |row| row.get(0))
+                    .unwrap_or(0);
+                let projects: i64 = db
+                    .conn_ref()
+                    .query_row("SELECT COUNT(*) FROM linear_projects", [], |row| row.get(0))
+                    .unwrap_or(0);
+                let last: Option<String> = db
+                    .conn_ref()
+                    .query_row("SELECT MAX(synced_at) FROM linear_issues", [], |row| {
+                        row.get(0)
+                    })
+                    .unwrap_or(None);
+                (issues, projects, last)
+            })
+            .unwrap_or((0, 0, None));
 
     LinearStatusData {
         enabled: linear_config.enabled,

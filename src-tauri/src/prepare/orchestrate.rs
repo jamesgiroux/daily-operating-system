@@ -64,7 +64,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 2: Fetch calendar events + classify (entity-generic)
     let entity_hints = {
-        let db_guard_owned = crate::db::ActionDb::open().ok();
+        let db_guard_owned =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let db_ref = db_guard_owned.as_ref();
         match db_ref {
             Some(db) => crate::helpers::build_entity_hints(db),
@@ -117,10 +118,11 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     let preset_email_keywords: Vec<String> =
         state.get_merged_signal_config().email_priority_keywords;
     // Load dismissed domains for relevance learning penalty
-    let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
-        .ok()
-        .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
-        .unwrap_or_default();
+    let dismissed_domains: HashSet<String> =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .ok()
+            .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
+            .unwrap_or_default();
     if !dismissed_domains.is_empty() {
         log::info!(
             "prepare_today: {} dismissed domains loaded for classification penalty",
@@ -153,7 +155,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4a2: Signal-context boosting (boost medium emails with entity signals)
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let merged_signal_types = state.get_merged_signal_config().email_signal_types;
             let mut boosted_count = 0u32;
             let mut new_high = Vec::new();
@@ -208,7 +212,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Persist fetched emails to DB (after classification + boosting)
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             // load tracked domains once for the noise filter.
             let (account_domains_for_noise, person_domains_for_noise) = load_tracked_domains(&db);
             let mut persisted = 0usize;
@@ -303,7 +309,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         .await
         .unwrap_or_default();
         if !sent_thread_ids.is_empty() {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 update_thread_positions_from_sent(&sent_thread_ids, &db);
             }
         }
@@ -324,7 +332,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
             log::info!("prepare_today: enriched {} emails", enriched);
         }
         // Emit entity signals from enriched emails
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
                 &db,
                 &state.signals.engine,
@@ -340,7 +350,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         // Split-lock: read active emails, score on a separate DB connection, then
         // write scores back under lock. Avoids holding DB mutex during ONNX inference.
         let active = {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 db.get_all_active_emails().unwrap_or_default()
             } else {
                 Vec::new()
@@ -350,7 +362,7 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         let scores = if active.is_empty() {
             Vec::new()
         } else {
-            match crate::db::ActionDb::open() {
+            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
                 Ok(scoring_db) => {
                     let model = state.embedding_model.clone();
                     let merged_kws = state.get_merged_signal_config().signal_keywords;
@@ -369,7 +381,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
         };
 
         if !scores.is_empty() {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 for (email_id, score, reason) in &scores {
                     #[allow(
                         clippy::let_underscore_must_use,
@@ -442,7 +456,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
                             .map(|c| c.ai_models.clone())
                             .unwrap_or_default()
                     };
-                    if let Ok(db) = crate::db::ActionDb::open() {
+                    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(
+                        crate::db::LocalKeychain::new(),
+                    )) {
                         let mut total_commitments = 0usize;
                         for (email_id, subject, from_email, body) in &fetched_bodies {
                             let commitments =
@@ -466,7 +482,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4b: Email-meeting bridge (correlate email signals with upcoming meetings)
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             match crate::signals::email_bridge::run_email_meeting_bridge(&db, &state.signals.engine)
             {
                 Ok(correlations) if !correlations.is_empty() => {
@@ -485,7 +503,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4b2: Email cadence monitoring (anomaly detection)
     let cadence_anomalies = {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let anomalies = crate::signals::cadence::compute_and_emit_cadence_anomalies_with_engine(
                 &db,
                 Some(&state.signals.engine),
@@ -504,7 +524,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 4b2a: Gone-quiet account detection (Gap 3 — email_cadence_drop signals)
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let gone_quiet = crate::services::emails::detect_gone_quiet_accounts(&db);
             match gone_quiet {
                 Ok(accounts) if !accounts.is_empty() => {
@@ -630,7 +652,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Step 4c: Thread position tracking ("ball in your court")
     // Only track high-priority email threads for "ball in your court" detection
     let replies_needed = {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let high_priority_emails: Vec<Value> = email_result
                 .all
                 .iter()
@@ -666,7 +690,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 5: Collect actions (workspace markdown + SQLite)
     let actions_dict = {
-        let db_guard_owned = crate::db::ActionDb::open().ok();
+        let db_guard_owned =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let db_ref = db_guard_owned.as_ref();
         let action_result = actions::collect_all_actions(workspace, db_ref);
         action_result.to_value()
@@ -676,7 +701,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     // Fixes first-run gap: calendar poller may not have run yet, so prepare_today
     // must upsert meetings itself. Pattern ported from prepare_week (lines 707-783).
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let mut ensured = 0u32;
             for cm in &classified {
                 let tier = cm
@@ -798,7 +825,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
             // Look up the meeting row to check intelligence state
             let needs_refresh = {
-                let guard_owned = crate::db::ActionDb::open().ok();
+                let guard_owned =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                        .ok();
                 let db_opt = guard_owned.as_ref();
                 match db_opt {
                     Some(db) => {
@@ -871,7 +900,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
     }
 
     // Step 6: Meeting contexts (thread embedding model for entity resolution)
-    let db_guard_owned = crate::db::ActionDb::open().ok();
+    let db_guard_owned =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
     let db_ref = db_guard_owned.as_ref();
     let embedding_ref = state.embedding_model.as_ref();
     let active_preset = state.active_preset.read().clone();
@@ -917,7 +947,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 6a: Run proactive detection scan
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let (profile, user_domains, _) = get_config(state);
             let scan_ctx = crate::proactive::engine::DetectorContext {
                 today,
@@ -935,7 +967,8 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 6b: Signal-driven briefing callouts
     let callouts = {
-        let callout_guard_owned = crate::db::ActionDb::open().ok();
+        let callout_guard_owned =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let callout_db = callout_guard_owned.as_ref();
         match callout_db {
             Some(db) => {
@@ -963,7 +996,9 @@ pub async fn prepare_today(state: &AppState, workspace: &Path) -> Result<(), Exe
 
     // Step 6c: Person intelligence enrichment triggers
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let n =
                 queue_person_intelligence(&meeting_contexts, workspace, &db, &state.intel_queue);
             if n > 0 {
@@ -1100,7 +1135,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Fetch and classify calendar events for the week (entity-generic)
     let entity_hints = {
-        let db_guard_owned = crate::db::ActionDb::open().ok();
+        let db_guard_owned =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let db_ref = db_guard_owned.as_ref();
         match db_ref {
             Some(db) => crate::helpers::build_entity_hints(db),
@@ -1112,7 +1148,9 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Ensure classified meetings exist in meetings table and generate intelligence (ADR-0081)
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             for cm in &classified {
                 let tier = cm
                     .get("intelligence_tier")
@@ -1225,7 +1263,9 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
         // Look up the DB meeting ID
         let meeting_id = {
-            let guard_owned = crate::db::ActionDb::open().ok();
+            let guard_owned =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .ok();
             let db = guard_owned.as_ref();
             match db {
                 Some(db) => db
@@ -1267,7 +1307,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
     }
 
     // Actions from SQLite
-    let db_guard_owned = crate::db::ActionDb::open().ok();
+    let db_guard_owned =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
     let db_ref = db_guard_owned.as_ref();
     let actions_data = match db_ref {
         Some(db) => actions::fetch_actions_from_db(db),
@@ -1323,7 +1364,8 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Proactive scan + callouts for week view
     let week_callouts = {
-        let callout_guard_owned = crate::db::ActionDb::open().ok();
+        let callout_guard_owned =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let callout_db = callout_guard_owned.as_ref();
         match callout_db {
             Some(db) => {
@@ -1365,7 +1407,9 @@ pub async fn prepare_week(state: &AppState, workspace: &Path) -> Result<(), Exec
 
     // Person intelligence enrichment triggers
     {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let n =
                 queue_person_intelligence(&meeting_contexts, workspace, &db, &state.intel_queue);
             if n > 0 {
@@ -1434,7 +1478,8 @@ pub async fn refresh_emails_with_retry_batch(
     let (_profile, user_domains, _user_focus) = get_config(state);
     let primary_user_domain = user_domains.first().cloned().unwrap_or_default();
     let account_hints = {
-        let db_guard_owned = crate::db::ActionDb::open().ok();
+        let db_guard_owned =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let db_ref = db_guard_owned.as_ref();
         match db_ref {
             Some(db) => crate::helpers::build_external_account_hints(db),
@@ -1469,10 +1514,11 @@ pub async fn refresh_emails_with_retry_batch(
     let preset_email_keywords: Vec<String> =
         state.get_merged_signal_config().email_priority_keywords;
     // Load dismissed domains for relevance learning penalty
-    let dismissed_domains: HashSet<String> = crate::db::ActionDb::open()
-        .ok()
-        .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
-        .unwrap_or_default();
+    let dismissed_domains: HashSet<String> =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .ok()
+            .map(|db| db.get_dismissed_domains(5).unwrap_or_default())
+            .unwrap_or_default();
 
     let email_result = fetch_and_classify_emails(
         &primary_user_domain,
@@ -1487,7 +1533,8 @@ pub async fn refresh_emails_with_retry_batch(
     }
 
     // Persist fetched emails to DB
-    if let Ok(db) = crate::db::ActionDb::open() {
+    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         // load tracked domains once for the noise filter.
         let (account_domains_for_noise, person_domains_for_noise) = load_tracked_domains(&db);
         let mut persisted = 0usize;
@@ -1654,7 +1701,9 @@ pub async fn refresh_emails_with_retry_batch(
         .await
         .unwrap_or_default();
         if !sent_thread_ids.is_empty() {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 update_thread_positions_from_sent(&sent_thread_ids, &db);
             }
         }
@@ -1680,7 +1729,9 @@ pub async fn refresh_emails_with_retry_batch(
             log::info!("refresh_emails: enriched {} emails", enriched);
         }
         // Emit entity signals from enriched emails
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             let emitted = crate::signals::email_bridge::emit_enriched_email_signals(
                 &db,
                 &state.signals.engine,
@@ -1696,7 +1747,9 @@ pub async fn refresh_emails_with_retry_batch(
         // Split-lock: read active emails, score on a separate DB connection, then
         // write scores back under lock. Avoids holding DB mutex during ONNX inference.
         let active = {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 db.get_all_active_emails().unwrap_or_default()
             } else {
                 Vec::new()
@@ -1706,7 +1759,7 @@ pub async fn refresh_emails_with_retry_batch(
         let scores = if active.is_empty() {
             Vec::new()
         } else {
-            match crate::db::ActionDb::open() {
+            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
                 Ok(scoring_db) => {
                     let model = state.embedding_model.clone();
                     let merged_kws = state.get_merged_signal_config().signal_keywords;
@@ -1725,7 +1778,9 @@ pub async fn refresh_emails_with_retry_batch(
         };
 
         if !scores.is_empty() {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 for (email_id, score, reason) in &scores {
                     #[allow(
                         clippy::let_underscore_must_use,
@@ -3157,7 +3212,9 @@ fn build_action_summary(directive: &Value) -> Value {
         .unwrap_or_default();
 
     if overdue.is_empty() && this_week.is_empty() {
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             actions = actions::fetch_actions_from_db(&db);
             overdue = actions
                 .get("overdue")
@@ -3263,7 +3320,8 @@ fn build_action_summary(directive: &Value) -> Value {
 }
 
 fn build_action_id_lookup_from_db() -> HashMap<String, String> {
-    let Ok(db) = crate::db::ActionDb::open() else {
+    let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    else {
         return HashMap::new();
     };
 

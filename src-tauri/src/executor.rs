@@ -102,7 +102,9 @@ impl Executor {
     /// Build set of known external domains from account_domains + person emails.
     pub(crate) fn build_known_domains(&self) -> HashSet<String> {
         let mut domains = HashSet::new();
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             {
                 // Account domains
                 if let Ok(rows) = db
@@ -625,7 +627,9 @@ impl Executor {
         // Step 1: Reconcile BEFORE archive (schedule.json gets cleaned)
         // Own DB connection to avoid starving foreground IPC commands
         let recon = {
-            let own_db = crate::db::ActionDb::open().ok();
+            let own_db =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .ok();
             let db_ref = own_db.as_ref();
             reconcile::run_reconciliation(workspace, db_ref)
         };
@@ -648,7 +652,9 @@ impl Executor {
                 .unwrap_or(false);
 
             if impact_enabled {
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     match crate::workflow::impact_rollup::rollup_daily_impact(
                         workspace,
                         &db,
@@ -678,7 +684,9 @@ impl Executor {
 
         // Step 1.6: Auto-archive stale pending actions (30+ days old)
         {
-            if let Ok(db) = crate::db::ActionDb::open() {
+            if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 match db.archive_stale_actions(30) {
                     Ok(0) => {}
                     Ok(n) => log::info!("Auto-archived {} stale pending actions (30+ days)", n),
@@ -688,7 +696,9 @@ impl Executor {
         }
 
         // Step 2: Persist meetings + freeze prep snapshots BEFORE archive cleanup.
-        if let Ok(db) = crate::db::ActionDb::open() {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
             reconcile::persist_meetings(&db, &recon, workspace);
         }
         // legacy entity resolution wake removed. Entity linking
@@ -791,7 +801,9 @@ impl Executor {
 
         // Step 1: Quick-classify all inbox files
         let results = {
-            let own_db = crate::db::ActionDb::open().ok();
+            let own_db =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                    .ok();
             let db_ref = own_db.as_ref();
             crate::processor::process_all(workspace, db_ref, &profile)
         };
@@ -1035,7 +1047,8 @@ impl Executor {
 
         // Deliver schedule + actions (with DB for entity ID resolution + dedup).
         // Own DB connection to avoid starving foreground IPC commands.
-        let own_db = crate::db::ActionDb::open().ok();
+        let own_db =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let schedule_data = {
             let db_ref = own_db.as_ref();
             crate::workflow::deliver::deliver_schedule(&directive, &data_dir, db_ref)

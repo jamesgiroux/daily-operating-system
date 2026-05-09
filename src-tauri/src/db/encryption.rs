@@ -1,25 +1,16 @@
-//! SQLCipher key management via macOS Keychain (ADR-0092).
+//! SQLCipher encryption helpers (ADR-0092).
 //!
-//! The database encryption key is a 256-bit random hex string stored in the
-//! macOS Keychain under `com.dailyos.desktop.db`. Raw hex format (`x'...'`)
-//! bypasses SQLCipher's PBKDF2, avoiding the 300ms open-time overhead.
+//! Key retrieval and rotation live in `db::key_provider`; this module keeps the
+//! SQLCipher formatting, plaintext detection, and migration helpers.
 
-use rand::Rng;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::OnceLock;
-
-const KEYCHAIN_SERVICE: &str = "com.dailyos.desktop.db";
-const KEYCHAIN_ACCOUNT: &str = "sqlcipher-key";
-
-/// Set to `true` when a new key is generated (fresh install).
-static KEY_WAS_GENERATED: AtomicBool = AtomicBool::new(false);
 
 /// Set to `true` when a plaintext→encrypted migration is performed.
 static MIGRATION_PERFORMED: AtomicBool = AtomicBool::new(false);
 
-/// Whether the last `get_or_create_db_key` call generated a new key.
+/// Whether the last local key-provider call generated a new key.
 pub fn was_key_generated() -> bool {
-    KEY_WAS_GENERATED.load(Ordering::Relaxed)
+    crate::db::key_provider::was_key_generated()
 }
 
 /// Whether `migrate_to_encrypted` ran during this process.
@@ -27,95 +18,25 @@ pub fn was_migration_performed() -> bool {
     MIGRATION_PERFORMED.load(Ordering::Relaxed)
 }
 
-/// Process-wide cached key. Set once on first Keychain read, reused for all
-/// subsequent DB opens. This avoids hitting the Keychain on every background
-/// thread's `open_at()` call (which would trigger repeated macOS permission
-/// dialogs on first launch or after code-signing changes).
-static CACHED_KEY: OnceLock<String> = OnceLock::new();
-
 #[cfg(test)]
 pub(crate) fn set_cached_db_key_for_tests(hex_key: &str) {
-    let _ = CACHED_KEY.set(hex_key.to_string());
-}
-
-/// Retrieve the existing DB key from Keychain, or generate and store a new one
-/// if no database exists yet. The key is cached in memory after the first
-/// successful access — subsequent calls never touch the Keychain.
-///
-/// **Critical safety rule:** If an encrypted database already exists but no
-/// Keychain entry is found, this returns `Err` instead of generating a new key.
-/// A new key would silently fail to decrypt the existing data. The caller must
-/// surface this as a recovery screen, not swallow it.
-#[must_use = "check whether DB key was loaded or created before opening encrypted database"]
-pub fn get_or_create_db_key(db_path: &std::path::Path) -> Result<String, String> {
-    let key = match get_existing_db_key() {
-        Ok(key) => key,
-        Err(_e) => {
-            // DB exists and is not plaintext → encrypted with a lost key.
-            // Return a KEY_MISSING marker so callers can distinguish this from
-            // other encryption errors and show a recovery screen.
-            if db_path.exists() && !is_database_plaintext(db_path) {
-                return Err(format!("KEY_MISSING:{}", db_path.display()));
-            }
-            // No DB yet (fresh install) or plaintext DB (pre-migration) → safe to create key
-            let new_key = generate_key();
-            store_key_in_keychain(&new_key)?;
-            KEY_WAS_GENERATED.store(true, Ordering::Relaxed);
-            new_key
-        }
-    };
-
-    // Cache for all future callers (race-safe: OnceLock ignores duplicate sets)
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    let _ = CACHED_KEY.set(key.clone());
-    Ok(key)
+    crate::db::key_provider::set_cached_db_key_for_tests(hex_key);
 }
 
 /// Retrieve the existing DB key without creating a Keychain entry.
-pub fn get_existing_db_key() -> Result<String, String> {
-    if let Some(key) = CACHED_KEY.get() {
-        return Ok(key.clone());
-    }
-
-    let key = get_key_from_keychain()?;
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    let _ = CACHED_KEY.set(key.clone());
-    Ok(key)
+pub fn get_existing_db_key() -> Result<crate::db::EncryptionKey, String> {
+    crate::db::LocalKeychain::new().get_existing_key()
 }
 
 /// Check if a key exists in the Keychain (without retrieving it).
 pub fn has_db_key() -> bool {
-    get_key_from_keychain().is_ok()
+    crate::db::LocalKeychain::new().has_key()
 }
 
 /// Delete the DB key from Keychain. Used for testing/recovery only.
 #[must_use = "check whether keychain entry was deleted before treating encrypted DB as reset"]
 pub fn delete_db_key() -> Result<(), String> {
-    let output = std::process::Command::new("security")
-        .args([
-            "delete-generic-password",
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-a",
-            KEYCHAIN_ACCOUNT,
-        ])
-        .output()
-        .map_err(|e| format!("Failed to run security CLI: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!(
-            "Failed to delete keychain entry: {}",
-            stderr.trim()
-        ));
-    }
-    Ok(())
+    crate::db::LocalKeychain::new().delete_key()
 }
 
 /// Format a hex key string into the SQLCipher PRAGMA format.
@@ -198,81 +119,6 @@ pub fn migrate_to_encrypted(plaintext_path: &std::path::Path, hex_key: &str) -> 
 
     MIGRATION_PERFORMED.store(true, Ordering::Relaxed);
     log::info!("Database migrated to SQLCipher encryption");
-    Ok(())
-}
-
-fn generate_key() -> String {
-    let mut bytes = [0u8; 32];
-    rand::rng().fill_bytes(&mut bytes);
-    hex::encode(bytes)
-}
-
-/// Read the encryption key from macOS Keychain via the `security` CLI.
-///
-/// Using the `security` binary instead of the `keyring` crate avoids the
-/// repeated password prompt during development — `security` is a trusted
-/// system binary, so macOS doesn't re-prompt when the app binary changes
-/// on every recompile.
-fn get_key_from_keychain() -> Result<String, String> {
-    let output = std::process::Command::new("security")
-        .args([
-            "find-generic-password",
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-a",
-            KEYCHAIN_ACCOUNT,
-            "-w", // output password only
-        ])
-        .output()
-        .map_err(|e| format!("Failed to run security CLI: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Keychain read failed: {}", stderr.trim()));
-    }
-
-    let key = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if key.is_empty() {
-        return Err("Keychain returned empty key".to_string());
-    }
-    Ok(key)
-}
-
-/// Store the encryption key in macOS Keychain via the `security` CLI.
-fn store_key_in_keychain(key: &str) -> Result<(), String> {
-    // Delete existing entry first (add-generic-password fails if it exists)
-    #[allow(
-        clippy::let_underscore_must_use,
-        reason = "intentional best-effort discard; preserves existing non-blocking behavior"
-    )]
-    let _ = std::process::Command::new("security")
-        .args([
-            "delete-generic-password",
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-a",
-            KEYCHAIN_ACCOUNT,
-        ])
-        .output();
-
-    let output = std::process::Command::new("security")
-        .args([
-            "add-generic-password",
-            "-s",
-            KEYCHAIN_SERVICE,
-            "-a",
-            KEYCHAIN_ACCOUNT,
-            "-w",
-            key,
-            "-U", // update if exists
-        ])
-        .output()
-        .map_err(|e| format!("Failed to run security CLI: {e}"))?;
-
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("Keychain write failed: {}", stderr.trim()));
-    }
     Ok(())
 }
 

@@ -570,7 +570,9 @@ pub fn build_intelligence_hygiene_status(
         gaps,
         // budget view now reflects token budget, not call count.
         budget: {
-            let (used_today, daily_limit) = if let Ok(db) = crate::db::ActionDb::open() {
+            let (used_today, daily_limit) = if let Ok(db) =
+                crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            {
                 let budget = crate::pty::read_configured_daily_budget(&db);
                 let usage = crate::pty::DailyTokenUsage::load(&db);
                 (usage.tokens_used, budget)

@@ -6,7 +6,8 @@ use crate::state::AppState;
 
 /// Upsert Linear issues into the database and emit signals for state changes.
 pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), String> {
-    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
     let conn = db.conn_ref();
 
     for issue in issues {
@@ -126,7 +127,8 @@ pub fn upsert_issues(state: &AppState, issues: &[LinearIssue]) -> Result<(), Str
 
 /// Upsert Linear projects into the database.
 pub fn upsert_projects(_state: &AppState, projects: &[LinearProject]) -> Result<(), String> {
-    let db = ActionDb::open().map_err(|e| format!("DB open failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("DB open failed: {e}"))?;
     let conn = db.conn_ref();
 
     for project in projects {

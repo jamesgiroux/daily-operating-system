@@ -16,7 +16,7 @@
 
 use std::path::PathBuf;
 
-use dailyos_lib::db::encryption;
+use dailyos_lib::db::{encryption, DbKeyProvider, LocalKeychain, UserIdentity};
 use rusqlite::Connection;
 use serde::Serialize;
 use serde_json::json;
@@ -34,9 +34,11 @@ fn open_db(db_path: &PathBuf) -> Result<Connection, String> {
         .map_err(|e| format!("Failed to open DB at {}: {e}", db_path.display()))?;
 
     if !encryption::is_database_plaintext(db_path) {
-        let hex_key = encryption::get_or_create_db_key(db_path)
+        let provider = LocalKeychain::new();
+        let user = UserIdentity::local(db_path.clone());
+        let encryption_key = DbKeyProvider::get_or_create_key(&provider, &user)
             .map_err(|e| format!("Failed to get DB encryption key: {e}"))?;
-        conn.execute_batch(&encryption::key_to_pragma(&hex_key))
+        conn.execute_batch(&encryption_key.to_pragma())
             .map_err(|e| format!("Failed to apply encryption key: {e}"))?;
     }
 

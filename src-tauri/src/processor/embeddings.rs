@@ -187,7 +187,8 @@ pub async fn run_embedding_processor(state: Arc<AppState>, _app: AppHandle) {
 }
 
 fn enqueue_sweep_candidates(state: &AppState, max_files: usize) -> Result<(), String> {
-    let db = ActionDb::open().map_err(|e| format!("open db failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("open db failed: {e}"))?;
     let files = db
         .get_files_needing_embeddings(max_files)
         .map_err(|e| format!("query files needing embeddings failed: {e}"))?;
@@ -219,7 +220,8 @@ fn process_request(state: &AppState, request: &EmbeddingRequest) -> Result<usize
         .clone()
         .ok_or_else(|| "config unavailable".to_string())?;
 
-    let db = ActionDb::open().map_err(|e| format!("open db failed: {e}"))?;
+    let db = ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("open db failed: {e}"))?;
 
     let files = db
         .get_entity_files(&request.entity_id)

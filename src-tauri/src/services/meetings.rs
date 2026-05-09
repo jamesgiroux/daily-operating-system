@@ -4210,7 +4210,8 @@ pub async fn attach_meeting_transcript(
         let workspace = std::path::Path::new(&workspace_path);
         // Open a dedicated connection instead of holding the shared mutex
         // for the entire transcript processing duration (30-120s with PTY).
-        let db = crate::db::ActionDb::open().ok();
+        let db =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         // Hydrate linked entities + attendees from the DB so routing lands
         // the file in the right Account/Project/Person dir instead of
         // _archive, and frontmatter carries entity IDs.

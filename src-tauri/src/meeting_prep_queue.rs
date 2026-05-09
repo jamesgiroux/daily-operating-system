@@ -259,7 +259,7 @@ pub struct PrepReadyPayload {
 /// 6. Writes result to `prep_frozen_json` in DB
 /// 7. Emits `prep-ready` event
 pub fn sweep_meetings_needing_prep(state: &AppState) {
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(d) => d,
         Err(e) => {
             log::warn!("MeetingPrepSweep: DB open failed: {e}");
@@ -514,7 +514,8 @@ fn generate_mechanical_prep_with_inputs(
     overwrite_existing: bool,
 ) -> Result<bool, String> {
     // Phase 1: Load meeting from DB (own connection)
-    let db = crate::db::ActionDb::open().map_err(|e| format!("Failed to open DB: {}", e))?;
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| format!("Failed to open DB: {}", e))?;
 
     let meeting = db
         .get_meeting_by_id(meeting_id)
@@ -815,7 +816,8 @@ async fn enrich_prep_via_pty(state: &AppState, app: &AppHandle, meeting_id: &str
     // Read current prep from DB on a blocking thread
     let mid = meeting_id.to_string();
     let prep_json = match tokio::task::spawn_blocking(move || {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("DB open: {}", e))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("DB open: {}", e))?;
         let meeting = db
             .get_meeting_by_id(&mid)
             .map_err(|e| e.to_string())?

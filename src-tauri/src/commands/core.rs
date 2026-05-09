@@ -781,7 +781,8 @@ pub async fn get_live_proactive_suggestions(
 
     // Use a dedicated DB connection so this async command never holds AppState DB lock
     // across Google API awaits.
-    let db = crate::db::ActionDb::open().map_err(|e| e.to_string())?;
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .map_err(|e| e.to_string())?;
     let (entity_hints, actions) = crate::queries::proactive::load_live_suggestion_inputs(&db)?;
 
     // Check cache unless force refresh requested

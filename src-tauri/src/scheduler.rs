@@ -219,7 +219,7 @@ impl Scheduler {
 
     /// Auto-archive stale suggested and pending actions on the daily scheduler sweep.
     fn auto_archive_stale_actions(&self) {
-        match crate::db::ActionDb::open() {
+        match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
             Ok(db) => {
                 match db.auto_archive_old_suggested(7) {
                     Ok(count) if count > 0 => {
@@ -249,11 +249,12 @@ impl Scheduler {
 
     /// Check for meetings starting in the next 2 hours that need intelligence refresh (Phase 4A).
     async fn check_pre_meeting_refresh(&self) {
-        let meetings_to_refresh: Vec<String> = match crate::db::ActionDb::open() {
-            Ok(db) => {
-                let conn = db.conn_ref();
-                let mut stmt = match conn.prepare(
-                    "SELECT m.id FROM meetings m
+        let meetings_to_refresh: Vec<String> =
+            match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
+                Ok(db) => {
+                    let conn = db.conn_ref();
+                    let mut stmt = match conn.prepare(
+                        "SELECT m.id FROM meetings m
                      LEFT JOIN meeting_transcripts mt ON mt.meeting_id = m.id
                      WHERE julianday(m.start_time) > julianday('now')
                      AND julianday(m.start_time) <= julianday('now', '+2 hours')
@@ -261,22 +262,22 @@ impl Scheduler {
                      AND (mt.has_new_signals = 1
                           OR mt.last_enriched_at IS NULL
                           OR julianday(mt.last_enriched_at) < julianday('now', '-12 hours'))",
-                ) {
-                    Ok(s) => s,
-                    Err(e) => {
-                        log::warn!("Pre-meeting refresh query failed: {}", e);
-                        return;
-                    }
-                };
-                stmt.query_map([], |row| row.get::<_, String>(0))
-                    .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
-                    .unwrap_or_default()
-            }
-            Err(e) => {
-                log::warn!("Failed to open DB for pre-meeting refresh: {}", e);
-                return;
-            }
-        };
+                    ) {
+                        Ok(s) => s,
+                        Err(e) => {
+                            log::warn!("Pre-meeting refresh query failed: {}", e);
+                            return;
+                        }
+                    };
+                    stmt.query_map([], |row| row.get::<_, String>(0))
+                        .map(|rows| rows.filter_map(|r| r.ok()).collect::<Vec<_>>())
+                        .unwrap_or_default()
+                }
+                Err(e) => {
+                    log::warn!("Failed to open DB for pre-meeting refresh: {}", e);
+                    return;
+                }
+            };
 
         if meetings_to_refresh.is_empty() {
             return;
@@ -327,7 +328,7 @@ impl Scheduler {
 
     /// Post-meeting email correlation
     fn run_post_meeting_email_correlation(&self) {
-        match crate::db::ActionDb::open() {
+        match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
             Ok(db) => {
                 if let Err(e) =
                     crate::signals::post_meeting::correlate_post_meeting_emails_with_engine(

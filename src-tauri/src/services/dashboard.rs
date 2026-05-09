@@ -1398,7 +1398,7 @@ async fn get_dashboard_data_inner(state: &AppState, db_busy: &mut bool) -> Dashb
 pub fn get_week_data(_state: &AppState) -> WeekResult {
     let started = std::time::Instant::now();
 
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
             return WeekResult::Error {

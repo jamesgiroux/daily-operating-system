@@ -18,7 +18,9 @@ fn main() -> ExitCode {
         }
     };
 
-    let db = match dailyos_lib::db::ActionDb::open() {
+    let db = match dailyos_lib::db::ActionDb::open(std::sync::Arc::new(
+        dailyos_lib::db::LocalKeychain::new(),
+    )) {
         Ok(db) => db,
         Err(e) => {
             eprintln!("failed to open database: {e}");

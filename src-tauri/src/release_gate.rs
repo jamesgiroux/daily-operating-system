@@ -254,7 +254,9 @@ pub struct ActionDbManualReader;
 
 impl ManualDbReader for ActionDbManualReader {
     fn open_readonly_schema_version(&self, path: &Path) -> Result<String, String> {
-        let db = ActionDb::open_readonly_at(path).map_err(|error| error.to_string())?;
+        let db =
+            ActionDb::open_readonly_at(path, std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .map_err(|error| error.to_string())?;
         schema_version_from_db(&db)
     }
 }

@@ -585,7 +585,9 @@ pub fn start_watcher(state: Arc<AppState>, app_handle: AppHandle) {
                 // user finishes typing the real name.
                 sleep(Duration::from_secs(5)).await;
                 log::info!("DOS-44: New entity directory detected, running workspace sync");
-                if let Ok(db) = crate::db::ActionDb::open() {
+                if let Ok(db) =
+                    crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                {
                     let accounts_synced =
                         crate::accounts::sync_accounts_from_workspace(&workspace, &db).unwrap_or(0);
                     let projects_synced =
@@ -632,7 +634,9 @@ fn handle_people_changes(paths: &[PathBuf], state: &AppState, workspace: &Path) 
     }
 
     // Own DB connection to avoid holding state.db Mutex during watcher I/O
-    let db = match crate::db::ActionDb::open().ok() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .ok()
+    {
         Some(db) => db,
         None => return,
     };
@@ -695,7 +699,9 @@ fn handle_account_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
     }
 
     // Own DB connection to avoid holding state.db Mutex during watcher I/O
-    let db = match crate::db::ActionDb::open().ok() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .ok()
+    {
         Some(db) => db,
         None => return,
     };
@@ -740,7 +746,9 @@ fn handle_project_changes(paths: &[PathBuf], _state: &AppState, workspace: &Path
     }
 
     // Own DB connection to avoid holding state.db Mutex during watcher I/O
-    let db = match crate::db::ActionDb::open().ok() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .ok()
+    {
         Some(db) => db,
         None => return,
     };
@@ -783,7 +791,8 @@ fn handle_account_content_changes(
     }
 
     // Own DB connection to avoid holding state.db Mutex during content indexing
-    let db = crate::db::ActionDb::open().ok()?;
+    let db =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
 
     let accounts_dir = workspace.join("Accounts");
     let mut affected_entity_ids = std::collections::HashSet::new();
@@ -849,7 +858,8 @@ fn handle_project_content_changes(
     }
 
     // Own DB connection to avoid holding state.db Mutex during content indexing
-    let db = crate::db::ActionDb::open().ok()?;
+    let db =
+        crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok()?;
 
     let projects_dir = workspace.join("Projects");
     let mut affected_entity_ids = std::collections::HashSet::new();
@@ -910,7 +920,9 @@ fn handle_user_attachment_changes(paths: &[PathBuf], state: &AppState, workspace
         return;
     }
 
-    let db = match crate::db::ActionDb::open().ok() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        .ok()
+    {
         Some(db) => db,
         None => return,
     };

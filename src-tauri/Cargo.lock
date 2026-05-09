@@ -1231,6 +1231,7 @@ dependencies = [
  "url",
  "uuid",
  "walkdir",
+ "zeroize",
  "zip 2.4.2",
 ]
 

@@ -583,7 +583,9 @@ impl AppState {
         // Open DB for startup validation and context_mode reading only.
         // The connection is NOT stored in AppState -- all runtime DB access goes
         // through `db_service` (async) or `ActionDb::open()` (sync helpers).
-        let startup_db = match crate::db::ActionDb::open() {
+        let startup_db = match crate::db::ActionDb::open(std::sync::Arc::new(
+            crate::db::LocalKeychain::new(),
+        )) {
             Ok(db) => {
                 // Distinguish key generation (fresh install) from access (existing DB)
                 let event = if crate::db::encryption::was_key_generated() {
@@ -1324,7 +1326,8 @@ impl AppState {
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("Database unavailable: {e}"))?;
         f(&db)
     }
 
@@ -1335,7 +1338,8 @@ impl AppState {
     where
         F: FnOnce(&crate::db::ActionDb) -> Result<T, String>,
     {
-        let db = crate::db::ActionDb::open().map_err(|e| format!("Database unavailable: {e}"))?;
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+            .map_err(|e| format!("Database unavailable: {e}"))?;
         f(&db)
     }
 
@@ -1373,9 +1377,11 @@ impl AppState {
     /// opening a fresh `rusqlite::Connection` (which races the pool writer
     /// mid-commit under SQLCipher).
     pub async fn init_db_service(&self) -> Result<(), String> {
-        let svc = crate::db_service::DbService::open()
-            .await
-            .map_err(|e| format!("Failed to open DbService: {e}"))?;
+        let svc = crate::db_service::DbService::open(std::sync::Arc::new(
+            crate::db::LocalKeychain::new(),
+        ))
+        .await
+        .map_err(|e| format!("Failed to open DbService: {e}"))?;
         crate::db_service::install_global(svc.clone());
         let mut guard = self.db_service.write().await;
         *guard = Some(svc);
@@ -1434,7 +1440,7 @@ impl AppState {
 
         // Startup fallback: DbService not yet initialized. Open a fresh
         // connection directly (- no persistent sync handle).
-        let db = crate::db::ActionDb::open()
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
             .map_err(|e| format!("Database unavailable: failed to open DB ({e})"))?;
         f(&db)
     }
@@ -1476,7 +1482,7 @@ impl AppState {
 
         // Startup fallback: DbService not yet initialized. Open a fresh
         // connection directly (- no persistent sync handle).
-        let db = crate::db::ActionDb::open()
+        let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
             .map_err(|e| format!("Database unavailable: failed to open DB ({e})"))?;
         f(&db)
     }
@@ -1537,7 +1543,7 @@ pub fn run_startup_sync(state: &AppState) {
         );
     }
 
-    let db = match crate::db::ActionDb::open() {
+    let db = match crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())) {
         Ok(db) => db,
         Err(e) => {
             log::warn!("Startup sync skipped: failed to open DB: {}", e);

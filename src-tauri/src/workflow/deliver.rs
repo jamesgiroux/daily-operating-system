@@ -2852,7 +2852,7 @@ pub fn enrich_emails(
     known_domains: &std::collections::HashSet<String>,
 ) -> Result<(), String> {
     // Open DB for Phase 5 workflow (load pending emails, write enrichments)
-    let db = crate::db::ActionDb::open()
+    let db = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
         .map_err(|e| format!("Failed to open DB for email enrichment: {}", e))?;
 
     // Step 1: Load all active emails from DB (not from JSON)
@@ -3402,7 +3402,8 @@ pub fn enrich_briefing(
 
     // Gather entity intelligence for accounts with meetings today (brief DB lock)
     let intel_context = {
-        let db_guard = crate::db::ActionDb::open().ok();
+        let db_guard =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         match db_guard.as_ref() {
             Some(db) => build_entity_intel_for_briefing(&schedule, db),
             None => String::new(),
@@ -4390,7 +4391,8 @@ pub fn deliver_manifest(
     write_json(&data_dir.join("manifest.json"), &manifest)?;
 
     // Also store manifest in app_state_kv for DB-based freshness checks
-    if let Ok(db) = crate::db::ActionDb::open() {
+    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         let manifest_str = serde_json::to_string(&manifest).unwrap_or_default();
         let clock = crate::services::context::SystemClock;
         let rng = crate::services::context::SystemRng;
@@ -4875,7 +4877,8 @@ pub fn enrich_week(
 
     // Gather entity intelligence for accounts with meetings this week (brief DB lock)
     let week_intel_context = {
-        let db_guard = crate::db::ActionDb::open().ok();
+        let db_guard =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         match db_guard.as_ref() {
             Some(db) => build_entity_intel_for_week(&overview, db),
             None => String::new(),

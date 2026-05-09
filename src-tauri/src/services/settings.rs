@@ -268,7 +268,8 @@ pub fn set_daily_ai_budget(
     })?;
 
     // Sync to KV store so the preflight gate (sync path) sees the update immediately.
-    if let Ok(db) = crate::db::ActionDb::open() {
+    if let Ok(db) = crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+    {
         crate::pty::sync_budget_config_to_kv(&db, budget);
     }
 

@@ -128,7 +128,8 @@ pub async fn process_inbox_file(
         let workspace = Path::new(&workspace_path);
         // Open a dedicated connection instead of holding the shared mutex
         // for the entire duration of process_file (which can take seconds).
-        let db = crate::db::ActionDb::open().ok();
+        let db =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let db_ref = db.as_ref();
         let entity_tracker_path = entity_id.as_deref().and_then(|eid| {
             db_ref
@@ -171,7 +172,8 @@ pub async fn process_all_inbox(
         let workspace = Path::new(&workspace_path);
         // Open a dedicated connection instead of holding the shared mutex
         // for the entire batch processing duration.
-        let db = crate::db::ActionDb::open().ok();
+        let db =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         crate::processor::process_all(workspace, db.as_ref(), &profile)
     })
     .await
@@ -212,14 +214,15 @@ pub async fn enrich_inbox_file(
 
     tauri::async_runtime::spawn_blocking(move || {
         let workspace = Path::new(&workspace_path);
-        let entity_tracker_path = crate::db::ActionDb::open()
-            .ok()
-            .and_then(|db| {
-                entity_id
-                    .as_deref()
-                    .and_then(|eid| db.get_entity(eid).ok().flatten())
-            })
-            .and_then(|e| e.tracker_path);
+        let entity_tracker_path =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+                .ok()
+                .and_then(|db| {
+                    entity_id
+                        .as_deref()
+                        .and_then(|eid| db.get_entity(eid).ok().flatten())
+                })
+                .and_then(|e| e.tracker_path);
         crate::processor::enrich::enrich_file(
             workspace,
             &filename,
@@ -1528,7 +1531,8 @@ pub async fn process_user_attachment(
     let final_path_owned = final_path.clone();
 
     let result = tokio::task::spawn_blocking(move || {
-        let db = crate::db::ActionDb::open().ok();
+        let db =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new())).ok();
         let result = crate::processor::process_user_attachment(
             &workspace_owned,
             &final_path_owned,
