@@ -11,6 +11,9 @@ fi
 
 violations=0
 
+# Filter rg hits through Python so we can skip lines inside `#[cfg(test)]` modules
+# (test fixtures legitimately seed signal_events for setup; the policy-registry
+# contract applies to production paths only).
 while IFS= read -r hit; do
   file="${hit%%:*}"
   case "$file" in
@@ -27,7 +30,65 @@ done < <(
     "INSERT\\s+(OR\\s+\\w+\\s+)?INTO\\s+signal_events|UPDATE\\s+(OR\\s+\\w+\\s+)?signal_events\\s+SET" \
     "$ROOT_DIR/src-tauri/src" \
     -g '*.rs' \
-    2>/dev/null || true
+    2>/dev/null \
+    | python3 -c '
+import re
+import sys
+from collections import defaultdict
+
+# Build per-file maps of cfg(test) module line ranges so we can drop hits inside.
+files = defaultdict(list)
+for line in sys.stdin:
+    line = line.rstrip("\n")
+    if not line:
+        continue
+    parts = line.split(":", 2)
+    if len(parts) < 3:
+        print(line)
+        continue
+    files[parts[0]].append((int(parts[1]), line))
+
+for path, hits in files.items():
+    try:
+        with open(path, encoding="utf-8") as fh:
+            src = fh.read().split("\n")
+    except OSError:
+        for _, hit in hits:
+            print(hit)
+        continue
+    test_ranges = []
+    pending = False
+    depth = 0
+    in_test = False
+    range_start = None
+    for idx, ln in enumerate(src):
+        stripped = ln.strip()
+        if pending and stripped.startswith("mod "):
+            in_test = True
+            range_start = idx
+            depth = ln.count("{") - ln.count("}")
+            pending = False
+            continue
+        if pending and not stripped.startswith("#["):
+            pending = False
+        if re.match(r"\s*#\[cfg\s*\(\s*test\s*\)\s*\]", ln):
+            pending = True
+            continue
+        if in_test:
+            depth += ln.count("{") - ln.count("}")
+            if depth <= 0:
+                test_ranges.append((range_start, idx))
+                in_test = False
+    def in_test_block(line_no):
+        for lo, hi in test_ranges:
+            if lo + 1 <= line_no <= hi + 1:
+                return True
+        return False
+    for line_no, hit in hits:
+        if not in_test_block(line_no):
+            print(hit)
+' \
+    || true
 )
 
 if [ "$violations" -gt 0 ]; then
