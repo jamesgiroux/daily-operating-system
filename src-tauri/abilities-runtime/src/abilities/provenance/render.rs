@@ -5,7 +5,7 @@
 //! has serialized JSON should use `render_serialized_provenance_for`, which
 //! falls back to the same surface rules for older/minimal test envelopes.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::sync::OnceLock;
 
 use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine as _};
@@ -18,9 +18,9 @@ use serde_json::{json, Map, Value};
 use sha2::{Digest as _, Sha256};
 
 use super::{
-    Actor, ComposedProvenance, CompositionId, DataSource, FieldAttribution, FieldPath, Provenance,
-    ProvenanceMaskReason, ProvenanceMasked, ProvenanceOrMasked, ProvenanceWarning, ScoringClass,
-    SourceAttribution, SourceIdentifier,
+    Actor, ComposedProvenance, CompositionId, DataSource, DerivationKind, FieldAttribution,
+    FieldPath, Provenance, ProvenanceMaskReason, ProvenanceMasked, ProvenanceOrMasked,
+    ProvenanceWarning, ScoringClass, SourceAttribution, SourceIdentifier, SourceRef,
 };
 
 pub const TAURI_INITIAL_PROVENANCE_BUDGET_BYTES: usize = 2 * 1024;
@@ -94,12 +94,31 @@ pub struct ChildElided {
 struct RenderContext {
     warnings: Vec<ProvenanceWarning>,
     composition_labels: BTreeMap<String, String>,
+    child_composition_labels: VecDeque<String>,
     next_composition_label: usize,
 }
 
 impl RenderContext {
+    fn for_provenance(prov: &Provenance) -> Self {
+        let mut ctx = Self::default();
+        ctx.prime_from_provenance(prov);
+        ctx
+    }
+
+    fn for_serialized_provenance(value: &Value) -> Self {
+        let mut ctx = Self::default();
+        ctx.prime_from_serialized_provenance(serialized_full_provenance_payload(value));
+        ctx
+    }
+
     fn opaque_composition_label(&mut self, composition_id: &CompositionId) -> String {
         self.opaque_composition_label_for_raw(composition_id.as_str())
+    }
+
+    fn opaque_child_composition_label(&mut self, composition_id: &CompositionId) -> String {
+        self.child_composition_labels
+            .pop_front()
+            .unwrap_or_else(|| self.opaque_composition_label(composition_id))
     }
 
     fn opaque_composition_label_for_raw(&mut self, composition_id: &str) -> String {
@@ -112,6 +131,183 @@ impl RenderContext {
         self.composition_labels
             .insert(composition_id.to_string(), label.clone());
         label
+    }
+
+    fn register_child_composition_id(&mut self, composition_id: &str) {
+        let label = self.opaque_composition_label_for_raw(composition_id);
+        self.child_composition_labels.push_back(label);
+    }
+
+    fn prime_from_provenance(&mut self, prov: &Provenance) {
+        for child in &prov.children {
+            self.register_child_composition_id(child.composition_id.as_str());
+            self.prime_from_provenance(child.provenance.as_ref());
+        }
+
+        for attribution in prov.field_attributions.values() {
+            self.prime_from_field_attribution(attribution);
+        }
+        for warning in &prov.warnings {
+            self.prime_from_warning(warning);
+        }
+    }
+
+    fn prime_from_field_attribution(&mut self, attribution: &FieldAttribution) {
+        if let DerivationKind::Composed { composition_id } = &attribution.derivation {
+            self.opaque_composition_label(composition_id);
+        }
+
+        for source_ref in &attribution.source_refs {
+            if let SourceRef::Child { composition_id, .. } = source_ref {
+                self.opaque_composition_label(composition_id);
+            }
+        }
+    }
+
+    fn prime_from_warning(&mut self, warning: &ProvenanceWarning) {
+        if let ProvenanceWarning::OptionalComposedReadFailed { composition_id, .. } = warning {
+            self.opaque_composition_label(composition_id);
+        }
+    }
+
+    fn prime_from_serialized_provenance(&mut self, value: &Value) {
+        let Some(object) = value.as_object() else {
+            return;
+        };
+        let child_candidates = serialized_direct_composition_refs(object);
+
+        if let Some(children) = object.get("children").and_then(Value::as_array) {
+            let mut used_candidates = vec![false; child_candidates.len()];
+            for (index, child) in children.iter().enumerate() {
+                if let Some(raw_id) = serialized_child_composition_id(
+                    child,
+                    index,
+                    &child_candidates,
+                    &mut used_candidates,
+                ) {
+                    self.register_child_composition_id(&raw_id);
+                }
+                self.prime_from_serialized_provenance(child);
+            }
+        }
+
+        self.prime_from_serialized_composition_refs(value);
+    }
+
+    fn prime_from_serialized_composition_refs(&mut self, value: &Value) {
+        collect_composition_refs(value, true, &mut |composition_id| {
+            self.opaque_composition_label_for_raw(composition_id);
+        });
+    }
+}
+
+fn serialized_full_provenance_payload(value: &Value) -> &Value {
+    value
+        .as_object()
+        .filter(|object| object.get("kind").and_then(Value::as_str) == Some("full"))
+        .and_then(|object| object.get("value"))
+        .unwrap_or(value)
+}
+
+fn serialized_direct_composition_refs(object: &Map<String, Value>) -> Vec<String> {
+    let mut refs = Vec::new();
+    for (key, value) in object {
+        if key == "children" {
+            continue;
+        }
+        collect_composition_refs(value, false, &mut |composition_id| {
+            if !refs.iter().any(|existing| existing == composition_id) {
+                refs.push(composition_id.to_string());
+            }
+        });
+    }
+    refs
+}
+
+fn serialized_child_composition_id(
+    child: &Value,
+    index: usize,
+    candidates: &[String],
+    used_candidates: &mut [bool],
+) -> Option<String> {
+    if let Some(composition_id) = child.get("composition_id").and_then(Value::as_str) {
+        return Some(composition_id.to_string());
+    }
+
+    if let Some(ability_name) = child.get("ability_name").and_then(Value::as_str) {
+        if let Some(candidate_index) =
+            find_single_unused_candidate(candidates, used_candidates, |candidate| {
+                candidate == ability_name
+            })
+        {
+            used_candidates[candidate_index] = true;
+            return Some(candidates[candidate_index].clone());
+        }
+
+        if let Some(candidate_index) =
+            find_single_unused_candidate(candidates, used_candidates, |candidate| {
+                candidate
+                    .strip_prefix(ability_name)
+                    .is_some_and(|suffix| suffix.starts_with(':'))
+            })
+        {
+            used_candidates[candidate_index] = true;
+            return Some(candidates[candidate_index].clone());
+        }
+    }
+
+    if index < candidates.len() && !used_candidates[index] {
+        used_candidates[index] = true;
+        return Some(candidates[index].clone());
+    }
+
+    if let Some(candidate_index) = used_candidates.iter().position(|used| !*used) {
+        used_candidates[candidate_index] = true;
+        return Some(candidates[candidate_index].clone());
+    }
+
+    child
+        .get("ability_name")
+        .and_then(Value::as_str)
+        .map(str::to_string)
+}
+
+fn find_single_unused_candidate(
+    candidates: &[String],
+    used_candidates: &[bool],
+    matches: impl Fn(&str) -> bool,
+) -> Option<usize> {
+    let mut found = None;
+    for (index, candidate) in candidates.iter().enumerate() {
+        if !used_candidates[index] && matches(candidate) {
+            if found.is_some() {
+                return None;
+            }
+            found = Some(index);
+        }
+    }
+    found
+}
+
+fn collect_composition_refs(value: &Value, skip_children: bool, visit: &mut impl FnMut(&str)) {
+    match value {
+        Value::Array(items) => {
+            for item in items {
+                collect_composition_refs(item, skip_children, visit);
+            }
+        }
+        Value::Object(object) => {
+            if let Some(composition_id) = object.get("composition_id").and_then(Value::as_str) {
+                visit(composition_id);
+            }
+            for (key, item) in object {
+                if skip_children && key == "children" {
+                    continue;
+                }
+                collect_composition_refs(item, skip_children, visit);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -305,7 +501,22 @@ pub fn render_provenance_for_with_options(
     surface: Surface,
     options: RenderOptions,
 ) -> RenderedProvenance {
-    let mut ctx = RenderContext::default();
+    render_provenance_for_with_context(
+        prov,
+        actor,
+        surface,
+        options,
+        RenderContext::for_provenance(prov),
+    )
+}
+
+fn render_provenance_for_with_context(
+    prov: &Provenance,
+    actor: Actor,
+    surface: Surface,
+    options: RenderOptions,
+    mut ctx: RenderContext,
+) -> RenderedProvenance {
     let value = match surface {
         Surface::TauriApp => render_tauri_app(prov, &actor, &mut ctx),
         Surface::McpTool => render_mcp_provenance(prov, &actor, surface, &mut ctx),
@@ -346,10 +557,11 @@ pub fn render_serialized_provenance_for_with_options(
     surface: Surface,
     options: RenderOptions,
 ) -> RenderedProvenance {
+    let ctx = RenderContext::for_serialized_provenance(&provenance);
     if let Ok(envelope) = serde_json::from_value::<ProvenanceOrMasked>(provenance.clone()) {
         return match envelope {
             ProvenanceOrMasked::Full(prov) => {
-                render_provenance_for_with_options(&prov, actor, surface, options)
+                render_provenance_for_with_context(&prov, actor, surface, options, ctx)
             }
             ProvenanceOrMasked::Masked(masked) => {
                 render_masked_provenance_for(&masked, actor, surface)
@@ -358,7 +570,7 @@ pub fn render_serialized_provenance_for_with_options(
     }
 
     match serde_json::from_value::<Provenance>(provenance) {
-        Ok(prov) => render_provenance_for_with_options(&prov, actor, surface, options),
+        Ok(prov) => render_provenance_for_with_context(&prov, actor, surface, options, ctx),
         Err(_) => enforce_render_budget(RenderedProvenance::new(
             surface,
             render_unparseable_legacy_provenance(&actor, surface),
@@ -1378,6 +1590,7 @@ fn render_child_for_mcp(
     depth: usize,
     ctx: &mut RenderContext,
 ) -> Value {
+    let composition_id = ctx.opaque_child_composition_label(&child.composition_id);
     if depth > 2 {
         let elided = ChildElided {
             ability_name: child.provenance.ability_name.clone(),
@@ -1390,7 +1603,6 @@ fn render_child_for_mcp(
         });
     }
 
-    let composition_id = ctx.opaque_composition_label(&child.composition_id);
     json!({
         "composition_id": composition_id,
         "provenance_schema_version": child.provenance.provenance_schema_version,
@@ -2472,6 +2684,96 @@ mod tests {
                 .cloned(),
             Some(json!("c1"))
         );
+    }
+
+    #[test]
+    fn serialized_mcp_detail_keeps_child_and_refs_on_same_opaque_label() {
+        let secret_composition_id = CompositionId::new("get_entity_context:account:acct-secret");
+        let mut child = provenance();
+        child.ability_name = "get_entity_context".to_string();
+        child.field_attributions.insert(
+            FieldPath::new("/child_composed").unwrap(),
+            FieldAttribution::composed(
+                subject(),
+                secret_composition_id.clone(),
+                FieldPath::new("/summary").unwrap(),
+                Confidence::composed_min(0.8).unwrap(),
+            )
+            .unwrap(),
+        );
+
+        let mut provenance = provenance();
+        provenance.children.push(ComposedProvenance::new(
+            secret_composition_id.clone(),
+            child,
+        ));
+        provenance.field_attributions.insert(
+            FieldPath::new("/child_summary").unwrap(),
+            FieldAttribution::composed(
+                subject(),
+                secret_composition_id.clone(),
+                FieldPath::new("/summary").unwrap(),
+                Confidence::composed_min(0.8).unwrap(),
+            )
+            .unwrap(),
+        );
+        provenance
+            .warnings
+            .push(ProvenanceWarning::OptionalComposedReadFailed {
+                composition_id: secret_composition_id.clone(),
+                reason: "private child read failure token-214".to_string(),
+            });
+
+        let serialized_provenance = serde_json::to_value(&provenance).unwrap();
+        assert_eq!(
+            serialized_provenance["children"][0]["ability_name"],
+            json!("get_entity_context")
+        );
+        assert!(serialized_provenance["children"][0]
+            .get("composition_id")
+            .is_none());
+
+        let rendered = render_serialized_provenance_for(
+            serialized_provenance,
+            Actor::Agent {
+                name: "mcp".to_string(),
+                version: "test".to_string(),
+            },
+            Surface::McpToolDetail,
+        );
+        let rendered_serialized = serde_json::to_string(&rendered).unwrap();
+
+        assert!(!rendered_serialized.contains(secret_composition_id.as_str()));
+        assert_eq!(rendered.value["children"][0]["composition_id"], json!("c1"));
+        assert_eq!(
+            rendered
+                .value
+                .pointer("/field_attributions/~1child_summary/derivation/composed/composition_id")
+                .cloned(),
+            Some(json!("c1"))
+        );
+        assert_eq!(
+            rendered
+                .value
+                .pointer("/field_attributions/~1child_summary/source_refs/0/child/composition_id")
+                .cloned(),
+            Some(json!("c1"))
+        );
+        assert_eq!(
+            rendered
+                .value
+                .pointer("/children/0/field_attributions/~1child_composed/derivation/composed/composition_id")
+                .cloned(),
+            Some(json!("c1"))
+        );
+        assert_eq!(
+            rendered
+                .value
+                .pointer("/children/0/field_attributions/~1child_composed/source_refs/0/child/composition_id")
+                .cloned(),
+            Some(json!("c1"))
+        );
+        assert_eq!(rendered.value["warnings"][0]["composition_id"], json!("c1"));
     }
 
     #[test]
