@@ -1615,7 +1615,7 @@ Six sprints of work across meeting intelligence, entity relationships, security 
 
 ### Changed
 
-- CLI archived to `_archive/dailyos/`
+- CLI archived to `.docs/_archive/dailyos-poc/dailyos/`
 - Python runtime eliminated -- all operations now in Rust
 - Config directory: `~/.dailyos/` (was `~/.daybreak/`)
 

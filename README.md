@@ -44,7 +44,7 @@ pnpm install
 pnpm tauri dev
 ```
 
-**Prerequisites:** Rust 1.70+, Node.js 18+, pnpm 8+
+**Prerequisites:** current stable Rust, Node.js 20.19+, pnpm 10
 
 **Run backend tests:**
 
@@ -72,11 +72,26 @@ Rotation procedure:
 
 Tauri v2 app with a Rust backend and React/TypeScript frontend. SQLite is the primary data store with supplementary markdown files on the filesystem. AI features run through Claude Code CLI spawned as a PTY subprocess.
 
+## Repository Layout
+
+- `src/` -- React/TypeScript frontend.
+- `src-tauri/` -- Rust backend, Tauri shell, migrations, MCP sidecar, tests.
+- `.docs/` -- planning, architecture, product, design system, audits, and archived project material.
+- `.docs/design/product/` -- product philosophy, principles, mission, and vision docs.
+- `.docs/design/reference/` -- reference HTML, screenshots, and design experiments.
+- `.docs/_archive/dailyos-poc/` -- legacy CLI proof-of-concept kept for historical reference.
+- `docs/` -- published product website.
+- `plugins/` -- Claude Code plugins shipped with DailyOS.
+- `templates/` -- workspace templates, schemas, skill templates, and slide templates.
+- `scripts/` -- local and CI-adjacent repository checks.
+- `tests/` -- legacy Python tests for archived workspace scripts.
+- `release-notes.md` -- user-facing release notes consumed by the release workflow.
+
 ## Documentation
 
-- [PHILOSOPHY.md](design/PHILOSOPHY.md) -- Why we exist
-- [PRINCIPLES.md](design/PRINCIPLES.md) -- Design principles
-- [VISION.md](design/VISION.md) -- Product vision
+- [PHILOSOPHY.md](.docs/design/product/PHILOSOPHY.md) -- Why we exist
+- [PRINCIPLES.md](.docs/design/product/PRINCIPLES.md) -- Design principles
+- [VISION.md](.docs/design/product/VISION.md) -- Product vision
 
 Product website: [daily-os.com](https://daily-os.com)
 

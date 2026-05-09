@@ -7,7 +7,12 @@ daybreak/
 .context/
 
 # Codex agent logs (ephemeral debug output)
+.codex/
 .docs/plans/**/_prompts/_logs/
+
+# Local agent scratch space
+.tmp/
+.stash/
 
 # Legacy archive mockups (contain pre-PII-discipline customer references;
 # kept on disk as historical reference but never shipped to git history)
