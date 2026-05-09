@@ -14,6 +14,7 @@ daybreak/
 # Local agent scratch space
 .tmp/
 .stash/
+tasks/
 
 # Legacy archive mockups (contain pre-PII-discipline customer references;
 # kept on disk as historical reference but never shipped to git history)
