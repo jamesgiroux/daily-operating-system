@@ -351,6 +351,8 @@ pub struct PurgeReport {
     pub email_signals_deleted: usize,
     #[serde(default)]
     pub caches_deleted: usize,
+    #[serde(default)]
+    pub temporal_rows_invalidated: usize,
 }
 
 fn is_profile_field(field: &str) -> bool {
@@ -469,6 +471,9 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
 
     db.with_transaction(|tx| {
         let source_str = source.as_str();
+        let temporal_rows_invalidated =
+            crate::services::temporal::mark_source_invalidated_in_db(tx, source_str, Utc::now())
+                .map_err(|e| format!("invalidate temporal source rows failed: {e}"))?;
         let affected_accounts = {
             let mut stmt = tx
                 .conn_ref()
@@ -650,6 +655,7 @@ pub fn purge_source(db: &ActionDb, source: DataSource) -> Result<PurgeReport, Db
             emails_deleted,
             email_signals_deleted,
             caches_deleted,
+            temporal_rows_invalidated,
         })
     })
     .map_err(DbError::Migration)
@@ -784,6 +790,30 @@ mod tests {
             None,
         );
 
+        let now = Utc::now();
+        let temporal_source_refs =
+            serde_json::to_string(&[crate::abilities::provenance::SourceRef::Direct {
+                data_source: crate::abilities::provenance::DataSource::Glean {
+                    downstream: crate::abilities::provenance::GleanDownstream::Documents,
+                },
+                identifier: crate::abilities::provenance::SourceIdentifier::Document {
+                    document_id: crate::abilities::provenance::DocumentId::new("doc-glean"),
+                    chunk_id: None,
+                },
+                observed_at: now,
+                source_asof: Some(now),
+            }])
+            .expect("serialize temporal source refs");
+        db.conn_ref()
+            .execute(
+                "INSERT INTO entity_engagement_curve (
+                     entity_type, entity_id, week_start, meetings_count, emails_count,
+                     bidirectional_ratio, source_refs_json
+                 ) VALUES ('account', 'a1', '2026-05-04T00:00:00Z', 0, 1, 0.0, ?1)",
+                [temporal_source_refs],
+            )
+            .expect("seed glean temporal row");
+
         db.conn_ref()
             .execute(
                 "INSERT INTO person_relationships
@@ -797,6 +827,7 @@ mod tests {
         assert_eq!(report.people_cleared, 1);
         assert_eq!(report.signals_deleted, 1);
         assert_eq!(report.relationships_deleted, 1);
+        assert_eq!(report.temporal_rows_invalidated, 1);
 
         let remaining_user_stakeholders: i64 = db
             .conn_ref()
@@ -817,6 +848,20 @@ mod tests {
             )
             .expect("count user signals");
         assert_eq!(remaining_user_signals, 1);
+
+        let invalidated_temporal_rows: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM entity_engagement_curve
+                 WHERE entity_type = 'account'
+                   AND entity_id = 'a1'
+                   AND source_invalidated_at IS NOT NULL",
+                [],
+                |row| row.get(0),
+            )
+            .expect("count invalidated temporal rows");
+        assert_eq!(invalidated_temporal_rows, 1);
     }
 
     // --- Age-based purge tests ---

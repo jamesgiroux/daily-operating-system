@@ -14,7 +14,7 @@
     "children": [
       {
         "ability_name": "get_entity_context",
-        "ability_schema_version": 1,
+        "ability_schema_version": 2,
         "ability_version": {
           "major": 1,
           "minor": 0
@@ -522,7 +522,7 @@
       },
       {
         "ability_name": "get_entity_context",
-        "ability_schema_version": 1,
+        "ability_schema_version": 2,
         "ability_version": {
           "major": 1,
           "minor": 0

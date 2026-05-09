@@ -105,7 +105,7 @@ pub fn emit_and_propagate(
     confidence: f64,
 ) -> Result<(String, Vec<String>), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    bus::emit_signal_and_propagate(
+    let result = bus::emit_signal_and_propagate(
         db,
         engine,
         entity_type,
@@ -115,7 +115,21 @@ pub fn emit_and_propagate(
         value,
         confidence,
     )
-    .map_err(|e| e.to_string())
+    .map_err(|e| e.to_string())?;
+
+    run_temporal_maintenance_for_signal(
+        ctx,
+        db,
+        TemporalSignalMaintenanceInput {
+            entity_type,
+            entity_id,
+            signal_type,
+            source,
+            signal_id: &result.0,
+            value,
+        },
+    );
+    Ok(result)
 }
 
 /// Best-effort wrapper around `emit` that warn-logs on failure rather than
@@ -229,6 +243,130 @@ pub fn get_by_type(
     signal_type: &str,
 ) -> Result<Vec<SignalEvent>, crate::db::DbError> {
     bus::get_active_signals_by_type(db, entity_type, entity_id, signal_type)
+}
+
+struct TemporalSignalMaintenanceInput<'a> {
+    entity_type: &'a str,
+    entity_id: &'a str,
+    signal_type: &'a str,
+    source: &'a str,
+    signal_id: &'a str,
+    value: Option<&'a str>,
+}
+
+fn run_temporal_maintenance_for_signal(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    input: TemporalSignalMaintenanceInput<'_>,
+) {
+    if input.entity_type != "person" || input.signal_type != "title_change" {
+        return;
+    }
+    let Some((title, org, seniority)) = role_change_from_signal_value(input.value) else {
+        return;
+    };
+
+    let now = ctx.clock.now();
+    let entity_id = input.entity_id.to_string();
+    let role_input = crate::abilities::temporal::DetectRoleChangeInput {
+        schema_version: 2,
+        entity_type: input.entity_type.to_string(),
+        entity_id: entity_id.clone(),
+        observed_at: Some(now),
+        title,
+        org,
+        seniority,
+        source_refs: vec![crate::abilities::provenance::SourceRef::Direct {
+            data_source: temporal_source_for_signal(input.source),
+            identifier: crate::abilities::provenance::SourceIdentifier::Signal {
+                signal_id: crate::abilities::provenance::SignalId::new(input.signal_id.to_string()),
+            },
+            observed_at: now,
+            source_asof: Some(now),
+        }],
+    };
+
+    if let Err(error) = crate::services::temporal::detect_role_change_in_db(db, role_input, now) {
+        log::warn!(
+            "temporal role progression maintenance skipped for title_change on person/{}: {error}",
+            entity_id
+        );
+    }
+}
+
+fn temporal_source_for_signal(source: &str) -> crate::abilities::provenance::DataSource {
+    match source.trim().to_ascii_lowercase().as_str() {
+        "clay" => crate::abilities::provenance::DataSource::Clay,
+        "google" => crate::abilities::provenance::DataSource::Google,
+        "local_enrichment" => crate::abilities::provenance::DataSource::LocalEnrichment,
+        other => crate::abilities::provenance::DataSource::Other(
+            crate::abilities::provenance::SourceName::new(other),
+        ),
+    }
+}
+
+fn role_change_from_signal_value(
+    value: Option<&str>,
+) -> Option<(String, Option<String>, Option<String>)> {
+    let raw = value?.trim();
+    if raw.is_empty() {
+        return None;
+    }
+
+    if let Ok(parsed) = serde_json::from_str::<Value>(raw) {
+        let title = string_field(&parsed, &["title", "new_title"])
+            .or_else(|| {
+                string_field(&parsed, &["new_value"])
+                    .and_then(split_title_org)
+                    .map(|pair| pair.0)
+            })
+            .or_else(|| string_field(&parsed, &["new_value"]));
+        let org = string_field(&parsed, &["org", "organization", "company"]).or_else(|| {
+            string_field(&parsed, &["new_value"])
+                .and_then(split_title_org)
+                .and_then(|pair| pair.1)
+        });
+        let seniority = string_field(&parsed, &["seniority"]);
+        return title.and_then(|title| normalized_role_change(title, org, seniority));
+    }
+
+    let (title, org) = split_title_org(raw.to_string()).unwrap_or_else(|| (raw.to_string(), None));
+    normalized_role_change(title, org, None)
+}
+
+fn string_field(value: &Value, keys: &[&str]) -> Option<String> {
+    keys.iter().find_map(|key| {
+        value
+            .get(*key)
+            .and_then(Value::as_str)
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn split_title_org(value: String) -> Option<(String, Option<String>)> {
+    let (title, org) = value.rsplit_once(" at ")?;
+    Some((title.trim().to_string(), Some(org.trim().to_string())))
+}
+
+fn normalized_role_change(
+    title: String,
+    org: Option<String>,
+    seniority: Option<String>,
+) -> Option<(String, Option<String>, Option<String>)> {
+    let title = normalize_signal_field(Some(title))?;
+    Some((
+        title,
+        normalize_signal_field(org),
+        normalize_signal_field(seniority),
+    ))
+}
+
+fn normalize_signal_field(value: Option<String>) -> Option<String> {
+    value
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty() && value != "Unknown")
 }
 
 /// Generate signal-based briefing callouts. Discards the persistence-outcome

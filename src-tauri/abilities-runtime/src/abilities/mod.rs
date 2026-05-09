@@ -6,6 +6,7 @@ pub mod get_entity_context;
 pub mod prepare_meeting;
 pub mod provenance;
 pub mod registry;
+pub mod temporal;
 pub mod threads;
 pub mod tracer;
 pub mod trust;
@@ -25,5 +26,6 @@ pub use registry::{
     AbilityPolicy, AbilityRegistry, AbilityResult, Actor, ComposesEntry, ConfirmationProof,
     SignalPolicy,
 };
+pub use temporal::*;
 pub use threads::ThreadMetadata;
 pub use tracer::{AbilityTracer, NoopAbilityTracer, SpanHandle, NOOP_ABILITY_TRACER};

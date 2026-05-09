@@ -107,7 +107,7 @@ async fn get_entity_context_tauri_bridge_wraps_confidential_claim_text_with_reve
             &provider,
             "get_entity_context",
             json!({
-                "schema_version": 1,
+                "schema_version": 2,
                 "entity_type": "account",
                 "entity_id": ACCOUNT_ID,
                 "depth": "standard",
@@ -116,7 +116,7 @@ async fn get_entity_context_tauri_bridge_wraps_confidential_claim_text_with_reve
         .await
         .expect("Tauri ability bridge invocation succeeds");
 
-    let entry = response.data[0]
+    let entry = response.data["entries"][0]
         .as_object()
         .expect("entity context entry is an object");
     let content = entry

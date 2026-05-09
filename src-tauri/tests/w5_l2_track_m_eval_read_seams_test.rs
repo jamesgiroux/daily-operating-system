@@ -74,7 +74,7 @@ mod w5_l2_track_m_eval_read_seams_test {
         let err = get_entity_context(
             &ctx,
             GetEntityContextInput {
-                schema_version: 1,
+                schema_version: 2,
                 entity_type: "account".to_string(),
                 entity_id: "acct-track-m".to_string(),
                 depth: ContextDepth::Standard,

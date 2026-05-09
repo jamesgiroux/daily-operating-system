@@ -59,6 +59,7 @@ macro_rules! id_newtype {
 }
 
 id_newtype!(SignalId);
+id_newtype!(EmailId);
 id_newtype!(MessageId);
 id_newtype!(MeetingId);
 id_newtype!(DocumentId);
@@ -211,6 +212,10 @@ pub enum SourceIdentifier {
     },
     EmailThread {
         thread_id: crate::abilities::provenance::ThreadId,
+        message_id: Option<MessageId>,
+    },
+    EmailMessage {
+        email_id: EmailId,
         message_id: Option<MessageId>,
     },
     Meeting {

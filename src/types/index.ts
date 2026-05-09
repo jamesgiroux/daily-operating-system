@@ -3225,6 +3225,44 @@ export interface EntityContextEntry {
   updatedAt: string;
 }
 
+export interface EntityContextOutput {
+  entries: EntityContextEntry[];
+  trajectory?: TrajectoryBundle | null;
+}
+
+export interface TrajectoryBundle {
+  engagement_curve?: TrajectorySnapshot<EngagementWindow> | null;
+  role_progression?: TrajectorySnapshot<RoleEntry> | null;
+}
+
+export interface TrajectorySnapshot<T> {
+  kind: "engagement_curve" | "role_progression";
+  entity_id: string;
+  series: Array<DataPoint<T>>;
+  computed_at: string;
+  confidence: number;
+}
+
+export interface DataPoint<T> {
+  at: string;
+  value: T;
+  source_refs: unknown[];
+}
+
+export interface EngagementWindow {
+  meetings_count: number;
+  emails_count: number;
+  bidirectional_ratio: number;
+}
+
+export interface RoleEntry {
+  started_at: string;
+  ended_at?: string | null;
+  title: string;
+  org?: string | null;
+  seniority?: string | null;
+}
+
 export interface AnnualPriority {
   id: string;
   text: string;
