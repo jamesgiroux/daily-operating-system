@@ -16,7 +16,7 @@ pub const KIND_TRANSFORM: &str = "transform";
 pub const KIND_MAINTENANCE_APPLY: &str = "maintenance_apply";
 pub const KIND_OUTBOX_REPLAY: &str = "outbox_replay";
 
-const DEFAULT_QUEUE_HARD_BOUND: i64 = 10_000;
+pub const DEFAULT_QUEUE_PENDING_CAP: i64 = 10_000;
 const DEFAULT_CHAIN_DEPTH_CAP: i64 = 16;
 const CLAIM_RECOMPUTE_ABILITY_ID: &str = "claim_recompute";
 const CLAIM_RECOMPUTE_ABILITY_VERSION: &str = "1";
@@ -132,6 +132,27 @@ pub struct InvalidationJobReceipt {
     pub successor_of_job_id: Option<String>,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidationQueueBounds {
+    pub pending_cap: i64,
+}
+
+impl InvalidationQueueBounds {
+    pub fn with_pending_cap(pending_cap: i64) -> Self {
+        Self {
+            pending_cap: pending_cap.max(1),
+        }
+    }
+}
+
+impl Default for InvalidationQueueBounds {
+    fn default() -> Self {
+        Self {
+            pending_cap: DEFAULT_QUEUE_PENDING_CAP,
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum JobFailureDisposition {
     RetryScheduled,
@@ -152,9 +173,28 @@ impl ActionDb {
         &self,
         input: EnqueueInvalidationJob,
     ) -> Result<InvalidationJobReceipt, DbError> {
+        self.enqueue_invalidation_job_with_bounds(input, InvalidationQueueBounds::default())
+    }
+
+    pub fn enqueue_invalidation_job_with_pending_cap(
+        &self,
+        input: EnqueueInvalidationJob,
+        pending_cap: i64,
+    ) -> Result<InvalidationJobReceipt, DbError> {
+        self.enqueue_invalidation_job_with_bounds(
+            input,
+            InvalidationQueueBounds::with_pending_cap(pending_cap),
+        )
+    }
+
+    pub fn enqueue_invalidation_job_with_bounds(
+        &self,
+        input: EnqueueInvalidationJob,
+        bounds: InvalidationQueueBounds,
+    ) -> Result<InvalidationJobReceipt, DbError> {
         let mut outcome: Option<Result<InvalidationJobReceipt, DbError>> = None;
         let tx_result = self.with_transaction(|tx| {
-            let result = tx.enqueue_invalidation_job_inner(input);
+            let result = tx.enqueue_invalidation_job_inner(input, bounds);
             let tx_result = result
                 .as_ref()
                 .map(|_| ())
@@ -169,7 +209,10 @@ impl ActionDb {
                     "invalidation job enqueue did not produce a result".to_string(),
                 ))
             }),
-            Err(error) => Err(DbError::Migration(error)),
+            Err(error) => match outcome {
+                Some(Err(db_error)) => Err(db_error),
+                _ => Err(DbError::Migration(error)),
+            },
         }
     }
 
@@ -347,6 +390,7 @@ impl ActionDb {
     fn enqueue_invalidation_job_inner(
         &self,
         mut input: EnqueueInvalidationJob,
+        bounds: InvalidationQueueBounds,
     ) -> Result<InvalidationJobReceipt, DbError> {
         validate_job_input(&input)?;
         if input.raw_signal_count <= 0 {
@@ -371,7 +415,7 @@ impl ActionDb {
                 input.successor_of_job_id = Some(running.id.clone());
                 input.depth = running.depth;
                 input.chain_ancestry = parse_ancestry(&running.chain_ancestry_json)?;
-                return self.insert_new_job(input, true);
+                return self.insert_new_job(input, true, bounds);
             }
         } else if let Some(existing) =
             self.find_active_idempotency_job(&derive_idempotency_key(&input))?
@@ -379,19 +423,35 @@ impl ActionDb {
             return Ok(receipt_for_job(&existing, true));
         }
 
-        self.insert_new_job(input, false)
+        self.insert_new_job(input, false, bounds)
     }
 
     fn insert_new_job(
         &self,
         input: EnqueueInvalidationJob,
         coalesced: bool,
+        bounds: InvalidationQueueBounds,
     ) -> Result<InvalidationJobReceipt, DbError> {
-        let active_depth = self.active_invalidation_job_depth()?;
-        if active_depth >= DEFAULT_QUEUE_HARD_BOUND {
-            return Err(DbError::InvalidArgument(
-                "invalidation queue is at the hard bound".to_string(),
-            ));
+        let pending_depth = self.pending_invalidation_job_depth()?;
+        if pending_depth >= bounds.pending_cap {
+            if let Some(job) = self.find_pending_job_for_aggressive_coalesce(&input)? {
+                self.update_pending_coalesced_job(&job.id, &input)?;
+                let updated = self.get_invalidation_job(&job.id)?.ok_or_else(|| {
+                    DbError::InvalidArgument("aggressively coalesced job disappeared".to_string())
+                })?;
+                log::warn!(
+                    "invalidation queue pending cap {} reached; aggressively coalesced {} into {}",
+                    bounds.pending_cap,
+                    input.subject_id,
+                    updated.id
+                );
+                return Ok(receipt_for_job(&updated, true));
+            }
+
+            return Err(DbError::InvalidArgument(format!(
+                "invalidation queue pending cap {} reached; enqueue rejected",
+                bounds.pending_cap
+            )));
         }
 
         let now = Utc::now().to_rfc3339();
@@ -683,7 +743,10 @@ impl ActionDb {
         {
             let successor_input =
                 successor_input_for_stale_terminalization(&job, current_source_claim_version)?;
-            let receipt = self.enqueue_invalidation_job_inner(successor_input)?;
+            let receipt = self.enqueue_invalidation_job_inner(
+                successor_input,
+                InvalidationQueueBounds::default(),
+            )?;
             successor_job_id = Some(receipt.job_id);
         }
 
@@ -727,15 +790,55 @@ impl ActionDb {
         }
     }
 
-    fn active_invalidation_job_depth(&self) -> Result<i64, DbError> {
+    fn pending_invalidation_job_depth(&self) -> Result<i64, DbError> {
         self.conn_ref()
             .query_row(
                 "SELECT COUNT(*)
                  FROM invalidation_jobs
-                 WHERE status IN ('pending', 'running')",
+                 WHERE status = 'pending'",
                 [],
                 |row| row.get(0),
             )
+            .map_err(DbError::Sqlite)
+    }
+
+    fn find_pending_job_for_aggressive_coalesce(
+        &self,
+        input: &EnqueueInvalidationJob,
+    ) -> Result<Option<InvalidationJob>, DbError> {
+        self.conn_ref()
+            .query_row(
+                "SELECT
+                    id, job_kind, operation, status, priority, chain_id,
+                    parent_job_id, successor_of_job_id, origin_signal_id,
+                    depth, chain_ancestry_json, idempotency_key, coalescing_key,
+                    subject_type, subject_id, ability_id, ability_version,
+                    source_claim_version, latest_source_claim_version, source_asof,
+                    input_snapshot_hash, provider_fingerprint, prompt_fingerprint,
+                    payload_json, first_signal_id, latest_signal_id, raw_signal_count,
+                    attempts, max_attempts, lease_owner, lease_expires_at,
+                    stale_marker_json
+                 FROM invalidation_jobs
+                 WHERE status = 'pending'
+                   AND job_kind = ?1
+                   AND operation = ?2
+                   AND subject_type = ?3
+                   AND subject_id = ?4
+                   AND ability_id = ?5
+                   AND ability_version = ?6
+                 ORDER BY priority DESC, updated_at DESC, created_at DESC
+                 LIMIT 1",
+                params![
+                    &input.job_kind,
+                    &input.operation,
+                    &input.subject_type,
+                    &input.subject_id,
+                    &input.ability_id,
+                    &input.ability_version,
+                ],
+                map_invalidation_job,
+            )
+            .optional()
             .map_err(DbError::Sqlite)
     }
 
@@ -1213,6 +1316,55 @@ mod tests {
             .expect("cycle job");
         assert_eq!(job.status, STATUS_CYCLE_DETECTED);
         assert!(job.stale_marker_json.is_some());
+    }
+
+    #[test]
+    fn pending_cap_aggressively_coalesces_matching_output() {
+        let db = test_db();
+        seed_account(&db, "acct-cap-coalesce", 1);
+        let mut first = claim_input("sig-1", "acct-cap-coalesce", 1);
+        first.coalescing_key = Some("first-window".to_string());
+        let first_receipt = db
+            .enqueue_invalidation_job_with_pending_cap(first, 1)
+            .expect("enqueue first");
+
+        let mut second = claim_input("sig-2", "acct-cap-coalesce", 2);
+        second.coalescing_key = Some("second-window".to_string());
+        let second_receipt = db
+            .enqueue_invalidation_job_with_pending_cap(second, 1)
+            .expect("aggressively coalesce second");
+
+        assert_eq!(second_receipt.job_id, first_receipt.job_id);
+        assert!(second_receipt.coalesced);
+
+        let job = db
+            .get_invalidation_job(&first_receipt.job_id)
+            .expect("read job")
+            .expect("job");
+        assert_eq!(job.latest_source_claim_version, 2);
+        assert_eq!(job.latest_signal_id.as_deref(), Some("sig-2"));
+        assert_eq!(job.raw_signal_count, 2);
+    }
+
+    #[test]
+    fn pending_cap_rejects_distinct_output_visibly() {
+        let db = test_db();
+        seed_account(&db, "acct-cap-a", 1);
+        seed_account(&db, "acct-cap-b", 1);
+        db.enqueue_invalidation_job_with_pending_cap(claim_input("sig-1", "acct-cap-a", 1), 1)
+            .expect("enqueue first");
+
+        let err = db
+            .enqueue_invalidation_job_with_pending_cap(claim_input("sig-2", "acct-cap-b", 1), 1)
+            .expect_err("distinct output should be rejected at cap");
+        assert!(
+            matches!(
+                err,
+                DbError::InvalidArgument(ref message)
+                    if message.contains("invalidation queue pending cap 1 reached")
+            ),
+            "expected visible InvalidArgument cap rejection, got {err}"
+        );
     }
 
     #[test]

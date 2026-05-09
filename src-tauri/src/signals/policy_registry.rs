@@ -117,7 +117,7 @@ pub enum SignalType {
 impl SignalType {
     pub fn from_name(name: &str) -> Self {
         match name {
-            "ability_output_changed" => Self::AbilityOutputChanged {
+            "ability_output_changed" | "AbilityOutputChanged" => Self::AbilityOutputChanged {
                 ability_name: String::new(),
                 output_id: String::new(),
             },
@@ -135,7 +135,7 @@ impl SignalType {
             "claim_feedback_recorded" => Self::ClaimFeedbackRecorded,
             "claim_retracted" => Self::ClaimRetracted,
             "claim_superseded" => Self::ClaimSuperseded,
-            "claim_trust_changed" => Self::ClaimTrustChanged,
+            "claim_trust_changed" | "ClaimTrustChanged" => Self::ClaimTrustChanged,
             "claim_verification_state_changed" => Self::ClaimVerificationStateChanged,
             "co_attendance" => Self::CoAttendance,
             "commitment_captured" => Self::CommitmentCaptured,
@@ -158,7 +158,7 @@ impl SignalType {
             "entity_resolved" => Self::EntityResolved,
             "entity_resolution" => Self::EntityResolution,
             "entity_restored" => Self::EntityRestored,
-            "entity_updated" => Self::EntityUpdated,
+            "entity_updated" | "EntityUpdated" => Self::EntityUpdated,
             "escalation_detected" => Self::EscalationDetected,
             "glean_champion_departed" => Self::GleanChampionDeparted,
             "glean_contact_discovered" => Self::GleanContactDiscovered,
@@ -226,6 +226,125 @@ impl SignalType {
                 name: other.to_string(),
             },
         }
+    }
+
+    pub fn canonical_name(&self) -> &str {
+        match self {
+            Self::AbilityOutputChanged { .. } => "ability_output_changed",
+            Self::AccountCreated => "account_created",
+            Self::AccountDomainsUpdated => "account_domains_updated",
+            Self::AccountEventRecorded => "account_event_recorded",
+            Self::AccountMerged => "account_merged",
+            Self::AccountRisk => "account_risk",
+            Self::AccountUpdated => "account_updated",
+            Self::ActionCluster => "action_cluster",
+            Self::ChampionEngagementConfirmed => "champion_engagement_confirmed",
+            Self::ChampionRisk => "champion_risk",
+            Self::ClaimAsserted => "claim_asserted",
+            Self::ClaimContradiction => "claim_contradiction",
+            Self::ClaimFeedbackRecorded => "claim_feedback_recorded",
+            Self::ClaimRetracted => "claim_retracted",
+            Self::ClaimSuperseded => "claim_superseded",
+            Self::ClaimTrustChanged => "claim_trust_changed",
+            Self::ClaimVerificationStateChanged => "claim_verification_state_changed",
+            Self::CoAttendance => "co_attendance",
+            Self::CommitmentCaptured => "commitment_captured",
+            Self::CommitmentReceived => "commitment_received",
+            Self::CompanyChange => "company_change",
+            Self::CompetitorMentioned => "competitor_mentioned",
+            Self::ContractSigned => "contract_signed",
+            Self::EmailCadenceDrop => "email_cadence_drop",
+            Self::EmailCadenceDropDismissed => "email_cadence_drop_dismissed",
+            Self::EmailItemDismissed => "email_item_dismissed",
+            Self::EmailReceived => "email_received",
+            Self::EmailSignalDismissed => "email_signal_dismissed",
+            Self::EngagementWarning => "engagement_warning",
+            Self::EnrichmentComplete => "enrichment_complete",
+            Self::EnrichmentStale => "enrichment_stale",
+            Self::EntityArchived => "entity_archived",
+            Self::EntityCreated => "entity_created",
+            Self::EntityEnriched => "entity_enriched",
+            Self::EntityIntelligenceUpdated => "entity_intelligence_updated",
+            Self::EntityResolved => "entity_resolved",
+            Self::EntityResolution => "entity_resolution",
+            Self::EntityRestored => "entity_restored",
+            Self::EntityUpdated => "entity_updated",
+            Self::EscalationDetected => "escalation_detected",
+            Self::GleanChampionDeparted => "glean_champion_departed",
+            Self::GleanContactDiscovered => "glean_contact_discovered",
+            Self::GleanOrgChange => "glean_org_change",
+            Self::HealthChange => "health_change",
+            Self::IntelligenceAnnotated => "intelligence_annotated",
+            Self::IntelligenceConfirmed => "intelligence_confirmed",
+            Self::IntelligenceCorrected => "intelligence_corrected",
+            Self::IntelligenceCurated => "intelligence_curated",
+            Self::IntelligenceRefreshed => "intelligence_refreshed",
+            Self::IntelligenceRejected => "intelligence_rejected",
+            Self::MeetingFrequency => "meeting_frequency",
+            Self::MeetingFrequencyDrop => "meeting_frequency_drop",
+            Self::NegativeSentiment => "negative_sentiment",
+            Self::ObjectiveCompleted => "objective_completed",
+            Self::ObjectiveCreated => "objective_created",
+            Self::ObjectiveUpdated => "objective_updated",
+            Self::PersonCreated => "person_created",
+            Self::PersonProfileUpdated => "person_profile_updated",
+            Self::PersonUpdated => "person_updated",
+            Self::PredictionConfirmed => "prediction_confirmed",
+            Self::PreMeetingContext => "pre_meeting_context",
+            Self::PrepInvalidated => "prep_invalidated",
+            Self::ProactiveActionCluster => "proactive_action_cluster",
+            Self::ProactiveEmailSpike => "proactive_email_spike",
+            Self::ProactiveMeetingLoad => "proactive_meeting_load",
+            Self::ProactiveNoContact => "proactive_no_contact",
+            Self::ProactivePrepGap => "proactive_prep_gap",
+            Self::ProactiveRelationshipDrift => "proactive_relationship_drift",
+            Self::ProactiveRenewalGap => "proactive_renewal_gap",
+            Self::ProactiveStaleChampion => "proactive_stale_champion",
+            Self::ProfileDiscovered => "profile_discovered",
+            Self::ProfileEnriched => "profile_enriched",
+            Self::ProfileUpdate => "profile_update",
+            Self::ProfileUpdated => "profile_updated",
+            Self::ProjectHealthWarning => "project_health_warning",
+            Self::ReadModelMaterialized => "read_model_materialized",
+            Self::RegulatoryGapDetected => "regulatory_gap_detected",
+            Self::RegulatoryRequirementDetected => "regulatory_requirement_detected",
+            Self::RelationshipGraphChanged => "relationship_graph_changed",
+            Self::RelationshipInferred => "relationship_inferred",
+            Self::RenewalAtRisk => "renewal_at_risk",
+            Self::RenewalDataUpdated => "renewal_data_updated",
+            Self::RenewalProximity => "renewal_proximity",
+            Self::RenewalRiskEscalation => "renewal_risk_escalation",
+            Self::RenewalStageUpdated => "renewal_stage_updated",
+            Self::SourceRestricted => "source_restricted",
+            Self::SourceRevoked => "source_revoked",
+            Self::SourceWithdrawn => "source_withdrawn",
+            Self::StakeholderChange => "stakeholder_change",
+            Self::StakeholderDisengagement => "stakeholder_disengagement",
+            Self::StakeholderUnverified => "stakeholder_unverified",
+            Self::StakeholderVerified => "stakeholder_verified",
+            Self::StakeholdersChanged => "stakeholders_changed",
+            Self::StakeholdersUpdated => "stakeholders_updated",
+            Self::SupportHealthUpdated => "support_health_updated",
+            Self::TechnicalFootprintUpdated => "technical_footprint_updated",
+            Self::ThreadPosition => "thread_position",
+            Self::TitleChange => "title_change",
+            Self::TranscriptOutcomes => "transcript_outcomes",
+            Self::TranscriptSentiment => "transcript_sentiment",
+            Self::UserCorrection => "user_correction",
+            Self::UserCorrectionSubmitted => "user_correction_submitted",
+            Self::Legacy { name } => name.as_str(),
+        }
+    }
+
+    pub fn is_claim_rate_limited(&self) -> bool {
+        matches!(self, Self::ClaimTrustChanged)
+    }
+
+    pub fn uses_emit_path_coalescing(&self) -> bool {
+        matches!(
+            self,
+            Self::EntityUpdated | Self::ClaimTrustChanged | Self::AbilityOutputChanged { .. }
+        )
     }
 }
 
@@ -353,13 +472,6 @@ pub struct SignalPolicy {
 const COALESCE_ENTITY_500MS: CoalescingPolicy = CoalescingPolicy::EntitySignal {
     window: Duration::from_millis(500),
 };
-const COALESCE_ENTITY_2S: CoalescingPolicy = CoalescingPolicy::EntitySignal {
-    window: Duration::from_secs(2),
-};
-const COALESCE_ABILITY_2S: CoalescingPolicy = CoalescingPolicy::SubjectAbilityInput {
-    window: Duration::from_secs(2),
-};
-
 pub fn policy_for(signal: &SignalType) -> SignalPolicy {
     use SignalType::*;
 
@@ -498,7 +610,7 @@ fn coalesced_claim_trust_policy() -> SignalPolicy {
         role: SignalRole::Invalidation,
         execution_mode: ExecutionModeBehavior::PersistInLive,
         propagation: PropagationPolicy::PropagateAsync {
-            coalesce: Some(COALESCE_ENTITY_2S),
+            coalesce: Some(COALESCE_ENTITY_500MS),
         },
         target_resolver: TargetResolver::ClaimSubject,
         retry_class: RetryClass::Invalidation,
@@ -549,7 +661,7 @@ fn ability_output_policy() -> SignalPolicy {
         role: SignalRole::Invalidation,
         execution_mode: ExecutionModeBehavior::PersistInLive,
         propagation: PropagationPolicy::PropagateAsync {
-            coalesce: Some(COALESCE_ABILITY_2S),
+            coalesce: Some(COALESCE_ENTITY_500MS),
         },
         target_resolver: TargetResolver::AbilityOutput,
         retry_class: RetryClass::Invalidation,
@@ -668,5 +780,25 @@ mod tests {
         let policy = policy_for_name("read_model_materialized");
         assert_eq!(policy.role, SignalRole::ReadModelMaterialized);
         assert_eq!(policy.propagation, PropagationPolicy::Local);
+    }
+
+    #[test]
+    fn dos237_named_signals_use_500ms_async_coalescing() {
+        for name in [
+            "EntityUpdated",
+            "ClaimTrustChanged",
+            "AbilityOutputChanged",
+            "entity_updated",
+            "claim_trust_changed",
+            "ability_output_changed",
+        ] {
+            let policy = policy_for_name(name);
+            assert!(matches!(
+                policy.propagation,
+                PropagationPolicy::PropagateAsync {
+                    coalesce: Some(CoalescingPolicy::EntitySignal { window })
+                } if window == Duration::from_millis(500)
+            ));
+        }
     }
 }

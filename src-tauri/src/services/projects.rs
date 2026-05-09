@@ -340,6 +340,7 @@ pub async fn update_project_field(
                 db,
                 &project_id,
                 "project",
+                "field_updated",
                 &intel_queue,
             );
 

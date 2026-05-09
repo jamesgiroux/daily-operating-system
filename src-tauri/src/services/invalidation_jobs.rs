@@ -3,13 +3,43 @@ use std::sync::Arc;
 use serde_json::json;
 
 use crate::db::invalidation_jobs::{
-    EnqueueInvalidationJob, InvalidationJob, JobFailureDisposition, TerminalizationOutcome,
+    EnqueueInvalidationJob, InvalidationJob, InvalidationQueueBounds, JobFailureDisposition,
+    TerminalizationOutcome, DEFAULT_QUEUE_PENDING_CAP,
 };
 use crate::db::ActionDb;
 use crate::services::context::ServiceContext;
 use crate::state::AppState;
 
 const STARTUP_DRAIN_LIMIT: usize = 100;
+const QUEUE_PENDING_CAP_ENV: &str = "DAILYOS_INVALIDATION_JOBS_PENDING_CAP";
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidationJobQueueConfig {
+    pub pending_cap: i64,
+}
+
+impl InvalidationJobQueueConfig {
+    pub fn from_env() -> Self {
+        let pending_cap = std::env::var(QUEUE_PENDING_CAP_ENV)
+            .ok()
+            .and_then(|raw| raw.parse::<i64>().ok())
+            .filter(|cap| *cap > 0)
+            .unwrap_or(DEFAULT_QUEUE_PENDING_CAP);
+        Self { pending_cap }
+    }
+
+    fn bounds(self) -> InvalidationQueueBounds {
+        InvalidationQueueBounds::with_pending_cap(self.pending_cap)
+    }
+}
+
+impl Default for InvalidationJobQueueConfig {
+    fn default() -> Self {
+        Self {
+            pending_cap: DEFAULT_QUEUE_PENDING_CAP,
+        }
+    }
+}
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaimRecomputeProcessOutcome {
@@ -35,6 +65,22 @@ pub fn enqueue_signal_claim_recompute_in_tx(
     subject_type: &str,
     subject_id: &str,
 ) -> Result<crate::db::invalidation_jobs::InvalidationJobReceipt, String> {
+    enqueue_signal_claim_recompute_with_config_in_tx(
+        tx,
+        origin_signal_id,
+        subject_type,
+        subject_id,
+        InvalidationJobQueueConfig::from_env(),
+    )
+}
+
+pub fn enqueue_signal_claim_recompute_with_config_in_tx(
+    tx: &ActionDb,
+    origin_signal_id: &str,
+    subject_type: &str,
+    subject_id: &str,
+    config: InvalidationJobQueueConfig,
+) -> Result<crate::db::invalidation_jobs::InvalidationJobReceipt, String> {
     let source_claim_version = tx
         .current_claim_version_for_subject(subject_type, subject_id)
         .map_err(|e| e.to_string())?;
@@ -44,7 +90,7 @@ pub fn enqueue_signal_claim_recompute_in_tx(
         subject_id,
         source_claim_version,
     );
-    tx.enqueue_invalidation_job(input)
+    tx.enqueue_invalidation_job_with_bounds(input, config.bounds())
         .map_err(|e| e.to_string())
 }
 

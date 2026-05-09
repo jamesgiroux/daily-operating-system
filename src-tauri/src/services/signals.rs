@@ -73,9 +73,13 @@ pub fn emit_in_transaction(
     payload: Value,
 ) -> Result<String, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
-    let signal_id =
+    let outcome =
         bus::emit_signal_in_active_tx(tx, entity_type, entity_id, signal_type, source, &payload)
             .map_err(|e| e.to_string())?;
+
+    if outcome.coalesced {
+        return Ok(outcome.id);
+    }
 
     for subscriber in crate::signals::derived_state_subscribers::registry() {
         if subscriber.signal_type() == signal_type {
@@ -83,7 +87,7 @@ pub fn emit_in_transaction(
         }
     }
 
-    Ok(signal_id)
+    Ok(outcome.id)
 }
 
 /// Emit a signal and run cross-entity propagation rules.
