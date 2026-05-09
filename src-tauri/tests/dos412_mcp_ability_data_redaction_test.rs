@@ -129,7 +129,7 @@ async fn mcp_ability_data_redacts_tagged_private_claim_text_while_tauri_stays_ra
     let state = AppState::new();
     let tauri_bridge = TauriAbilityBridge::new(&registry);
     let tauri_response = tauri_bridge
-        .invoke(
+        .invoke_tauri_app(
             &state,
             "dos412_synthetic_claim_text",
             json!({}),
@@ -185,7 +185,7 @@ async fn mcp_ability_response_drops_diagnostics_warnings_while_tauri_keeps_them(
     let state = AppState::new();
     let tauri_bridge = TauriAbilityBridge::new(&registry);
     let tauri_response = tauri_bridge
-        .invoke(
+        .invoke_tauri_app(
             &state,
             "dos412_synthetic_claim_text",
             json!({}),

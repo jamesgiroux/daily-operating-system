@@ -11,8 +11,8 @@ use crate::abilities::provenance::{
     build_ownership_policy_for_invocation, validate_serialized_subject_ownership,
 };
 use crate::abilities::{AbilityRegistry, Actor};
-use crate::bridges::tauri::TauriAbilityBridge;
-use crate::bridges::{AbilityResponseJson, BridgeSurfaceError, ConfirmationToken};
+use crate::bridges::tauri::{TauriAbilityBridge, TauriInvokeContext};
+use crate::bridges::{AbilityResponseJson, BridgeSurface, BridgeSurfaceError, ConfirmationToken};
 use crate::state::AppState;
 
 #[allow(
@@ -43,8 +43,12 @@ pub async fn invoke_ability(
             state.inner().as_ref(),
             &ability_name,
             input_json,
-            dry_run,
-            confirmation.as_ref(),
+            TauriInvokeContext::new(
+                Actor::User,
+                BridgeSurface::TauriApp,
+                dry_run,
+                confirmation.as_ref(),
+            ),
         )
         .await?;
     let policy = build_ownership_policy_for_invocation(
