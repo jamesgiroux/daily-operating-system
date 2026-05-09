@@ -1,4 +1,6 @@
-CREATE TABLE IF NOT EXISTS invalidation_jobs (
+PRAGMA foreign_keys=OFF;
+
+CREATE TABLE IF NOT EXISTS invalidation_jobs_v148 (
     id                            TEXT PRIMARY KEY,
     job_kind                      TEXT NOT NULL
                                       CHECK (job_kind IN (
@@ -67,6 +69,36 @@ CREATE TABLE IF NOT EXISTS invalidation_jobs (
     CHECK (latest_source_claim_version >= source_claim_version)
 );
 
+INSERT INTO invalidation_jobs_v148 (
+    id, job_kind, operation, status, priority, chain_id,
+    parent_job_id, successor_of_job_id, origin_signal_id,
+    depth, chain_ancestry_json, idempotency_key, coalescing_key,
+    subject_type, subject_id, ability_id, ability_version,
+    source_claim_version, latest_source_claim_version, source_asof,
+    input_snapshot_hash, provider_fingerprint, prompt_fingerprint,
+    payload_json, first_signal_id, latest_signal_id, raw_signal_count,
+    covered_since_at, covered_until_at, attempts, max_attempts,
+    next_run_at, lease_owner, lease_expires_at, claimed_at,
+    completed_at, dead_lettered_at, last_error, stale_marker_json,
+    created_at, updated_at
+)
+SELECT
+    id, job_kind, operation, status, priority, chain_id,
+    parent_job_id, successor_of_job_id, origin_signal_id,
+    depth, chain_ancestry_json, idempotency_key, coalescing_key,
+    subject_type, subject_id, ability_id, ability_version,
+    source_claim_version, latest_source_claim_version, source_asof,
+    input_snapshot_hash, provider_fingerprint, prompt_fingerprint,
+    payload_json, first_signal_id, latest_signal_id, raw_signal_count,
+    covered_since_at, covered_until_at, attempts, max_attempts,
+    next_run_at, lease_owner, lease_expires_at, claimed_at,
+    completed_at, dead_lettered_at, last_error, stale_marker_json,
+    created_at, updated_at
+FROM invalidation_jobs;
+
+DROP TABLE invalidation_jobs;
+ALTER TABLE invalidation_jobs_v148 RENAME TO invalidation_jobs;
+
 CREATE INDEX IF NOT EXISTS idx_invalidation_jobs_status_run
     ON invalidation_jobs(status, next_run_at, created_at);
 
@@ -96,3 +128,5 @@ CREATE UNIQUE INDEX IF NOT EXISTS ux_invalidation_jobs_active_idempotency
     ON invalidation_jobs(idempotency_key)
     WHERE status IN ('pending', 'running')
       AND successor_of_job_id IS NULL;
+
+PRAGMA foreign_keys=ON;

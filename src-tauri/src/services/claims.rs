@@ -18,7 +18,7 @@
 use std::collections::{HashMap, HashSet, VecDeque};
 use std::sync::{Arc, OnceLock};
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use parking_lot::Mutex;
 use rusqlite::{params, Connection, OptionalExtension, Params};
 use schemars::JsonSchema;
@@ -130,6 +130,50 @@ pub struct ClaimFeedbackOutcome {
     pub new_verification_state: ClaimVerificationState,
     pub applied_at_pending: bool,
     pub repair_job_id: Option<String>,
+}
+
+/// Claim-generation contract boundary.
+///
+/// Implementation note: this cites and accepts the W0-A enrichment refactor
+/// design in `.docs/research/enrichment-refactor-design.md`: claim generation
+/// is per reviewable fact; `get_entity_context` is the canonical Read shape;
+/// `prepare_meeting` is a Transform that may produce bounded claim proposals;
+/// narrative assembly cannot write durable claims directly. The signal policy,
+/// durable repair job, and load-test amendment bullets in that document are
+/// accepted here. None are rejected.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+#[serde(rename_all = "snake_case")]
+pub enum ClaimGenerationContract {
+    ClaimExtraction,
+    ClaimValidation,
+    ClaimRepair,
+    NarrativeAssembly,
+}
+
+/// Explicit per-ability claim-generation budget. These are generation budgets,
+/// not total DB read budgets for the surrounding surface.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub struct ClaimGenerationBudget {
+    pub ability_id: String,
+    pub contract: ClaimGenerationContract,
+    pub max_candidate_claims: u16,
+    pub max_provider_queries: u16,
+    pub max_retrieval_sources: u16,
+    pub max_llm_calls: u16,
+    pub max_prompt_tokens: u32,
+    pub max_output_tokens: u32,
+    pub may_commit_claims: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize, JsonSchema)]
+pub enum TargetedRepairProcessOutcome {
+    NoJob,
+    Completed {
+        job_id: String,
+        repair_jobs_processed: usize,
+        claims_changed: usize,
+        contradictions_reconciled: usize,
+    },
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -1763,6 +1807,7 @@ pub fn commit_claim(
     let metadata = metadata_for_claim_type(kind);
     let actor_class = actor_class_for_actor(&proposal.actor)
         .ok_or_else(|| ClaimError::InvalidActor(proposal.actor.clone()))?;
+    targeted_repair_validate_claim_commit_route(ctx, &proposal)?;
     if !metadata.allowed_actor_classes.is_empty()
         && !metadata.allowed_actor_classes.contains(&actor_class)
     {
@@ -1820,6 +1865,7 @@ pub fn commit_claim(
             proposal.field_path.as_deref(),
             &proposal.text,
         );
+        targeted_repair_validate_claim_commit_invocation_budget(ctx, tx, &proposal)?;
         if proposal.tombstone.is_some() && proposal.supersedes.is_some() {
             return Err(ClaimError::InvalidSupersession(
                 "tombstone commits cannot also supersede another claim".to_string(),
@@ -2181,8 +2227,53 @@ pub fn withdraw_claim(
 // record_claim_feedback
 // ---------------------------------------------------------------------------
 
-const MAX_ACTIVE_REPAIR_JOBS_PER_CLAIM: i64 = 5;
-const MAX_ACTIVE_REPAIR_JOBS_WORKSPACE: i64 = 50;
+const TARGETED_REPAIR_OPERATION: &str = "targeted_claim_repair";
+const TARGETED_REPAIR_ABILITY_ID: &str = "targeted_claim_repair";
+const TARGETED_REPAIR_ABILITY_VERSION: &str = "1";
+const TARGETED_REPAIR_PROVIDER_FINGERPRINT: &str =
+    "provider:targeted_repair_local:model:claim-repair-rules-v1:temperature:0";
+const TARGETED_REPAIR_PROMPT_TEMPLATE_ID: &str = "targeted_claim_repair_batch";
+const TARGETED_REPAIR_PROMPT_TEMPLATE_VERSION: &str = "1.0.0";
+const TARGETED_REPAIR_PROMPT_TEMPLATE: &str = "Repair one claim batch using committed claims, feedback, contradictions, and bounded evidence.";
+const TARGETED_REPAIR_LEASE_SECONDS: i64 = 60;
+const TARGETED_REPAIR_MAX_RETRIEVAL_SOURCES: u16 = 10;
+const TARGETED_REPAIR_LOCAL_CORROBORATION_MECHANISM: &str = "targeted_repair_local_claim_match";
+
+fn targeted_repair_operation(repair: RepairAction) -> String {
+    format!(
+        "{TARGETED_REPAIR_OPERATION}:{}",
+        repair_action_label(repair)
+    )
+}
+
+fn repair_action_label(repair: RepairAction) -> &'static str {
+    match repair {
+        RepairAction::None => "None",
+        RepairAction::FreshnessRefresh => "FreshnessRefresh",
+        RepairAction::ContradictionReconcile => "ContradictionReconcile",
+        RepairAction::SubjectFitRepair => "SubjectFitRepair",
+        RepairAction::SourceSupportRepair => "SourceSupportRepair",
+        RepairAction::BoundedCorroboration => "BoundedCorroboration",
+        RepairAction::PolicyRepair => "PolicyRepair",
+    }
+}
+
+fn parse_repair_action_label(raw: &str) -> Result<RepairAction, ClaimError> {
+    match raw.trim() {
+        "None" | "none" => Ok(RepairAction::None),
+        "FreshnessRefresh" | "freshness_refresh" => Ok(RepairAction::FreshnessRefresh),
+        "ContradictionReconcile" | "contradiction_reconcile" => {
+            Ok(RepairAction::ContradictionReconcile)
+        }
+        "SubjectFitRepair" | "subject_fit_repair" => Ok(RepairAction::SubjectFitRepair),
+        "SourceSupportRepair" | "source_support_repair" => Ok(RepairAction::SourceSupportRepair),
+        "BoundedCorroboration" | "bounded_corroboration" => Ok(RepairAction::BoundedCorroboration),
+        "PolicyRepair" | "policy_repair" => Ok(RepairAction::PolicyRepair),
+        other => Err(ClaimError::InvalidFeedback(format!(
+            "unknown targeted repair action: {other}"
+        ))),
+    }
+}
 
 #[derive(Debug)]
 struct ClaimFeedbackWriteOutcome {
@@ -2311,7 +2402,7 @@ pub fn record_claim_feedback(
         }
 
         let repair_job_id =
-            maybe_enqueue_repair_job(tx, &input.claim_id, &feedback_id, &now, metadata.repair)?;
+            targeted_repair_enqueue_job(ctx, tx, &claim, &feedback_id, metadata.repair)?;
 
         bump_invalidation_for_claim_id(tx, &input.claim_id)?;
         let verification_state_after = enum_to_db(&new_verification_state)?;
@@ -2337,49 +2428,1651 @@ pub fn record_claim_feedback(
     Ok(write.outcome)
 }
 
-fn maybe_enqueue_repair_job(
+pub fn targeted_repair_claim_generation_budget(ability_id: &str) -> Option<ClaimGenerationBudget> {
+    match ability_id {
+        // Read-only context assembly. It may read committed claims but has no
+        // claim generation budget and no provider budget.
+        "get_entity_context" => Some(ClaimGenerationBudget {
+            ability_id: "get_entity_context".to_string(),
+            contract: ClaimGenerationContract::ClaimValidation,
+            max_candidate_claims: 0,
+            max_provider_queries: 0,
+            max_retrieval_sources: 0,
+            max_llm_calls: 0,
+            max_prompt_tokens: 0,
+            max_output_tokens: 0,
+            may_commit_claims: false,
+        }),
+        // Transform-only meeting synthesis. Candidate claims are bounded and
+        // must be routed to Maintenance for validation/commit.
+        "prepare_meeting" => Some(ClaimGenerationBudget {
+            ability_id: "prepare_meeting".to_string(),
+            contract: ClaimGenerationContract::ClaimExtraction,
+            max_candidate_claims: 12,
+            max_provider_queries: 0,
+            max_retrieval_sources: 0,
+            max_llm_calls: 1,
+            max_prompt_tokens: 12_000,
+            max_output_tokens: 4_000,
+            may_commit_claims: false,
+        }),
+        TARGETED_REPAIR_ABILITY_ID | "find_corroborating_evidence" => Some(ClaimGenerationBudget {
+            ability_id: TARGETED_REPAIR_ABILITY_ID.to_string(),
+            contract: ClaimGenerationContract::ClaimRepair,
+            max_candidate_claims: 3,
+            max_provider_queries: 1,
+            max_retrieval_sources: TARGETED_REPAIR_MAX_RETRIEVAL_SOURCES,
+            max_llm_calls: 1,
+            max_prompt_tokens: 6_000,
+            max_output_tokens: 1_200,
+            may_commit_claims: true,
+        }),
+        "narrative_assembly" | "briefing_narrative" | "report_narrative" => {
+            Some(ClaimGenerationBudget {
+                ability_id: "narrative_assembly".to_string(),
+                contract: ClaimGenerationContract::NarrativeAssembly,
+                max_candidate_claims: 0,
+                max_provider_queries: 0,
+                max_retrieval_sources: 0,
+                max_llm_calls: 1,
+                max_prompt_tokens: 8_000,
+                max_output_tokens: 2_000,
+                may_commit_claims: false,
+            })
+        }
+        _ => None,
+    }
+}
+
+#[derive(Debug, Default)]
+struct ClaimCommitRouteMetadata {
+    ability_id: Option<String>,
+    contract: Option<String>,
+    invocation_id: Option<String>,
+    claims_this_invocation: Option<u64>,
+    may_commit_claims: Option<bool>,
+}
+
+fn targeted_repair_validate_claim_commit_route(
+    ctx: &ServiceContext<'_>,
+    proposal: &ClaimProposal,
+) -> Result<(), ClaimError> {
+    let route = claim_commit_route_metadata(proposal)?;
+    let actor = proposal.actor.trim().to_ascii_lowercase();
+    let data_source = proposal.data_source.trim().to_ascii_lowercase();
+
+    let narrative_direct = actor.contains("narrative")
+        || data_source.contains("narrative")
+        || route.contract.as_deref() == Some("narrative_assembly")
+        || route.ability_id.as_deref() == Some("narrative_assembly");
+    if narrative_direct {
+        return Err(ClaimError::InvalidActor(
+            "narrative assembly cannot commit claims directly; route new assertions through claim extraction, validation, and the claim commit service"
+                .to_string(),
+        ));
+    }
+
+    if route.may_commit_claims == Some(false) {
+        let ability = route
+            .ability_id
+            .as_deref()
+            .unwrap_or("metadata-declared ability");
+        return Err(ClaimError::InvalidActor(format!(
+            "{ability} metadata declares may_commit_claims=false; route new assertions through a claim-commit-capable maintenance ability"
+        )));
+    }
+
+    for ability_id in claim_commit_ability_candidates(ctx, proposal, &route) {
+        if let Some(budget) = targeted_repair_claim_generation_budget(&ability_id) {
+            if !budget.may_commit_claims {
+                return Err(ClaimError::InvalidActor(format!(
+                    "{} cannot commit claims directly because its registered claim-generation budget has may_commit_claims=false",
+                    budget.ability_id
+                )));
+            }
+        }
+    }
+
+    if let Some(ability_id) = route.ability_id.as_deref() {
+        if let Some(budget) = targeted_repair_claim_generation_budget(ability_id) {
+            if let Some(claims_this_invocation) = route.claims_this_invocation {
+                if claims_this_invocation >= u64::from(budget.max_candidate_claims) {
+                    return Err(ClaimError::InvalidActor(format!(
+                        "{} claim-generation budget exhausted: claims_this_invocation={} max_candidate_claims={}",
+                        budget.ability_id, claims_this_invocation, budget.max_candidate_claims
+                    )));
+                }
+            }
+        }
+    }
+
+    Ok(())
+}
+
+fn targeted_repair_validate_claim_commit_invocation_budget(
+    ctx: &ServiceContext<'_>,
     tx: &ActionDb,
-    claim_id: &str,
+    proposal: &ClaimProposal,
+) -> Result<(), ClaimError> {
+    let route = claim_commit_route_metadata(proposal)?;
+    let Some(invocation_id) = route.invocation_id.as_deref() else {
+        return Ok(());
+    };
+    for ability_id in claim_commit_ability_candidates(ctx, proposal, &route) {
+        let Some(budget) = targeted_repair_claim_generation_budget(&ability_id) else {
+            continue;
+        };
+        if !budget.may_commit_claims {
+            return Err(ClaimError::InvalidActor(format!(
+                "{} cannot commit claims directly because its registered claim-generation budget has may_commit_claims=false",
+                budget.ability_id
+            )));
+        }
+
+        let committed_for_invocation =
+            count_claims_for_ability_invocation(tx, &ability_id, invocation_id)?;
+        if committed_for_invocation >= i64::from(budget.max_candidate_claims) {
+            return Err(ClaimError::InvalidActor(format!(
+                "{} claim-generation budget exhausted for invocation {}: committed_claims={} max_candidate_claims={}",
+                budget.ability_id,
+                invocation_id,
+                committed_for_invocation,
+                budget.max_candidate_claims
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn claim_commit_ability_candidates(
+    ctx: &ServiceContext<'_>,
+    proposal: &ClaimProposal,
+    route: &ClaimCommitRouteMetadata,
+) -> Vec<String> {
+    let mut candidates = Vec::new();
+    push_ability_candidate(&mut candidates, ctx.ability_id);
+    if let Some(actor_ability) = ability_id_from_actor(&proposal.actor) {
+        push_ability_candidate(&mut candidates, Some(&actor_ability));
+    }
+    push_ability_candidate(&mut candidates, route.ability_id.as_deref());
+    candidates
+}
+
+fn push_ability_candidate(candidates: &mut Vec<String>, ability_id: Option<&str>) {
+    let Some(ability_id) = ability_id.map(str::trim).filter(|value| !value.is_empty()) else {
+        return;
+    };
+    let normalized = ability_id.to_ascii_lowercase();
+    if !candidates.contains(&normalized) {
+        candidates.push(normalized);
+    }
+}
+
+fn ability_id_from_actor(actor: &str) -> Option<String> {
+    let mut parts = actor
+        .split(':')
+        .map(str::trim)
+        .filter(|part| !part.is_empty());
+    let head = parts.next()?.to_ascii_lowercase();
+    match head.as_str() {
+        "agent" | "ai" | "ability" => parts.next().map(|part| part.to_ascii_lowercase()),
+        _ => None,
+    }
+}
+
+fn claim_commit_route_metadata(
+    proposal: &ClaimProposal,
+) -> Result<ClaimCommitRouteMetadata, ClaimError> {
+    let metadata = optional_json_object(proposal.metadata_json.as_deref())?;
+    let provenance = optional_json_object(Some(&proposal.provenance_json))?;
+    let mut route = ClaimCommitRouteMetadata::default();
+
+    for value in metadata.iter().chain(provenance.iter()) {
+        route.ability_id = route.ability_id.or_else(|| {
+            json_string_any(
+                value,
+                &[
+                    &["ability_id"][..],
+                    &["ability_name"][..],
+                    &["source_ability"][..],
+                    &["producer_ability"][..],
+                    &["claim_generation", "ability_id"][..],
+                    &["claim_generation_budget", "ability_id"][..],
+                    &["budget", "ability_id"][..],
+                ],
+            )
+        });
+        route.contract = route.contract.or_else(|| {
+            json_string_any(
+                value,
+                &[
+                    &["claim_generation_contract"][..],
+                    &["ability_contract"][..],
+                    &["claim_generation", "contract"][..],
+                    &["claim_generation_budget", "contract"][..],
+                    &["budget", "contract"][..],
+                ],
+            )
+            .map(|contract| contract.to_ascii_lowercase())
+        });
+        route.invocation_id = route.invocation_id.or_else(|| {
+            json_string_any(
+                value,
+                &[
+                    &["invocation_id"][..],
+                    &["producer_invocation_id"][..],
+                    &["claim_generation", "invocation_id"][..],
+                ],
+            )
+        });
+        route.claims_this_invocation = route.claims_this_invocation.or_else(|| {
+            json_u64_any(
+                value,
+                &[
+                    &["claims_this_invocation"][..],
+                    &["claim_generation", "claims_this_invocation"][..],
+                    &["claim_generation_budget", "claims_this_invocation"][..],
+                    &["budget", "claims_this_invocation"][..],
+                ],
+            )
+        });
+        route.may_commit_claims = route.may_commit_claims.or_else(|| {
+            json_bool_any(
+                value,
+                &[
+                    &["may_commit_claims"][..],
+                    &["claim_generation", "may_commit_claims"][..],
+                    &["claim_generation_budget", "may_commit_claims"][..],
+                    &["budget", "may_commit_claims"][..],
+                ],
+            )
+        });
+    }
+
+    route.ability_id = route
+        .ability_id
+        .map(|ability| ability.trim().to_ascii_lowercase())
+        .filter(|ability| !ability.is_empty());
+    route.invocation_id = route
+        .invocation_id
+        .map(|invocation| invocation.trim().to_string())
+        .filter(|invocation| !invocation.is_empty());
+
+    Ok(route)
+}
+
+fn optional_json_object(raw: Option<&str>) -> Result<Option<serde_json::Value>, ClaimError> {
+    let Some(raw) = raw.map(str::trim).filter(|raw| !raw.is_empty()) else {
+        return Ok(None);
+    };
+    let value: serde_json::Value = serde_json::from_str(raw)?;
+    if value.is_object() {
+        Ok(Some(value))
+    } else {
+        Ok(None)
+    }
+}
+
+fn json_at_path<'a>(value: &'a serde_json::Value, path: &[&str]) -> Option<&'a serde_json::Value> {
+    let mut current = value;
+    for key in path {
+        current = current.get(*key)?;
+    }
+    Some(current)
+}
+
+fn json_string_any(value: &serde_json::Value, paths: &[&[&str]]) -> Option<String> {
+    paths.iter().find_map(|path| {
+        json_at_path(value, path)
+            .and_then(serde_json::Value::as_str)
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+    })
+}
+
+fn json_u64_any(value: &serde_json::Value, paths: &[&[&str]]) -> Option<u64> {
+    paths
+        .iter()
+        .find_map(|path| json_at_path(value, path).and_then(serde_json::Value::as_u64))
+}
+
+fn json_bool_any(value: &serde_json::Value, paths: &[&[&str]]) -> Option<bool> {
+    paths
+        .iter()
+        .find_map(|path| json_at_path(value, path).and_then(serde_json::Value::as_bool))
+}
+
+fn count_claims_for_ability_invocation(
+    tx: &ActionDb,
+    ability_id: &str,
+    invocation_id: &str,
+) -> Result<i64, ClaimError> {
+    tx.conn_ref()
+        .query_row(
+            "SELECT count(*)
+             FROM intelligence_claims
+             WHERE (
+                 json_valid(metadata_json) = 1
+                 AND (
+                     lower(json_extract(metadata_json, '$.ability_id')) = ?1
+                     OR lower(json_extract(metadata_json, '$.ability_name')) = ?1
+                     OR lower(json_extract(metadata_json, '$.claim_generation.ability_id')) = ?1
+                     OR lower(json_extract(metadata_json, '$.claim_generation_budget.ability_id')) = ?1
+                     OR lower(json_extract(metadata_json, '$.budget.ability_id')) = ?1
+                 )
+                 AND (
+                     json_extract(metadata_json, '$.invocation_id') = ?2
+                     OR json_extract(metadata_json, '$.producer_invocation_id') = ?2
+                     OR json_extract(metadata_json, '$.claim_generation.invocation_id') = ?2
+                 )
+             )
+             OR (
+                 json_valid(provenance_json) = 1
+                 AND (
+                     lower(json_extract(provenance_json, '$.ability_id')) = ?1
+                     OR lower(json_extract(provenance_json, '$.ability_name')) = ?1
+                     OR lower(json_extract(provenance_json, '$.claim_generation.ability_id')) = ?1
+                     OR lower(json_extract(provenance_json, '$.claim_generation_budget.ability_id')) = ?1
+                     OR lower(json_extract(provenance_json, '$.budget.ability_id')) = ?1
+                 )
+                 AND (
+                     json_extract(provenance_json, '$.invocation_id') = ?2
+                     OR json_extract(provenance_json, '$.producer_invocation_id') = ?2
+                     OR json_extract(provenance_json, '$.claim_generation.invocation_id') = ?2
+                 )
+             )",
+            params![ability_id, invocation_id],
+            |row| row.get(0),
+        )
+        .map_err(ClaimError::Rusqlite)
+}
+
+fn targeted_repair_enqueue_job(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
     feedback_id: &str,
-    created_at: &str,
     repair: RepairAction,
 ) -> Result<Option<String>, ClaimError> {
     if matches!(repair, RepairAction::None) {
         return Ok(None);
     }
 
-    let per_claim_active: i64 = tx.conn_ref().query_row(
-        "SELECT count(*) FROM claim_repair_job
-         WHERE claim_id = ?1 AND state IN ('pending', 'in_progress')",
-        params![claim_id],
-        |row| row.get(0),
+    let subject_value: serde_json::Value = serde_json::from_str(&claim.subject_ref)?;
+    let subject = subject_ref_from_json(&subject_value)?;
+    let (signal_entity_type, signal_entity_id) = signal_target_for_claim(&subject, &claim.id);
+
+    let repair_signal_id = targeted_repair_emit_requested_signal(
+        ctx,
+        tx,
+        &signal_entity_type,
+        &signal_entity_id,
+        &claim.id,
+        feedback_id,
+        repair,
     )?;
-    if per_claim_active >= MAX_ACTIVE_REPAIR_JOBS_PER_CLAIM {
-        log::warn!(
-            "claim repair job cap reached; claim_id={claim_id} active_jobs={per_claim_active}"
-        );
-        return Ok(None);
+
+    let receipt = targeted_repair_enqueue_invalidation(
+        tx,
+        Some(&repair_signal_id),
+        &subject,
+        &claim.id,
+        feedback_id,
+        repair,
+    )?;
+
+    Ok(Some(receipt.job_id))
+}
+
+fn targeted_repair_emit_requested_signal(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    claim_id: &str,
+    feedback_id: &str,
+    repair: RepairAction,
+) -> Result<String, ClaimError> {
+    let payload = serde_json::json!({
+        "claim_id": claim_id,
+        "feedback_id": feedback_id,
+        "repair_action": repair_action_label(repair),
+        "contract": ClaimGenerationContract::ClaimRepair,
+    });
+    crate::services::signals::emit_in_transaction(
+        ctx,
+        tx,
+        entity_type,
+        entity_id,
+        "claim_repair_requested",
+        "claim_feedback",
+        payload,
+    )
+    .map_err(ClaimError::Transaction)
+}
+
+fn targeted_repair_enqueue_invalidation(
+    tx: &ActionDb,
+    origin_signal_id: Option<&str>,
+    subject: &SubjectRef,
+    claim_id: &str,
+    feedback_id: &str,
+    repair: RepairAction,
+) -> Result<crate::db::invalidation_jobs::InvalidationJobReceipt, ClaimError> {
+    let Some(subject_type) = subject_kind_label(subject) else {
+        return Err(ClaimError::SubjectRef(
+            "targeted repair requires a single concrete subject".to_string(),
+        ));
+    };
+    let Some(subject_id) = subject_id_for_lookup(subject) else {
+        return Err(ClaimError::SubjectRef(
+            "targeted repair requires a subject id".to_string(),
+        ));
+    };
+
+    let subject_type = subject_type.to_ascii_lowercase();
+    let source_claim_version = tx.current_claim_version_for_subject(&subject_type, subject_id)?;
+    let input_snapshot_hash =
+        targeted_repair_input_hash(&subject_type, subject_id, claim_id, source_claim_version);
+    let prompt_fingerprint = targeted_repair_prompt_fingerprint(&input_snapshot_hash);
+    let extraction_batch =
+        targeted_repair_extraction_batch_payload(&input_snapshot_hash, &prompt_fingerprint);
+    let budget = targeted_repair_claim_generation_budget(TARGETED_REPAIR_ABILITY_ID)
+        .expect("targeted repair budget is registered");
+    let payload_json = serde_json::json!({
+        "claim_id": claim_id,
+        "feedback_id": feedback_id,
+        "repair_action": repair_action_label(repair),
+        "contract": ClaimGenerationContract::ClaimRepair,
+        "budget": budget,
+        "extraction_batch": extraction_batch,
+        "dos_241": {
+            "claim_granularity": "per_reviewable_fact",
+            "dos_235": "accepted",
+            "dos_236": "accepted",
+            "dos_237": "accepted"
+        }
+    });
+    let input = crate::db::invalidation_jobs::EnqueueInvalidationJob {
+        job_kind: crate::db::invalidation_jobs::KIND_TARGETED_REPAIR.to_string(),
+        operation: targeted_repair_operation(repair),
+        origin_signal_id: origin_signal_id.map(str::to_string),
+        subject_type: subject_type.clone(),
+        subject_id: subject_id.to_string(),
+        ability_id: TARGETED_REPAIR_ABILITY_ID.to_string(),
+        ability_version: TARGETED_REPAIR_ABILITY_VERSION.to_string(),
+        source_claim_version,
+        source_asof: None,
+        input_snapshot_hash: Some(input_snapshot_hash.clone()),
+        provider_fingerprint: Some(TARGETED_REPAIR_PROVIDER_FINGERPRINT.to_string()),
+        prompt_fingerprint: Some(prompt_fingerprint),
+        payload_json,
+        coalescing_key: Some(targeted_repair_coalescing_key(
+            &subject_type,
+            subject_id,
+            claim_id,
+            repair,
+            &input_snapshot_hash,
+        )),
+        chain_id: None,
+        parent_job_id: None,
+        successor_of_job_id: None,
+        depth: 0,
+        chain_ancestry: Vec::new(),
+        max_attempts: 3,
+        priority: 0,
+        raw_signal_count: 1,
+    };
+
+    let config = crate::services::invalidation_jobs::InvalidationJobQueueConfig::from_env();
+    let pending_cap = targeted_repair_pending_cap(config.pending_cap);
+    tx.enqueue_invalidation_job_with_pending_cap(input, pending_cap)
+        .map_err(ClaimError::Db)
+}
+
+#[cfg(test)]
+thread_local! {
+    static TARGETED_REPAIR_PENDING_CAP_OVERRIDE: std::cell::Cell<Option<i64>> =
+        std::cell::Cell::new(None);
+}
+
+fn targeted_repair_pending_cap(default_pending_cap: i64) -> i64 {
+    #[cfg(test)]
+    {
+        if let Some(pending_cap) = TARGETED_REPAIR_PENDING_CAP_OVERRIDE.with(std::cell::Cell::get) {
+            return pending_cap;
+        }
     }
 
-    let workspace_active: i64 = tx.conn_ref().query_row(
-        "SELECT count(*) FROM claim_repair_job
-         WHERE state IN ('pending', 'in_progress')",
-        [],
-        |row| row.get(0),
-    )?;
-    if workspace_active >= MAX_ACTIVE_REPAIR_JOBS_WORKSPACE {
-        log::warn!("workspace claim repair job cap reached; active_jobs={workspace_active}");
-        return Ok(None);
+    default_pending_cap
+}
+
+#[cfg(test)]
+fn with_targeted_repair_pending_cap_override<T>(pending_cap: i64, run: impl FnOnce() -> T) -> T {
+    struct PendingCapOverrideGuard {
+        previous: Option<i64>,
     }
 
-    let repair_job_id = uuid::Uuid::new_v4().to_string();
+    impl Drop for PendingCapOverrideGuard {
+        fn drop(&mut self) {
+            TARGETED_REPAIR_PENDING_CAP_OVERRIDE.with(|override_cap| {
+                override_cap.set(self.previous);
+            });
+        }
+    }
+
+    let previous = TARGETED_REPAIR_PENDING_CAP_OVERRIDE.with(|override_cap| {
+        let previous = override_cap.get();
+        override_cap.set(Some(pending_cap));
+        previous
+    });
+    let _guard = PendingCapOverrideGuard { previous };
+    run()
+}
+
+fn targeted_repair_input_hash(
+    subject_type: &str,
+    subject_id: &str,
+    claim_id: &str,
+    source_claim_version: i64,
+) -> String {
+    format!("targeted_repair:{subject_type}:{subject_id}:{claim_id}:claims:{source_claim_version}")
+}
+
+fn targeted_repair_coalescing_key(
+    subject_type: &str,
+    subject_id: &str,
+    claim_id: &str,
+    repair: RepairAction,
+    input_snapshot_hash: &str,
+) -> String {
+    let input_scope = input_snapshot_hash
+        .rsplit_once(':')
+        .map(|(scope, _)| scope)
+        .unwrap_or(input_snapshot_hash);
+    format!(
+        "{TARGETED_REPAIR_OPERATION}:{subject_type}:{subject_id}:{claim_id}:{}:{}:{}:{input_scope}",
+        repair_action_label(repair),
+        TARGETED_REPAIR_ABILITY_ID,
+        TARGETED_REPAIR_ABILITY_VERSION
+    )
+}
+
+fn targeted_repair_prompt_fingerprint(input_snapshot_hash: &str) -> String {
+    let prompt = targeted_repair_prompt_input(input_snapshot_hash);
+    let fingerprint_metadata = targeted_repair_fingerprint_metadata();
+    crate::intelligence::provider::canonical_prompt_hash(
+        crate::intelligence::provider::CanonicalPromptRequest {
+            prompt: &prompt,
+            fingerprint_metadata: &fingerprint_metadata,
+        },
+    )
+}
+
+fn targeted_repair_prompt_input(
+    input_snapshot_hash: &str,
+) -> crate::intelligence::provider::PromptInput {
+    crate::intelligence::provider::PromptInput::new(TARGETED_REPAIR_PROMPT_TEMPLATE)
+        .with_template(
+            TARGETED_REPAIR_PROMPT_TEMPLATE_ID,
+            TARGETED_REPAIR_PROMPT_TEMPLATE_VERSION,
+            crate::intelligence::provider::canonical_template_hash(TARGETED_REPAIR_PROMPT_TEMPLATE),
+        )
+        .with_canonical_json_inputs(serde_json::json!({
+            "ability_id": TARGETED_REPAIR_ABILITY_ID,
+            "operation": TARGETED_REPAIR_OPERATION,
+            "input_snapshot_hash": input_snapshot_hash,
+            "contract": ClaimGenerationContract::ClaimRepair,
+            "claim_generation_budget": targeted_repair_claim_generation_budget(
+                TARGETED_REPAIR_ABILITY_ID
+            ),
+            "dos_241": {
+                "claim_granularity": "per_reviewable_fact",
+                "dos_235": "accepted",
+                "dos_236": "accepted",
+                "dos_237": "accepted"
+            }
+        }))
+}
+
+fn targeted_repair_fingerprint_metadata() -> crate::intelligence::provider::FingerprintMetadata {
+    crate::intelligence::provider::FingerprintMetadata {
+        provider: crate::intelligence::provider::ProviderKind::Other("targeted_repair_local"),
+        model: crate::intelligence::provider::ModelName::new("claim-repair-rules-v1"),
+        temperature: 0.0,
+        top_p: None,
+        seed: None,
+        tokens_input: None,
+        tokens_output: None,
+        provider_completion_id: None,
+    }
+}
+
+fn targeted_repair_extraction_batch_payload(
+    input_snapshot_hash: &str,
+    prompt_fingerprint: &str,
+) -> serde_json::Value {
+    let fingerprint_metadata = targeted_repair_fingerprint_metadata();
+    serde_json::json!({
+        "id": input_snapshot_hash,
+        "level": "extraction_batch",
+        "prompt_fingerprint": prompt_fingerprint,
+        "canonical_prompt_hash": prompt_fingerprint,
+        "prompt_template_id": TARGETED_REPAIR_PROMPT_TEMPLATE_ID,
+        "prompt_template_version": TARGETED_REPAIR_PROMPT_TEMPLATE_VERSION,
+        "provider": fingerprint_metadata.provider.as_str(),
+        "model": fingerprint_metadata.model.as_str(),
+        "temperature": fingerprint_metadata.temperature,
+        "provider_fingerprint": TARGETED_REPAIR_PROVIDER_FINGERPRINT,
+    })
+}
+
+#[derive(Debug, Clone)]
+struct TargetedRepairInvalidationJob {
+    id: String,
+    subject_type: String,
+    subject_id: String,
+    latest_source_claim_version: i64,
+    payload_json: String,
+    attempts: i64,
+    max_attempts: i64,
+}
+
+#[derive(Debug, Clone)]
+struct TargetedRepairPayload {
+    claim_id: String,
+    feedback_id: String,
+    repair_action: RepairAction,
+}
+
+#[derive(Debug, Default)]
+struct TargetedRepairRunSummary {
+    repair_jobs_processed: usize,
+    claims_changed: usize,
+    contradictions_reconciled: usize,
+    failed_jobs: usize,
+    changed_claim_ids: Vec<String>,
+}
+
+pub fn targeted_repair_process_next_job(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    worker_id: &str,
+) -> Result<TargetedRepairProcessOutcome, ClaimError> {
+    ctx.check_mutation_allowed()
+        .map_err(|e| ClaimError::Mode(e.to_string()))?;
+
+    with_claim_transaction(db, |tx| {
+        let repair_now = ctx.clock.now().to_rfc3339();
+        let queue_now = Utc::now();
+        let queue_now_str = queue_now.to_rfc3339();
+        let lease_expires_at =
+            (queue_now + Duration::seconds(TARGETED_REPAIR_LEASE_SECONDS)).to_rfc3339();
+        let Some(job) = query_targeted_repair_next_invalidation_job(
+            tx,
+            worker_id,
+            &queue_now_str,
+            &lease_expires_at,
+        )?
+        else {
+            return Ok(TargetedRepairProcessOutcome::NoJob);
+        };
+
+        let mut summary = TargetedRepairRunSummary::default();
+        if job.attempts > job.max_attempts {
+            tx.mark_invalidation_job_failed(&job.id, "targeted repair attempt budget exhausted")?;
+            summary.failed_jobs += 1;
+        } else if let Err(error) =
+            targeted_repair_process_invalidation_job(ctx, tx, &job, &repair_now, &mut summary)
+        {
+            tx.mark_invalidation_job_failed(&job.id, &error.to_string())?;
+            summary.failed_jobs += 1;
+            targeted_repair_emit_activity_log(ctx, tx, &job, &summary)?;
+            return Ok(TargetedRepairProcessOutcome::Completed {
+                job_id: job.id,
+                repair_jobs_processed: summary.repair_jobs_processed,
+                claims_changed: summary.claims_changed,
+                contradictions_reconciled: summary.contradictions_reconciled,
+            });
+        }
+
+        if summary.failed_jobs == 0 {
+            targeted_repair_complete_invalidation_job(tx, &job, &queue_now_str)?;
+        }
+        targeted_repair_emit_activity_log(ctx, tx, &job, &summary)?;
+
+        Ok(TargetedRepairProcessOutcome::Completed {
+            job_id: job.id,
+            repair_jobs_processed: summary.repair_jobs_processed,
+            claims_changed: summary.claims_changed,
+            contradictions_reconciled: summary.contradictions_reconciled,
+        })
+    })
+}
+
+fn query_targeted_repair_next_invalidation_job(
+    tx: &ActionDb,
+    worker_id: &str,
+    now: &str,
+    lease_expires_at: &str,
+) -> Result<Option<TargetedRepairInvalidationJob>, ClaimError> {
+    let job_id: Option<String> = tx
+        .conn_ref()
+        .query_row(
+            "SELECT id
+             FROM invalidation_jobs
+             WHERE job_kind = ?1
+               AND (
+                    (status = 'pending' AND datetime(next_run_at) <= datetime(?2))
+                    OR
+                    (status = 'running'
+                     AND lease_expires_at IS NOT NULL
+                     AND datetime(lease_expires_at) <= datetime(?2))
+               )
+             ORDER BY
+                CASE status WHEN 'running' THEN 0 ELSE 1 END,
+                priority DESC,
+                created_at ASC
+             LIMIT 1",
+            params![crate::db::invalidation_jobs::KIND_TARGETED_REPAIR, now],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let Some(job_id) = job_id else {
+        return Ok(None);
+    };
+
     tx.conn_ref().execute(
-        "INSERT INTO claim_repair_job (id, claim_id, feedback_id, state, attempts, max_attempts, created_at)
-         VALUES (?1, ?2, ?3, 'pending', 0, 3, ?4)",
-        params![&repair_job_id, claim_id, feedback_id, created_at],
+        "UPDATE invalidation_jobs
+         SET status = 'running',
+             lease_owner = ?2,
+             lease_expires_at = ?3,
+             claimed_at = ?4,
+             attempts = attempts + 1,
+             updated_at = ?4
+         WHERE id = ?1
+           AND status IN ('pending', 'running')",
+        params![&job_id, worker_id, lease_expires_at, now],
     )?;
 
-    Ok(Some(repair_job_id))
+    tx.conn_ref()
+        .query_row(
+            "SELECT id, subject_type, subject_id, latest_source_claim_version,
+                    payload_json, attempts, max_attempts
+             FROM invalidation_jobs
+             WHERE id = ?1",
+            params![&job_id],
+            |row| {
+                Ok(TargetedRepairInvalidationJob {
+                    id: row.get(0)?,
+                    subject_type: row.get(1)?,
+                    subject_id: row.get(2)?,
+                    latest_source_claim_version: row.get(3)?,
+                    payload_json: row.get(4)?,
+                    attempts: row.get(5)?,
+                    max_attempts: row.get(6)?,
+                })
+            },
+        )
+        .optional()
+        .map_err(ClaimError::Rusqlite)
+}
+
+fn targeted_repair_process_invalidation_job(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    job: &TargetedRepairInvalidationJob,
+    now: &str,
+    summary: &mut TargetedRepairRunSummary,
+) -> Result<(), ClaimError> {
+    let payload = targeted_repair_payload(job)?;
+    let delta = targeted_repair_apply_claim_job(ctx, tx, &payload, now)?;
+    summary.repair_jobs_processed += 1;
+    summary.claims_changed += delta.claims_changed;
+    summary.contradictions_reconciled += delta.contradictions_reconciled;
+    for id in delta.changed_claim_ids {
+        if !summary.changed_claim_ids.contains(&id) {
+            summary.changed_claim_ids.push(id);
+        }
+    }
+    Ok(())
+}
+
+#[derive(Debug, Default)]
+struct TargetedRepairClaimDelta {
+    claims_changed: usize,
+    contradictions_reconciled: usize,
+    changed_claim_ids: Vec<String>,
+}
+
+fn targeted_repair_apply_claim_job(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    payload: &TargetedRepairPayload,
+    now: &str,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let claim = load_claim_by_id(tx.conn_ref(), &payload.claim_id)?
+        .ok_or_else(|| ClaimError::UnknownClaimId(payload.claim_id.clone()))?;
+    let feedback = targeted_repair_feedback(tx, &payload.feedback_id)?;
+    let expected_repair = feedback_semantics(feedback.action).repair;
+    if expected_repair != payload.repair_action {
+        return Err(ClaimError::InvalidFeedback(format!(
+            "targeted repair payload action {} does not match feedback {} repair {}",
+            repair_action_label(payload.repair_action),
+            feedback.action.as_str(),
+            repair_action_label(expected_repair)
+        )));
+    }
+
+    match payload.repair_action {
+        RepairAction::ContradictionReconcile => {
+            targeted_repair_apply_contradiction_reconcile(ctx, tx, &claim, &feedback, now)
+        }
+        RepairAction::BoundedCorroboration => {
+            targeted_repair_apply_bounded_corroboration(tx, &claim, now)
+        }
+        RepairAction::FreshnessRefresh => targeted_repair_apply_freshness_refresh(tx, &claim, now),
+        RepairAction::SubjectFitRepair => {
+            targeted_repair_apply_subject_fit_repair(ctx, tx, &claim, &feedback, now)
+        }
+        RepairAction::SourceSupportRepair => {
+            targeted_repair_apply_source_support_repair(tx, &claim, &feedback, now)
+        }
+        RepairAction::PolicyRepair => {
+            targeted_repair_apply_policy_repair(tx, &claim, &feedback, now)
+        }
+        RepairAction::None => Err(ClaimError::InvalidFeedback(format!(
+            "targeted repair job resolved to feedback action {} with no repair action",
+            feedback.action.as_str()
+        ))),
+    }
+}
+
+#[derive(Debug, Clone)]
+struct TargetedRepairFeedback {
+    action: FeedbackAction,
+    actor: String,
+    payload_json: Option<String>,
+}
+
+fn targeted_repair_payload(
+    job: &TargetedRepairInvalidationJob,
+) -> Result<TargetedRepairPayload, ClaimError> {
+    let value: serde_json::Value = serde_json::from_str(&job.payload_json)?;
+    let claim_id = value
+        .get("claim_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ClaimError::InvalidFeedback(format!(
+                "targeted repair job {} missing payload claim_id",
+                job.id
+            ))
+        })?
+        .to_string();
+    let feedback_id = value
+        .get("feedback_id")
+        .and_then(serde_json::Value::as_str)
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| {
+            ClaimError::InvalidFeedback(format!(
+                "targeted repair job {} missing payload feedback_id",
+                job.id
+            ))
+        })?
+        .to_string();
+    let repair_action = value
+        .get("repair_action")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            ClaimError::InvalidFeedback(format!(
+                "targeted repair job {} missing payload repair_action",
+                job.id
+            ))
+        })
+        .and_then(parse_repair_action_label)?;
+
+    Ok(TargetedRepairPayload {
+        claim_id,
+        feedback_id,
+        repair_action,
+    })
+}
+
+fn targeted_repair_feedback(
+    tx: &ActionDb,
+    feedback_id: &str,
+) -> Result<TargetedRepairFeedback, ClaimError> {
+    let (action, actor, payload_json): (String, String, Option<String>) = tx
+        .conn_ref()
+        .query_row(
+            "SELECT feedback_type, actor, payload_json FROM claim_feedback WHERE id = ?1",
+            params![feedback_id],
+            |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        )
+        .optional()?
+        .ok_or_else(|| ClaimError::InvalidFeedback(format!("feedback {feedback_id} not found")))?;
+
+    Ok(TargetedRepairFeedback {
+        action: parse_db_enum::<FeedbackAction>(action)?,
+        actor,
+        payload_json,
+    })
+}
+
+fn targeted_repair_corroboration_count(tx: &ActionDb, claim_id: &str) -> Result<i64, ClaimError> {
+    tx.conn_ref()
+        .query_row(
+            "SELECT count(*) FROM claim_corroborations WHERE claim_id = ?1",
+            params![claim_id],
+            |row| row.get(0),
+        )
+        .map_err(ClaimError::Rusqlite)
+}
+
+#[derive(Debug, Clone)]
+struct TargetedRepairCorroboratingEvidence {
+    claim_id: String,
+    source_asof: Option<String>,
+    observed_at: String,
+}
+
+fn targeted_repair_apply_bounded_corroboration(
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    now: &str,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let budget = targeted_repair_claim_generation_budget(TARGETED_REPAIR_ABILITY_ID)
+        .expect("targeted repair budget is registered");
+    let evidence = targeted_repair_find_local_corroborating_claims(
+        tx,
+        claim,
+        i64::from(budget.max_retrieval_sources),
+    )?;
+
+    let mut recorded = 0usize;
+    for item in evidence {
+        let data_source = format!("claim:{}", item.claim_id);
+        let source_asof = item
+            .source_asof
+            .as_deref()
+            .or(Some(item.observed_at.as_str()));
+        corroborate_in_tx(
+            tx,
+            &claim.id,
+            &data_source,
+            source_asof,
+            Some(TARGETED_REPAIR_LOCAL_CORROBORATION_MECHANISM),
+            now,
+        )?;
+        recorded += 1;
+    }
+
+    let corroboration_count = targeted_repair_corroboration_count(tx, &claim.id)?;
+    let mut delta = TargetedRepairClaimDelta::default();
+    if corroboration_count > 0 && claim.verification_state != ClaimVerificationState::Active {
+        execute_claims_update(
+            tx.conn_ref(),
+            "UPDATE intelligence_claims
+             SET verification_state = 'active',
+                 verification_reason = NULL,
+                 needs_user_decision_at = NULL
+             WHERE id = ?1",
+            params![&claim.id],
+        )?;
+        delta.claims_changed += 1;
+        delta.changed_claim_ids.push(claim.id.clone());
+    } else if recorded == 0 {
+        execute_claims_update(
+            tx.conn_ref(),
+            "UPDATE intelligence_claims
+             SET verification_reason = 'bounded_corroboration_no_local_evidence'
+             WHERE id = ?1",
+            params![&claim.id],
+        )?;
+        delta.claims_changed += 1;
+        delta.changed_claim_ids.push(claim.id.clone());
+    }
+
+    if recorded > 0 || delta.claims_changed > 0 {
+        bump_invalidation_for_claim_id(tx, &claim.id)?;
+    }
+
+    Ok(delta)
+}
+
+fn targeted_repair_find_local_corroborating_claims(
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    limit: i64,
+) -> Result<Vec<TargetedRepairCorroboratingEvidence>, ClaimError> {
+    if limit <= 0 {
+        return Ok(Vec::new());
+    }
+    let subject_value: serde_json::Value = serde_json::from_str(&claim.subject_ref)?;
+    let subject = subject_ref_from_json(&subject_value)?;
+    let Some(kind) = subject_kind_label(&subject) else {
+        return Ok(Vec::new());
+    };
+    let Some(id) = subject_id_for_lookup(&subject) else {
+        return Ok(Vec::new());
+    };
+
+    let mut stmt = tx.conn_ref().prepare(
+        "SELECT c.id, c.source_asof, c.observed_at
+         FROM intelligence_claims c
+         WHERE c.id <> ?1
+           AND c.claim_state = 'active'
+           AND c.surfacing_state = 'active'
+           AND c.claim_type = ?2
+           AND coalesce(c.field_path, '') = coalesce(?3, '')
+           AND json_valid(c.subject_ref) = 1
+           AND lower(json_extract(c.subject_ref, '$.kind')) = lower(?4)
+           AND json_extract(c.subject_ref, '$.id') = ?5
+           AND (
+               (c.item_hash IS NOT NULL AND c.item_hash = ?6)
+               OR c.text = ?7 COLLATE NOCASE
+           )
+           AND NOT EXISTS (
+               SELECT 1
+               FROM claim_corroborations cc
+               WHERE cc.claim_id = ?1
+                 AND cc.data_source = ('claim:' || c.id)
+           )
+         ORDER BY c.created_at DESC, c.id ASC
+         LIMIT ?8",
+    )?;
+    let rows = stmt.query_map(
+        params![
+            &claim.id,
+            &claim.claim_type,
+            claim.field_path.as_deref(),
+            kind,
+            id,
+            claim.item_hash.as_deref().unwrap_or(""),
+            &claim.text,
+            limit,
+        ],
+        |row| {
+            Ok(TargetedRepairCorroboratingEvidence {
+                claim_id: row.get(0)?,
+                source_asof: row.get(1)?,
+                observed_at: row.get(2)?,
+            })
+        },
+    )?;
+    let mut evidence = Vec::new();
+    for row in rows {
+        evidence.push(row?);
+    }
+    Ok(evidence)
+}
+
+fn targeted_repair_apply_contradiction_reconcile(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    feedback: &TargetedRepairFeedback,
+    now: &str,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let mut delta = targeted_repair_reconcile_user_backed_contradictions(ctx, tx, &claim.id, now)?;
+
+    if matches!(feedback.action, FeedbackAction::NeedsNuance) {
+        if let Some(corrected_text) =
+            payload_string(feedback.payload_json.as_deref(), "corrected_text")?
+        {
+            let subject_value: serde_json::Value = serde_json::from_str(&claim.subject_ref)?;
+            let subject = subject_ref_from_json(&subject_value)?;
+            let replacement = targeted_repair_insert_replacement_claim(
+                ctx,
+                tx,
+                TargetedRepairReplacement {
+                    original: claim,
+                    target_subject: &subject,
+                    replacement_text: &corrected_text,
+                    feedback,
+                    now,
+                    demotion_reason: "targeted_repair_needs_nuance",
+                },
+            )?;
+            delta.claims_changed += replacement.claims_changed;
+            delta
+                .changed_claim_ids
+                .extend(replacement.changed_claim_ids);
+        }
+    }
+
+    if delta.claims_changed == 0 && delta.contradictions_reconciled == 0 {
+        execute_claims_update(
+            tx.conn_ref(),
+            "UPDATE intelligence_claims
+             SET demotion_reason = 'targeted_repair_contradiction_reconcile'
+             WHERE id = ?1",
+            params![&claim.id],
+        )?;
+        bump_invalidation_for_claim_id(tx, &claim.id)?;
+        delta.claims_changed += 1;
+        delta.changed_claim_ids.push(claim.id.clone());
+    }
+
+    delta.changed_claim_ids.sort();
+    delta.changed_claim_ids.dedup();
+    Ok(delta)
+}
+
+fn targeted_repair_apply_freshness_refresh(
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    _now: &str,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let fresher_claim_id: Option<String> = tx
+        .conn_ref()
+        .query_row(
+            "SELECT id
+             FROM intelligence_claims
+             WHERE id <> ?1
+               AND subject_ref = ?2
+               AND claim_type = ?3
+               AND coalesce(field_path, '') = coalesce(?4, '')
+               AND claim_state = 'active'
+               AND surfacing_state = 'active'
+               AND source_asof IS NOT NULL
+               AND (?5 IS NULL OR datetime(source_asof) > datetime(?5))
+             ORDER BY datetime(source_asof) DESC, created_at DESC, id ASC
+             LIMIT 1",
+            params![
+                &claim.id,
+                &claim.subject_ref,
+                &claim.claim_type,
+                claim.field_path.as_deref(),
+                claim.source_asof.as_deref(),
+            ],
+            |row| row.get(0),
+        )
+        .optional()?;
+
+    let mut delta = TargetedRepairClaimDelta::default();
+    if let Some(fresher_claim_id) = fresher_claim_id {
+        execute_claims_update(
+            tx.conn_ref(),
+            "UPDATE intelligence_claims
+             SET claim_state = 'dormant',
+                 surfacing_state = 'dormant',
+                 demotion_reason = 'targeted_repair_freshness_refresh',
+                 superseded_by = ?2
+             WHERE id = ?1",
+            params![&claim.id, &fresher_claim_id],
+        )?;
+        delta.changed_claim_ids.push(fresher_claim_id);
+    } else {
+        execute_claims_update(
+            tx.conn_ref(),
+            "UPDATE intelligence_claims
+             SET surfacing_state = 'dormant',
+                 demotion_reason = 'targeted_repair_freshness_refresh',
+                 verification_reason = 'freshness_refresh_requested'
+             WHERE id = ?1",
+            params![&claim.id],
+        )?;
+    }
+    bump_invalidation_for_claim_id(tx, &claim.id)?;
+    delta.claims_changed += 1;
+    delta.changed_claim_ids.push(claim.id.clone());
+    Ok(delta)
+}
+
+fn targeted_repair_apply_subject_fit_repair(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    feedback: &TargetedRepairFeedback,
+    now: &str,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let Some(subject) = corrected_subject_from_payload(feedback.payload_json.as_deref())? else {
+        execute_claims_update(
+            tx.conn_ref(),
+            "UPDATE intelligence_claims
+             SET demotion_reason = 'targeted_repair_subject_fit',
+                 verification_reason = 'subject_fit_repair_requested'
+             WHERE id = ?1",
+            params![&claim.id],
+        )?;
+        bump_invalidation_for_claim_id(tx, &claim.id)?;
+        return Ok(TargetedRepairClaimDelta {
+            claims_changed: 1,
+            contradictions_reconciled: 0,
+            changed_claim_ids: vec![claim.id.clone()],
+        });
+    };
+
+    targeted_repair_insert_replacement_claim(
+        ctx,
+        tx,
+        TargetedRepairReplacement {
+            original: claim,
+            target_subject: &subject,
+            replacement_text: &claim.text,
+            feedback,
+            now,
+            demotion_reason: "targeted_repair_subject_fit",
+        },
+    )
+}
+
+fn targeted_repair_apply_source_support_repair(
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    feedback: &TargetedRepairFeedback,
+    _now: &str,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let source_ref = payload_string(feedback.payload_json.as_deref(), "source_ref")?
+        .unwrap_or_else(|| "unknown_source".to_string());
+    let reason = format!("source_support_repair:{source_ref}");
+    execute_claims_update(
+        tx.conn_ref(),
+        "UPDATE intelligence_claims
+         SET verification_state = 'contested',
+             verification_reason = ?2,
+             needs_user_decision_at = NULL
+         WHERE id = ?1",
+        params![&claim.id, &reason],
+    )?;
+    bump_invalidation_for_claim_id(tx, &claim.id)?;
+    Ok(TargetedRepairClaimDelta {
+        claims_changed: 1,
+        contradictions_reconciled: 0,
+        changed_claim_ids: vec![claim.id.clone()],
+    })
+}
+
+fn targeted_repair_apply_policy_repair(
+    tx: &ActionDb,
+    claim: &IntelligenceClaim,
+    feedback: &TargetedRepairFeedback,
+    _now: &str,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let surface = payload_string(feedback.payload_json.as_deref(), "surface")?
+        .unwrap_or_else(|| "unspecified_surface".to_string());
+    let demotion_reason = format!("policy_repair:{surface}");
+    execute_claims_update(
+        tx.conn_ref(),
+        "UPDATE intelligence_claims
+         SET surfacing_state = 'dormant',
+             demotion_reason = ?2
+         WHERE id = ?1",
+        params![&claim.id, &demotion_reason],
+    )?;
+    bump_invalidation_for_claim_id(tx, &claim.id)?;
+    Ok(TargetedRepairClaimDelta {
+        claims_changed: 1,
+        contradictions_reconciled: 0,
+        changed_claim_ids: vec![claim.id.clone()],
+    })
+}
+
+fn corrected_subject_from_payload(
+    payload_json: Option<&str>,
+) -> Result<Option<SubjectRef>, ClaimError> {
+    let Some(raw) = payload_json
+        .map(str::trim)
+        .filter(|payload| !payload.is_empty())
+    else {
+        return Ok(None);
+    };
+    let payload: serde_json::Value = serde_json::from_str(raw)?;
+    let Some(value) = payload
+        .get("corrected_subject")
+        .or_else(|| payload.get("corrected_subject_ref"))
+    else {
+        return Ok(None);
+    };
+    let subject_value = if let Some(raw_subject) = value.as_str() {
+        serde_json::from_str::<serde_json::Value>(raw_subject)?
+    } else {
+        value.clone()
+    };
+    subject_ref_from_json(&subject_value).map(Some)
+}
+
+struct TargetedRepairReplacement<'a> {
+    original: &'a IntelligenceClaim,
+    target_subject: &'a SubjectRef,
+    replacement_text: &'a str,
+    feedback: &'a TargetedRepairFeedback,
+    now: &'a str,
+    demotion_reason: &'a str,
+}
+
+fn targeted_repair_insert_replacement_claim(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    replacement: TargetedRepairReplacement<'_>,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let TargetedRepairReplacement {
+        original,
+        target_subject,
+        replacement_text,
+        feedback,
+        now,
+        demotion_reason,
+    } = replacement;
+    let kind = crate::abilities::claims::ClaimType::try_from_db_str(&original.claim_type)
+        .map_err(|e| ClaimError::UnknownClaimType(e.0))?;
+    let Some(subject_kind) = subject_kind_label(target_subject) else {
+        return Err(ClaimError::SubjectRef(
+            "replacement claims require a single concrete subject".to_string(),
+        ));
+    };
+    let subject_kind_lc = subject_kind.to_ascii_lowercase();
+    if !crate::abilities::claims::subject_kind_is_canonical_for(kind, &subject_kind_lc) {
+        return Err(ClaimError::SubjectRef(format!(
+            "claim_type {} not permitted on subject kind {}",
+            original.claim_type, subject_kind
+        )));
+    }
+
+    let target_subject_ref = canonical_subject_ref(target_subject)?;
+    let canonical_text = if matches!(kind, ClaimType::UserNote) {
+        replacement_text.to_string()
+    } else {
+        canonicalize_for_dos280(replacement_text)
+    };
+    let computed_hash = item_hash(
+        item_kind_for_claim_type(&original.claim_type),
+        &canonical_text,
+    );
+    let dedup_key = compute_dedup_key(
+        &computed_hash,
+        &target_subject_ref,
+        &original.claim_type,
+        original.field_path.as_deref(),
+    );
+
+    let existing = load_active_claim_by_dedup_key(tx.conn_ref(), &dedup_key)?;
+    let replacement_id = if let Some(existing) = existing {
+        existing.id
+    } else {
+        let replacement_id = uuid::Uuid::new_v4().to_string();
+        let claim = IntelligenceClaim {
+            id: replacement_id.clone(),
+            subject_ref: target_subject_ref.clone(),
+            claim_type: original.claim_type.clone(),
+            field_path: original.field_path.clone(),
+            topic_key: original.topic_key.clone(),
+            text: canonical_text,
+            dedup_key,
+            item_hash: Some(computed_hash),
+            actor: feedback.actor.clone(),
+            data_source: "user_feedback".to_string(),
+            source_ref: Some(
+                serde_json::json!({
+                    "kind": "targeted_repair",
+                    "source_claim_id": original.id,
+                })
+                .to_string(),
+            ),
+            source_asof: Some(now.to_string()),
+            observed_at: now.to_string(),
+            created_at: now.to_string(),
+            provenance_json: serde_json::json!({
+                "ability_id": TARGETED_REPAIR_ABILITY_ID,
+                "repair_action": repair_action_label(feedback_semantics(feedback.action).repair),
+                "feedback_action": feedback.action.as_str(),
+            })
+            .to_string(),
+            metadata_json: Some(
+                serde_json::json!({
+                    "feedback_action": feedback.action.as_str(),
+                    "source_claim_id": original.id,
+                })
+                .to_string(),
+            ),
+            claim_state: ClaimState::Active,
+            surfacing_state: SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score: initial_trust_score(kind),
+            trust_computed_at: initial_trust_score(kind).map(|_| now.to_string()),
+            trust_version: initial_trust_score(kind).map(|_| 1),
+            thread_id: original.thread_id.clone(),
+            temporal_scope: original.temporal_scope.clone(),
+            sensitivity: original.sensitivity.clone(),
+            verification_state: ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
+        };
+        insert_claim_row(tx, &claim)?;
+        project_legacy_state_for_claim(ctx, tx, &claim)?;
+        replacement_id
+    };
+
+    execute_claims_update(
+        tx.conn_ref(),
+        "UPDATE intelligence_claims
+         SET claim_state = 'dormant',
+             surfacing_state = 'dormant',
+             demotion_reason = ?2,
+             superseded_by = ?3
+         WHERE id = ?1",
+        params![&original.id, demotion_reason, &replacement_id],
+    )?;
+    tx.conn_ref().execute(
+        "INSERT INTO claim_contradictions
+         (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at,
+          reconciliation_kind, reconciliation_note, reconciled_at, winner_claim_id)
+         VALUES (?1, ?2, ?3, 'supersession', ?4, ?5, ?6, ?4, ?3)",
+        params![
+            uuid::Uuid::new_v4().to_string(),
+            &original.id,
+            &replacement_id,
+            now,
+            enum_to_db(&ReconciliationKind::UserPickedWinner)?,
+            demotion_reason,
+        ],
+    )?;
+
+    let original_subject_value: serde_json::Value = serde_json::from_str(&original.subject_ref)?;
+    let original_subject = subject_ref_from_json(&original_subject_value)?;
+    tx.bump_for_subject(&original_subject)?;
+    tx.bump_for_subject(target_subject)?;
+
+    Ok(TargetedRepairClaimDelta {
+        claims_changed: 2,
+        contradictions_reconciled: 1,
+        changed_claim_ids: vec![original.id.clone(), replacement_id],
+    })
+}
+
+fn targeted_repair_reconcile_user_backed_contradictions(
+    _ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    claim_id: &str,
+    now: &str,
+) -> Result<TargetedRepairClaimDelta, ClaimError> {
+    let mut stmt = tx.conn_ref().prepare(
+        "SELECT id, primary_claim_id, contradicting_claim_id
+         FROM claim_contradictions
+         WHERE reconciled_at IS NULL
+           AND (primary_claim_id = ?1 OR contradicting_claim_id = ?1)
+         ORDER BY detected_at ASC, id ASC",
+    )?;
+    let rows = stmt.query_map(params![claim_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+        ))
+    })?;
+    let mut edges = Vec::new();
+    for row in rows {
+        edges.push(row?);
+    }
+    drop(stmt);
+
+    let mut delta = TargetedRepairClaimDelta::default();
+    for (contradiction_id, primary_id, contradicting_id) in edges {
+        let primary = load_claim_by_id(tx.conn_ref(), &primary_id)?
+            .ok_or_else(|| ClaimError::UnknownClaimId(primary_id.clone()))?;
+        let contradicting = load_claim_by_id(tx.conn_ref(), &contradicting_id)?
+            .ok_or_else(|| ClaimError::UnknownClaimId(contradicting_id.clone()))?;
+        let Some(winner_id) = targeted_repair_pick_winner(&primary, &contradicting, claim_id)
+        else {
+            continue;
+        };
+        let loser_id = if winner_id == primary.id {
+            contradicting.id.clone()
+        } else {
+            primary.id.clone()
+        };
+
+        tx.conn_ref().execute(
+            "UPDATE claim_contradictions
+             SET reconciliation_kind = ?1,
+                 reconciliation_note = ?2,
+                 reconciled_at = ?3,
+                 winner_claim_id = ?4,
+                 merged_claim_id = NULL
+             WHERE id = ?5
+               AND reconciled_at IS NULL",
+            params![
+                enum_to_db(&ReconciliationKind::UserPickedWinner)?,
+                "targeted_repair_user_backed_winner",
+                now,
+                &winner_id,
+                &contradiction_id,
+            ],
+        )?;
+
+        let loser = if loser_id == primary.id {
+            &primary
+        } else {
+            &contradicting
+        };
+        if loser.claim_state == ClaimState::Active
+            || loser.surfacing_state == SurfacingState::Active
+        {
+            execute_claims_update(
+                tx.conn_ref(),
+                "UPDATE intelligence_claims
+                 SET claim_state = 'dormant',
+                     surfacing_state = 'dormant',
+                     demotion_reason = 'targeted_repair_contradiction'
+                 WHERE id = ?1",
+                params![&loser_id],
+            )?;
+            bump_invalidation_for_claim_id(tx, &loser_id)?;
+            delta.claims_changed += 1;
+            delta.changed_claim_ids.push(loser_id.clone());
+        }
+
+        delta.contradictions_reconciled += 1;
+        if !delta.changed_claim_ids.contains(&winner_id) {
+            delta.changed_claim_ids.push(winner_id);
+        }
+    }
+
+    Ok(delta)
+}
+
+fn targeted_repair_pick_winner(
+    primary: &IntelligenceClaim,
+    contradicting: &IntelligenceClaim,
+    target_claim_id: &str,
+) -> Option<String> {
+    let primary_user = matches!(
+        actor_class_for_actor(&primary.actor),
+        Some(ClaimActorClass::User)
+    );
+    let contradicting_user = matches!(
+        actor_class_for_actor(&contradicting.actor),
+        Some(ClaimActorClass::User)
+    );
+    match (primary_user, contradicting_user) {
+        (true, false) => return Some(primary.id.clone()),
+        (false, true) => return Some(contradicting.id.clone()),
+        _ => {}
+    }
+
+    let primary_active = primary.claim_state == ClaimState::Active
+        && primary.surfacing_state == SurfacingState::Active;
+    let contradicting_active = contradicting.claim_state == ClaimState::Active
+        && contradicting.surfacing_state == SurfacingState::Active;
+    match (primary_active, contradicting_active) {
+        (true, false) => Some(primary.id.clone()),
+        (false, true) => Some(contradicting.id.clone()),
+        (true, true) if target_claim_id == primary.id => Some(contradicting.id.clone()),
+        (true, true) if target_claim_id == contradicting.id => Some(primary.id.clone()),
+        _ => None,
+    }
+}
+
+fn targeted_repair_complete_invalidation_job(
+    tx: &ActionDb,
+    job: &TargetedRepairInvalidationJob,
+    now: &str,
+) -> Result<(), ClaimError> {
+    let current_source_claim_version = tx
+        .current_claim_version_for_subject(&job.subject_type, &job.subject_id)
+        .unwrap_or(job.latest_source_claim_version);
+    let stale_marker = if current_source_claim_version > job.latest_source_claim_version {
+        Some(
+            serde_json::json!({
+                "reason": "targeted_repair_completed_with_newer_claim_version",
+                "job_source_claim_version": job.latest_source_claim_version,
+                "current_source_claim_version": current_source_claim_version,
+            })
+            .to_string(),
+        )
+    } else {
+        None
+    };
+    tx.conn_ref().execute(
+        "UPDATE invalidation_jobs
+         SET status = 'completed',
+             completed_at = ?2,
+             lease_owner = NULL,
+             lease_expires_at = NULL,
+             stale_marker_json = ?3,
+             updated_at = ?2
+         WHERE id = ?1",
+        params![&job.id, now, stale_marker.as_deref()],
+    )?;
+    Ok(())
+}
+
+fn targeted_repair_emit_activity_log(
+    ctx: &ServiceContext<'_>,
+    tx: &ActionDb,
+    job: &TargetedRepairInvalidationJob,
+    summary: &TargetedRepairRunSummary,
+) -> Result<(), ClaimError> {
+    let payload = serde_json::json!({
+        "job_id": &job.id,
+        "repair_jobs_processed": summary.repair_jobs_processed,
+        "claims_changed": summary.claims_changed,
+        "contradictions_reconciled": summary.contradictions_reconciled,
+        "failed_jobs": summary.failed_jobs,
+        "changed_claim_ids": summary.changed_claim_ids,
+    });
+    crate::services::signals::emit_in_transaction(
+        ctx,
+        tx,
+        &job.subject_type,
+        &job.subject_id,
+        "claim_repair_ran",
+        "targeted_repair",
+        payload,
+    )
+    .map(|_| ())
+    .map_err(ClaimError::Transaction)
 }
 
 fn signal_target_for_claim(subject: &SubjectRef, claim_id: &str) -> (String, String) {
@@ -2764,7 +4457,7 @@ fn entity_context_subject(
         other => {
             return Err(ClaimError::SubjectRef(format!(
                 "unsupported entity context subject kind '{other}'"
-            )))
+            )));
         }
     };
 
@@ -3001,7 +4694,8 @@ pub fn shadow_write_tombstone_claim(
     let Some(normalized_kind) = normalize_subject_kind_for_claim(subject_kind) else {
         log::debug!(
             "[dos7-shadow] skipping shadow tombstone — subject_kind {:?} has no claim-substrate representation yet (subject_id={})",
-            subject_kind, subject_id
+            subject_kind,
+            subject_id
         );
         return ShadowTombstoneOutcome::SkippedUnsupportedSubjectKind;
     };
@@ -3224,7 +4918,6 @@ mod tests {
 
     const TS: &str = "2026-05-02T12:00:00+00:00";
     const SUBJECT: &str = r#"{"kind":"account","id":"acct-1"}"#;
-
     #[test]
     fn claim_update_allowlist_accepts_lifecycle_trust_and_feedback_columns() {
         let sql = "UPDATE intelligence_claims
@@ -3706,11 +5399,90 @@ mod tests {
     fn repair_job_count(db: &ActionDb, claim_id: &str) -> i64 {
         db.conn_ref()
             .query_row(
-                "SELECT count(*) FROM claim_repair_job WHERE claim_id = ?1",
-                params![claim_id],
+                "SELECT count(*) FROM invalidation_jobs
+                 WHERE job_kind = ?1
+                   AND json_extract(payload_json, '$.claim_id') = ?2",
+                params![crate::db::invalidation_jobs::KIND_TARGETED_REPAIR, claim_id],
                 |row| row.get(0),
             )
             .expect("count repair jobs")
+    }
+
+    fn repair_job_status_and_attempts(db: &ActionDb, job_id: &str) -> (String, i64) {
+        db.conn_ref()
+            .query_row(
+                "SELECT status, attempts FROM invalidation_jobs WHERE id = ?1",
+                params![job_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read repair job")
+    }
+
+    fn repair_job_payload_feedback_id(db: &ActionDb, claim_id: &str) -> Option<String> {
+        db.conn_ref()
+            .query_row(
+                "SELECT json_extract(payload_json, '$.feedback_id')
+                 FROM invalidation_jobs
+                 WHERE job_kind = ?1
+                   AND json_extract(payload_json, '$.claim_id') = ?2
+                 ORDER BY created_at ASC, id ASC
+                 LIMIT 1",
+                params![crate::db::invalidation_jobs::KIND_TARGETED_REPAIR, claim_id],
+                |row| row.get(0),
+            )
+            .expect("read repair feedback id")
+    }
+
+    fn repair_job_status_and_error(db: &ActionDb, claim_id: &str) -> (String, Option<String>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT status, last_error
+                 FROM invalidation_jobs
+                 WHERE job_kind = ?1
+                   AND json_extract(payload_json, '$.claim_id') = ?2
+                 ORDER BY created_at ASC, id ASC
+                 LIMIT 1",
+                params![crate::db::invalidation_jobs::KIND_TARGETED_REPAIR, claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read repair state and error")
+    }
+
+    fn invalidation_job_count(db: &ActionDb, operation: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT count(*) FROM invalidation_jobs
+                 WHERE operation = ?1 OR operation LIKE (?1 || ':%')",
+                params![operation],
+                |row| row.get(0),
+            )
+            .expect("count invalidation jobs")
+    }
+
+    fn first_invalidation_job(
+        db: &ActionDb,
+        operation: &str,
+    ) -> (String, String, Option<String>, Option<String>, String, i64) {
+        db.conn_ref()
+            .query_row(
+                "SELECT id, status, provider_fingerprint, prompt_fingerprint, payload_json, raw_signal_count
+                 FROM invalidation_jobs
+                 WHERE operation = ?1 OR operation LIKE (?1 || ':%')
+                 ORDER BY created_at ASC, id ASC
+                 LIMIT 1",
+                params![operation],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .expect("read invalidation job")
     }
 
     fn signal_count(db: &ActionDb, signal_type: &str) -> i64 {
@@ -4704,6 +6476,176 @@ mod tests {
     }
 
     #[test]
+    fn targeted_repair_contracts_distinguish_generation_boundaries() {
+        let entity_budget = targeted_repair_claim_generation_budget("get_entity_context").unwrap();
+        assert_eq!(
+            entity_budget.contract,
+            ClaimGenerationContract::ClaimValidation
+        );
+        assert_eq!(entity_budget.max_candidate_claims, 0);
+        assert_eq!(entity_budget.max_llm_calls, 0);
+        assert!(!entity_budget.may_commit_claims);
+
+        let meeting_budget = targeted_repair_claim_generation_budget("prepare_meeting").unwrap();
+        assert_eq!(
+            meeting_budget.contract,
+            ClaimGenerationContract::ClaimExtraction
+        );
+        assert_eq!(meeting_budget.max_candidate_claims, 12);
+        assert_eq!(meeting_budget.max_llm_calls, 1);
+        assert!(!meeting_budget.may_commit_claims);
+
+        let repair_budget =
+            targeted_repair_claim_generation_budget(TARGETED_REPAIR_ABILITY_ID).unwrap();
+        assert_eq!(repair_budget.contract, ClaimGenerationContract::ClaimRepair);
+        assert_eq!(repair_budget.max_provider_queries, 1);
+        assert_eq!(
+            repair_budget.max_retrieval_sources,
+            TARGETED_REPAIR_MAX_RETRIEVAL_SOURCES
+        );
+        assert_eq!(repair_budget.max_llm_calls, 1);
+        assert!(repair_budget.may_commit_claims);
+
+        let narrative_budget =
+            targeted_repair_claim_generation_budget("narrative_assembly").unwrap();
+        assert_eq!(
+            narrative_budget.contract,
+            ClaimGenerationContract::NarrativeAssembly
+        );
+        assert_eq!(narrative_budget.max_candidate_claims, 0);
+        assert!(!narrative_budget.may_commit_claims);
+    }
+
+    #[test]
+    fn narrative_assembly_cannot_commit_claims_directly() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut p = proposal("Narrative invented durable fact");
+        p.actor = "agent:narrative_assembly".to_string();
+        p.metadata_json =
+            Some(serde_json::json!({ "ability_contract": "narrative_assembly" }).to_string());
+
+        let err = commit_claim(&ctx, &db, p).expect_err("narrative commits must be rejected");
+        assert!(
+            matches!(err, ClaimError::InvalidActor(message) if message.contains("narrative assembly"))
+        );
+    }
+
+    #[test]
+    fn readonly_and_transform_abilities_cannot_commit_claims_directly() {
+        for ability_id in ["prepare_meeting", "get_entity_context"] {
+            let db = test_db();
+            seed_account(&db);
+            let (clock, rng, external) = ctx_parts();
+            let ctx = live_ctx(&clock, &rng, &external);
+            let mut p = proposal("Budget boundary must reject direct commit");
+            p.metadata_json = Some(
+                serde_json::json!({
+                    "ability_id": ability_id,
+                    "invocation_id": format!("invocation-{ability_id}"),
+                    "claims_this_invocation": 0
+                })
+                .to_string(),
+            );
+
+            let err =
+                commit_claim(&ctx, &db, p).expect_err("non-committing ability must be rejected");
+            assert!(
+                matches!(&err, ClaimError::InvalidActor(message) if message.contains(ability_id) && message.contains("may_commit_claims=false")),
+                "unexpected error for {ability_id}: {err}"
+            );
+        }
+    }
+
+    #[test]
+    fn commit_claim_rejects_non_committing_ability_from_context_or_actor() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external).with_ability_id("prepare_meeting");
+        let err = commit_claim(&ctx, &db, proposal("Context ability must reject"))
+            .expect_err("ServiceContext ability must be budget-gated");
+        assert!(
+            matches!(&err, ClaimError::InvalidActor(message) if message.contains("prepare_meeting") && message.contains("may_commit_claims=false")),
+            "unexpected context ability error: {err}"
+        );
+
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut p = proposal("Actor ability must reject");
+        p.actor = "agent:get_entity_context".to_string();
+        let err = commit_claim(&ctx, &db, p).expect_err("actor ability must be budget-gated");
+        assert!(
+            matches!(&err, ClaimError::InvalidActor(message) if message.contains("get_entity_context") && message.contains("may_commit_claims=false")),
+            "unexpected actor ability error: {err}"
+        );
+    }
+
+    #[test]
+    fn commit_claim_counts_claims_this_invocation_against_ability_budget() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let invocation_id = "targeted-repair-budget-invocation";
+
+        for idx in 0..3 {
+            let mut p = proposal(&format!("Budgeted claim {idx}"));
+            p.field_path = Some(format!("health.risk.{idx}"));
+            p.metadata_json = Some(
+                serde_json::json!({
+                    "ability_id": TARGETED_REPAIR_ABILITY_ID,
+                    "invocation_id": invocation_id
+                })
+                .to_string(),
+            );
+            commit_claim(&ctx, &db, p).expect("claim within targeted repair budget");
+        }
+
+        let mut over_budget = proposal("Budgeted claim 4");
+        over_budget.field_path = Some("health.risk.4".to_string());
+        over_budget.metadata_json = Some(
+            serde_json::json!({
+                "ability_id": TARGETED_REPAIR_ABILITY_ID,
+                "invocation_id": invocation_id
+            })
+            .to_string(),
+        );
+
+        let err = commit_claim(&ctx, &db, over_budget)
+            .expect_err("fourth claim must exceed targeted repair budget");
+        assert!(
+            matches!(&err, ClaimError::InvalidActor(message) if message.contains("budget exhausted") && message.contains("committed_claims=3")),
+            "unexpected budget error: {err}"
+        );
+    }
+
+    #[test]
+    fn commit_claim_rejects_metadata_claims_this_invocation_at_budget() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let mut p = proposal("Caller-reported over budget claim");
+        p.metadata_json = Some(
+            serde_json::json!({
+                "ability_id": TARGETED_REPAIR_ABILITY_ID,
+                "invocation_id": "caller-reported-budget",
+                "claims_this_invocation": 3
+            })
+            .to_string(),
+        );
+
+        let err = commit_claim(&ctx, &db, p)
+            .expect_err("claims_this_invocation must be enforced before commit");
+        assert!(
+            matches!(&err, ClaimError::InvalidActor(message) if message.contains("claims_this_invocation=3")),
+            "unexpected claims_this_invocation error: {err}"
+        );
+    }
+
+    #[test]
     fn record_claim_feedback_enqueues_repair_for_cannot_verify() {
         let db = test_db();
         seed_account(&db);
@@ -4723,17 +6665,78 @@ mod tests {
             .repair_job_id
             .as_deref()
             .expect("repair job id should be returned");
-        let (state, attempts): (String, i64) = db
-            .conn_ref()
-            .query_row(
-                "SELECT state, attempts FROM claim_repair_job WHERE id = ?1",
-                params![repair_job_id],
-                |row| Ok((row.get(0)?, row.get(1)?)),
-            )
-            .expect("read repair job");
+        let (state, attempts) = repair_job_status_and_attempts(&db, repair_job_id);
         assert_eq!(repair_job_count(&db, &claim_id), 1);
         assert_eq!(state, "pending");
         assert_eq!(attempts, 0);
+
+        assert_eq!(signal_count(&db, "claim_repair_requested"), 1);
+        assert_eq!(invalidation_job_count(&db, TARGETED_REPAIR_OPERATION), 1);
+        let (_job_id, status, provider_fp, prompt_fp, payload, raw_signal_count) =
+            first_invalidation_job(&db, TARGETED_REPAIR_OPERATION);
+        assert_eq!(status, "pending");
+        assert_eq!(
+            provider_fp.as_deref(),
+            Some(TARGETED_REPAIR_PROVIDER_FINGERPRINT)
+        );
+        assert!(prompt_fp.as_deref().is_some_and(|value| value.len() == 64));
+        assert_eq!(raw_signal_count, 1);
+        let payload_json: serde_json::Value =
+            serde_json::from_str(&payload).expect("targeted repair payload JSON");
+        assert_eq!(payload_json["claim_id"], claim_id);
+        assert_eq!(
+            payload_json["budget"]["max_retrieval_sources"].as_u64(),
+            Some(TARGETED_REPAIR_MAX_RETRIEVAL_SOURCES as u64)
+        );
+        assert_eq!(
+            payload_json["extraction_batch"]["prompt_fingerprint"],
+            prompt_fp.unwrap()
+        );
+    }
+
+    #[test]
+    fn record_claim_feedback_propagates_invalidation_queue_cap_rejection() {
+        with_targeted_repair_pending_cap_override(1, || {
+            let db = test_db();
+            seed_account(&db);
+            db.conn_ref()
+                .execute(
+                    "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                    params!["acct-2", "Account 2", TS],
+                )
+                .expect("seed second account");
+            let (clock, rng, external) = ctx_parts();
+            let ctx = live_ctx(&clock, &rng, &external);
+
+            let first_claim = inserted_claim_id(
+                commit_claim(&ctx, &db, proposal("First capped repair")).unwrap(),
+            );
+            record_claim_feedback(
+                &ctx,
+                &db,
+                feedback_input(&first_claim, FeedbackAction::CannotVerify),
+            )
+            .expect("first repair should fill cap");
+
+            let mut second = proposal("Second capped repair must reject");
+            second.subject_ref = serde_json::json!({
+                "kind": "account",
+                "id": "acct-2"
+            })
+            .to_string();
+            let second_claim = inserted_claim_id(commit_claim(&ctx, &db, second).unwrap());
+            let err = record_claim_feedback(
+                &ctx,
+                &db,
+                feedback_input(&second_claim, FeedbackAction::CannotVerify),
+            )
+            .expect_err("second distinct repair must propagate cap rejection");
+
+            assert!(
+                matches!(&err, ClaimError::Db(DbError::InvalidArgument(message)) if message.contains("invalidation queue pending cap 1 reached")),
+                "unexpected cap error: {err}"
+            );
+        });
     }
 
     #[test]
@@ -4757,7 +6760,7 @@ mod tests {
     }
 
     #[test]
-    fn record_claim_feedback_honors_per_claim_cap() {
+    fn record_claim_feedback_coalesces_existing_active_repair_for_claim() {
         let db = test_db();
         seed_account(&db);
         let (clock, rng, external) = ctx_parts();
@@ -4765,29 +6768,222 @@ mod tests {
         let claim_id =
             inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk at repair cap")).unwrap());
 
-        for idx in 0..MAX_ACTIVE_REPAIR_JOBS_PER_CLAIM {
-            db.conn_ref()
-                .execute(
-                    "INSERT INTO claim_repair_job
-                     (id, claim_id, feedback_id, state, attempts, max_attempts, created_at)
-                     VALUES (?1, ?2, NULL, 'pending', 0, 3, ?3)",
-                    params![format!("repair-seed-{idx}"), &claim_id, TS],
-                )
-                .expect("seed repair job");
-        }
-
-        let outcome = record_claim_feedback(
+        let first = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+        let second = record_claim_feedback(
             &ctx,
             &db,
             feedback_input(&claim_id, FeedbackAction::CannotVerify),
         )
         .unwrap();
 
-        assert_eq!(outcome.repair_job_id, None);
-        assert_eq!(
-            repair_job_count(&db, &claim_id),
-            MAX_ACTIVE_REPAIR_JOBS_PER_CLAIM
+        assert_eq!(second.repair_job_id, first.repair_job_id);
+        assert_eq!(repair_job_count(&db, &claim_id), 1);
+        assert_eq!(invalidation_job_count(&db, TARGETED_REPAIR_OPERATION), 1);
+        let (_, _, _, _, _, raw_signal_count) =
+            first_invalidation_job(&db, TARGETED_REPAIR_OPERATION);
+        assert_eq!(raw_signal_count, 2);
+    }
+
+    #[test]
+    fn record_claim_feedback_coalescing_updates_pending_repair_feedback_id() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Risk needing newest repair")).unwrap(),
         );
+
+        let first = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+        assert_eq!(
+            repair_job_payload_feedback_id(&db, &claim_id).as_deref(),
+            Some(first.feedback_id.as_str())
+        );
+
+        let second = record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+
+        assert_eq!(repair_job_count(&db, &claim_id), 1);
+        assert_eq!(
+            repair_job_payload_feedback_id(&db, &claim_id).as_deref(),
+            Some(second.feedback_id.as_str())
+        );
+        assert_eq!(second.repair_job_id, first.repair_job_id);
+    }
+
+    #[test]
+    fn targeted_repair_freshness_refresh_marks_stale_claim_completed() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Risk with stale source")).unwrap());
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::MarkOutdated),
+        )
+        .unwrap();
+        let outcome = targeted_repair_process_next_job(&ctx, &db, "repair-worker-freshness")
+            .expect("worker completes invalidation job");
+        assert!(matches!(
+            outcome,
+            TargetedRepairProcessOutcome::Completed {
+                repair_jobs_processed: 1,
+                ..
+            }
+        ));
+
+        let (state, error) = repair_job_status_and_error(&db, &claim_id);
+        assert_eq!(state, "completed");
+        assert_eq!(error, None);
+        let (_, surfacing_state, demotion_reason, _) = read_lifecycle_columns(&db, &claim_id);
+        assert_eq!(surfacing_state, "dormant");
+        assert_eq!(
+            demotion_reason.as_deref(),
+            Some("targeted_repair_freshness_refresh")
+        );
+    }
+
+    #[test]
+    fn targeted_repair_bounded_corroboration_records_new_local_evidence() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Risk with matching local evidence")).unwrap(),
+        );
+        insert_fixture_claim(
+            &db,
+            "claim-local-evidence",
+            SUBJECT,
+            "risk",
+            "Risk with matching local evidence",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&claim_id, FeedbackAction::CannotVerify),
+        )
+        .unwrap();
+        targeted_repair_process_next_job(&ctx, &db, "repair-worker-corroboration")
+            .expect("process repair job");
+
+        let data_source: String = db
+            .conn_ref()
+            .query_row(
+                "SELECT data_source FROM claim_corroborations WHERE claim_id = ?1",
+                params![&claim_id],
+                |row| row.get(0),
+            )
+            .expect("new corroboration row");
+        assert_eq!(data_source, "claim:claim-local-evidence");
+        let (verification_state, _, _) = read_verification_columns(&db, &claim_id);
+        assert_eq!(verification_state, "active");
+        let (state, error) = repair_job_status_and_error(&db, &claim_id);
+        assert_eq!(state, "completed");
+        assert_eq!(error, None);
+    }
+
+    #[test]
+    fn targeted_repair_bundle5_contradiction_fixture_produces_expected_delta() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut user_claim = proposal(
+            "Riley Rivera asked to start with a written agenda and confirm next ownership.",
+        );
+        user_claim.id = Some("src-b5-user-edited-preference".to_string());
+        user_claim.actor = "user:fixture".to_string();
+        user_claim.data_source = "user".to_string();
+        let user_claim_id = inserted_claim_id(commit_claim(&ctx, &db, user_claim).unwrap());
+
+        let mut stale_agent_claim = proposal("Riley prefers a broad discovery agenda.");
+        stale_agent_claim.id = Some("src-b5-original-preference".to_string());
+        stale_agent_claim.actor = "agent:fixture".to_string();
+        stale_agent_claim.data_source = "email".to_string();
+        let forked = commit_claim(&ctx, &db, stale_agent_claim).unwrap();
+        let (contradiction_id, stale_claim_id) = match forked {
+            CommittedClaim::Forked {
+                contradiction_id,
+                new_claim_id,
+                ..
+            } => (contradiction_id, new_claim_id),
+            other => panic!("expected bundle-5 contradiction fork, got {other:?}"),
+        };
+        assert_eq!(stale_claim_id, "src-b5-original-preference");
+
+        record_claim_feedback(
+            &ctx,
+            &db,
+            feedback_input(&stale_claim_id, FeedbackAction::MarkFalse),
+        )
+        .unwrap();
+
+        let outcome = targeted_repair_process_next_job(&ctx, &db, "repair-worker-b5").unwrap();
+        match outcome {
+            TargetedRepairProcessOutcome::Completed {
+                repair_jobs_processed,
+                contradictions_reconciled,
+                ..
+            } => {
+                assert_eq!(repair_jobs_processed, 1);
+                assert_eq!(contradictions_reconciled, 1);
+            }
+            other => panic!("expected targeted repair completion, got {other:?}"),
+        }
+
+        let (reconciled_at, winner_claim_id): (Option<String>, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT reconciled_at, winner_claim_id
+                 FROM claim_contradictions
+                 WHERE id = ?1",
+                params![&contradiction_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(reconciled_at.as_deref(), Some(TS));
+        assert_eq!(winner_claim_id.as_deref(), Some(user_claim_id.as_str()));
+
+        let (repair_state, _) = repair_job_status_and_error(&db, &stale_claim_id);
+        assert_eq!(repair_state, "completed");
+        let (_, invalidation_status, _, _, _, _) =
+            first_invalidation_job(&db, TARGETED_REPAIR_OPERATION);
+        assert_eq!(invalidation_status, "completed");
+
+        assert_eq!(signal_count(&db, "claim_repair_ran"), 1);
+        let activity = first_signal_value(&db, "claim_repair_ran");
+        let activity_json: serde_json::Value =
+            serde_json::from_str(&activity).expect("activity payload JSON");
+        assert_eq!(activity_json["contradictions_reconciled"], 1);
+        assert!(activity_json["changed_claim_ids"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .any(|value| value.as_str() == Some(user_claim_id.as_str())));
     }
 
     #[test]
@@ -5121,6 +7317,11 @@ mod tests {
             )
             .unwrap();
         assert_eq!(feedback_count, 2);
+        assert_eq!(repair_job_count(&db, &claim_id), 1);
+        assert_eq!(invalidation_job_count(&db, TARGETED_REPAIR_OPERATION), 1);
+        let (_, _, _, _, _, raw_signal_count) =
+            first_invalidation_job(&db, TARGETED_REPAIR_OPERATION);
+        assert_eq!(raw_signal_count, 2);
     }
 
     #[test]

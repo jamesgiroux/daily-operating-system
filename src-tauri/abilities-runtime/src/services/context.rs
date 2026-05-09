@@ -831,6 +831,7 @@ pub struct ServiceContext<'a> {
     pub clock: &'a dyn Clock,
     pub rng: &'a dyn SeededRng,
     pub actor: &'a str,
+    pub ability_id: Option<&'a str>,
     pub external: &'a ExternalClients,
     entity_context_reader: Option<Arc<dyn EntityContextReadHandle>>,
     entity_context_claim_reader: Option<Arc<dyn EntityContextClaimReadHandle>>,
@@ -959,6 +960,7 @@ impl<'a> ServiceContext<'a> {
             clock,
             rng,
             actor: "system",
+            ability_id: None,
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
@@ -981,6 +983,7 @@ impl<'a> ServiceContext<'a> {
             clock,
             rng,
             actor: "system",
+            ability_id: None,
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
@@ -1014,6 +1017,7 @@ impl<'a> ServiceContext<'a> {
             clock,
             rng,
             actor: "system",
+            ability_id: None,
             external,
             entity_context_reader: None,
             entity_context_claim_reader: None,
@@ -1032,6 +1036,14 @@ impl<'a> ServiceContext<'a> {
     /// Override the actor label associated with this service call.
     pub fn with_actor(mut self, actor: &'a str) -> Self {
         self.actor = actor;
+        self
+    }
+
+    /// Attach the ability currently responsible for this service call.
+    /// Mutation services use this as a fail-closed budget identity when
+    /// proposal metadata omits the producer ability.
+    pub fn with_ability_id(mut self, ability_id: &'a str) -> Self {
+        self.ability_id = Some(ability_id);
         self
     }
 

@@ -12,6 +12,7 @@ pub const STATUS_CYCLE_DETECTED: &str = "cycle_detected";
 
 pub const KIND_SIGNAL_INVALIDATION: &str = "signal_invalidation";
 pub const KIND_CLAIM_RECOMPUTE: &str = "claim_recompute";
+pub const KIND_TARGETED_REPAIR: &str = "targeted_repair";
 pub const KIND_TRANSFORM: &str = "transform";
 pub const KIND_MAINTENANCE_APPLY: &str = "maintenance_apply";
 pub const KIND_OUTBOX_REPLAY: &str = "outbox_replay";
@@ -995,6 +996,7 @@ fn validate_job_input(input: &EnqueueInvalidationJob) -> Result<(), DbError> {
         input.job_kind.as_str(),
         KIND_SIGNAL_INVALIDATION
             | KIND_CLAIM_RECOMPUTE
+            | KIND_TARGETED_REPAIR
             | KIND_TRANSFORM
             | KIND_MAINTENANCE_APPLY
             | KIND_OUTBOX_REPLAY
