@@ -1,0 +1,341 @@
+name: L3 Release Review
+
+# L3 — Adversarial review of a release bundle.
+#
+# Fires on PR open/sync against `trunk`. The integrated diff is `trunk..dev`
+# (or whatever the PR's base..head is). Reviews the entire release-worth
+# of work in one pass — naturally bundles whatever waves / Linear projects /
+# ad-hoc work shipped this cycle.
+#
+# This is the right scope for L3 because:
+#   - Integrated-state issues matter most at the release boundary, not
+#     mid-wave when more PRs may still land.
+#   - One fire per release = minutes scale with releases, not PR volume.
+#   - Release PRs aren't time-sensitive — happy to sit "pending L3" for
+#     ~30 minutes while panel + suites run.
+#
+# Workflow_dispatch is kept as an escape hatch for re-runs, ad-hoc reviews,
+# or testing against a specific PR list.
+#
+# Failure path: exit non-zero + upload findings as workflow artifacts.
+# CI fail email + the active polling session handle the rest. No Slack/L6
+# escalation infrastructure layered on (per memory).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+    branches:
+      - main
+  workflow_dispatch:
+    inputs:
+      scope-id:
+        description: "Scope name (e.g. release-v1.4.1, ad-hoc-review-X)."
+        required: true
+        type: string
+      base:
+        description: "Base ref for diff. Used by manual dispatch."
+        required: false
+        default: main
+        type: string
+      head:
+        description: "Head ref for diff. Used by manual dispatch."
+        required: false
+        default: dev
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: read
+
+concurrency:
+  group: l3-${{ github.event.pull_request.number || github.event.inputs.scope-id }}
+  cancel-in-progress: true
+
+jobs:
+  gate:
+    name: L3 / gate
+    runs-on: ubuntu-latest
+    outputs:
+      scope: ${{ steps.normalize.outputs.scope }}
+      range: ${{ steps.range.outputs.range }}
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - id: normalize
+        env:
+          EVENT: ${{ github.event_name }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          DISPATCH_SCOPE: ${{ github.event.inputs.scope-id }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            raw="$DISPATCH_SCOPE"
+          else
+            # Auto-derive: prefer "Release vX.Y.Z" pattern from PR title; fall back to PR number.
+            if [[ "$PR_TITLE" =~ ^[Rr]elease[[:space:]]+(v[0-9]+\.[0-9]+\.[0-9]+(-[A-Za-z0-9.-]+)?) ]]; then
+              raw="release-${BASH_REMATCH[1]}"
+            else
+              raw="release-pr-${PR_NUM}"
+            fi
+          fi
+          scope=$(printf '%s' "$raw" | tr -c '[:alnum:]._-' '_' | sed 's/^_//;s/_$//')
+          [[ -n "$scope" ]] || { echo "::error::scope-id reduced to empty"; exit 1; }
+          echo "scope=$scope" >> "$GITHUB_OUTPUT"
+          echo "Normalized scope-id: $scope" >&2
+
+      - id: range
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          DISPATCH_BASE: ${{ github.event.inputs.base }}
+          DISPATCH_HEAD: ${{ github.event.inputs.head }}
+        run: |
+          set -euo pipefail
+          if [[ "$EVENT" == "workflow_dispatch" ]]; then
+            base_sha=$(git rev-parse "origin/$DISPATCH_BASE")
+            head_sha=$(git rev-parse "origin/$DISPATCH_HEAD")
+          else
+            base_sha="$BASE_SHA"
+            head_sha="$HEAD_SHA"
+          fi
+          range="${base_sha}..${head_sha}"
+          echo "range=$range" >> "$GITHUB_OUTPUT"
+          echo "Integrated range: $range ($(git rev-list --count $range) commits)" >&2
+
+  panel-codex:
+    name: L3 / panel / codex-challenge
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/l3-reviewer-job
+        with:
+          reviewer: codex-challenge
+          scope: ${{ needs.gate.outputs.scope }}
+          range: ${{ needs.gate.outputs.range }}
+          prompt-path: .github/reviewer-prompts/l3-codex-challenge.md
+          output-dir: /tmp/l3/codex-challenge
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+      - if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: l3-codex-challenge
+          path: /tmp/l3/codex-challenge
+
+  panel-architect:
+    name: L3 / panel / architect-reviewer
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+      - uses: ./.github/actions/l3-reviewer-job
+        with:
+          reviewer: architect-reviewer
+          scope: ${{ needs.gate.outputs.scope }}
+          range: ${{ needs.gate.outputs.range }}
+          prompt-path: .github/reviewer-prompts/l3-architect-reviewer.md
+          output-dir: /tmp/l3/architect-reviewer
+          anthropic-api-key: ${{ secrets.ANTHROPIC_API_KEY }}
+      - if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: l3-architect-reviewer
+          path: /tmp/l3/architect-reviewer
+
+  suite-s:
+    name: L3 / suite-s
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - run: ./scripts/suite-s.sh --scope "${{ needs.gate.outputs.scope }}" --out /tmp/suite-s.json
+      - if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: l3-suite-s
+          path: /tmp/suite-s.json
+
+  suite-p:
+    name: L3 / suite-p
+    needs: gate
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - run: pnpm install
+      - run: ./scripts/suite-p.sh --scope "${{ needs.gate.outputs.scope }}" --out /tmp/suite-p.json
+      - if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: l3-suite-p
+          path: |
+            /tmp/suite-p.json
+            .docs/perf-baselines/
+
+  suite-e:
+    name: L3 / suite-e
+    needs: gate
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
+      - run: pnpm install
+      - run: ./scripts/suite-e.sh --scope "${{ needs.gate.outputs.scope }}" --out /tmp/suite-e.json
+      - if: always()
+        uses: actions/upload-artifact@65c4c4a1ddee5b72f698fdd19549f0f0fb45cf08 # v4.6.0
+        with:
+          name: l3-suite-e
+          path: /tmp/suite-e.json
+
+  aggregate:
+    name: L3 / aggregate
+    needs: [gate, panel-codex, panel-architect, suite-s, suite-p, suite-e]
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        with:
+          fetch-depth: 0
+
+      - id: verdict
+        env:
+          CODEX_RESULT: ${{ needs.panel-codex.result }}
+          ARCH_RESULT: ${{ needs.panel-architect.result }}
+          S_RESULT: ${{ needs.suite-s.result }}
+          P_RESULT: ${{ needs.suite-p.result }}
+          E_RESULT: ${{ needs.suite-e.result }}
+        run: |
+          set -euo pipefail
+          if [[ "$CODEX_RESULT" == "success" \
+             && "$ARCH_RESULT"  == "success" \
+             && "$S_RESULT"     == "success" \
+             && "$P_RESULT"     == "success" \
+             && "$E_RESULT"     == "success" ]]; then
+            echo "verdict=pass" >> "$GITHUB_OUTPUT"
+          else
+            echo "verdict=fail" >> "$GITHUB_OUTPUT"
+          fi
+          echo "results: codex=$CODEX_RESULT arch=$ARCH_RESULT S=$S_RESULT P=$P_RESULT E=$E_RESULT"
+
+      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16 # v4.1.8
+        with:
+          path: /tmp/l3-artifacts
+
+      - name: Write proof bundle
+        env:
+          SCOPE: ${{ needs.gate.outputs.scope }}
+          RANGE: ${{ needs.gate.outputs.range }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          BUNDLE_DIR=".docs/plans/l3-reviews/${SCOPE}"
+          mkdir -p "$BUNDLE_DIR"
+          BUNDLE="${BUNDLE_DIR}/proof-bundle.md"
+          {
+            echo "# L3 Release Review — proof bundle"
+            echo ""
+            echo "- Scope: ${SCOPE}"
+            echo "- Integrated range: \`${RANGE}\`"
+            echo "- Workflow run: ${RUN_URL}"
+            echo "- Verdict: ${VERDICT}"
+            echo "- Generated: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+            echo ""
+            echo "## Panel verdicts"
+            echo ""
+            for slot in codex-challenge architect-reviewer; do
+              echo "### ${slot}"
+              echo ""
+              if [[ -f "/tmp/l3-artifacts/l3-${slot}/verdict.json" ]]; then
+                echo '```json'
+                cat "/tmp/l3-artifacts/l3-${slot}/verdict.json"
+                echo '```'
+              else
+                echo "_(no verdict file — see workflow artifacts)_"
+              fi
+              echo ""
+            done
+            echo "## Suite results"
+            echo ""
+            for s in s p e; do
+              S_UPPER=$(echo "$s" | tr '[:lower:]' '[:upper:]')
+              echo "### Suite ${S_UPPER}"
+              echo ""
+              if [[ -f "/tmp/l3-artifacts/l3-suite-${s}/suite-${s}.json" ]]; then
+                echo '```json'
+                cat "/tmp/l3-artifacts/l3-suite-${s}/suite-${s}.json"
+                echo '```'
+              fi
+              echo ""
+            done
+            echo "<!-- l3_complete sha=$(git rev-parse HEAD) ts=$(date -u +%Y-%m-%dT%H:%M:%SZ) scope=${SCOPE} verdict=${VERDICT} -->"
+          } > "$BUNDLE"
+          echo "wrote $BUNDLE"
+
+      - name: Comment results on release PR
+        if: github.event_name == 'pull_request'
+        env:
+          SCOPE: ${{ needs.gate.outputs.scope }}
+          VERDICT: ${{ steps.verdict.outputs.verdict }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          PR_NUM: ${{ github.event.pull_request.number }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          icon="pass"
+          [[ "$VERDICT" == "fail" ]] && icon="fail"
+          body=$(cat <<EOM
+          **L3 Release Review** — verdict: \`${VERDICT}\` (${icon})
+
+          Scope: \`${SCOPE}\`
+          Workflow run: ${RUN_URL}
+
+          Findings + panel responses available as workflow artifacts. On pass, proof bundle will land at \`.docs/plans/l3-reviews/${SCOPE}/proof-bundle.md\`.
+          EOM
+          )
+          gh pr comment "$PR_NUM" --body "$body"
+
+      - name: Open proof-bundle PR (success only)
+        if: steps.verdict.outputs.verdict == 'pass'
+        env:
+          SCOPE: ${{ needs.gate.outputs.scope }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          BRANCH="l3-proof/${SCOPE}"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git config user.name "github-actions[bot]"
+          git checkout -b "$BRANCH"
+          git add ".docs/plans/l3-reviews/${SCOPE}/proof-bundle.md"
+          [ -d ".docs/perf-baselines" ] && git add ".docs/perf-baselines/" || true
+          git diff --cached --quiet && { echo "No proof bundle changes to commit"; exit 0; }
+          git commit -m "L3 proof bundle for ${SCOPE}"
+          git push -u origin "$BRANCH"
+          gh pr create --base dev --head "$BRANCH" \
+            --title "L3 proof bundle — ${SCOPE}" \
+            --body "Generated by L3 release review. Verdict: pass. Workflow run: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}"
+
+      - name: Fail workflow if verdict is fail
+        if: steps.verdict.outputs.verdict == 'fail'
+        run: |
+          echo "::error::L3 review failed for scope ${{ needs.gate.outputs.scope }}. See workflow artifacts."
+          exit 1
