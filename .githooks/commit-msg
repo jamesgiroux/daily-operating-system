@@ -1,0 +1,103 @@
+#!/usr/bin/env bash
+# .githooks/commit-msg — L2 review acknowledgment gate.
+#
+# DailyOS L2 review is a developer discipline performed BEFORE pushing,
+# not a CI gate (per CLAUDE.md). This hook enforces that every commit
+# touching code files declares its L2 status in the commit message.
+#
+# Required line in the commit message (if code files staged):
+#
+#     L2-status: passed              # L2 review ran clean
+#     L2-status: not-run-acknowledged # L2 was explicitly skipped
+#     L2-status: n-a-doc-only         # code-pattern file but actually doc-only
+#
+# Doc-only commits (no code files staged) are exempt — no declaration needed.
+#
+# Install: scripts/install-hooks.sh   (one-time per clone)
+# Bypass:  git commit --no-verify     (use sparingly; defeats the point)
+
+set -euo pipefail
+
+COMMIT_MSG_FILE="$1"
+
+# Skip merge / revert / fixup / squash commits — these aren't "real" commits
+# in the sense the L2 declaration covers.
+first_line=$(head -n1 "$COMMIT_MSG_FILE")
+case "$first_line" in
+  Merge*|Revert*|fixup!*|squash!*)
+    exit 0 ;;
+esac
+
+# Get list of staged files. If none staged (e.g., empty commit), skip.
+STAGED=$(git diff --cached --name-only 2>/dev/null || true)
+[ -z "$STAGED" ] && exit 0
+
+# Code-pattern detection. A file matches ANY of these patterns → code commit.
+# Order: most specific first.
+is_code_file() {
+  local f="$1"
+  case "$f" in
+    *.rs)                   return 0 ;;
+    *.ts|*.tsx)             return 0 ;;
+    *.js|*.jsx)             return 0 ;;
+    *.py)                   return 0 ;;
+    *.sql)                  return 0 ;;
+    *.toml)                 return 0 ;;
+    src-tauri/Cargo.lock)   return 0 ;;
+    package.json)           return 0 ;;
+    pnpm-lock.yaml)         return 0 ;;
+    *.sh)                   return 0 ;;
+    .github/workflows/*)    return 0 ;;
+    .github/actions/**)     return 0 ;;
+    .github/scripts/*)      return 0 ;;
+    .githooks/*)            return 0 ;;
+  esac
+  return 1
+}
+
+has_code=false
+code_files=()
+while IFS= read -r f; do
+  [ -z "$f" ] && continue
+  if is_code_file "$f"; then
+    has_code=true
+    code_files+=("$f")
+  fi
+done <<< "$STAGED"
+
+if ! $has_code; then
+  # No code files; doc-only commit; skip L2 check.
+  exit 0
+fi
+
+# Code files staged. Require L2-status declaration.
+if grep -qE '^L2-status: (passed|not-run-acknowledged|n-a-doc-only)$' "$COMMIT_MSG_FILE"; then
+  # Valid declaration present; allow commit.
+  status=$(grep -E '^L2-status: ' "$COMMIT_MSG_FILE" | head -n1 | awk '{print $2}')
+  echo "commit-msg: L2-status=$status (code commit)" >&2
+  exit 0
+fi
+
+# Missing or invalid L2-status. Fail with instructions.
+{
+  echo ""
+  echo "🔒 L2 acknowledgment required."
+  echo ""
+  echo "This commit touches code files and must declare L2 review status."
+  echo ""
+  echo "Add ONE of these lines to your commit message:"
+  echo ""
+  echo "  L2-status: passed                  # L2 review ran clean"
+  echo "  L2-status: not-run-acknowledged    # L2 not run; will surface to user"
+  echo "  L2-status: n-a-doc-only            # code-pattern file but actually doc-only"
+  echo ""
+  echo "Per CLAUDE.md, L2 is mandatory before merge for code changes."
+  echo "If unsure, use 'not-run-acknowledged' and tell the user."
+  echo ""
+  echo "Code files staged in this commit:"
+  for f in "${code_files[@]}"; do
+    echo "  - $f"
+  done | head -10
+} >&2
+
+exit 1

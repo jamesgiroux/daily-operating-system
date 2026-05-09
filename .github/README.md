@@ -1,86 +1,78 @@
-# `.github/` — Phase 2 L2 review workflow
+# .github/ — orchestration scaffolding for L2 + L3
 
-Sets up the L2 reviewer panel as a GitHub Action on the `public` repo. Every PR opened against `dev` or `trunk` triggers parallel reviewers; branch protection requires their status checks before merge.
+DailyOS uses a two-tier review model:
 
-Phase 2 of the orchestration v1-lite plan (`.docs/plans/orchestration/v1-lite.md`).
+| Tier | What | Where it runs |
+|---|---|---|
+| **L2** | Pre-merge review of a single PR | **Locally**, before pushing — codex review + code-reviewer + domain reviewer per `reviewer-prompts/matrix.yml` |
+| **L3** | Adversarial review of a release bundle | **CI**, on PR open against `main` |
 
-## What ships
+L2 is a developer discipline. The CI side of L2 is intentionally lightweight — just the trust-boundary fence and PR-template validation. The actual reviewer panel runs in your local session before the PR opens.
 
-| Path | Purpose |
+L3 fires once per release on the `dev → main` PR; it reviews the integrated bundle (codex challenge + architect-reviewer + Suite S/P/E).
+
+## Local L2 enforcement: the commit-msg hook
+
+Every commit that touches code files must declare `L2-status` in its message:
+
+```
+L2-status: passed                  # L2 review ran clean
+L2-status: not-run-acknowledged    # L2 was explicitly skipped (will surface to user)
+L2-status: n-a-doc-only            # code-pattern file but actually doc-only
+```
+
+The `.githooks/commit-msg` hook fails commits without a valid declaration. Doc-only commits (no code files staged) are exempt.
+
+**One-time install per clone:**
+```bash
+./scripts/install-hooks.sh
+```
+
+Bypass with `--no-verify` is available but defeats the point — use only with explicit user authorization.
+
+## What ships in CI
+
+| File | Purpose |
 |---|---|
-| `workflows/l2-review.yml` | The L2 workflow. Triggers on PR open/synchronize/reopen. Runs code-reviewer + matched domain reviewers in parallel. |
-| `reviewer-prompts/code-reviewer.md` | General L2 code-quality reviewer prompt |
-| `reviewer-prompts/architect-reviewer.md` | Architectural domain reviewer prompt |
-| `reviewer-prompts/security-auditor.md` | Security / OWASP domain reviewer prompt |
-| `reviewer-prompts/performance-engineer.md` | Performance domain reviewer prompt |
-| `reviewer-prompts/accessibility-tester.md` | A11y domain reviewer prompt |
-| `reviewer-prompts/matrix.yml` | Path-prefix → reviewer mapping; the workflow consults this to decide which domain reviewers to invoke per PR |
-| `pull_request_template.md` | PR description template; pre-fills DoD checklist + `security_auditor_invoked` field |
-| `scripts/configure-branch-protection.sh` | One-time `gh`-CLI script to enforce L2 status checks as merge gates on `dev` and `trunk` |
+| `workflows/l2-review.yml` | Fires on PR open/sync vs dev. Runs **config-fence** (self-modification trust boundary) + **validate-pr-template** (security_auditor_invoked field check) + **l2-summary** (aggregator). No reviewer panel — that runs locally. |
+| `workflows/l3-review.yml` | Fires on PR open/sync vs main. Runs the codex/architect panel + Suite S/P/E against the release bundle. |
+| `workflows/test.yml` | The base `test` workflow (clippy, cargo test, pnpm test, etc.) — unchanged by this scaffolding. |
+| `actions/l3-reviewer-job/` | Composite action for L3 panel slots. |
+| `scripts/check-config-fence.sh` | Trust-boundary check used by L2's fence. |
+| `scripts/configure-branch-protection.sh` | One-time branch-protection setup. |
+| `scripts/validate-pr-template.py` | Verifies `security_auditor_invoked` field per PR template. |
+| `reviewer-prompts/matrix.yml` | Mapping of file-path triggers → reviewer roles. **Local-L2 reference**, not CI-driven. |
+| `reviewer-prompts/{accessibility,architect,code,performance,security}-{tester,reviewer,auditor,engineer}.md` | Role definitions for local-L2 reviewers. Used by your local session when running L2 before pushing. |
+| `reviewer-prompts/l3-{codex-challenge,architect-reviewer}.md` | Prompts for CI-side L3 reviewers. |
+| `pull_request_template.md` | Template for PR bodies (with required §4 Security checklist). |
 
 ## Required GitHub setup (one-time)
 
-These are manual steps you do in GitHub UI / CLI. Without them the workflow won't function.
-
-### 1. Install the Anthropic Claude Code GitHub App
-
-The workflow calls `anthropics/claude-code-action@v1`. You need the GitHub App installed on the `public` repo so the Action can authenticate.
-
-Easiest path: from a Claude Code session, run `/install-github-app`. It walks through the OAuth flow, installs the app on the repo you choose, and configures the `ANTHROPIC_API_KEY` secret.
-
-Manual alternative:
-1. Visit https://github.com/apps/claude
-2. Install on `jamesgiroux/daily-operating-system`
-3. Add `ANTHROPIC_API_KEY` as a repo secret (Settings → Secrets and variables → Actions → New repository secret)
-
-### 2. Configure branch protection
-
-Run the script to require L2 status checks on `dev` and `trunk`:
+### 1. Configure branch protection
 
 ```bash
-bash .github/scripts/configure-branch-protection.sh
+./.github/scripts/configure-branch-protection.sh
 ```
 
-It uses `gh api` and is idempotent. Re-run after adding/removing reviewer jobs in the workflow.
+Required status checks added: `L2 / config-fence`, `L2 / validate-pr-template`, `L2 / l2-summary` for `dev`; `L3 / aggregate` for `main`.
 
-UI alternative: GitHub → repo → Settings → Branches → Add rule for `dev` and `trunk`. Toggle:
-- ✓ Require status checks to pass before merging
-- ✓ Require branches to be up to date before merging
-- ✓ Require linear history
-- Add required checks (visible after first L2 workflow run): `L2 / code-reviewer`, plus any domain reviewers you want as hard requirements.
+### 2. Install hooks locally
 
-## How the workflow runs
+```bash
+./scripts/install-hooks.sh
+```
 
-1. PR opened against `dev` or `trunk` triggers the workflow.
-3. **`resolve-matrix`** reads `reviewer-prompts/matrix.yml`, matches changed files against the path globs, outputs the list of reviewers to invoke.
-4. **`code-reviewer`** runs always (general slot).
-5. **Domain reviewers** (`architect-reviewer`, `security-auditor`, `performance-engineer`, `accessibility-tester`) run only when their matrix entries match the PR's changed files.
-6. Each reviewer is a Claude Code Action run with its prompt file. The Action posts a PR review with the verdict + structured findings, and sets a status check.
-7. Branch protection blocks merge until all required status checks are green.
-
-## Updating reviewer behavior
-
-Edit the corresponding `reviewer-prompts/*.md` file. Changes go through L2 review themselves — the prompt files are version-controlled, and the security-auditor matrix triggers on `.github/reviewer-prompts/**`, so any prompt change pulls security-auditor into its own L2 panel. This closes the routine-prompt circular-trust loop from earlier orchestration designs.
-
-## Adding a new domain reviewer
-
-1. Drop a new `reviewer-prompts/<name>.md` (follow the existing prompt structure).
-2. Add an entry in `reviewer-prompts/matrix.yml` with `reviewer: <name>` and the path globs that should trigger it.
-3. Add a job block in `workflows/l2-review.yml` for the new reviewer (copy an existing domain reviewer's job, change the prompt path).
-4. Re-run `configure-branch-protection.sh` if you want the new reviewer's status check as a hard merge requirement.
-
-## What Phase 2 does NOT include
-
-- **`/codex review` slot** — codex CLI in a runner is non-trivial. Phase 2.1 follow-up. Until then, codex L2 happens in-cycle as developer practice.
-- **Linear comment mirroring** — the Action posts to the PR (native GitHub UI). Phase 3 wires claudebot to mirror PR review comments onto the Linear ticket so Linear stays canonical per v1-lite §7.
-- **Auto-merge** — Phase 5 (wave-driver) earns merge authority later. Phase 2 just gates merge readiness; you press the button.
+This wires `core.hooksPath` to `.githooks/`. Required for the commit-msg L2 acknowledgment gate.
 
 ## Bypass
 
-`--no-verify` works on local hooks (Phase 1), not on this workflow. CI status checks are the gate. To bypass in a true emergency: an admin can override via the GitHub UI's "Merge without waiting for requirements to be met" button. That action is logged.
+For a legitimate emergency or known-safe class:
+
+- CI fence: `--admin` merge override (documented bootstrap path for L2/L3 self-modifying PRs)
+- commit-msg hook: `git commit --no-verify` (use sparingly; surface to user)
 
 ## Troubleshooting
 
-- **Workflow doesn't trigger on PR.** Confirm the GitHub App is installed and `ANTHROPIC_API_KEY` is set. Confirm the PR base branch is `dev` or `trunk`.
-- **A reviewer job posts no comment.** Check the workflow run logs for the Anthropic Claude Code Action step. The Action handles its own commenting; no output usually means the Action couldn't reach the API.
-- **Required status check is "expected" but never runs.** A reviewer matched the matrix but the workflow file has a typo in the job name, or the matrix entry has a broken glob. Run a small test PR (docs typo) and inspect the `resolve-matrix` step's output.
+- **`L2 / config-fence fails`**: PR modifies L2's own config; admin override required (the bootstrap pattern).
+- **`L2 / validate-pr-template fails`**: PR body missing `security_auditor_invoked: true|false`. Add to body and re-push.
+- **commit-msg hook fires on a doc-only change**: a file in your commit matches a code-pattern (e.g., `.toml`). If the change is genuinely doc-only, use `L2-status: n-a-doc-only`. If you intend to skip L2 review, use `not-run-acknowledged`.
