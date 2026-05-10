@@ -1274,44 +1274,6 @@ fn claim_merge_tiers_compatible(
     )
 }
 
-fn dedup_key_shadowed_by_compatible_tombstone(
-    conn: &rusqlite::Connection,
-    dedup_key: &str,
-    proposal_temporal_scope: &TemporalScope,
-    proposal_sensitivity: &ClaimSensitivity,
-    now: &str,
-) -> Result<bool, ClaimError> {
-    let mut stmt = conn.prepare(
-        "SELECT temporal_scope, sensitivity \
-         FROM intelligence_claims \
-         WHERE dedup_key = ?1 \
-           AND claim_state = 'tombstoned' \
-           AND (expires_at IS NULL OR expires_at > ?2)",
-    )?;
-    let mut rows = stmt.query(params![dedup_key, now])?;
-    while let Some(row) = rows.next()? {
-        let tombstone_temporal_scope_raw: String = row.get(0)?;
-        let tombstone_sensitivity_raw: String = row.get(1)?;
-        let (Ok(tombstone_temporal_scope), Ok(tombstone_sensitivity)) = (
-            parse_db_enum::<TemporalScope>(tombstone_temporal_scope_raw),
-            parse_db_enum::<ClaimSensitivity>(tombstone_sensitivity_raw),
-        ) else {
-            continue;
-        };
-
-        if claim_merge_tier_values_compatible(
-            &tombstone_temporal_scope,
-            &tombstone_sensitivity,
-            proposal_temporal_scope,
-            proposal_sensitivity,
-        ) {
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
-}
-
 fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> {
     Ok(serde_json::to_string(value)?)
 }
@@ -1514,6 +1476,29 @@ fn pre_gate_blocking_tombstone_exists(
     }
 
     Ok(false)
+}
+
+fn candidate_claim_shadowed_by_compatible_tombstone(
+    conn: &rusqlite::Connection,
+    subject: &SubjectRef,
+    candidate: &IntelligenceClaim,
+    proposal_temporal_scope: &TemporalScope,
+    proposal_sensitivity: &ClaimSensitivity,
+    now: &str,
+) -> Result<bool, ClaimError> {
+    pre_gate_blocking_tombstone_exists(
+        conn,
+        PreGateTombstoneLookup {
+            subject,
+            claim_type: candidate.claim_type.as_str(),
+            field_path: candidate.field_path.as_deref(),
+            item_hash_value: candidate.item_hash.as_deref().unwrap_or(""),
+            canonical_text: &candidate.text,
+            proposal_temporal_scope,
+            proposal_sensitivity,
+            now,
+        },
+    )
 }
 
 fn compact_subject_ref_str(subject_ref: &str) -> Result<String, ClaimError> {
@@ -1954,9 +1939,10 @@ fn load_active_semantic_duplicate_claim(
 
     while let Some(row) = rows.next()? {
         let claim = read_claim_row(row)?;
-        if dedup_key_shadowed_by_compatible_tombstone(
+        if candidate_claim_shadowed_by_compatible_tombstone(
             conn,
-            &claim.dedup_key,
+            lookup.subject,
+            &claim,
             lookup.proposal_temporal_scope,
             lookup.proposal_sensitivity,
             lookup.now,
@@ -1998,7 +1984,7 @@ fn load_active_semantic_duplicate_claim(
 /// Returns the most recently created contradicting claim (one fork
 /// per commit; subsequent contradictions chain off the new claim).
 ///
-/// Skips active claims whose own `dedup_key` has a policy-compatible
+/// Skips active claims whose own semantic identity has a policy-compatible
 /// tombstone in the table — those are "effectively retracted" by a user
 /// dismissal even though their `claim_state` column hasn't been
 /// transitioned (the claims substrate keeps active rows append-only; tombstones
@@ -2045,13 +2031,21 @@ fn load_active_contradicting_claim(
     ])?;
     while let Some(row) = rows.next()? {
         let claim = read_claim_row(row)?;
-        if dedup_key_shadowed_by_compatible_tombstone(
+        if candidate_claim_shadowed_by_compatible_tombstone(
             conn,
-            &claim.dedup_key,
+            lookup.subject,
+            &claim,
             lookup.proposal_temporal_scope,
             lookup.proposal_sensitivity,
             lookup.now,
         )? {
+            continue;
+        }
+        if !claim_merge_tiers_compatible(
+            &claim,
+            lookup.proposal_temporal_scope,
+            lookup.proposal_sensitivity,
+        ) {
             continue;
         }
         if semantic_claim_near_duplicate(&claim, lookup.canonical_text, lookup.proposal_qualifiers)
@@ -6291,6 +6285,35 @@ mod tests {
             .expect("read sensitivity")
     }
 
+    fn read_claim_dedup_key(db: &ActionDb, claim_id: &str) -> String {
+        db.conn_ref()
+            .query_row(
+                "SELECT dedup_key FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| row.get(0),
+            )
+            .expect("read dedup_key")
+    }
+
+    fn read_claim_item_hash(db: &ActionDb, claim_id: &str) -> String {
+        db.conn_ref()
+            .query_row(
+                "SELECT item_hash FROM intelligence_claims WHERE id = ?1",
+                params![claim_id],
+                |row| row.get::<_, Option<String>>(0),
+            )
+            .expect("read item_hash")
+            .unwrap_or_default()
+    }
+
+    fn claim_contradiction_count(db: &ActionDb) -> i64 {
+        db.conn_ref()
+            .query_row("SELECT count(*) FROM claim_contradictions", [], |row| {
+                row.get(0)
+            })
+            .expect("read contradiction count")
+    }
+
     fn insert_fixture_claim(
         db: &ActionDb,
         id: &str,
@@ -9559,6 +9582,205 @@ mod tests {
         assert_eq!(active.len(), 1, "must not insert a duplicate active claim");
         assert_eq!(active[0].id, canonical_id);
         assert_eq!(read_claim_sensitivity(&db, &canonical_id), "confidential");
+    }
+
+    #[test]
+    fn semantic_duplicate_lookup_skips_backfill_tombstoned_active_with_different_dedup_key() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let active_text = "Phase 2 budget approval is pending with finance";
+        let active_id = inserted_claim_id(commit_claim(&ctx, &db, proposal(active_text)).unwrap());
+        update_claim_trust(&db, &active_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let active_hash = read_claim_item_hash(&db, &active_id);
+        seed_backfill_shaped_tombstone(&db, &active_hash, active_text);
+        assert_ne!(
+            read_claim_dedup_key(&db, &active_id),
+            read_claim_dedup_key(&db, "m1-fixture-1"),
+            "fixture must keep the legacy backfill dedup_key shape distinct from the active claim"
+        );
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("Finance has not approved the Phase 2 budget yet"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, active_id),
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!(
+                    "semantic paraphrase reinforced shadowed active claim {}",
+                    claim.id
+                )
+            }
+            CommittedClaim::Forked { primary_claim, .. } => {
+                panic!(
+                    "semantic paraphrase forked against shadowed active claim {}",
+                    primary_claim.id
+                )
+            }
+            CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
+        }
+
+        let corroboration_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_corroborations WHERE claim_id = ?1",
+                params![&active_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(corroboration_count, 0);
+
+        let contradiction_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT count(*) FROM claim_contradictions
+                 WHERE primary_claim_id = ?1 OR contradicting_claim_id = ?1",
+                params![&active_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(contradiction_count, 0);
+    }
+
+    #[test]
+    fn contradiction_lookup_skips_backfill_tombstoned_active_with_different_dedup_key() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let active_text = "Phase 2 budget approval is pending with finance";
+        let active_id = inserted_claim_id(commit_claim(&ctx, &db, proposal(active_text)).unwrap());
+        let active_hash = read_claim_item_hash(&db, &active_id);
+        seed_backfill_shaped_tombstone(&db, &active_hash, active_text);
+        assert_ne!(
+            read_claim_dedup_key(&db, &active_id),
+            read_claim_dedup_key(&db, "m1-fixture-1"),
+            "fixture must keep the legacy backfill dedup_key shape distinct from the active claim"
+        );
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("Legal has not approved the Phase 2 contract terms yet"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, active_id),
+            CommittedClaim::Forked { primary_claim, .. } => {
+                panic!("forked against shadowed active claim {}", primary_claim.id)
+            }
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!("unexpectedly reinforced shadowed active claim {}", claim.id)
+            }
+            CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
+        }
+
+        assert_eq!(claim_contradiction_count(&db), 0);
+    }
+
+    #[test]
+    fn contradiction_lookup_skips_point_in_time_proposal_against_standard_active_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let active_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Renewal looks healthy")).unwrap());
+
+        let mut point_in_time = proposal("Renewal at risk due to procurement");
+        point_in_time.temporal_scope = Some(TemporalScope::PointInTime);
+        let result = commit_claim(&ctx, &db, point_in_time).unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => {
+                assert_ne!(claim.id, active_id);
+                assert_eq!(claim.temporal_scope, TemporalScope::PointInTime);
+            }
+            other => panic!(
+                "point-in-time proposal must not fork against state active claim, got {other:?}"
+            ),
+        }
+
+        assert_eq!(claim_contradiction_count(&db), 0);
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn contradiction_lookup_skips_confidential_proposal_against_internal_active_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let active_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Renewal looks healthy")).unwrap());
+
+        let mut confidential = proposal("Renewal at risk due to procurement");
+        confidential.sensitivity = Some(ClaimSensitivity::Confidential);
+        let result = commit_claim(&ctx, &db, confidential).unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => {
+                assert_ne!(claim.id, active_id);
+                assert_eq!(claim.sensitivity, ClaimSensitivity::Confidential);
+            }
+            other => panic!(
+                "confidential proposal must not fork against internal active claim, got {other:?}"
+            ),
+        }
+
+        assert_eq!(claim_contradiction_count(&db), 0);
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn contradiction_lookup_forks_standard_proposal_against_standard_active_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let primary_id =
+            inserted_claim_id(commit_claim(&ctx, &db, proposal("Renewal looks healthy")).unwrap());
+        let result =
+            commit_claim(&ctx, &db, proposal("Renewal at risk due to procurement")).unwrap();
+
+        match result {
+            CommittedClaim::Forked {
+                primary_claim,
+                contradiction_id,
+                new_claim_id,
+            } => {
+                assert_eq!(primary_claim.id, primary_id);
+                assert_ne!(new_claim_id, primary_id);
+                let edge_count: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT count(*) FROM claim_contradictions WHERE id = ?1",
+                        params![&contradiction_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(edge_count, 1);
+            }
+            other => {
+                panic!("standard proposal should fork against standard active claim, got {other:?}")
+            }
+        }
+
+        assert_eq!(claim_contradiction_count(&db), 1);
     }
 
     #[test]
