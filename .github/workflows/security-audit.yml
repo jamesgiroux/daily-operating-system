@@ -1,6 +1,6 @@
-# Dependency vulnerability audit - weekly schedule + path-trigger on
-# lockfile changes. Moved out of the per-PR test.yml as part of DOS-534
-# CI cost optimization. CVE coverage stays tight because:
+# Dependency vulnerability audit — weekly schedule + path-trigger on
+# lockfile changes. Lives outside the per-PR test workflow so per-PR
+# minutes stay low. CVE coverage stays tight because:
 #   1. Weekly run catches new advisories within 7 days.
 #   2. Path trigger on Cargo.lock / pnpm-lock.yaml catches dep bumps in PR.
 #   3. workflow_dispatch lets us trigger on demand for emergencies.

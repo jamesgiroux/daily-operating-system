@@ -1,13 +1,13 @@
-# CI strategy (DOS-534):
+# CI strategy ():
 # - lint-and-checks + frontend: every PR/push to dev/trunk on Linux (fast, cheap).
-# - rust:                       moved to .github/workflows/rust.yml on macOS,
-#                               triggered only when src-tauri/** or Cargo.* change,
-#                               OR for any push/PR to trunk.
-# - cargo-audit:                moved to .github/workflows/security-audit.yml,
-#                               weekly + path-triggered on Cargo.lock.
+# - rust: moved to .github/workflows/rust.yml on macOS,
+# triggered only when src-tauri/** or Cargo.* change,
+# OR for any push/PR to trunk.
+# - cargo-audit: moved to .github/workflows/security-audit.yml,
+# weekly + path-triggered on Cargo.lock.
 #
 # Rationale: the .githooks/pre-commit gate runs clippy + cargo test --lib + tsc
-# locally on every commit (post-DOS-534), and L2 review is required before
+# locally on every commit (post-), and L2 review is required before
 # merge. Re-running clippy/cargo-test on every dev PR is redundant and burns
 # macOS minutes (10x Linux cost).
 name: Test

@@ -1,12 +1,12 @@
-# Rust CI - macOS only because Tauri externalBin validation + macOS keychain
+# Rust CI — macOS only because Tauri externalBin validation + macOS keychain
 # integration paths require it. Triggers are deliberately narrow:
 #
-# - Pushes/PRs to trunk: always run (release branch -- full safety).
+# - Pushes/PRs to trunk: always run (release branch — full safety).
 # - PRs to dev: only when src-tauri/**, Cargo.*, or workflow files change.
 #   Frontend-only PRs to dev skip this job entirely (the cost saving).
 #
-# DOS-534 rationale: .githooks/pre-commit catches clippy + cargo test --lib
-# + tsc locally on every commit post-DOS-534-hook-wiring. L2 review catches
+# Rationale: the .githooks/pre-commit gate runs clippy + cargo test --lib
+# + tsc locally on every commit post-hook-wiring. L2 review catches
 # anything the local gate misses before merge. CI-on-every-dev-PR was
 # redundant + expensive (10x Linux cost on macos-latest).
 name: Rust
@@ -68,7 +68,7 @@ jobs:
           touch "src-tauri/binaries/dailyos-mcp-$TARGET"
           touch src-tauri/build.rs
 
-      - name: Run DOS-301 claim projection roundtrip regression
+      - name: Run claim projection roundtrip regression
         run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --test dos301_claim_projection_roundtrip_test
 
       - name: Run Rust clippy (production targets)
