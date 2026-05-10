@@ -132,6 +132,29 @@ impl ActionDb {
         Ok(rows.collect::<Result<Vec<_>, _>>()?)
     }
 
+    /// Get a map of `parent_id -> child_count` for every parent that has at
+    /// least one non-archived child. Single grouped query — use this in list
+    /// builders instead of calling `get_child_accounts(parent_id).len()` per
+    /// row, which fans out into N+1 queries.
+    pub fn get_child_account_counts(&self) -> Result<HashMap<String, i64>, DbError> {
+        let mut stmt = self.conn.prepare(
+            "SELECT parent_id, COUNT(*) FROM accounts
+             WHERE parent_id IS NOT NULL AND archived = 0
+             GROUP BY parent_id",
+        )?;
+        let rows = stmt.query_map([], |row| {
+            let parent_id: String = row.get(0)?;
+            let count: i64 = row.get(1)?;
+            Ok((parent_id, count))
+        })?;
+        let mut counts: HashMap<String, i64> = HashMap::new();
+        for row in rows {
+            let (parent_id, count) = row?;
+            counts.insert(parent_id, count);
+        }
+        Ok(counts)
+    }
+
     /// Walk the parent_id chain to get all ancestors (n-level nesting).
     pub fn get_account_ancestors(&self, account_id: &str) -> Result<Vec<DbAccount>, DbError> {
         let sql = format!(
