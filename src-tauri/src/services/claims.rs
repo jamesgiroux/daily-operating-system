@@ -763,6 +763,29 @@ struct SemanticDuplicateLookup<'a> {
     proposal_qualifiers: &'a HashSet<String>,
     proposal_temporal_scope: &'a TemporalScope,
     proposal_sensitivity: &'a ClaimSensitivity,
+    now: &'a str,
+}
+
+struct ContradictionLookup<'a> {
+    subject: &'a SubjectRef,
+    claim_type: &'a str,
+    field_path: Option<&'a str>,
+    canonical_text: &'a str,
+    proposal_qualifiers: &'a HashSet<String>,
+    proposal_temporal_scope: &'a TemporalScope,
+    proposal_sensitivity: &'a ClaimSensitivity,
+    now: &'a str,
+}
+
+struct PreGateTombstoneLookup<'a> {
+    subject: &'a SubjectRef,
+    claim_type: &'a str,
+    field_path: Option<&'a str>,
+    item_hash_value: &'a str,
+    canonical_text: &'a str,
+    proposal_temporal_scope: &'a TemporalScope,
+    proposal_sensitivity: &'a ClaimSensitivity,
+    now: &'a str,
 }
 
 /// Builds a semantic near-duplicate signature. This is deliberately conservative:
@@ -1227,14 +1250,66 @@ fn claim_sensitivity_restriction_rank(sensitivity: &ClaimSensitivity) -> u8 {
     }
 }
 
+fn claim_merge_tier_values_compatible(
+    existing_temporal_scope: &TemporalScope,
+    existing_sensitivity: &ClaimSensitivity,
+    proposal_temporal_scope: &TemporalScope,
+    proposal_sensitivity: &ClaimSensitivity,
+) -> bool {
+    existing_temporal_scope == proposal_temporal_scope
+        && claim_sensitivity_restriction_rank(proposal_sensitivity)
+            <= claim_sensitivity_restriction_rank(existing_sensitivity)
+}
+
 fn claim_merge_tiers_compatible(
     existing: &IntelligenceClaim,
     proposal_temporal_scope: &TemporalScope,
     proposal_sensitivity: &ClaimSensitivity,
 ) -> bool {
-    existing.temporal_scope == *proposal_temporal_scope
-        && claim_sensitivity_restriction_rank(proposal_sensitivity)
-            <= claim_sensitivity_restriction_rank(&existing.sensitivity)
+    claim_merge_tier_values_compatible(
+        &existing.temporal_scope,
+        &existing.sensitivity,
+        proposal_temporal_scope,
+        proposal_sensitivity,
+    )
+}
+
+fn dedup_key_shadowed_by_compatible_tombstone(
+    conn: &rusqlite::Connection,
+    dedup_key: &str,
+    proposal_temporal_scope: &TemporalScope,
+    proposal_sensitivity: &ClaimSensitivity,
+    now: &str,
+) -> Result<bool, ClaimError> {
+    let mut stmt = conn.prepare(
+        "SELECT temporal_scope, sensitivity \
+         FROM intelligence_claims \
+         WHERE dedup_key = ?1 \
+           AND claim_state = 'tombstoned' \
+           AND (expires_at IS NULL OR expires_at > ?2)",
+    )?;
+    let mut rows = stmt.query(params![dedup_key, now])?;
+    while let Some(row) = rows.next()? {
+        let tombstone_temporal_scope_raw: String = row.get(0)?;
+        let tombstone_sensitivity_raw: String = row.get(1)?;
+        let (Ok(tombstone_temporal_scope), Ok(tombstone_sensitivity)) = (
+            parse_db_enum::<TemporalScope>(tombstone_temporal_scope_raw),
+            parse_db_enum::<ClaimSensitivity>(tombstone_sensitivity_raw),
+        ) else {
+            continue;
+        };
+
+        if claim_merge_tier_values_compatible(
+            &tombstone_temporal_scope,
+            &tombstone_sensitivity,
+            proposal_temporal_scope,
+            proposal_sensitivity,
+        ) {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
 }
 
 fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> {
@@ -1323,21 +1398,20 @@ fn subject_id_for_lookup(subject: &SubjectRef) -> Option<&str> {
 /// query is order-agnostic between runtime-serialized JSON
 /// (alphabetical, BTreeMap) and backfill-serialized JSON
 /// (insertion-order from `json_object()`).
+///
+/// A tombstone only blocks proposals in the same merge tier: temporal
+/// scope must match, and the proposal sensitivity must not be more
+/// restrictive than the tombstone sensitivity.
 fn pre_gate_blocking_tombstone_exists(
     conn: &rusqlite::Connection,
-    subject: &SubjectRef,
-    claim_type: &str,
-    field_path: Option<&str>,
-    item_hash_value: &str,
-    canonical_text: &str,
-    now: &str,
+    lookup: PreGateTombstoneLookup<'_>,
 ) -> Result<bool, ClaimError> {
-    let Some(kind) = subject_kind_label(subject) else {
+    let Some(kind) = subject_kind_label(lookup.subject) else {
         // Multi/Global subjects don't participate in single-tombstone
         // suppression. Fall through to the active-write path.
         return Ok(false);
     };
-    let Some(id) = subject_id_for_lookup(subject) else {
+    let Some(id) = subject_id_for_lookup(lookup.subject) else {
         return Ok(false);
     };
 
@@ -1353,7 +1427,7 @@ fn pre_gate_blocking_tombstone_exists(
     // set first; malformed tombstones are silently skipped (they
     // can be remediated by an operator-run quarantine pass).
     const TIER_SQL: &str = "\
-        SELECT 1 \
+        SELECT temporal_scope, sensitivity \
         FROM intelligence_claims \
         WHERE id IN ( \
             SELECT ic.id FROM intelligence_claims ic \
@@ -1365,23 +1439,48 @@ fn pre_gate_blocking_tombstone_exists(
               AND json_extract(ic.subject_ref, '$.id') = ?4 \
               AND (ic.expires_at IS NULL OR ic.expires_at > ?5) \
         ) \
-          AND TIER_PREDICATE \
-        LIMIT 1";
+          AND TIER_PREDICATE";
 
     let hit = |predicate: &str, params: &[&dyn rusqlite::ToSql]| -> Result<bool, ClaimError> {
         let sql = TIER_SQL.replace("TIER_PREDICATE", predicate);
         let mut stmt = conn.prepare(&sql)?;
         let mut rows = stmt.query(params)?;
-        Ok(rows.next()?.is_some())
+        while let Some(row) = rows.next()? {
+            let tombstone_temporal_scope_raw: String = row.get(0)?;
+            let tombstone_sensitivity_raw: String = row.get(1)?;
+            let (Ok(tombstone_temporal_scope), Ok(tombstone_sensitivity)) = (
+                parse_db_enum::<TemporalScope>(tombstone_temporal_scope_raw),
+                parse_db_enum::<ClaimSensitivity>(tombstone_sensitivity_raw),
+            ) else {
+                continue;
+            };
+
+            if claim_merge_tier_values_compatible(
+                &tombstone_temporal_scope,
+                &tombstone_sensitivity,
+                lookup.proposal_temporal_scope,
+                lookup.proposal_sensitivity,
+            ) {
+                return Ok(true);
+            }
+        }
+        Ok(false)
     };
 
-    let field = field_path.unwrap_or("");
+    let field = lookup.field_path.unwrap_or("");
 
     // Hash tier
-    if !item_hash_value.is_empty()
+    if !lookup.item_hash_value.is_empty()
         && hit(
             "item_hash IS NOT NULL AND item_hash <> '' AND item_hash = ?6",
-            &[&claim_type, &field, &kind, &id, &now, &item_hash_value],
+            &[
+                &lookup.claim_type,
+                &field,
+                &kind,
+                &id,
+                &lookup.now,
+                &lookup.item_hash_value,
+            ],
         )?
     {
         return Ok(true);
@@ -1390,10 +1489,17 @@ fn pre_gate_blocking_tombstone_exists(
     // Exact text tier — NOCASE so backfilled tombstones with the
     // legacy mixed-case `text` column still match runtime
     // canonical_text (which is lowercased by canonicalize_semantic_text).
-    if !canonical_text.is_empty()
+    if !lookup.canonical_text.is_empty()
         && hit(
             "text = ?6 COLLATE NOCASE",
-            &[&claim_type, &field, &kind, &id, &now, &canonical_text],
+            &[
+                &lookup.claim_type,
+                &field,
+                &kind,
+                &id,
+                &lookup.now,
+                &lookup.canonical_text,
+            ],
         )?
     {
         return Ok(true);
@@ -1402,7 +1508,7 @@ fn pre_gate_blocking_tombstone_exists(
     // Keyless field-wide tier
     if hit(
         "text = '<keyless>'",
-        &[&claim_type, &field, &kind, &id, &now],
+        &[&lookup.claim_type, &field, &kind, &id, &lookup.now],
     )? {
         return Ok(true);
     }
@@ -1840,11 +1946,6 @@ fn load_active_semantic_duplicate_claim(
            AND coalesce(active.field_path, '') = coalesce(?4, '') \
            AND active.claim_state = 'active' \
            AND active.surfacing_state = 'active' \
-           AND NOT EXISTS ( \
-               SELECT 1 FROM intelligence_claims tombstone \
-               WHERE tombstone.dedup_key = active.dedup_key \
-                 AND tombstone.claim_state = 'tombstoned' \
-           ) \
          ORDER BY active.created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -1853,6 +1954,15 @@ fn load_active_semantic_duplicate_claim(
 
     while let Some(row) = rows.next()? {
         let claim = read_claim_row(row)?;
+        if dedup_key_shadowed_by_compatible_tombstone(
+            conn,
+            &claim.dedup_key,
+            lookup.proposal_temporal_scope,
+            lookup.proposal_sensitivity,
+            lookup.now,
+        )? {
+            continue;
+        }
         if !claim_merge_tiers_compatible(
             &claim,
             lookup.proposal_temporal_scope,
@@ -1888,8 +1998,8 @@ fn load_active_semantic_duplicate_claim(
 /// Returns the most recently created contradicting claim (one fork
 /// per commit; subsequent contradictions chain off the new claim).
 ///
-/// Skips active claims whose own `dedup_key` has a matching tombstone
-/// in the table — those are "effectively retracted" by a user
+/// Skips active claims whose own `dedup_key` has a policy-compatible
+/// tombstone in the table — those are "effectively retracted" by a user
 /// dismissal even though their `claim_state` column hasn't been
 /// transitioned (the claims substrate keeps active rows append-only; tombstones
 /// shadow them via PRE-GATE on re-commit). Without this skip, a
@@ -1898,11 +2008,7 @@ fn load_active_semantic_duplicate_claim(
 /// retracted.
 fn load_active_contradicting_claim(
     conn: &rusqlite::Connection,
-    subject: &SubjectRef,
-    claim_type: &str,
-    field_path: Option<&str>,
-    canonical_text: &str,
-    proposal_qualifiers: &HashSet<String>,
+    lookup: ContradictionLookup<'_>,
 ) -> Result<Option<IntelligenceClaim>, ClaimError> {
     // L2 cycle-12 fix #1: match the active subject by kind+id via
     // json_extract instead of exact subject_ref string equality.
@@ -1912,10 +2018,10 @@ fn load_active_contradicting_claim(
     // detector and silently insert an unlinked duplicate active
     // claim. json_valid guards malformed historical rows from
     // tripping json_extract mid-query (cycle-7 hazard).
-    let Some(kind) = subject_kind_label(subject) else {
+    let Some(kind) = subject_kind_label(lookup.subject) else {
         return Ok(None);
     };
-    let Some(id) = subject_id_for_lookup(subject) else {
+    let Some(id) = subject_id_for_lookup(lookup.subject) else {
         return Ok(None);
     };
     let sql = format!(
@@ -1927,18 +2033,29 @@ fn load_active_contradicting_claim(
            AND coalesce(active.field_path, '') = coalesce(?4, '') \
            AND active.claim_state = 'active' \
            AND active.text <> ?5 \
-           AND NOT EXISTS ( \
-               SELECT 1 FROM intelligence_claims tombstone \
-               WHERE tombstone.dedup_key = active.dedup_key \
-                 AND tombstone.claim_state = 'tombstoned' \
-           ) \
          ORDER BY active.created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt.query(params![kind, id, claim_type, field_path, canonical_text])?;
+    let mut rows = stmt.query(params![
+        kind,
+        id,
+        lookup.claim_type,
+        lookup.field_path,
+        lookup.canonical_text
+    ])?;
     while let Some(row) = rows.next()? {
         let claim = read_claim_row(row)?;
-        if semantic_claim_near_duplicate(&claim, canonical_text, proposal_qualifiers) {
+        if dedup_key_shadowed_by_compatible_tombstone(
+            conn,
+            &claim.dedup_key,
+            lookup.proposal_temporal_scope,
+            lookup.proposal_sensitivity,
+            lookup.now,
+        )? {
+            continue;
+        }
+        if semantic_claim_near_duplicate(&claim, lookup.canonical_text, lookup.proposal_qualifiers)
+        {
             continue;
         }
         return Ok(Some(claim));
@@ -2542,20 +2659,28 @@ pub fn commit_claim(
             }
             if pre_gate_blocking_tombstone_exists(
                 tx.conn_ref(),
-                &superseded_subject,
-                &superseded.claim_type,
-                superseded.field_path.as_deref(),
-                superseded.item_hash.as_deref().unwrap_or(""),
-                &superseded.text,
-                &now,
+                PreGateTombstoneLookup {
+                    subject: &superseded_subject,
+                    claim_type: superseded.claim_type.as_str(),
+                    field_path: superseded.field_path.as_deref(),
+                    item_hash_value: superseded.item_hash.as_deref().unwrap_or(""),
+                    canonical_text: &superseded.text,
+                    proposal_temporal_scope: &effective_temporal_scope,
+                    proposal_sensitivity: &effective_sensitivity,
+                    now: &now,
+                },
             )? || pre_gate_blocking_tombstone_exists(
                 tx.conn_ref(),
-                &subject,
-                &proposal.claim_type,
-                proposal.field_path.as_deref(),
-                &computed_hash,
-                &canonical_text,
-                &now,
+                PreGateTombstoneLookup {
+                    subject: &subject,
+                    claim_type: proposal.claim_type.as_str(),
+                    field_path: proposal.field_path.as_deref(),
+                    item_hash_value: &computed_hash,
+                    canonical_text: &canonical_text,
+                    proposal_temporal_scope: &effective_temporal_scope,
+                    proposal_sensitivity: &effective_sensitivity,
+                    now: &now,
+                },
             )? {
                 return Err(ClaimError::TombstonedPreGate);
             }
@@ -2629,12 +2754,16 @@ pub fn commit_claim(
         if proposal.tombstone.is_none()
             && pre_gate_blocking_tombstone_exists(
                 tx.conn_ref(),
-                &subject,
-                &proposal.claim_type,
-                proposal.field_path.as_deref(),
-                &computed_hash,
-                &canonical_text,
-                &now,
+                PreGateTombstoneLookup {
+                    subject: &subject,
+                    claim_type: proposal.claim_type.as_str(),
+                    field_path: proposal.field_path.as_deref(),
+                    item_hash_value: &computed_hash,
+                    canonical_text: &canonical_text,
+                    proposal_temporal_scope: &effective_temporal_scope,
+                    proposal_sensitivity: &effective_sensitivity,
+                    now: &now,
+                },
             )?
         {
             return Err(ClaimError::TombstonedPreGate);
@@ -2689,6 +2818,7 @@ pub fn commit_claim(
                     proposal_qualifiers: &semantic_qualifiers,
                     proposal_temporal_scope: &effective_temporal_scope,
                     proposal_sensitivity: &effective_sensitivity,
+                    now: &now,
                 },
             )? {
                 match semantic_match.action {
@@ -2738,11 +2868,16 @@ pub fn commit_claim(
             // reconciliation pass) resolves the fork.
             if let Some(primary) = load_active_contradicting_claim(
                 tx.conn_ref(),
-                &subject,
-                &proposal.claim_type,
-                proposal.field_path.as_deref(),
-                &canonical_text,
-                &semantic_qualifiers,
+                ContradictionLookup {
+                    subject: &subject,
+                    claim_type: &proposal.claim_type,
+                    field_path: proposal.field_path.as_deref(),
+                    canonical_text: &canonical_text,
+                    proposal_qualifiers: &semantic_qualifiers,
+                    proposal_temporal_scope: &effective_temporal_scope,
+                    proposal_sensitivity: &effective_sensitivity,
+                    now: &now,
+                },
             )? {
                 let new_id = proposal
                     .id
@@ -6213,6 +6348,23 @@ mod tests {
         }
     }
 
+    fn commit_tombstone_claim(
+        ctx: &ServiceContext<'_>,
+        db: &ActionDb,
+        text: &str,
+        temporal_scope: TemporalScope,
+        sensitivity: ClaimSensitivity,
+    ) {
+        let mut tombstone = proposal(text);
+        tombstone.temporal_scope = Some(temporal_scope);
+        tombstone.sensitivity = Some(sensitivity);
+        tombstone.tombstone = Some(TombstoneSpec {
+            retraction_reason: "user_removal".to_string(),
+            expires_at: None,
+        });
+        commit_claim(ctx, db, tombstone).expect("commit tombstone claim");
+    }
+
     fn all_feedback_actions() -> [FeedbackAction; 9] {
         [
             FeedbackAction::ConfirmCurrent,
@@ -7118,6 +7270,88 @@ mod tests {
 
         let err = commit_claim(&ctx, &db, proposal("Procurement blocked renewal"))
             .expect_err("tombstone should block recommit");
+        assert!(matches!(err, ClaimError::TombstonedPreGate));
+    }
+
+    #[test]
+    fn pre_gate_does_not_block_confidential_proposal_with_internal_tombstone() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let text = "Procurement blocked renewal";
+        commit_tombstone_claim(
+            &ctx,
+            &db,
+            text,
+            TemporalScope::State,
+            ClaimSensitivity::Internal,
+        );
+
+        let mut confidential = proposal(text);
+        confidential.sensitivity = Some(ClaimSensitivity::Confidential);
+
+        let result = commit_claim(&ctx, &db, confidential);
+        let claim = match result {
+            Ok(CommittedClaim::Inserted { claim }) => claim,
+            other => panic!(
+                "internal tombstone must not block more restrictive confidential proposal, got {other:?}"
+            ),
+        };
+        assert_eq!(claim.sensitivity, ClaimSensitivity::Confidential);
+        assert_eq!(read_claim_sensitivity(&db, &claim.id), "confidential");
+    }
+
+    #[test]
+    fn pre_gate_does_not_block_point_in_time_proposal_with_state_tombstone() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let text = "Procurement blocked renewal";
+        commit_tombstone_claim(
+            &ctx,
+            &db,
+            text,
+            TemporalScope::State,
+            ClaimSensitivity::Internal,
+        );
+
+        let mut point_in_time = proposal(text);
+        point_in_time.temporal_scope = Some(TemporalScope::PointInTime);
+
+        let result = commit_claim(&ctx, &db, point_in_time);
+        let claim = match result {
+            Ok(CommittedClaim::Inserted { claim }) => claim,
+            other => {
+                panic!("state tombstone must not block point-in-time proposal, got {other:?}")
+            }
+        };
+        assert_eq!(claim.temporal_scope, TemporalScope::PointInTime);
+        assert_eq!(read_claim_temporal_scope(&db, &claim.id), "point_in_time");
+    }
+
+    #[test]
+    fn pre_gate_still_blocks_internal_state_proposal_with_internal_state_tombstone() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let text = "Procurement blocked renewal";
+        commit_tombstone_claim(
+            &ctx,
+            &db,
+            text,
+            TemporalScope::State,
+            ClaimSensitivity::Internal,
+        );
+
+        let mut internal = proposal(text);
+        internal.temporal_scope = Some(TemporalScope::State);
+        internal.sensitivity = Some(ClaimSensitivity::Internal);
+
+        let err = commit_claim(&ctx, &db, internal)
+            .expect_err("policy-compatible tombstone should still block recommit");
         assert!(matches!(err, ClaimError::TombstonedPreGate));
     }
 
@@ -9287,6 +9521,44 @@ mod tests {
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
         assert_eq!(active.len(), 1);
         assert_eq!(read_claim_sensitivity(&db, &first_id), "confidential");
+    }
+
+    #[test]
+    fn commit_claim_confidential_semantic_variant_merges_despite_internal_tombstone() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let canonical_text = "Phase 2 budget approval is pending with finance";
+
+        commit_tombstone_claim(
+            &ctx,
+            &db,
+            canonical_text,
+            TemporalScope::State,
+            ClaimSensitivity::Internal,
+        );
+
+        let mut canonical = proposal(canonical_text);
+        canonical.sensitivity = Some(ClaimSensitivity::Confidential);
+        let canonical_id = inserted_claim_id(commit_claim(&ctx, &db, canonical).unwrap());
+        update_claim_trust(&db, &canonical_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let mut paraphrase = proposal("Finance has not approved the Phase 2 budget yet");
+        paraphrase.sensitivity = Some(ClaimSensitivity::Confidential);
+        let result = commit_claim(&ctx, &db, paraphrase).unwrap();
+
+        match result {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, canonical_id),
+            other => panic!(
+                "confidential paraphrase should reinforce confidential canonical, got {other:?}"
+            ),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 1, "must not insert a duplicate active claim");
+        assert_eq!(active[0].id, canonical_id);
+        assert_eq!(read_claim_sensitivity(&db, &canonical_id), "confidential");
     }
 
     #[test]
