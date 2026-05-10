@@ -137,6 +137,14 @@ pub fn run() {
     .init();
 
     log::info!("DailyOS starting");
+    {
+        let clock = crate::services::context::SystemClock;
+        let freshness_ctx = crate::abilities::trust::ScoringContext {
+            clock: &clock,
+            renewal_context: None,
+        };
+        crate::abilities::trust::validate_freshness_decay_config(&freshness_ctx);
+    }
 
     tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())

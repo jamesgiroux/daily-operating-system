@@ -6,15 +6,20 @@
 
 pub mod config;
 pub mod factors;
+pub mod freshness_decay;
 pub mod types;
 
 use factors::{
-    contradiction_penalty, corroboration_weight, cross_entity_coherence, freshness_weight,
+    contradiction_penalty, corroboration_weight, cross_entity_coherence,
     internal_consistency, sensitivity_aware_filtering, source_lifecycle_weight, source_reliability,
     subject_fit_confidence, user_feedback_weight,
 };
 
 pub use config::{TrustConfig, TrustConfigError, TrustFactorWeights};
+pub use freshness_decay::{
+    freshness_weight, half_life_for, validate_freshness_decay_config, RenewalContext,
+    ScoringContext,
+};
 pub use types::{
     ConfidenceCaveat, ConfidenceEvidence, CorroboratorWeight, CrossEntityCoherenceInput,
     CrossEntityHit, CrossEntityHitKind, EntityFootprint, FactorEvidence, FreshnessContext,
@@ -55,9 +60,11 @@ pub fn compile_trust(
         },
         NamedFactor {
             name: "freshness_weight",
-            raw_value: freshness_weight(
-                &ctx.factor_inputs.freshness,
-                &claim.temporal_scope,
+            raw_value: freshness_decay::freshness_weight_at(
+                claim,
+                ctx.now,
+                ctx.renewal_context.as_ref(),
+                Some(&ctx.factor_inputs.freshness),
                 &ctx.config,
             ),
             weight: ctx.config.weights.freshness_weight,
@@ -426,7 +433,13 @@ fn caveats(
     if !ctx.factor_inputs.freshness.timestamp_known {
         caveats.push(ConfidenceCaveat::UnknownTimestamp);
     }
-    if ctx.factor_inputs.freshness.age_days > ctx.config.freshness_half_life_days {
+    if ctx.factor_inputs.freshness.age_days
+        > freshness_decay::freshness_threshold_days(
+            claim,
+            ctx.now,
+            ctx.renewal_context.as_ref(),
+        )
+    {
         caveats.push(ConfidenceCaveat::StaleSource {
             source: claim.data_source.clone(),
             age_days: ctx.factor_inputs.freshness.age_days,
@@ -475,9 +488,9 @@ mod tests {
             actor: "agent:test".to_string(),
             data_source: "glean".to_string(),
             source_ref: None,
-            source_asof: Some("2026-05-01T00:00:00Z".to_string()),
-            observed_at: "2026-05-01T00:00:00Z".to_string(),
-            created_at: "2026-05-01T00:00:00Z".to_string(),
+            source_asof: Some("2026-05-04T00:00:00Z".to_string()),
+            observed_at: "2026-05-04T00:00:00Z".to_string(),
+            created_at: "2026-05-04T00:00:00Z".to_string(),
             provenance_json: "{}".to_string(),
             metadata_json: None,
             claim_state: ClaimState::Active,
@@ -502,6 +515,7 @@ mod tests {
     fn test_context() -> TrustContext {
         TrustContext {
             now: Utc.with_ymd_and_hms(2026, 5, 4, 0, 0, 0).unwrap(),
+            renewal_context: None,
             config: TrustConfig::default(),
             factor_inputs: TrustFactorInputs {
                 source_reliability: 1.0,
