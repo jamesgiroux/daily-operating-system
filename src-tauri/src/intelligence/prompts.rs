@@ -2699,6 +2699,8 @@ struct AiOpenCommitment {
     source: Option<String>,
     #[serde(default)]
     status: Option<String>,
+    #[serde(default)]
+    item_source: Option<ItemSource>,
 }
 
 /// Relationship depth assessment.
@@ -3275,7 +3277,7 @@ fn try_parse_json_response(
                     due_date: c.due_date,
                     source: c.source,
                     status: c.status,
-                    item_source: None,
+                    item_source: c.item_source,
                     discrepancy: None,
                 })
                 .collect()

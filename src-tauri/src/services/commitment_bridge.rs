@@ -8,7 +8,8 @@
 //! service-boundary rule (no direct DB writes from commands).
 
 use crate::abilities::extractors::commitment::{
-    derive_commitment_id, CommitmentClaim, CommitmentTrust, OwnerRef,
+    derive_commitment_id, normalize_commitment_title as normalize_commitment_identity_title,
+    CommitmentClaim, CommitmentTrust, OwnerRef,
 };
 use crate::abilities::feedback::ClaimVerificationState;
 use crate::abilities::provenance::SubjectRef;
@@ -36,6 +37,7 @@ pub struct BridgeSyncSummary {
     pub updated: usize,
     pub skipped_tombstoned: usize,
     pub skipped_missing_id: usize,
+    pub skipped_malformed_id: usize,
     /// bridge_id was new but mapped to an existing action via
     /// derived identity match (alias). No new action row was created;
     /// the bridge row was inserted pointing at the existing action.
@@ -45,12 +47,80 @@ pub struct BridgeSyncSummary {
 /// Normalize a commitment title with the same title rule used by
 /// `derive_commitment_id`.
 pub fn normalize_commitment_title(title: &str) -> String {
-    title
-        .split_whitespace()
-        .collect::<Vec<_>>()
-        .join(" ")
-        .trim()
-        .to_ascii_lowercase()
+    normalize_commitment_identity_title(title)
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct CommitmentIngestionSource {
+    source_type: String,
+    source_id: String,
+}
+
+impl CommitmentIngestionSource {
+    pub fn new(
+        source_type: impl Into<String>,
+        source_id: impl Into<String>,
+    ) -> Result<Self, String> {
+        let source_type = source_type.into();
+        let source_id = source_id.into();
+        let source_type = trimmed_non_empty(Some(source_type.as_str()))
+            .ok_or_else(|| "commitment ingestion source_type is empty".to_string())?
+            .to_string();
+        let source_id = trimmed_non_empty(Some(source_id.as_str()))
+            .ok_or_else(|| "commitment ingestion source_id is empty".to_string())?
+            .to_string();
+        Ok(Self {
+            source_type,
+            source_id,
+        })
+    }
+
+    fn for_intelligence_commitment(
+        entity_type: &str,
+        entity_id: &str,
+        commitment: &OpenCommitment,
+    ) -> Result<Self, String> {
+        if let Some(source_id) = commitment
+            .commitment_id
+            .as_deref()
+            .and_then(source_commitment_stable_source_id)
+        {
+            return Self::new("commitment", source_id);
+        }
+
+        let source_type = commitment
+            .item_source
+            .as_ref()
+            .map(|source| source.source.as_str())
+            .or(commitment.source.as_deref())
+            .unwrap_or("ai_enrichment");
+        let source_type = if source_type.trim().is_empty() {
+            "ai_enrichment"
+        } else {
+            source_type
+        };
+        let source_id = entity_id;
+        let source_id = if source_id.trim().is_empty() {
+            entity_type
+        } else {
+            source_id
+        };
+
+        Self::new(source_type, source_id)
+    }
+
+    fn source_type(&self) -> &str {
+        &self.source_type
+    }
+
+    fn source_id(&self) -> &str {
+        &self.source_id
+    }
+}
+
+pub struct CommitmentIngestionItem<'a> {
+    pub commitment: &'a OpenCommitment,
+    pub source: CommitmentIngestionSource,
 }
 
 /// A single bridge row read from `ai_commitment_bridge`.
@@ -95,13 +165,50 @@ pub fn sync_ai_commitments(
     entity_id: &str,
     commitments: &[OpenCommitment],
 ) -> Result<BridgeSyncSummary, String> {
+    let commitments = intelligence_commitment_ingestion_items(entity_type, entity_id, commitments)?;
+    sync_ai_commitments_with_ingestion_sources(ctx, db, entity_type, entity_id, &commitments)
+}
+
+pub fn intelligence_commitment_ingestion_items<'a>(
+    entity_type: &str,
+    entity_id: &str,
+    commitments: &'a [OpenCommitment],
+) -> Result<Vec<CommitmentIngestionItem<'a>>, String> {
+    let commitments = commitments
+        .iter()
+        .map(|commitment| {
+            Ok(CommitmentIngestionItem {
+                commitment,
+                source: CommitmentIngestionSource::for_intelligence_commitment(
+                    entity_type,
+                    entity_id,
+                    commitment,
+                )?,
+            })
+        })
+        .collect::<Result<Vec<_>, String>>()?;
+    Ok(commitments)
+}
+
+pub fn sync_ai_commitments_with_ingestion_sources(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    commitments: &[CommitmentIngestionItem<'_>],
+) -> Result<BridgeSyncSummary, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     let mut summary = BridgeSyncSummary::default();
     let now = ctx.clock.now().to_rfc3339();
 
-    for commitment in commitments {
+    for item in commitments {
+        let commitment = item.commitment;
         if commitment.description.trim().is_empty() {
             summary.skipped_missing_id += 1;
+            continue;
+        }
+        if !llm_commitment_id_matches_ingestion_source(commitment, &item.source) {
+            summary.skipped_malformed_id += 1;
             continue;
         }
 
@@ -156,7 +263,7 @@ pub fn sync_ai_commitments(
         }
         let owner_resolution =
             resolve_owner(db, entity_id, &derived_id, commitment.owner.as_deref())?;
-        let source_key = commitment_source_key(commitment, &derived_id);
+        let source_key = commitment_source_key(&item.source);
         let source_count = source_count_after_sighting(db, &derived_id, &source_key).unwrap_or(1);
         let trust = compute_commitment_trust(
             entity_id,
@@ -180,6 +287,7 @@ pub fn sync_ai_commitments(
             entity_type,
             entity_id,
             commitment,
+            &item.source,
             &claim,
             &owner_resolution,
             &trust,
@@ -344,6 +452,11 @@ fn source_commitment_id_parts(value: &str) -> Option<(&str, &str, &str)> {
     ))
 }
 
+fn source_commitment_stable_source_id(value: &str) -> Option<String> {
+    let (source_type, source_id, _source_ordinal) = source_commitment_id_parts(value)?;
+    Some(format!("{source_type}:{source_id}"))
+}
+
 fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
     value.map(str::trim).filter(|value| !value.is_empty())
 }
@@ -448,6 +561,7 @@ pub fn upsert_commitment_claim(
     entity_type: &str,
     entity_id: &str,
     commitment: &OpenCommitment,
+    ingestion_source: &CommitmentIngestionSource,
     claim: &CommitmentClaim,
     owner_resolution: &OwnerResolution,
     trust: &CommitmentTrust,
@@ -534,7 +648,15 @@ pub fn upsert_commitment_claim(
         now,
     )
     .map_err(|e| e.to_string())?;
-    insert_commitment_source(db, &action, commitment, owner_resolution, trust, now)?;
+    insert_commitment_source(
+        db,
+        &action,
+        commitment,
+        ingestion_source,
+        owner_resolution,
+        trust,
+        now,
+    )?;
 
     Ok(())
 }
@@ -718,6 +840,7 @@ fn insert_commitment_source(
     db: &ActionDb,
     action: &DbAction,
     commitment: &OpenCommitment,
+    ingestion_source: &CommitmentIngestionSource,
     owner_resolution: &OwnerResolution,
     trust: &CommitmentTrust,
     now: &str,
@@ -727,12 +850,7 @@ fn insert_commitment_source(
         .as_deref()
         .ok_or_else(|| format!("commitment action {} missing commitment_id", action.id))?;
     let source_confidence = commitment.item_source.as_ref().map(|s| s.confidence);
-    let source_type = commitment
-        .item_source
-        .as_ref()
-        .map(|s| s.source.as_str())
-        .or(commitment.source.as_deref())
-        .or(action.source_type.as_deref());
+    let source_type = ingestion_source.source_type();
     let source_label = commitment
         .item_source
         .as_ref()
@@ -740,7 +858,7 @@ fn insert_commitment_source(
         .or(commitment.source.as_deref())
         .or(action.source_label.as_deref());
     let owner_ref_json = serde_json::to_string(&owner_resolution.owner_ref).ok();
-    let source_key = commitment_source_key(commitment, commitment_id);
+    let source_key = commitment_source_key(ingestion_source);
 
     db.conn_ref()
         .execute(
@@ -755,7 +873,7 @@ fn insert_commitment_source(
                 action.id.as_str(),
                 source_key,
                 source_type,
-                action.source_id.as_deref(),
+                ingestion_source.source_id(),
                 source_label,
                 now,
                 source_confidence,
@@ -798,38 +916,37 @@ fn source_count_after_sighting(
     Ok(existing + if already_seen { 0 } else { 1 })
 }
 
-fn commitment_source_key(commitment: &OpenCommitment, commitment_id: &str) -> String {
-    if let Some((source_type, source_id, source_ordinal)) = commitment
+fn commitment_source_key(ingestion_source: &CommitmentIngestionSource) -> String {
+    format!(
+        "{}:{}",
+        normalize_source_key_part(ingestion_source.source_type()),
+        normalize_source_key_part(ingestion_source.source_id())
+    )
+}
+
+fn llm_commitment_id_matches_ingestion_source(
+    commitment: &OpenCommitment,
+    ingestion_source: &CommitmentIngestionSource,
+) -> bool {
+    let Some((source_type, source_id, _source_ordinal)) = commitment
         .commitment_id
         .as_deref()
         .and_then(source_commitment_id_parts)
+    else {
+        return true;
+    };
+
+    if normalize_source_key_part(ingestion_source.source_type()) == "commitment"
+        && normalize_source_key_part(ingestion_source.source_id())
+            == normalize_source_key_part(&format!("{source_type}:{source_id}"))
     {
-        return format!(
-            "{}:{}:{}",
-            normalize_source_key_part(source_type),
-            normalize_source_key_part(source_id),
-            normalize_source_key_part(source_ordinal)
-        );
+        return true;
     }
 
-    let source_type = commitment
-        .item_source
-        .as_ref()
-        .map(|source| source.source.as_str())
-        .or(commitment.source.as_deref())
-        .unwrap_or("commitment");
-    let source_id = commitment
-        .item_source
-        .as_ref()
-        .and_then(|source| source.reference.as_deref())
-        .or_else(|| trimmed_non_empty(commitment.commitment_id.as_deref()))
-        .unwrap_or(commitment_id);
-
-    format!(
-        "{}:{}:0",
-        normalize_source_key_part(source_type),
-        normalize_source_key_part(source_id)
-    )
+    normalize_source_key_part(source_type)
+        == normalize_source_key_part(ingestion_source.source_type())
+        && normalize_source_key_part(source_id)
+            == normalize_source_key_part(ingestion_source.source_id())
 }
 
 fn normalize_source_key_part(value: &str) -> String {
@@ -1281,6 +1398,28 @@ mod tests {
         }
     }
 
+    fn make_commitment_with_item_source(
+        description: &str,
+        legacy_id: &str,
+        source_type: &str,
+        source_ref: &str,
+    ) -> OpenCommitment {
+        let mut commitment = make_commitment_with_identity(
+            description,
+            Some(legacy_id),
+            None,
+            None,
+            Some(source_type),
+        );
+        commitment.item_source = Some(crate::intelligence::io::ItemSource {
+            source: source_type.to_string(),
+            confidence: 0.8,
+            sourced_at: "2026-04-29T00:00:00Z".to_string(),
+            reference: Some(source_ref.to_string()),
+        });
+        commitment
+    }
+
     fn derived_id(description: &str) -> String {
         derive_commitment_id(description, "acct-1", None, None)
     }
@@ -1335,6 +1474,22 @@ mod tests {
                 |row| row.get(0),
             )
             .unwrap()
+    }
+
+    fn sync_one_with_ingestion_source(
+        ctx: &ServiceContext<'_>,
+        db: &ActionDb,
+        commitment: &OpenCommitment,
+        source_type: &str,
+        source_id: &str,
+    ) -> BridgeSyncSummary {
+        let items = [CommitmentIngestionItem {
+            commitment,
+            source: CommitmentIngestionSource::new(source_type, source_id)
+                .expect("ingestion source"),
+        }];
+        sync_ai_commitments_with_ingestion_sources(ctx, db, "account", "acct-1", &items)
+            .expect("sync")
     }
 
     #[test]
@@ -1441,6 +1596,191 @@ mod tests {
             .expect("action query")
             .expect("action row");
         assert_eq!(action.commitment_source_count, Some(1));
+    }
+
+    #[test]
+    fn llm_ordinal_drift_does_not_inflate_distinct_source_count_or_trust() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Send source-count deck despite LLM ordinal drift";
+        let commitment_id = derived_id(title);
+
+        let first = make_commitment_with_identity(
+            title,
+            Some("meeting:acct-1:1"),
+            None,
+            None,
+            Some("meeting"),
+        );
+        let first_summary = sync_one_with_ingestion_source(&ctx, &db, &first, "meeting", "acct-1");
+        assert_eq!(first_summary.created, 1);
+        let first_score = trust_score(&db, &commitment_id);
+
+        for ordinal in 2..=5 {
+            let drifted = make_commitment_with_identity(
+                title,
+                Some(&format!("meeting:acct-1:{ordinal}")),
+                None,
+                None,
+                Some("meeting"),
+            );
+            let summary = sync_one_with_ingestion_source(&ctx, &db, &drifted, "meeting", "acct-1");
+            assert_eq!(summary.created, 0);
+            assert_eq!(summary.skipped_malformed_id, 0);
+        }
+
+        assert_eq!(source_rows(&db, &commitment_id), 5);
+        assert_eq!(distinct_source_keys(&db, &commitment_id), 1);
+        assert_eq!(trust_score(&db, &commitment_id), first_score);
+    }
+
+    #[test]
+    fn reordered_llm_commitment_array_keeps_distinct_source_count_stable() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let source_ref = "call-123";
+        let title = "Prepare reordered commitment A";
+        let commitment_id = derived_id(title);
+        let first = vec![
+            make_commitment_with_item_source(title, "meeting:call-123:1", "meeting", source_ref),
+            make_commitment_with_item_source(
+                "Prepare reordered commitment B",
+                "meeting:call-123:2",
+                "meeting",
+                source_ref,
+            ),
+            make_commitment_with_item_source(
+                "Prepare reordered commitment C",
+                "meeting:call-123:3",
+                "meeting",
+                source_ref,
+            ),
+        ];
+        let reordered = vec![
+            make_commitment_with_item_source(
+                "Prepare reordered commitment C",
+                "meeting:call-123:1",
+                "meeting",
+                source_ref,
+            ),
+            make_commitment_with_item_source(
+                "Prepare reordered commitment B",
+                "meeting:call-123:2",
+                "meeting",
+                source_ref,
+            ),
+            make_commitment_with_item_source(title, "meeting:call-123:3", "meeting", source_ref),
+        ];
+
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &first).expect("first sync");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &reordered).expect("reordered sync");
+
+        assert_eq!(source_rows(&db, &commitment_id), 2);
+        assert_eq!(distinct_source_keys(&db, &commitment_id), 1);
+    }
+
+    #[test]
+    fn commitment_id_source_identity_is_stable_when_reference_is_display_only() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Prepare human-reference commitment";
+        let commitment_id = derived_id(title);
+        let incoming = make_commitment_with_item_source(
+            title,
+            "meeting:abc:1",
+            "meeting",
+            "Meeting on 2026-03-10",
+        );
+
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[incoming]).expect("sync");
+
+        assert_eq!(summary.created, 1);
+        assert_eq!(summary.skipped_malformed_id, 0);
+
+        let (source_key, source_type, source_id, source_label): (String, String, String, String) =
+            db.conn_ref()
+                .query_row(
+                    "SELECT source_key, source_type, source_id, source_label
+                 FROM action_commitment_sources
+                 WHERE commitment_id = ?1",
+                    rusqlite::params![commitment_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .unwrap();
+
+        assert_eq!(source_key, "commitment:meeting:abc");
+        assert_eq!(source_type, "commitment");
+        assert_eq!(source_id, "meeting:abc");
+        assert_eq!(source_label, "Meeting on 2026-03-10");
+    }
+
+    #[test]
+    fn same_source_reingest_with_reordering_keeps_trust_scores_unchanged() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let source_ref = "call-456";
+        let titles = [
+            "Keep trust stable for reordered A",
+            "Keep trust stable for reordered B",
+            "Keep trust stable for reordered C",
+        ];
+        let first = vec![
+            make_commitment_with_item_source(
+                titles[0],
+                "meeting:call-456:1",
+                "meeting",
+                source_ref,
+            ),
+            make_commitment_with_item_source(
+                titles[1],
+                "meeting:call-456:2",
+                "meeting",
+                source_ref,
+            ),
+            make_commitment_with_item_source(
+                titles[2],
+                "meeting:call-456:3",
+                "meeting",
+                source_ref,
+            ),
+        ];
+        let reordered = vec![
+            make_commitment_with_item_source(
+                titles[2],
+                "meeting:call-456:1",
+                "meeting",
+                source_ref,
+            ),
+            make_commitment_with_item_source(
+                titles[1],
+                "meeting:call-456:2",
+                "meeting",
+                source_ref,
+            ),
+            make_commitment_with_item_source(
+                titles[0],
+                "meeting:call-456:3",
+                "meeting",
+                source_ref,
+            ),
+        ];
+
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &first).expect("first sync");
+        let before = titles
+            .iter()
+            .map(|title| {
+                let commitment_id = derived_id(title);
+                (commitment_id.clone(), trust_score(&db, &commitment_id))
+            })
+            .collect::<Vec<_>>();
+
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &reordered).expect("reordered sync");
+
+        for (commitment_id, score) in before {
+            assert_eq!(trust_score(&db, &commitment_id), score);
+            assert_eq!(distinct_source_keys(&db, &commitment_id), 1);
+        }
     }
 
     #[test]
@@ -1588,14 +1928,9 @@ mod tests {
             )
             .unwrap();
 
-        let summary = sync_ai_commitments(
-            &ctx,
-            &db,
-            "account",
-            "acct-1",
-            &[make_commitment_with_legacy_id(title, legacy_id)],
-        )
-        .expect("sync");
+        let incoming = make_commitment_with_legacy_id(title, legacy_id);
+        let summary =
+            sync_one_with_ingestion_source(&ctx, &db, &incoming, "meeting", "legacy-source");
 
         assert_eq!(summary.created, 0);
         assert_eq!(summary.skipped_tombstoned, 1);
@@ -1835,8 +2170,7 @@ mod tests {
             None,
             Some("meeting"),
         );
-        let blocked_summary =
-            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[blocked]).expect("sync");
+        let blocked_summary = sync_one_with_ingestion_source(&ctx, &db, &blocked, "meeting", "abc");
 
         assert_eq!(blocked_summary.created, 0);
         assert_eq!(blocked_summary.skipped_tombstoned, 1);
@@ -1859,8 +2193,7 @@ mod tests {
             Some("meeting"),
         );
         let pass_summary =
-            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[unrelated_ordinal])
-                .expect("sync");
+            sync_one_with_ingestion_source(&ctx, &db, &unrelated_ordinal, "meeting", "abc");
 
         assert_eq!(pass_summary.created, 1);
         assert_eq!(pass_summary.skipped_tombstoned, 0);
@@ -1896,8 +2229,7 @@ mod tests {
             None,
             Some("meeting"),
         );
-        let summary =
-            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[incoming]).expect("sync");
+        let summary = sync_one_with_ingestion_source(&ctx, &db, &incoming, "meeting", "abc");
 
         assert_eq!(summary.created, 1);
         assert_eq!(summary.skipped_tombstoned, 0);
@@ -2254,7 +2586,7 @@ mod tests {
         );
         assert_eq!(
             normalize_commitment_title("Send  Renewal  Deck."),
-            "send renewal deck."
+            "send renewal deck"
         );
     }
 

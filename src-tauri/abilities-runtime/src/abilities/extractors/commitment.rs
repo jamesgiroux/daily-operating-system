@@ -120,7 +120,20 @@ pub fn derive_commitment_id(
 }
 
 pub fn normalize_commitment_title(title: &str) -> String {
-    title
+    normalize_commitment_identity_text(title)
+}
+
+pub fn normalize_commitment_identity_text(value: &str) -> String {
+    value
+        .chars()
+        .map(|ch| {
+            if ch.is_ascii_punctuation() {
+                ' '
+            } else {
+                ch
+            }
+        })
+        .collect::<String>()
         .split_whitespace()
         .collect::<Vec<_>>()
         .join(" ")
@@ -145,12 +158,11 @@ pub fn normalize_due_date(due: &str) -> Option<String> {
 }
 
 pub fn normalize_owner_raw(owner_raw: &str) -> Option<String> {
-    let normalized = owner_raw.split_whitespace().collect::<Vec<_>>().join(" ");
-    let trimmed = normalized.trim();
-    if trimmed.is_empty() {
+    let normalized = normalize_commitment_identity_text(owner_raw);
+    if normalized.is_empty() {
         None
     } else {
-        Some(trimmed.to_string())
+        Some(normalized)
     }
 }
 
@@ -207,6 +219,23 @@ mod tests {
             "acct-1",
             Some("2026-05-12"),
             Some("Alex Chen"),
+        );
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn commitment_id_is_stable_for_case_and_punctuation() {
+        let a = derive_commitment_id(
+            " Phase 2: Budget! ",
+            "acct-1",
+            Some("2026-05-12"),
+            Some(" Alex.Chen "),
+        );
+        let b = derive_commitment_id(
+            "phase 2 budget",
+            "acct-1",
+            Some("2026-05-12"),
+            Some("alex chen"),
         );
         assert_eq!(a, b);
     }

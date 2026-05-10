@@ -15,6 +15,8 @@ ALTER TABLE actions ADD COLUMN owner_confidence REAL;
 ALTER TABLE actions ADD COLUMN owner_source TEXT;
 ALTER TABLE actions ADD COLUMN trust_score REAL;
 ALTER TABLE actions ADD COLUMN trust_band TEXT;
+ALTER TABLE actions ADD COLUMN normalized_title TEXT;
+ALTER TABLE actions ADD COLUMN normalized_owner TEXT;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_commitment_id_unique
     ON actions(commitment_id)
@@ -24,6 +26,7 @@ CREATE TABLE IF NOT EXISTS action_commitment_sources (
     id                TEXT PRIMARY KEY,
     commitment_id     TEXT NOT NULL,
     action_id         TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+    -- Normalized source_type:source_id; LLM ordinals are not authoritative.
     source_key        TEXT,
     source_type       TEXT,
     source_id         TEXT,
@@ -111,6 +114,61 @@ WHERE action_kind = 'commitment'
       WHERE lower(trim(p.name)) = lower(trim(actions.owner_raw))
   ) = 1;
 
+-- Backfill normalized identity fields using the runtime commitment identity
+-- contract: lowercase, trim, collapse internal whitespace, and strip ASCII
+-- punctuation before duplicate collapse and partial unique indexes run.
+UPDATE actions
+SET normalized_title = COALESCE(title, ''),
+    normalized_owner = COALESCE(owner_raw, '')
+WHERE action_kind = 'commitment';
+
+UPDATE actions SET normalized_title = replace(normalized_title, char(9), ' '), normalized_owner = replace(normalized_owner, char(9), ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, char(10), ' '), normalized_owner = replace(normalized_owner, char(10), ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, char(11), ' '), normalized_owner = replace(normalized_owner, char(11), ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, char(12), ' '), normalized_owner = replace(normalized_owner, char(12), ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, char(13), ' '), normalized_owner = replace(normalized_owner, char(13), ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '!', ' '), normalized_owner = replace(normalized_owner, '!', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '"', ' '), normalized_owner = replace(normalized_owner, '"', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '#', ' '), normalized_owner = replace(normalized_owner, '#', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '$', ' '), normalized_owner = replace(normalized_owner, '$', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '%', ' '), normalized_owner = replace(normalized_owner, '%', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '&', ' '), normalized_owner = replace(normalized_owner, '&', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '''', ' '), normalized_owner = replace(normalized_owner, '''', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '(', ' '), normalized_owner = replace(normalized_owner, '(', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, ')', ' '), normalized_owner = replace(normalized_owner, ')', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '*', ' '), normalized_owner = replace(normalized_owner, '*', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '+', ' '), normalized_owner = replace(normalized_owner, '+', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '.', ' '), normalized_owner = replace(normalized_owner, '.', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, ',', ' '), normalized_owner = replace(normalized_owner, ',', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, ':', ' '), normalized_owner = replace(normalized_owner, ':', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, ';', ' '), normalized_owner = replace(normalized_owner, ';', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '<', ' '), normalized_owner = replace(normalized_owner, '<', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '=', ' '), normalized_owner = replace(normalized_owner, '=', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '>', ' '), normalized_owner = replace(normalized_owner, '>', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '?', ' '), normalized_owner = replace(normalized_owner, '?', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '@', ' '), normalized_owner = replace(normalized_owner, '@', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '-', ' '), normalized_owner = replace(normalized_owner, '-', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '_', ' '), normalized_owner = replace(normalized_owner, '_', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '/', ' '), normalized_owner = replace(normalized_owner, '/', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, char(92), ' '), normalized_owner = replace(normalized_owner, char(92), ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '[', ' '), normalized_owner = replace(normalized_owner, '[', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, ']', ' '), normalized_owner = replace(normalized_owner, ']', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '^', ' '), normalized_owner = replace(normalized_owner, '^', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '{', ' '), normalized_owner = replace(normalized_owner, '{', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '}', ' '), normalized_owner = replace(normalized_owner, '}', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '`', ' '), normalized_owner = replace(normalized_owner, '`', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '|', ' '), normalized_owner = replace(normalized_owner, '|', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '~', ' '), normalized_owner = replace(normalized_owner, '~', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '  ', ' '), normalized_owner = replace(normalized_owner, '  ', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '  ', ' '), normalized_owner = replace(normalized_owner, '  ', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '  ', ' '), normalized_owner = replace(normalized_owner, '  ', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '  ', ' '), normalized_owner = replace(normalized_owner, '  ', ' ') WHERE action_kind = 'commitment';
+UPDATE actions SET normalized_title = replace(normalized_title, '  ', ' '), normalized_owner = replace(normalized_owner, '  ', ' ') WHERE action_kind = 'commitment';
+UPDATE actions
+SET normalized_title = lower(trim(normalized_title)),
+    normalized_owner = NULLIF(lower(trim(normalized_owner)), '')
+WHERE action_kind = 'commitment';
+
 -- Seed one source row per legacy bridge mapping so existing commitment cards
 -- can show non-zero source counts immediately after migration.
 INSERT OR IGNORE INTO action_commitment_sources (
@@ -129,13 +187,9 @@ SELECT
     'migration:' || b.commitment_id,
     COALESCE(a.commitment_id, b.commitment_id),
     b.action_id,
-    CASE
-        WHEN b.commitment_id LIKE '%:%:%' THEN lower(trim(b.commitment_id))
-        ELSE lower(trim(COALESCE(NULLIF(a.source_type, ''), 'commitment')))
-             || ':' ||
-             lower(trim(COALESCE(NULLIF(a.source_id, ''), NULLIF(a.source_label, ''), b.commitment_id, a.id)))
-             || ':0'
-    END,
+    lower(trim(COALESCE(NULLIF(a.source_type, ''), 'commitment')))
+        || ':' ||
+        lower(trim(COALESCE(NULLIF(a.source_id, ''), NULLIF(a.source_label, ''), a.id))),
     a.source_type,
     a.source_id,
     a.source_label,
@@ -159,15 +213,15 @@ FROM (
     SELECT
         id AS canonical_id,
         account_id,
-        lower(trim(title)) AS title_key,
+        normalized_title AS title_key,
         COALESCE(due_date, '') AS due_date_key,
-        COALESCE(owner_raw, '') AS owner_key,
+        COALESCE(normalized_owner, '') AS owner_key,
         ROW_NUMBER() OVER (
             PARTITION BY
                 account_id,
-                lower(trim(title)),
+                normalized_title,
                 COALESCE(due_date, ''),
-                COALESCE(owner_raw, '')
+                COALESCE(normalized_owner, '')
             ORDER BY created_at ASC, id ASC
         ) AS rn
     FROM actions
@@ -186,9 +240,9 @@ SET action_id = (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.id = ai_commitment_bridge.action_id
     LIMIT 1
 )
@@ -197,9 +251,9 @@ WHERE action_id IN (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -211,9 +265,9 @@ SET action_id = (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.id = action_commitment_sources.action_id
     LIMIT 1
 )
@@ -222,9 +276,9 @@ WHERE action_id IN (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -236,9 +290,9 @@ WHERE id IN (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -260,15 +314,15 @@ FROM (
     SELECT
         id AS canonical_id,
         project_id,
-        lower(trim(title)) AS title_key,
+        normalized_title AS title_key,
         COALESCE(due_date, '') AS due_date_key,
-        COALESCE(owner_raw, '') AS owner_key,
+        COALESCE(normalized_owner, '') AS owner_key,
         ROW_NUMBER() OVER (
             PARTITION BY
                 project_id,
-                lower(trim(title)),
+                normalized_title,
                 COALESCE(due_date, ''),
-                COALESCE(owner_raw, '')
+                COALESCE(normalized_owner, '')
             ORDER BY created_at ASC, id ASC
         ) AS rn
     FROM actions
@@ -287,9 +341,9 @@ SET action_id = (
     FROM actions a
     JOIN _dos276_backlog_project_canonical c
       ON c.project_id = a.project_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.id = ai_commitment_bridge.action_id
     LIMIT 1
 )
@@ -298,9 +352,9 @@ WHERE action_id IN (
     FROM actions a
     JOIN _dos276_backlog_project_canonical c
       ON c.project_id = a.project_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -312,9 +366,9 @@ SET action_id = (
     FROM actions a
     JOIN _dos276_backlog_project_canonical c
       ON c.project_id = a.project_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.id = action_commitment_sources.action_id
     LIMIT 1
 )
@@ -323,9 +377,9 @@ WHERE action_id IN (
     FROM actions a
     JOIN _dos276_backlog_project_canonical c
       ON c.project_id = a.project_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -337,9 +391,9 @@ WHERE id IN (
     FROM actions a
     JOIN _dos276_backlog_project_canonical c
       ON c.project_id = a.project_id
-     AND c.title_key = lower(trim(a.title))
+     AND c.title_key = a.normalized_title
      AND c.due_date_key = COALESCE(a.due_date, '')
-     AND c.owner_key = COALESCE(a.owner_raw, '')
+     AND c.owner_key = COALESCE(a.normalized_owner, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -349,13 +403,13 @@ DROP INDEX _dos276_backlog_project_canonical_idx;
 DROP TABLE _dos276_backlog_project_canonical;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_account_unique
-    ON actions(account_id, lower(trim(title)), COALESCE(due_date, ''), COALESCE(owner_raw, ''))
+    ON actions(account_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, ''))
     WHERE action_kind = 'commitment'
       AND status = 'backlog'
       AND account_id IS NOT NULL;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_project_unique
-    ON actions(project_id, lower(trim(title)), COALESCE(due_date, ''), COALESCE(owner_raw, ''))
+    ON actions(project_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, ''))
     WHERE action_kind = 'commitment'
       AND status = 'backlog'
       AND project_id IS NOT NULL;

@@ -572,14 +572,16 @@ impl ActionDb {
     /// Insert or update an action. Uses SQLite `ON CONFLICT` (upsert).
     #[must_use = "check whether the action was saved before showing or linking it"]
     pub fn upsert_action(&self, action: &DbAction) -> Result<(), DbError> {
+        let (normalized_title, normalized_owner) = normalized_commitment_identity_columns(action);
         self.conn.execute(
             "INSERT INTO actions (
                 id, title, priority, status, created_at, due_date, completed_at,
                 account_id, project_id, source_type, source_id, source_label,
                 context, waiting_on, updated_at, person_id, action_kind,
                 commitment_id, owner_raw, owner_entity_id, owner_confidence,
-                owner_source, trust_score, trust_band
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
+                owner_source, trust_score, trust_band, normalized_title,
+                normalized_owner
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24, ?25, ?26)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 priority = excluded.priority,
@@ -602,7 +604,9 @@ impl ActionDb {
                 owner_confidence = excluded.owner_confidence,
                 owner_source = excluded.owner_source,
                 trust_score = excluded.trust_score,
-                trust_band = excluded.trust_band",
+                trust_band = excluded.trust_band,
+                normalized_title = excluded.normalized_title,
+                normalized_owner = excluded.normalized_owner",
             params![
                 action.id,
                 action.title,
@@ -628,6 +632,8 @@ impl ActionDb {
                 action.owner_source,
                 action.trust_score,
                 action.trust_band,
+                normalized_title,
+                normalized_owner,
             ],
         )?;
         Ok(())
@@ -1478,6 +1484,20 @@ fn extract_significant_keywords(normalized_title: &str) -> Vec<String> {
         .filter(|w| w.len() > 2 && !STOP_WORDS.contains(w))
         .map(|w| w.to_string())
         .collect()
+}
+
+fn normalized_commitment_identity_columns(action: &DbAction) -> (Option<String>, Option<String>) {
+    if action.action_kind != crate::action_status::KIND_COMMITMENT {
+        return (None, None);
+    }
+
+    (
+        Some(crate::abilities::extractors::commitment::normalize_commitment_title(&action.title)),
+        action
+            .owner_raw
+            .as_deref()
+            .and_then(crate::abilities::extractors::commitment::normalize_owner_raw),
+    )
 }
 
 #[cfg(test)]

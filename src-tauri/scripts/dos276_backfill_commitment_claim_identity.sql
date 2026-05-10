@@ -24,6 +24,7 @@ INSERT OR IGNORE INTO action_commitment_sources (
     id,
     commitment_id,
     action_id,
+    source_key,
     source_type,
     source_id,
     source_label,
@@ -36,6 +37,9 @@ SELECT
     'dos276-backfill:' || b.commitment_id,
     COALESCE(a.commitment_id, b.commitment_id),
     b.action_id,
+    lower(trim(COALESCE(NULLIF(a.source_type, ''), 'commitment')))
+        || ':' ||
+        lower(trim(COALESCE(NULLIF(a.source_id, ''), NULLIF(a.source_label, ''), a.id))),
     a.source_type,
     a.source_id,
     a.source_label,

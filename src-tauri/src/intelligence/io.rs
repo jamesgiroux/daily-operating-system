@@ -424,10 +424,9 @@ pub struct SuccessMetric {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct OpenCommitment {
-    /// Stable identity emitted by the LLM for bridging to the Actions entity.
-    /// Format: `{source_type}:{source_id}:{n}` e.g. `meeting:abc123:2`. When
-    /// absent (legacy or non-commitment-aware flow), the bridge skips the item
-    /// rather than creating an un-bridgeable Action.
+    /// Legacy source identity emitted by the LLM. The ordinal segment in the
+    /// historical `{source_type}:{source_id}:{n}` shape is not authoritative;
+    /// the bridge derives stable commitment identity from structured fields.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub commitment_id: Option<String>,
     pub description: String,

@@ -818,11 +818,18 @@ const MIGRATIONS: &[Migration] = &[
         version: 159,
         apply: remediate_tombstoned_commitment_bridge_mutable_aliases,
     },
-    // Stable source keys separate append-only sightings from corroborating
-    // sources for commitment trust and UI counts.
+    // Stable source keys are source_type:source_id, separating append-only
+    // sightings from corroborating sources for commitment trust and UI counts.
     Migration::Fn {
         version: 160,
         apply: backfill_commitment_source_keys,
+    },
+    // Normalize commitment identity columns with the runtime derive rules and
+    // rebuild the backlog identity indexes for databases that already applied
+    // the earlier expression-based v155/v157 migrations.
+    Migration::Fn {
+        version: 161,
+        apply: backfill_commitment_identity_normalized_fields,
     },
 ];
 
@@ -1523,22 +1530,374 @@ fn backfill_commitment_source_keys(conn: &Connection) -> Result<(), MigrationErr
     let source_id_expr = nullable_column_expr(&columns, "source_id");
     let source_label_expr = nullable_column_expr(&columns, "source_label");
     let action_id_expr = nullable_column_expr(&columns, "action_id");
+    let id_expr = nullable_column_expr(&columns, "id");
     let sql = format!(
-        "UPDATE action_commitment_sources
-         SET source_key =
-             lower(trim(COALESCE({source_type_expr}, 'commitment')))
-             || ':' ||
-             lower(trim(COALESCE({source_id_expr}, {source_label_expr}, {action_id_expr}, commitment_id, id)))
-             || ':0'
-         WHERE source_key IS NULL OR trim(source_key) = ''"
+        "SELECT rowid,
+                {source_type_expr},
+                {source_id_expr},
+                {source_label_expr},
+                {action_id_expr},
+                {id_expr}
+         FROM action_commitment_sources"
     );
-    conn.execute(&sql, [])
-        .map_err(|e| format!("backfill action_commitment_sources.source_key: {e}"))?;
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("query action_commitment_sources.source_key rows: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, i64>(0)?,
+                row.get::<_, Option<String>>(1)?,
+                row.get::<_, Option<String>>(2)?,
+                row.get::<_, Option<String>>(3)?,
+                row.get::<_, Option<String>>(4)?,
+                row.get::<_, Option<String>>(5)?,
+            ))
+        })
+        .map_err(|e| format!("map action_commitment_sources.source_key rows: {e}"))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("read action_commitment_sources.source_key rows: {e}"))?;
+    drop(stmt);
+
+    for (rowid, source_type, source_id, source_label, action_id, id) in rows {
+        let source_key = backfilled_commitment_source_key(
+            source_type.as_deref(),
+            source_id.as_deref(),
+            source_label.as_deref(),
+            action_id.as_deref(),
+            id.as_deref(),
+        );
+        conn.execute(
+            "UPDATE action_commitment_sources SET source_key = ?1 WHERE rowid = ?2",
+            rusqlite::params![source_key, rowid],
+        )
+        .map_err(|e| format!("recompute action_commitment_sources.source_key: {e}"))?;
+    }
     conn.execute_batch(
         "CREATE INDEX IF NOT EXISTS idx_action_commitment_sources_commitment_key
              ON action_commitment_sources(commitment_id, source_key);",
     )
     .map_err(|e| format!("create action_commitment_sources source_key index: {e}"))?;
+    Ok(())
+}
+
+fn backfilled_commitment_source_key(
+    source_type: Option<&str>,
+    source_id: Option<&str>,
+    source_label: Option<&str>,
+    action_id: Option<&str>,
+    id: Option<&str>,
+) -> String {
+    let source_type = trimmed_non_empty(source_type).unwrap_or("commitment");
+    let source_id = trimmed_non_empty(source_id)
+        .and_then(legacy_commitment_source_id_without_ordinal)
+        .or_else(|| trimmed_non_empty(source_id).map(ToString::to_string))
+        .or_else(|| trimmed_non_empty(source_label).map(ToString::to_string))
+        .or_else(|| trimmed_non_empty(action_id).map(ToString::to_string))
+        .or_else(|| trimmed_non_empty(id).map(ToString::to_string))
+        .unwrap_or_else(|| "unknown".to_string());
+
+    format!(
+        "{}:{}",
+        normalize_commitment_source_key_part(source_type),
+        normalize_commitment_source_key_part(&source_id)
+    )
+}
+
+fn legacy_commitment_source_id_without_ordinal(value: &str) -> Option<String> {
+    let (source_type, source_id, _source_ordinal) = legacy_commitment_source_id_parts(value)?;
+    Some(format!("{source_type}:{source_id}"))
+}
+
+fn legacy_commitment_source_id_parts(value: &str) -> Option<(&str, &str, &str)> {
+    let value = trimmed_non_empty(Some(value))?;
+    let (source_type, rest) = value.split_once(':')?;
+    let (source_id, source_ordinal) = rest.rsplit_once(':')?;
+    Some((
+        trimmed_non_empty(Some(source_type))?,
+        trimmed_non_empty(Some(source_id))?,
+        trimmed_non_empty(Some(source_ordinal))?,
+    ))
+}
+
+fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
+}
+
+fn normalize_commitment_source_key_part(value: &str) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = normalized.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        "unknown".to_string()
+    } else {
+        normalized
+    }
+}
+
+fn backfill_commitment_identity_normalized_fields(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, "actions")? {
+        return Ok(());
+    }
+
+    let columns = table_columns(conn, "actions")?;
+    if !columns.contains("normalized_title") {
+        conn.execute_batch("ALTER TABLE actions ADD COLUMN normalized_title TEXT;")
+            .map_err(|e| format!("add actions.normalized_title: {e}"))?;
+    }
+    if !columns.contains("normalized_owner") {
+        conn.execute_batch("ALTER TABLE actions ADD COLUMN normalized_owner TEXT;")
+            .map_err(|e| format!("add actions.normalized_owner: {e}"))?;
+    }
+
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, title, owner_raw
+             FROM actions
+             WHERE action_kind = 'commitment'",
+        )
+        .map_err(|e| format!("prepare commitment identity normalization backfill: {e}"))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, Option<String>>(2)?,
+            ))
+        })
+        .map_err(|e| format!("query commitment identity rows: {e}"))?;
+
+    let mut updates = Vec::new();
+    for row in rows {
+        let (id, title, owner_raw) =
+            row.map_err(|e| format!("read commitment identity row: {e}"))?;
+        let normalized_title =
+            crate::abilities::extractors::commitment::normalize_commitment_title(&title);
+        let normalized_owner = owner_raw
+            .as_deref()
+            .and_then(crate::abilities::extractors::commitment::normalize_owner_raw);
+        updates.push((id, normalized_title, normalized_owner));
+    }
+    drop(stmt);
+
+    for (id, normalized_title, normalized_owner) in updates {
+        conn.execute(
+            "UPDATE actions
+             SET normalized_title = ?1,
+                 normalized_owner = ?2
+             WHERE id = ?3",
+            rusqlite::params![normalized_title, normalized_owner, id],
+        )
+        .map_err(|e| format!("update normalized commitment identity for action: {e}"))?;
+    }
+
+    collapse_normalized_commitment_identity_duplicates(conn)?;
+
+    conn.execute_batch(
+        "DROP INDEX IF EXISTS idx_actions_backlog_commitment_identity_account_unique;
+         DROP INDEX IF EXISTS idx_actions_backlog_commitment_identity_project_unique;
+
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_account_unique
+             ON actions(account_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, ''))
+             WHERE action_kind = 'commitment'
+               AND status = 'backlog'
+               AND account_id IS NOT NULL;
+
+         CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_project_unique
+             ON actions(project_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, ''))
+             WHERE action_kind = 'commitment'
+               AND status = 'backlog'
+               AND project_id IS NOT NULL;",
+    )
+    .map_err(|e| format!("rebuild normalized commitment identity indexes: {e}"))?;
+
+    Ok(())
+}
+
+fn collapse_normalized_commitment_identity_duplicates(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    conn.execute_batch(
+        "CREATE TEMP TABLE _dos276_norm_backlog_canonical AS
+         SELECT canonical_id, account_id, title_key, due_date_key, owner_key
+         FROM (
+             SELECT
+                 id AS canonical_id,
+                 account_id,
+                 normalized_title AS title_key,
+                 COALESCE(due_date, '') AS due_date_key,
+                 COALESCE(normalized_owner, '') AS owner_key,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY account_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, '')
+                     ORDER BY created_at ASC, id ASC
+                 ) AS rn
+             FROM actions
+             WHERE action_kind = 'commitment'
+               AND status = 'backlog'
+               AND account_id IS NOT NULL
+         )
+         WHERE rn = 1;
+
+         CREATE INDEX _dos276_norm_backlog_canonical_idx
+             ON _dos276_norm_backlog_canonical(account_id, title_key, due_date_key, owner_key);
+
+         UPDATE ai_commitment_bridge
+         SET action_id = (
+             SELECT c.canonical_id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.id = ai_commitment_bridge.action_id
+             LIMIT 1
+         )
+         WHERE action_id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         UPDATE action_commitment_sources
+         SET action_id = (
+             SELECT c.canonical_id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.id = action_commitment_sources.action_id
+             LIMIT 1
+         )
+         WHERE action_id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         DELETE FROM actions
+         WHERE id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_canonical c
+               ON c.account_id = a.account_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         DROP INDEX _dos276_norm_backlog_canonical_idx;
+         DROP TABLE _dos276_norm_backlog_canonical;
+
+         CREATE TEMP TABLE _dos276_norm_backlog_project_canonical AS
+         SELECT canonical_id, project_id, title_key, due_date_key, owner_key
+         FROM (
+             SELECT
+                 id AS canonical_id,
+                 project_id,
+                 normalized_title AS title_key,
+                 COALESCE(due_date, '') AS due_date_key,
+                 COALESCE(normalized_owner, '') AS owner_key,
+                 ROW_NUMBER() OVER (
+                     PARTITION BY project_id, normalized_title, COALESCE(due_date, ''), COALESCE(normalized_owner, '')
+                     ORDER BY created_at ASC, id ASC
+                 ) AS rn
+             FROM actions
+             WHERE action_kind = 'commitment'
+               AND status = 'backlog'
+               AND project_id IS NOT NULL
+         )
+         WHERE rn = 1;
+
+         CREATE INDEX _dos276_norm_backlog_project_canonical_idx
+             ON _dos276_norm_backlog_project_canonical(project_id, title_key, due_date_key, owner_key);
+
+         UPDATE ai_commitment_bridge
+         SET action_id = (
+             SELECT c.canonical_id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.id = ai_commitment_bridge.action_id
+             LIMIT 1
+         )
+         WHERE action_id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         UPDATE action_commitment_sources
+         SET action_id = (
+             SELECT c.canonical_id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.id = action_commitment_sources.action_id
+             LIMIT 1
+         )
+         WHERE action_id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         DELETE FROM actions
+         WHERE id IN (
+             SELECT a.id
+             FROM actions a
+             JOIN _dos276_norm_backlog_project_canonical c
+               ON c.project_id = a.project_id
+              AND c.title_key = a.normalized_title
+              AND c.due_date_key = COALESCE(a.due_date, '')
+              AND c.owner_key = COALESCE(a.normalized_owner, '')
+             WHERE a.action_kind = 'commitment'
+               AND a.status = 'backlog'
+               AND a.id != c.canonical_id
+         );
+
+         DROP INDEX _dos276_norm_backlog_project_canonical_idx;
+         DROP TABLE _dos276_norm_backlog_project_canonical;",
+    )
+    .map_err(|e| format!("collapse normalized commitment identity duplicates: {e}"))?;
     Ok(())
 }
 
@@ -1549,6 +1908,7 @@ fn nullable_column_expr(columns: &HashSet<String>, column: &str) -> &'static str
             "source_id" => "NULLIF(source_id, '')",
             "source_label" => "NULLIF(source_label, '')",
             "action_id" => "NULLIF(action_id, '')",
+            "id" => "NULLIF(id, '')",
             _ => "NULL",
         }
     } else {
@@ -2478,6 +2838,48 @@ mod tests {
     }
 
     #[test]
+    fn migration_160_recomputes_existing_source_keys_without_llm_ordinals() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE action_commitment_sources (
+                id TEXT PRIMARY KEY,
+                commitment_id TEXT NOT NULL,
+                action_id TEXT NOT NULL,
+                source_key TEXT,
+                source_type TEXT,
+                source_id TEXT,
+                source_label TEXT
+             );
+             INSERT INTO action_commitment_sources
+                (id, commitment_id, action_id, source_key, source_type, source_id, source_label)
+             VALUES
+                ('src-1', 'commitment:a', 'action-a', 'commitment:meeting:call-123:1', 'commitment', 'meeting:call-123:1', 'Call'),
+                ('src-2', 'commitment:a', 'action-a', 'commitment:meeting:call-123:3', 'commitment', 'meeting:call-123:3', 'Call');",
+        )
+        .expect("seed inflated source keys");
+
+        backfill_commitment_source_keys(&conn).expect("recompute source keys");
+
+        let distinct_keys: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT source_key) FROM action_commitment_sources",
+                [],
+                |row| row.get(0),
+            )
+            .expect("distinct source key count");
+        assert_eq!(distinct_keys, 1);
+
+        let source_key: String = conn
+            .query_row(
+                "SELECT source_key FROM action_commitment_sources WHERE id = 'src-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source key");
+        assert_eq!(source_key, "commitment:meeting:call-123");
+    }
+
+    #[test]
     fn test_bootstrap_missing_actions_table_is_fresh_db() {
         let conn = mem_db();
         ensure_schema_version_table(&conn).expect("schema_version table");
@@ -2806,8 +3208,8 @@ mod tests {
         )
         .expect("seed legacy source sighting");
 
-        let applied = run_migrations(&conn).expect("apply v157-v160");
-        assert_eq!(applied, 4);
+        let applied = run_migrations(&conn).expect("apply v157-v161");
+        assert_eq!(applied, 5);
 
         let edited_alias_count: i64 = conn
             .query_row(
@@ -2907,8 +3309,8 @@ mod tests {
         )
         .expect("seed stale mutable alias");
 
-        let applied = run_migrations(&conn).expect("apply v157-v160");
-        assert_eq!(applied, 4);
+        let applied = run_migrations(&conn).expect("apply v157-v161");
+        assert_eq!(applied, 5);
 
         let source_alias_count: i64 = conn
             .query_row(
@@ -2963,8 +3365,8 @@ mod tests {
         )
         .expect("seed null-action tombstone");
 
-        let applied = run_migrations(&conn).expect("apply v157-v160");
-        assert_eq!(applied, 4);
+        let applied = run_migrations(&conn).expect("apply v157-v161");
+        assert_eq!(applied, 5);
 
         let (legacy_bridge_id, tombstoned_action_id, status): (String, Option<String>, String) =
             conn.query_row(
@@ -2981,7 +3383,7 @@ mod tests {
     }
 
     #[test]
-    fn migration_155_canonicalizes_project_backlog_duplicates_before_unique_index() {
+    fn migration_155_canonicalizes_normalized_backlog_duplicates_before_unique_index() {
         let conn = mem_db();
         conn.execute_batch(
             "CREATE TABLE people (
@@ -3018,17 +3420,27 @@ mod tests {
              );
              INSERT INTO actions
                 (id, title, priority, status, created_at, updated_at, due_date,
-                 project_id, source_type, source_id, source_label, action_kind)
+                 account_id, project_id, source_type, source_id, source_label, action_kind)
              VALUES
-                ('project-late', 'Send launch checklist', 3, 'backlog',
+                ('account-late', 'Phase  2  budget', 3, 'backlog',
+                 '2026-01-02', '2026-01-02', NULL,
+                 'acct-1', NULL, 'meeting', 'meeting:acct:2', 'Budget review', 'commitment'),
+                ('account-early', 'Phase 2 budget', 3, 'backlog',
+                 '2026-01-01', '2026-01-01', NULL,
+                 'acct-1', NULL, 'meeting', 'meeting:acct:1', 'Budget review', 'commitment'),
+                ('project-late', 'Send launch checklist!', 3, 'backlog',
                  '2026-01-02', '2026-01-02', '2026-02-01',
-                 'proj-1', 'meeting', 'meeting:abc:2', 'Kickoff', 'commitment'),
+                 NULL, 'proj-1', 'meeting', 'meeting:abc:2', 'Kickoff', 'commitment'),
                 ('project-early', 'Send launch checklist', 3, 'backlog',
                  '2026-01-01', '2026-01-01', '2026-02-01',
-                 'proj-1', 'meeting', 'meeting:abc:1', 'Kickoff', 'commitment');
+                 NULL, 'proj-1', 'meeting', 'meeting:abc:1', 'Kickoff', 'commitment');
              INSERT INTO ai_commitment_bridge
                 (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
              VALUES
+                ('meeting:acct:2', 'account', 'acct-1', 'account-late',
+                 '2026-01-02', '2026-01-02', 0),
+                ('meeting:acct:1', 'account', 'acct-1', 'account-early',
+                 '2026-01-01', '2026-01-01', 0),
                 ('meeting:abc:2', 'project', 'proj-1', 'project-late',
                  '2026-01-02', '2026-01-02', 0),
                 ('meeting:abc:1', 'project', 'proj-1', 'project-early',
@@ -3042,6 +3454,29 @@ mod tests {
             .expect("migration 155 registered");
         conn.execute_batch(migration.sql().expect("migration 155 should be SQL"))
             .expect("migration 155 applies with project duplicates");
+
+        let account_action_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM actions
+                 WHERE account_id = 'acct-1'
+                   AND action_kind = 'commitment'
+                   AND status = 'backlog'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("account action count");
+        assert_eq!(account_action_count, 1);
+
+        let (account_canonical_id, normalized_title): (String, String) = conn
+            .query_row(
+                "SELECT id, normalized_title FROM actions WHERE account_id = 'acct-1'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("canonical account action");
+        assert_eq!(account_canonical_id, "account-early");
+        assert_eq!(normalized_title, "phase 2 budget");
 
         let action_count: i64 = conn
             .query_row(
