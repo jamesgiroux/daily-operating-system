@@ -4438,7 +4438,9 @@ mod tests {
         commit_claim, record_claim_feedback, record_corroboration, update_claim_trust,
         ClaimFeedbackInput, ClaimProposal, CommittedClaim,
     };
-    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+    use crate::services::context::{
+        ClaimDismissalSurface, ExternalClients, FixedClock, SeedableRng, ServiceContext,
+    };
     use chrono::TimeZone;
     use rusqlite::params;
     use std::path::Path;
@@ -4570,6 +4572,21 @@ mod tests {
             )
             .expect("record claim feedback");
         });
+    }
+
+    fn dismiss_trust_claim_on_surface(
+        db: &crate::db::ActionDb,
+        claim_id: &str,
+        surface: ClaimDismissalSurface,
+    ) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO claim_surface_dismissals (
+                    claim_id, surface, actor, dismissed_at
+                 ) VALUES (?1, ?2, ?3, ?4)",
+                params![claim_id, surface.as_str(), "user:test", TRUST_TS],
+            )
+            .expect("dismiss claim on surface");
     }
 
     fn trust_input(entity_id: &str, entity_dir: &Path) -> EnrichmentInput {
@@ -4788,6 +4805,42 @@ mod tests {
         assert!(computed_at.is_some());
         assert_eq!(version, Some(1));
         assert_eq!(pipeline_failure_count(&db, "extractor_mismatch"), 0);
+    }
+
+    #[test]
+    fn trust_recompute_includes_claim_dismissed_on_tauri_report_surface() {
+        let db = trust_test_db();
+        let account_id = "acct-trust-report-dismissed";
+        seed_trust_account(&db, account_id);
+        let claim_id = seed_trust_claim(
+            &db,
+            account_id,
+            "Report-only dismissal must not remove this claim from shared trust scoring.",
+            "unit_test_source",
+        );
+        seed_trust_corroboration(&db, &claim_id, "glean");
+        dismiss_trust_claim_on_surface(&db, &claim_id, ClaimDismissalSurface::TauriReport);
+
+        let subject_ref =
+            claim_subject_ref_json_for_entity("account", account_id).expect("account subject ref");
+        let report_visible = crate::services::claims::load_claims_active_for_surface(
+            &db,
+            &subject_ref,
+            None,
+            ClaimDismissalSurface::TauriReport.as_str(),
+        )
+        .expect("load report-visible claims");
+        assert!(
+            report_visible.is_empty(),
+            "fixture must be hidden from tauri_report render reads"
+        );
+
+        run_trust_finalize(&db, account_id, FinalizeMode::TrustRecompute);
+
+        let (score, computed_at, version) = read_trust_columns(&db, &claim_id);
+        assert!(score.is_some_and(|value| value > 0.75));
+        assert!(computed_at.is_some());
+        assert_eq!(version, Some(1));
     }
 
     #[test]

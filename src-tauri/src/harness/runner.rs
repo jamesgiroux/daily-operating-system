@@ -23,9 +23,9 @@ use crate::intelligence::provider::{
 #[cfg(feature = "harness-hermetic")]
 use crate::services::context::validate_harness_hermetic_db_path;
 use crate::services::context::{
-    EntityContextClaimReadFuture, EntityContextClaimReadHandle, EntityContextReadFuture,
-    EntityContextReadHandle, PrepareMeetingContextReadFuture, PrepareMeetingContextReadHandle,
-    PrepareMeetingContextSnapshot,
+    ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
+    EntityContextReadFuture, EntityContextReadHandle, PrepareMeetingContextReadFuture,
+    PrepareMeetingContextReadHandle, PrepareMeetingContextSnapshot,
 };
 use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
 use crate::services::external_replay::JsonExternalReplayFixture;
@@ -265,6 +265,7 @@ impl EntityContextClaimReadHandle for FixtureEntityContextClaimReader {
         &'a self,
         entity_type: String,
         entity_id: String,
+        _surface: ClaimDismissalSurface,
         _depth: usize,
     ) -> EntityContextClaimReadFuture<'a> {
         Box::pin(async move {

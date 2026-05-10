@@ -6,12 +6,12 @@ use chrono::{TimeZone, Utc};
 use dailyos_lib::abilities::feedback::FeedbackAction;
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::claims::{
-    commit_claim, load_entity_context_claims_active, record_claim_feedback, ClaimFeedbackInput,
-    ClaimProposal, CommittedClaim,
+    commit_claim, load_entity_context_claims_active_for_surface, record_claim_feedback,
+    ClaimFeedbackInput, ClaimProposal, CommittedClaim,
 };
 use dailyos_lib::services::context::{
-    EntityContextClaimReadFuture, EntityContextClaimReadHandle, ExternalClients, FixedClock,
-    SeedableRng, ServiceContext,
+    ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle,
+    ExternalClients, FixedClock, SeedableRng, ServiceContext,
 };
 use dailyos_lib::state::AppState;
 use rusqlite::Connection;
@@ -37,15 +37,17 @@ impl EntityContextClaimReadHandle for SqliteClaimReader {
         &'a self,
         entity_type: String,
         entity_id: String,
+        surface: ClaimDismissalSurface,
         depth: usize,
     ) -> EntityContextClaimReadFuture<'a> {
         let result = {
             let conn = self.conn.lock().expect("claim reader db lock");
-            load_entity_context_claims_active(
+            load_entity_context_claims_active_for_surface(
                 ActionDb::from_conn(&conn),
                 &entity_type,
                 &entity_id,
                 depth,
+                surface.as_str(),
             )
             .map_err(|error| format!("claim read failed: {error}"))
         };
@@ -181,7 +183,12 @@ async fn workspace_entity_context_handler_filters_inactive_claim_rows() {
         .with_entity_context_claim_reader(reader);
 
     let entries = services
-        .read_entity_context_claim_entries("person".to_string(), "person-track-e".to_string(), 1)
+        .read_entity_context_claim_entries(
+            "person".to_string(),
+            "person-track-e".to_string(),
+            ClaimDismissalSurface::TauriEntityDetail,
+            1,
+        )
         .await
         .expect("workspace entity context handler read succeeds");
 

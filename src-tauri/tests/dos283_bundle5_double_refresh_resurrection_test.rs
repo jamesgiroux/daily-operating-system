@@ -12,6 +12,7 @@ use dailyos_lib::intelligence::provider::{
     Completion, FingerprintMetadata, IntelligenceProvider, ModelName, ModelTier, PromptInput,
     ProviderError, ProviderKind,
 };
+use dailyos_lib::services::context::ClaimDismissalSurface;
 use rusqlite::Connection;
 use serde_json::Value;
 
@@ -65,6 +66,7 @@ fn bundle5_double_refresh_does_not_resurrect_dormant_or_corrected_claims() {
             &NOOP_ABILITY_TRACER,
             Actor::User,
             None,
+            ClaimDismissalSurface::Eval,
         );
         let output = runtime
             .block_on(prepare_meeting(&ctx, input.clone()))
@@ -89,6 +91,7 @@ fn bundle5_double_refresh_does_not_resurrect_dormant_or_corrected_claims() {
             &NOOP_ABILITY_TRACER,
             Actor::User,
             None,
+            ClaimDismissalSurface::Eval,
         );
         let output = runtime
             .block_on(prepare_meeting(&ctx, input))

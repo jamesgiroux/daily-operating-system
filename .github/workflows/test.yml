@@ -91,6 +91,9 @@ jobs:
         continue-on-error: true
         run: src-tauri/scripts/check_dos301_legacy_projection_writers.sh
 
+      - name: Run DOS-301 claim projection roundtrip regression
+        run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --test dos301_claim_projection_roundtrip_test
+
       - name: Run Rust clippy (production targets)
         run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
 

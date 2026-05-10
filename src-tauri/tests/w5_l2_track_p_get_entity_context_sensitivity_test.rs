@@ -9,8 +9,8 @@ use dailyos_lib::db::claims::{
 };
 use dailyos_lib::intelligence::provider::ReplayProvider;
 use dailyos_lib::services::context::{
-    EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock, SeedableRng,
-    ServiceContext,
+    ClaimDismissalSurface, EntityContextClaimReadFuture, EntityContextClaimReadHandle, FixedClock,
+    SeedableRng, ServiceContext,
 };
 use dailyos_lib::services::sensitivity::RenderPolicyKind;
 use dailyos_lib::types::{EntityContextEntry, EntityContextText};
@@ -31,6 +31,7 @@ impl EntityContextClaimReadHandle for FixtureClaimReader {
         &'a self,
         entity_type: String,
         entity_id: String,
+        _surface: ClaimDismissalSurface,
         _depth: usize,
     ) -> EntityContextClaimReadFuture<'a> {
         let mut claims = self
@@ -78,7 +79,14 @@ async fn invoke_get_entity_context(
         .with_actor("ability-test")
         .with_entity_context_claim_reader(Arc::new(FixtureClaimReader { claims }));
     let provider = ReplayProvider::new(std::collections::HashMap::new());
-    let ctx = AbilityContext::new(&services, &provider, &NOOP_ABILITY_TRACER, actor, None);
+    let ctx = AbilityContext::new(
+        &services,
+        &provider,
+        &NOOP_ABILITY_TRACER,
+        actor,
+        None,
+        ClaimDismissalSurface::TauriEntityDetail,
+    );
 
     let value = registry
         .invoke_by_name_json(

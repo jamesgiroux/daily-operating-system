@@ -9,14 +9,16 @@ use parking_lot::Mutex;
 
 use crate::abilities::NOOP_ABILITY_TRACER;
 use crate::abilities::{AbilityRegistry, Actor};
-use crate::bridges::types::{invoke_registry_json, provider_from_context_snapshot, surface_error};
+use crate::bridges::types::{
+    claim_dismissal_surface_for_non_tauri_bridge, invoke_registry_json,
+    is_tauri_claim_dismissal_surface, provider_from_context_snapshot, surface_error,
+};
 use crate::bridges::{
     AbilityResponseJson, AttestationRequestId, BridgeActor, BridgeSurface, BridgeSurfaceError,
     ConfirmationRecord, ConfirmationToken, ConfirmationTokenStore, InvocationContext,
     UserAttestationRequest,
 };
-use crate::services::context::Clock;
-use crate::services::context::ExecutionMode;
+use crate::services::context::{ClaimDismissalSurface, Clock, ExecutionMode};
 use crate::state::AppState;
 
 const CONFIRMATION_RATE_LIMIT_MAX_REQUESTS: u32 = 3;
@@ -87,6 +89,7 @@ pub struct TauriAbilityBridge<'registry> {
 pub struct TauriInvokeContext<'a> {
     pub actor: Actor,
     pub surface: BridgeSurface,
+    pub claim_dismissal_surface: ClaimDismissalSurface,
     pub dry_run: bool,
     pub confirmation: Option<&'a ConfirmationToken>,
 }
@@ -95,19 +98,62 @@ impl<'a> TauriInvokeContext<'a> {
     pub fn new(
         actor: Actor,
         surface: BridgeSurface,
+        claim_dismissal_surface: ClaimDismissalSurface,
         dry_run: bool,
         confirmation: Option<&'a ConfirmationToken>,
     ) -> Self {
         Self {
             actor,
             surface,
+            claim_dismissal_surface,
             dry_run,
             confirmation,
         }
     }
 
-    pub fn tauri_app_user(dry_run: bool, confirmation: Option<&'a ConfirmationToken>) -> Self {
-        Self::new(Actor::User, BridgeSurface::TauriApp, dry_run, confirmation)
+    pub fn tauri_app_user(
+        claim_dismissal_surface: ClaimDismissalSurface,
+        dry_run: bool,
+        confirmation: Option<&'a ConfirmationToken>,
+    ) -> Self {
+        Self::new(
+            Actor::User,
+            BridgeSurface::TauriApp,
+            claim_dismissal_surface,
+            dry_run,
+            confirmation,
+        )
+    }
+}
+
+#[cfg(feature = "test-harness")]
+#[derive(Debug, Clone, Copy)]
+pub struct TauriTestInvokeContext {
+    pub actor: Actor,
+    pub surface: BridgeSurface,
+    pub claim_dismissal_surface: ClaimDismissalSurface,
+}
+
+#[cfg(feature = "test-harness")]
+impl TauriTestInvokeContext {
+    pub const fn new(
+        actor: Actor,
+        surface: BridgeSurface,
+        claim_dismissal_surface: ClaimDismissalSurface,
+    ) -> Self {
+        Self {
+            actor,
+            surface,
+            claim_dismissal_surface,
+        }
+    }
+
+    pub const fn tauri_entity_detail_user() -> Self {
+        Self::new(
+            Actor::User,
+            BridgeSurface::TauriApp,
+            ClaimDismissalSurface::TauriEntityDetail,
+        )
     }
 }
 
@@ -138,6 +184,10 @@ impl<'registry> TauriAbilityBridge<'registry> {
         if state.lock_state.lock().is_locked {
             return Err(BridgeSurfaceError::AbilityUnavailable);
         }
+        validate_claim_dismissal_surface_for_bridge(
+            context.surface,
+            context.claim_dismissal_surface,
+        )?;
 
         let snapshot = state.context_snapshot();
         let provider = provider_from_context_snapshot(&snapshot);
@@ -155,6 +205,7 @@ impl<'registry> TauriAbilityBridge<'registry> {
             actor: bridge_actor,
             mode: ExecutionMode::Live,
             surface: context.surface,
+            claim_dismissal_surface: context.claim_dismissal_surface,
             dry_run: context.dry_run,
             confirmation: context.confirmation,
             confirmation_store,
@@ -178,6 +229,7 @@ impl<'registry> TauriAbilityBridge<'registry> {
         state: &AppState,
         ability_name: &str,
         input_json: serde_json::Value,
+        claim_dismissal_surface: ClaimDismissalSurface,
         dry_run: bool,
         confirmation: Option<&ConfirmationToken>,
     ) -> Result<AbilityResponseJson, BridgeSurfaceError> {
@@ -185,7 +237,7 @@ impl<'registry> TauriAbilityBridge<'registry> {
             state,
             ability_name,
             input_json,
-            TauriInvokeContext::tauri_app_user(dry_run, confirmation),
+            TauriInvokeContext::tauri_app_user(claim_dismissal_surface, dry_run, confirmation),
         )
         .await
     }
@@ -202,8 +254,7 @@ impl<'registry> TauriAbilityBridge<'registry> {
         self.invoke_with_service_context_for_tests_as(
             services,
             provider,
-            Actor::User,
-            BridgeSurface::TauriApp,
+            TauriTestInvokeContext::tauri_entity_detail_user(),
             ability_name,
             input_json,
         )
@@ -216,15 +267,19 @@ impl<'registry> TauriAbilityBridge<'registry> {
         &self,
         services: &'a crate::services::context::ServiceContext<'a>,
         provider: &'a dyn crate::intelligence::provider::IntelligenceProvider,
-        actor: Actor,
-        surface: BridgeSurface,
+        context: TauriTestInvokeContext,
         ability_name: &str,
         input_json: serde_json::Value,
     ) -> Result<AbilityResponseJson, crate::bridges::types::AbilityInvokeError> {
+        validate_claim_dismissal_surface_for_bridge(
+            context.surface,
+            context.claim_dismissal_surface,
+        )?;
         let invocation = InvocationContext {
-            actor: BridgeActor::from_registry_actor(actor),
+            actor: BridgeActor::from_registry_actor(context.actor),
             mode: services.mode,
-            surface,
+            surface: context.surface,
+            claim_dismissal_surface: context.claim_dismissal_surface,
             dry_run: false,
             confirmation: None,
             confirmation_store: None,
@@ -359,6 +414,52 @@ fn service_actor_label(actor: BridgeActor) -> &'static str {
         BridgeActor::Agent => "agent:mcp",
         BridgeActor::Admin => "admin",
         BridgeActor::System => "system",
+    }
+}
+
+pub(crate) fn parse_tauri_claim_dismissal_surface(
+    render_surface: &str,
+) -> Result<ClaimDismissalSurface, BridgeSurfaceError> {
+    let surface = ClaimDismissalSurface::from_name(render_surface).ok_or_else(|| {
+        BridgeSurfaceError::Validation(format!("unknown Tauri render surface `{render_surface}`"))
+    })?;
+    if is_tauri_claim_dismissal_surface(surface) {
+        Ok(surface)
+    } else {
+        Err(BridgeSurfaceError::Validation(format!(
+            "render surface `{render_surface}` is not a Tauri render surface"
+        )))
+    }
+}
+
+pub(crate) fn validate_claim_dismissal_surface_for_bridge(
+    bridge_surface: BridgeSurface,
+    claim_dismissal_surface: ClaimDismissalSurface,
+) -> Result<(), BridgeSurfaceError> {
+    if bridge_surface == BridgeSurface::TauriApp {
+        if is_tauri_claim_dismissal_surface(claim_dismissal_surface) {
+            return Ok(());
+        }
+        return Err(BridgeSurfaceError::Validation(format!(
+            "TauriApp requires a Tauri claim dismissal surface, got {}",
+            claim_dismissal_surface.as_str()
+        )));
+    }
+
+    let expected =
+        claim_dismissal_surface_for_non_tauri_bridge(bridge_surface).ok_or_else(|| {
+            BridgeSurfaceError::Validation(format!(
+                "missing claim dismissal surface for {bridge_surface:?}"
+            ))
+        })?;
+    if claim_dismissal_surface == expected {
+        Ok(())
+    } else {
+        Err(BridgeSurfaceError::Validation(format!(
+            "{bridge_surface:?} requires claim dismissal surface {}, got {}",
+            expected.as_str(),
+            claim_dismissal_surface.as_str()
+        )))
     }
 }
 
@@ -696,7 +797,14 @@ mod tests {
         let state = AppState::new();
         let bridge = TauriAbilityBridge::new(&registry);
         let err = bridge
-            .invoke_tauri_app(&state, ability_name, json!({}), false, None)
+            .invoke_tauri_app(
+                &state,
+                ability_name,
+                json!({}),
+                ClaimDismissalSurface::TauriEntityDetail,
+                false,
+                None,
+            )
             .await
             .unwrap_err();
         serde_json::to_vec(&err).unwrap()
@@ -971,7 +1079,14 @@ mod tests {
         state.lock_state.lock().is_locked = true;
 
         let err = TauriAbilityBridge::new(&registry)
-            .invoke_tauri_app(&state, "missing", json!({}), false, None)
+            .invoke_tauri_app(
+                &state,
+                "missing",
+                json!({}),
+                ClaimDismissalSurface::TauriEntityDetail,
+                false,
+                None,
+            )
             .await
             .unwrap_err();
 
@@ -991,7 +1106,14 @@ mod tests {
         let bridge = TauriAbilityBridge::new(&registry);
 
         let err = bridge
-            .invoke_tauri_app(&state, "not_registered", json!({}), false, None)
+            .invoke_tauri_app(
+                &state,
+                "not_registered",
+                json!({}),
+                ClaimDismissalSurface::TauriEntityDetail,
+                false,
+                None,
+            )
             .await
             .unwrap_err();
         let serialized = serde_json::to_vec(&err).unwrap();
@@ -1012,7 +1134,14 @@ mod tests {
         let state = AppState::new();
         let bridge = TauriAbilityBridge::new(&registry);
 
-        let invoke = bridge.invoke_tauri_app(&state, "pre_admission", json!({}), false, None);
+        let invoke = bridge.invoke_tauri_app(
+            &state,
+            "pre_admission",
+            json!({}),
+            ClaimDismissalSurface::TauriEntityDetail,
+            false,
+            None,
+        );
         let lock_after_admission = async {
             PRE_ADMISSION_STARTED.notified().await;
             state.lock_state.lock().is_locked = true;
@@ -1049,7 +1178,14 @@ mod tests {
         state.swap_intelligence_provider(Some(first_provider));
         let bridge = TauriAbilityBridge::new(&registry);
 
-        let invoke = bridge.invoke_tauri_app(&state, "provider_snapshot", json!({}), false, None);
+        let invoke = bridge.invoke_tauri_app(
+            &state,
+            "provider_snapshot",
+            json!({}),
+            ClaimDismissalSurface::TauriEntityDetail,
+            false,
+            None,
+        );
         let swap_after_snapshot = async {
             PROVIDER_SNAPSHOT_STARTED.notified().await;
             state.swap_intelligence_provider(Some(second_provider));
@@ -1087,6 +1223,7 @@ mod tests {
                 &state,
                 "strict_subject",
                 json!({ "subject": 217 }),
+                ClaimDismissalSurface::TauriEntityDetail,
                 false,
                 None,
             )
@@ -1116,6 +1253,7 @@ mod tests {
                 &state,
                 "actor_echo",
                 json!({ "actor": "System" }),
+                ClaimDismissalSurface::TauriEntityDetail,
                 false,
                 None,
             )
@@ -1138,7 +1276,14 @@ mod tests {
         let bridge = TauriAbilityBridge::new(&registry);
 
         let response = bridge
-            .invoke_tauri_app(&state, "tauri_response", json!({}), false, None)
+            .invoke_tauri_app(
+                &state,
+                "tauri_response",
+                json!({}),
+                ClaimDismissalSurface::TauriEntityDetail,
+                false,
+                None,
+            )
             .await
             .unwrap();
 
@@ -1174,7 +1319,14 @@ mod tests {
         let bridge = TauriAbilityBridge::new(&registry);
 
         let response = bridge
-            .invoke_tauri_app(&state, "rendered_surface_only", json!({}), false, None)
+            .invoke_tauri_app(
+                &state,
+                "rendered_surface_only",
+                json!({}),
+                ClaimDismissalSurface::TauriEntityDetail,
+                false,
+                None,
+            )
             .await
             .unwrap();
 
@@ -1205,6 +1357,7 @@ mod tests {
                 &state,
                 "leaking_error",
                 json!({ "prompt": secret }),
+                ClaimDismissalSurface::TauriEntityDetail,
                 false,
                 None,
             )
@@ -1388,7 +1541,14 @@ mod tests {
         };
 
         let err = bridge
-            .invoke_tauri_app(&state, "publish_ability", input, false, Some(&forged))
+            .invoke_tauri_app(
+                &state,
+                "publish_ability",
+                input,
+                ClaimDismissalSurface::TauriEntityDetail,
+                false,
+                Some(&forged),
+            )
             .await
             .unwrap_err();
 
@@ -1440,6 +1600,7 @@ mod tests {
                 &state,
                 "publish_ability",
                 input.clone(),
+                ClaimDismissalSurface::TauriEntityDetail,
                 false,
                 Some(&token),
             )
@@ -1447,7 +1608,14 @@ mod tests {
         assert!(first.is_ok(), "first use of issued token must succeed");
 
         let second = bridge
-            .invoke_tauri_app(&state, "publish_ability", input, false, Some(&token))
+            .invoke_tauri_app(
+                &state,
+                "publish_ability",
+                input,
+                ClaimDismissalSurface::TauriEntityDetail,
+                false,
+                Some(&token),
+            )
             .await
             .unwrap_err();
         assert_eq!(

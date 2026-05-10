@@ -1,7 +1,9 @@
 use chrono::{TimeZone, Utc};
 use dailyos_lib::db::ActionDb;
 use dailyos_lib::services::claims::{commit_claim, ClaimProposal};
-use dailyos_lib::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
+use dailyos_lib::services::context::{
+    ClaimDismissalSurface, ExternalClients, FixedClock, SeedableRng, ServiceContext,
+};
 use rusqlite::{params, Connection};
 
 const CLAIMS_SCHEMA_SQL: &str = include_str!("../src/migrations/129_dos_7_claims_schema.sql");
@@ -9,6 +11,8 @@ const PROJECTION_STATUS_SQL: &str =
     include_str!("../src/migrations/134_dos_301_claim_projection_status.sql");
 const TYPED_FEEDBACK_SQL: &str =
     include_str!("../src/migrations/135_dos_294_typed_feedback_schema.sql");
+const CLAIM_SURFACE_DISMISSALS_SQL: &str =
+    include_str!("../src/migrations/154_claim_surface_dismissals.sql");
 
 const LEGACY_READER_SCHEMA_SQL: &str = r#"
 CREATE TABLE accounts (
@@ -93,6 +97,8 @@ fn fresh_db() -> Connection {
         .expect("apply projection status schema");
     conn.execute_batch(TYPED_FEEDBACK_SQL)
         .expect("apply typed feedback schema");
+    conn.execute_batch(CLAIM_SURFACE_DISMISSALS_SQL)
+        .expect("apply claim surface dismissals schema");
     conn
 }
 
@@ -148,4 +154,100 @@ fn commit_claim_projects_entity_summary_to_legacy_reader() {
         intel.executive_assessment.as_deref(),
         Some("roundtrip summary visible to legacy reader")
     );
+}
+
+#[test]
+fn tauri_report_read_uses_unfiltered_projection_after_entity_detail_dismissal() {
+    let conn = fresh_db();
+    conn.execute(
+        "INSERT INTO accounts (id, updated_at) VALUES (?1, ?2)",
+        params!["acct-dos301-surface-dismissal", "2026-05-03T12:00:00Z"],
+    )
+    .expect("seed account");
+
+    let (clock, rng, external) = ctx_parts();
+    let ctx = live_ctx(&clock, &rng, &external);
+    let db = ActionDb::from_conn(&conn);
+    let subject_ref = serde_json::json!({
+        "kind": "account",
+        "id": "acct-dos301-surface-dismissal",
+    })
+    .to_string();
+
+    commit_claim(
+        &ctx,
+        db,
+        ClaimProposal {
+            id: Some("claim-dos301-entity-detail-dismissed-summary".to_string()),
+            subject_ref: subject_ref.clone(),
+            claim_type: "entity_summary".to_string(),
+            field_path: Some("executiveAssessment".to_string()),
+            topic_key: None,
+            text: "summary must remain in shared report projection".to_string(),
+            actor: "agent:test".to_string(),
+            data_source: "test".to_string(),
+            source_ref: None,
+            source_asof: Some("2026-05-03T12:00:00Z".to_string()),
+            observed_at: "2026-05-03T12:00:00Z".to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: None,
+            sensitivity: None,
+            supersedes: None,
+            tombstone: None,
+        },
+    )
+    .expect("commit summary claim");
+
+    conn.execute(
+        "INSERT INTO claim_surface_dismissals (
+            claim_id, surface, actor, dismissed_at
+         ) VALUES (?1, ?2, ?3, ?4)",
+        params![
+            "claim-dos301-entity-detail-dismissed-summary",
+            ClaimDismissalSurface::TauriEntityDetail.as_str(),
+            "user",
+            "2026-05-03T12:01:00Z",
+        ],
+    )
+    .expect("dismiss summary only on entity detail");
+
+    commit_claim(
+        &ctx,
+        db,
+        ClaimProposal {
+            id: Some("claim-dos301-report-visible-risk".to_string()),
+            subject_ref,
+            claim_type: "entity_risk".to_string(),
+            field_path: Some("risks".to_string()),
+            topic_key: None,
+            text: "risk triggers projection rebuild".to_string(),
+            actor: "agent:test".to_string(),
+            data_source: "test".to_string(),
+            source_ref: None,
+            source_asof: Some("2026-05-03T12:00:00Z".to_string()),
+            observed_at: "2026-05-03T12:00:00Z".to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            thread_id: None,
+            temporal_scope: None,
+            sensitivity: None,
+            supersedes: None,
+            tombstone: None,
+        },
+    )
+    .expect("commit risk claim");
+
+    let intel = db
+        .get_entity_intelligence("acct-dos301-surface-dismissal")
+        .expect("legacy reader")
+        .expect("projected row");
+
+    assert_eq!(
+        intel.executive_assessment.as_deref(),
+        Some("summary must remain in shared report projection")
+    );
+    assert_eq!(intel.risks.len(), 1);
+    assert_eq!(intel.risks[0].text, "risk triggers projection rebuild");
 }

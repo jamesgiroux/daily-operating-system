@@ -7,10 +7,12 @@
 
 use crate::db::claims::{ClaimSensitivity, IntelligenceClaim, TemporalScope};
 use crate::services::claims::{
-    commit_claim, load_claim_by_id, load_entity_context_claims_active, subject_ref_from_json,
-    withdraw_claim, ClaimProposal, CommittedClaim,
+    commit_claim, load_claim_by_id, load_entity_context_claims_active_for_surface,
+    subject_ref_from_json, withdraw_claim, ClaimProposal, CommittedClaim,
 };
-use crate::services::sensitivity::{renderable_claim_text_with_value, RenderActor, RenderSurface};
+use crate::services::sensitivity::{
+    renderable_claim_text_with_value, ClaimDismissalSurface, RenderActor, RenderSurface,
+};
 use crate::state::AppState;
 use crate::types::{EntityContextEntry, EntityContextText};
 
@@ -44,8 +46,14 @@ pub async fn get_entries(
     let entity_id = entity_id.to_string();
     state
         .db_read(move |db| {
-            let claims = load_entity_context_claims_active(db, &entity_type, &entity_id, 1)
-                .map_err(|error| format!("Failed to read entity context claims: {error}"))?;
+            let claims = load_entity_context_claims_active_for_surface(
+                db,
+                &entity_type,
+                &entity_id,
+                1,
+                ClaimDismissalSurface::TauriEntityDetail.as_str(),
+            )
+            .map_err(|error| format!("Failed to read entity context claims: {error}"))?;
             claims
                 .into_iter()
                 .map(entity_context_entry_for_claim)

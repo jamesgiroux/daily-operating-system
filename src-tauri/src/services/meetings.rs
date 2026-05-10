@@ -341,8 +341,13 @@ fn load_prepare_meeting_claims(
     let allowed_source_subject_refs = subject_refs.iter().cloned().collect::<HashSet<_>>();
 
     for subject_ref in subject_refs {
-        for claim in crate::services::claims::load_claims_active(db, &subject_ref, None)
-            .map_err(|error| format!("load active claims for {subject_ref}: {error}"))?
+        for claim in crate::services::claims::load_claims_active_for_surface(
+            db,
+            &subject_ref,
+            None,
+            "briefing",
+        )
+        .map_err(|error| format!("load active claims for {subject_ref}: {error}"))?
         {
             if !crate::services::claims::claim_allowed_for_prompt_input(&claim) {
                 continue;
@@ -353,8 +358,10 @@ fn load_prepare_meeting_claims(
         }
     }
 
-    for claim in crate::services::claims::load_claims_active_by_source_ref(db, meeting_id)
-        .map_err(|error| format!("load active claims for source_ref {meeting_id}: {error}"))?
+    for claim in crate::services::claims::load_claims_active_by_source_ref_for_surface(
+        db, meeting_id, "briefing",
+    )
+    .map_err(|error| format!("load active claims for source_ref {meeting_id}: {error}"))?
     {
         if !crate::services::claims::claim_allowed_for_prompt_input(&claim) {
             continue;

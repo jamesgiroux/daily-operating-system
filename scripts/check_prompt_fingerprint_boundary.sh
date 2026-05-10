@@ -21,6 +21,7 @@ is_allowed_file() {
     "$ROOT_DIR/src-tauri/src/intelligence/prompt_fingerprint.rs") return 0 ;;
     "$ROOT_DIR/src-tauri/abilities-runtime/src/abilities/provenance/envelope.rs") return 0 ;;
     "$ROOT_DIR/src-tauri/abilities-runtime/src/abilities/provenance/render.rs") return 0 ;;
+    "$ROOT_DIR/src-tauri/src/services/claims.rs") return 0 ;;
     *) return 1 ;;
   esac
 }

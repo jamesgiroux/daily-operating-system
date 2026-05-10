@@ -775,6 +775,15 @@ const MIGRATIONS: &[Migration] = &[
         version: 152,
         sql: include_str!("migrations/152_dos_215_temporal_entity_type_keys.sql"),
     },
+    // Targeted repair invalidation jobs for claim repair routing.
+    Migration::Sql {
+        version: 153,
+        sql: include_str!("migrations/153_targeted_repair_invalidation_jobs.sql"),
+    },
+    Migration::Sql {
+        version: 154,
+        sql: include_str!("migrations/154_claim_surface_dismissals.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

@@ -24,7 +24,7 @@ use crate::intelligence::provider::{
 use crate::services::context::{ExecutionMode, ServiceContext};
 use crate::services::sensitivity::{
     render_mcp_ability_data_for_surface_with_provenance,
-    render_mcp_ability_data_without_claim_lookup,
+    render_mcp_ability_data_without_claim_lookup, ClaimDismissalSurface,
 };
 use crate::state::ContextSnapshot;
 
@@ -128,6 +128,7 @@ pub struct InvocationContext<'a> {
     pub actor: BridgeActor,
     pub mode: ExecutionMode,
     pub surface: BridgeSurface,
+    pub claim_dismissal_surface: ClaimDismissalSurface,
     pub dry_run: bool,
     pub confirmation: Option<&'a ConfirmationToken>,
     /// Server-side store of issued confirmation tokens. When present, the
@@ -332,6 +333,7 @@ pub(crate) async fn invoke_registry_json<'a>(
         tracer,
         invocation.actor.registry_actor(),
         confirmation,
+        invocation.claim_dismissal_surface,
     );
     let output_json = registry
         .invoke_by_name_json(&ability_context, ability_name, input_json)
@@ -344,6 +346,31 @@ pub(crate) async fn invoke_registry_json<'a>(
         invocation.actor,
         invocation.surface,
         output_json,
+    )
+}
+
+pub(crate) fn claim_dismissal_surface_for_non_tauri_bridge(
+    surface: BridgeSurface,
+) -> Option<ClaimDismissalSurface> {
+    match surface {
+        BridgeSurface::TauriApp => None,
+        BridgeSurface::McpTool => Some(ClaimDismissalSurface::McpTool),
+        BridgeSurface::McpToolDetail => Some(ClaimDismissalSurface::McpToolDetail),
+        BridgeSurface::Worker => Some(ClaimDismissalSurface::Worker),
+        BridgeSurface::Eval => Some(ClaimDismissalSurface::Eval),
+    }
+}
+
+pub(crate) fn is_tauri_claim_dismissal_surface(surface: ClaimDismissalSurface) -> bool {
+    matches!(
+        surface,
+        ClaimDismissalSurface::TauriEntityDetail
+            | ClaimDismissalSurface::Briefing
+            | ClaimDismissalSurface::TauriMeetingDetail
+            | ClaimDismissalSurface::TauriEmailSummary
+            | ClaimDismissalSurface::TauriProvenance
+            | ClaimDismissalSurface::TauriReport
+            | ClaimDismissalSurface::TauriChat
     )
 }
 
@@ -1082,7 +1109,7 @@ mod tests {
     use super::*;
     use crate::abilities::registry::{AbilityPolicy, SignalPolicy};
     use std::pin::Pin;
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
 
     fn ok_erased<'a>(
         _ctx: &'a AbilityContext<'a>,
@@ -1123,6 +1150,86 @@ mod tests {
         }
     }
 
+    struct SurfaceAwareEntityContextClaimReader;
+
+    impl crate::services::context::EntityContextClaimReadHandle
+        for SurfaceAwareEntityContextClaimReader
+    {
+        fn read_entity_context_claims<'a>(
+            &'a self,
+            entity_type: String,
+            entity_id: String,
+            surface: ClaimDismissalSurface,
+            _depth: usize,
+        ) -> crate::services::context::EntityContextClaimReadFuture<'a> {
+            let claims = if surface == ClaimDismissalSurface::TauriMeetingDetail {
+                Vec::new()
+            } else if surface == ClaimDismissalSurface::TauriEntityDetail {
+                vec![surface_regression_claim(&entity_type, &entity_id)]
+            } else {
+                panic!("unexpected test surface {}", surface.as_str());
+            };
+            Box::pin(std::future::ready(Ok(claims)))
+        }
+    }
+
+    fn surface_regression_claim(
+        entity_type: &str,
+        entity_id: &str,
+    ) -> crate::db::claims::IntelligenceClaim {
+        crate::db::claims::IntelligenceClaim {
+            id: "claim-tauri-surface-visible-on-entity-detail".to_string(),
+            subject_ref: serde_json::json!({
+                "kind": entity_type,
+                "id": entity_id,
+            })
+            .to_string(),
+            claim_type: "entity_summary".to_string(),
+            field_path: Some("context.summary".to_string()),
+            topic_key: None,
+            text: "Visible on entity detail only.".to_string(),
+            dedup_key: "surface-regression".to_string(),
+            item_hash: None,
+            actor: "agent:test".to_string(),
+            data_source: "user".to_string(),
+            source_ref: Some("fixture:tauri-surface".to_string()),
+            source_asof: Some("2026-05-09T12:00:00Z".to_string()),
+            observed_at: "2026-05-09T12:00:00Z".to_string(),
+            created_at: "2026-05-09T12:00:00Z".to_string(),
+            provenance_json: "{}".to_string(),
+            metadata_json: None,
+            claim_state: crate::db::claims::ClaimState::Active,
+            surfacing_state: crate::db::claims::SurfacingState::Active,
+            demotion_reason: None,
+            reactivated_at: None,
+            retraction_reason: None,
+            expires_at: None,
+            superseded_by: None,
+            trust_score: None,
+            trust_computed_at: None,
+            trust_version: None,
+            thread_id: None,
+            temporal_scope: crate::db::claims::TemporalScope::State,
+            sensitivity: crate::db::claims::ClaimSensitivity::Internal,
+            verification_state: crate::db::claims::ClaimVerificationState::Active,
+            verification_reason: None,
+            needs_user_decision_at: None,
+        }
+    }
+
+    fn entity_context_entry_ids(response: &AbilityResponseJson) -> Vec<&str> {
+        response.data["entries"]
+            .as_array()
+            .expect("entity context response has entries")
+            .iter()
+            .map(|entry| {
+                entry["id"]
+                    .as_str()
+                    .expect("entity context entry has string id")
+            })
+            .collect()
+    }
+
     #[derive(Default)]
     struct RecordingTracer {
         events: Mutex<Vec<(String, serde_json::Value)>>,
@@ -1156,11 +1263,84 @@ mod tests {
         }
     }
 
+    #[tokio::test]
+    async fn tauri_get_entity_context_uses_explicit_claim_dismissal_surface() {
+        let clock = crate::services::context::FixedClock::new(
+            DateTime::parse_from_rfc3339("2026-05-09T12:00:00Z")
+                .unwrap()
+                .with_timezone(&Utc),
+        );
+        let rng = crate::services::context::SeedableRng::new(8);
+        let external = crate::services::context::ExternalClients::default();
+        let services = ServiceContext::new_live(&clock, &rng, &external)
+            .with_actor("user")
+            .with_entity_context_claim_reader(Arc::new(SurfaceAwareEntityContextClaimReader));
+        let provider = BridgeNoopIntelligenceProvider;
+        let tracer = &crate::abilities::NOOP_ABILITY_TRACER;
+        let registry = AbilityRegistry::from_inventory_checked().expect("registry builds");
+        let input = serde_json::json!({
+            "schema_version": 2,
+            "entity_type": "account",
+            "entity_id": "acct-tauri-surface",
+            "depth": "shallow",
+        });
+
+        let meeting_response = invoke_registry_json(
+            &registry,
+            &services,
+            &provider,
+            tracer,
+            InvocationContext {
+                actor: BridgeActor::User,
+                mode: ExecutionMode::Live,
+                surface: BridgeSurface::TauriApp,
+                claim_dismissal_surface: ClaimDismissalSurface::TauriMeetingDetail,
+                dry_run: false,
+                confirmation: None,
+                confirmation_store: None,
+            },
+            "get_entity_context",
+            input.clone(),
+        )
+        .await
+        .expect("meeting-context invocation succeeds");
+        let entity_detail_response = invoke_registry_json(
+            &registry,
+            &services,
+            &provider,
+            tracer,
+            InvocationContext {
+                actor: BridgeActor::User,
+                mode: ExecutionMode::Live,
+                surface: BridgeSurface::TauriApp,
+                claim_dismissal_surface: ClaimDismissalSurface::TauriEntityDetail,
+                dry_run: false,
+                confirmation: None,
+                confirmation_store: None,
+            },
+            "get_entity_context",
+            input,
+        )
+        .await
+        .expect("entity-detail invocation succeeds");
+
+        assert!(
+            entity_context_entry_ids(&meeting_response).is_empty(),
+            "tauri_meeting_detail dismissal surface must hide the claim"
+        );
+        assert_eq!(
+            entity_context_entry_ids(&entity_detail_response),
+            vec!["claim-tauri-surface-visible-on-entity-detail"],
+            "entity-detail context must not inherit meeting-detail dismissals"
+        );
+    }
+
     fn invocation<'a>(confirmation: Option<&'a ConfirmationToken>) -> InvocationContext<'a> {
         InvocationContext {
             actor: BridgeActor::User,
             mode: ExecutionMode::Live,
             surface: BridgeSurface::TauriApp,
+            claim_dismissal_surface: ClaimDismissalSurface::TauriEntityDetail,
             dry_run: false,
             confirmation,
             confirmation_store: None,

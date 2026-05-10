@@ -11,6 +11,9 @@ use crate::services::context::ServiceContext;
 use crate::state::AppState;
 
 const STARTUP_DRAIN_LIMIT: usize = 100;
+const TARGETED_REPAIR_DRAIN_LIMIT: usize = 100;
+const TARGETED_REPAIR_IDLE_POLL_MS: u64 = 250;
+const TARGETED_REPAIR_ERROR_POLL_MS: u64 = 2_000;
 const QUEUE_PENDING_CAP_ENV: &str = "DAILYOS_INVALIDATION_JOBS_PENDING_CAP";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -159,6 +162,72 @@ pub async fn drain_pending_claim_recomputes(state: &Arc<AppState>) {
             Err(error) => {
                 log::warn!("Claim recompute drain stopped: {error}");
                 break;
+            }
+        }
+    }
+}
+
+pub async fn drain_pending_targeted_claim_repairs(state: &Arc<AppState>) {
+    let worker_id = format!("targeted-repair-startup-{}", uuid::Uuid::new_v4());
+    for _ in 0..TARGETED_REPAIR_DRAIN_LIMIT {
+        let worker_id = worker_id.clone();
+        let result = state
+            .db_write(move |db| {
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                crate::services::claims::targeted_repair_process_next_job(&ctx, db, &worker_id)
+                    .map_err(|e| e.to_string())
+            })
+            .await;
+
+        match result {
+            Ok(crate::services::claims::TargetedRepairProcessOutcome::NoJob) => break,
+            Ok(outcome) => log::info!("Targeted claim repair drain processed {outcome:?}"),
+            Err(error) => {
+                log::warn!("Targeted claim repair drain stopped: {error}");
+                break;
+            }
+        }
+    }
+}
+
+pub async fn run_targeted_claim_repair_worker(state: Arc<AppState>) {
+    let worker_id = format!("targeted-repair-worker-{}", uuid::Uuid::new_v4());
+    loop {
+        let worker_id_for_db = worker_id.clone();
+        let result = state
+            .db_write(move |db| {
+                let clock = crate::services::context::SystemClock;
+                let rng = crate::services::context::SystemRng;
+                let ext = crate::services::context::ExternalClients::default();
+                let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+                crate::services::claims::targeted_repair_process_next_job(
+                    &ctx,
+                    db,
+                    &worker_id_for_db,
+                )
+                .map_err(|e| e.to_string())
+            })
+            .await;
+
+        match result {
+            Ok(crate::services::claims::TargetedRepairProcessOutcome::NoJob) => {
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    TARGETED_REPAIR_IDLE_POLL_MS,
+                ))
+                .await;
+            }
+            Ok(outcome) => {
+                log::info!("Targeted claim repair worker processed {outcome:?}");
+            }
+            Err(error) => {
+                log::warn!("Targeted claim repair worker iteration failed: {error}");
+                tokio::time::sleep(std::time::Duration::from_millis(
+                    TARGETED_REPAIR_ERROR_POLL_MS,
+                ))
+                .await;
             }
         }
     }

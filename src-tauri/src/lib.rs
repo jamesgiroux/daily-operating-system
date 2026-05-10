@@ -192,6 +192,14 @@ pub fn run() {
                         let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
                         crate::services::health_debouncer::drain_pending(&ctx, &init_state).await;
                         crate::services::invalidation_jobs::drain_pending_claim_recomputes(&init_state).await;
+                        crate::services::invalidation_jobs::drain_pending_targeted_claim_repairs(&init_state).await;
+                        let repair_worker_state = init_state.clone();
+                        tauri::async_runtime::spawn(async move {
+                            crate::services::invalidation_jobs::run_targeted_claim_repair_worker(
+                                repair_worker_state,
+                            )
+                            .await;
+                        });
 
                         // Run the claims cutover (rekey
                         // m1-m8 to runtime dedup_key shape + JSON-blob

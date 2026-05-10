@@ -11,7 +11,9 @@ use crate::abilities::provenance::{
     build_ownership_policy_for_invocation, validate_serialized_subject_ownership,
 };
 use crate::abilities::{AbilityRegistry, Actor};
-use crate::bridges::tauri::{TauriAbilityBridge, TauriInvokeContext};
+use crate::bridges::tauri::{
+    parse_tauri_claim_dismissal_surface, TauriAbilityBridge, TauriInvokeContext,
+};
 use crate::bridges::{AbilityResponseJson, BridgeSurface, BridgeSurfaceError, ConfirmationToken};
 use crate::state::AppState;
 
@@ -24,6 +26,7 @@ pub async fn invoke_ability(
     state: State<'_, Arc<AppState>>,
     ability_name: String,
     input_json: serde_json::Value,
+    render_surface: String,
     dry_run: bool,
     confirmation: Option<ConfirmationToken>,
 ) -> Result<AbilityResponseJson, BridgeSurfaceError> {
@@ -38,6 +41,7 @@ pub async fn invoke_ability(
         .find(|descriptor| descriptor.name == ability_name)
         .ok_or(BridgeSurfaceError::AbilityUnavailable)?;
     let input_for_policy = input_json.clone();
+    let claim_dismissal_surface = parse_tauri_claim_dismissal_surface(&render_surface)?;
     let response = TauriAbilityBridge::new(registry)
         .invoke(
             state.inner().as_ref(),
@@ -46,6 +50,7 @@ pub async fn invoke_ability(
             TauriInvokeContext::new(
                 Actor::User,
                 BridgeSurface::TauriApp,
+                claim_dismissal_surface,
                 dry_run,
                 confirmation.as_ref(),
             ),
