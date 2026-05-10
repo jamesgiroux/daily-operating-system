@@ -1434,16 +1434,17 @@ fn verify_no_live_shadow_trust_v157(conn: &Connection, context: &str) -> Result<
             "SELECT COUNT(*)
                FROM intelligence_claims
               WHERE shadow_trust_version IS NOT NULL
+                AND trust_version IN (?1, 0)
                 AND (trust_score IS NOT NULL
                      OR trust_computed_at IS NOT NULL
                      OR trust_version IS NOT NULL)",
-            [],
+            [V155_SHADOW_TRUST_VERSION],
             |row| row.get(0),
         )
         .map_err(|e| format!("{context}: {e}"))?;
     if violating_rows > 0 {
         return Err(format!(
-            "{context} found {violating_rows} shadow trust row(s) with non-null live trust columns"
+            "{context} found {violating_rows} legacy shadow trust row(s) with non-null live trust columns"
         ));
     }
 
@@ -2137,6 +2138,9 @@ fn quarantine_gate_blocking_count(conn: &Connection) -> Result<i64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::db::ActionDb;
+    use crate::services::claims::{shadow_update_claim_trust_shadow_only, TrustScore};
+    use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use rusqlite::Connection;
 
     /// Helper: open an in-memory database with WAL-like settings.
@@ -2589,6 +2593,55 @@ mod tests {
 
         verify_no_live_shadow_trust_v157(&conn, "v157 verifier")
             .expect("non-violating rows should pass");
+    }
+
+    #[test]
+    fn verify_required_schema_allows_shadow_score_with_production_live_trust_version() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute(
+            "INSERT INTO intelligence_claims \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version)
+             VALUES (
+                 'claim-shadow-live-v7',
+                 '{\"kind\":\"account\",\"id\":\"acct-shadow-live-v7\"}',
+                 'summary',
+                 'production trust can coexist with shadow trust',
+                 'claim-shadow-live-v7-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-08T10:00:00Z',
+                 '{}',
+                 0.62,
+                 '2026-05-08T10:00:00Z',
+                 7
+             )",
+            [],
+        )
+        .expect("seed production-trusted claim");
+
+        let db = ActionDb::from_conn(&conn);
+        let clock = FixedClock::new(
+            chrono::DateTime::parse_from_rfc3339("2026-05-08T11:00:00Z")
+                .expect("fixed shadow trust timestamp")
+                .with_timezone(&Utc),
+        );
+        let rng = SeedableRng::new(157);
+        let external = ExternalClients::default();
+        let ctx = ServiceContext::test_live(&clock, &rng, &external);
+
+        shadow_update_claim_trust_shadow_only(
+            db,
+            "claim-shadow-live-v7",
+            TrustScore(0.74),
+            V155_SHADOW_TRUST_VERSION,
+            &ctx,
+        )
+        .expect("shadow score production-trusted claim");
+
+        verify_required_schema(&conn)
+            .expect("production live trust version may coexist with shadow trust version");
     }
 
     #[test]
