@@ -818,6 +818,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 159,
         apply: remediate_tombstoned_commitment_bridge_mutable_aliases,
     },
+    // Stable source keys separate append-only sightings from corroborating
+    // sources for commitment trust and UI counts.
+    Migration::Fn {
+        version: 160,
+        apply: backfill_commitment_source_keys,
+    },
 ];
 
 #[derive(Clone)]
@@ -1502,6 +1508,54 @@ fn legacy_owner_from_context(context: Option<&str>) -> Option<String> {
     }
 }
 
+fn backfill_commitment_source_keys(conn: &Connection) -> Result<(), MigrationError> {
+    if !table_exists(conn, "action_commitment_sources")? {
+        return Ok(());
+    }
+
+    let columns = table_columns(conn, "action_commitment_sources")?;
+    if !columns.contains("source_key") {
+        conn.execute_batch("ALTER TABLE action_commitment_sources ADD COLUMN source_key TEXT;")
+            .map_err(|e| format!("add action_commitment_sources.source_key: {e}"))?;
+    }
+
+    let source_type_expr = nullable_column_expr(&columns, "source_type");
+    let source_id_expr = nullable_column_expr(&columns, "source_id");
+    let source_label_expr = nullable_column_expr(&columns, "source_label");
+    let action_id_expr = nullable_column_expr(&columns, "action_id");
+    let sql = format!(
+        "UPDATE action_commitment_sources
+         SET source_key =
+             lower(trim(COALESCE({source_type_expr}, 'commitment')))
+             || ':' ||
+             lower(trim(COALESCE({source_id_expr}, {source_label_expr}, {action_id_expr}, commitment_id, id)))
+             || ':0'
+         WHERE source_key IS NULL OR trim(source_key) = ''"
+    );
+    conn.execute(&sql, [])
+        .map_err(|e| format!("backfill action_commitment_sources.source_key: {e}"))?;
+    conn.execute_batch(
+        "CREATE INDEX IF NOT EXISTS idx_action_commitment_sources_commitment_key
+             ON action_commitment_sources(commitment_id, source_key);",
+    )
+    .map_err(|e| format!("create action_commitment_sources source_key index: {e}"))?;
+    Ok(())
+}
+
+fn nullable_column_expr(columns: &HashSet<String>, column: &str) -> &'static str {
+    if columns.contains(column) {
+        match column {
+            "source_type" => "NULLIF(source_type, '')",
+            "source_id" => "NULLIF(source_id, '')",
+            "source_label" => "NULLIF(source_label, '')",
+            "action_id" => "NULLIF(action_id, '')",
+            _ => "NULL",
+        }
+    } else {
+        "NULL"
+    }
+}
+
 /// Create the `schema_version` table if it doesn't exist.
 fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
     conn.execute_batch(
@@ -1790,6 +1844,16 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
         if !role_cols.contains("source_invalidated_at") {
             return Err(
                 "Schema integrity check failed: missing column person_role_progression.source_invalidated_at"
+                    .to_string(),
+            );
+        }
+    }
+
+    if version >= 160 && table_exists(conn, "action_commitment_sources")? {
+        let source_cols = table_columns(conn, "action_commitment_sources")?;
+        if !source_cols.contains("source_key") {
+            return Err(
+                "Schema integrity check failed: missing column action_commitment_sources.source_key"
                     .to_string(),
             );
         }
@@ -2742,8 +2806,8 @@ mod tests {
         )
         .expect("seed legacy source sighting");
 
-        let applied = run_migrations(&conn).expect("apply v157-v159");
-        assert_eq!(applied, 3);
+        let applied = run_migrations(&conn).expect("apply v157-v160");
+        assert_eq!(applied, 4);
 
         let edited_alias_count: i64 = conn
             .query_row(
@@ -2843,8 +2907,8 @@ mod tests {
         )
         .expect("seed stale mutable alias");
 
-        let applied = run_migrations(&conn).expect("apply v157-v159");
-        assert_eq!(applied, 3);
+        let applied = run_migrations(&conn).expect("apply v157-v160");
+        assert_eq!(applied, 4);
 
         let source_alias_count: i64 = conn
             .query_row(
@@ -2899,8 +2963,8 @@ mod tests {
         )
         .expect("seed null-action tombstone");
 
-        let applied = run_migrations(&conn).expect("apply v157-v159");
-        assert_eq!(applied, 3);
+        let applied = run_migrations(&conn).expect("apply v157-v160");
+        assert_eq!(applied, 4);
 
         let (legacy_bridge_id, tombstoned_action_id, status): (String, Option<String>, String) =
             conn.query_row(
@@ -2914,6 +2978,128 @@ mod tests {
         assert_eq!(legacy_bridge_id, "legacy:null-action");
         assert_eq!(tombstoned_action_id, None);
         assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn migration_155_canonicalizes_project_backlog_duplicates_before_unique_index() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE people (
+                id TEXT PRIMARY KEY,
+                name TEXT NOT NULL
+             );
+             CREATE TABLE actions (
+                id TEXT PRIMARY KEY,
+                title TEXT NOT NULL,
+                priority INTEGER NOT NULL DEFAULT 3,
+                status TEXT NOT NULL,
+                created_at TEXT NOT NULL,
+                due_date TEXT,
+                completed_at TEXT,
+                account_id TEXT,
+                project_id TEXT,
+                source_type TEXT,
+                source_id TEXT,
+                source_label TEXT,
+                context TEXT,
+                waiting_on TEXT,
+                updated_at TEXT NOT NULL,
+                person_id TEXT,
+                action_kind TEXT NOT NULL DEFAULT 'task'
+             );
+             CREATE TABLE ai_commitment_bridge (
+                commitment_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action_id TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                tombstoned INTEGER NOT NULL DEFAULT 0
+             );
+             INSERT INTO actions
+                (id, title, priority, status, created_at, updated_at, due_date,
+                 project_id, source_type, source_id, source_label, action_kind)
+             VALUES
+                ('project-late', 'Send launch checklist', 3, 'backlog',
+                 '2026-01-02', '2026-01-02', '2026-02-01',
+                 'proj-1', 'meeting', 'meeting:abc:2', 'Kickoff', 'commitment'),
+                ('project-early', 'Send launch checklist', 3, 'backlog',
+                 '2026-01-01', '2026-01-01', '2026-02-01',
+                 'proj-1', 'meeting', 'meeting:abc:1', 'Kickoff', 'commitment');
+             INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES
+                ('meeting:abc:2', 'project', 'proj-1', 'project-late',
+                 '2026-01-02', '2026-01-02', 0),
+                ('meeting:abc:1', 'project', 'proj-1', 'project-early',
+                 '2026-01-01', '2026-01-01', 0);",
+        )
+        .expect("seed pre-155 project duplicates");
+
+        let migration = MIGRATIONS
+            .iter()
+            .find(|migration| migration.version() == 155)
+            .expect("migration 155 registered");
+        conn.execute_batch(migration.sql().expect("migration 155 should be SQL"))
+            .expect("migration 155 applies with project duplicates");
+
+        let action_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM actions
+                 WHERE project_id = 'proj-1'
+                   AND action_kind = 'commitment'
+                   AND status = 'backlog'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("action count");
+        assert_eq!(action_count, 1);
+
+        let canonical_id: String = conn
+            .query_row(
+                "SELECT id FROM actions WHERE project_id = 'proj-1'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("canonical action");
+        assert_eq!(canonical_id, "project-early");
+
+        let rewired_bridge_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM ai_commitment_bridge
+                 WHERE entity_type = 'project'
+                   AND entity_id = 'proj-1'
+                   AND action_id = 'project-early'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("rewired bridge count");
+        assert_eq!(rewired_bridge_count, 2);
+
+        let source_action_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(DISTINCT action_id)
+                 FROM action_commitment_sources
+                 WHERE commitment_id IN ('meeting:abc:1', 'meeting:abc:2')",
+                [],
+                |row| row.get(0),
+            )
+            .expect("source action count");
+        assert_eq!(source_action_count, 1);
+
+        let project_index_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*)
+                 FROM sqlite_master
+                 WHERE type = 'index'
+                   AND name = 'idx_actions_backlog_commitment_identity_project_unique'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("project unique index count");
+        assert_eq!(project_index_count, 1);
     }
 
     #[test]

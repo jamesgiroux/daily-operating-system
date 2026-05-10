@@ -144,7 +144,7 @@ impl ActionDb {
                     actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
                     actions.owner_confidence, actions.owner_source,
                     actions.trust_score, actions.trust_band,
-                    (SELECT COUNT(*)
+                    (SELECT COUNT(DISTINCT acs.source_key)
                      FROM action_commitment_sources acs
                      WHERE acs.commitment_id = actions.commitment_id)
              FROM actions
@@ -387,7 +387,7 @@ impl ActionDb {
                     actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
                     actions.owner_confidence, actions.owner_source,
                     actions.trust_score, actions.trust_band,
-                    (SELECT COUNT(*)
+                    (SELECT COUNT(DISTINCT acs.source_key)
                      FROM action_commitment_sources acs
                      WHERE acs.commitment_id = actions.commitment_id)
              FROM actions

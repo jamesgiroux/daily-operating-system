@@ -156,7 +156,8 @@ pub fn sync_ai_commitments(
         }
         let owner_resolution =
             resolve_owner(db, entity_id, &derived_id, commitment.owner.as_deref())?;
-        let source_count = source_count_for_commitment(db, &derived_id).unwrap_or(0) + 1;
+        let source_key = commitment_source_key(commitment, &derived_id);
+        let source_count = source_count_after_sighting(db, &derived_id, &source_key).unwrap_or(1);
         let trust = compute_commitment_trust(
             entity_id,
             commitment,
@@ -739,18 +740,20 @@ fn insert_commitment_source(
         .or(commitment.source.as_deref())
         .or(action.source_label.as_deref());
     let owner_ref_json = serde_json::to_string(&owner_resolution.owner_ref).ok();
+    let source_key = commitment_source_key(commitment, commitment_id);
 
     db.conn_ref()
         .execute(
             "INSERT INTO action_commitment_sources (
-                id, commitment_id, action_id, source_type, source_id,
+                id, commitment_id, action_id, source_key, source_type, source_id,
                 source_label, observed_at, source_confidence, trust_score,
                 trust_band, owner_raw, owner_ref_json
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)",
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
             rusqlite::params![
                 uuid::Uuid::new_v4().to_string(),
                 commitment_id,
                 action.id.as_str(),
+                source_key,
                 source_type,
                 action.source_id.as_deref(),
                 source_label,
@@ -768,10 +771,75 @@ fn insert_commitment_source(
 
 fn source_count_for_commitment(db: &ActionDb, commitment_id: &str) -> Result<i64, rusqlite::Error> {
     db.conn_ref().query_row(
-        "SELECT COUNT(*) FROM action_commitment_sources WHERE commitment_id = ?1",
+        "SELECT COUNT(DISTINCT source_key)
+         FROM action_commitment_sources
+         WHERE commitment_id = ?1",
         rusqlite::params![commitment_id],
         |row| row.get(0),
     )
+}
+
+fn source_count_after_sighting(
+    db: &ActionDb,
+    commitment_id: &str,
+    source_key: &str,
+) -> Result<i64, rusqlite::Error> {
+    let existing = source_count_for_commitment(db, commitment_id)?;
+    let already_seen = db.conn_ref().query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM action_commitment_sources
+            WHERE commitment_id = ?1
+              AND source_key = ?2
+        )",
+        rusqlite::params![commitment_id, source_key],
+        |row| row.get::<_, i64>(0).map(|value| value != 0),
+    )?;
+    Ok(existing + if already_seen { 0 } else { 1 })
+}
+
+fn commitment_source_key(commitment: &OpenCommitment, commitment_id: &str) -> String {
+    if let Some((source_type, source_id, source_ordinal)) = commitment
+        .commitment_id
+        .as_deref()
+        .and_then(source_commitment_id_parts)
+    {
+        return format!(
+            "{}:{}:{}",
+            normalize_source_key_part(source_type),
+            normalize_source_key_part(source_id),
+            normalize_source_key_part(source_ordinal)
+        );
+    }
+
+    let source_type = commitment
+        .item_source
+        .as_ref()
+        .map(|source| source.source.as_str())
+        .or(commitment.source.as_deref())
+        .unwrap_or("commitment");
+    let source_id = commitment
+        .item_source
+        .as_ref()
+        .and_then(|source| source.reference.as_deref())
+        .or_else(|| trimmed_non_empty(commitment.commitment_id.as_deref()))
+        .unwrap_or(commitment_id);
+
+    format!(
+        "{}:{}:0",
+        normalize_source_key_part(source_type),
+        normalize_source_key_part(source_id)
+    )
+}
+
+fn normalize_source_key_part(value: &str) -> String {
+    let normalized = value.split_whitespace().collect::<Vec<_>>().join(" ");
+    let normalized = normalized.trim().to_ascii_lowercase();
+    if normalized.is_empty() {
+        "unknown".to_string()
+    } else {
+        normalized
+    }
 }
 
 fn compute_commitment_trust(
@@ -1247,6 +1315,28 @@ mod tests {
             .unwrap()
     }
 
+    fn distinct_source_keys(db: &ActionDb, commitment_id: &str) -> i64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT COUNT(DISTINCT source_key)
+                 FROM action_commitment_sources
+                 WHERE commitment_id = ?1",
+                rusqlite::params![commitment_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
+    fn trust_score(db: &ActionDb, commitment_id: &str) -> f64 {
+        db.conn_ref()
+            .query_row(
+                "SELECT trust_score FROM actions WHERE commitment_id = ?1",
+                rusqlite::params![commitment_id],
+                |row| row.get(0),
+            )
+            .unwrap()
+    }
+
     #[test]
     fn test_sync_creates_new_commitment() {
         let db = test_db();
@@ -1322,6 +1412,70 @@ mod tests {
         assert_eq!(bridge_action_id(&db, &commitment_id), first_action_id);
         assert_eq!(action_count(&db), 1);
         assert_eq!(source_rows(&db, &commitment_id), 2);
+    }
+
+    #[test]
+    fn repeated_same_source_sightings_do_not_inflate_count_or_trust() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let commitments = vec![make_commitment_with_source(
+            "Send source-count renewal deck",
+            Some("meeting"),
+        )];
+        let commitment_id = derived_id("Send source-count renewal deck");
+
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("first sync");
+        let action_id = bridge_action_id(&db, &commitment_id);
+        let first_score = trust_score(&db, &commitment_id);
+
+        for _ in 0..4 {
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("resync");
+        }
+
+        assert_eq!(source_rows(&db, &commitment_id), 5);
+        assert_eq!(distinct_source_keys(&db, &commitment_id), 1);
+        assert_eq!(trust_score(&db, &commitment_id), first_score);
+
+        let action = db
+            .get_action_by_id(&action_id)
+            .expect("action query")
+            .expect("action row");
+        assert_eq!(action.commitment_source_count, Some(1));
+    }
+
+    #[test]
+    fn different_source_sightings_count_as_distinct_corroborators() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Send multi-source renewal deck";
+        let commitment_id = derived_id(title);
+
+        sync_ai_commitments(
+            &ctx,
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment_with_source(title, Some("meeting"))],
+        )
+        .expect("first sync");
+        sync_ai_commitments(
+            &ctx,
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment_with_source(title, Some("gong"))],
+        )
+        .expect("second sync");
+
+        assert_eq!(source_rows(&db, &commitment_id), 2);
+        assert_eq!(distinct_source_keys(&db, &commitment_id), 2);
+
+        let action_id = bridge_action_id(&db, &commitment_id);
+        let action = db
+            .get_action_by_id(&action_id)
+            .expect("action query")
+            .expect("action row");
+        assert_eq!(action.commitment_source_count, Some(2));
     }
 
     #[test]

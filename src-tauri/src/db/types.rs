@@ -80,7 +80,7 @@ pub struct DbAction {
     /// Latest computed trust band for this commitment claim.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub trust_band: Option<String>,
-    /// Number of source sightings recorded for this commitment.
+    /// Number of distinct corroborating source keys recorded for this commitment.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub commitment_source_count: Option<i64>,
     pub context: Option<String>,

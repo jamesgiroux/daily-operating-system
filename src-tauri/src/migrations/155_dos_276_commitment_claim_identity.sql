@@ -24,6 +24,7 @@ CREATE TABLE IF NOT EXISTS action_commitment_sources (
     id                TEXT PRIMARY KEY,
     commitment_id     TEXT NOT NULL,
     action_id         TEXT NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+    source_key        TEXT,
     source_type       TEXT,
     source_id         TEXT,
     source_label      TEXT,
@@ -39,6 +40,8 @@ CREATE INDEX IF NOT EXISTS idx_action_commitment_sources_commitment
     ON action_commitment_sources(commitment_id, observed_at);
 CREATE INDEX IF NOT EXISTS idx_action_commitment_sources_action
     ON action_commitment_sources(action_id, observed_at);
+CREATE INDEX IF NOT EXISTS idx_action_commitment_sources_commitment_key
+    ON action_commitment_sources(commitment_id, source_key);
 
 -- Seed commitment_id from the legacy bridge where possible. The new runtime
 -- will replace legacy ids with derived CommitmentClaim ids on first sighting,
@@ -114,6 +117,7 @@ INSERT OR IGNORE INTO action_commitment_sources (
     id,
     commitment_id,
     action_id,
+    source_key,
     source_type,
     source_id,
     source_label,
@@ -125,6 +129,13 @@ SELECT
     'migration:' || b.commitment_id,
     COALESCE(a.commitment_id, b.commitment_id),
     b.action_id,
+    CASE
+        WHEN b.commitment_id LIKE '%:%:%' THEN lower(trim(b.commitment_id))
+        ELSE lower(trim(COALESCE(NULLIF(a.source_type, ''), 'commitment')))
+             || ':' ||
+             lower(trim(COALESCE(NULLIF(a.source_id, ''), NULLIF(a.source_label, ''), b.commitment_id, a.id)))
+             || ':0'
+    END,
     a.source_type,
     a.source_id,
     a.source_label,
@@ -235,6 +246,107 @@ WHERE id IN (
 
 DROP INDEX _dos276_backlog_canonical_idx;
 DROP TABLE _dos276_backlog_canonical;
+
+-- Repeat the same duplicate-collapse pass for project-scoped backlog
+-- commitments before adding the project partial unique index.
+CREATE TEMP TABLE _dos276_backlog_project_canonical AS
+SELECT
+    canonical_id,
+    project_id,
+    title_key,
+    due_date_key,
+    owner_key
+FROM (
+    SELECT
+        id AS canonical_id,
+        project_id,
+        lower(trim(title)) AS title_key,
+        COALESCE(due_date, '') AS due_date_key,
+        COALESCE(owner_raw, '') AS owner_key,
+        ROW_NUMBER() OVER (
+            PARTITION BY
+                project_id,
+                lower(trim(title)),
+                COALESCE(due_date, ''),
+                COALESCE(owner_raw, '')
+            ORDER BY created_at ASC, id ASC
+        ) AS rn
+    FROM actions
+    WHERE action_kind = 'commitment'
+      AND status = 'backlog'
+      AND project_id IS NOT NULL
+)
+WHERE rn = 1;
+
+CREATE INDEX _dos276_backlog_project_canonical_idx
+    ON _dos276_backlog_project_canonical(project_id, title_key, due_date_key, owner_key);
+
+UPDATE ai_commitment_bridge
+SET action_id = (
+    SELECT c.canonical_id
+    FROM actions a
+    JOIN _dos276_backlog_project_canonical c
+      ON c.project_id = a.project_id
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
+    WHERE a.id = ai_commitment_bridge.action_id
+    LIMIT 1
+)
+WHERE action_id IN (
+    SELECT a.id
+    FROM actions a
+    JOIN _dos276_backlog_project_canonical c
+      ON c.project_id = a.project_id
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
+    WHERE a.action_kind = 'commitment'
+      AND a.status = 'backlog'
+      AND a.id != c.canonical_id
+);
+
+UPDATE action_commitment_sources
+SET action_id = (
+    SELECT c.canonical_id
+    FROM actions a
+    JOIN _dos276_backlog_project_canonical c
+      ON c.project_id = a.project_id
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
+    WHERE a.id = action_commitment_sources.action_id
+    LIMIT 1
+)
+WHERE action_id IN (
+    SELECT a.id
+    FROM actions a
+    JOIN _dos276_backlog_project_canonical c
+      ON c.project_id = a.project_id
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
+    WHERE a.action_kind = 'commitment'
+      AND a.status = 'backlog'
+      AND a.id != c.canonical_id
+);
+
+DELETE FROM actions
+WHERE id IN (
+    SELECT a.id
+    FROM actions a
+    JOIN _dos276_backlog_project_canonical c
+      ON c.project_id = a.project_id
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
+    WHERE a.action_kind = 'commitment'
+      AND a.status = 'backlog'
+      AND a.id != c.canonical_id
+);
+
+DROP INDEX _dos276_backlog_project_canonical_idx;
+DROP TABLE _dos276_backlog_project_canonical;
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_account_unique
     ON actions(account_id, lower(trim(title)), COALESCE(due_date, ''), COALESCE(owner_raw, ''))
