@@ -784,6 +784,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 154,
         sql: include_str!("migrations/154_claim_surface_dismissals.sql"),
     },
+    // Shadow trust compiler output must not overwrite live trust columns.
+    Migration::Sql {
+        version: 155,
+        sql: include_str!("migrations/155_claim_shadow_trust_columns.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
@@ -1076,6 +1081,21 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
                 "Schema integrity check failed: missing column person_role_progression.source_invalidated_at"
                     .to_string(),
             );
+        }
+    }
+
+    if version >= 155 {
+        let claim_cols = table_columns(conn, "intelligence_claims")?;
+        for col in [
+            "shadow_trust_score",
+            "shadow_trust_computed_at",
+            "shadow_trust_version",
+        ] {
+            if !claim_cols.contains(col) {
+                return Err(format!(
+                    "Schema integrity check failed: missing column intelligence_claims.{col}"
+                ));
+            }
         }
     }
 

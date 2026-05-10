@@ -3729,6 +3729,15 @@ async fn run_trust_compiler_shadow_if_enabled(state: &std::sync::Arc<AppState>, 
     }
 }
 
+fn spawn_trust_compiler_shadow_if_enabled(state: &std::sync::Arc<AppState>, meeting_id: &str) {
+    let state = state.clone();
+    let meeting_id = meeting_id.to_string();
+    let handle = tokio::spawn(async move {
+        run_trust_compiler_shadow_if_enabled(&state, &meeting_id).await;
+    });
+    drop(handle);
+}
+
 fn compile_trust_shadow_for_briefing_claims(
     ctx: &ServiceContext<'_>,
     db: &ActionDb,
@@ -3763,7 +3772,7 @@ fn compile_trust_shadow_for_briefing_claims(
     if !scores.is_empty() {
         db.with_transaction(|tx| {
             for (claim_id, score) in &scores {
-                crate::services::claims::update_claim_trust(
+                crate::services::claims::shadow_update_claim_trust_shadow_only(
                     tx,
                     claim_id,
                     *score,
@@ -4485,7 +4494,7 @@ pub async fn refresh_meeting_briefing_full(
         },
     )?;
 
-    run_trust_compiler_shadow_if_enabled(state, &result.meeting_id).await;
+    spawn_trust_compiler_shadow_if_enabled(state, &result.meeting_id);
 
     Ok(result)
 }
@@ -5030,6 +5039,7 @@ pub async fn attach_meeting_transcript(
 mod tests {
     use super::persist_classification_entities_scored;
     use super::plan_refresh_completion;
+    use super::refresh_meeting_briefing_full;
     use super::restore_meeting_entity;
     use super::{
         compile_trust_shadow_for_briefing_claims, load_prepare_meeting_context_snapshot,
@@ -5042,6 +5052,8 @@ mod tests {
     use crate::services::context::{ExternalClients, FixedClock, SeedableRng, ServiceContext};
     use crate::state::AppState;
     use chrono::TimeZone;
+    use std::path::Path;
+    use std::sync::Arc;
     use std::time::{Duration as StdDuration, Instant};
 
     fn test_ctx<'a>(
@@ -5167,9 +5179,17 @@ mod tests {
                 claims_skipped: 0,
             }
         );
-        let (score, version) = read_claim_trust(&db, &claim_id);
-        assert!(score.is_some(), "shadow run should populate trust_score");
+        let (score, version) = read_claim_shadow_trust(&db, &claim_id);
+        assert!(
+            score.is_some(),
+            "shadow run should populate shadow_trust_score"
+        );
         assert_eq!(version, Some(BRIEFING_TRUST_SHADOW_VERSION));
+        assert_eq!(
+            read_claim_trust(&db, &claim_id),
+            (None, None),
+            "shadow run must not populate live trust_score"
+        );
 
         let after = format!(
             "{:?}",
@@ -5218,7 +5238,7 @@ mod tests {
         db.conn_ref()
             .execute_batch(
                 "CREATE TRIGGER fail_trust_shadow_second \
-                 BEFORE UPDATE OF trust_score ON intelligence_claims \
+                 BEFORE UPDATE OF shadow_trust_score ON intelligence_claims \
                  WHEN OLD.id = 'claim-rollback-two' \
                  BEGIN \
                    SELECT RAISE(ABORT, 'trust shadow rollback fixture'); \
@@ -5235,6 +5255,14 @@ mod tests {
         );
         assert_eq!(read_claim_trust(&db, "claim-rollback-one"), (None, None));
         assert_eq!(read_claim_trust(&db, "claim-rollback-two"), (None, None));
+        assert_eq!(
+            read_claim_shadow_trust(&db, "claim-rollback-one"),
+            (None, None)
+        );
+        assert_eq!(
+            read_claim_shadow_trust(&db, "claim-rollback-two"),
+            (None, None)
+        );
     }
 
     #[test]
@@ -5272,23 +5300,104 @@ mod tests {
             read_claim_trust(&db, "claim-missing-source-type"),
             (None, None)
         );
+        assert_eq!(
+            read_claim_shadow_trust(&db, "claim-missing-source-type"),
+            (None, None)
+        );
     }
 
-    #[test]
-    fn trust_compiler_shadow_benchmark_stays_within_50ms_regression_budget() {
-        let db = test_db();
-        let clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
-        let rng = SeedableRng::new(911);
-        let ext = ExternalClients::default();
-        let ctx = test_ctx(&clock, &rng, &ext);
-        let meeting_id = "meeting-trust-benchmark";
-        let account_id = "acct-trust-benchmark";
-        seed_prepare_meeting(&db, meeting_id, account_id);
-        let subject_ref = subject_ref_json("account", account_id).expect("subject ref");
-        for idx in 0..8 {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn trust_compiler_shadow_benchmark_stays_within_50ms_regression_budget() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let off_meeting_id = "meeting-trust-benchmark-off";
+        let on_meeting_id = "meeting-trust-benchmark-on";
+        let off_state =
+            refresh_benchmark_state(&temp.path().join("shadow-off.db"), false, off_meeting_id, 8)
+                .await;
+        let on_state =
+            refresh_benchmark_state(&temp.path().join("shadow-on.db"), true, on_meeting_id, 8)
+                .await;
+
+        let off_clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
+        let off_rng = SeedableRng::new(911);
+        let off_ext = ExternalClients::default();
+        let off_ctx = test_ctx(&off_clock, &off_rng, &off_ext);
+        let baseline_start = Instant::now();
+        refresh_meeting_briefing_full(&off_ctx, &off_state, off_meeting_id, None)
+            .await
+            .expect("flag-off refresh");
+        let baseline = baseline_start.elapsed();
+
+        let on_clock = FixedClock::new(chrono::Utc.with_ymd_and_hms(2026, 5, 5, 9, 0, 0).unwrap());
+        let on_rng = SeedableRng::new(912);
+        let on_ext = ExternalClients::default();
+        let on_ctx = test_ctx(&on_clock, &on_rng, &on_ext);
+        let shadow_start = Instant::now();
+        refresh_meeting_briefing_full(&on_ctx, &on_state, on_meeting_id, None)
+            .await
+            .expect("flag-on refresh");
+        let shadow_enabled = shadow_start.elapsed();
+
+        assert!(
+            shadow_enabled.saturating_sub(baseline) <= StdDuration::from_millis(50),
+            "trust shadow regression exceeded 50ms: baseline={baseline:?} shadow_enabled={shadow_enabled:?}"
+        );
+        wait_for_shadow_scores(&on_state, on_meeting_id, 8).await;
+    }
+
+    async fn refresh_benchmark_state(
+        db_path: &Path,
+        shadow_enabled: bool,
+        meeting_id: &str,
+        claim_count: usize,
+    ) -> Arc<AppState> {
+        let svc = crate::db_service::DbService::open_at_unencrypted(db_path.to_path_buf())
+            .await
+            .expect("open benchmark db service");
+        let state = Arc::new(AppState::test_with_db_service(svc));
+        *state.config.write() = Some(refresh_benchmark_config(shadow_enabled));
+
+        let meeting_id = meeting_id.to_string();
+        state
+            .db_write(move |db| {
+                seed_refresh_benchmark_meeting(db, &meeting_id, claim_count);
+                Ok(())
+            })
+            .await
+            .expect("seed refresh benchmark state");
+
+        state
+    }
+
+    fn refresh_benchmark_config(shadow_enabled: bool) -> crate::types::Config {
+        let mut config: crate::types::Config =
+            serde_json::from_value(serde_json::json!({ "workspacePath": "" }))
+                .expect("benchmark config");
+        config.features.insert(
+            crate::types::FEATURE_TRUST_COMPILER_SHADOW.to_string(),
+            shadow_enabled,
+        );
+        config
+    }
+
+    fn seed_refresh_benchmark_meeting(
+        db: &crate::db::ActionDb,
+        meeting_id: &str,
+        claim_count: usize,
+    ) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO meetings (id, title, meeting_type, start_time, end_time, attendees, created_at)
+                 VALUES (?1, 'Trust Shadow Benchmark', 'external', '2026-05-10T17:00:00Z',
+                         '2026-05-10T17:30:00Z', '[\"taylor@example.com\"]', '2026-05-05T09:00:00Z')",
+                rusqlite::params![meeting_id],
+            )
+            .expect("seed benchmark meeting");
+        let subject_ref = subject_ref_json("meeting", meeting_id).expect("subject ref");
+        for idx in 0..claim_count {
             insert_raw_prepare_meeting_claim(
-                &db,
-                &format!("claim-benchmark-{idx}"),
+                db,
+                &format!("{meeting_id}-claim-benchmark-{idx}"),
                 &subject_ref,
                 &format!("Benchmark claim {idx}"),
                 &format!("risk.benchmark.{idx}"),
@@ -5296,21 +5405,38 @@ mod tests {
                 meeting_id,
             );
         }
+    }
 
-        let baseline_start = Instant::now();
-        let _ = load_prepare_meeting_context_snapshot(&db, meeting_id).expect("baseline snapshot");
-        let baseline = baseline_start.elapsed();
+    async fn wait_for_shadow_scores(state: &Arc<AppState>, meeting_id: &str, expected_count: i64) {
+        let deadline = Instant::now() + StdDuration::from_secs(2);
+        loop {
+            let meeting_id = meeting_id.to_string();
+            let count = state
+                .db_read(move |db| {
+                    db.conn_ref()
+                        .query_row(
+                            "SELECT COUNT(*)
+                             FROM intelligence_claims
+                             WHERE source_ref = ?1
+                               AND shadow_trust_version = ?2
+                               AND shadow_trust_score IS NOT NULL",
+                            rusqlite::params![meeting_id, BRIEFING_TRUST_SHADOW_VERSION],
+                            |row| row.get::<_, i64>(0),
+                        )
+                        .map_err(|error| error.to_string())
+                })
+                .await
+                .expect("read shadow score count");
 
-        let shadow_start = Instant::now();
-        let summary =
-            compile_trust_shadow_for_briefing_claims(&ctx, &db, meeting_id).expect("shadow score");
-        let shadow = shadow_start.elapsed();
-
-        assert_eq!(summary.claims_scored, 8);
-        assert!(
-            shadow.saturating_sub(baseline) <= StdDuration::from_millis(50),
-            "trust shadow regression exceeded 50ms: baseline={baseline:?} shadow={shadow:?}"
-        );
+            if count == expected_count {
+                return;
+            }
+            assert!(
+                Instant::now() < deadline,
+                "timed out waiting for {expected_count} shadow scores, got {count}"
+            );
+            tokio::time::sleep(StdDuration::from_millis(10)).await;
+        }
     }
 
     fn seed_prepare_meeting(db: &crate::db::ActionDb, meeting_id: &str, account_id: &str) {
@@ -5383,6 +5509,21 @@ mod tests {
                 |row| Ok((row.get(0)?, row.get(1)?)),
             )
             .expect("read claim trust")
+    }
+
+    fn read_claim_shadow_trust(
+        db: &crate::db::ActionDb,
+        claim_id: &str,
+    ) -> (Option<f64>, Option<i64>) {
+        db.conn_ref()
+            .query_row(
+                "SELECT shadow_trust_score, shadow_trust_version
+                 FROM intelligence_claims
+                 WHERE id = ?1",
+                rusqlite::params![claim_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read claim shadow trust")
     }
 
     fn count_claim_rows(db: &crate::db::ActionDb, claim_id: &str) -> i64 {
