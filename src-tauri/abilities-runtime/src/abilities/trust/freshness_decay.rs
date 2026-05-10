@@ -164,57 +164,57 @@ pub(crate) fn freshness_weight_at(
     freshness_context: Option<&FreshnessContext>,
     trust_config: &TrustConfig,
 ) -> f64 {
-    if claim.claim_state == ClaimState::Tombstoned {
-        return 1.0;
-    }
+    let (age_days, timestamp_known) =
+        freshness_age_days_and_timestamp_known(claim, now, freshness_context);
 
-    if matches!(
-        claim.temporal_scope,
-        TemporalScope::PointInTime | TemporalScope::Closed
-    ) {
-        return 1.0;
-    }
-
-    let (age_days, timestamp_known) = match freshness_timestamp_for_claim(claim) {
-        Some(timestamp) => {
-            let age_seconds = now.signed_duration_since(timestamp.at).num_seconds();
-            if age_seconds <= 0 {
-                return 1.0;
+    let base = if claim.claim_state == ClaimState::Tombstoned
+        || matches!(
+            claim.temporal_scope,
+            TemporalScope::PointInTime | TemporalScope::Closed
+        ) {
+        1.0
+    } else {
+        let rule = rule_for_claim_at(claim, now, renewal_context);
+        let policy = freshness_config().policy;
+        match rule {
+            HalfLifeRule::Days(days) => {
+                let half_life = days as f64;
+                (2.0_f64).powf(-age_days / half_life).max(policy.floor)
             }
-
-            let timestamp_known = freshness_context
-                .map(|freshness| freshness.timestamp_known)
-                .unwrap_or(timestamp.timestamp_known);
-            (age_seconds as f64 / SECONDS_PER_DAY, timestamp_known)
-        }
-        None => {
-            let Some(freshness) = freshness_context else {
-                return 1.0;
-            };
-
-            (freshness.age_days.max(0.0), freshness.timestamp_known)
-        }
-    };
-
-    let rule = rule_for_claim_at(claim, now, renewal_context);
-    let policy = freshness_config().policy;
-    let base = match rule {
-        HalfLifeRule::Days(days) => {
-            let half_life = days as f64;
-            (2.0_f64).powf(-age_days / half_life).max(policy.floor)
-        }
-        HalfLifeRule::Step30dThreshold => {
-            if age_days <= SALESFORCE_FIELD_UPDATE_THRESHOLD_DAYS as f64 {
-                1.0
-            } else {
-                policy.salesforce_field_update_stale_weight
+            HalfLifeRule::Step30dThreshold => {
+                if age_days <= SALESFORCE_FIELD_UPDATE_THRESHOLD_DAYS as f64 {
+                    1.0
+                } else {
+                    policy.salesforce_field_update_stale_weight
+                }
             }
         }
     };
+
     if timestamp_known {
         base
     } else {
         base * trust_config.unknown_timestamp_penalty
+    }
+}
+
+fn freshness_age_days_and_timestamp_known(
+    claim: &Claim,
+    now: DateTime<Utc>,
+    freshness_context: Option<&FreshnessContext>,
+) -> (f64, bool) {
+    match freshness_timestamp_for_claim(claim) {
+        Some(timestamp) => {
+            let age_days =
+                now.signed_duration_since(timestamp.at).num_seconds() as f64 / SECONDS_PER_DAY;
+            let timestamp_known = freshness_context
+                .map(|freshness| freshness.timestamp_known)
+                .unwrap_or(timestamp.timestamp_known);
+            (age_days.max(0.0), timestamp_known)
+        }
+        None => freshness_context
+            .map(|freshness| (freshness.age_days.max(0.0), freshness.timestamp_known))
+            .unwrap_or((0.0, false)),
     }
 }
 
@@ -1137,6 +1137,75 @@ mod tests {
                 &TrustConfig::default(),
             ),
             0.5 * TrustConfig::default().unknown_timestamp_penalty,
+        );
+    }
+
+    #[test]
+    fn exhaustive_return_paths_apply_unknown_timestamp_penalty() {
+        let clock = FixedClock::new(at());
+        let scoring_ctx = ctx(&clock);
+        let trust_config = TrustConfig::default();
+        let penalty = trust_config.unknown_timestamp_penalty;
+        let stale_unknown_freshness = FreshnessContext {
+            timestamp_known: false,
+            age_days: 14.0,
+        };
+        let current_unknown_freshness = FreshnessContext {
+            timestamp_known: false,
+            age_days: 0.0,
+        };
+
+        let mut malformed_with_context = claim_with_source("email", at());
+        malformed_with_context.source_asof = Some("not-a-timestamp".to_string());
+        malformed_with_context.observed_at = "also-not-a-timestamp".to_string();
+        malformed_with_context.created_at = "still-not-a-timestamp".to_string();
+        assert_float_close(
+            freshness_weight_at(
+                &malformed_with_context,
+                clock.now(),
+                None,
+                Some(&stale_unknown_freshness),
+                &trust_config,
+            ),
+            0.5 * penalty,
+        );
+
+        let mut malformed_without_context = claim_with_source("email", at());
+        malformed_without_context.source_asof = Some("not-a-timestamp".to_string());
+        malformed_without_context.observed_at = "also-not-a-timestamp".to_string();
+        malformed_without_context.created_at = "still-not-a-timestamp".to_string();
+        assert_float_close(
+            freshness_weight(&malformed_without_context, &scoring_ctx),
+            penalty,
+        );
+
+        let mut observed_now = claim_with_source("email", at());
+        observed_now.source_asof = None;
+        observed_now.observed_at = at().to_rfc3339();
+        assert_float_close(
+            freshness_weight_at(
+                &observed_now,
+                clock.now(),
+                None,
+                Some(&current_unknown_freshness),
+                &trust_config,
+            ),
+            penalty,
+        );
+
+        let mut future_created_at = claim_with_source("email", at());
+        future_created_at.source_asof = None;
+        future_created_at.observed_at = "not-a-timestamp".to_string();
+        future_created_at.created_at = (at() + Duration::seconds(1)).to_rfc3339();
+        assert_float_close(
+            freshness_weight_at(
+                &future_created_at,
+                clock.now(),
+                None,
+                Some(&current_unknown_freshness),
+                &trust_config,
+            ),
+            penalty,
         );
     }
 
