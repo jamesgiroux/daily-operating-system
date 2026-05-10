@@ -10,15 +10,15 @@ use crate::abilities::provenance::{DataSource, GleanDownstream, SourceName};
 use crate::services::context::Clock;
 use crate::types::{ClaimState, TemporalScope};
 
+use super::config::TrustConfig;
+use super::types::FreshnessContext;
+
 pub type Claim = crate::types::IntelligenceClaim;
 
 const CONFIG_TOML: &str =
     include_str!("../../../../src/abilities/trust/config/trust_compiler.toml");
-const FRESHNESS_FLOOR: f64 = 0.05;
 const SECONDS_PER_DAY: f64 = 86_400.0;
 const SALESFORCE_FIELD_UPDATE_THRESHOLD_DAYS: i64 = 30;
-const SALESFORCE_FIELD_UPDATE_STALE_WEIGHT: f64 = 0.3;
-const RENEWAL_IMMINENT_WINDOW_DAYS: i64 = 45;
 
 const ZENDESK_ESCALATION: &str = "zendesk_escalation";
 const ZENDESK_GENERAL: &str = "zendesk_general";
@@ -28,8 +28,17 @@ const GONG_TRANSCRIPT: &str = "gong_transcript";
 const GONG_SENTIMENT: &str = "gong_sentiment";
 const EMAIL: &str = "email";
 const SLACK: &str = "slack";
+const GLEAN_P2: &str = "glean_p2";
+const GLEAN_WORDPRESS: &str = "glean_wordpress";
+const GLEAN_ORG_DIRECTORY: &str = "glean_org_directory";
+const GLEAN_DOCUMENTS: &str = "glean_documents";
+const GLEAN_UNKNOWN: &str = "glean_unknown";
 const LINEAR_ISSUE: &str = "linear_issue";
 const CLAY_ENRICHMENT: &str = "clay_enrichment";
+const AI: &str = "ai";
+const CO_ATTENDANCE: &str = "co_attendance";
+const LOCAL_ENRICHMENT: &str = "local_enrichment";
+const LEGACY_UNATTRIBUTED: &str = "legacy_unattributed";
 const USER_CORRECTION: &str = "user_correction";
 const RENEWAL_NOTES_IMMINENT: &str = "renewal_notes_with_imminent_renewal";
 const RENEWAL_NOTES_NO_CONTEXT: &str = "renewal_notes_no_renewal_context";
@@ -44,8 +53,17 @@ const REQUIRED_CONFIG_KEYS: &[&str] = &[
     GONG_SENTIMENT,
     EMAIL,
     SLACK,
+    GLEAN_P2,
+    GLEAN_WORDPRESS,
+    GLEAN_ORG_DIRECTORY,
+    GLEAN_DOCUMENTS,
+    GLEAN_UNKNOWN,
     LINEAR_ISSUE,
     CLAY_ENRICHMENT,
+    AI,
+    CO_ATTENDANCE,
+    LOCAL_ENRICHMENT,
+    LEGACY_UNATTRIBUTED,
     USER_CORRECTION,
     RENEWAL_NOTES_IMMINENT,
     RENEWAL_NOTES_NO_CONTEXT,
@@ -67,6 +85,14 @@ pub struct ScoringContext<'a> {
 #[derive(Debug, Deserialize)]
 struct TrustCompilerToml {
     half_life_days: BTreeMap<String, HalfLifeConfigValue>,
+    freshness_policy: FreshnessPolicyToml,
+}
+
+#[derive(Debug, Deserialize)]
+struct FreshnessPolicyToml {
+    floor: f64,
+    salesforce_field_update_stale_weight: f64,
+    renewal_imminent_window_days: i64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +120,20 @@ impl HalfLifeRule {
 #[derive(Debug)]
 struct TrustFreshnessConfig {
     half_life_days: BTreeMap<String, HalfLifeRule>,
+    policy: FreshnessPolicy,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FreshnessPolicy {
+    floor: f64,
+    salesforce_field_update_stale_weight: f64,
+    renewal_imminent_window_days: i64,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct FreshnessTimestamp {
+    at: DateTime<Utc>,
+    timestamp_known: bool,
 }
 
 static CONFIG: OnceLock<TrustFreshnessConfig> = OnceLock::new();
@@ -112,6 +152,8 @@ pub fn freshness_weight(claim: &Claim, ctx: &ScoringContext<'_>) -> f64 {
         claim,
         ctx.clock.now(),
         ctx.renewal_context.as_ref(),
+        None,
+        &TrustConfig::default(),
     )
 }
 
@@ -119,6 +161,8 @@ pub(crate) fn freshness_weight_at(
     claim: &Claim,
     now: DateTime<Utc>,
     renewal_context: Option<&RenewalContext>,
+    freshness_context: Option<&FreshnessContext>,
+    trust_config: &TrustConfig,
 ) -> f64 {
     if claim.claim_state == ClaimState::Tombstoned {
         return 1.0;
@@ -131,30 +175,37 @@ pub(crate) fn freshness_weight_at(
         return 1.0;
     }
 
-    let Ok(created_at) = DateTime::parse_from_rfc3339(&claim.created_at) else {
-        warn_malformed_created_at(claim);
+    let Some(timestamp) = freshness_timestamp_for_claim(claim) else {
         return 1.0;
     };
-    let created_at = created_at.with_timezone(&Utc);
-    let age_seconds = now.signed_duration_since(created_at).num_seconds();
+    let age_seconds = now.signed_duration_since(timestamp.at).num_seconds();
     if age_seconds <= 0 {
         return 1.0;
     }
 
     let age_days = age_seconds as f64 / SECONDS_PER_DAY;
     let rule = rule_for_claim_at(claim, now, renewal_context);
-    match rule {
+    let policy = freshness_config().policy;
+    let base = match rule {
         HalfLifeRule::Days(days) => {
             let half_life = days as f64;
-            (2.0_f64).powf(-age_days / half_life).max(FRESHNESS_FLOOR)
+            (2.0_f64).powf(-age_days / half_life).max(policy.floor)
         }
         HalfLifeRule::Step30dThreshold => {
             if age_days <= SALESFORCE_FIELD_UPDATE_THRESHOLD_DAYS as f64 {
                 1.0
             } else {
-                SALESFORCE_FIELD_UPDATE_STALE_WEIGHT
+                policy.salesforce_field_update_stale_weight
             }
         }
+    };
+    let timestamp_known = freshness_context
+        .map(|freshness| freshness.timestamp_known)
+        .unwrap_or(timestamp.timestamp_known);
+    if timestamp_known {
+        base
+    } else {
+        base * trust_config.unknown_timestamp_penalty
     }
 }
 
@@ -184,6 +235,7 @@ fn load_embedded_config() -> Result<TrustFreshnessConfig, String> {
     let parsed: TrustCompilerToml =
         toml::from_str(CONFIG_TOML).map_err(|err| format!("toml parse failed: {err}"))?;
     let mut half_life_days = BTreeMap::new();
+    let policy = parse_freshness_policy(parsed.freshness_policy)?;
 
     for (raw_key, raw_value) in parsed.half_life_days {
         let key = normalize_key(&raw_key);
@@ -208,7 +260,65 @@ fn load_embedded_config() -> Result<TrustFreshnessConfig, String> {
         }
     }
 
-    Ok(TrustFreshnessConfig { half_life_days })
+    Ok(TrustFreshnessConfig {
+        half_life_days,
+        policy,
+    })
+}
+
+fn parse_freshness_policy(raw: FreshnessPolicyToml) -> Result<FreshnessPolicy, String> {
+    validate_unit_interval(
+        "freshness_policy.floor",
+        raw.floor,
+        UnitIntervalBoundary::GreaterThanZero,
+    )?;
+    validate_unit_interval(
+        "freshness_policy.salesforce_field_update_stale_weight",
+        raw.salesforce_field_update_stale_weight,
+        UnitIntervalBoundary::InclusiveZero,
+    )?;
+    if raw.renewal_imminent_window_days < 0 {
+        return Err(format!(
+            "freshness_policy.renewal_imminent_window_days must be non-negative, got {}",
+            raw.renewal_imminent_window_days
+        ));
+    }
+
+    Ok(FreshnessPolicy {
+        floor: raw.floor,
+        salesforce_field_update_stale_weight: raw.salesforce_field_update_stale_weight,
+        renewal_imminent_window_days: raw.renewal_imminent_window_days,
+    })
+}
+
+#[derive(Debug, Clone, Copy)]
+enum UnitIntervalBoundary {
+    InclusiveZero,
+    GreaterThanZero,
+}
+
+fn validate_unit_interval(
+    name: &'static str,
+    value: f64,
+    boundary: UnitIntervalBoundary,
+) -> Result<(), String> {
+    if !value.is_finite() {
+        return Err(format!("{name} must be finite, got {value}"));
+    }
+
+    let lower_bound_ok = match boundary {
+        UnitIntervalBoundary::InclusiveZero => value >= 0.0,
+        UnitIntervalBoundary::GreaterThanZero => value > 0.0,
+    };
+    if !lower_bound_ok || value > 1.0 {
+        let range = match boundary {
+            UnitIntervalBoundary::InclusiveZero => "[0, 1]",
+            UnitIntervalBoundary::GreaterThanZero => "(0, 1]",
+        };
+        return Err(format!("{name} must be in {range}, got {value}"));
+    }
+
+    Ok(())
 }
 
 fn representative_data_sources() -> Vec<DataSource> {
@@ -246,7 +356,8 @@ fn representative_data_sources() -> Vec<DataSource> {
         DataSource::Ai,
         DataSource::CoAttendance,
         DataSource::LocalEnrichment,
-        DataSource::Other(SourceName::new("boot_validation_unmapped")),
+        DataSource::Other(SourceName::new(LINEAR_ISSUE)),
+        DataSource::Other(SourceName::new("renewal_notes")),
         DataSource::LegacyUnattributed,
     ]
 }
@@ -267,19 +378,31 @@ fn rule_for_data_source(source_type: &DataSource, ctx: &ScoringContext<'_>) -> H
         DataSource::Glean {
             downstream: GleanDownstream::Slack,
         } => configured_rule(SLACK),
+        DataSource::Glean {
+            downstream: GleanDownstream::P2,
+        } => configured_rule(GLEAN_P2),
+        DataSource::Glean {
+            downstream: GleanDownstream::Wordpress,
+        } => configured_rule(GLEAN_WORDPRESS),
+        DataSource::Glean {
+            downstream: GleanDownstream::OrgDirectory,
+        } => configured_rule(GLEAN_ORG_DIRECTORY),
+        DataSource::Glean {
+            downstream: GleanDownstream::Documents,
+        } => configured_rule(GLEAN_DOCUMENTS),
+        DataSource::Glean {
+            downstream: GleanDownstream::Unknown,
+        } => configured_rule(GLEAN_UNKNOWN),
         DataSource::Clay => configured_rule(CLAY_ENRICHMENT),
         DataSource::Other(name) => {
             let key = normalize_key(name.as_str());
             rule_for_named_source(&key, Some(ctx.clock.now()), ctx.renewal_context.as_ref())
-                .unwrap_or_else(|| default_rule_for_unmapped(&format!("other:{key}")))
+                .unwrap_or_else(|| panic!("unmapped DataSource::Other freshness rule: {key}"))
         }
-        DataSource::Glean { downstream } => {
-            default_rule_for_unmapped(&format!("glean:{}", downstream.display_name()))
-        }
-        DataSource::Ai => default_rule_for_unmapped("ai"),
-        DataSource::CoAttendance => default_rule_for_unmapped("co_attendance"),
-        DataSource::LocalEnrichment => default_rule_for_unmapped("local_enrichment"),
-        DataSource::LegacyUnattributed => default_rule_for_unmapped("legacy_unattributed"),
+        DataSource::Ai => configured_rule(AI),
+        DataSource::CoAttendance => configured_rule(CO_ATTENDANCE),
+        DataSource::LocalEnrichment => configured_rule(LOCAL_ENRICHMENT),
+        DataSource::LegacyUnattributed => configured_rule(LEGACY_UNATTRIBUTED),
     }
 }
 
@@ -393,6 +516,10 @@ fn rule_for_named_source(
         }
         "gong" | "glean_gong" | "transcript" | "notes" => Some(configured_rule(GONG_TRANSCRIPT)),
         "glean_slack" => Some(configured_rule(SLACK)),
+        "p2" | "glean_p2" => Some(configured_rule(GLEAN_P2)),
+        "wordpress" | "word_press" | "glean_wordpress" => Some(configured_rule(GLEAN_WORDPRESS)),
+        "org_directory" | "glean_org_directory" => Some(configured_rule(GLEAN_ORG_DIRECTORY)),
+        "documents" | "document" | "glean_documents" => Some(configured_rule(GLEAN_DOCUMENTS)),
         _ if freshness_config().half_life_days.contains_key(key) && key != DEFAULT => {
             Some(configured_rule(key))
         }
@@ -443,7 +570,44 @@ fn renewal_is_imminent(
         )
     });
 
-    days_to_renewal.is_some_and(|days| (0..=RENEWAL_IMMINENT_WINDOW_DAYS).contains(&days))
+    let renewal_window_days = freshness_config().policy.renewal_imminent_window_days;
+    days_to_renewal.is_some_and(|days| (0..=renewal_window_days).contains(&days))
+}
+
+fn freshness_timestamp_for_claim(claim: &Claim) -> Option<FreshnessTimestamp> {
+    if let Some(source_asof) = claim
+        .source_asof
+        .as_deref()
+        .map(str::trim)
+        .filter(|source_asof| !source_asof.is_empty())
+    {
+        match DateTime::parse_from_rfc3339(source_asof) {
+            Ok(parsed) => {
+                return Some(FreshnessTimestamp {
+                    at: parsed.with_timezone(&Utc),
+                    timestamp_known: true,
+                });
+            }
+            Err(_) => warn_malformed_timestamp(claim, "source_asof", source_asof),
+        }
+    }
+
+    for (field_name, raw_timestamp) in [
+        ("observed_at", claim.observed_at.as_str()),
+        ("created_at", claim.created_at.as_str()),
+    ] {
+        match DateTime::parse_from_rfc3339(raw_timestamp) {
+            Ok(parsed) => {
+                return Some(FreshnessTimestamp {
+                    at: parsed.with_timezone(&Utc),
+                    timestamp_known: false,
+                });
+            }
+            Err(_) => warn_malformed_timestamp(claim, field_name, raw_timestamp),
+        }
+    }
+
+    None
 }
 
 fn data_source_for_claim(source_key: &str) -> DataSource {
@@ -463,6 +627,18 @@ fn data_source_for_claim(source_key: &str) -> DataSource {
         },
         "slack" | "glean_slack" => DataSource::Glean {
             downstream: GleanDownstream::Slack,
+        },
+        "p2" | "glean_p2" => DataSource::Glean {
+            downstream: GleanDownstream::P2,
+        },
+        "wordpress" | "word_press" | "glean_wordpress" => DataSource::Glean {
+            downstream: GleanDownstream::Wordpress,
+        },
+        "org_directory" | "glean_org_directory" => DataSource::Glean {
+            downstream: GleanDownstream::OrgDirectory,
+        },
+        "documents" | "document" | "glean_documents" => DataSource::Glean {
+            downstream: GleanDownstream::Documents,
         },
         "clay" | "clay_enrichment" | "gravatar" => DataSource::Clay,
         "linear" | "linear_issue" => DataSource::Other(SourceName::new(LINEAR_ISSUE)),
@@ -580,11 +756,12 @@ fn warn_unmapped_source(source_label: &str) {
     }
 }
 
-fn warn_malformed_created_at(claim: &Claim) {
+fn warn_malformed_timestamp(claim: &Claim, field_name: &'static str, timestamp: &str) {
     tracing::warn!(
         claim_id = claim.id.as_str(),
-        created_at = claim.created_at.as_str(),
-        "Trust freshness decay: malformed claim created_at; using freshness weight 1.0"
+        field = field_name,
+        timestamp = timestamp,
+        "Trust freshness decay: malformed claim freshness timestamp"
     );
 }
 
@@ -660,6 +837,13 @@ mod tests {
         assert_eq!(actual, Duration::days(expected_days));
     }
 
+    fn assert_float_close(actual: f64, expected: f64) {
+        assert!(
+            (actual - expected).abs() < 1e-9,
+            "expected {expected}, got {actual}"
+        );
+    }
+
     #[test]
     fn every_signal_type_returns_configured_half_life() {
         let clock = FixedClock::new(at());
@@ -673,8 +857,17 @@ mod tests {
             ("gong_sentiment", 21),
             ("email", 14),
             ("slack", 14),
+            ("glean_p2", 21),
+            ("glean_wordpress", 21),
+            ("glean_org_directory", 21),
+            ("glean_documents", 21),
+            ("glean_unknown", 21),
             ("linear_issue", 45),
             ("clay_enrichment", 90),
+            ("ai", 21),
+            ("co_attendance", 21),
+            ("local_enrichment", 21),
+            ("legacy_unattributed", 21),
             ("user_correction", 365),
             ("renewal_notes_no_renewal_context", 90),
             ("default", 21),
@@ -736,7 +929,56 @@ mod tests {
             ),
             14,
         );
+        assert_days(
+            half_life_for(
+                &DataSource::Glean {
+                    downstream: GleanDownstream::P2,
+                },
+                &ctx,
+            ),
+            21,
+        );
+        assert_days(
+            half_life_for(
+                &DataSource::Glean {
+                    downstream: GleanDownstream::Wordpress,
+                },
+                &ctx,
+            ),
+            21,
+        );
+        assert_days(
+            half_life_for(
+                &DataSource::Glean {
+                    downstream: GleanDownstream::OrgDirectory,
+                },
+                &ctx,
+            ),
+            21,
+        );
+        assert_days(
+            half_life_for(
+                &DataSource::Glean {
+                    downstream: GleanDownstream::Documents,
+                },
+                &ctx,
+            ),
+            21,
+        );
+        assert_days(
+            half_life_for(
+                &DataSource::Glean {
+                    downstream: GleanDownstream::Unknown,
+                },
+                &ctx,
+            ),
+            21,
+        );
         assert_days(half_life_for(&DataSource::Clay, &ctx), 90);
+        assert_days(half_life_for(&DataSource::Ai, &ctx), 21);
+        assert_days(half_life_for(&DataSource::CoAttendance, &ctx), 21);
+        assert_days(half_life_for(&DataSource::LocalEnrichment, &ctx), 21);
+        assert_days(half_life_for(&DataSource::LegacyUnattributed, &ctx), 21);
     }
 
     #[test]
@@ -761,7 +1003,9 @@ mod tests {
 
         let clock = FixedClock::new(at());
         let ctx = ctx(&clock);
-        assert_days(half_life_for(&DataSource::Ai, &ctx), 21);
+        let claim = claim_with_source("unknown_source", at() - Duration::days(21));
+
+        assert_float_close(freshness_weight(&claim, &ctx), 0.5);
         assert_eq!(
             DEFAULT_WARNING_COUNT.load(std::sync::atomic::Ordering::SeqCst),
             1
@@ -793,7 +1037,43 @@ mod tests {
         let ctx = ctx(&clock);
         let claim = claim_with_source("email", at() - Duration::days(20_000));
 
-        assert_eq!(freshness_weight(&claim, &ctx), FRESHNESS_FLOOR);
+        assert_eq!(freshness_weight(&claim, &ctx), freshness_config().policy.floor);
+    }
+
+    #[test]
+    fn source_asof_precedes_observed_at_and_created_at() {
+        let clock = FixedClock::new(at());
+        let ctx = ctx(&clock);
+        let mut claim = claim_with_source("email", at());
+        claim.source_asof = Some((at() - Duration::days(14)).to_rfc3339());
+        claim.observed_at = at().to_rfc3339();
+        claim.created_at = at().to_rfc3339();
+
+        assert_float_close(freshness_weight(&claim, &ctx), 0.5);
+    }
+
+    #[test]
+    fn observed_at_precedes_created_at_and_preserves_unknown_timestamp_penalty() {
+        let clock = FixedClock::new(at());
+        let mut claim = claim_with_source("email", at());
+        claim.source_asof = None;
+        claim.observed_at = (at() - Duration::days(14)).to_rfc3339();
+        claim.created_at = at().to_rfc3339();
+        let freshness_context = FreshnessContext {
+            timestamp_known: false,
+            age_days: 14.0,
+        };
+
+        assert_float_close(
+            freshness_weight_at(
+                &claim,
+                clock.now(),
+                None,
+                Some(&freshness_context),
+                &TrustConfig::default(),
+            ),
+            0.5 * TrustConfig::default().unknown_timestamp_penalty,
+        );
     }
 
     #[test]
@@ -814,12 +1094,16 @@ mod tests {
         let mut fresh = claim_with_source("salesforce", at() - Duration::days(30));
         fresh.field_path = Some("account.health".to_string());
         let mut stale = fresh.clone();
+        stale.source_asof = Some((at() - Duration::days(31)).to_rfc3339());
+        stale.observed_at = (at() - Duration::days(31)).to_rfc3339();
         stale.created_at = (at() - Duration::days(31)).to_rfc3339();
 
         assert_eq!(freshness_weight(&fresh, &ctx), 1.0);
         assert_eq!(
             freshness_weight(&stale, &ctx),
-            SALESFORCE_FIELD_UPDATE_STALE_WEIGHT
+            freshness_config()
+                .policy
+                .salesforce_field_update_stale_weight
         );
     }
 }

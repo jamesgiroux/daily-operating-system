@@ -4904,9 +4904,124 @@ mod tests {
     }
 
     #[test]
-    #[ignore = "depends on bundle 5 fixture from W6-A/"]
     fn bundle5_user_correction_tombstone_not_averaged_away() {
-        panic!("bundle 5 fixture from W6-A/DOS-283 is not seeded in DOS-5 chunk 7");
+        #[derive(Debug)]
+        struct FixtureClaim {
+            id: String,
+            claim_state: String,
+            surfacing_state: String,
+            data_source: String,
+            trust_score: f64,
+            scenario: String,
+        }
+
+        let conn = rusqlite::Connection::open_in_memory().expect("open fixture db");
+        conn.execute_batch(include_str!("../tests/fixtures/bundle-5/state.sql"))
+            .expect("load bundle-5 fixture");
+
+        let mut stmt = conn
+            .prepare(
+                "SELECT id, claim_state, surfacing_state, data_source, trust_score, metadata_json
+                 FROM intelligence_claims
+                 ORDER BY id",
+            )
+            .expect("prepare correction-resurrection query");
+        let rows = stmt
+            .query_map([], |row| {
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, String>(2)?,
+                    row.get::<_, String>(3)?,
+                    row.get::<_, Option<f64>>(4)?,
+                    row.get::<_, Option<String>>(5)?,
+                ))
+            })
+            .expect("read fixture rows")
+            .collect::<Result<Vec<_>, _>>()
+            .expect("collect fixture rows");
+
+        let rows: Vec<FixtureClaim> = rows
+            .into_iter()
+            .filter_map(
+                |(id, claim_state, surfacing_state, data_source, trust_score, metadata_json)| {
+                    let metadata_json = metadata_json?;
+                    let metadata: serde_json::Value = serde_json::from_str(&metadata_json).ok()?;
+                    let scenario = metadata.get("scenario")?.as_str()?.to_string();
+                    matches!(
+                        scenario.as_str(),
+                        "wrong_subject_tombstone"
+                            | "user_edited_supersession"
+                            | "expired_dormant_no_resurrection"
+                    )
+                    .then(|| FixtureClaim {
+                        id,
+                        claim_state,
+                        surfacing_state,
+                        data_source,
+                        trust_score: trust_score
+                            .expect("fixture correction rows carry trust_score"),
+                        scenario,
+                    })
+                },
+            )
+            .collect();
+
+        assert_eq!(
+            rows.len(),
+            4,
+            "bundle-5 must seed all correction-resurrection guard rows"
+        );
+
+        let mut distinct_scores: Vec<f64> = Vec::new();
+        for row in &rows {
+            if !distinct_scores
+                .iter()
+                .any(|score| (*score - row.trust_score).abs() < 1e-9)
+            {
+                distinct_scores.push(row.trust_score);
+            }
+        }
+        assert!(
+            distinct_scores.len() >= 3,
+            "correction-resurrection trust scores must not collapse to a flat distribution: {rows:?}"
+        );
+
+        let state_pairs: std::collections::BTreeSet<_> = rows
+            .iter()
+            .map(|row| (row.claim_state.as_str(), row.surfacing_state.as_str()))
+            .collect();
+        assert!(state_pairs.contains(&("tombstoned", "dormant")));
+        assert!(state_pairs.contains(&("dormant", "dormant")));
+        assert!(state_pairs.contains(&("active", "active")));
+
+        let wrong_subject = rows
+            .iter()
+            .find(|row| row.id == "src-b5-wrong-attendee-original")
+            .expect("wrong-subject tombstone row exists");
+        assert_eq!(wrong_subject.scenario, "wrong_subject_tombstone");
+        assert_eq!(wrong_subject.claim_state, "tombstoned");
+        assert!(wrong_subject.trust_score < 0.4);
+
+        let original = rows
+            .iter()
+            .find(|row| row.id == "src-b5-original-preference")
+            .expect("superseded original row exists");
+        let edited = rows
+            .iter()
+            .find(|row| row.id == "src-b5-user-edited-preference")
+            .expect("user-edited superseding row exists");
+        assert_eq!(edited.data_source, "user");
+        assert_eq!(edited.claim_state, "active");
+        assert!(edited.trust_score > original.trust_score);
+
+        let expired = rows
+            .iter()
+            .find(|row| row.id == "src-b5-expired-dormant-open-loop")
+            .expect("expired dormant resurrection guard row exists");
+        assert_eq!(expired.scenario, "expired_dormant_no_resurrection");
+        assert_eq!(expired.claim_state, "dormant");
+        assert!(expired.trust_score < edited.trust_score);
     }
 
     #[test]

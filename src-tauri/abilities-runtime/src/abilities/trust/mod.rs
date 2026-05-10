@@ -64,6 +64,8 @@ pub fn compile_trust(
                 claim,
                 ctx.now,
                 ctx.renewal_context.as_ref(),
+                Some(&ctx.factor_inputs.freshness),
+                &ctx.config,
             ),
             weight: ctx.config.weights.freshness_weight,
         },
