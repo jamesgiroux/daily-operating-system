@@ -1010,6 +1010,8 @@ fn lookup_semantic_term(token: &str, negated: bool) -> Option<(String, SemanticA
         "budget" | "budgets" | "funding" | "funds" => ("budget", SemanticAssertionStatus::Unknown),
         "finance" | "financial" | "cfo" => ("finance", SemanticAssertionStatus::Unknown),
         "phase" | "phases" => ("phase", SemanticAssertionStatus::Unknown),
+        "signing" | "signings" => ("signing", SemanticAssertionStatus::Unknown),
+        "signature" | "signatures" => ("signature", SemanticAssertionStatus::Unknown),
         _ => {
             let stemmed = semantic_stem(token);
             return if stemmed.is_empty() {
@@ -1362,6 +1364,70 @@ fn semantic_claim_qualifiers(claim: &IntelligenceClaim) -> Option<HashSet<String
     semantic_qualifiers_from_metadata(claim.metadata_json.as_deref())
 }
 
+fn semantic_explicit_synonym_map() -> &'static HashMap<&'static str, &'static [&'static str]> {
+    static MAP: OnceLock<HashMap<&'static str, &'static [&'static str]>> = OnceLock::new();
+    MAP.get_or_init(|| {
+        HashMap::from([
+            ("budget", &["funding"][..]),
+            ("funding", &["budget"][..]),
+            ("contract", &["agreement"][..]),
+            ("agreement", &["contract", "deal"][..]),
+            ("deal", &["agreement"][..]),
+            ("signing", &["signature"][..]),
+            ("signature", &["signing"][..]),
+            ("approval", &["approved", "greenlit"][..]),
+            ("approved", &["approval", "greenlit"][..]),
+            ("greenlit", &["approval", "approved"][..]),
+        ])
+    })
+}
+
+fn semantic_terms_explicit_synonyms(left: &str, right: &str) -> bool {
+    semantic_explicit_synonym_map()
+        .get(left)
+        .is_some_and(|synonyms| synonyms.contains(&right))
+        || semantic_explicit_synonym_map()
+            .get(right)
+            .is_some_and(|synonyms| synonyms.contains(&left))
+}
+
+fn is_semantic_unmatched_low_salience_term(term: &str) -> bool {
+    is_semantic_stopword(term)
+        || is_semantic_negator(term)
+        || matches!(
+            term,
+            "approval" | "pending" | "confirmed" | "finance" | "phase"
+        )
+}
+
+fn semantic_unmatched_terms<'a>(
+    left: &'a HashSet<String>,
+    right: &'a HashSet<String>,
+) -> Vec<&'a str> {
+    left.difference(right)
+        .map(String::as_str)
+        .filter(|term| !is_semantic_unmatched_low_salience_term(term))
+        .collect()
+}
+
+fn semantic_has_unsynonymized_unmatched_terms(
+    left: &SemanticSignature,
+    right: &SemanticSignature,
+) -> bool {
+    let left_unmatched = semantic_unmatched_terms(&left.terms, &right.terms);
+    let right_unmatched = semantic_unmatched_terms(&right.terms, &left.terms);
+
+    left_unmatched.iter().any(|term| {
+        !right_unmatched
+            .iter()
+            .any(|other| semantic_terms_explicit_synonyms(term, other))
+    }) || right_unmatched.iter().any(|term| {
+        !left_unmatched
+            .iter()
+            .any(|other| semantic_terms_explicit_synonyms(term, other))
+    })
+}
+
 fn is_semantic_low_salience_token(token: &str) -> bool {
     is_semantic_stopword(token)
         || is_semantic_negator(token)
@@ -1488,6 +1554,10 @@ fn semantic_signatures_near_duplicate(left: &SemanticSignature, right: &Semantic
 
     let union = left.terms.union(&right.terms).count();
     if union == 0 {
+        return false;
+    }
+
+    if semantic_has_unsynonymized_unmatched_terms(left, right) {
         return false;
     }
 
@@ -9520,6 +9590,20 @@ mod tests {
         );
         assert!(
             !semantic_near_duplicate(
+                "phase 2 budget approval is pending with finance",
+                "phase 2 contract approval is pending with finance"
+            ),
+            "shared phase approval wording must not collapse different objects"
+        );
+        assert!(
+            semantic_near_duplicate(
+                "phase 2 deal signing approval is pending with finance",
+                "phase 2 deal signature approval is pending with finance"
+            ),
+            "explicit signing/signature synonyms should still collapse"
+        );
+        assert!(
+            !semantic_near_duplicate(
                 "Phase 2 budget approval is pending with finance",
                 "Finance approved the Phase 2 budget"
             ),
@@ -10097,6 +10181,130 @@ mod tests {
         .unwrap();
         assert_eq!(recovered_for_surface.len(), 1);
         assert_eq!(recovered_for_surface[0].id, first_id);
+    }
+
+    #[test]
+    fn commit_claim_budget_vs_contract_approval_does_not_auto_canonicalize() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("phase 2 budget approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("phase 2 contract approval is pending with finance"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
+            CommittedClaim::Forked {
+                primary_claim,
+                new_claim_id,
+                ..
+            } => {
+                assert_eq!(primary_claim.id, first_id);
+                assert_ne!(new_claim_id, first_id);
+            }
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!(
+                    "contract approval incorrectly canonicalized into {}",
+                    claim.id
+                )
+            }
+            CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_signing_vs_signature_synonym_auto_canonicalizes() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("phase 2 deal signing approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("phase 2 deal signature approval is pending with finance"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, first_id),
+            other => panic!("signing/signature synonym should canonicalize, got {other:?}"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 1);
+    }
+
+    #[test]
+    fn commit_claim_lowercase_entity_swap_does_not_auto_canonicalize() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("acme phase 2 budget approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("globex phase 2 budget approval is pending with finance"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
+            CommittedClaim::Forked {
+                primary_claim,
+                new_claim_id,
+                ..
+            } => {
+                assert_eq!(primary_claim.id, first_id);
+                assert_ne!(new_claim_id, first_id);
+            }
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!("globex claim incorrectly canonicalized into {}", claim.id)
+            }
+            CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
     }
 
     #[test]
