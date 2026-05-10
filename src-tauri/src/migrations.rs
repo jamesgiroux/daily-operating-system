@@ -1733,8 +1733,6 @@ fn migrate_v156_reconcile_claim_shadow_trust_columns(
         )
         .map_err(|e| format!("reconcile shadow trust columns: {e}"))?;
 
-        verify_no_live_shadow_trust_scores(conn, "v156 shadow trust reconciliation")?;
-
         Ok(())
     })
 }
@@ -2563,6 +2561,77 @@ mod tests {
             .expect("read repaired row");
         assert_eq!((live_score, live_at, live_version), (None, None, None));
         assert_eq!(shadow_score, Some(0.73));
+        assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
+        assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
+    }
+
+    #[test]
+    fn migration_156_allows_v157_to_repair_partial_v155_shadow_rows() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute("DELETE FROM schema_version WHERE version >= 156", [])
+            .expect("roll recorded version back to v155");
+        assert_eq!(current_version(&conn).expect("current version"), 155);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v157 regression seeds partial c3/c5 shadow state */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version,
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+             VALUES (
+                 'claim-v157-partial-v155-repair',
+                 '{\"kind\":\"account\",\"id\":\"acct-v157-partial-v155\"}',
+                 'summary',
+                 'partial v155 shadow trust state',
+                 'claim-v157-partial-v155-repair-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-06T10:00:00Z',
+                 '{}',
+                 0.83,
+                 '2026-05-08T10:00:00Z',
+                 ?1,
+                 0.44,
+                 '2026-05-06T10:00:00Z',
+                 ?1
+             )",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed partial v155 shadow row");
+
+        let applied = run_migrations(&conn).expect("v156 and v157 migrations should succeed");
+        assert_eq!(applied, 2, "v156 and v157 should be pending");
+        assert_eq!(current_version(&conn).expect("current version"), 157);
+        verify_required_schema(&conn).expect("v157 invariant should pass");
+
+        let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version,
+                        shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
+                   FROM intelligence_claims
+                  WHERE id = 'claim-v157-partial-v155-repair'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .expect("read repaired row");
+        assert_eq!((live_score, live_at, live_version), (None, None, None));
+        assert_eq!(shadow_score, Some(0.44));
         assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
         assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
     }
