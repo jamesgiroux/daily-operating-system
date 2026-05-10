@@ -20,6 +20,7 @@ use std::sync::{Arc, OnceLock};
 
 use chrono::{DateTime, Duration, NaiveDateTime, Utc};
 use parking_lot::Mutex;
+use regex::Regex;
 use rusqlite::{params, Connection, OptionalExtension, Params};
 use schemars::JsonSchema;
 use serde::de::DeserializeOwned;
@@ -827,6 +828,15 @@ fn compute_semantic_signature_with_qualifiers(
             i += 1;
         }
 
+        if raw_tokens
+            .get(i + 1)
+            .is_some_and(|next| is_semantic_negator(next))
+            && is_semantic_contraction_auxiliary_fragment(raw)
+        {
+            i += 1;
+            continue;
+        }
+
         if is_semantic_negator(raw) {
             negate_window = 3;
             i += 1;
@@ -859,49 +869,29 @@ fn compute_semantic_signature_with_qualifiers(
 }
 
 fn normalize_semantic_contractions(text: &str) -> String {
-    let mut normalized = String::with_capacity(text.len());
-    let mut token = String::new();
-
-    for ch in text.chars() {
-        if ch.is_ascii_alphanumeric() || ch == '\'' || ch == '\u{2019}' {
-            let ch = if ch == '\u{2019}' {
-                '\''
-            } else {
-                ch.to_ascii_lowercase()
-            };
-            token.push(ch);
-            continue;
-        }
-
-        push_semantic_contraction_expansion(&mut normalized, &token);
-        token.clear();
-        normalized.push(ch);
-    }
-
-    push_semantic_contraction_expansion(&mut normalized, &token);
-    normalized
+    let normalized = semantic_aint_contraction_regex().replace_all(text, "am not");
+    let normalized = semantic_cannot_regex().replace_all(&normalized, "can not");
+    semantic_negative_contraction_regex()
+        .replace_all(&normalized, "${1}n not")
+        .into_owned()
 }
 
-fn push_semantic_contraction_expansion(normalized: &mut String, token: &str) {
-    if token.is_empty() {
-        return;
-    }
+fn semantic_negative_contraction_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        Regex::new("(?i)\\b(\\w+)n['\u{2019}]t\\b")
+            .expect("semantic negative contraction regex must compile")
+    })
+}
 
-    let expanded = match token {
-        "hasn't" => "has not",
-        "isn't" => "is not",
-        "wasn't" => "was not",
-        "doesn't" => "does not",
-        "don't" => "do not",
-        "didn't" => "did not",
-        "won't" => "will not",
-        "wouldn't" => "would not",
-        "shouldn't" => "should not",
-        "couldn't" => "could not",
-        "can't" => "can not",
-        _ => token,
-    };
-    normalized.push_str(expanded);
+fn semantic_cannot_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new("(?i)\\bcannot\\b").expect("cannot regex must compile"))
+}
+
+fn semantic_aint_contraction_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new("(?i)\\bain['\u{2019}]t\\b").expect("ain't regex must compile"))
 }
 
 fn is_semantic_negator(token: &str) -> bool {
@@ -956,6 +946,13 @@ fn is_semantic_stopword(token: &str) -> bool {
     )
 }
 
+fn is_semantic_contraction_auxiliary_fragment(token: &str) -> bool {
+    token
+        .strip_suffix('n')
+        .filter(|stem| !stem.is_empty())
+        .is_some_and(is_semantic_stopword)
+}
+
 fn lookup_semantic_term(token: &str, negated: bool) -> Option<(String, SemanticAssertionStatus)> {
     if is_semantic_stopword(token) {
         return None;
@@ -987,7 +984,8 @@ fn lookup_semantic_term(token: &str, negated: bool) -> Option<(String, SemanticA
         | "completed" | "completing" | "finalise" | "finalised" | "finalises" | "finalising"
         | "finalize" | "finalized" | "finalizes" | "finalizing" | "greenlight" | "greenlighted"
         | "greenlighting" | "greenlights" | "greenlit" | "land" | "landed" | "landing"
-        | "lands" | "secure" | "secured" | "secures" | "securing" => (
+        | "lands" | "proceed" | "proceeded" | "proceeding" | "proceeds" | "secure" | "secured"
+        | "secures" | "securing" => (
             "confirmed",
             semantic_status_with_negation(SemanticAssertionStatus::Confirmed, negated),
         ),
@@ -1393,6 +1391,10 @@ fn is_semantic_low_salience_token(token: &str) -> bool {
                 | "landed"
                 | "landing"
                 | "lands"
+                | "proceed"
+                | "proceeded"
+                | "proceeding"
+                | "proceeds"
                 | "secure"
                 | "secured"
                 | "secures"
@@ -9573,6 +9575,42 @@ mod tests {
     }
 
     #[test]
+    fn semantic_negative_contractions_expand_generically_before_status_tokenization() {
+        for (negative, positive) in [
+            (
+                "Finance haven't approved Phase 2 budget",
+                "Finance approved Phase 2 budget",
+            ),
+            ("Marketing aren't complete", "Marketing complete"),
+            ("Sales weren't greenlit", "Sales greenlit"),
+            ("Renewal isn't secured", "Renewal secured"),
+            ("Approval ain't landed", "Approval landed"),
+            ("Project cannot proceed", "Project can proceed"),
+        ] {
+            assert_eq!(
+                compute_semantic_signature(negative).status,
+                SemanticAssertionStatus::Pending,
+                "{negative} must tokenize with a negator"
+            );
+            assert_eq!(
+                compute_semantic_signature(positive).status,
+                SemanticAssertionStatus::Confirmed,
+                "{positive} must remain a positive status assertion"
+            );
+            assert!(
+                !semantic_near_duplicate(positive, negative),
+                "{negative} must not semantically merge with {positive}"
+            );
+        }
+
+        assert_eq!(
+            compute_semantic_signature("Sales weren\u{2019}t greenlit").status,
+            SemanticAssertionStatus::Pending,
+            "curly apostrophe negative contractions must tokenize with a negator"
+        );
+    }
+
+    #[test]
     fn commit_claim_preserves_region_qualifiers_after_text_canonicalization() {
         for region in ["US", "EU", "APAC", "EMEA"] {
             let db = test_db();
@@ -9814,6 +9852,58 @@ mod tests {
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
         assert_eq!(active.len(), 2);
         assert_eq!(claim_contradiction_count(&db), 1);
+    }
+
+    #[test]
+    fn commit_claim_negative_contraction_statuses_fork_from_positive_claims() {
+        for (positive, negative) in [
+            (
+                "Finance approved Phase 2 budget",
+                "Finance haven't approved Phase 2 budget",
+            ),
+            ("Marketing complete", "Marketing aren't complete"),
+            ("Sales greenlit", "Sales weren't greenlit"),
+            ("Renewal secured", "Renewal isn't secured"),
+            ("Approval landed", "Approval ain't landed"),
+            ("Project can proceed", "Project cannot proceed"),
+        ] {
+            let db = test_db();
+            seed_account(&db);
+            let (clock, rng, external) = ctx_parts();
+            let ctx = live_ctx(&clock, &rng, &external);
+
+            let primary_id =
+                inserted_claim_id(commit_claim(&ctx, &db, proposal(positive)).unwrap());
+            update_claim_trust(&db, &primary_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+            let result = commit_claim(&ctx, &db, proposal(negative)).unwrap();
+            match result {
+                CommittedClaim::Forked {
+                    primary_claim,
+                    contradiction_id,
+                    new_claim_id,
+                } => {
+                    assert_eq!(primary_claim.id, primary_id);
+                    assert_ne!(new_claim_id, primary_id);
+                    let edge_count: i64 = db
+                        .conn_ref()
+                        .query_row(
+                            "SELECT count(*) FROM claim_contradictions WHERE id = ?1",
+                            params![&contradiction_id],
+                            |row| row.get(0),
+                        )
+                        .unwrap();
+                    assert_eq!(edge_count, 1);
+                }
+                other => {
+                    panic!("{negative} must fork from positive status claim {positive}: {other:?}")
+                }
+            }
+
+            let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+            assert_eq!(active.len(), 2);
+            assert_eq!(claim_contradiction_count(&db), 1);
+        }
     }
 
     #[test]
