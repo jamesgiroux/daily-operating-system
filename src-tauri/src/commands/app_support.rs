@@ -1572,6 +1572,7 @@ pub async fn get_feature_flags(
             .features
             .get("glean_discovery_enabled")
             .unwrap_or(&false),
+        trust_compiler_shadow_enabled: crate::types::is_trust_compiler_shadow_enabled(config),
     };
     Ok(flags)
 }
