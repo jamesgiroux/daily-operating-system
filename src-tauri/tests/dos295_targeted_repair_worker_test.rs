@@ -1,17 +1,47 @@
 #![cfg(feature = "test-harness")]
 
+use std::ffi::OsString;
 use std::sync::Arc;
 use std::time::Duration;
 
 use chrono::Utc;
 use dailyos_lib::abilities::feedback::FeedbackAction;
-use dailyos_lib::db::{ActionDb, DbAccount};
+use dailyos_lib::db::{ActionDb, DbAccount, DbError};
 use dailyos_lib::services::claims::{
-    commit_claim, record_claim_feedback, ClaimFeedbackInput, ClaimProposal, CommittedClaim,
+    commit_claim, is_claim_dismissed_on_surface, record_claim_feedback, ClaimError,
+    ClaimFeedbackInput, ClaimProposal, CommittedClaim,
 };
-use dailyos_lib::services::context::{ExternalClients, SeedableRng, ServiceContext, SystemClock};
+use dailyos_lib::services::context::{
+    ClaimDismissalSurface, ExternalClients, SeedableRng, ServiceContext, SystemClock,
+};
 use dailyos_lib::state::AppState;
 use rusqlite::params;
+
+const INVALIDATION_PENDING_CAP_ENV: &str = "DAILYOS_INVALIDATION_JOBS_PENDING_CAP";
+
+static TARGETED_REPAIR_ENV_LOCK: tokio::sync::Mutex<()> = tokio::sync::Mutex::const_new(());
+
+struct EnvVarGuard {
+    name: &'static str,
+    previous: Option<OsString>,
+}
+
+impl EnvVarGuard {
+    fn set(name: &'static str, value: &str) -> Self {
+        let previous = std::env::var_os(name);
+        std::env::set_var(name, value);
+        Self { name, previous }
+    }
+}
+
+impl Drop for EnvVarGuard {
+    fn drop(&mut self) {
+        match &self.previous {
+            Some(value) => std::env::set_var(self.name, value),
+            None => std::env::remove_var(self.name),
+        }
+    }
+}
 
 fn seed_account(db: &ActionDb, id: &str) {
     let account = DbAccount {
@@ -81,11 +111,32 @@ fn feedback_input(claim_id: String, action: FeedbackAction) -> ClaimFeedbackInpu
     }
 }
 
+fn surface_feedback_input(claim_id: String, surface: &str) -> ClaimFeedbackInput {
+    ClaimFeedbackInput {
+        claim_id,
+        action: FeedbackAction::SurfaceInappropriate,
+        actor: "user:test".to_string(),
+        actor_id: Some("user-test".to_string()),
+        payload_json: Some(serde_json::json!({ "surface": surface }).to_string()),
+    }
+}
+
 fn inserted_claim_id(committed: CommittedClaim) -> String {
     match committed {
         CommittedClaim::Inserted { claim } => claim.id,
         other => panic!("expected inserted claim, got {other:?}"),
     }
+}
+
+fn assert_pending_cap_rejection(error: &ClaimError) {
+    assert!(
+        matches!(
+            error,
+            ClaimError::Db(DbError::InvalidArgument(message))
+                if message.contains("invalidation queue pending cap 1 reached")
+        ),
+        "expected visible pending-cap rejection, got {error}"
+    );
 }
 
 async fn wait_for_jobs_completed(
@@ -170,50 +221,54 @@ async fn targeted_repair_worker_completes_all_repair_actions_from_feedback() {
         .expect("open test db service");
     let state = Arc::new(AppState::test_with_db_service(svc));
 
-    let repair_job_ids = state
-        .db_write(|db| {
-            seed_account(db, "acct-dos295-worker");
-            seed_account(db, "acct-dos295-corrected");
-            let clock = SystemClock;
-            let rng = SeedableRng::new(295);
-            let external = ExternalClients::default();
-            let ctx = ServiceContext::new_live(&clock, &rng, &external);
-            let actions = [
-                FeedbackAction::MarkFalse,
-                FeedbackAction::CannotVerify,
-                FeedbackAction::MarkOutdated,
-                FeedbackAction::WrongSubject,
-                FeedbackAction::WrongSource,
-                FeedbackAction::SurfaceInappropriate,
-            ];
+    let repair_job_ids = {
+        let _env_lock = TARGETED_REPAIR_ENV_LOCK.lock().await;
+        state
+            .db_write(|db| {
+                seed_account(db, "acct-dos295-worker");
+                seed_account(db, "acct-dos295-corrected");
+                let clock = SystemClock;
+                let rng = SeedableRng::new(295);
+                let external = ExternalClients::default();
+                let ctx = ServiceContext::new_live(&clock, &rng, &external);
+                let actions = [
+                    FeedbackAction::MarkFalse,
+                    FeedbackAction::CannotVerify,
+                    FeedbackAction::MarkOutdated,
+                    FeedbackAction::WrongSubject,
+                    FeedbackAction::WrongSource,
+                    FeedbackAction::SurfaceInappropriate,
+                ];
 
-            let mut ids = Vec::new();
-            for action in actions {
-                let field_path = format!("health.risk.{}", action.as_str());
-                let claim_id = inserted_claim_id(
-                    commit_claim(
-                        &ctx,
-                        db,
-                        proposal(
-                            "acct-dos295-worker",
-                            &field_path,
-                            &format!("DOS-295 {:?} repair fixture", action),
-                        ),
-                    )
-                    .map_err(|e| e.to_string())?,
-                );
-                let feedback = record_claim_feedback(&ctx, db, feedback_input(claim_id, action))
-                    .map_err(|e| e.to_string())?;
-                ids.push(
-                    feedback
-                        .repair_job_id
-                        .ok_or_else(|| format!("{action:?} should enqueue repair"))?,
-                );
-            }
-            Ok(ids)
-        })
-        .await
-        .expect("seed feedback jobs");
+                let mut ids = Vec::new();
+                for action in actions {
+                    let field_path = format!("health.risk.{}", action.as_str());
+                    let claim_id = inserted_claim_id(
+                        commit_claim(
+                            &ctx,
+                            db,
+                            proposal(
+                                "acct-dos295-worker",
+                                &field_path,
+                                &format!("DOS-295 {:?} repair fixture", action),
+                            ),
+                        )
+                        .map_err(|e| e.to_string())?,
+                    );
+                    let feedback =
+                        record_claim_feedback(&ctx, db, feedback_input(claim_id, action))
+                            .map_err(|e| e.to_string())?;
+                    ids.push(
+                        feedback
+                            .repair_job_id
+                            .ok_or_else(|| format!("{action:?} should enqueue repair"))?,
+                    );
+                }
+                Ok(ids)
+            })
+            .await
+            .expect("seed feedback jobs")
+    };
 
     assert_eq!(repair_job_ids.len(), 6);
 
@@ -232,20 +287,163 @@ async fn targeted_repair_worker_completes_all_repair_actions_from_feedback() {
         assert!(Utc::now().to_rfc3339() >= completed_at.unwrap());
     }
 
-    let targeted_repair_jobs: i64 = state
+    let completed_targeted_repair_jobs: i64 = state
         .db_read(move |db| {
-            db.conn_ref()
-                .query_row(
-                    "SELECT count(*)
-                     FROM invalidation_jobs
-                     WHERE job_kind = 'targeted_repair'
-                       AND status = 'completed'",
-                    [],
-                    |row| row.get(0),
-                )
-                .map_err(|e| e.to_string())
+            let mut completed = 0;
+            for job_id in repair_job_ids {
+                let row: (String, String) = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT job_kind, status
+                         FROM invalidation_jobs
+                         WHERE id = ?1",
+                        params![job_id],
+                        |row| Ok((row.get(0)?, row.get(1)?)),
+                    )
+                    .map_err(|e| e.to_string())?;
+                if row.0 == "targeted_repair" && row.1 == "completed" {
+                    completed += 1;
+                }
+            }
+            Ok::<_, String>(completed)
         })
         .await
         .expect("read completed targeted repair count");
-    assert_eq!(targeted_repair_jobs, 6);
+    assert_eq!(completed_targeted_repair_jobs, 6);
+}
+
+#[tokio::test]
+async fn targeted_repair_pending_cap_does_not_drop_distinct_surface_feedback() {
+    let temp = tempfile::tempdir().expect("tempdir");
+    let db_path = temp.path().join("dos295-targeted-repair-surface-cap.db");
+    let svc = dailyos_lib::db_service::DbService::open_at_unencrypted_for_tests(db_path)
+        .await
+        .expect("open test db service");
+    let state = Arc::new(AppState::test_with_db_service(svc));
+
+    let (claim_id, first_job_id) = {
+        let _env_lock = TARGETED_REPAIR_ENV_LOCK.lock().await;
+        let _env_guard = EnvVarGuard::set(INVALIDATION_PENDING_CAP_ENV, "1");
+        state
+            .db_write(|db| {
+                seed_account(db, "acct-dos295-surface-cap");
+                let clock = SystemClock;
+                let rng = SeedableRng::new(296);
+                let external = ExternalClients::default();
+                let ctx = ServiceContext::new_live(&clock, &rng, &external);
+                let claim_id = inserted_claim_id(
+                    commit_claim(
+                        &ctx,
+                        db,
+                        proposal(
+                            "acct-dos295-surface-cap",
+                            "health.risk.surface_cap",
+                            "DOS-295 surface cap repair fixture",
+                        ),
+                    )
+                    .map_err(|e| e.to_string())?,
+                );
+
+                let first = record_claim_feedback(
+                    &ctx,
+                    db,
+                    surface_feedback_input(claim_id.clone(), "briefing"),
+                )
+                .map_err(|e| e.to_string())?;
+                let second = record_claim_feedback(
+                    &ctx,
+                    db,
+                    surface_feedback_input(claim_id.clone(), "entity_detail"),
+                );
+                let Err(error) = second else {
+                    panic!("distinct surface repair should reject while pending cap is full");
+                };
+                assert_pending_cap_rejection(&error);
+
+                let first_job_id = first
+                    .repair_job_id
+                    .ok_or_else(|| "first surface feedback should enqueue repair".to_string())?;
+                Ok::<_, String>((claim_id, first_job_id))
+            })
+            .await
+            .expect("seed first capped surface feedback")
+    };
+
+    let worker = tokio::spawn(
+        dailyos_lib::services::invalidation_jobs::run_targeted_claim_repair_worker(state.clone()),
+    );
+
+    wait_for_jobs_completed(state.clone(), vec![first_job_id])
+        .await
+        .expect("first surface repair completed");
+
+    let second_job_id = {
+        let _env_lock = TARGETED_REPAIR_ENV_LOCK.lock().await;
+        let _env_guard = EnvVarGuard::set(INVALIDATION_PENDING_CAP_ENV, "1");
+        let claim_id = claim_id.clone();
+        state
+            .db_write(move |db| {
+                let clock = SystemClock;
+                let rng = SeedableRng::new(297);
+                let external = ExternalClients::default();
+                let ctx = ServiceContext::new_live(&clock, &rng, &external);
+                let second = record_claim_feedback(
+                    &ctx,
+                    db,
+                    surface_feedback_input(claim_id, "entity_detail"),
+                )
+                .map_err(|e| e.to_string())?;
+                second
+                    .repair_job_id
+                    .ok_or_else(|| "retried surface feedback should enqueue repair".to_string())
+            })
+            .await
+            .expect("retry second surface feedback after drain")
+    };
+
+    wait_for_jobs_completed(state.clone(), vec![second_job_id])
+        .await
+        .expect("second surface repair completed");
+
+    worker.abort();
+
+    let assertion_claim_id = claim_id.clone();
+    let surfaces = state
+        .db_read(move |db| {
+            assert!(is_claim_dismissed_on_surface(
+                db,
+                &assertion_claim_id,
+                ClaimDismissalSurface::Briefing.as_str()
+            )
+            .map_err(|e| e.to_string())?);
+            assert!(is_claim_dismissed_on_surface(
+                db,
+                &assertion_claim_id,
+                ClaimDismissalSurface::TauriEntityDetail.as_str()
+            )
+            .map_err(|e| e.to_string())?);
+            db.conn_ref()
+                .prepare(
+                    "SELECT surface
+                     FROM claim_surface_dismissals
+                     WHERE claim_id = ?1
+                     ORDER BY surface ASC",
+                )
+                .map_err(|e| e.to_string())?
+                .query_map(params![&assertion_claim_id], |row| row.get::<_, String>(0))
+                .map_err(|e| e.to_string())?
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(|e| e.to_string())
+        })
+        .await
+        .expect("read surface dismissals");
+    assert_eq!(
+        surfaces,
+        vec![
+            ClaimDismissalSurface::Briefing.as_str().to_string(),
+            ClaimDismissalSurface::TauriEntityDetail
+                .as_str()
+                .to_string(),
+        ]
+    );
 }

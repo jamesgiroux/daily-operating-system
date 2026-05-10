@@ -21,6 +21,7 @@ pub const DEFAULT_QUEUE_PENDING_CAP: i64 = 10_000;
 const DEFAULT_CHAIN_DEPTH_CAP: i64 = 16;
 const CLAIM_RECOMPUTE_ABILITY_ID: &str = "claim_recompute";
 const CLAIM_RECOMPUTE_ABILITY_VERSION: &str = "1";
+const TARGETED_REPAIR_POLICY_REPAIR_OPERATION: &str = "targeted_claim_repair:PolicyRepair";
 
 #[derive(Debug, Clone)]
 pub struct EnqueueInvalidationJob {
@@ -807,6 +808,50 @@ impl ActionDb {
         &self,
         input: &EnqueueInvalidationJob,
     ) -> Result<Option<InvalidationJob>, DbError> {
+        if targeted_policy_repair_requires_surface_match(input) {
+            let Some(coalescing_key) = input.coalescing_key.as_deref() else {
+                return Ok(None);
+            };
+
+            return self
+                .conn_ref()
+                .query_row(
+                    "SELECT
+                    id, job_kind, operation, status, priority, chain_id,
+                    parent_job_id, successor_of_job_id, origin_signal_id,
+                    depth, chain_ancestry_json, idempotency_key, coalescing_key,
+                    subject_type, subject_id, ability_id, ability_version,
+                    source_claim_version, latest_source_claim_version, source_asof,
+                    input_snapshot_hash, provider_fingerprint, prompt_fingerprint,
+                    payload_json, first_signal_id, latest_signal_id, raw_signal_count,
+                    attempts, max_attempts, lease_owner, lease_expires_at,
+                    stale_marker_json
+                 FROM invalidation_jobs
+                 WHERE status = 'pending'
+                   AND job_kind = ?1
+                   AND operation = ?2
+                   AND subject_type = ?3
+                   AND subject_id = ?4
+                   AND ability_id = ?5
+                   AND ability_version = ?6
+                   AND coalescing_key = ?7
+                 ORDER BY priority DESC, updated_at DESC, created_at DESC
+                 LIMIT 1",
+                    params![
+                        &input.job_kind,
+                        &input.operation,
+                        &input.subject_type,
+                        &input.subject_id,
+                        &input.ability_id,
+                        &input.ability_version,
+                        coalescing_key,
+                    ],
+                    map_invalidation_job,
+                )
+                .optional()
+                .map_err(DbError::Sqlite);
+        }
+
         self.conn_ref()
             .query_row(
                 "SELECT
@@ -974,6 +1019,11 @@ pub fn claim_recompute_input_hash(
     source_claim_version: i64,
 ) -> String {
     format!("{subject_type}:{subject_id}:claims:{source_claim_version}")
+}
+
+fn targeted_policy_repair_requires_surface_match(input: &EnqueueInvalidationJob) -> bool {
+    input.job_kind == KIND_TARGETED_REPAIR
+        && input.operation == TARGETED_REPAIR_POLICY_REPAIR_OPERATION
 }
 
 pub fn claim_recompute_coalescing_key(
@@ -1209,6 +1259,52 @@ mod tests {
         )
     }
 
+    fn targeted_policy_repair_input(
+        signal_id: &str,
+        claim_id: &str,
+        surface: &str,
+        version: i64,
+    ) -> EnqueueInvalidationJob {
+        let subject_type = "account";
+        let subject_id = "acct-policy";
+        let ability_id = "targeted_claim_repair";
+        let ability_version = "1";
+        let input_scope = format!("targeted_repair:{subject_type}:{subject_id}:{claim_id}:claims");
+        let input_snapshot_hash = format!("{input_scope}:{version}");
+        let coalescing_key = format!(
+            "targeted_claim_repair:{subject_type}:{subject_id}:{claim_id}:PolicyRepair:surface:{surface}:{ability_id}:{ability_version}:{input_scope}"
+        );
+
+        EnqueueInvalidationJob {
+            job_kind: KIND_TARGETED_REPAIR.to_string(),
+            operation: TARGETED_REPAIR_POLICY_REPAIR_OPERATION.to_string(),
+            origin_signal_id: Some(signal_id.to_string()),
+            subject_type: subject_type.to_string(),
+            subject_id: subject_id.to_string(),
+            ability_id: ability_id.to_string(),
+            ability_version: ability_version.to_string(),
+            source_claim_version: version,
+            source_asof: None,
+            input_snapshot_hash: Some(input_snapshot_hash),
+            provider_fingerprint: Some("provider:test".to_string()),
+            prompt_fingerprint: Some("prompt:test".to_string()),
+            payload_json: serde_json::json!({
+                "claim_id": claim_id,
+                "feedback_id": format!("feedback-{surface}"),
+                "repair_action": "PolicyRepair",
+            }),
+            coalescing_key: Some(coalescing_key),
+            chain_id: None,
+            parent_job_id: None,
+            successor_of_job_id: None,
+            depth: 0,
+            chain_ancestry: Vec::new(),
+            max_attempts: 3,
+            priority: 0,
+            raw_signal_count: 1,
+        }
+    }
+
     #[test]
     fn coalescing_mutates_pending_but_creates_running_successor() {
         let db = test_db();
@@ -1384,6 +1480,52 @@ mod tests {
         assert_eq!(job.latest_source_claim_version, 2);
         assert_eq!(job.latest_signal_id.as_deref(), Some("sig-2"));
         assert_eq!(job.raw_signal_count, 2);
+    }
+
+    #[test]
+    fn pending_cap_rejects_policy_repair_with_distinct_surface_key() {
+        let db = test_db();
+        seed_account(&db, "acct-policy", 1);
+        let first = db
+            .enqueue_invalidation_job_with_pending_cap(
+                targeted_policy_repair_input("sig-policy-1", "claim-policy", "briefing", 1),
+                1,
+            )
+            .expect("enqueue first surface repair");
+
+        let err = db
+            .enqueue_invalidation_job_with_pending_cap(
+                targeted_policy_repair_input(
+                    "sig-policy-2",
+                    "claim-policy",
+                    "tauri_entity_detail",
+                    2,
+                ),
+                1,
+            )
+            .expect_err("distinct surface repair should reject at cap");
+        assert!(
+            matches!(
+                err,
+                DbError::InvalidArgument(ref message)
+                    if message.contains("invalidation queue pending cap 1 reached")
+            ),
+            "expected visible InvalidArgument cap rejection, got {err}"
+        );
+
+        let job = db
+            .get_invalidation_job(&first.job_id)
+            .expect("read first surface job")
+            .expect("first surface job");
+        let payload: serde_json::Value =
+            serde_json::from_str(&job.payload_json).expect("payload json");
+        assert_eq!(
+            payload
+                .get("feedback_id")
+                .and_then(serde_json::Value::as_str),
+            Some("feedback-briefing")
+        );
+        assert_eq!(job.raw_signal_count, 1);
     }
 
     #[test]
