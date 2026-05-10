@@ -10,6 +10,7 @@ pub enum RenderSurface {
     TauriBriefingPrep,
     TauriMeetingDetail,
     TauriEmailSummary,
+    Action,
     TauriProvenance,
     TauriReport,
     TauriChat,
@@ -20,13 +21,16 @@ pub enum RenderSurface {
     PushNotification,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize, JsonSchema,
+)]
 #[serde(rename_all = "snake_case")]
 pub enum ClaimDismissalSurface {
     TauriEntityDetail,
     Briefing,
     TauriMeetingDetail,
     TauriEmailSummary,
+    Action,
     TauriProvenance,
     TauriReport,
     TauriChat,
@@ -48,6 +52,7 @@ impl ClaimDismissalSurface {
             Self::Briefing => "briefing",
             Self::TauriMeetingDetail => "tauri_meeting_detail",
             Self::TauriEmailSummary => "tauri_email_summary",
+            Self::Action => "action",
             Self::TauriProvenance => "tauri_provenance",
             Self::TauriReport => "tauri_report",
             Self::TauriChat => "tauri_chat",
@@ -67,6 +72,7 @@ impl ClaimDismissalSurface {
             "briefing" | "tauri_briefing_prep" | "briefing_prep" => Some(Self::Briefing),
             "tauri_meeting_detail" | "meeting_detail" => Some(Self::TauriMeetingDetail),
             "tauri_email_summary" | "email_summary" => Some(Self::TauriEmailSummary),
+            "action" | "actions" | "tauri_action" | "tauri_actions" => Some(Self::Action),
             "tauri_provenance" | "provenance" => Some(Self::TauriProvenance),
             "tauri_report" | "report" => Some(Self::TauriReport),
             "tauri_chat" | "chat" => Some(Self::TauriChat),
@@ -89,6 +95,7 @@ impl From<RenderSurface> for ClaimDismissalSurface {
             RenderSurface::TauriBriefingPrep => Self::Briefing,
             RenderSurface::TauriMeetingDetail => Self::TauriMeetingDetail,
             RenderSurface::TauriEmailSummary => Self::TauriEmailSummary,
+            RenderSurface::Action => Self::Action,
             RenderSurface::TauriProvenance => Self::TauriProvenance,
             RenderSurface::TauriReport => Self::TauriReport,
             RenderSurface::TauriChat => Self::TauriChat,
@@ -108,6 +115,7 @@ impl RenderSurface {
             "tauri_briefing_prep" | "briefing_prep" => Some(Self::TauriBriefingPrep),
             "tauri_meeting_detail" | "meeting_detail" => Some(Self::TauriMeetingDetail),
             "tauri_email_summary" | "email_summary" => Some(Self::TauriEmailSummary),
+            "action" | "actions" | "tauri_action" | "tauri_actions" => Some(Self::Action),
             "tauri_provenance" | "provenance" => Some(Self::TauriProvenance),
             "tauri_report" | "report" => Some(Self::TauriReport),
             "tauri_chat" | "chat" => Some(Self::TauriChat),
@@ -126,6 +134,7 @@ impl RenderSurface {
             Self::TauriEntityDetail
                 | Self::TauriMeetingDetail
                 | Self::TauriEmailSummary
+                | Self::Action
                 | Self::TauriProvenance
                 | Self::TauriReport
         )
@@ -138,6 +147,7 @@ impl RenderSurface {
                 | Self::TauriBriefingPrep
                 | Self::TauriMeetingDetail
                 | Self::TauriEmailSummary
+                | Self::Action
                 | Self::TauriProvenance
                 | Self::TauriReport
         )

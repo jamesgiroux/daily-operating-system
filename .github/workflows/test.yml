@@ -78,6 +78,7 @@ jobs:
           bash src-tauri/scripts/check_ability_surface_drift.sh
           bash src-tauri/scripts/check_no_live_external_clients_in_eval.sh
           bash src-tauri/scripts/check_fixture_anonymization.sh
+          bash src-tauri/scripts/check_trust_factor_thresholds.sh
           bash scripts/check_prompt_template_registry.sh
           bash scripts/check_prompt_fingerprint_boundary.sh
 

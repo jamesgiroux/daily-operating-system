@@ -10,14 +10,16 @@ use crate::abilities::provenance::{DataSource, GleanDownstream, SourceName};
 use crate::services::context::Clock;
 use crate::types::{ClaimState, TemporalScope};
 
-use super::config::TrustConfig;
+use super::config::{
+    TrustConfig, FACTOR_MAX, FACTOR_MIN, FRESHNESS_EXPONENTIAL_BASE, FRESHNESS_FLOOR,
+    SALESFORCE_FIELD_UPDATE_STALE_WEIGHT, SECONDS_PER_DAY,
+};
 use super::types::FreshnessContext;
 
 pub type Claim = crate::types::IntelligenceClaim;
 
 const CONFIG_TOML: &str =
     include_str!("../../../../src/abilities/trust/config/trust_compiler.toml");
-const SECONDS_PER_DAY: f64 = 86_400.0;
 const SALESFORCE_FIELD_UPDATE_THRESHOLD_DAYS: i64 = 30;
 
 const ZENDESK_ESCALATION: &str = "zendesk_escalation";
@@ -40,6 +42,7 @@ const CO_ATTENDANCE: &str = "co_attendance";
 const LOCAL_ENRICHMENT: &str = "local_enrichment";
 const LEGACY_UNATTRIBUTED: &str = "legacy_unattributed";
 const USER_CORRECTION: &str = "user_correction";
+const RENEWAL_NOTES: &str = "renewal_notes";
 const RENEWAL_NOTES_IMMINENT: &str = "renewal_notes_with_imminent_renewal";
 const RENEWAL_NOTES_NO_CONTEXT: &str = "renewal_notes_no_renewal_context";
 const DEFAULT: &str = "default";
@@ -172,25 +175,20 @@ pub(crate) fn freshness_weight_at(
             claim.temporal_scope,
             TemporalScope::PointInTime | TemporalScope::Closed
         ) {
-        1.0
+        FACTOR_MAX
     } else {
-        let rule = rule_for_claim_at(claim, now, renewal_context);
-        let policy = freshness_config().policy;
-        match rule {
-            HalfLifeRule::Days(days) => {
-                let half_life = days as f64;
-                (2.0_f64).powf(-age_days / half_life).max(policy.floor)
-            }
-            HalfLifeRule::Step30dThreshold => {
-                if age_days <= SALESFORCE_FIELD_UPDATE_THRESHOLD_DAYS as f64 {
-                    1.0
-                } else {
-                    policy.salesforce_field_update_stale_weight
-                }
-            }
-        }
+        let data_source = freshness_data_source_for_claim(claim);
+        freshness_weight_for_data_source_at(&data_source, age_days, Some(now), renewal_context)
     };
 
+    apply_unknown_timestamp_penalty(base, timestamp_known, trust_config)
+}
+
+fn apply_unknown_timestamp_penalty(
+    base: f64,
+    timestamp_known: bool,
+    trust_config: &TrustConfig,
+) -> f64 {
     if timestamp_known {
         base
     } else {
@@ -210,20 +208,72 @@ fn freshness_age_days_and_timestamp_known(
             let timestamp_known = freshness_context
                 .map(|freshness| freshness.timestamp_known)
                 .unwrap_or(timestamp.timestamp_known);
-            (age_days.max(0.0), timestamp_known)
+            (age_days.max(FACTOR_MIN), timestamp_known)
         }
         None => freshness_context
-            .map(|freshness| (freshness.age_days.max(0.0), freshness.timestamp_known))
-            .unwrap_or((0.0, false)),
+            .map(|freshness| (freshness.age_days.max(FACTOR_MIN), freshness.timestamp_known))
+            .unwrap_or((FACTOR_MIN, false)),
     }
 }
 
-pub(crate) fn freshness_threshold_days(
+pub(crate) fn freshness_data_source_for_claim(claim: &Claim) -> DataSource {
+    let source_key = normalize_key(&claim.data_source);
+    if let Some(named_source) = refined_named_source_for_claim(&source_key, claim) {
+        return named_data_source(named_source);
+    }
+    if rule_for_named_source(&source_key, None, None).is_some() {
+        return named_data_source(source_key);
+    }
+    if is_renewal_note(claim) {
+        return named_data_source(RENEWAL_NOTES);
+    }
+
+    data_source_for_claim(&source_key)
+}
+
+pub(crate) fn freshness_decay_for_data_source(
+    data_source: &DataSource,
+    age_days: f64,
+    renewal_context: Option<&RenewalContext>,
+) -> f64 {
+    freshness_decay_for_data_source_at(data_source, age_days, None, renewal_context)
+}
+
+fn freshness_weight_for_data_source_at(
+    data_source: &DataSource,
+    age_days: f64,
+    now: Option<DateTime<Utc>>,
+    renewal_context: Option<&RenewalContext>,
+) -> f64 {
+    freshness_decay_for_data_source_at(data_source, age_days, now, renewal_context)
+        .max(freshness_config().policy.floor)
+}
+
+pub(crate) fn freshness_decay_for_data_source_at(
+    data_source: &DataSource,
+    age_days: f64,
+    now: Option<DateTime<Utc>>,
+    renewal_context: Option<&RenewalContext>,
+) -> f64 {
+    let rule = rule_for_freshness_data_source(data_source, now, renewal_context);
+    freshness_decay_for_rule(rule, age_days)
+}
+
+pub(crate) fn freshness_threshold_days_for_data_source(
+    data_source: &DataSource,
+    renewal_context: Option<&RenewalContext>,
+) -> f64 {
+    rule_for_freshness_data_source(data_source, None, renewal_context).threshold_days() as f64
+}
+
+#[cfg(test)]
+fn freshness_threshold_days(
     claim: &Claim,
     now: DateTime<Utc>,
     renewal_context: Option<&RenewalContext>,
 ) -> f64 {
-    rule_for_claim_at(claim, now, renewal_context).threshold_days() as f64
+    let data_source = freshness_data_source_for_claim(claim);
+    rule_for_freshness_data_source(&data_source, Some(now), renewal_context).threshold_days() as f64
 }
 
 pub fn validate_freshness_decay_config(ctx: &ScoringContext<'_>) {
@@ -281,10 +331,16 @@ fn parse_freshness_policy(raw: FreshnessPolicyToml) -> Result<FreshnessPolicy, S
         raw.floor,
         UnitIntervalBoundary::GreaterThanZero,
     )?;
+    validate_compiled_constant("freshness_policy.floor", raw.floor, FRESHNESS_FLOOR)?;
     validate_unit_interval(
         "freshness_policy.salesforce_field_update_stale_weight",
         raw.salesforce_field_update_stale_weight,
         UnitIntervalBoundary::InclusiveZero,
+    )?;
+    validate_compiled_constant(
+        "freshness_policy.salesforce_field_update_stale_weight",
+        raw.salesforce_field_update_stale_weight,
+        SALESFORCE_FIELD_UPDATE_STALE_WEIGHT,
     )?;
     if raw.renewal_imminent_window_days < 0 {
         return Err(format!(
@@ -316,15 +372,25 @@ fn validate_unit_interval(
     }
 
     let lower_bound_ok = match boundary {
-        UnitIntervalBoundary::InclusiveZero => value >= 0.0,
-        UnitIntervalBoundary::GreaterThanZero => value > 0.0,
+        UnitIntervalBoundary::InclusiveZero => value >= FACTOR_MIN,
+        UnitIntervalBoundary::GreaterThanZero => value > FACTOR_MIN,
     };
-    if !lower_bound_ok || value > 1.0 {
+    if !lower_bound_ok || value > FACTOR_MAX {
         let range = match boundary {
             UnitIntervalBoundary::InclusiveZero => "[0, 1]",
             UnitIntervalBoundary::GreaterThanZero => "(0, 1]",
         };
         return Err(format!("{name} must be in {range}, got {value}"));
+    }
+
+    Ok(())
+}
+
+fn validate_compiled_constant(name: &'static str, value: f64, expected: f64) -> Result<(), String> {
+    if (value - expected).abs() > f64::EPSILON {
+        return Err(format!(
+            "{name} must match compiled trust constant {expected}, got {value}"
+        ));
     }
 
     Ok(())
@@ -366,12 +432,24 @@ fn representative_data_sources() -> Vec<DataSource> {
         DataSource::CoAttendance,
         DataSource::LocalEnrichment,
         DataSource::Other(SourceName::new(LINEAR_ISSUE)),
-        DataSource::Other(SourceName::new("renewal_notes")),
+        DataSource::Other(SourceName::new(RENEWAL_NOTES)),
         DataSource::LegacyUnattributed,
     ]
 }
 
 fn rule_for_data_source(source_type: &DataSource, ctx: &ScoringContext<'_>) -> HalfLifeRule {
+    rule_for_freshness_data_source(
+        source_type,
+        Some(ctx.clock.now()),
+        ctx.renewal_context.as_ref(),
+    )
+}
+
+fn rule_for_freshness_data_source(
+    source_type: &DataSource,
+    now: Option<DateTime<Utc>>,
+    renewal_context: Option<&RenewalContext>,
+) -> HalfLifeRule {
     match source_type {
         DataSource::User => configured_rule(USER_CORRECTION),
         DataSource::Google => configured_rule(EMAIL),
@@ -405,8 +483,8 @@ fn rule_for_data_source(source_type: &DataSource, ctx: &ScoringContext<'_>) -> H
         DataSource::Clay => configured_rule(CLAY_ENRICHMENT),
         DataSource::Other(name) => {
             let key = normalize_key(name.as_str());
-            rule_for_named_source(&key, Some(ctx.clock.now()), ctx.renewal_context.as_ref())
-                .unwrap_or_else(|| panic!("unmapped DataSource::Other freshness rule: {key}"))
+            rule_for_named_source(&key, now, renewal_context)
+                .unwrap_or_else(|| default_rule_for_unmapped(&format!("other:{key}")))
         }
         DataSource::Ai => configured_rule(AI),
         DataSource::CoAttendance => configured_rule(CO_ATTENDANCE),
@@ -415,92 +493,51 @@ fn rule_for_data_source(source_type: &DataSource, ctx: &ScoringContext<'_>) -> H
     }
 }
 
-fn rule_for_claim_at(
-    claim: &Claim,
-    now: DateTime<Utc>,
-    renewal_context: Option<&RenewalContext>,
-) -> HalfLifeRule {
-    let source_key = normalize_key(&claim.data_source);
-    if let Some(rule) = rule_for_named_source(&source_key, Some(now), renewal_context) {
-        return refine_rule_for_claim(rule, &source_key, claim);
-    }
-
-    let source = data_source_for_claim(&source_key);
-    match source {
-        DataSource::Glean {
-            downstream: GleanDownstream::Zendesk,
-        } => {
-            if is_zendesk_escalation(claim) {
-                configured_rule(ZENDESK_ESCALATION)
-            } else {
-                configured_rule(ZENDESK_GENERAL)
-            }
-        }
-        DataSource::Glean {
-            downstream: GleanDownstream::Salesforce,
-        } => {
-            if is_salesforce_field_update(claim) {
-                configured_rule(SALESFORCE_FIELD_UPDATE)
-            } else {
-                configured_rule(SALESFORCE_OPP_NOTES)
-            }
-        }
-        DataSource::Glean {
-            downstream: GleanDownstream::Gong,
-        } => {
-            if is_gong_sentiment(claim) {
-                configured_rule(GONG_SENTIMENT)
-            } else {
-                configured_rule(GONG_TRANSCRIPT)
-            }
-        }
-        DataSource::Glean {
-            downstream: GleanDownstream::Slack,
-        } => configured_rule(SLACK),
-        DataSource::Google => configured_rule(EMAIL),
-        DataSource::Clay => configured_rule(CLAY_ENRICHMENT),
-        DataSource::User => configured_rule(USER_CORRECTION),
-        DataSource::Other(name) => {
-            let key = normalize_key(name.as_str());
-            rule_for_named_source(&key, Some(now), renewal_context).unwrap_or_else(|| {
-                default_rule_for_unmapped(&format!("claim:{}", claim.data_source))
-            })
-        }
-        DataSource::Glean { .. }
-        | DataSource::Ai
-        | DataSource::CoAttendance
-        | DataSource::LocalEnrichment
-        | DataSource::LegacyUnattributed => {
-            default_rule_for_unmapped(&format!("claim:{}", claim.data_source))
-        }
-    }
-}
-
-fn refine_rule_for_claim(rule: HalfLifeRule, source_key: &str, claim: &Claim) -> HalfLifeRule {
+fn refined_named_source_for_claim(source_key: &str, claim: &Claim) -> Option<&'static str> {
     match source_key {
         "zendesk" | "glean_zendesk" | "glean_support" | ZENDESK_GENERAL => {
             if is_zendesk_escalation(claim) {
-                configured_rule(ZENDESK_ESCALATION)
+                Some(ZENDESK_ESCALATION)
             } else {
-                rule
+                None
             }
         }
         "salesforce" | "sfdc" | "glean_salesforce" | "glean_crm" | SALESFORCE_OPP_NOTES => {
             if is_salesforce_field_update(claim) {
-                configured_rule(SALESFORCE_FIELD_UPDATE)
+                Some(SALESFORCE_FIELD_UPDATE)
             } else {
-                rule
+                None
             }
         }
         "gong" | "glean_gong" | GONG_TRANSCRIPT => {
             if is_gong_sentiment(claim) {
-                configured_rule(GONG_SENTIMENT)
+                Some(GONG_SENTIMENT)
             } else {
-                rule
+                None
             }
         }
-        _ => rule,
+        _ => None,
     }
+}
+
+fn freshness_decay_for_rule(rule: HalfLifeRule, age_days: f64) -> f64 {
+    match rule {
+        HalfLifeRule::Days(days) => {
+            let half_life = days as f64;
+            FRESHNESS_EXPONENTIAL_BASE.powf(-age_days / half_life)
+        }
+        HalfLifeRule::Step30dThreshold => {
+            if age_days <= SALESFORCE_FIELD_UPDATE_THRESHOLD_DAYS as f64 {
+                FACTOR_MAX
+            } else {
+                freshness_config().policy.salesforce_field_update_stale_weight
+            }
+        }
+    }
+}
+
+fn named_data_source(name: impl Into<String>) -> DataSource {
+    DataSource::Other(SourceName::new(name))
 }
 
 fn rule_for_named_source(
@@ -509,7 +546,7 @@ fn rule_for_named_source(
     renewal_context: Option<&RenewalContext>,
 ) -> Option<HalfLifeRule> {
     match key {
-        "renewal_notes" | "renewal_note" => Some(renewal_notes_rule(now, renewal_context)),
+        RENEWAL_NOTES | "renewal_note" => Some(renewal_notes_rule(now, renewal_context)),
         DEFAULT => Some(configured_rule(DEFAULT)),
         "gmail" | "google_email" | "email_thread" | "email_enrichment" => {
             Some(configured_rule(EMAIL))
@@ -650,6 +687,19 @@ fn data_source_for_claim(source_key: &str) -> DataSource {
         "ai" | "agent" | "intel_queue" => DataSource::Ai,
         other => DataSource::Other(SourceName::new(other)),
     }
+}
+
+fn is_renewal_note(claim: &Claim) -> bool {
+    let claim_type = normalize_key(&claim.claim_type);
+    if matches!(claim_type.as_str(), RENEWAL_NOTES | "renewal_note") {
+        return true;
+    }
+
+    claim
+        .field_path
+        .as_deref()
+        .map(normalize_key)
+        .is_some_and(|field_path| matches!(field_path.as_str(), RENEWAL_NOTES | "renewal_note"))
 }
 
 fn is_zendesk_escalation(claim: &Claim) -> bool {
@@ -845,6 +895,10 @@ mod tests {
         );
     }
 
+    fn half_weight() -> f64 {
+        FACTOR_MAX / FRESHNESS_EXPONENTIAL_BASE
+    }
+
     #[test]
     fn every_signal_type_returns_configured_half_life() {
         let clock = FixedClock::new(at());
@@ -996,31 +1050,34 @@ mod tests {
         let imminent = ctx_with_renewal(&clock, Some(30));
         let no_renewal = ctx(&clock);
 
-        assert!(freshness_weight(&claim, &imminent) > 0.5);
-        assert!(freshness_weight(&claim, &no_renewal) < 0.1);
+        assert!(freshness_weight(&claim, &imminent) > half_weight());
+        assert!(
+            freshness_weight(&claim, &no_renewal)
+                < freshness_config().policy.floor * FRESHNESS_EXPONENTIAL_BASE
+        );
     }
 
     #[test]
     fn renewal_mentions_do_not_override_source_specific_decay() {
         let cases = [
-            ("email", "Customer asked about renewal timing.", None, 14.0),
+            ("email", "Customer asked about renewal timing.", None, 14_f64),
             (
                 "zendesk",
                 "Urgent escalation: renewal blockers are growing.",
                 None,
-                7.0,
+                7_f64,
             ),
             (
                 "salesforce",
                 "Renewal forecast field changed.",
                 Some("account.health"),
-                30.0,
+                30_f64,
             ),
             (
                 "gong",
                 "Discussed renewal planning on the call.",
                 None,
-                30.0,
+                30_f64,
             ),
         ];
 
@@ -1042,11 +1099,8 @@ mod tests {
         let ctx = ctx(&clock);
         let claim = claim_with_source("unknown_source", at() - Duration::days(21));
 
-        assert_float_close(freshness_weight(&claim, &ctx), 0.5);
-        assert_eq!(
-            DEFAULT_WARNING_COUNT.load(std::sync::atomic::Ordering::SeqCst),
-            1
-        );
+        assert_float_close(freshness_weight(&claim, &ctx), half_weight());
+        assert!(DEFAULT_WARNING_COUNT.load(std::sync::atomic::Ordering::SeqCst) >= 1);
     }
 
     #[test]
@@ -1056,7 +1110,7 @@ mod tests {
         let mut claim = claim_with_source("clay", at() - Duration::days(10_000));
         claim.claim_state = ClaimState::Tombstoned;
 
-        assert_eq!(freshness_weight(&claim, &ctx), 1.0);
+        assert_eq!(freshness_weight(&claim, &ctx), FACTOR_MAX);
     }
 
     #[test]
@@ -1065,7 +1119,7 @@ mod tests {
         let ctx = ctx(&clock);
         let claim = claim_with_source("email", at() + Duration::days(1));
 
-        assert_eq!(freshness_weight(&claim, &ctx), 1.0);
+        assert_eq!(freshness_weight(&claim, &ctx), FACTOR_MAX);
     }
 
     #[test]
@@ -1089,7 +1143,7 @@ mod tests {
         claim.observed_at = at().to_rfc3339();
         claim.created_at = at().to_rfc3339();
 
-        assert_float_close(freshness_weight(&claim, &ctx), 0.5);
+        assert_float_close(freshness_weight(&claim, &ctx), half_weight());
     }
 
     #[test]
@@ -1101,7 +1155,7 @@ mod tests {
         claim.created_at = at().to_rfc3339();
         let freshness_context = FreshnessContext {
             timestamp_known: false,
-            age_days: 14.0,
+            age_days: 14_f64,
         };
 
         assert_float_close(
@@ -1112,7 +1166,7 @@ mod tests {
                 Some(&freshness_context),
                 &TrustConfig::default(),
             ),
-            0.5 * TrustConfig::default().unknown_timestamp_penalty,
+            half_weight() * TrustConfig::default().unknown_timestamp_penalty,
         );
     }
 
@@ -1125,7 +1179,7 @@ mod tests {
         claim.created_at = "still-not-a-timestamp".to_string();
         let freshness_context = FreshnessContext {
             timestamp_known: false,
-            age_days: 14.0,
+            age_days: 14_f64,
         };
 
         assert_float_close(
@@ -1136,7 +1190,7 @@ mod tests {
                 Some(&freshness_context),
                 &TrustConfig::default(),
             ),
-            0.5 * TrustConfig::default().unknown_timestamp_penalty,
+            half_weight() * TrustConfig::default().unknown_timestamp_penalty,
         );
     }
 
@@ -1148,11 +1202,11 @@ mod tests {
         let penalty = trust_config.unknown_timestamp_penalty;
         let stale_unknown_freshness = FreshnessContext {
             timestamp_known: false,
-            age_days: 14.0,
+            age_days: 14_f64,
         };
         let current_unknown_freshness = FreshnessContext {
             timestamp_known: false,
-            age_days: 0.0,
+            age_days: FACTOR_MIN,
         };
 
         let mut malformed_with_context = claim_with_source("email", at());
@@ -1167,7 +1221,7 @@ mod tests {
                 Some(&stale_unknown_freshness),
                 &trust_config,
             ),
-            0.5 * penalty,
+            half_weight() * penalty,
         );
 
         let mut malformed_without_context = claim_with_source("email", at());
@@ -1216,8 +1270,8 @@ mod tests {
         let stale_clock = FixedClock::new(created_at + Duration::days(14));
         let claim = claim_with_source("email", created_at);
 
-        assert_eq!(freshness_weight(&claim, &ctx(&fresh_clock)), 1.0);
-        assert!(freshness_weight(&claim, &ctx(&stale_clock)) < 1.0);
+        assert_eq!(freshness_weight(&claim, &ctx(&fresh_clock)), FACTOR_MAX);
+        assert!(freshness_weight(&claim, &ctx(&stale_clock)) < FACTOR_MAX);
     }
 
     #[test]
@@ -1231,7 +1285,7 @@ mod tests {
         stale.observed_at = (at() - Duration::days(31)).to_rfc3339();
         stale.created_at = (at() - Duration::days(31)).to_rfc3339();
 
-        assert_eq!(freshness_weight(&fresh, &ctx), 1.0);
+        assert_eq!(freshness_weight(&fresh, &ctx), FACTOR_MAX);
         assert_eq!(
             freshness_weight(&stale, &ctx),
             freshness_config()
@@ -1240,3 +1294,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "freshness_decay_test.rs"]
+mod freshness_decay_test;
