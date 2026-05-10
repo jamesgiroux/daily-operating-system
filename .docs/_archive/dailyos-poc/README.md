@@ -2,7 +2,7 @@
 
 This directory contains the original **DailyOS** CLI proof-of-concept.
 
-**Status:** Archived for reference. Active development has moved to `/daybreak/`.
+**Status:** Archived for reference. Active development is now the native DailyOS app in this repository.
 
 ---
 
@@ -50,14 +50,14 @@ dailyos/
 If you need to reference DailyOS code:
 
 ```bash
-# Python scripts (still used by Daybreak)
-cat _archive/dailyos/templates/scripts/prepare_today.py
+# Python scripts
+cat .docs/_archive/dailyos-poc/dailyos/templates/scripts/prepare_today.py
 
 # Command templates
-cat _archive/dailyos/templates/commands/today.md
+cat .docs/_archive/dailyos-poc/dailyos/templates/commands/today.md
 
 # Agent definitions
-cat _archive/dailyos/templates/agents/
+cat .docs/_archive/dailyos-poc/dailyos/templates/agents/
 ```
 
 ---

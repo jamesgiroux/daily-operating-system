@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Product Vision: DailyOS · DailyOS Foundation</title>
+  <link rel="stylesheet" href="../reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../reference/_shared/chrome.css">
+  <link rel="stylesheet" href="../reference/_shared/inspector.css">
+  <link rel="stylesheet" href="foundation.css">
+</head>
+<body
+  data-folio-label="Foundation"
+  data-folio-crumbs="Reference > Product Foundation > Vision"
+  data-folio-status="Memory plus judgment"
+  data-tint="larkspur"
+  data-active-page="today"
+  data-nav-base="../reference/surfaces"
+  data-chapters="what-dailyos-is:star:What DailyOS Is|what-dailyos-is-not:eye:What DailyOS Is Not|who-dailyos-is-for:crosshair:Who DailyOS Is For|the-core-experience:lightbulb:The Core Experience|what-you-never-do:compass:What You Never Do|the-outcomes:network:The Outcomes|the-trust-problem:star:The Trust Problem|the-gemini-question:eye:The Gemini Question">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="foundation-shell">
+<nav class="foundation-topnav" aria-label="Product foundation">
+  <a class="foundation-mark" href="index.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg> Product foundation</a>
+  <div class="foundation-links"><a href="mission.html">Mission</a>
+<a href="vision.html" data-active="true">Vision</a>
+<a href="product-thesis.html">Product Thesis</a>
+<a href="philosophy.html">Philosophy</a>
+<a href="principles.html">Principles</a>
+<a href="dos-engine-concept.html">DOS Engine</a></div>
+</nav>
+<section class="foundation-cover">
+  <p class="foundation-eyebrow">Vision · Product foundation</p>
+  <h1 class="foundation-title">Product Vision: DailyOS</h1>
+  <p class="foundation-lede">Open the app. Your day is ready.</p>
+  <div class="foundation-meta">
+    <span>15 sections</span>
+    <span>Source: VISION.md</span>
+  </div>
+</section>
+<div class="foundation-layout">
+  <aside class="foundation-toc"><p class="foundation-toc-title">In this document</p><a href="#what-dailyos-is">What DailyOS Is</a><a href="#what-dailyos-is-not">What DailyOS Is Not</a><a href="#who-dailyos-is-for">Who DailyOS Is For</a><a href="#the-core-experience">The Core Experience</a><a href="#what-you-never-do">What You Never Do</a><a href="#the-outcomes">The Outcomes</a><a href="#the-trust-problem">The Trust Problem</a><a href="#the-gemini-question">The Gemini Question</a><a href="#how-it-works">How It Works</a><a href="#the-boundary">The Boundary</a><a href="#the-ecosystem-not-just-the-app">The Ecosystem, Not Just the App</a><a href="#extensibility-vision">Extensibility Vision</a><a href="#beyond-individual-organizational-intelligence">Beyond Individual: Organizational Intelligence</a><a href="#success-criteria">Success Criteria</a><a href="#the-name">The Name</a></aside>
+  <article class="foundation-document">
+    <blockquote><p>Open the app. Your day is ready.</p></blockquote>
+<p>For the company-level mission behind this product vision, see <a href="MISSION.md">Mission: DailyOS</a>.</p>
+<hr>
+<h2 id="what-dailyos-is">What DailyOS Is</h2>
+<p>DailyOS is a native desktop application that gives knowledge workers an AI-powered executive assistant—without requiring them to understand AI, write prompts, or touch a terminal.</p>
+<p><strong>The experience:</strong></p>
+<ol><li>You open the app</li><li>Your day is already prepared</li><li>You read, review, act</li><li>You close the app and do your work</li></ol>
+<p>That's it. No configuration. No commands. No maintenance. The system operated while you weren't looking.</p>
+<hr>
+<h2 id="what-dailyos-is-not">What DailyOS Is Not</h2>
+<p><strong>Not a note-taking app.</strong> We're not competing with Notion or Obsidian on general-purpose note capture. DailyOS is opinionated about productivity workflows, not a blank canvas.</p>
+<p><strong>Not a task manager.</strong> We're not building a better Todoist. Tasks are a byproduct of work, not the center of it. DailyOS surfaces what's relevant; it doesn't demand you manage a backlog.</p>
+<p><strong>Not a calendar app.</strong> We integrate with your calendar; we don't replace it. Google Calendar stays. We make what's on it actionable.</p>
+<p><strong>Not a collaboration tool.</strong> DailyOS is for the alone part of work—individual execution, preparation, synthesis. Collaboration happens in Slack, Docs, meetings. We prepare you for those.</p>
+<p><strong>Not an enterprise knowledge tool.</strong> Enterprise search and workplace AI platforms such as Glean, Microsoft Copilot, and similar tools index what the <em>organisation</em> knows — tickets, docs, CRM records, calls across every system. They answer &quot;what does the company know about this account?&quot; DailyOS answers &quot;what do <em>you</em> know about this account?&quot; These are different questions requiring different architectures. Organisational context systems are the company's knowledge graph. DailyOS is yours. They complement each other; DailyOS can consume organisational context as an enrichment source via connectors or MCP, but DailyOS does not feed personal intelligence back into shared indexes.</p>
+<p><strong>Not a Claude Code replacement.</strong> Power users who want full control can still use Claude Code directly. DailyOS is the consumption layer on top of the same primitives.</p>
+<hr>
+<h2 id="who-dailyos-is-for">Who DailyOS Is For</h2>
+<h3 id="the-primary-user">The Primary User</h3>
+<p><strong>Knowledge workers whose only AI experience is ChatGPT or Copilot.</strong></p>
+<p>They know how to ask a question and get output. That's the extent of their AI literacy. They don't know how to build systems, write sophisticated prompts, or structure workflows.</p>
+<p><strong>Their day looks like this:</strong></p>
+<ul><li>Move from app to app (Salesforce → Glean → Gong → Slack → Docs)</li><li>Collect information from each silo manually</li><li>Synthesize in their head</li><li>Action toward some outcome</li><li>Repeat</li></ul>
+<p><strong>What they wish for:</strong></p>
+<ul><li>&quot;I wish I could just ask about [topic] and the system would know where to look&quot;</li><li>&quot;I wish I didn't have to spend 20 minutes prepping for every meeting&quot;</li><li>&quot;I wish my action items didn't fall through the cracks&quot;</li><li>&quot;I wish I could remember what happened in that meeting 3 months ago&quot;</li></ul>
+<p><strong>Tools they've tried and abandoned:</strong></p>
+<ul><li>Todoist (set up perfectly, never used)</li><li>Notion (built a system, didn't maintain it)</li><li>Asana (too much overhead)</li><li>All of them (the guilt loop)</li></ul>
+<h3 id="the-secondary-user">The Secondary User</h3>
+<p><strong>Technical users who want the benefits without the terminal.</strong></p>
+<p>They could use Claude Code directly. They might, for some things. But for daily productivity, they want to open an app like a normal person and have their day ready.</p>
+<p>They appreciate:</p>
+<ul><li>The automation that runs while they sleep</li><li>The one-click interactions instead of typing commands</li><li>The ability to drop into power-user mode when needed</li><li>The same file system they could access via terminal</li></ul>
+<hr>
+<h2 id="the-core-experience">The Core Experience</h2>
+<h3 id="morning">Morning</h3>
+<p><strong>6:00 AM — The system runs</strong></p>
+<ul><li>Pulls today's calendar</li><li>Gathers context for each meeting</li><li>Surfaces actions due today and overdue</li><li>Summarizes relevant emails</li><li>Compiles into a daily overview</li></ul>
+<p><strong>8:00 AM — You open DailyOS</strong></p>
+<ul><li>Your daily briefing is ready</li><li>Meeting prep cards are populated</li><li>Actions needing attention are surfaced</li><li>You read it with your coffee</li></ul>
+<p><strong>8:15 AM — You're prepared</strong></p>
+<ul><li>Close the app</li><li>Get to work</li></ul>
+<h3 id="during-the-day">During the Day</h3>
+<p><strong>Meeting notification (30 min before)</strong></p>
+<ul><li>&quot;Acme Corp in 30 minutes&quot;</li><li>Click → prep doc appears</li><li>Context, history, talking points ready</li><li>You walk in prepared</li></ul>
+<p><strong>After a meeting</strong></p>
+<ul><li>Drop transcript in inbox folder</li><li>System processes automatically</li><li>Summary, actions, routing handled</li><li>You don't think about it</li></ul>
+<p><strong>Ad-hoc lookup</strong></p>
+<ul><li>&quot;What did we discuss with BigCo last quarter?&quot;</li><li>DailyOS finds it</li><li>Context without searching</li></ul>
+<h3 id="evening">Evening</h3>
+<p><strong>5:30 PM — Background archive</strong></p>
+<ul><li>The system archives today's briefing automatically</li><li>Captures what happened, what carried over</li><li>Tomorrow's briefing runs overnight</li><li>You shut the laptop</li></ul>
+<hr>
+<h2 id="what-you-never-do">What You Never Do</h2>
+<p>In DailyOS, you never:</p>
+<ul><li>Open a terminal</li><li>Type a command</li><li>Write a prompt</li><li>See markdown syntax (unless you want to)</li><li>Configure folder structures</li><li>Set up integrations manually</li><li>Process things into your system</li><li>Feel guilty about skipped days</li></ul>
+<p>The system handles the infrastructure. You handle the decisions.</p>
+<hr>
+<h2 id="the-outcomes">The Outcomes</h2>
+<h3 id="for-the-user">For the User</h3>
+<table><thead><tr><th>Before DailyOS</th><th>After DailyOS</th></tr></thead><tbody><tr><td>30 min prepping for meetings</td><td>Already prepared</td></tr><tr><td>Actions fall through cracks</td><td>Actions surface when relevant</td></tr><tr><td>Context requires searching</td><td>Context is presented</td></tr><tr><td>&quot;I know it's somewhere&quot;</td><td>&quot;It's right here&quot;</td></tr><tr><td>Guilty about unused systems</td><td>System keeps up with you</td></tr></tbody></table>
+<h3 id="measurable-goals">Measurable Goals</h3>
+<ul><li><strong>Meeting prep time:</strong> 30 min → 5 min</li><li><strong>Action drop rate:</strong> Reduced 80%</li><li><strong>Context retrieval:</strong> Instant vs. hunting</li><li><strong>System maintenance time:</strong> Zero</li></ul>
+<h3 id="the-emotional-outcome">The Emotional Outcome</h3>
+<blockquote><p>&quot;I feel like I have an assistant who actually knows what's going on.&quot;</p></blockquote>
+<p>That's the feeling we're designing for. Not &quot;productive&quot; in an abstract sense. Actually supported. Actually prepared. Actually on top of things—because the system is on top of things for you.</p>
+<hr>
+<h2 id="the-trust-problem">The Trust Problem</h2>
+<p>Users have been burned. Every productivity tool promised to change their life. Every one became a maintenance burden or got abandoned.</p>
+<p><strong>How we earn trust:</strong></p>
+<p><strong>1. Immediate value, no setup</strong> The first experience is &quot;here's something useful&quot; not &quot;let's configure your workspace.&quot; Value before investment.</p>
+<p><strong>2. Demonstrated forgiveness</strong> Early in the experience, show that skipping a day doesn't break anything. &quot;Welcome back. Here's today.&quot; Not &quot;You missed 3 days. Here's your backlog.&quot;</p>
+<p><strong>3. Low switching cost</strong> Your data is markdown files. Don't like DailyOS? Take your files and go. No lock-in. No hostage data. This reduces the risk of trying it.</p>
+<p><strong>4. Visible results</strong> When you walk into a meeting prepared and someone asks &quot;how did you know that?&quot;—that's the moment DailyOS sells itself. Word of mouth from visible results.</p>
+<hr>
+<h2 id="the-gemini-question">The Gemini Question</h2>
+<p>Google will add AI synthesis to Calendar. Microsoft will add it to Outlook. Every integrated platform will eventually show you a smart summary when you click a meeting. Why choose DailyOS?</p>
+<p><strong>For most users: continuity across time.</strong></p>
+<p>Google shows you a snapshot when you click a calendar event. Smart, contextual, maybe even good. But it's moment-in-time intelligence — it knows what's on the invite and what's in your recent emails.</p>
+<p>DailyOS had your prep ready before you woke up. It tracked the three action items from your last meeting with that account. It noticed the renewal is next quarter and the engagement score has been declining. It flagged that their champion went quiet two weeks ago. It connected yesterday's support escalation to the executive sponsor's email from last month.</p>
+<p>Google gives you intelligence about a moment. DailyOS gives you operational memory with continuity — what happened, what's happening, what's about to matter, maintained continuously whether you're paying attention or not.</p>
+<p>Integrated tools have real advantages: zero setup, free, already where you are. We don't pretend otherwise. But they'll always be constrained to their own data and the current moment. They can't maintain a cross-source, cross-time view of your professional relationships because that's not their job. It's ours.</p>
+<p><strong>For power users: ownership and portability.</strong></p>
+<p>Your brain shouldn't have a landlord. When Google falls behind or Claude becomes better than Gemini, your intelligence shouldn't be trapped. Your data is yours, in files you control, readable by any AI tool, portable to any future system.</p>
+<p>This is the retention answer, not the acquisition answer. People won't choose DailyOS because &quot;I own my files&quot; — they'll choose it because it knows things Google can't. They'll <em>stay</em> because they own everything it built for them.</p>
+<hr>
+<h2 id="how-it-works">How It Works</h2>
+<p>DailyOS is a native desktop app built with Tauri (Rust + React). All data processing happens locally on your machine.</p>
+<p><strong>The architecture:</strong></p>
+<ul><li><strong>Rust backend</strong> fetches your Google Calendar and Gmail, processes transcripts, manages the working store</li><li><strong>Claude Code CLI</strong> (your existing subscription) handles AI enrichment — meeting prep, email triage, entity intelligence, briefing synthesis</li><li><strong>Markdown + JSON files</strong> you own are the durable archive — readable by any AI tool, any text editor, any future system</li><li><strong>SQLite</strong> serves as the working store for fast queries and cross-referencing</li></ul>
+<p>No cloud service. No API keys to manage. No vendor lock-in on your data.</p>
+<hr>
+<h2 id="the-boundary">The Boundary</h2>
+<p>DailyOS is for the alone part of knowledge work. The boundary is where individual preparation meets group collaboration.</p>
+<p><strong>DailyOS's job:</strong></p>
+<ul><li>Prepare you for meetings (your prep, your context)</li><li>Process your transcripts (your summaries, your actions)</li><li>Track your actions (your commitments, your follow-ups)</li><li>Capture your impact (your wins, your evidence)</li></ul>
+<p><strong>Handoff to other tools:</strong></p>
+<ul><li>The meeting itself (Zoom, Meet)</li><li>Shared documents (Google Docs, Notion)</li><li>Team communication (Slack, email)</li><li>Project tracking (Jira, Linear, Asana)</li></ul>
+<p><strong>The integration model:</strong></p>
+<ul><li>Rendered outputs you can copy/paste/share</li><li>Documents ready for wherever they need to go</li><li>Your call on where content ends up</li></ul>
+<hr>
+<h2 id="the-ecosystem-not-just-the-app">The Ecosystem, Not Just the App</h2>
+<p>DailyOS doesn't need to do everything. It needs to be the operational memory layer — the system that proactively maintains your readiness so you never have to ask &quot;what do I need to know?&quot;</p>
+<p>DailyOS is memory plus judgment: it remembers what happened, understands what still matters, and helps the user decide what deserves attention.</p>
+<p><strong>It should just know.</strong> That's the promise. Not &quot;ask me anything&quot; — that's a chatbot. Not &quot;search your files&quot; — that's a search engine. DailyOS should know what you need before you need it, because it's been watching, connecting, and maintaining intelligence continuously across time.</p>
+<p>What makes this possible is the combination of <strong>personal context</strong> (your calendar, your email, your meetings — signals no enterprise tool has permission to synthesize together) and <strong>continuity across time</strong> (not just what's happening now, but what happened last week, last month, last quarter, and what that means for tomorrow).</p>
+<p><strong>The three-layer ecosystem:</strong></p>
+<table><thead><tr><th>Layer</th><th>What</th><th>Examples</th></tr></thead><tbody><tr><td>Domain intelligence</td><td>Tools authoritative in their domain — CRM, transcripts, project tracking, support</td><td>Gong, Salesforce, Gainsight, Linear, Zendesk</td></tr><tr><td>Operational memory</td><td>DailyOS maintains readiness with continuity — briefings, preps, entity intelligence, actions, relationship history</td><td>The app</td></tr><tr><td>Creative/analytical</td><td>AI tools consume the archive for deeper work — reports, strategies, content, analysis</td><td>Claude Desktop, ChatGPT</td></tr></tbody></table>
+<p>There is also an adjacent but distinct layer: <strong>organisational context</strong>. Enterprise search and workplace AI systems index what a company knows across its tools. DailyOS and organisational context tools are complements: those systems know what the organisation has recorded about an account; DailyOS knows what <em>you</em> know. The integration model is one-way consumption — DailyOS can pull organisational context as an enrichment source, enriching entity intelligence with what company systems record. DailyOS does not push personal signals into shared organisational indexes.</p>
+<p>This distinction is important because the most valuable context in DailyOS is irreducibly personal. The brief's quality depends on it being honest, unfiltered, and built from your specific signals — your relationship history, your judgment patterns, your coaching observations. That quality disappears if the intelligence is shared into an organisational layer where users know colleagues and systems can see it.</p>
+<p>Domain tools are the best source for their data. DailyOS is the best synthesizer of <em>your</em> context across all of them — the layer that turns scattered signals into operational readiness, maintained continuously. Creative tools consume what DailyOS maintains to produce artifacts that require deeper thought.</p>
+<p>Strategy consulting? Claude Desktop skill that reads your PARA workspace. Monthly impact report? Any AI tool can synthesize the weekly captures DailyOS archived. GTM plan? Claude reads your account files, your meeting history, your competitive intelligence.</p>
+<p>DailyOS's job is to maintain operational discipline — the self-running system that keeps your intelligence current and your readiness high. Everything else builds on top.</p>
+<h2 id="extensibility-vision">Extensibility Vision</h2>
+<p>Out of the box, DailyOS is opinionated. It makes decisions so you don't have to.</p>
+<p>But knowledge work varies. A CS leader needs different intelligence than a VP of Engineering. Account-based work needs different signals than project-based work.</p>
+<p><strong>Entity Mode:</strong> How you organize your work — account-based, project-based, or both. Determines what you track and how meetings associate with entities.</p>
+<p><strong>Kits:</strong> Domain-specific fields, templates, and vocabulary for your role. CS Kit adds account health and renewal tracking. Sales Kit adds pipeline stages.</p>
+<p><strong>Intelligence:</strong> Analytical perspectives layered on top. Executive Intelligence adds decision framing and delegation tracking. ProDev Intelligence captures personal impact and career narrative.</p>
+<p><strong>Integrations:</strong> Data source connectors via MCP. Gong for transcripts. Salesforce for CRM data. Linear for project tracking.</p>
+<p><strong>Fork and Own:</strong> It's open source (GPL-3.0). Your data is markdown. Take it all and go.</p>
+<hr>
+<h2 id="beyond-individual-organizational-intelligence">Beyond Individual: Organizational Intelligence</h2>
+<p>DailyOS is a personal tool. But when every person on a team maintains excellent operational intelligence, something emerges: the raw material for organizational intelligence that's better than anything a top-down system can produce.</p>
+<p>Consider the biweekly status update. Today, every IC scrambles to remember what they did. A manager synthesizes six hastily-assembled summaries. A director aggregates four managers. By the time it reaches the division report, it's a lossy summary of lossy summaries — and it took the ELT EA a full day to coordinate.</p>
+<p>Now imagine each IC's DailyOS has been capturing wins, customer stories, project milestones, and risk signals in real-time for two weeks. The contribution practically assembles itself. The IC picks 1-3 highlights from what DailyOS already knows. The manager's tool synthesizes the team's contributions into a narrative. At each layer, the human curates — confirming, swapping, elevating. The report cascades from individual to team to group to department to division, with a human touch at every level and clear accountability for every story.</p>
+<p>This is contribution, not surveillance. Each person controls what they publish. The organization gets signal quality that's impossible to achieve top-down, because it's grounded in the richest possible individual context — actual meetings, actual outcomes, actual relationship signals.</p>
+<p><strong>This is future state.</strong> The individual product must work beautifully first. But the architecture enables it: the markdown archive is the contribution mechanism, Kits provide domain-appropriate templates, and Intelligence layers identify what's worth elevating. When individual DailyOS users produce excellent signal, organizational intelligence becomes a consumption problem — and consumption is what AI does best.</p>
+<hr>
+<h2 id="success-criteria">Success Criteria</h2>
+<p>DailyOS succeeds when:</p>
+<ol><li><strong>Users open it daily</strong> — not because they have to, but because it's useful</li><li><strong>Users feel prepared</strong> — walking into meetings with confidence</li><li><strong>Nothing falls through cracks</strong> — actions surfaced, not buried</li><li><strong>Guilt is gone</strong> — the system adapts to them, not vice versa</li><li><strong>They recommend it</strong> — &quot;you need to try this&quot; word of mouth</li></ol>
+<p>DailyOS fails if:</p>
+<ol><li><strong>It becomes another maintenance burden</strong> — we've recreated the problem</li><li><strong>Users feel behind</strong> — guilt loop reappears</li><li><strong>Technical knowledge required</strong> — excluded the primary user</li><li><strong>Data feels trapped</strong> — violated ownership principle</li><li><strong>It's just a pretty CLI</strong> — didn't actually remove the friction</li></ol>
+<hr>
+<h2 id="the-name">The Name</h2>
+<p><strong>DailyOS</strong> — an operating system for your day.</p>
+<p>It's the layer that manages your daily work. It prepares, processes, and presents—so you can focus on the work that matters.</p>
+<p>You open DailyOS. Your day is ready. You're prepared.</p>
+<hr>
+<p><em>The system operates, you leverage. Open the app, your day is ready.</em></p>
+    <nav class="foundation-next" aria-label="Adjacent foundation documents">
+      <a href="mission.html"><span class="foundation-next-label">Previous</span><span class="foundation-next-title">Mission</span></a>
+      <a href="product-thesis.html"><span class="foundation-next-label">Next</span><span class="foundation-next-title">Product Thesis</span></a>
+    </nav>
+  </article>
+</div>
+<section class="finis">
+  <div class="finis-mark">✱ ✱ ✱</div>
+  <p class="finis-caption">Memory plus judgment.</p>
+</section>
+</div>
+</main>
+</div>
+<script src="../reference/_shared/chrome.js"></script>
+<script src="../reference/_shared/inspector.js"></script>
+</body>
+</html>

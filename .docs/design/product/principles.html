@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Design Principles · DailyOS Foundation</title>
+  <link rel="stylesheet" href="../reference/_shared/fonts.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/design-tokens.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/AtmosphereLayer.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/FolioBar.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/FloatingNavIsland.module.css">
+  <link rel="stylesheet" href="../reference/_shared/styles/MagazinePageLayout.module.css">
+  <link rel="stylesheet" href="../reference/_shared/chrome.css">
+  <link rel="stylesheet" href="../reference/_shared/inspector.css">
+  <link rel="stylesheet" href="foundation.css">
+</head>
+<body
+  data-folio-label="Foundation"
+  data-folio-crumbs="Reference > Product Foundation > Principles"
+  data-folio-status="Memory plus judgment"
+  data-tint="olive"
+  data-active-page="today"
+  data-nav-base="../reference/surfaces"
+  data-chapters="the-prime-directive:star:The Prime Directive|principle-1-zero-guilt-by-default:eye:Principle 1: Zero-Guilt by Default|principle-2-prepared-not-empty:crosshair:Principle 2: Prepared, Not Empty|principle-3-it-should-just-know:lightbulb:Principle 3: It Should Just Know|principle-4-buttons-not-commands:compass:Principle 4: Buttons, Not Commands|principle-5-opinionated-defaults-escapable-constraints:network:Principle 5: Opinionated Defaults, Escapable Constraints|principle-6-local-first-always:star:Principle 6: Local-First, Always|principle-7-ai-native-not-ai-assisted:eye:Principle 7: AI-Native, Not AI-Assisted">
+<div class="MagazinePageLayout_magazinePage">
+<main class="MagazinePageLayout_pageContainer">
+<div class="foundation-shell">
+<nav class="foundation-topnav" aria-label="Product foundation">
+  <a class="foundation-mark" href="index.html"><svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 433 407" width="16" height="16" aria-hidden="true"><path d="M159 407 161 292 57 355 0 259 102 204 0 148 57 52 161 115 159 0H273L271 115L375 52L433 148L331 204L433 259L375 355L271 292L273 407Z" fill="currentColor"/></svg> Product foundation</a>
+  <div class="foundation-links"><a href="mission.html">Mission</a>
+<a href="vision.html">Vision</a>
+<a href="product-thesis.html">Product Thesis</a>
+<a href="philosophy.html">Philosophy</a>
+<a href="principles.html" data-active="true">Principles</a>
+<a href="dos-engine-concept.html">DOS Engine</a></div>
+</nav>
+<section class="foundation-cover">
+  <p class="foundation-eyebrow">Principles · Product foundation</p>
+  <h1 class="foundation-title">Design Principles</h1>
+  <p class="foundation-lede"><strong>The system operates. You leverage.</strong></p>
+  <div class="foundation-meta">
+    <span>17 sections</span>
+    <span>Source: PRINCIPLES.md</span>
+  </div>
+</section>
+<div class="foundation-layout">
+  <aside class="foundation-toc"><p class="foundation-toc-title">In this document</p><a href="#the-prime-directive">The Prime Directive</a><a href="#principle-1-zero-guilt-by-default">Principle 1: Zero-Guilt by Default</a><a href="#principle-2-prepared-not-empty">Principle 2: Prepared, Not Empty</a><a href="#principle-3-it-should-just-know">Principle 3: It Should Just Know</a><a href="#principle-4-buttons-not-commands">Principle 4: Buttons, Not Commands</a><a href="#principle-5-opinionated-defaults-escapable-constraints">Principle 5: Opinionated Defaults, Escapable Constraints</a><a href="#principle-6-local-first-always">Principle 6: Local-First, Always</a><a href="#principle-7-ai-native-not-ai-assisted">Principle 7: AI-Native, Not AI-Assisted</a><a href="#principle-8-consumption-over-production">Principle 8: Consumption Over Production</a><a href="#principle-9-forgiveness-built-in">Principle 9: Forgiveness Built In</a><a href="#principle-10-show-the-work-hide-the-plumbing">Principle 10: Show the Work, Hide the Plumbing</a><a href="#principle-11-outcomes-over-activity">Principle 11: Outcomes Over Activity</a><a href="#principle-12-individual-context-is-not-organisational-property">Principle 12: Individual Context Is Not Organisational Property</a><a href="#principle-13-the-three-knowledge-layers">Principle 13: The Three Knowledge Layers</a><a href="#decision-framework">Decision Framework</a><a href="#anti-patterns-to-avoid">Anti-Patterns to Avoid</a><a href="#principles-in-tension">Principles in Tension</a></aside>
+  <article class="foundation-document">
+    <p>These principles guide every decision we make. When facing a tradeoff, these are the tiebreakers. When reviewing a feature, these are the criteria. When something feels wrong, one of these is probably being violated.</p>
+<hr>
+<h2 id="the-prime-directive">The Prime Directive</h2>
+<blockquote><p><strong>The system operates. You leverage.</strong></p></blockquote>
+<p>If a feature requires the user to maintain it, it's wrong. If the user has to remember to do something for the system to work, it's wrong. If skipping a day creates debt, it's wrong.</p>
+<p>The system does the work. The user benefits from the work.</p>
+<hr>
+<h2 id="principle-1-zero-guilt-by-default">Principle 1: Zero-Guilt by Default</h2>
+<p><strong>Every feature must pass the guilt test:</strong></p>
+<ol><li>What happens if the user doesn't use this for a week?</li><li>Does it create accumulated backlog?</li><li>Does it require catching up?</li><li>Does it make the user feel bad about themselves?</li></ol>
+<p>If any answer is &quot;yes,&quot; redesign the feature.</p>
+<p><strong>Examples:</strong></p>
+<table><thead><tr><th>Guilty Design</th><th>Zero-Guilt Design</th></tr></thead><tbody><tr><td>Daily task list that grows if unreviewed</td><td>Tasks surface when relevant, archive automatically</td></tr><tr><td>Inbox count showing 47 unprocessed items</td><td>System processes automatically, shows what needs attention</td></tr><tr><td>&quot;You haven't logged in for 5 days&quot;</td><td>Pick up where you are, not where you left off</td></tr><tr><td>Streak counters</td><td>No streaks. Consistency isn't the goal. Outcomes are.</td></tr></tbody></table>
+<p><strong>The principle:</strong> Missing a day should be invisible, not punishing.</p>
+<hr>
+<h2 id="principle-2-prepared-not-empty">Principle 2: Prepared, Not Empty</h2>
+<p><strong>The default state is &quot;ready,&quot; not &quot;waiting.&quot;</strong></p>
+<p>When the user opens DailyOS, things should already be done:</p>
+<ul><li>Daily briefing: already generated</li><li>Meeting prep: already pulled together</li><li>Actions due: already surfaced</li><li>Email summary: already compiled</li></ul>
+<p>The user's first interaction is consumption, not configuration. Reading, not prompting. Reviewing, not gathering.</p>
+<p><strong>The principle:</strong> Don't show an empty state that requires user labor to fill.</p>
+<hr>
+<h2 id="principle-3-it-should-just-know">Principle 3: It Should Just Know</h2>
+<p><strong>If the context exists, the system should connect it — not wait for you to ask.</strong></p>
+<p>The user shouldn't be the one stitching together who they're meeting with, what they discussed last quarter, which account is at risk, and what follow-up they promised. That context exists across their calendar, email, CRM, and meeting notes. The system should cross-reference it continuously.</p>
+<p>This is distinct from production (Principle 2). Production means the briefing is on your desk. Knowing means understanding <em>why</em> that briefing matters — right now, in the context of everything else.</p>
+<table><thead><tr><th>Reactive</th><th>Proactive Intelligence</th></tr></thead><tbody><tr><td>User searches for last meeting with contact</td><td>System links contact to meeting history automatically</td></tr><tr><td>User checks CRM before a call</td><td>Account signals surfaced in meeting prep</td></tr><tr><td>User asks &quot;what did we discuss?&quot;</td><td>Conversation patterns tracked across meetings</td></tr><tr><td>User manually flags an at-risk account</td><td>System notices declining engagement and surfaces it</td></tr></tbody></table>
+<p><strong>The design test:</strong> Is the user manually connecting information that the system already has? If yes, the system should be making that connection automatically.</p>
+<p><strong>The principle:</strong> The system is always paying attention. The user never has to ask &quot;wait, what's the history here?&quot;</p>
+<hr>
+<h2 id="principle-4-buttons-not-commands">Principle 4: Buttons, Not Commands</h2>
+<p><strong>Most actions shouldn't require user interaction at all.</strong></p>
+<p>The hierarchy of interaction:</p>
+<ol><li><strong>Invisible</strong> — It happens without user action (best)</li><li><strong>One-click</strong> — User initiates with minimal effort</li><li><strong>Configuration</strong> — User sets preferences once</li></ol>
+<table><thead><tr><th>Level</th><th>Example</th></tr></thead><tbody><tr><td>Automatic</td><td>Daily briefing generates at 6am</td></tr><tr><td>One-click</td><td>&quot;Run Briefing&quot; button regenerates on demand</td></tr><tr><td>Configuration</td><td>Change briefing time in settings</td></tr></tbody></table>
+<p><strong>The principle:</strong> The best interface is no interface. Automation beats buttons beats configuration.</p>
+<hr>
+<h2 id="principle-5-opinionated-defaults-escapable-constraints">Principle 5: Opinionated Defaults, Escapable Constraints</h2>
+<p><strong>The system should work beautifully out of the box for 80% of users.</strong></p>
+<p>We make decisions so users don't have to. We pick the folder structure. We choose when things run. We decide what surfaces and what archives.</p>
+<p>But we're not a prison.</p>
+<p><strong>Escape hatches exist:</strong></p>
+<ul><li>Don't like the folder structure? Change it.</li><li>Want different timing? Configure it.</li><li>Need something we didn't think of? Build an extension.</li><li>Hate a feature entirely? Turn it off.</li></ul>
+<p><strong>The balance:</strong></p>
+<ul><li>New users get magic without configuration</li><li>Power users get control without fighting the system</li><li>Nobody is trapped</li></ul>
+<p><strong>The principle:</strong> Strong opinions, loosely held. We decide, but you can override.</p>
+<hr>
+<h2 id="principle-6-local-first-always">Principle 6: Local-First, Always</h2>
+<p><strong>Your data lives on your machine.</strong></p>
+<p>Not &quot;synced to your machine.&quot; Not &quot;cached locally.&quot; Actually, primarily, definitively on your machine in files you control.</p>
+<p><strong>Why this matters:</strong></p>
+<ul><li><strong>Speed</strong>: No network latency for basic operations</li><li><strong>Privacy</strong>: Your thoughts don't traverse someone else's servers (beyond AI processing)</li><li><strong>Ownership</strong>: Walk away anytime with everything</li><li><strong>Reliability</strong>: Works offline (except AI features)</li></ul>
+<p><strong>What this means in practice:</strong></p>
+<ul><li>Markdown files, not database rows</li><li>File system is the source of truth</li><li>Sync is user's choice (Git, Dropbox, iCloud, nothing)</li><li>No account required for core functionality</li></ul>
+<p><strong>The principle:</strong> You own your data. We never hold it hostage.</p>
+<hr>
+<h2 id="principle-7-ai-native-not-ai-assisted">Principle 7: AI-Native, Not AI-Assisted</h2>
+<p><strong>AI isn't a feature. It's the foundation.</strong></p>
+<p>The difference:</p>
+<table><thead><tr><th>AI-Assisted</th><th>AI-Native</th></tr></thead><tbody><tr><td>&quot;Click here to generate with AI&quot;</td><td>Generation is the default</td></tr><tr><td>AI is an add-on</td><td>AI is the engine</td></tr><tr><td>User prompts, AI responds</td><td>AI anticipates, user reviews</td></tr><tr><td>Enhancement</td><td>Architecture</td></tr></tbody></table>
+<p><strong>What this means in practice:</strong></p>
+<ul><li>Every output starts as AI-generated, user-refined</li><li>The system runs without user prompting</li><li>AI handles the cognitive overhead layer</li><li>User handles decisions and judgment</li></ul>
+<p><strong>The principle:</strong> Don't add AI to a traditional tool. Build a new kind of tool where AI is assumed.</p>
+<hr>
+<h2 id="principle-8-consumption-over-production">Principle 8: Consumption Over Production</h2>
+<p><strong>Users should spend more time reading than writing.</strong></p>
+<p>The work of gathering, compiling, synthesizing, formatting—that's the system's job. The user's job is reviewing, deciding, acting.</p>
+<p><strong>Time allocation goal:</strong></p>
+<ul><li>80% consuming (reading, reviewing, using outputs)</li><li>20% producing (editing, adding, deciding)</li></ul>
+<p><strong>What this means in practice:</strong></p>
+<ul><li>Outputs are polished, not rough drafts</li><li>Summaries are readable, not raw dumps</li><li>The user edits rather than creates from scratch</li><li>&quot;Good enough to use&quot; is the generation standard</li></ul>
+<p><strong>The principle:</strong> The AI produces, the user consumes. Invert the traditional tool relationship.</p>
+<hr>
+<h2 id="principle-9-forgiveness-built-in">Principle 9: Forgiveness Built In</h2>
+<p><strong>The system recovers gracefully from neglect.</strong></p>
+<p>Users will:</p>
+<ul><li>Not use it for days</li><li>Forget to close out properly</li><li>Skip steps</li><li>Use it inconsistently</li></ul>
+<p>The system must handle all of this without:</p>
+<ul><li>Breaking</li><li>Accumulating debt</li><li>Requiring manual repair</li><li>Making users feel guilty</li></ul>
+<p><strong>Recovery patterns:</strong></p>
+<ul><li>Missed wrap? Next morning catches what's outstanding.</li><li>Stale data? Surface it with a refresh option, don't block.</li><li>Skipped a week? Start fresh from today.</li><li>Orphaned files? Archive silently or surface gently.</li></ul>
+<p><strong>The principle:</strong> Assume inconsistent usage. Design for the user who disappears and returns.</p>
+<hr>
+<h2 id="principle-10-show-the-work-hide-the-plumbing">Principle 10: Show the Work, Hide the Plumbing</h2>
+<p><strong>Users should see outputs, not processes.</strong></p>
+<p>When the system is working:</p>
+<ul><li>Show what was generated</li><li>Show what's ready to use</li><li>Show what needs attention</li></ul>
+<p>Don't show:</p>
+<ul><li>API calls happening</li><li>Files being shuffled</li><li>Agents being invoked</li><li>Processing steps</li></ul>
+<p><strong>The exception:</strong> When something fails or needs input, surface just enough context to resolve it. Then hide it again.</p>
+<p><strong>Power user mode:</strong> Advanced users can opt into seeing the plumbing. But it's opt-in, not default.</p>
+<p><strong>The principle:</strong> Magic, not machinery. The system &quot;just works&quot; until you want to know how.</p>
+<hr>
+<h2 id="principle-11-outcomes-over-activity">Principle 11: Outcomes Over Activity</h2>
+<p><strong>We measure what matters.</strong></p>
+<p>Wrong metrics:</p>
+<ul><li>Days used in a row (streaks encourage guilt)</li><li>Tasks completed (quantity over quality)</li><li>Files created (activity over value)</li><li>Time in app (engagement over outcome)</li></ul>
+<p>Right metrics:</p>
+<ul><li>Meetings entered prepared</li><li>Actions not dropped</li><li>Context available when needed</li><li>Time saved on cognitive overhead</li></ul>
+<p><strong>The principle:</strong> The goal is a more effective user, not a more engaged user. We succeed when they need us less, not more — because the system is working for them whether they open the app or not.</p>
+<hr>
+<h2 id="principle-12-individual-context-is-not-organisational-property">Principle 12: Individual Context Is Not Organisational Property</h2>
+<p>The most valuable context a professional has is irreducibly personal — their relationship history with specific stakeholders, their pattern recognition about which signals matter in which accounts, their accumulated judgment from years of execution. This context cannot be fully captured in a shared index without losing the specificity that makes it signal rather than noise.</p>
+<p><strong>What this means in practice:</strong></p>
+<ul><li>Personal signals (email history, relationship temperature, coaching observations) stay on the user's machine, always</li><li>Sharing happens at the output layer — reports, documents the user has deliberately authored — not the signal layer</li><li>When users know their private observations will be shared or indexed, they stop writing honest ones</li><li>The brief is personal because its quality depends on it being personal</li></ul>
+<p><strong>The test:</strong> Would the intelligence lose value if a colleague could read it? If yes, it belongs in the private layer.</p>
+<p><strong>Applies to:</strong> Everything that feeds the brief. Does not apply to curated report outputs, which the user has intentionally authored for sharing.</p>
+<hr>
+<h2 id="principle-13-the-three-knowledge-layers">Principle 13: The Three Knowledge Layers</h2>
+<p>Enterprise AI tools such as Glean, Copilot, and similar platforms address the organisational knowledge layer. DailyOS addresses the individual context layer. They are complementary, not competing:</p>
+<table><thead><tr><th>Layer</th><th>What it holds</th><th>Who owns it</th></tr></thead><tbody><tr><td>Systems of record</td><td>Outcomes and transactions</td><td>Organisation</td></tr><tr><td>Organisational context</td><td>How the org makes decisions; patterns across roles and deals</td><td>Organisation</td></tr><tr><td><strong>Individual context</strong></td><td>How this person works; their relationships, judgment patterns, signals</td><td><strong>The individual</strong></td></tr></tbody></table>
+<p>DailyOS is the layer 3 tool. Building toward layer 2 — feeding personal intelligence into shared indexes, creating team visibility into personal signals — would undermine the privacy model that makes layer 3 intelligence honest and valuable.</p>
+<p><strong>What this means in practice:</strong></p>
+<ul><li>Organisational context integrations are <em>consumer</em> relationships: DailyOS pulls org context to enrich individual intelligence</li><li>DailyOS does not push personal signals into enterprise search, workplace AI, or any shared index</li><li>These integrations improve the brief by adding what the org knows; they do not share what the individual knows</li></ul>
+<p><strong>The test:</strong> Does this feature move intelligence from layer 3 to layer 2? If yes, it requires explicit user-initiated action (like publishing a report), never automatic pipelines.</p>
+<hr>
+<h2 id="decision-framework">Decision Framework</h2>
+<p>When evaluating any feature, ask:</p>
+<ol><li><strong>Does it operate or wait?</strong> (Must operate)</li><li><strong>What happens if skipped?</strong> (Must forgive)</li><li><strong>Who does the work?</strong> (System, not user)</li><li><strong>Is the default state ready?</strong> (Must be prepared)</li><li><strong>Can it be overridden?</strong> (Must be escapable)</li><li><strong>Does it respect ownership?</strong> (Must be local-first)</li></ol>
+<p>If a feature fails any of these, it needs redesign or rejection.</p>
+<hr>
+<h2 id="anti-patterns-to-avoid">Anti-Patterns to Avoid</h2>
+<table><thead><tr><th>Anti-Pattern</th><th>Why It's Wrong</th></tr></thead><tbody><tr><td>Streak counters</td><td>Creates guilt about breaking streaks</td></tr><tr><td>Unread counts</td><td>Implies obligation to clear</td></tr><tr><td>&quot;You haven't...&quot; notifications</td><td>Shames non-usage</td></tr><tr><td>Empty states requiring setup</td><td>Demands labor before value</td></tr><tr><td>Required daily actions</td><td>Creates debt when skipped</td></tr><tr><td>Irreversible organization</td><td>Traps users in decisions</td></tr><tr><td>Proprietary formats</td><td>Hostage data</td></tr><tr><td>Cloud-required features</td><td>Dependency on our infrastructure</td></tr><tr><td>Engagement optimization</td><td>Wrong goal entirely</td></tr></tbody></table>
+<hr>
+<h2 id="principles-in-tension">Principles in Tension</h2>
+<p>Sometimes principles conflict. Here's how to resolve:</p>
+<p><strong>Zero-guilt vs. Comprehensive capture</strong> → Zero-guilt wins. Better to miss something than create debt.</p>
+<p><strong>Opinionated vs. Flexible</strong> → Opinionated defaults, flexible overrides. Don't make users decide upfront.</p>
+<p><strong>AI automation vs. User control</strong> → Automate by default, but always allow override. Never take actions the user can't undo.</p>
+<p><strong>Local-first vs. Convenience</strong> → Local-first wins. Convenience without ownership is a trap.</p>
+<p><strong>Simplicity vs. Power</strong> → Simple surface, powerful depths. Progressive disclosure, not feature hiding.</p>
+<hr>
+<p><em>These principles are guardrails, not handcuffs. They exist to guide decisions, not prevent good ideas.</em></p>
+    <nav class="foundation-next" aria-label="Adjacent foundation documents">
+      <a href="philosophy.html"><span class="foundation-next-label">Previous</span><span class="foundation-next-title">Philosophy</span></a>
+      <a href="dos-engine-concept.html"><span class="foundation-next-label">Next</span><span class="foundation-next-title">DOS Engine</span></a>
+    </nav>
+  </article>
+</div>
+<section class="finis">
+  <div class="finis-mark">✱ ✱ ✱</div>
+  <p class="finis-caption">Memory plus judgment.</p>
+</section>
+</div>
+</main>
+</div>
+<script src="../reference/_shared/chrome.js"></script>
+<script src="../reference/_shared/inspector.js"></script>
+</body>
+</html>

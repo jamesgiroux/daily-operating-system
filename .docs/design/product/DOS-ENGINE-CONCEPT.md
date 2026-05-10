@@ -38,7 +38,7 @@ Its job is to convert scattered signals into personal intelligence that is:
 - context-aware
 - grounded in the user's actual work
 
-It does not depend on any one source system such as Glean, REDACTED, Gong, or Linear. Those are useful sources, not the source of trust itself.
+It does not depend on any one source system such as Glean, Salesforce, Gong, or Linear. Those are useful sources, not the source of trust itself.
 
 Trust should emerge from the engine's behavior:
 - provenance

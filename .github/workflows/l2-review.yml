@@ -99,6 +99,8 @@ jobs:
             ".githooks/"
           )
 
+          FENCED_FILES=()
+
           hits=()
 
           while IFS= read -r path; do
@@ -117,12 +119,14 @@ jobs:
               esac
             done
 
-            for f in "${FENCED_FILES[@]}"; do
-              if [ "$path" = "$f" ]; then
-                hits+=("$path")
-                continue 2
-              fi
-            done
+            if [ "${#FENCED_FILES[@]}" -gt 0 ]; then
+              for f in "${FENCED_FILES[@]}"; do
+                if [ "$path" = "$f" ]; then
+                  hits+=("$path")
+                  continue 2
+                fi
+              done
+            fi
           done < "$CHANGED_FILES_PATH"
 
           if [ "${#hits[@]}" -eq 0 ]; then

@@ -10,7 +10,7 @@
 
 Work has more information than ever, but very little of it feels personal.
 
-Most tools know a slice of the truth. Your calendar knows where you are supposed to be. Email knows who is asking for what. Glean knows what the organization can see. REDACTED, Linear, Gong, Slack, Docs, and notes each hold their own part of the story.
+Most tools know a slice of the truth. Your calendar knows where you are supposed to be. Email knows who is asking for what. Enterprise search knows what the organization can see. Salesforce, Linear, Gong, Slack, Docs, and notes each hold their own part of the story.
 
 The person doing the work still has to assemble the meaning.
 
@@ -21,6 +21,8 @@ We believe intelligence should not only be powerful, shared, or searchable. It s
 ## The Mission
 
 DailyOS makes intelligence personal.
+
+DailyOS is memory plus judgment.
 
 That means we build the layer that turns scattered work context into personal intelligence: timely, trustworthy, local, and useful before the user has to ask.
 
@@ -52,7 +54,7 @@ The surfaces will change. Today they may look like briefings, meeting prep, acco
 
 The mission is not the surface.
 
-The mission is the personal intelligence underneath: the durable context layer that helps a person show up with memory, judgment, and readiness.
+The mission is the personal intelligence underneath: the durable context layer that helps a person show up with memory, judgment, and readiness. Memory remembers what happened. Judgment helps decide what is current, trustworthy, relevant, and worth acting on.
 
 ## What We Believe
 

@@ -119,7 +119,7 @@ The account manager deserves an EA. The project lead deserves an EA. The individ
 Here's what nobody talks about: enterprise tools don't consolidate—they isolate.
 
 Think about where your information lives right now:
-- Only accessible in REDACTED
+- Only accessible in Salesforce
 - Only accessible in Google Docs
 - Only accessible in Gong
 - Only accessible in Slack
@@ -190,7 +190,7 @@ Your brain shouldn't have a landlord. Your thoughts, your files, your control.
 
 Here's what separates AI-native from digital-native at a fundamental level.
 
-**Digital-native apps hoard data.** REDACTED locks your customer data behind their API. Notion stores your notes in their database. Gong keeps your transcripts in their cloud. Each app builds a moat around your information. The business model depends on it — if you could easily leave, you would.
+**Digital-native apps hoard data.** Salesforce locks your customer data behind their API. Notion stores your notes in their database. Gong keeps your transcripts in their cloud. Each app builds a moat around your information. The business model depends on it — if you could easily leave, you would.
 
 **AI-native apps produce data every AI can consume.**
 
@@ -257,7 +257,7 @@ The most valuable context — the sales director's instinct about why "internal 
 
 **The most valuable context is irreducibly personal.** Individual context cannot be fully captured without degrading it. It cannot be shared without transforming it. It lives in one person's experience, and it belongs to them.
 
-DailyOS is the individual context layer the enterprise AI stack is missing. Not a replacement for organisational knowledge graphs — a complement. Glean knows what your company knows. DailyOS knows what *you* know.
+DailyOS is the individual context layer the enterprise AI stack is missing. Not a replacement for organisational knowledge graphs — a complement. Those systems know what your company knows. DailyOS knows what *you* know.
 
 ---
 
