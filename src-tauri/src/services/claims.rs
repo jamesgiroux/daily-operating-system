@@ -803,8 +803,9 @@ fn compute_semantic_signature_with_qualifiers(
     let qualifiers = qualifiers
         .cloned()
         .unwrap_or_else(|| semantic_high_salience_qualifiers(text));
+    let contraction_normalized = normalize_semantic_contractions(text);
     let mut normalized = String::with_capacity(text.len());
-    for ch in text.chars() {
+    for ch in contraction_normalized.chars() {
         if ch.is_ascii_alphanumeric() {
             normalized.push(ch.to_ascii_lowercase());
         } else {
@@ -857,6 +858,52 @@ fn compute_semantic_signature_with_qualifiers(
     }
 }
 
+fn normalize_semantic_contractions(text: &str) -> String {
+    let mut normalized = String::with_capacity(text.len());
+    let mut token = String::new();
+
+    for ch in text.chars() {
+        if ch.is_ascii_alphanumeric() || ch == '\'' || ch == '\u{2019}' {
+            let ch = if ch == '\u{2019}' {
+                '\''
+            } else {
+                ch.to_ascii_lowercase()
+            };
+            token.push(ch);
+            continue;
+        }
+
+        push_semantic_contraction_expansion(&mut normalized, &token);
+        token.clear();
+        normalized.push(ch);
+    }
+
+    push_semantic_contraction_expansion(&mut normalized, &token);
+    normalized
+}
+
+fn push_semantic_contraction_expansion(normalized: &mut String, token: &str) {
+    if token.is_empty() {
+        return;
+    }
+
+    let expanded = match token {
+        "hasn't" => "has not",
+        "isn't" => "is not",
+        "wasn't" => "was not",
+        "doesn't" => "does not",
+        "don't" => "do not",
+        "didn't" => "did not",
+        "won't" => "will not",
+        "wouldn't" => "would not",
+        "shouldn't" => "should not",
+        "couldn't" => "could not",
+        "can't" => "can not",
+        _ => token,
+    };
+    normalized.push_str(expanded);
+}
+
 fn is_semantic_negator(token: &str) -> bool {
     matches!(token, "not" | "no" | "never" | "without")
 }
@@ -874,6 +921,11 @@ fn is_semantic_stopword(token: &str) -> bool {
             | "being"
             | "by"
             | "currently"
+            | "can"
+            | "could"
+            | "did"
+            | "do"
+            | "does"
             | "due"
             | "for"
             | "from"
@@ -897,6 +949,9 @@ fn is_semantic_stopword(token: &str) -> bool {
             | "was"
             | "were"
             | "with"
+            | "will"
+            | "would"
+            | "should"
             | "yet"
     )
 }
@@ -908,22 +963,34 @@ fn lookup_semantic_term(token: &str, negated: bool) -> Option<(String, SemanticA
 
     let (term, status) = match token {
         "approval" | "approvals" | "signoff" | "signoffs" => {
-            ("approval", SemanticAssertionStatus::Unknown)
-        }
-        "approve" | "approves" | "approved" | "approving" => {
             let status = if negated {
                 SemanticAssertionStatus::Pending
             } else {
-                SemanticAssertionStatus::Confirmed
+                SemanticAssertionStatus::Unknown
             };
             ("approval", status)
         }
+        "approve" | "approves" | "approved" | "approving" => (
+            "approval",
+            semantic_status_with_negation(SemanticAssertionStatus::Confirmed, negated),
+        ),
         "awaiting" | "blocked" | "blocking" | "blocker" | "outstanding" | "pending" | "stalled"
-        | "unapproved" => ("pending", SemanticAssertionStatus::Pending),
-        "need" | "needed" | "needs" => ("pending", SemanticAssertionStatus::Pending),
-        "confirmed" | "complete" | "completed" | "greenlit" | "secured" => {
-            ("confirmed", SemanticAssertionStatus::Confirmed)
-        }
+        | "unapproved" => (
+            "pending",
+            semantic_status_with_negation(SemanticAssertionStatus::Pending, negated),
+        ),
+        "need" | "needed" | "needs" => (
+            "pending",
+            semantic_status_with_negation(SemanticAssertionStatus::Pending, negated),
+        ),
+        "confirm" | "confirms" | "confirmed" | "confirming" | "complete" | "completes"
+        | "completed" | "completing" | "finalise" | "finalised" | "finalises" | "finalising"
+        | "finalize" | "finalized" | "finalizes" | "finalizing" | "greenlight" | "greenlighted"
+        | "greenlighting" | "greenlights" | "greenlit" | "land" | "landed" | "landing"
+        | "lands" | "secure" | "secured" | "secures" | "securing" => (
+            "confirmed",
+            semantic_status_with_negation(SemanticAssertionStatus::Confirmed, negated),
+        ),
         "budget" | "budgets" | "funding" | "funds" => ("budget", SemanticAssertionStatus::Unknown),
         "finance" | "financial" | "cfo" => ("finance", SemanticAssertionStatus::Unknown),
         "phase" | "phases" => ("phase", SemanticAssertionStatus::Unknown),
@@ -938,6 +1005,22 @@ fn lookup_semantic_term(token: &str, negated: bool) -> Option<(String, SemanticA
     };
 
     Some((term.to_string(), status))
+}
+
+fn semantic_status_with_negation(
+    status: SemanticAssertionStatus,
+    negated: bool,
+) -> SemanticAssertionStatus {
+    if !negated {
+        return status;
+    }
+
+    match status {
+        SemanticAssertionStatus::Confirmed => SemanticAssertionStatus::Pending,
+        SemanticAssertionStatus::Pending | SemanticAssertionStatus::Unknown => {
+            SemanticAssertionStatus::Unknown
+        }
+    }
 }
 
 fn semantic_stem(token: &str) -> String {
@@ -1285,11 +1368,35 @@ fn is_semantic_low_salience_token(token: &str) -> bool {
                 | "need"
                 | "needed"
                 | "needs"
+                | "confirm"
+                | "confirms"
                 | "confirmed"
+                | "confirming"
                 | "complete"
+                | "completes"
                 | "completed"
+                | "completing"
+                | "finalise"
+                | "finalised"
+                | "finalises"
+                | "finalising"
+                | "finalize"
+                | "finalized"
+                | "finalizes"
+                | "finalizing"
+                | "greenlight"
+                | "greenlighted"
+                | "greenlighting"
+                | "greenlights"
                 | "greenlit"
+                | "land"
+                | "landed"
+                | "landing"
+                | "lands"
+                | "secure"
                 | "secured"
+                | "secures"
+                | "securing"
                 | "budget"
                 | "budgets"
                 | "funding"
@@ -2181,6 +2288,7 @@ fn load_active_contradicting_claim(
            AND active.claim_type = ?3 \
            AND coalesce(active.field_path, '') = coalesce(?4, '') \
            AND active.claim_state = 'active' \
+           AND active.surfacing_state = 'active' \
            AND active.text <> ?5 \
          ORDER BY active.created_at DESC"
     );
@@ -9428,6 +9536,43 @@ mod tests {
     }
 
     #[test]
+    fn semantic_negation_applies_to_all_confirmed_status_terms() {
+        for term in [
+            "approved",
+            "complete",
+            "completed",
+            "greenlit",
+            "secured",
+            "finalized",
+            "confirmed",
+        ] {
+            let text = format!("Phase 2 budget is not {term} with finance");
+            assert_eq!(
+                compute_semantic_signature(&text).status,
+                SemanticAssertionStatus::Pending,
+                "{term} must honor the negation window"
+            );
+        }
+
+        assert_eq!(
+            compute_semantic_signature("Approval hasn't landed").status,
+            SemanticAssertionStatus::Pending
+        );
+        assert_eq!(
+            compute_semantic_signature("Approval hasn\u{2019}t landed").status,
+            SemanticAssertionStatus::Pending
+        );
+        assert!(!semantic_near_duplicate(
+            "Phase 2 budget is secured with finance",
+            "Phase 2 budget is not secured with finance"
+        ));
+        assert!(semantic_near_duplicate(
+            "Phase 2 budget approval hasn\u{2019}t landed with finance",
+            "Phase 2 budget approval is pending with finance"
+        ));
+    }
+
+    #[test]
     fn commit_claim_preserves_region_qualifiers_after_text_canonicalization() {
         for region in ["US", "EU", "APAC", "EMEA"] {
             let db = test_db();
@@ -9619,6 +9764,56 @@ mod tests {
 
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
         assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_negated_confirmed_status_forks_from_positive_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let primary_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("Phase 2 budget is secured with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &primary_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("Phase 2 budget is not secured with finance"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Forked {
+                primary_claim,
+                contradiction_id,
+                new_claim_id,
+            } => {
+                assert_eq!(primary_claim.id, primary_id);
+                assert_ne!(new_claim_id, primary_id);
+                let edge_count: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT count(*) FROM claim_contradictions WHERE id = ?1",
+                        params![&contradiction_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(edge_count, 1);
+            }
+            other => panic!("negated secured claim must fork, got {other:?}"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+        assert_eq!(claim_contradiction_count(&db), 1);
     }
 
     #[test]
@@ -10062,6 +10257,36 @@ mod tests {
         }
 
         assert_eq!(claim_contradiction_count(&db), 1);
+    }
+
+    #[test]
+    fn contradiction_lookup_ignores_surfacing_dormant_active_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        insert_fixture_claim(
+            &db,
+            "dormant-active",
+            SUBJECT,
+            "risk",
+            "Renewal looks healthy",
+            ClaimState::Active,
+            SurfacingState::Dormant,
+        );
+
+        let result =
+            commit_claim(&ctx, &db, proposal("Renewal at risk due to procurement")).unwrap();
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, "dormant-active"),
+            other => panic!("surfacing-dormant active claim must not fork, got {other:?}"),
+        }
+
+        assert_eq!(claim_contradiction_count(&db), 0);
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_ne!(active[0].id, "dormant-active");
     }
 
     #[test]
