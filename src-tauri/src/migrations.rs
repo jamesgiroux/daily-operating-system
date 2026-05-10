@@ -795,6 +795,12 @@ const MIGRATIONS: &[Migration] = &[
         version: 156,
         apply: migrate_v156_reconcile_claim_shadow_trust_columns,
     },
+    // Reconcile databases that recorded v156 before its c4/c5 shadow trust
+    // repair completed, including c5 rows left with trust_version = 0.
+    Migration::Fn {
+        version: 157,
+        apply: migrate_v157_reconcile_claim_shadow_trust_columns,
+    },
 ];
 
 const V155_SHADOW_TRUST_VERSION: i64 = 1_401_003;
@@ -898,6 +904,11 @@ fn apply_migration_146_signal_events_data_source(
 
 fn verify_required_schema(conn: &Connection) -> Result<(), String> {
     let version = current_version(conn)?;
+    verify_no_live_shadow_trust_v157(
+        conn,
+        "Schema integrity check failed: v157 shadow trust invariant",
+    )?;
+
     if version < 55 {
         return Ok(());
     }
@@ -1105,13 +1116,6 @@ fn verify_required_schema(conn: &Connection) -> Result<(), String> {
                 ));
             }
         }
-    }
-
-    if version >= 156 {
-        verify_no_live_shadow_trust_scores(
-            conn,
-            "Schema integrity check failed: v156 shadow trust invariant",
-        )?;
     }
 
     Ok(())
@@ -1408,6 +1412,44 @@ fn verify_no_live_shadow_trust_scores(conn: &Connection, context: &str) -> Resul
     Ok(())
 }
 
+fn verify_no_live_shadow_trust_v157(conn: &Connection, context: &str) -> Result<(), String> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Ok(());
+    }
+
+    let claim_cols = table_columns(conn, "intelligence_claims")?;
+    for col in [
+        "trust_score",
+        "trust_computed_at",
+        "trust_version",
+        "shadow_trust_version",
+    ] {
+        if !claim_cols.contains(col) {
+            return Ok(());
+        }
+    }
+
+    let violating_rows: i64 = conn
+        .query_row(
+            "SELECT COUNT(*)
+               FROM intelligence_claims
+              WHERE shadow_trust_version IS NOT NULL
+                AND (trust_score IS NOT NULL
+                     OR trust_computed_at IS NOT NULL
+                     OR trust_version IS NOT NULL)",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| format!("{context}: {e}"))?;
+    if violating_rows > 0 {
+        return Err(format!(
+            "{context} found {violating_rows} shadow trust row(s) with non-null live trust columns"
+        ));
+    }
+
+    Ok(())
+}
+
 fn migrate_v40_entity_quality(conn: &Connection) -> Result<(), MigrationError> {
     let db = crate::db::ActionDb::from_conn(conn);
     db.with_transaction(|tx| {
@@ -1680,18 +1722,51 @@ fn migrate_v156_reconcile_claim_shadow_trust_columns(
 
         conn.execute(
             "UPDATE intelligence_claims
-                SET shadow_trust_score = COALESCE(shadow_trust_score, trust_score),
-                    shadow_trust_computed_at = COALESCE(shadow_trust_computed_at, trust_computed_at),
-                    shadow_trust_version = COALESCE(shadow_trust_version, trust_version),
+                SET shadow_trust_score = trust_score,
+                    shadow_trust_computed_at = trust_computed_at,
+                    shadow_trust_version = trust_version,
                     trust_score = NULL,
                     trust_computed_at = NULL,
                     trust_version = 0
-              WHERE trust_version = ?1",
+              WHERE trust_version = ?1
+                AND shadow_trust_version IS NULL",
             [V155_SHADOW_TRUST_VERSION],
         )
         .map_err(|e| format!("reconcile shadow trust columns: {e}"))?;
 
         verify_no_live_shadow_trust_scores(conn, "v156 shadow trust reconciliation")?;
+
+        Ok(())
+    })
+}
+
+fn migrate_v157_reconcile_claim_shadow_trust_columns(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    if !table_exists(conn, "intelligence_claims")? {
+        return Err("intelligence_claims table is missing".to_string());
+    }
+
+    let db = crate::db::ActionDb::from_conn(conn);
+    db.with_transaction(|tx| {
+        let conn = tx.conn_ref();
+        ensure_claim_shadow_trust_columns(conn)?;
+
+        conn.execute(
+            "UPDATE intelligence_claims
+                SET shadow_trust_score = COALESCE(shadow_trust_score, trust_score),
+                    shadow_trust_computed_at = COALESCE(shadow_trust_computed_at, trust_computed_at),
+                    shadow_trust_version = COALESCE(shadow_trust_version, NULLIF(trust_version, 0), ?1),
+                    trust_score = NULL,
+                    trust_computed_at = NULL,
+                    trust_version = NULL
+              WHERE trust_version = ?1
+                 OR trust_version = 0",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .map_err(|e| format!("reconcile v157 shadow trust columns: {e}"))?;
+
+        verify_no_live_shadow_trust_v157(conn, "v157 shadow trust reconciliation")?;
 
         Ok(())
     })
@@ -2341,23 +2416,106 @@ mod tests {
     }
 
     #[test]
-    fn migration_156_reconciles_v155_recorded_without_copy_clear() {
+    fn migration_157_fresh_db_applies_cleanly() {
+        let conn = mem_db();
+
+        let applied = run_migrations(&conn).expect("fresh v157 migration should succeed");
+
+        assert_eq!(applied, MIGRATIONS.len());
+        assert_eq!(current_version(&conn).expect("current version"), 157);
+        verify_no_live_shadow_trust_v157(&conn, "fresh v157 verifier")
+            .expect("fresh database should satisfy v157 invariant");
+    }
+
+    #[test]
+    fn migration_157_clears_v156_trust_version_zero_shadow_rows() {
         let conn = mem_db();
         run_migrations(&conn).expect("build current schema");
-        conn.execute("DELETE FROM schema_version WHERE version >= 156", [])
-            .expect("roll recorded version back to v155");
-        assert_eq!(current_version(&conn).expect("current version"), 155);
+        conn.execute("DELETE FROM schema_version WHERE version >= 157", [])
+            .expect("roll recorded version back to v156");
+        assert_eq!(current_version(&conn).expect("current version"), 156);
 
         conn.execute(
-            "INSERT INTO intelligence_claims /* dos7-allowed: v156 migration fixture seeds v155-recorded live shadow score */ \
+            "INSERT INTO intelligence_claims /* dos7-allowed: v157 migration fixture seeds c5 trust_version=0 state */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version,
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+             VALUES (
+                 'claim-v157-zero-repair',
+                 '{\"kind\":\"account\",\"id\":\"acct-v157-zero\"}',
+                 'summary',
+                 'c5 trust version zero repair',
+                 'claim-v157-zero-repair-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-06T10:00:00Z',
+                 '{}',
+                 0.88,
+                 '2026-05-07T10:00:00Z',
+                 0,
+                 0.51,
+                 '2026-05-06T10:00:00Z',
+                 ?1
+             )",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed c5 zero-version shadow row");
+
+        let applied = run_migrations(&conn).expect("v157 migration should succeed");
+        assert_eq!(applied, 1, "only v157 should be pending");
+        assert_eq!(current_version(&conn).expect("current version"), 157);
+        verify_required_schema(&conn).expect("v157 invariant should pass");
+
+        let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version,
+                        shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
+                   FROM intelligence_claims
+                  WHERE id = 'claim-v157-zero-repair'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .expect("read repaired row");
+        assert_eq!((live_score, live_at, live_version), (None, None, None));
+        assert_eq!(shadow_score, Some(0.51));
+        assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
+        assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
+    }
+
+    #[test]
+    fn migration_157_copies_v156_live_shadow_rows_and_clears_live_columns() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute("DELETE FROM schema_version WHERE version >= 157", [])
+            .expect("roll recorded version back to v156");
+        assert_eq!(current_version(&conn).expect("current version"), 156);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v157 migration fixture seeds v156-recorded live shadow score */ \
              (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
               provenance_json, trust_score, trust_computed_at, trust_version)
              VALUES (
-                 'claim-v156-repair',
-                 '{\"kind\":\"account\",\"id\":\"acct-v156\"}',
+                 'claim-v157-live-repair',
+                 '{\"kind\":\"account\",\"id\":\"acct-v157-live\"}',
                  'summary',
-                 'legacy shadow trust score',
-                 'claim-v156-repair-dedup',
+                 'legacy live shadow trust score',
+                 'claim-v157-live-repair-dedup',
                  'system',
                  'manual',
                  '2026-05-06T10:00:00Z',
@@ -2368,12 +2526,12 @@ mod tests {
              )",
             [V155_SHADOW_TRUST_VERSION],
         )
-        .expect("seed v155-recorded live score");
+        .expect("seed v156-recorded live score");
 
-        let applied = run_migrations(&conn).expect("v156 migration should succeed");
-        assert_eq!(applied, 1, "only v156 should be pending");
-        assert_eq!(current_version(&conn).expect("current version"), 156);
-        verify_required_schema(&conn).expect("v156 invariant should pass");
+        let applied = run_migrations(&conn).expect("v157 migration should succeed");
+        assert_eq!(applied, 1, "only v157 should be pending");
+        assert_eq!(current_version(&conn).expect("current version"), 157);
+        verify_required_schema(&conn).expect("v157 invariant should pass");
 
         let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
             Option<f64>,
@@ -2387,7 +2545,7 @@ mod tests {
                 "SELECT trust_score, trust_computed_at, trust_version,
                         shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
                    FROM intelligence_claims
-                  WHERE id = 'claim-v156-repair'",
+                  WHERE id = 'claim-v157-live-repair'",
                 [],
                 |row| {
                     Ok((
@@ -2401,81 +2559,36 @@ mod tests {
                 },
             )
             .expect("read repaired row");
-        assert_eq!((live_score, live_at, live_version), (None, None, Some(0)));
+        assert_eq!((live_score, live_at, live_version), (None, None, None));
         assert_eq!(shadow_score, Some(0.73));
         assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
         assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
     }
 
     #[test]
-    fn migration_156_clears_live_scores_when_shadow_values_already_exist() {
+    fn verify_no_live_shadow_trust_v157_passes_without_shadow_violations() {
         let conn = mem_db();
-        run_migrations(&conn).expect("build current schema");
-        conn.execute("DELETE FROM schema_version WHERE version >= 156", [])
-            .expect("roll recorded version back to v155");
-        assert_eq!(current_version(&conn).expect("current version"), 155);
-
+        seed_v155_claims_table(
+            &conn,
+            &[
+                "shadow_trust_score",
+                "shadow_trust_computed_at",
+                "shadow_trust_version",
+            ],
+        );
         conn.execute(
-            "INSERT INTO intelligence_claims /* dos7-allowed: v156 migration fixture seeds c3 partial shadow repair state */ \
-             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
-              provenance_json, trust_score, trust_computed_at, trust_version,
+            "INSERT INTO intelligence_claims
+             (id, trust_score, trust_computed_at, trust_version,
               shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
-             VALUES (
-                 'claim-v156-partial-repair',
-                 '{\"kind\":\"account\",\"id\":\"acct-v156-partial\"}',
-                 'summary',
-                 'partial shadow trust repair',
-                 'claim-v156-partial-repair-dedup',
-                 'system',
-                 'manual',
-                 '2026-05-07T10:00:00Z',
-                 '{}',
-                 0.88,
-                 '2026-05-07T10:00:00Z',
-                 ?1,
-                 0.51,
-                 '2026-05-06T10:00:00Z',
-                 ?1
-             )",
+             VALUES
+             ('claim-live-only', 0.67, '2026-05-08T10:00:00Z', 7, NULL, NULL, NULL),
+             ('claim-shadow-only', NULL, NULL, NULL, 0.71, '2026-05-08T11:00:00Z', ?1)",
             [V155_SHADOW_TRUST_VERSION],
         )
-        .expect("seed c3 partial repair row");
+        .expect("seed non-violating trust rows");
 
-        let applied = run_migrations(&conn).expect("v156 migration should succeed");
-        assert_eq!(applied, 1, "only v156 should be pending");
-        assert_eq!(current_version(&conn).expect("current version"), 156);
-        verify_required_schema(&conn).expect("v156 invariant should pass");
-
-        let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
-            Option<f64>,
-            Option<String>,
-            Option<i64>,
-            Option<f64>,
-            Option<String>,
-            Option<i64>,
-        ) = conn
-            .query_row(
-                "SELECT trust_score, trust_computed_at, trust_version,
-                        shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
-                   FROM intelligence_claims
-                  WHERE id = 'claim-v156-partial-repair'",
-                [],
-                |row| {
-                    Ok((
-                        row.get(0)?,
-                        row.get(1)?,
-                        row.get(2)?,
-                        row.get(3)?,
-                        row.get(4)?,
-                        row.get(5)?,
-                    ))
-                },
-            )
-            .expect("read repaired row");
-        assert_eq!((live_score, live_at, live_version), (None, None, Some(0)));
-        assert_eq!(shadow_score, Some(0.51));
-        assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
-        assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
+        verify_no_live_shadow_trust_v157(&conn, "v157 verifier")
+            .expect("non-violating rows should pass");
     }
 
     #[test]
