@@ -811,6 +811,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 158,
         sql: include_str!("migrations/158_dos_276_commitment_alias_remediation.sql"),
     },
+    // Forward repair for databases that already recorded the c3 v156 body:
+    // remove mutable-field aliases invented for tombstoned legacy bridges and
+    // quarantine the legacy row for manual review.
+    Migration::Fn {
+        version: 159,
+        apply: remediate_tombstoned_commitment_bridge_mutable_aliases,
+    },
 ];
 
 #[derive(Clone)]
@@ -837,15 +844,15 @@ struct CommitmentBridgeAliasRemediationRow {
     observed_at: String,
 }
 
-struct CommitmentBridgeAliasBackfillRows {
-    aliases: Vec<CommitmentBridgeAliasBackfillRow>,
-    remediations: Vec<CommitmentBridgeAliasRemediationRow>,
+struct CommitmentBridgeMutableAliasRemediation {
+    remediation: CommitmentBridgeAliasRemediationRow,
+    mutable_derived_commitment_id: Option<String>,
+    source_derived_commitment_ids: HashSet<String>,
 }
 
 fn backfill_commitment_bridge_derived_aliases(conn: &Connection) -> Result<(), MigrationError> {
-    ensure_commitment_alias_remediation_table(conn)?;
     let rows = collect_commitment_bridge_alias_rows(conn)?;
-    for row in rows.aliases {
+    for row in rows {
         if row.legacy_commitment_id == row.derived_commitment_id {
             continue;
         }
@@ -877,15 +884,12 @@ fn backfill_commitment_bridge_derived_aliases(conn: &Connection) -> Result<(), M
         )
         .map_err(|e| format!("commitment bridge derived alias insert failed: {e}"))?;
     }
-    for row in rows.remediations {
-        insert_commitment_alias_remediation(conn, row)?;
-    }
     Ok(())
 }
 
 fn collect_commitment_bridge_alias_rows(
     conn: &Connection,
-) -> Result<CommitmentBridgeAliasBackfillRows, MigrationError> {
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
     let mut rows = Vec::new();
     let mut source_alias_action_ids = HashSet::new();
 
@@ -905,101 +909,46 @@ fn collect_commitment_bridge_alias_rows(
         rows.push(row);
     }
 
-    rows.extend(collect_commitment_bridge_action_alias_rows(conn)?);
-    let remediations =
-        collect_commitment_bridge_alias_remediation_rows(conn, &source_alias_action_ids)?;
-    Ok(CommitmentBridgeAliasBackfillRows {
-        aliases: rows,
-        remediations,
-    })
+    rows.extend(collect_commitment_bridge_action_alias_rows(
+        conn,
+        &source_alias_action_ids,
+    )?);
+    Ok(rows)
 }
 
 fn collect_commitment_bridge_source_alias_rows(
     conn: &Connection,
 ) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
-    let source_columns = table_columns(conn, "action_commitment_sources")?;
-    let source_id_expr = if source_columns.contains("source_id") {
-        "acs.source_id"
-    } else {
-        "NULL"
-    };
-    let sql = format!(
-        "SELECT
-            b.commitment_id,
-            b.entity_type,
-            b.entity_id,
-            b.action_id,
-            b.first_seen_at,
-            b.last_seen_at,
-            b.tombstoned,
-            acs.commitment_id,
-            {source_id_expr}
-         FROM ai_commitment_bridge b
-         JOIN actions a ON a.id = b.action_id
-         JOIN action_commitment_sources acs ON acs.action_id = b.action_id
-         WHERE a.action_kind = 'commitment'
-           AND b.tombstoned != 0
-           AND acs.commitment_id IS NOT NULL"
-    );
     let mut stmt = conn
-        .prepare(&sql)
+        .prepare(
+            "SELECT
+                b.commitment_id,
+                b.entity_type,
+                b.entity_id,
+                b.action_id,
+                b.first_seen_at,
+                b.last_seen_at,
+                b.tombstoned,
+                acs.commitment_id
+             FROM ai_commitment_bridge b
+             JOIN actions a ON a.id = b.action_id
+             JOIN action_commitment_sources acs ON acs.action_id = b.action_id
+             WHERE a.action_kind = 'commitment'
+               AND b.tombstoned != 0
+               AND acs.commitment_id IS NOT NULL",
+        )
         .map_err(|e| format!("commitment bridge source alias query failed: {e}"))?;
 
     let rows = stmt
-        .query_map([], |row| {
-            let legacy_commitment_id: String = row.get(0)?;
-            let entity_type: String = row.get(1)?;
-            let entity_id: String = row.get(2)?;
-            let action_id: Option<String> = row.get(3)?;
-            let first_seen_at: String = row.get(4)?;
-            let last_seen_at: String = row.get(5)?;
-            let tombstoned: i32 = row.get(6)?;
-            let source_commitment_id: Option<String> = row.get(7)?;
-            let source_id: Option<String> = row.get(8)?;
-            Ok((
-                legacy_commitment_id,
-                entity_type,
-                entity_id,
-                action_id,
-                first_seen_at,
-                last_seen_at,
-                tombstoned,
-                source_commitment_id,
-                source_id,
-            ))
-        })
+        .query_map([], commitment_bridge_alias_row_from_stored_id)
         .map_err(|e| format!("commitment bridge source alias row map failed: {e}"))?;
 
     let mut out = Vec::new();
     for row in rows {
-        let (
-            legacy_commitment_id,
-            entity_type,
-            entity_id,
-            action_id,
-            first_seen_at,
-            last_seen_at,
-            tombstoned,
-            source_commitment_id,
-            source_id,
-        ) = row.map_err(|e| format!("commitment bridge source alias row read failed: {e}"))?;
-        for candidate in [source_commitment_id.as_deref(), source_id.as_deref()]
-            .into_iter()
-            .flatten()
-        {
-            if !is_derived_commitment_id(candidate) {
-                continue;
-            }
-            out.push(CommitmentBridgeAliasBackfillRow {
-                legacy_commitment_id: legacy_commitment_id.clone(),
-                derived_commitment_id: candidate.to_string(),
-                entity_type: entity_type.clone(),
-                entity_id: entity_id.clone(),
-                action_id: action_id.clone(),
-                first_seen_at: first_seen_at.clone(),
-                last_seen_at: last_seen_at.clone(),
-                tombstoned,
-            });
+        let row =
+            row.map_err(|e| format!("commitment bridge source alias row read failed: {e}"))?;
+        if is_derived_commitment_id(&row.derived_commitment_id) {
+            out.push(row);
         }
     }
     Ok(out)
@@ -1102,6 +1051,7 @@ fn collect_commitment_bridge_action_provenance_alias_rows(
 
 fn collect_commitment_bridge_action_alias_rows(
     conn: &Connection,
+    source_alias_action_ids: &HashSet<String>,
 ) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
     let mut stmt = conn
         .prepare(
@@ -1120,7 +1070,6 @@ fn collect_commitment_bridge_action_alias_rows(
              FROM ai_commitment_bridge b
              JOIN actions a ON a.id = b.action_id
              WHERE a.action_kind = 'commitment'
-               AND b.tombstoned = 0
                AND a.title IS NOT NULL",
         )
         .map_err(|e| format!("commitment bridge alias query failed: {e}"))?;
@@ -1163,36 +1112,100 @@ fn collect_commitment_bridge_action_alias_rows(
     let mut out = Vec::new();
     for row in rows {
         let row = row.map_err(|e| format!("commitment bridge alias row read failed: {e}"))?;
+        if row.tombstoned != 0
+            && row
+                .action_id
+                .as_ref()
+                .is_some_and(|action_id| source_alias_action_ids.contains(action_id))
+        {
+            continue;
+        }
         out.push(row);
     }
     Ok(out)
 }
 
+fn commitment_bridge_alias_row_from_stored_id(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<CommitmentBridgeAliasBackfillRow> {
+    Ok(CommitmentBridgeAliasBackfillRow {
+        legacy_commitment_id: row.get(0)?,
+        entity_type: row.get(1)?,
+        entity_id: row.get(2)?,
+        action_id: row.get(3)?,
+        first_seen_at: row.get(4)?,
+        last_seen_at: row.get(5)?,
+        tombstoned: row.get(6)?,
+        derived_commitment_id: row.get(7)?,
+    })
+}
+
+fn remediate_tombstoned_commitment_bridge_mutable_aliases(
+    conn: &Connection,
+) -> Result<(), MigrationError> {
+    ensure_commitment_alias_remediation_table(conn)?;
+
+    for candidate in collect_commitment_bridge_alias_remediation_rows(conn)? {
+        if !candidate.source_derived_commitment_ids.is_empty() {
+            continue;
+        }
+
+        let tombstoned_action_id = candidate.remediation.tombstoned_action_id.clone();
+        insert_commitment_alias_remediation(conn, candidate.remediation)?;
+        if let Some(derived_id) = candidate.mutable_derived_commitment_id.as_deref() {
+            remove_tombstoned_mutable_commitment_bridge_alias(
+                conn,
+                derived_id,
+                tombstoned_action_id.as_deref(),
+            )?;
+        }
+    }
+
+    Ok(())
+}
+
 fn collect_commitment_bridge_alias_remediation_rows(
     conn: &Connection,
-    source_alias_action_ids: &HashSet<String>,
-) -> Result<Vec<CommitmentBridgeAliasRemediationRow>, MigrationError> {
+) -> Result<Vec<CommitmentBridgeMutableAliasRemediation>, MigrationError> {
+    if !table_exists(conn, "ai_commitment_bridge")? {
+        return Ok(Vec::new());
+    }
+
+    let has_actions_table = table_exists(conn, "actions")?;
+    let action_columns = if has_actions_table {
+        table_columns(conn, "actions")?
+    } else {
+        HashSet::new()
+    };
     let has_source_table = table_exists(conn, "action_commitment_sources")?;
     let source_columns = if has_source_table {
         table_columns(conn, "action_commitment_sources")?
     } else {
         HashSet::new()
     };
-    let source_commitment_expr = if has_source_table {
-        "(
-            SELECT acs.commitment_id
-            FROM action_commitment_sources acs
-            WHERE acs.action_id = b.action_id
-            ORDER BY acs.observed_at ASC
-            LIMIT 1
-        )"
+
+    let action_join = if has_actions_table {
+        "LEFT JOIN actions a ON a.id = b.action_id"
     } else {
-        "NULL"
+        ""
     };
+    let action_kind_filter = if action_columns.contains("action_kind") {
+        "AND (a.id IS NULL OR a.action_kind = 'commitment')"
+    } else {
+        ""
+    };
+    let title_expr = action_subquery_expr(&action_columns, "title");
+    let due_date_expr = action_subquery_expr(&action_columns, "due_date");
+    let owner_raw_expr = action_subquery_expr(&action_columns, "owner_raw");
+    let context_expr = action_subquery_expr(&action_columns, "context");
+    let action_commitment_expr = action_subquery_expr(&action_columns, "commitment_id");
+    let action_source_id_expr = action_subquery_expr(&action_columns, "source_id");
+    let source_commitment_expr =
+        source_subquery_expr(has_source_table, &source_columns, "commitment_id");
     let source_type_expr = source_subquery_expr(has_source_table, &source_columns, "source_type");
     let source_id_expr = source_subquery_expr(has_source_table, &source_columns, "source_id");
     let source_label_expr = source_subquery_expr(has_source_table, &source_columns, "source_label");
-    let observed_at_expr = if has_source_table {
+    let observed_at_expr = if has_source_table && source_columns.contains("observed_at") {
         "COALESCE((
             SELECT acs.observed_at
             FROM action_commitment_sources acs
@@ -1209,51 +1222,122 @@ fn collect_commitment_bridge_alias_remediation_rows(
             b.entity_type,
             b.entity_id,
             b.action_id,
+            {title_expr},
+            {due_date_expr},
+            {owner_raw_expr},
+            {context_expr},
+            {action_commitment_expr},
+            {action_source_id_expr},
             {source_commitment_expr},
             {source_type_expr},
             {source_id_expr},
             {source_label_expr},
             {observed_at_expr}
          FROM ai_commitment_bridge b
-         JOIN actions a ON a.id = b.action_id
-         WHERE a.action_kind = 'commitment'
-           AND b.tombstoned != 0"
+         {action_join}
+         WHERE b.tombstoned != 0
+           {action_kind_filter}"
     );
     let mut stmt = conn
         .prepare(&sql)
         .map_err(|e| format!("commitment bridge remediation query failed: {e}"))?;
     let rows = stmt
         .query_map([], |row| {
+            let legacy_bridge_id: String = row.get(0)?;
+            let entity_type: String = row.get(1)?;
+            let entity_id: String = row.get(2)?;
+            let tombstoned_action_id: Option<String> = row.get(3)?;
+            let title: Option<String> = row.get(4)?;
+            let due_date: Option<String> = row.get(5)?;
+            let owner_raw: Option<String> = row.get(6)?;
+            let context: Option<String> = row.get(7)?;
+            let action_commitment_id: Option<String> = row.get(8)?;
+            let action_source_id: Option<String> = row.get(9)?;
+            let source_commitment_id: Option<String> = row.get(10)?;
+            let source_type: Option<String> = row.get(11)?;
+            let source_id: Option<String> = row.get(12)?;
+            let source_label: Option<String> = row.get(13)?;
+            let observed_at: String = row.get(14)?;
+
+            let context_owner = legacy_owner_from_context(context.as_deref());
+            let owner_for_identity = owner_raw.as_deref().or(context_owner.as_deref());
+            let mutable_derived_commitment_id = title.as_deref().map(|title| {
+                crate::abilities::extractors::commitment::derive_commitment_id(
+                    title,
+                    &entity_id,
+                    due_date.as_deref(),
+                    owner_for_identity,
+                )
+            });
+
             Ok(CommitmentBridgeAliasRemediationRow {
-                legacy_bridge_id: row.get(0)?,
-                entity_type: row.get(1)?,
-                entity_id: row.get(2)?,
-                tombstoned_action_id: row.get(3)?,
-                source_commitment_id: row.get(4)?,
-                source_type: row.get(5)?,
-                source_id: row.get(6)?,
-                source_label: row.get(7)?,
-                observed_at: row.get(8)?,
+                legacy_bridge_id,
+                tombstoned_action_id,
+                entity_type,
+                entity_id,
+                source_commitment_id,
+                source_type,
+                source_id,
+                source_label,
+                observed_at,
+            })
+            .map(|remediation| {
+                (
+                    remediation,
+                    mutable_derived_commitment_id,
+                    action_commitment_id,
+                    action_source_id,
+                )
             })
         })
         .map_err(|e| format!("commitment bridge remediation row map failed: {e}"))?;
 
     let mut out = Vec::new();
     for row in rows {
-        let row = row.map_err(|e| format!("commitment bridge remediation row read failed: {e}"))?;
-        if is_derived_commitment_id(&row.legacy_bridge_id) {
+        let (remediation, mutable_derived_commitment_id, action_commitment_id, action_source_id) =
+            row.map_err(|e| format!("commitment bridge remediation row read failed: {e}"))?;
+        if is_derived_commitment_id(&remediation.legacy_bridge_id) {
             continue;
         }
-        if row
-            .tombstoned_action_id
-            .as_ref()
-            .is_some_and(|action_id| source_alias_action_ids.contains(action_id))
-        {
-            continue;
-        }
-        out.push(row);
+        let mut source_derived_commitment_ids = HashSet::new();
+        insert_derived_commitment_id(
+            &mut source_derived_commitment_ids,
+            action_commitment_id.as_deref(),
+        );
+        insert_derived_commitment_id(
+            &mut source_derived_commitment_ids,
+            action_source_id.as_deref(),
+        );
+        insert_derived_commitment_id(
+            &mut source_derived_commitment_ids,
+            remediation.source_commitment_id.as_deref(),
+        );
+        insert_derived_commitment_id(
+            &mut source_derived_commitment_ids,
+            remediation.source_id.as_deref(),
+        );
+        collect_action_commitment_source_derived_ids(
+            conn,
+            remediation.tombstoned_action_id.as_deref(),
+            &source_columns,
+            &mut source_derived_commitment_ids,
+        )?;
+
+        out.push(CommitmentBridgeMutableAliasRemediation {
+            remediation,
+            mutable_derived_commitment_id,
+            source_derived_commitment_ids,
+        });
     }
     Ok(out)
+}
+
+fn action_subquery_expr(action_columns: &HashSet<String>, column: &str) -> String {
+    if action_columns.contains(column) {
+        format!("a.{column}")
+    } else {
+        "NULL".to_string()
+    }
 }
 
 fn source_subquery_expr(
@@ -1264,15 +1348,94 @@ fn source_subquery_expr(
     if !has_source_table || !source_columns.contains(column) {
         return "NULL".to_string();
     }
+    let order_by = if source_columns.contains("observed_at") {
+        "ORDER BY acs.observed_at ASC"
+    } else {
+        ""
+    };
     format!(
         "(
             SELECT acs.{column}
             FROM action_commitment_sources acs
             WHERE acs.action_id = b.action_id
-            ORDER BY acs.observed_at ASC
+            {order_by}
             LIMIT 1
         )"
     )
+}
+
+fn collect_action_commitment_source_derived_ids(
+    conn: &Connection,
+    action_id: Option<&str>,
+    source_columns: &HashSet<String>,
+    out: &mut HashSet<String>,
+) -> Result<(), MigrationError> {
+    let Some(action_id) = action_id else {
+        return Ok(());
+    };
+    let has_commitment_id = source_columns.contains("commitment_id");
+    let has_source_id = source_columns.contains("source_id");
+    if !has_commitment_id && !has_source_id {
+        return Ok(());
+    }
+
+    let commitment_expr = if has_commitment_id {
+        "commitment_id"
+    } else {
+        "NULL"
+    };
+    let source_id_expr = if has_source_id { "source_id" } else { "NULL" };
+    let sql = format!(
+        "SELECT {commitment_expr}, {source_id_expr}
+         FROM action_commitment_sources
+         WHERE action_id = ?1"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("commitment source identity query failed: {e}"))?;
+    let rows = stmt
+        .query_map([action_id], |row| {
+            Ok((
+                row.get::<_, Option<String>>(0)?,
+                row.get::<_, Option<String>>(1)?,
+            ))
+        })
+        .map_err(|e| format!("commitment source identity row map failed: {e}"))?;
+    for row in rows {
+        let (commitment_id, source_id) =
+            row.map_err(|e| format!("commitment source identity row read failed: {e}"))?;
+        insert_derived_commitment_id(out, commitment_id.as_deref());
+        insert_derived_commitment_id(out, source_id.as_deref());
+    }
+    Ok(())
+}
+
+fn insert_derived_commitment_id(out: &mut HashSet<String>, value: Option<&str>) {
+    if let Some(value) = value
+        .map(str::trim)
+        .filter(|value| is_derived_commitment_id(value))
+    {
+        out.insert(value.to_string());
+    }
+}
+
+fn remove_tombstoned_mutable_commitment_bridge_alias(
+    conn: &Connection,
+    derived_id: &str,
+    action_id: Option<&str>,
+) -> Result<(), MigrationError> {
+    conn.execute(
+        "DELETE FROM ai_commitment_bridge
+         WHERE commitment_id = ?1
+           AND tombstoned != 0
+           AND (
+               (?2 IS NULL AND action_id IS NULL)
+               OR (?2 IS NOT NULL AND action_id = ?2)
+           )",
+        rusqlite::params![derived_id, action_id],
+    )
+    .map_err(|e| format!("mutable commitment bridge alias removal failed: {e}"))?;
+    Ok(())
 }
 
 fn ensure_commitment_alias_remediation_table(conn: &Connection) -> Result<(), MigrationError> {
@@ -2242,6 +2405,19 @@ mod tests {
         Connection::open_in_memory().expect("in-memory db")
     }
 
+    fn reset_migrated_db_to_version_156(conn: &Connection) {
+        run_migrations(conn).expect("seed full schema");
+        conn.execute_batch(
+            "DELETE FROM action_commitment_alias_remediation;
+             DELETE FROM action_commitment_sources;
+             DELETE FROM ai_commitment_bridge;
+             DELETE FROM actions;
+             DELETE FROM schema_version WHERE version > 156;",
+        )
+        .expect("reset to schema version 156");
+        assert_eq!(current_version(conn).expect("version query"), 156);
+    }
+
     #[test]
     fn test_bootstrap_missing_actions_table_is_fresh_db() {
         let conn = mem_db();
@@ -2365,7 +2541,7 @@ mod tests {
     }
 
     #[test]
-    fn commitment_bridge_alias_backfill_audits_unrecoverable_tombstone() {
+    fn commitment_bridge_alias_backfill_preserves_tombstone_state() {
         let conn = mem_db();
         conn.execute_batch(
             "CREATE TABLE actions (
@@ -2424,29 +2600,17 @@ mod tests {
             .expect("active alias");
         assert_eq!(active_tombstoned, 0);
 
-        let done_alias_count: i64 = conn
+        let (done_action_id, done_tombstoned): (String, i32) = conn
             .query_row(
-                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                "SELECT action_id, tombstoned
+                 FROM ai_commitment_bridge
+                 WHERE commitment_id = ?1",
                 [done_derived],
-                |row| row.get(0),
+                |row| Ok((row.get(0)?, row.get(1)?)),
             )
-            .expect("done alias count");
-        assert_eq!(
-            done_alias_count, 0,
-            "tombstoned rows without immutable source identity must not use action fields"
-        );
-
-        let (legacy_bridge_id, tombstoned_action_id, status): (String, String, String) = conn
-            .query_row(
-                "SELECT legacy_bridge_id, tombstoned_action_id, remediation_status
-                 FROM action_commitment_alias_remediation",
-                [],
-                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
-            )
-            .expect("remediation row");
-        assert_eq!(legacy_bridge_id, "legacy:done");
-        assert_eq!(tombstoned_action_id, "done-a1");
-        assert_eq!(status, "pending");
+            .expect("done alias");
+        assert_eq!(done_action_id, "done-a1");
+        assert_eq!(done_tombstoned, 1);
     }
 
     #[test]
@@ -2539,8 +2703,9 @@ mod tests {
     }
 
     #[test]
-    fn commitment_bridge_alias_backfill_remediates_legacy_source_tombstoned_edited_title() {
+    fn migration_159_repairs_c3_mutable_tombstone_alias_from_schema_156() {
         let conn = mem_db();
+        reset_migrated_db_to_version_156(&conn);
         let edited_derived = crate::abilities::extractors::commitment::derive_commitment_id(
             "User edited wording",
             "acct-1",
@@ -2548,66 +2713,51 @@ mod tests {
             Some("Alex Chen"),
         );
         conn.execute_batch(
-            "CREATE TABLE actions (
-                id TEXT PRIMARY KEY,
-                title TEXT,
-                due_date TEXT,
-                owner_raw TEXT,
-                context TEXT,
-                account_id TEXT,
-                project_id TEXT,
-                source_id TEXT,
-                commitment_id TEXT,
-                action_kind TEXT
-            );
-            CREATE TABLE ai_commitment_bridge (
-                commitment_id TEXT PRIMARY KEY,
-                entity_type TEXT NOT NULL,
-                entity_id TEXT NOT NULL,
-                action_id TEXT,
-                first_seen_at TEXT NOT NULL,
-                last_seen_at TEXT NOT NULL,
-                tombstoned INTEGER NOT NULL DEFAULT 0
-            );
-            CREATE TABLE action_commitment_sources (
-                id TEXT PRIMARY KEY,
-                commitment_id TEXT NOT NULL,
-                action_id TEXT NOT NULL,
-                source_type TEXT,
-                source_id TEXT,
-                source_label TEXT,
-                observed_at TEXT NOT NULL
-            );
+            "INSERT INTO accounts (id, name, updated_at)
+             VALUES ('acct-1', 'Acme', '2026-01-01');
             INSERT INTO actions
-                (id, title, due_date, owner_raw, context, account_id, source_id, commitment_id, action_kind)
+                (id, title, priority, status, created_at, updated_at, due_date,
+                 account_id, source_type, source_id, source_label, action_kind,
+                 commitment_id, owner_raw)
             VALUES
-                ('done-a1', 'User edited wording', '2026-05-01', 'Alex Chen', NULL,
-                 'acct-1', 'legacy:done', 'legacy:done', 'commitment');
+                ('done-a1', 'User edited wording', 3, 'completed',
+                 '2026-01-01', '2026-01-02', '2026-05-01',
+                 'acct-1', 'commitment', 'legacy:done', 'Customer call',
+                 'commitment', 'legacy:done', 'Alex Chen');
             INSERT INTO ai_commitment_bridge
                 (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
             VALUES
-                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);
-            INSERT INTO action_commitment_sources
-                (id, commitment_id, action_id, source_type, source_id, source_label, observed_at)
-            VALUES
-                ('src-legacy', 'legacy:done', 'done-a1', 'meeting', 'meeting:abc:1',
-                 'Customer call', '2026-01-01');",
+                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);",
         )
-        .expect("seed pre-156 schema");
+        .expect("seed partial c3 schema");
+        conn.execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES (?1, 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1)",
+            [edited_derived.as_str()],
+        )
+        .expect("seed c3 mutable alias");
+        conn.execute(
+            "INSERT INTO action_commitment_sources
+             (id, commitment_id, action_id, source_type, source_id, source_label, observed_at)
+             VALUES
+                ('src-legacy', 'legacy:done', 'done-a1', 'meeting', 'meeting:abc:1',
+                 'Customer call', '2026-01-01')",
+            [],
+        )
+        .expect("seed legacy source sighting");
 
-        backfill_commitment_bridge_derived_aliases(&conn).expect("backfill aliases");
+        let applied = run_migrations(&conn).expect("apply v157-v159");
+        assert_eq!(applied, 3);
 
         let edited_alias_count: i64 = conn
             .query_row(
                 "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
-                [edited_derived],
+                [edited_derived.as_str()],
                 |row| row.get(0),
             )
             .expect("edited alias count");
-        assert_eq!(
-            edited_alias_count, 0,
-            "tombstoned legacy source rows must not alias the user-edited action title"
-        );
+        assert_eq!(edited_alias_count, 0, "v159 removes the c3 mutable alias");
 
         let (legacy_bridge_id, tombstoned_action_id, source_id, status): (
             String,
@@ -2625,6 +2775,49 @@ mod tests {
         assert_eq!(legacy_bridge_id, "legacy:done");
         assert_eq!(tombstoned_action_id, "done-a1");
         assert_eq!(source_id, "meeting:abc:1");
+        assert_eq!(status, "pending");
+
+        remediate_tombstoned_commitment_bridge_mutable_aliases(&conn).expect("v159 rerun");
+        let remediation_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM action_commitment_alias_remediation
+                 WHERE legacy_bridge_id = 'legacy:done'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remediation count");
+        assert_eq!(remediation_count, 1);
+    }
+
+    #[test]
+    fn migration_159_remediates_tombstoned_bridge_with_null_action_id() {
+        let conn = mem_db();
+        reset_migrated_db_to_version_156(&conn);
+
+        conn.execute_batch(
+            "INSERT INTO accounts (id, name, updated_at)
+             VALUES ('acct-1', 'Acme', '2026-01-01');
+             INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES
+                ('legacy:null-action', 'account', 'acct-1', NULL, '2026-01-01', '2026-01-03', 1);",
+        )
+        .expect("seed null-action tombstone");
+
+        let applied = run_migrations(&conn).expect("apply v157-v159");
+        assert_eq!(applied, 3);
+
+        let (legacy_bridge_id, tombstoned_action_id, status): (String, Option<String>, String) =
+            conn.query_row(
+                "SELECT legacy_bridge_id, tombstoned_action_id, remediation_status
+                 FROM action_commitment_alias_remediation
+                 WHERE legacy_bridge_id = 'legacy:null-action'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("remediation row");
+        assert_eq!(legacy_bridge_id, "legacy:null-action");
+        assert_eq!(tombstoned_action_id, None);
         assert_eq!(status, "pending");
     }
 
