@@ -986,8 +986,9 @@ fn semantic_status_compatible(
 pub(crate) fn semantic_high_salience_qualifiers(text: &str) -> HashSet<String> {
     let mut qualifiers = HashSet::new();
     let mut token = String::new();
+    let normalized_text = normalize_semantic_region_aliases(text);
 
-    for ch in text.chars().chain(std::iter::once(' ')) {
+    for ch in normalized_text.chars().chain(std::iter::once(' ')) {
         if ch.is_ascii_alphanumeric() {
             token.push(ch);
             continue;
@@ -1001,7 +1002,7 @@ pub(crate) fn semantic_high_salience_qualifiers(text: &str) -> HashSet<String> {
         let upper = token.to_ascii_uppercase();
         if matches!(lower.as_str(), "q1" | "q2" | "q3" | "q4") {
             qualifiers.insert(format!("quarter:{lower}"));
-        } else if matches!(upper.as_str(), "US" | "EU" | "APAC" | "EMEA") && token == upper {
+        } else if matches!(upper.as_str(), "US" | "UK" | "EU" | "APAC" | "EMEA") && token == upper {
             qualifiers.insert(format!("region:{upper}"));
         } else if matches!(lower.parse::<i32>(), Ok(2024..=2030)) {
             qualifiers.insert(format!("year:{lower}"));
@@ -1013,6 +1014,136 @@ pub(crate) fn semantic_high_salience_qualifiers(text: &str) -> HashSet<String> {
     }
 
     qualifiers
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SemanticRegionAliasSegmentKind {
+    Token,
+    Separator,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct SemanticRegionAliasSegment {
+    kind: SemanticRegionAliasSegmentKind,
+    value: String,
+}
+
+fn normalize_semantic_region_aliases(text: &str) -> String {
+    let segments = semantic_region_alias_segments(text);
+    let mut normalized = String::with_capacity(text.len());
+    let mut i = 0usize;
+
+    while i < segments.len() {
+        let segment = &segments[i];
+        if matches!(segment.kind, SemanticRegionAliasSegmentKind::Token) {
+            if let Some(region) = semantic_region_phrase_alias_at(&segments, i) {
+                normalized.push_str(region);
+                i += 3;
+                continue;
+            }
+            if let Some(region) = semantic_region_token_alias(&segment.value) {
+                normalized.push_str(region);
+                i += 1;
+                continue;
+            }
+        }
+
+        normalized.push_str(&segment.value);
+        i += 1;
+    }
+
+    normalized
+}
+
+fn semantic_region_alias_segments(text: &str) -> Vec<SemanticRegionAliasSegment> {
+    let mut segments = Vec::new();
+    let mut current = String::new();
+    let mut current_kind = None;
+
+    for ch in text.chars() {
+        let kind = if ch.is_ascii_alphanumeric() || ch == '.' {
+            SemanticRegionAliasSegmentKind::Token
+        } else {
+            SemanticRegionAliasSegmentKind::Separator
+        };
+
+        if current_kind == Some(kind) {
+            current.push(ch);
+            continue;
+        }
+
+        if let Some(kind) = current_kind {
+            segments.push(SemanticRegionAliasSegment {
+                kind,
+                value: std::mem::take(&mut current),
+            });
+        }
+        current.push(ch);
+        current_kind = Some(kind);
+    }
+
+    if let Some(kind) = current_kind {
+        segments.push(SemanticRegionAliasSegment {
+            kind,
+            value: current,
+        });
+    }
+
+    segments
+}
+
+fn semantic_region_phrase_alias_at(
+    segments: &[SemanticRegionAliasSegment],
+    index: usize,
+) -> Option<&'static str> {
+    let [first, separator, second] = segments.get(index..index + 3)? else {
+        return None;
+    };
+    if !matches!(first.kind, SemanticRegionAliasSegmentKind::Token)
+        || !matches!(separator.kind, SemanticRegionAliasSegmentKind::Separator)
+        || !matches!(second.kind, SemanticRegionAliasSegmentKind::Token)
+        || !separator.value.chars().all(char::is_whitespace)
+    {
+        return None;
+    }
+
+    match (
+        semantic_region_token_key(&first.value).as_str(),
+        semantic_region_token_key(&second.value).as_str(),
+    ) {
+        ("united", "states") => Some("US"),
+        ("united", "kingdom") => Some("UK"),
+        ("european", "union") => Some("EU"),
+        _ => None,
+    }
+}
+
+fn semantic_region_token_alias(token: &str) -> Option<&'static str> {
+    let key = semantic_region_token_key(token);
+    let has_period = token.contains('.');
+    let alnum = token
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .collect::<String>();
+    let all_upper = !alnum.is_empty() && alnum == alnum.to_ascii_uppercase();
+
+    match key.as_str() {
+        "us" if has_period || all_upper => Some("US"),
+        "usa" if all_upper => Some("US"),
+        "uk" if has_period || all_upper => Some("UK"),
+        "eu" if has_period || all_upper => Some("EU"),
+        "apac" if has_period || all_upper => Some("APAC"),
+        "emea" if has_period || all_upper => Some("EMEA"),
+        _ => None,
+    }
+}
+
+fn semantic_region_token_key(token: &str) -> String {
+    token
+        .chars()
+        .filter(|ch| ch.is_ascii_alphanumeric())
+        .flat_map(char::to_lowercase)
+        .collect()
 }
 
 fn is_semantic_named_entity(token: &str) -> bool {
@@ -1887,26 +2018,32 @@ pub fn load_claim_by_id(
     }
 }
 
-/// L2 cycle-1 fix #6: load the single ACTIVE claim with this exact
-/// dedup_key, if any. Used by commit_claim's same-meaning merge branch
-/// to detect a re-commit of the same logical content and route it
-/// through corroboration instead of inserting a duplicate active row.
+/// L2 cycle-1 fix #6: load the first ACTIVE claim with this exact dedup_key
+/// that can merge with the proposal's temporal/sensitivity tier. Used by
+/// commit_claim's same-meaning merge branch to detect a re-commit of the same
+/// logical content and route it through corroboration instead of inserting a
+/// duplicate active row.
 fn load_active_claim_by_dedup_key(
     conn: &rusqlite::Connection,
     dedup_key: &str,
+    proposal_temporal_scope: &TemporalScope,
+    proposal_sensitivity: &ClaimSensitivity,
 ) -> Result<Option<IntelligenceClaim>, ClaimError> {
     let sql = format!(
         "SELECT {CLAIM_COLUMNS} FROM intelligence_claims \
          WHERE dedup_key = ?1 AND claim_state = 'active' \
-         ORDER BY created_at DESC LIMIT 1"
+         ORDER BY created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![dedup_key])?;
-    if let Some(row) = rows.next()? {
-        Ok(Some(read_claim_row(row)?))
-    } else {
-        Ok(None)
+    while let Some(row) = rows.next()? {
+        let claim = read_claim_row(row)?;
+        if claim_merge_tiers_compatible(&claim, proposal_temporal_scope, proposal_sensitivity) {
+            return Ok(Some(claim));
+        }
     }
+
+    Ok(None)
 }
 
 /// Looks up semantic near-duplicates. Exact `dedup_key` equality is
@@ -2773,33 +2910,32 @@ pub fn commit_claim(
             && !matches!(metadata.commit_policy_class, CommitPolicyClass::Append)
         {
             let mut semantic_duplicate_needs_verification = false;
-            if let Some(existing) = load_active_claim_by_dedup_key(tx.conn_ref(), &dedup_key)? {
-                if claim_merge_tiers_compatible(
-                    &existing,
-                    &effective_temporal_scope,
-                    &effective_sensitivity,
-                ) {
-                    let corroboration_id = corroborate_in_tx(
-                        tx,
-                        &existing.id,
-                        &proposal.data_source,
-                        proposal.source_asof.as_deref(),
-                        Some("same_meaning_merge"),
-                        &now,
-                    )?;
-                    let mut edge_claim = existing.clone();
-                    edge_claim.metadata_json = link_map::metadata_with_structured_field(
-                        edge_claim.metadata_json.as_deref(),
-                        proposal.field_path.as_deref(),
-                        &proposal.text,
-                    );
-                    insert_claim_edges(tx, &edge_claim)?;
-                    tx.bump_for_subject(&subject)?;
-                    return Ok(CommittedClaim::Reinforced {
-                        claim: existing,
-                        corroboration_id,
-                    });
-                }
+            if let Some(existing) = load_active_claim_by_dedup_key(
+                tx.conn_ref(),
+                &dedup_key,
+                &effective_temporal_scope,
+                &effective_sensitivity,
+            )? {
+                let corroboration_id = corroborate_in_tx(
+                    tx,
+                    &existing.id,
+                    &proposal.data_source,
+                    proposal.source_asof.as_deref(),
+                    Some("same_meaning_merge"),
+                    &now,
+                )?;
+                let mut edge_claim = existing.clone();
+                edge_claim.metadata_json = link_map::metadata_with_structured_field(
+                    edge_claim.metadata_json.as_deref(),
+                    proposal.field_path.as_deref(),
+                    &proposal.text,
+                );
+                insert_claim_edges(tx, &edge_claim)?;
+                tx.bump_for_subject(&subject)?;
+                return Ok(CommittedClaim::Reinforced {
+                    claim: existing,
+                    corroboration_id,
+                });
             }
 
             if let Some(semantic_match) = load_active_semantic_duplicate_claim(
@@ -9159,6 +9295,39 @@ mod tests {
     }
 
     #[test]
+    fn semantic_high_salience_qualifiers_normalizes_region_aliases_before_tokenizing() {
+        for (region_text, expected) in [
+            ("U.S.", "region:US"),
+            ("U.S", "region:US"),
+            ("USA", "region:US"),
+            ("United States", "region:US"),
+            ("U.K.", "region:UK"),
+            ("U.K", "region:UK"),
+            ("United Kingdom", "region:UK"),
+            ("E.U.", "region:EU"),
+            ("E.U", "region:EU"),
+            ("European Union", "region:EU"),
+            ("A.P.A.C.", "region:APAC"),
+            ("E.M.E.A.", "region:EMEA"),
+        ] {
+            let text = format!("{region_text} Phase 2 budget approval is pending with finance");
+            let qualifiers = semantic_high_salience_qualifiers(&text);
+            assert!(
+                qualifiers.contains(expected),
+                "{region_text} should produce {expected}, got {qualifiers:?}"
+            );
+        }
+
+        let qualifiers = semantic_high_salience_qualifiers(
+            "Finance asked us whether Phase 2 budget approval is pending",
+        );
+        assert!(
+            !qualifiers.contains("region:US"),
+            "lowercase pronoun 'us' must not become a US region qualifier"
+        );
+    }
+
+    #[test]
     fn semantic_near_duplicate_is_tightly_scoped() {
         assert!(semantic_near_duplicate(
             "Phase 2 budget approval is pending with finance",
@@ -9248,6 +9417,72 @@ mod tests {
             let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
             assert_eq!(active.len(), 2);
         }
+    }
+
+    #[test]
+    fn commit_claim_preserves_dotted_us_region_qualifier_against_unscoped_variant() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_text = "U.S. Phase 2 budget approval is pending with finance";
+        let first_id = inserted_claim_id(commit_claim(&ctx, &db, proposal(first_text)).unwrap());
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("Phase 2 budget approval is pending with finance"),
+        )
+        .unwrap();
+        match result {
+            CommittedClaim::Forked {
+                primary_claim,
+                new_claim_id,
+                ..
+            } => {
+                assert_eq!(primary_claim.id, first_id);
+                assert_ne!(new_claim_id, first_id);
+            }
+            other => panic!("U.S.-scoped claim collapsed into unscoped variant: {other:?}"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_preserves_united_states_region_qualifier_against_eu_variant() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_text = "United States Phase 2 budget approval is pending with finance";
+        let first_id = inserted_claim_id(commit_claim(&ctx, &db, proposal(first_text)).unwrap());
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("EU Phase 2 budget approval is pending with finance"),
+        )
+        .unwrap();
+        match result {
+            CommittedClaim::Forked {
+                primary_claim,
+                new_claim_id,
+                ..
+            } => {
+                assert_eq!(primary_claim.id, first_id);
+                assert_ne!(new_claim_id, first_id);
+            }
+            other => panic!("United States-scoped claim collapsed into EU variant: {other:?}"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
     }
 
     #[test]
@@ -9813,6 +10048,37 @@ mod tests {
             CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
         }
 
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_exact_dedup_scans_past_incompatible_newer_claim() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let text = "Phase 2 budget approval is pending with finance";
+
+        let state_id = inserted_claim_id(commit_claim(&ctx, &db, proposal(text)).unwrap());
+
+        clock.advance(chrono::Duration::seconds(1));
+        let mut point_in_time = proposal(text);
+        point_in_time.temporal_scope = Some(TemporalScope::PointInTime);
+        let point_in_time_id = inserted_claim_id(commit_claim(&ctx, &db, point_in_time).unwrap());
+
+        clock.advance(chrono::Duration::seconds(1));
+        let result = commit_claim(&ctx, &db, proposal(text)).unwrap();
+        match result {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, state_id),
+            other => panic!("state recommit should reinforce original state claim, got {other:?}"),
+        }
+
+        assert_eq!(read_claim_temporal_scope(&db, &state_id), "state");
+        assert_eq!(
+            read_claim_temporal_scope(&db, &point_in_time_id),
+            "point_in_time"
+        );
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
         assert_eq!(active.len(), 2);
     }
