@@ -291,7 +291,6 @@ fn cross_entity_coherence_factor(db: &ActionDb, claim_text: &str) -> f64 {
         &claim,
         TrustContext {
             now: Utc.with_ymd_and_hms(2026, 5, 4, 13, 0, 0).unwrap(),
-            renewal_context: None,
             config: TrustConfig::default(),
             renewal_context: None,
             factor_inputs: TrustFactorInputs {
