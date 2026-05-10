@@ -20,7 +20,7 @@ use crate::abilities::trust::{
     TargetFootprint, TrustBand, TrustConfig, TrustContext, TrustFactorInputs, TrustScore,
     UserFeedbackSignal,
 };
-use crate::action_status::{BACKLOG, KIND_COMMITMENT, UNSTARTED};
+use crate::action_status::{BACKLOG, KIND_COMMITMENT, STARTED, UNSTARTED};
 use crate::db::{ActionDb, DbAction};
 use crate::intelligence::io::OpenCommitment;
 use abilities_runtime::types::{
@@ -103,6 +103,18 @@ pub fn sync_ai_commitments(
             commitment.due_date.as_deref(),
             commitment.owner.as_deref(),
         );
+        if legacy_bridge_tombstone_blocks_claim(
+            ctx,
+            db,
+            entity_type,
+            entity_id,
+            commitment,
+            &derived_id,
+            &now,
+        )? {
+            summary.skipped_tombstoned += 1;
+            continue;
+        }
         let owner_resolution =
             resolve_owner(db, entity_id, &derived_id, commitment.owner.as_deref())?;
         let source_count = source_count_for_commitment(db, &derived_id).unwrap_or(0) + 1;
@@ -136,10 +148,46 @@ pub fn sync_ai_commitments(
         )?;
     }
 
-    // Silence unused warning on UNSTARTED (imported for clarity / future use).
-    let _ = UNSTARTED;
-
     Ok(summary)
+}
+
+fn legacy_bridge_tombstone_blocks_claim(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    commitment: &OpenCommitment,
+    derived_id: &str,
+    now: &str,
+) -> Result<bool, String> {
+    let Some(incoming_id) = commitment
+        .commitment_id
+        .as_deref()
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+    else {
+        return Ok(false);
+    };
+
+    let Some(row) = read_bridge_row(db, incoming_id).map_err(|e| e.to_string())? else {
+        return Ok(false);
+    };
+
+    if !row.tombstoned {
+        return Ok(false);
+    }
+
+    insert_tombstoned_bridge_alias(
+        ctx,
+        db,
+        derived_id,
+        entity_type,
+        entity_id,
+        row.action_id.as_deref(),
+        now,
+    )?;
+    touch_bridge_row(ctx, db, incoming_id, now).map_err(|e| e.to_string())?;
+    Ok(true)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -157,7 +205,8 @@ pub fn upsert_commitment_claim(
 ) -> Result<(), String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
 
-    if let Some(row) = read_bridge_row(db, &claim.commitment_id).map_err(|e| e.to_string())? {
+    let bridge_row = read_bridge_row(db, &claim.commitment_id).map_err(|e| e.to_string())?;
+    if let Some(row) = bridge_row.as_ref() {
         if row.tombstoned {
             summary.skipped_tombstoned += 1;
             touch_bridge_row(ctx, db, &claim.commitment_id, now).map_err(|e| e.to_string())?;
@@ -165,8 +214,14 @@ pub fn upsert_commitment_claim(
         }
     }
 
+    let bridged_action = get_action_from_bridge_row(db, bridge_row.as_ref())?;
+    let existing_action = match bridged_action {
+        Some(action) => Some(action),
+        None => get_action_by_commitment_id(db, &claim.commitment_id)?,
+    };
+
     let mut created_action = false;
-    let mut action = match get_action_by_commitment_id(db, &claim.commitment_id)? {
+    let mut action = match existing_action {
         Some(action) => {
             if is_terminal_status(&action.status) {
                 summary.skipped_tombstoned += 1;
@@ -218,10 +273,7 @@ pub fn upsert_commitment_claim(
     insert_bridge_row(
         ctx,
         db,
-        action
-            .commitment_id
-            .as_deref()
-            .unwrap_or(claim.commitment_id.as_str()),
+        &claim.commitment_id,
         entity_type,
         entity_id,
         &action.id,
@@ -300,11 +352,14 @@ fn apply_commitment_claim_to_action(
     trust: &CommitmentTrust,
     now: &str,
 ) {
-    if action.status.as_str() == BACKLOG {
-        action.title = commitment.description.clone();
-        action.due_date = commitment.due_date.clone();
-        action.source_label = commitment.source.clone();
+    if action.status.as_str() != BACKLOG {
+        refresh_accepted_commitment_trust(action, trust, now);
+        return;
     }
+
+    action.title = commitment.description.clone();
+    action.due_date = commitment.due_date.clone();
+    action.source_label = commitment.source.clone();
 
     if action.commitment_id.as_deref() != Some(claim.commitment_id.as_str()) {
         action.commitment_id = Some(claim.commitment_id.clone());
@@ -338,6 +393,20 @@ fn action_changed_for_commitment(before: &DbAction, after: &DbAction) -> bool {
         || before.trust_score != after.trust_score
         || before.trust_band != after.trust_band
         || before.context != after.context
+}
+
+fn refresh_accepted_commitment_trust(action: &mut DbAction, trust: &CommitmentTrust, now: &str) {
+    if !matches!(action.status.as_str(), UNSTARTED | STARTED) {
+        return;
+    }
+
+    let next_score = Some(trust.score.value());
+    let next_band = Some(trust_band_label(trust.band).to_string());
+    if action.trust_score != next_score || action.trust_band != next_band {
+        action.trust_score = next_score;
+        action.trust_band = next_band;
+        action.updated_at = now.to_string();
+    }
 }
 
 fn strip_legacy_owner_context(context: Option<&str>) -> Option<String> {
@@ -379,6 +448,16 @@ fn get_action_by_commitment_id(
         Some(id) => db.get_action_by_id(&id).map_err(|e| e.to_string()),
         None => Ok(None),
     }
+}
+
+fn get_action_from_bridge_row(
+    db: &ActionDb,
+    row: Option<&BridgeRow>,
+) -> Result<Option<DbAction>, String> {
+    let Some(action_id) = row.and_then(|row| row.action_id.as_deref()) else {
+        return Ok(None);
+    };
+    db.get_action_by_id(action_id).map_err(|e| e.to_string())
 }
 
 fn insert_commitment_source(
@@ -727,6 +806,34 @@ fn insert_bridge_row(
     Ok(())
 }
 
+fn insert_tombstoned_bridge_alias(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    commitment_id: &str,
+    entity_type: &str,
+    entity_id: &str,
+    action_id: Option<&str>,
+    now: &str,
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    db.conn_ref()
+        .execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id,
+              first_seen_at, last_seen_at, tombstoned)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?5, 1)
+         ON CONFLICT(commitment_id) DO UPDATE SET
+              action_id = COALESCE(excluded.action_id, ai_commitment_bridge.action_id),
+              entity_type = excluded.entity_type,
+              entity_id = excluded.entity_id,
+              last_seen_at = excluded.last_seen_at,
+              tombstoned = 1",
+            rusqlite::params![commitment_id, entity_type, entity_id, action_id, now],
+        )
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 fn touch_bridge_row(
     ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
@@ -769,8 +876,20 @@ mod tests {
     }
 
     fn make_commitment_with_source(description: &str, source: Option<&str>) -> OpenCommitment {
+        make_commitment_with_legacy_id_and_source(description, "legacy-llm-id-is-ignored", source)
+    }
+
+    fn make_commitment_with_legacy_id(description: &str, legacy_id: &str) -> OpenCommitment {
+        make_commitment_with_legacy_id_and_source(description, legacy_id, None)
+    }
+
+    fn make_commitment_with_legacy_id_and_source(
+        description: &str,
+        legacy_id: &str,
+        source: Option<&str>,
+    ) -> OpenCommitment {
         OpenCommitment {
-            commitment_id: Some("legacy-llm-id-is-ignored".to_string()),
+            commitment_id: Some(legacy_id.to_string()),
             description: description.to_string(),
             owner: None,
             due_date: None,
@@ -970,6 +1089,62 @@ mod tests {
     }
 
     #[test]
+    fn pre155_tombstoned_legacy_id_creates_derived_tombstone_alias_and_skips() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Do not resurrect legacy commitment";
+        let legacy_id = "meeting:legacy-source:1";
+        let derived_commitment_id = derived_id(title);
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, account_id,
+                  source_type, source_id, action_kind, commitment_id)
+                 VALUES ('done-a1', ?1, 3, 'completed', '2026-01-01', '2026-01-02',
+                         'acct-1', 'commitment', ?2, 'commitment', ?2)",
+                rusqlite::params![title, legacy_id],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES (?1, 'account', 'acct-1', 'done-a1',
+                         '2026-01-01', '2026-01-02', 1)",
+                rusqlite::params![legacy_id],
+            )
+            .unwrap();
+
+        let summary = sync_ai_commitments(
+            &ctx,
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment_with_legacy_id(title, legacy_id)],
+        )
+        .expect("sync");
+
+        assert_eq!(summary.created, 0);
+        assert_eq!(summary.skipped_tombstoned, 1);
+        assert_eq!(action_count(&db), 1);
+
+        let (action_id, tombstoned): (String, i32) = db
+            .conn_ref()
+            .query_row(
+                "SELECT action_id, tombstoned
+                 FROM ai_commitment_bridge
+                 WHERE commitment_id = ?1",
+                rusqlite::params![derived_commitment_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(action_id, "done-a1");
+        assert_eq!(tombstoned, 1);
+    }
+
+    #[test]
     fn changed_title_derives_new_identity() {
         let db = test_db();
         make_ctx!(ctx);
@@ -1060,6 +1235,197 @@ mod tests {
             )
             .unwrap();
         assert_eq!(title, "User-edited title");
+    }
+
+    #[test]
+    fn accepted_title_alias_preserves_identity_owner_context_and_refreshes_trust() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Accepted exact title";
+        let derived_commitment_id = derived_id(title);
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, source_label, context,
+                  action_kind, commitment_id, owner_raw, owner_entity_id,
+                  owner_confidence, owner_source, trust_score, trust_band)
+                 VALUES ('accepted-a1', ?1, 3, 'unstarted', '2026-01-01',
+                         '2026-01-02', '2030-01-01', 'acct-1', 'commitment',
+                         'legacy-accepted-id', 'manual source', 'owner: keep this',
+                         'commitment', 'legacy-accepted-id', 'Alex Chen', 'p-alex',
+                         0.96, 'exact_person_name', NULL, NULL)",
+                rusqlite::params![title],
+            )
+            .unwrap();
+
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[make_commitment(title)])
+                .expect("sync");
+
+        assert_eq!(summary.created, 0);
+        assert_eq!(summary.aliased_to_existing, 1);
+        assert_eq!(action_count(&db), 1);
+
+        let (
+            commitment_id,
+            source_id,
+            due_date,
+            source_label,
+            context,
+            owner_raw,
+            owner_entity_id,
+            owner_confidence,
+            owner_source,
+            trust_score,
+            trust_band,
+        ): (
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            f64,
+            String,
+            Option<f64>,
+            Option<String>,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT commitment_id, source_id, due_date, source_label, context,
+                        owner_raw, owner_entity_id, owner_confidence, owner_source,
+                        trust_score, trust_band
+                 FROM actions WHERE id = 'accepted-a1'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
+                        row.get(10)?,
+                    ))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(commitment_id, "legacy-accepted-id");
+        assert_eq!(source_id, "legacy-accepted-id");
+        assert_eq!(due_date, "2030-01-01");
+        assert_eq!(source_label, "manual source");
+        assert_eq!(context, "owner: keep this");
+        assert_eq!(owner_raw, "Alex Chen");
+        assert_eq!(owner_entity_id, "p-alex");
+        assert_eq!(owner_confidence, 0.96);
+        assert_eq!(owner_source, "exact_person_name");
+        assert!(trust_score.is_some());
+        assert!(trust_band.is_some());
+
+        assert_eq!(bridge_action_id(&db, &derived_commitment_id), "accepted-a1");
+        assert_eq!(source_rows(&db, "legacy-accepted-id"), 1);
+    }
+
+    #[test]
+    fn accepted_bridge_match_preserves_user_owned_fields_after_rekeyed_action() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let original = vec![make_commitment("AI phrasing for accepted row")];
+        let derived_commitment_id = derived_id("AI phrasing for accepted row");
+        sync_ai_commitments(&ctx, &db, "account", "acct-1", &original).expect("initial sync");
+        let action_id = bridge_action_id(&db, &derived_commitment_id);
+
+        db.conn_ref()
+            .execute(
+                "UPDATE actions
+                 SET status = 'unstarted',
+                     title = 'User title',
+                     due_date = '2030-02-03',
+                     source_id = 'user-stable-id',
+                     source_label = 'user source',
+                     commitment_id = 'user-stable-id',
+                     owner_raw = 'Jamie Lee',
+                     owner_entity_id = 'p-jamie',
+                     owner_confidence = 0.88,
+                     owner_source = 'exact_person_name',
+                     context = 'owner: still user context',
+                     trust_score = NULL,
+                     trust_band = NULL
+                 WHERE id = ?1",
+                rusqlite::params![action_id],
+            )
+            .unwrap();
+
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &original).expect("resync");
+        assert_eq!(summary.created, 0);
+        assert_eq!(action_count(&db), 1);
+
+        let (
+            title,
+            due_date,
+            commitment_id,
+            source_id,
+            source_label,
+            owner_raw,
+            owner_entity_id,
+            context,
+            trust_score,
+            trust_band,
+        ): (
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            String,
+            Option<f64>,
+            Option<String>,
+        ) = db
+            .conn_ref()
+            .query_row(
+                "SELECT title, due_date, commitment_id, source_id, source_label,
+                        owner_raw, owner_entity_id, context, trust_score, trust_band
+                 FROM actions WHERE id = ?1",
+                rusqlite::params![action_id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                        row.get(6)?,
+                        row.get(7)?,
+                        row.get(8)?,
+                        row.get(9)?,
+                    ))
+                },
+            )
+            .unwrap();
+
+        assert_eq!(title, "User title");
+        assert_eq!(due_date, "2030-02-03");
+        assert_eq!(commitment_id, "user-stable-id");
+        assert_eq!(source_id, "user-stable-id");
+        assert_eq!(source_label, "user source");
+        assert_eq!(owner_raw, "Jamie Lee");
+        assert_eq!(owner_entity_id, "p-jamie");
+        assert_eq!(context, "owner: still user context");
+        assert!(trust_score.is_some());
+        assert!(trust_band.is_some());
+        assert_eq!(source_rows(&db, "user-stable-id"), 1);
     }
 
     #[test]

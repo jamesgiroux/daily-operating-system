@@ -791,7 +791,138 @@ const MIGRATIONS: &[Migration] = &[
         version: 155,
         sql: include_str!("migrations/155_dos_276_commitment_claim_identity.sql"),
     },
+    // Map pre-155 bridge ids to typed derived commitment ids so tombstones and
+    // accepted-row bridge lookups survive the identity transition.
+    Migration::Fn {
+        version: 156,
+        apply: backfill_commitment_bridge_derived_aliases,
+    },
 ];
+
+struct CommitmentBridgeAliasBackfillRow {
+    legacy_commitment_id: String,
+    derived_commitment_id: String,
+    entity_type: String,
+    entity_id: String,
+    action_id: Option<String>,
+    first_seen_at: String,
+    last_seen_at: String,
+    tombstoned: i32,
+}
+
+fn backfill_commitment_bridge_derived_aliases(conn: &Connection) -> Result<(), MigrationError> {
+    let rows = collect_commitment_bridge_alias_rows(conn)?;
+    for row in rows {
+        if row.legacy_commitment_id == row.derived_commitment_id {
+            continue;
+        }
+
+        conn.execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id,
+              first_seen_at, last_seen_at, tombstoned)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+             ON CONFLICT(commitment_id) DO UPDATE SET
+                entity_type = excluded.entity_type,
+                entity_id = excluded.entity_id,
+                action_id = COALESCE(excluded.action_id, ai_commitment_bridge.action_id),
+                last_seen_at = excluded.last_seen_at,
+                tombstoned = CASE
+                    WHEN ai_commitment_bridge.tombstoned != 0 OR excluded.tombstoned != 0
+                    THEN 1
+                    ELSE 0
+                END",
+            rusqlite::params![
+                row.derived_commitment_id,
+                row.entity_type,
+                row.entity_id,
+                row.action_id,
+                row.first_seen_at,
+                row.last_seen_at,
+                row.tombstoned,
+            ],
+        )
+        .map_err(|e| format!("commitment bridge derived alias insert failed: {e}"))?;
+    }
+    Ok(())
+}
+
+fn collect_commitment_bridge_alias_rows(
+    conn: &Connection,
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                b.commitment_id,
+                b.entity_type,
+                b.entity_id,
+                b.action_id,
+                b.first_seen_at,
+                b.last_seen_at,
+                b.tombstoned,
+                a.title,
+                a.due_date,
+                a.owner_raw,
+                a.context
+             FROM ai_commitment_bridge b
+             JOIN actions a ON a.id = b.action_id
+             WHERE a.action_kind = 'commitment'
+               AND a.title IS NOT NULL",
+        )
+        .map_err(|e| format!("commitment bridge alias query failed: {e}"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let legacy_commitment_id: String = row.get(0)?;
+            let entity_type: String = row.get(1)?;
+            let entity_id: String = row.get(2)?;
+            let action_id: Option<String> = row.get(3)?;
+            let first_seen_at: String = row.get(4)?;
+            let last_seen_at: String = row.get(5)?;
+            let tombstoned: i32 = row.get(6)?;
+            let title: String = row.get(7)?;
+            let due_date: Option<String> = row.get(8)?;
+            let owner_raw: Option<String> = row.get(9)?;
+            let context: Option<String> = row.get(10)?;
+            let context_owner = legacy_owner_from_context(context.as_deref());
+            let owner_for_identity = owner_raw.as_deref().or(context_owner.as_deref());
+            let derived_commitment_id =
+                crate::abilities::extractors::commitment::derive_commitment_id(
+                    &title,
+                    &entity_id,
+                    due_date.as_deref(),
+                    owner_for_identity,
+                );
+            Ok(CommitmentBridgeAliasBackfillRow {
+                legacy_commitment_id,
+                derived_commitment_id,
+                entity_type,
+                entity_id,
+                action_id,
+                first_seen_at,
+                last_seen_at,
+                tombstoned,
+            })
+        })
+        .map_err(|e| format!("commitment bridge alias row map failed: {e}"))?;
+
+    rows.collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("commitment bridge alias row read failed: {e}"))
+}
+
+fn legacy_owner_from_context(context: Option<&str>) -> Option<String> {
+    let value = context?.trim();
+    let prefix_len = value
+        .get(..6)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("owner:"))?
+        .len();
+    let owner = value[prefix_len..].trim();
+    if owner.is_empty() {
+        None
+    } else {
+        Some(owner.to_string())
+    }
+}
 
 /// Create the `schema_version` table if it doesn't exist.
 fn ensure_schema_version_table(conn: &Connection) -> Result<(), String> {
@@ -1811,6 +1942,79 @@ mod tests {
             sqlite_failure_with_message(rusqlite::ffi::SQLITE_ERROR, "no such table: accounts");
         assert!(!is_missing_column_error(&corrupt));
         assert!(!is_missing_column_error(&unrelated));
+    }
+
+    #[test]
+    fn commitment_bridge_alias_backfill_preserves_tombstone_state() {
+        let conn = mem_db();
+        conn.execute_batch(
+            "CREATE TABLE actions (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                due_date TEXT,
+                owner_raw TEXT,
+                context TEXT,
+                account_id TEXT,
+                project_id TEXT,
+                action_kind TEXT
+            );
+            CREATE TABLE ai_commitment_bridge (
+                commitment_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action_id TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                tombstoned INTEGER NOT NULL DEFAULT 0
+            );
+            INSERT INTO actions
+                (id, title, due_date, owner_raw, context, account_id, action_kind)
+            VALUES
+                ('active-a1', 'Active old id', NULL, NULL, NULL, 'acct-1', 'commitment'),
+                ('done-a1', 'Dismissed old id', '2026-05-01', NULL, 'owner: Alex Chen', 'acct-1', 'commitment');
+            INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+            VALUES
+                ('legacy:active', 'account', 'acct-1', 'active-a1', '2026-01-01', '2026-01-02', 0),
+                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);",
+        )
+        .expect("seed pre-156 schema");
+
+        backfill_commitment_bridge_derived_aliases(&conn).expect("backfill aliases");
+
+        let active_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Active old id",
+            "acct-1",
+            None,
+            None,
+        );
+        let done_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Dismissed old id",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+
+        let active_tombstoned: i32 = conn
+            .query_row(
+                "SELECT tombstoned FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [active_derived],
+                |row| row.get(0),
+            )
+            .expect("active alias");
+        assert_eq!(active_tombstoned, 0);
+
+        let (done_action_id, done_tombstoned): (String, i32) = conn
+            .query_row(
+                "SELECT action_id, tombstoned
+                 FROM ai_commitment_bridge
+                 WHERE commitment_id = ?1",
+                [done_derived],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("done alias");
+        assert_eq!(done_action_id, "done-a1");
+        assert_eq!(done_tombstoned, 1);
     }
 
     #[test]

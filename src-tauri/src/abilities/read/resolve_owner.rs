@@ -21,6 +21,12 @@ pub struct OwnerResolution {
     pub owner_source: String,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum OwnerResolutionMode {
+    RespectUserReassignment,
+    FreshInput,
+}
+
 impl OwnerResolution {
     pub fn unassigned() -> Self {
         Self {
@@ -39,17 +45,31 @@ pub fn resolve_owner(
     commitment_id: &str,
     owner_raw: Option<&str>,
 ) -> Result<OwnerResolution, String> {
-    if let Some(user_resolution) = user_reassigned_owner(db, commitment_id)? {
-        return Ok(user_resolution);
+    resolve_owner_with_mode(
+        db,
+        account_id,
+        commitment_id,
+        owner_raw,
+        OwnerResolutionMode::RespectUserReassignment,
+    )
+}
+
+pub fn resolve_owner_with_mode(
+    db: &ActionDb,
+    account_id: &str,
+    commitment_id: &str,
+    owner_raw: Option<&str>,
+    mode: OwnerResolutionMode,
+) -> Result<OwnerResolution, String> {
+    if mode == OwnerResolutionMode::RespectUserReassignment {
+        if let Some(user_resolution) = user_reassigned_owner(db, commitment_id)? {
+            return Ok(user_resolution);
+        }
     }
 
     let Some(raw) = normalize_owner_raw(owner_raw) else {
         return Ok(OwnerResolution::unassigned());
     };
-
-    if let Some(team) = team_owner(&raw) {
-        return Ok(team);
-    }
 
     let candidates = exact_email_candidates(db, &raw)?;
     if let Some(resolution) = resolution_from_candidates(&raw, candidates, "exact_email") {
@@ -71,6 +91,10 @@ pub fn resolve_owner(
     let fuzzy = fuzzy_account_stakeholder_candidates(db, account_id, &raw)?;
     if let Some(resolution) = resolution_from_candidates(&raw, fuzzy, "fuzzy_account_stakeholder") {
         return Ok(resolution);
+    }
+
+    if let Some(team) = team_owner(&raw) {
+        return Ok(team);
     }
 
     Ok(ambiguous_resolution(
@@ -322,7 +346,15 @@ fn ambiguous_resolution(
 }
 
 fn team_owner(raw: &str) -> Option<OwnerResolution> {
-    let normalized = raw.to_ascii_lowercase();
+    if raw.contains('@') {
+        return None;
+    }
+
+    let tokens = owner_label_tokens(raw);
+    if tokens.is_empty() {
+        return None;
+    }
+
     let teamish = [
         "us",
         "we",
@@ -338,10 +370,7 @@ fn team_owner(raw: &str) -> Option<OwnerResolution> {
         "them",
         "joint",
     ];
-    if teamish
-        .iter()
-        .any(|label| normalized == *label || normalized.contains(label))
-    {
+    if teamish.iter().any(|label| contains_label(&tokens, label)) {
         return Some(OwnerResolution {
             owner_ref: OwnerRef::Team {
                 label: raw.to_string(),
@@ -355,6 +384,24 @@ fn team_owner(raw: &str) -> Option<OwnerResolution> {
         });
     }
     None
+}
+
+fn owner_label_tokens(raw: &str) -> Vec<String> {
+    raw.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|token| !token.is_empty())
+        .map(|token| token.to_ascii_lowercase())
+        .collect()
+}
+
+fn contains_label(tokens: &[String], label: &str) -> bool {
+    let label_tokens = owner_label_tokens(label);
+    match label_tokens.len() {
+        0 => false,
+        1 => tokens.iter().any(|token| token == &label_tokens[0]),
+        len => tokens
+            .windows(len)
+            .any(|window| window.iter().eq(label_tokens.iter())),
+    }
 }
 
 fn person_display_name(db: &ActionDb, person_id: &str) -> Result<Option<String>, String> {
@@ -388,15 +435,20 @@ mod tests {
     use super::*;
     use crate::db::test_utils::test_db;
 
+    fn insert_person(db: &ActionDb, id: &str, email: &str, name: &str) {
+        db.conn_ref()
+            .execute(
+                "INSERT INTO people (id, email, name, updated_at)
+                 VALUES (?1, ?2, ?3, '2026-01-01')",
+                params![id, email, name],
+            )
+            .unwrap();
+    }
+
     #[test]
     fn resolves_exact_account_stakeholder() {
         let db = test_db();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-alex', 'alex@example.com', 'Alex Chen', '2026-01-01')",
-                [],
-            )
-            .unwrap();
+        insert_person(&db, "p-alex", "alex@example.com", "Alex Chen");
         db.conn_ref()
             .execute(
                 "INSERT INTO account_stakeholders (account_id, person_id, data_source) VALUES ('acct-1', 'p-alex', 'user')",
@@ -420,12 +472,7 @@ mod tests {
     #[test]
     fn user_reassignment_wins_before_new_resolution() {
         let db = test_db();
-        db.conn_ref()
-            .execute(
-                "INSERT INTO people (id, email, name, updated_at) VALUES ('p-jamie', 'jamie@example.com', 'Jamie Lee', '2026-01-01')",
-                [],
-            )
-            .unwrap();
+        insert_person(&db, "p-jamie", "jamie@example.com", "Jamie Lee");
         db.conn_ref()
             .execute(
                 "INSERT INTO actions (id, title, priority, status, created_at, updated_at, action_kind, commitment_id, owner_raw, owner_entity_id, owner_confidence, owner_source)
@@ -437,5 +484,68 @@ mod tests {
         let resolved = resolve_owner(&db, "acct-1", "commitment:test", Some("Alex Chen")).unwrap();
         assert_eq!(resolved.owner_entity_id.as_deref(), Some("p-jamie"));
         assert_eq!(resolved.owner_source, "user_reassigned");
+    }
+
+    #[test]
+    fn exact_people_and_email_match_before_team_labels() {
+        let db = test_db();
+        for (id, email, name) in [
+            ("p-susan", "susan@example.com", "Susan"),
+            ("p-austin", "austin@example.com", "Austin"),
+            ("p-wendy", "wendy@example.com", "Wendy"),
+            ("p-justin", "justin@example.com", "Justin"),
+            ("p-brutus", "brutus@example.com", "Brutus"),
+            ("p-product", "product@example.com", "Product Owner"),
+        ] {
+            insert_person(&db, id, email, name);
+        }
+
+        for (raw, person_id) in [
+            ("Susan", "p-susan"),
+            ("Austin", "p-austin"),
+            ("Wendy", "p-wendy"),
+            ("Justin", "p-justin"),
+            ("Brutus", "p-brutus"),
+        ] {
+            let resolved = resolve_owner(&db, "acct-1", "commitment:test", Some(raw)).unwrap();
+            assert_eq!(resolved.owner_entity_id.as_deref(), Some(person_id));
+            assert_eq!(resolved.owner_source, "exact_person_name");
+        }
+
+        let resolved = resolve_owner(
+            &db,
+            "acct-1",
+            "commitment:test",
+            Some("product@example.com"),
+        )
+        .unwrap();
+        assert_eq!(resolved.owner_entity_id.as_deref(), Some("p-product"));
+        assert_eq!(resolved.owner_source, "exact_email");
+    }
+
+    #[test]
+    fn team_matching_uses_full_tokens_not_substrings() {
+        let db = test_db();
+        for raw in [
+            "Susan",
+            "Austin",
+            "Wendy",
+            "Justin",
+            "Brutus",
+            "product@example.com",
+        ] {
+            let resolved = resolve_owner(&db, "acct-1", "commitment:test", Some(raw)).unwrap();
+            assert_eq!(
+                resolved.owner_source, "ambiguous",
+                "{raw} should not be team"
+            );
+            assert!(!matches!(resolved.owner_ref, OwnerRef::Team { .. }));
+        }
+
+        for raw in ["us", "we", "our team", "Product team", "customer success"] {
+            let resolved = resolve_owner(&db, "acct-1", "commitment:test", Some(raw)).unwrap();
+            assert_eq!(resolved.owner_source, "team_label", "{raw} should be team");
+            assert!(matches!(resolved.owner_ref, OwnerRef::Team { .. }));
+        }
     }
 }
