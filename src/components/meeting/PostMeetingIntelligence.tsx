@@ -19,6 +19,7 @@ import {
 import { TalkBalanceBar } from "@/components/shared/TalkBalanceBar";
 import { ChapterHeading } from "@/components/editorial/ChapterHeading";
 import { IntelligenceFeedback } from "@/components/ui/IntelligenceFeedback";
+import { formatShortDate } from "@/lib/utils";
 import styles from "./PostMeetingIntelligence.module.css";
 
 // =============================================================================
@@ -648,14 +649,6 @@ function threadHasDetails(thread: ContinuityThread): boolean {
     || thread.healthDelta != null
     || thread.newAttendees.length > 0
   );
-}
-
-function formatShortDate(date: string): string {
-  const parsed = new Date(date);
-  if (Number.isNaN(parsed.getTime())) {
-    return date;
-  }
-  return parsed.toLocaleDateString("en-US", { month: "short", day: "numeric" });
 }
 
 function sentimentClass(sentiment: string): string {
