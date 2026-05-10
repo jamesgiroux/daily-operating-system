@@ -3677,6 +3677,23 @@ struct BriefingTrustShadowSummary {
 }
 
 #[derive(Debug)]
+struct BriefingTrustShadowPlan {
+    summary: BriefingTrustShadowSummary,
+    scores: Vec<(String, crate::abilities::trust::TrustScore)>,
+}
+
+struct TrustShadowInFlightGuard {
+    state: std::sync::Arc<AppState>,
+    meeting_id: String,
+}
+
+impl Drop for TrustShadowInFlightGuard {
+    fn drop(&mut self) {
+        self.state.finish_trust_shadow_refresh(&self.meeting_id);
+    }
+}
+
+#[derive(Debug)]
 enum BriefingTrustCompileError {
     MissingSourceType,
     SubjectRef(String),
@@ -3695,25 +3712,45 @@ impl fmt::Display for BriefingTrustCompileError {
     }
 }
 
-async fn run_trust_compiler_shadow_if_enabled(state: &std::sync::Arc<AppState>, meeting_id: &str) {
-    let enabled = state
+fn trust_compiler_shadow_enabled(state: &std::sync::Arc<AppState>) -> bool {
+    state
         .config
         .read()
         .as_ref()
         .map(crate::types::is_trust_compiler_shadow_enabled)
-        .unwrap_or_else(crate::types::default_trust_compiler_shadow_enabled);
-    if !enabled {
+        .unwrap_or_else(crate::types::default_trust_compiler_shadow_enabled)
+}
+
+async fn run_trust_compiler_shadow_if_enabled(state: &std::sync::Arc<AppState>, meeting_id: &str) {
+    if !trust_compiler_shadow_enabled(state) {
         return;
     }
 
-    let meeting_id = meeting_id.to_string();
-    let state_for_ctx = state.clone();
-    let result = state
-        .db_write(move |db| {
-            let ctx = state_for_ctx.live_service_context();
-            compile_trust_shadow_for_briefing_claims(&ctx, db, &meeting_id)
-        })
-        .await;
+    let result: Result<BriefingTrustShadowSummary, String> = async {
+        let meeting_id_for_read = meeting_id.to_string();
+        let state_for_ctx = state.clone();
+        let plan = state
+            .db_read(move |db| {
+                let ctx = state_for_ctx.live_service_context();
+                compile_trust_shadow_plan_for_briefing_claims(&ctx, db, &meeting_id_for_read)
+            })
+            .await?;
+
+        let summary = plan.summary;
+        if !plan.scores.is_empty() {
+            let scores = plan.scores;
+            let state_for_ctx = state.clone();
+            state
+                .db_write(move |db| {
+                    let ctx = state_for_ctx.live_service_context();
+                    write_trust_shadow_scores(&ctx, db, &scores)
+                })
+                .await?;
+        }
+
+        Ok(summary)
+    }
+    .await;
 
     match result {
         Ok(summary) => log::debug!(
@@ -3729,13 +3766,33 @@ async fn run_trust_compiler_shadow_if_enabled(state: &std::sync::Arc<AppState>, 
     }
 }
 
-fn spawn_trust_compiler_shadow_if_enabled(state: &std::sync::Arc<AppState>, meeting_id: &str) {
+fn spawn_trust_compiler_shadow_if_enabled(
+    state: &std::sync::Arc<AppState>,
+    meeting_id: &str,
+) -> bool {
+    if !trust_compiler_shadow_enabled(state) {
+        return false;
+    }
+
+    if !state.try_begin_trust_shadow_refresh(meeting_id) {
+        log::debug!(
+            "refresh_meeting_briefing_full: trust compiler shadow already in flight for {}",
+            meeting_id
+        );
+        return false;
+    }
+
     let state = state.clone();
     let meeting_id = meeting_id.to_string();
     let handle = tokio::spawn(async move {
+        let _guard = TrustShadowInFlightGuard {
+            state: state.clone(),
+            meeting_id: meeting_id.clone(),
+        };
         run_trust_compiler_shadow_if_enabled(&state, &meeting_id).await;
     });
     drop(handle);
+    true
 }
 
 fn compile_trust_shadow_for_briefing_claims(
@@ -3744,8 +3801,21 @@ fn compile_trust_shadow_for_briefing_claims(
     meeting_id: &str,
 ) -> Result<BriefingTrustShadowSummary, String> {
     ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
+    let plan = compile_trust_shadow_plan_for_briefing_claims(ctx, db, meeting_id)?;
+    write_trust_shadow_scores(ctx, db, &plan.scores)?;
+    Ok(plan.summary)
+}
+
+fn compile_trust_shadow_plan_for_briefing_claims(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    meeting_id: &str,
+) -> Result<BriefingTrustShadowPlan, String> {
     if !object_exists(db, "intelligence_claims")? {
-        return Ok(BriefingTrustShadowSummary::default());
+        return Ok(BriefingTrustShadowPlan {
+            summary: BriefingTrustShadowSummary::default(),
+            scores: Vec::new(),
+        });
     }
 
     let snapshot = load_prepare_meeting_context_snapshot(db, meeting_id)?;
@@ -3769,9 +3839,25 @@ fn compile_trust_shadow_for_briefing_claims(
     }
 
     let claims_scored = scores.len();
+    Ok(BriefingTrustShadowPlan {
+        summary: BriefingTrustShadowSummary {
+            claims_seen,
+            claims_scored,
+            claims_skipped,
+        },
+        scores,
+    })
+}
+
+fn write_trust_shadow_scores(
+    ctx: &ServiceContext<'_>,
+    db: &ActionDb,
+    scores: &[(String, crate::abilities::trust::TrustScore)],
+) -> Result<(), String> {
+    ctx.check_mutation_allowed().map_err(|e| e.to_string())?;
     if !scores.is_empty() {
         db.with_transaction(|tx| {
-            for (claim_id, score) in &scores {
+            for (claim_id, score) in scores {
                 crate::services::claims::shadow_update_claim_trust_shadow_only(
                     tx,
                     claim_id,
@@ -3785,11 +3871,7 @@ fn compile_trust_shadow_for_briefing_claims(
         })?;
     }
 
-    Ok(BriefingTrustShadowSummary {
-        claims_seen,
-        claims_scored,
-        claims_skipped,
-    })
+    Ok(())
 }
 
 fn compile_briefing_claim_trust(
@@ -5342,7 +5424,50 @@ mod tests {
             shadow_enabled.saturating_sub(baseline) <= StdDuration::from_millis(50),
             "trust shadow regression exceeded 50ms: baseline={baseline:?} shadow_enabled={shadow_enabled:?}"
         );
+
+        tokio::task::yield_now().await;
+        let writer_probe_start = Instant::now();
+        on_state
+            .db_write(|db| {
+                db.conn_ref()
+                    .query_row("SELECT 1", [], |row| row.get::<_, i64>(0))
+                    .map_err(|error| error.to_string())?;
+                Ok(())
+            })
+            .await
+            .expect("writer availability probe");
+        let writer_probe = writer_probe_start.elapsed();
+        assert!(
+            writer_probe <= StdDuration::from_millis(50),
+            "trust shadow should not occupy the writer after refresh response: writer_probe={writer_probe:?}"
+        );
+
         wait_for_shadow_scores(&on_state, on_meeting_id, 8).await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn trust_compiler_shadow_inflight_guard_coalesces_per_meeting() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let state =
+            refresh_benchmark_state(&temp.path().join("shadow-guard.db"), true, "m-guard", 0).await;
+
+        assert!(state.try_begin_trust_shadow_refresh("m-guard"));
+        assert!(
+            !state.try_begin_trust_shadow_refresh("m-guard"),
+            "same meeting should coalesce while a shadow refresh is in flight"
+        );
+        assert!(
+            state.try_begin_trust_shadow_refresh("m-other"),
+            "different meetings must not block each other"
+        );
+
+        state.finish_trust_shadow_refresh("m-guard");
+        assert!(
+            state.try_begin_trust_shadow_refresh("m-guard"),
+            "meeting should be schedulable again after the in-flight guard clears"
+        );
+        state.finish_trust_shadow_refresh("m-guard");
+        state.finish_trust_shadow_refresh("m-other");
     }
 
     async fn refresh_benchmark_state(
