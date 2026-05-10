@@ -426,7 +426,7 @@ pub enum EmailsResult {
 /// Get all emails
 #[tauri::command]
 pub fn get_all_emails(state: State<'_, Arc<AppState>>) -> EmailsResult {
-    match state.with_db_read(|db| {
+    match state.with_db(|db| {
         db.get_all_active_emails()
             .map(|emails| {
                 emails

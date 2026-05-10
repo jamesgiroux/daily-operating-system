@@ -97,7 +97,7 @@ pub async fn evaluate_email(
         .map_err(|e| e.to_string())?;
     let thread_id = email.thread_id.clone();
 
-    let ctx = state.with_db_read(|db| build_context(email, None, db))?;
+    let ctx = state.with_db(|db| build_context(email, None, db))?;
     let outcome = super::evaluate(svc_ctx, state.clone(), ctx, trigger).await?;
 
     // Flush thread inheritance queue when a primary was just set.
@@ -105,7 +105,7 @@ pub async fn evaluate_email(
     // resolve correctly with the parent's primary available.
     if outcome.primary.is_some() {
         if let Some(tid) = thread_id {
-            let children = state.with_db_read(move |db| db.drain_thread_inheritance_queue(&tid))?;
+            let children = state.with_db(move |db| db.drain_thread_inheritance_queue(&tid))?;
 
             if !children.is_empty() {
                 log::info!(
@@ -115,7 +115,7 @@ pub async fn evaluate_email(
                 for child_id in children {
                     let cid = child_id.clone();
                     let child_email =
-                        state.with_db_read(move |db| db.get_email_by_id_for_linking(&cid));
+                        state.with_db(move |db| db.get_email_by_id_for_linking(&cid));
                     match child_email {
                         Ok(Some(child_email)) => {
                             // Box::pin required because evaluate_email calls itself

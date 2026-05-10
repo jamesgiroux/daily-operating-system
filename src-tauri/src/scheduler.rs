@@ -494,7 +494,7 @@ impl Scheduler {
     fn is_briefing_fresh_for_today(&self) -> bool {
         let today = chrono::Local::now().format("%Y-%m-%d").to_string();
         self.state
-            .with_db_read(|db| {
+            .with_db(|db| {
                 let json_str: Option<String> = db
                     .conn_ref()
                     .query_row(
