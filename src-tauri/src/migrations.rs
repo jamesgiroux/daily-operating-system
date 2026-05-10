@@ -784,6 +784,11 @@ const MIGRATIONS: &[Migration] = &[
         version: 154,
         sql: include_str!("migrations/154_claim_surface_dismissals.sql"),
     },
+    // Full per-variant provenance for DOS-280 semantic claim merges.
+    Migration::Sql {
+        version: 155,
+        sql: include_str!("migrations/155_dos_280_semantic_evidence.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.

@@ -728,6 +728,7 @@ pub(crate) fn canonicalize_for_dos280(text: &str) -> String {
 struct SemanticSignature {
     terms: HashSet<String>,
     numbers: HashSet<String>,
+    qualifiers: HashSet<String>,
     status: SemanticAssertionStatus,
 }
 
@@ -754,6 +755,7 @@ struct SemanticDuplicateMatch {
 /// and field family, then requires strong overlap on normalized
 /// domain terms plus compatible assertion status.
 fn semantic_signature_for_dos280(text: &str) -> SemanticSignature {
+    let qualifiers = semantic_high_salience_qualifiers_for_dos280(text);
     let mut normalized = String::with_capacity(text.len());
     for ch in text.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -803,6 +805,7 @@ fn semantic_signature_for_dos280(text: &str) -> SemanticSignature {
     SemanticSignature {
         terms,
         numbers,
+        qualifiers,
         status,
     }
 }
@@ -936,6 +939,99 @@ fn semantic_status_compatible_for_dos280(
     )
 }
 
+fn semantic_high_salience_qualifiers_for_dos280(text: &str) -> HashSet<String> {
+    let mut qualifiers = HashSet::new();
+    let mut token = String::new();
+
+    for ch in text.chars().chain(std::iter::once(' ')) {
+        if ch.is_ascii_alphanumeric() {
+            token.push(ch);
+            continue;
+        }
+
+        if token.is_empty() {
+            continue;
+        }
+
+        let lower = token.to_ascii_lowercase();
+        let upper = token.to_ascii_uppercase();
+        if matches!(lower.as_str(), "q1" | "q2" | "q3" | "q4") {
+            qualifiers.insert(format!("quarter:{lower}"));
+        } else if matches!(upper.as_str(), "US" | "EU" | "APAC" | "EMEA") && token == upper {
+            qualifiers.insert(format!("region:{upper}"));
+        } else if matches!(lower.parse::<i32>(), Ok(2024..=2030)) {
+            qualifiers.insert(format!("year:{lower}"));
+        } else if semantic_named_entity_qualifier_for_dos280(&token) {
+            qualifiers.insert(format!("entity:{lower}"));
+        }
+
+        token.clear();
+    }
+
+    qualifiers
+}
+
+fn semantic_named_entity_qualifier_for_dos280(token: &str) -> bool {
+    if token.len() < 3 || token.chars().any(|ch| ch.is_ascii_digit()) {
+        return false;
+    }
+
+    let lower = token.to_ascii_lowercase();
+    if semantic_low_salience_entity_token_for_dos280(&lower) {
+        return false;
+    }
+
+    let mut chars = token.chars();
+    let Some(first) = chars.next() else {
+        return false;
+    };
+    let has_later_upper = chars.clone().any(|ch| ch.is_ascii_uppercase());
+    let all_upper = token.chars().all(|ch| ch.is_ascii_uppercase());
+    let title_case =
+        first.is_ascii_uppercase() && token[1..].chars().all(|ch| ch.is_ascii_lowercase());
+
+    has_later_upper || all_upper || title_case
+}
+
+fn semantic_low_salience_entity_token_for_dos280(token: &str) -> bool {
+    semantic_stopword_for_dos280(token)
+        || semantic_negator_for_dos280(token)
+        || matches!(
+            token,
+            "approval"
+                | "approvals"
+                | "approve"
+                | "approves"
+                | "approved"
+                | "approving"
+                | "awaiting"
+                | "blocked"
+                | "blocking"
+                | "blocker"
+                | "outstanding"
+                | "pending"
+                | "stalled"
+                | "unapproved"
+                | "need"
+                | "needed"
+                | "needs"
+                | "confirmed"
+                | "complete"
+                | "completed"
+                | "greenlit"
+                | "secured"
+                | "budget"
+                | "budgets"
+                | "funding"
+                | "funds"
+                | "finance"
+                | "financial"
+                | "cfo"
+                | "phase"
+                | "phases"
+        )
+}
+
 fn semantic_near_duplicate_for_dos280(left: &str, right: &str) -> bool {
     let left = semantic_signature_for_dos280(left);
     let right = semantic_signature_for_dos280(right);
@@ -951,6 +1047,10 @@ fn semantic_near_duplicate_for_dos280(left: &str, right: &str) -> bool {
     }
 
     if !left.numbers.is_empty() && !right.numbers.is_empty() && left.numbers != right.numbers {
+        return false;
+    }
+
+    if left.qualifiers != right.qualifiers {
         return false;
     }
 
@@ -989,6 +1089,13 @@ fn needs_verification_score_for_dos280() -> f64 {
     (config.use_with_caution_min - config.clamp_floor)
         .max(TrustScore::MIN)
         .min(config.use_with_caution_min)
+}
+
+fn semantic_trust_band_allows_canonicalize_for_dos280(band: factors::TrustBand) -> bool {
+    matches!(
+        band,
+        factors::TrustBand::LikelyCurrent | factors::TrustBand::UseWithCaution
+    )
 }
 
 fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> {
@@ -1614,16 +1721,17 @@ fn load_active_semantic_duplicate_claim(
             continue;
         }
 
-        if trust_band_for_dos280(claim.trust_score) == factors::TrustBand::NeedsVerification {
-            needs_verification_match.get_or_insert(SemanticDuplicateMatch {
-                claim,
-                action: SemanticDuplicateAction::NeedsVerification,
-            });
-        } else {
+        let trust_band = trust_band_for_dos280(claim.trust_score);
+        if semantic_trust_band_allows_canonicalize_for_dos280(trust_band) {
             return Ok(Some(SemanticDuplicateMatch {
                 claim,
                 action: SemanticDuplicateAction::Canonicalize,
             }));
+        } else {
+            needs_verification_match.get_or_insert(SemanticDuplicateMatch {
+                claim,
+                action: SemanticDuplicateAction::NeedsVerification,
+            });
         }
     }
 
@@ -1679,15 +1787,19 @@ fn load_active_contradicting_claim(
                WHERE tombstone.dedup_key = active.dedup_key \
                  AND tombstone.claim_state = 'tombstoned' \
            ) \
-         ORDER BY active.created_at DESC LIMIT 1"
+         ORDER BY active.created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
     let mut rows = stmt.query(params![kind, id, claim_type, field_path, canonical_text])?;
-    if let Some(row) = rows.next()? {
-        Ok(Some(read_claim_row(row)?))
-    } else {
-        Ok(None)
+    while let Some(row) = rows.next()? {
+        let claim = read_claim_row(row)?;
+        if semantic_near_duplicate_for_dos280(&claim.text, canonical_text) {
+            continue;
+        }
+        return Ok(Some(claim));
     }
+
+    Ok(None)
 }
 
 /// L2 cycle-1 fix #6: in-transaction corroboration helper. Same body
@@ -1753,6 +1865,40 @@ fn corroborate_in_tx(
             id
         }
     };
+    Ok(id)
+}
+
+fn insert_semantic_evidence_in_tx(
+    tx: &ActionDb,
+    canonical_claim_id: &str,
+    corroboration_id: &str,
+    proposal: &ClaimProposal,
+    source_mechanism: &str,
+    now: &str,
+) -> Result<String, ClaimError> {
+    let id = uuid::Uuid::new_v4().to_string();
+    tx.conn_ref().execute(
+        "INSERT INTO claim_semantic_evidence (
+            id, canonical_claim_id, corroboration_id, data_source, source_ref,
+            source_asof, provenance_json, original_text, actor, observed_at,
+            thread_id, source_mechanism, created_at
+         ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)",
+        params![
+            &id,
+            canonical_claim_id,
+            corroboration_id,
+            &proposal.data_source,
+            proposal.source_ref.as_deref(),
+            proposal.source_asof.as_deref(),
+            &proposal.provenance_json,
+            &proposal.text,
+            &proposal.actor,
+            &proposal.observed_at,
+            proposal.thread_id.as_deref(),
+            source_mechanism,
+            now,
+        ],
+    )?;
     Ok(id)
 }
 
@@ -2383,12 +2529,21 @@ pub fn commit_claim(
             )? {
                 match semantic_match.action {
                     SemanticDuplicateAction::Canonicalize => {
+                        let source_mechanism = "semantic_near_duplicate_merge";
                         let corroboration_id = corroborate_in_tx(
                             tx,
                             &semantic_match.claim.id,
                             &proposal.data_source,
                             proposal.source_asof.as_deref(),
-                            Some("semantic_near_duplicate_merge"),
+                            Some(source_mechanism),
+                            &now,
+                        )?;
+                        insert_semantic_evidence_in_tx(
+                            tx,
+                            &semantic_match.claim.id,
+                            &corroboration_id,
+                            &proposal,
+                            source_mechanism,
                             &now,
                         )?;
                         let mut edge_claim = semantic_match.claim.clone();
@@ -2417,72 +2572,70 @@ pub fn commit_claim(
             // new claim AND a claim_contradictions edge, then return
             // Forked. Both claims remain active until the user (or a
             // reconciliation pass) resolves the fork.
-            if !semantic_duplicate_needs_verification {
-                if let Some(primary) = load_active_contradicting_claim(
-                    tx.conn_ref(),
-                    &subject,
-                    &proposal.claim_type,
-                    proposal.field_path.as_deref(),
-                    &canonical_text,
-                )? {
-                    let new_id = proposal
-                        .id
-                        .clone()
-                        .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                    let contradicting = IntelligenceClaim {
-                        id: new_id.clone(),
-                        subject_ref: subject_ref_compact.clone(),
-                        claim_type: proposal.claim_type.clone(),
-                        field_path: proposal.field_path.clone(),
-                        topic_key: proposal.topic_key.clone(),
-                        text: canonical_text.clone(),
-                        dedup_key: dedup_key.clone(),
-                        item_hash: Some(computed_hash.clone()),
-                        actor: proposal.actor.clone(),
-                        data_source: proposal.data_source.clone(),
-                        source_ref: proposal.source_ref.clone(),
-                        source_asof: proposal.source_asof.clone(),
-                        observed_at: proposal.observed_at.clone(),
-                        created_at: now.clone(),
-                        provenance_json: proposal.provenance_json.clone(),
-                        metadata_json: claim_metadata_json.clone(),
-                        claim_state: ClaimState::Active,
-                        surfacing_state: SurfacingState::Active,
-                        demotion_reason: None,
-                        reactivated_at: None,
-                        retraction_reason: None,
-                        expires_at: None,
-                        superseded_by: None,
-                        trust_score: initial_trust_score(kind),
-                        trust_computed_at: initial_trust_score(kind).map(|_| now.clone()),
-                        trust_version: initial_trust_score(kind).map(|_| 1),
-                        thread_id: proposal.thread_id.clone(),
-                        temporal_scope: effective_temporal_scope.clone(),
-                        sensitivity: effective_sensitivity.clone(),
-                        verification_state: ClaimVerificationState::Active,
-                        verification_reason: None,
-                        needs_user_decision_at: None,
-                    };
-                    insert_claim_row(tx, &contradicting)?;
-                    project_legacy_state_for_claim(ctx, tx, &contradicting)?;
-                    insert_claim_edges(tx, &contradicting)?;
+            if let Some(primary) = load_active_contradicting_claim(
+                tx.conn_ref(),
+                &subject,
+                &proposal.claim_type,
+                proposal.field_path.as_deref(),
+                &canonical_text,
+            )? {
+                let new_id = proposal
+                    .id
+                    .clone()
+                    .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+                let contradicting = IntelligenceClaim {
+                    id: new_id.clone(),
+                    subject_ref: subject_ref_compact.clone(),
+                    claim_type: proposal.claim_type.clone(),
+                    field_path: proposal.field_path.clone(),
+                    topic_key: proposal.topic_key.clone(),
+                    text: canonical_text.clone(),
+                    dedup_key: dedup_key.clone(),
+                    item_hash: Some(computed_hash.clone()),
+                    actor: proposal.actor.clone(),
+                    data_source: proposal.data_source.clone(),
+                    source_ref: proposal.source_ref.clone(),
+                    source_asof: proposal.source_asof.clone(),
+                    observed_at: proposal.observed_at.clone(),
+                    created_at: now.clone(),
+                    provenance_json: proposal.provenance_json.clone(),
+                    metadata_json: claim_metadata_json.clone(),
+                    claim_state: ClaimState::Active,
+                    surfacing_state: SurfacingState::Active,
+                    demotion_reason: None,
+                    reactivated_at: None,
+                    retraction_reason: None,
+                    expires_at: None,
+                    superseded_by: None,
+                    trust_score: initial_trust_score(kind),
+                    trust_computed_at: initial_trust_score(kind).map(|_| now.clone()),
+                    trust_version: initial_trust_score(kind).map(|_| 1),
+                    thread_id: proposal.thread_id.clone(),
+                    temporal_scope: effective_temporal_scope.clone(),
+                    sensitivity: effective_sensitivity.clone(),
+                    verification_state: ClaimVerificationState::Active,
+                    verification_reason: None,
+                    needs_user_decision_at: None,
+                };
+                insert_claim_row(tx, &contradicting)?;
+                project_legacy_state_for_claim(ctx, tx, &contradicting)?;
+                insert_claim_edges(tx, &contradicting)?;
 
-                    let contradiction_id = uuid::Uuid::new_v4().to_string();
-                    tx.conn_ref().execute(
-                        "INSERT INTO claim_contradictions \
-                         (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at) \
-                         VALUES (?1, ?2, ?3, 'contradiction', ?4)",
-                        params![&contradiction_id, &primary.id, &new_id, &now],
-                    )?;
+                let contradiction_id = uuid::Uuid::new_v4().to_string();
+                tx.conn_ref().execute(
+                    "INSERT INTO claim_contradictions \
+                     (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at) \
+                     VALUES (?1, ?2, ?3, 'contradiction', ?4)",
+                    params![&contradiction_id, &primary.id, &new_id, &now],
+                )?;
 
-                    tx.bump_for_subject(&subject)?;
+                tx.bump_for_subject(&subject)?;
 
-                    return Ok(CommittedClaim::Forked {
-                        primary_claim: primary,
-                        contradiction_id,
-                        new_claim_id: new_id,
-                    });
-                }
+                return Ok(CommittedClaim::Forked {
+                    primary_claim: primary,
+                    contradiction_id,
+                    new_claim_id: new_id,
+                });
             }
             if semantic_duplicate_needs_verification {
                 let id = proposal
@@ -8561,6 +8714,27 @@ mod tests {
             ),
             "generic lexical overlap without an explicit assertion status must not collapse"
         );
+        assert!(
+            !semantic_near_duplicate_for_dos280(
+                "Q3 Phase 2 budget approval is pending with finance",
+                "Phase 2 budget approval is pending with finance"
+            ),
+            "quarter-scoped claims must not collapse into unscoped claims"
+        );
+        assert!(
+            !semantic_near_duplicate_for_dos280(
+                "US Phase 2 budget approval is pending with finance",
+                "EU Phase 2 budget approval is pending with finance"
+            ),
+            "region variants must not collapse across scopes"
+        );
+        assert!(
+            !semantic_near_duplicate_for_dos280(
+                "Acme Phase 2 budget approval is pending with finance",
+                "Globex Phase 2 budget approval is pending with finance"
+            ),
+            "named-entity variants must not collapse across entities"
+        );
     }
 
     #[test]
@@ -8583,6 +8757,9 @@ mod tests {
             let mut p = proposal(text);
             p.data_source = format!("dos280_source_{}", index + 1);
             p.source_ref = Some(format!("fixture://dos280/source-{}", index + 1));
+            p.actor = format!("agent:dos280:{}", index + 1);
+            p.observed_at = format!("2026-05-02T12:0{}:00+00:00", index + 1);
+            p.thread_id = Some(format!("thread-dos280-{}", index + 1));
             p.provenance_json = serde_json::json!({
                 "variant": index + 1,
                 "source_ref": p.source_ref.as_deref(),
@@ -8591,7 +8768,9 @@ mod tests {
             let result = commit_claim(&ctx, &db, p).unwrap();
 
             if index == 0 {
-                first_id = Some(inserted_claim_id(result));
+                let id = inserted_claim_id(result);
+                update_claim_trust(&db, &id, TrustScore(0.85), 1, &ctx).unwrap();
+                first_id = Some(id);
             } else {
                 match result {
                     CommittedClaim::Reinforced { claim, .. } => {
@@ -8654,6 +8833,31 @@ mod tests {
             );
             assert_eq!(*count, 1);
         }
+
+        let recovered: (String, String, String, String, Option<String>) = db
+            .conn_ref()
+            .query_row(
+                "SELECT data_source, provenance_json, original_text, observed_at, thread_id
+                 FROM claim_semantic_evidence
+                 WHERE canonical_claim_id = ?1
+                   AND source_ref = 'fixture://dos280/source-4'",
+                params![&first_id],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                    ))
+                },
+            )
+            .expect("semantic variant evidence recoverable by source_ref");
+        assert_eq!(recovered.0, "dos280_source_4");
+        assert!(recovered.1.contains("\"variant\":4"));
+        assert_eq!(recovered.2, variants[3]);
+        assert_eq!(recovered.3, "2026-05-02T12:04:00+00:00");
+        assert_eq!(recovered.4.as_deref(), Some("thread-dos280-4"));
     }
 
     #[test]
@@ -8743,6 +8947,111 @@ mod tests {
             contradiction_count, 0,
             "low-trust semantic duplicate is verification work, not a contradiction"
         );
+    }
+
+    #[test]
+    fn commit_claim_unscored_semantic_duplicate_routes_to_needs_verification() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("Phase 2 budget approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("Finance has not approved the Phase 2 budget yet"),
+        )
+        .unwrap();
+
+        let inserted = match result {
+            CommittedClaim::Inserted { claim } => claim,
+            other => panic!("unscored duplicate should not auto-canonicalize, got {other:?}"),
+        };
+        assert_ne!(inserted.id, first_id);
+        assert_eq!(
+            trust_band_for_dos280(inserted.trust_score),
+            factors::TrustBand::NeedsVerification
+        );
+        assert_eq!(
+            inserted.verification_reason.as_deref(),
+            Some("semantic_duplicate_low_trust_needs_verification")
+        );
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+        let contradiction_count: i64 = db
+            .conn_ref()
+            .query_row("SELECT count(*) FROM claim_contradictions", [], |row| {
+                row.get(0)
+            })
+            .unwrap();
+        assert_eq!(contradiction_count, 0);
+    }
+
+    #[test]
+    fn commit_claim_low_trust_semantic_duplicate_still_checks_contradictions() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let low_trust_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("Phase 2 budget approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &low_trust_id, TrustScore(0.42), 1, &ctx).unwrap();
+        insert_fixture_claim(
+            &db,
+            "opposite-active",
+            SUBJECT,
+            "risk",
+            "finance approved the phase 2 budget",
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("Finance has not approved the Phase 2 budget yet"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Forked {
+                primary_claim,
+                contradiction_id,
+                new_claim_id,
+            } => {
+                assert_eq!(primary_claim.id, "opposite-active");
+                assert_ne!(new_claim_id, low_trust_id);
+                let edge_count: i64 = db
+                    .conn_ref()
+                    .query_row(
+                        "SELECT count(*) FROM claim_contradictions WHERE id = ?1",
+                        params![&contradiction_id],
+                        |row| row.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(edge_count, 1);
+            }
+            other => panic!(
+                "opposite active assertion must still fork despite low-trust duplicate, got {other:?}"
+            ),
+        }
     }
 
     /// L2 cycle-1 fix #6: re-committing the same active claim's
