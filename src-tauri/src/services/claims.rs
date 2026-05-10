@@ -869,10 +869,13 @@ fn compute_semantic_signature_with_qualifiers(
 }
 
 fn normalize_semantic_contractions(text: &str) -> String {
-    let normalized = semantic_aint_contraction_regex().replace_all(text, "am not");
+    let normalized = semantic_wont_contraction_regex().replace_all(text, "will not");
+    let normalized = semantic_shant_contraction_regex().replace_all(&normalized, "shall not");
+    let normalized = semantic_aint_contraction_regex().replace_all(&normalized, "am not");
     let normalized = semantic_cannot_regex().replace_all(&normalized, "can not");
+    let normalized = semantic_cant_contraction_regex().replace_all(&normalized, "can not");
     semantic_negative_contraction_regex()
-        .replace_all(&normalized, "${1}n not")
+        .replace_all(&normalized, "${1} not")
         .into_owned()
 }
 
@@ -887,6 +890,21 @@ fn semantic_negative_contraction_regex() -> &'static Regex {
 fn semantic_cannot_regex() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| Regex::new("(?i)\\bcannot\\b").expect("cannot regex must compile"))
+}
+
+fn semantic_wont_contraction_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new("(?i)\\bwon['\u{2019}]t\\b").expect("won't regex must compile"))
+}
+
+fn semantic_shant_contraction_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new("(?i)\\bshan['\u{2019}]t\\b").expect("shan't regex must compile"))
+}
+
+fn semantic_cant_contraction_regex() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| Regex::new("(?i)\\bcan['\u{2019}]t\\b").expect("can't regex must compile"))
 }
 
 fn semantic_aint_contraction_regex() -> &'static Regex {
@@ -9586,6 +9604,7 @@ mod tests {
             ("Renewal isn't secured", "Renewal secured"),
             ("Approval ain't landed", "Approval landed"),
             ("Project cannot proceed", "Project can proceed"),
+            ("Project can't proceed", "Project can proceed"),
         ] {
             assert_eq!(
                 compute_semantic_signature(negative).status,
@@ -9607,6 +9626,39 @@ mod tests {
             compute_semantic_signature("Sales weren\u{2019}t greenlit").status,
             SemanticAssertionStatus::Pending,
             "curly apostrophe negative contractions must tokenize with a negator"
+        );
+    }
+
+    #[test]
+    fn semantic_irregular_negative_contractions_normalize_before_generic_regex() {
+        assert_eq!(
+            normalize_semantic_contractions("Finance won't approve Phase 2 budget"),
+            "Finance will not approve Phase 2 budget"
+        );
+        assert_eq!(
+            normalize_semantic_contractions("Acme Phase 2 project shan't proceed"),
+            "Acme Phase 2 project shall not proceed"
+        );
+        assert_eq!(
+            normalize_semantic_contractions("Finance haven't approved Phase 2 budget"),
+            "Finance have not approved Phase 2 budget"
+        );
+
+        assert!(semantic_near_duplicate(
+            "Finance won't approve Phase 2 budget",
+            "Finance will not approve Phase 2 budget"
+        ));
+        assert!(semantic_near_duplicate(
+            "Acme Phase 2 project shan't proceed",
+            "Acme Phase 2 project shall not proceed"
+        ));
+        assert_eq!(
+            compute_semantic_signature("Finance won't approve Phase 2 budget").status,
+            SemanticAssertionStatus::Pending
+        );
+        assert_eq!(
+            compute_semantic_signature("Finance will not approve Phase 2 budget").status,
+            SemanticAssertionStatus::Pending
         );
     }
 
