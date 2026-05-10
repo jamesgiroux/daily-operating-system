@@ -719,7 +719,7 @@ pub fn emit_signal_and_propagate(
                 decay_half_life_days: None,
                 insert_mode: SignalInsertMode::Insert,
                 channel: SignalEmissionChannel::Infrastructure,
-                refresh_meetings: true,
+                refresh_meetings: false,
             },
         )
         .map_err(|e| e.to_string())?;
