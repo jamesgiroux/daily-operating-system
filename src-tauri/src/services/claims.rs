@@ -2895,6 +2895,8 @@ fn targeted_repair_enqueue_invalidation(
         targeted_repair_extraction_batch_payload(&input_snapshot_hash, &prompt_fingerprint);
     let budget = targeted_repair_claim_generation_budget(TARGETED_REPAIR_ABILITY_ID)
         .expect("targeted repair budget is registered");
+    let policy_repair_surface =
+        targeted_repair_policy_repair_coalescing_surface(tx, feedback_id, repair)?;
     let payload_json = serde_json::json!({
         "claim_id": claim_id,
         "feedback_id": feedback_id,
@@ -2928,6 +2930,7 @@ fn targeted_repair_enqueue_invalidation(
             subject_id,
             claim_id,
             repair,
+            policy_repair_surface.as_deref(),
             &input_snapshot_hash,
         )),
         chain_id: None,
@@ -3000,18 +3003,40 @@ fn targeted_repair_coalescing_key(
     subject_id: &str,
     claim_id: &str,
     repair: RepairAction,
+    repair_scope: Option<&str>,
     input_snapshot_hash: &str,
 ) -> String {
     let input_scope = input_snapshot_hash
         .rsplit_once(':')
         .map(|(scope, _)| scope)
         .unwrap_or(input_snapshot_hash);
+    let repair_scope = repair_scope.unwrap_or("claim");
     format!(
-        "{TARGETED_REPAIR_OPERATION}:{subject_type}:{subject_id}:{claim_id}:{}:{}:{}:{input_scope}",
+        "{TARGETED_REPAIR_OPERATION}:{subject_type}:{subject_id}:{claim_id}:{}:{repair_scope}:{}:{}:{input_scope}",
         repair_action_label(repair),
         TARGETED_REPAIR_ABILITY_ID,
         TARGETED_REPAIR_ABILITY_VERSION
     )
+}
+
+fn targeted_repair_policy_repair_coalescing_surface(
+    tx: &ActionDb,
+    feedback_id: &str,
+    repair: RepairAction,
+) -> Result<Option<String>, ClaimError> {
+    if !matches!(repair, RepairAction::PolicyRepair) {
+        return Ok(None);
+    }
+
+    let feedback = targeted_repair_feedback(tx, feedback_id)?;
+    let surface = payload_string(feedback.payload_json.as_deref(), "surface")?
+        .ok_or_else(|| {
+            ClaimError::InvalidFeedback(
+                "surface_inappropriate repair requires payload_json.surface".to_string(),
+            )
+        })
+        .and_then(|surface| normalize_claim_surface(&surface))?;
+    Ok(Some(format!("surface:{}", surface.as_str())))
 }
 
 fn targeted_repair_prompt_fingerprint(input_snapshot_hash: &str) -> String {
@@ -3895,16 +3920,30 @@ fn targeted_repair_insert_replacement_claim(
         }
     };
 
-    execute_claims_update(
-        tx.conn_ref(),
-        "UPDATE intelligence_claims
-         SET claim_state = 'dormant',
-             surfacing_state = 'dormant',
-             demotion_reason = ?2,
-             superseded_by = ?3
-         WHERE id = ?1",
-        params![&original.id, demotion_reason, &replacement_id],
-    )?;
+    if matches!(
+        original.claim_state,
+        ClaimState::Tombstoned | ClaimState::Withdrawn
+    ) {
+        execute_claims_update(
+            tx.conn_ref(),
+            "UPDATE intelligence_claims
+             SET surfacing_state = 'dormant',
+                 superseded_by = ?2
+             WHERE id = ?1",
+            params![&original.id, &replacement_id],
+        )?;
+    } else {
+        execute_claims_update(
+            tx.conn_ref(),
+            "UPDATE intelligence_claims
+             SET claim_state = 'dormant',
+                 surfacing_state = 'dormant',
+                 demotion_reason = ?2,
+                 superseded_by = ?3
+             WHERE id = ?1",
+            params![&original.id, demotion_reason, &replacement_id],
+        )?;
+    }
     tx.conn_ref().execute(
         "INSERT INTO claim_contradictions
          (id, primary_claim_id, contradicting_claim_id, branch_kind, detected_at,
@@ -7036,6 +7075,75 @@ mod tests {
     }
 
     #[test]
+    fn policy_repair_coalescing_keeps_distinct_surface_feedback() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let claim_id = inserted_claim_id(
+            commit_claim(&ctx, &db, proposal("Risk hidden on two surfaces")).unwrap(),
+        );
+
+        let mut briefing = feedback_input(&claim_id, FeedbackAction::SurfaceInappropriate);
+        briefing.payload_json = Some(serde_json::json!({ "surface": "briefing" }).to_string());
+        let first = record_claim_feedback(&ctx, &db, briefing).unwrap();
+
+        let mut entity_detail = feedback_input(&claim_id, FeedbackAction::SurfaceInappropriate);
+        entity_detail.payload_json =
+            Some(serde_json::json!({ "surface": "entity_detail" }).to_string());
+        let second = record_claim_feedback(&ctx, &db, entity_detail).unwrap();
+
+        assert_ne!(second.repair_job_id, first.repair_job_id);
+        assert_eq!(repair_job_count(&db, &claim_id), 2);
+
+        let mut drained = false;
+        for attempt in 0..8 {
+            let worker_id = format!("repair-worker-policy-multi-surface-{attempt}");
+            match targeted_repair_process_next_job(&ctx, &db, &worker_id)
+                .expect("process pending policy repair")
+            {
+                TargetedRepairProcessOutcome::NoJob => {
+                    drained = true;
+                    break;
+                }
+                TargetedRepairProcessOutcome::Completed { .. } => {}
+            }
+        }
+        assert!(drained, "targeted repair queue should drain");
+
+        assert!(is_claim_dismissed_on_surface(&db, &claim_id, "briefing").unwrap());
+        assert!(is_claim_dismissed_on_surface(
+            &db,
+            &claim_id,
+            ClaimDismissalSurface::TauriEntityDetail.as_str()
+        )
+        .unwrap());
+
+        let surfaces = db
+            .conn_ref()
+            .prepare(
+                "SELECT surface
+                 FROM claim_surface_dismissals
+                 WHERE claim_id = ?1
+                 ORDER BY surface ASC",
+            )
+            .unwrap()
+            .query_map(params![&claim_id], |row| row.get::<_, String>(0))
+            .unwrap()
+            .collect::<Result<Vec<_>, _>>()
+            .unwrap();
+        assert_eq!(
+            surfaces,
+            vec![
+                ClaimDismissalSurface::Briefing.as_str().to_string(),
+                ClaimDismissalSurface::TauriEntityDetail
+                    .as_str()
+                    .to_string(),
+            ]
+        );
+    }
+
+    #[test]
     fn targeted_repair_stale_job_reschedules_without_applying() {
         let db = test_db();
         seed_account(&db);
@@ -7452,6 +7560,61 @@ mod tests {
         assert!(error
             .as_deref()
             .is_some_and(|message| message.contains("tombstone PRE-GATE")));
+    }
+
+    #[test]
+    fn targeted_repair_wrong_subject_replacement_preserves_original_tombstone() {
+        let db = test_db();
+        seed_account(&db);
+        db.conn_ref()
+            .execute(
+                "INSERT INTO accounts (id, name, updated_at) VALUES (?1, ?2, ?3)",
+                params!["acct-2", "Account 2", TS],
+            )
+            .expect("seed corrected account");
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let text = "procurement blocked renewal on the asserted account";
+        let source_claim_id = inserted_claim_id(commit_claim(&ctx, &db, proposal(text)).unwrap());
+        let mut input = feedback_input(&source_claim_id, FeedbackAction::WrongSubject);
+        input.payload_json = Some(
+            serde_json::json!({
+                "corrected_subject": {
+                    "kind": "account",
+                    "id": "acct-2"
+                }
+            })
+            .to_string(),
+        );
+        record_claim_feedback(&ctx, &db, input).unwrap();
+        let outcome =
+            targeted_repair_process_next_job(&ctx, &db, "repair-worker-wrong-subject-success")
+                .expect("process wrong-subject replacement repair");
+        assert!(matches!(
+            outcome,
+            TargetedRepairProcessOutcome::Completed {
+                repair_jobs_processed: 1,
+                claims_changed: 2,
+                contradictions_reconciled: 1,
+                ..
+            }
+        ));
+
+        let target_active =
+            load_claims_active(&db, r#"{"kind":"account","id":"acct-2"}"#, Some("risk")).unwrap();
+        assert_eq!(target_active.len(), 1);
+        assert_eq!(target_active[0].text, text);
+
+        let (claim_state, surfacing_state, _, retraction_reason) =
+            read_lifecycle_columns(&db, &source_claim_id);
+        assert_eq!(claim_state, "tombstoned");
+        assert_eq!(surfacing_state, "dormant");
+        assert_eq!(retraction_reason.as_deref(), Some("wrong_subject"));
+
+        let err = commit_claim(&ctx, &db, proposal(text))
+            .expect_err("original subject/text must remain tombstone-gated");
+        assert!(matches!(err, ClaimError::TombstonedPreGate));
     }
 
     #[test]
