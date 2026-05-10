@@ -261,15 +261,27 @@ fn incoming_id_matches_source_parts_with_ordinal(
     incoming_id: &str,
     row: &PendingAliasRemediationRow,
 ) -> bool {
+    let Some((incoming_source_type, incoming_source_id, incoming_source_ordinal)) =
+        source_commitment_id_parts(incoming_id)
+    else {
+        return false;
+    };
+
+    if remediation_full_source_parts_match(
+        row,
+        (
+            incoming_source_type,
+            incoming_source_id,
+            incoming_source_ordinal,
+        ),
+    ) {
+        return true;
+    }
+
     let Some(source_type) = trimmed_non_empty(row.source_type.as_deref()) else {
         return false;
     };
     let Some(source_id) = trimmed_non_empty(row.source_id.as_deref()) else {
-        return false;
-    };
-    let Some((incoming_source_type, incoming_source_id, incoming_source_ordinal)) =
-        source_commitment_id_parts(incoming_id)
-    else {
         return false;
     };
 
@@ -279,6 +291,20 @@ fn incoming_id_matches_source_parts_with_ordinal(
 
     remediation_source_ordinal(row, source_type, source_id)
         .is_some_and(|source_ordinal| source_ordinal == incoming_source_ordinal)
+}
+
+fn remediation_full_source_parts_match(
+    row: &PendingAliasRemediationRow,
+    incoming_parts: (&str, &str, &str),
+) -> bool {
+    [
+        row.source_commitment_id.as_deref(),
+        row.source_id.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter_map(source_commitment_id_parts)
+    .any(|source_parts| source_parts == incoming_parts)
 }
 
 fn remediation_source_ordinal<'a>(
@@ -1623,6 +1649,69 @@ mod tests {
         );
         let unrelated_action_id = bridge_action_id(&db, &unrelated_id);
         assert_ne!(unrelated_action_id, "done-edited-a1");
+    }
+
+    #[test]
+    fn pending_alias_remediation_blocks_full_source_id_same_ordinal() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let blocked_title = "Send first ordinal renewal followup";
+        let blocked_id = derived_id(blocked_title);
+        let second_title = "Send second ordinal renewal followup";
+        let second_id = derived_id(second_title);
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO action_commitment_alias_remediation
+                 (id, legacy_bridge_id, tombstoned_action_id, entity_type,
+                  entity_id, source_type, source_id,
+                  observed_at, reason, remediation_status)
+                 VALUES ('remediation-full-source-id', 'legacy:done', 'done-edited-a1',
+                         'account', 'acct-1', 'meeting', 'meeting:abc:1',
+                         '2026-01-02',
+                         'unrecoverable_tombstoned_legacy_bridge_alias', 'pending')",
+                [],
+            )
+            .unwrap();
+
+        let blocked = make_commitment_with_identity(
+            blocked_title,
+            Some("meeting:abc:1"),
+            None,
+            None,
+            Some("meeting"),
+        );
+        let blocked_summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[blocked]).expect("sync");
+
+        assert_eq!(blocked_summary.created, 0);
+        assert_eq!(blocked_summary.skipped_tombstoned, 1);
+        assert_eq!(action_count(&db), 0);
+        let blocked_bridge_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                rusqlite::params![blocked_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(blocked_bridge_count, 0);
+
+        let unrelated_ordinal = make_commitment_with_identity(
+            second_title,
+            Some("meeting:abc:2"),
+            None,
+            None,
+            Some("meeting"),
+        );
+        let pass_summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[unrelated_ordinal])
+                .expect("sync");
+
+        assert_eq!(pass_summary.created, 1);
+        assert_eq!(pass_summary.skipped_tombstoned, 0);
+        assert_eq!(action_count(&db), 1);
+        assert!(!bridge_action_id(&db, &second_id).is_empty());
     }
 
     #[test]

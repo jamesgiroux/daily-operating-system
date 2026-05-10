@@ -785,7 +785,7 @@ impl ActionDb {
              WHERE status = 'backlog'
                AND (
                      owner_source = 'unassigned'
-                  OR owner_source = 'ambiguous'
+                  OR owner_source IN ('ambiguous', 'legacy_context_ambiguous')
                   OR (owner_raw IS NOT NULL AND LOWER(owner_raw) = ?2)
                   OR (
                        owner_source IS NULL
@@ -1804,6 +1804,17 @@ mod tests {
                 )
                 .expect("insert seed");
         }
+        db.conn
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at,
+                  owner_raw, owner_source, action_kind)
+                 VALUES ('h-legacy-ambiguous', 'Review migrated owner',
+                         2, 'backlog', datetime('now'), datetime('now'),
+                         'Customer Owner', 'legacy_context_ambiguous', 'commitment')",
+                [],
+            )
+            .expect("insert legacy ambiguous seed");
 
         // Mine + unassigned only.
         let scoped = db
@@ -1821,6 +1832,10 @@ mod tests {
             "rows without owner: prefix must surface"
         );
         assert!(
+            ids.contains("h-legacy-ambiguous"),
+            "migrated ambiguous owner rows must surface for triage"
+        );
+        assert!(
             !ids.contains("c-other"),
             "other-owner rows must be filtered out"
         );
@@ -1833,7 +1848,7 @@ mod tests {
         let unscoped = db.get_suggested_actions_for_user(None).expect("unscoped");
         assert_eq!(
             unscoped.len(),
-            7,
+            8,
             "None user_name should return all seeded rows"
         );
 
@@ -1843,7 +1858,7 @@ mod tests {
             .expect("empty");
         assert_eq!(
             empty.len(),
-            7,
+            8,
             "whitespace-only name falls back to full list"
         );
     }
