@@ -97,6 +97,14 @@ pub fn sync_ai_commitments(
             commitment.due_date.as_deref(),
             commitment.owner.as_deref(),
         );
+        if read_bridge_row(db, &derived_id)
+            .map_err(|e| e.to_string())?
+            .is_none()
+            && pending_alias_remediation_blocks_claim(db, entity_type, entity_id)?
+        {
+            summary.skipped_tombstoned += 1;
+            continue;
+        }
         if legacy_bridge_tombstone_blocks_claim(
             ctx,
             db,
@@ -154,6 +162,34 @@ pub fn sync_ai_commitments(
     }
 
     Ok(summary)
+}
+
+fn pending_alias_remediation_blocks_claim(
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+) -> Result<bool, String> {
+    if !table_exists(db, "action_commitment_alias_remediation").map_err(|e| e.to_string())? {
+        return Ok(false);
+    }
+
+    db.conn_ref()
+        .query_row(
+            "SELECT 1
+             FROM action_commitment_alias_remediation
+             WHERE remediation_status = 'pending'
+               AND entity_type = ?1
+               AND entity_id = ?2
+             LIMIT 1",
+            rusqlite::params![entity_type, entity_id],
+            |_| Ok(()),
+        )
+        .map(|()| true)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(false),
+            other => Err(other),
+        })
+        .map_err(|e| e.to_string())
 }
 
 fn legacy_bridge_tombstone_blocks_claim(
@@ -865,6 +901,18 @@ fn read_bridge_row(
         })
 }
 
+fn table_exists(db: &ActionDb, table_name: &str) -> Result<bool, rusqlite::Error> {
+    db.conn_ref().query_row(
+        "SELECT EXISTS(
+            SELECT 1
+            FROM sqlite_master
+            WHERE type = 'table' AND name = ?1
+        )",
+        rusqlite::params![table_name],
+        |row| row.get::<_, i64>(0).map(|value| value != 0),
+    )
+}
+
 fn insert_bridge_row(
     ctx: &crate::services::context::ServiceContext<'_>,
     db: &ActionDb,
@@ -1371,6 +1419,76 @@ mod tests {
             )
             .unwrap();
         assert_eq!(tombstoned, 1);
+    }
+
+    #[test]
+    fn pending_alias_remediation_blocks_original_source_sighting() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let original_title = "Send original renewal plan";
+        let original_id = derived_id_with(original_title, Some("2030-03-01"), Some("Alex Chen"));
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, action_kind, commitment_id,
+                  owner_raw)
+                 VALUES ('done-edited-a1', 'User edited renewal wording', 3,
+                         'completed', '2026-01-01', '2026-01-02', '2030-03-01',
+                         'acct-1', 'commitment', 'legacy:original', 'commitment',
+                         'legacy:original', 'Alex Chen')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES ('legacy:original', 'account', 'acct-1', 'done-edited-a1',
+                         '2026-01-01', '2026-01-02', 1)",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO action_commitment_alias_remediation
+                 (id, legacy_bridge_id, tombstoned_action_id, entity_type,
+                  entity_id, observed_at, reason, remediation_status)
+                 VALUES ('remediation-1', 'legacy:original', 'done-edited-a1',
+                         'account', 'acct-1', '2026-01-02',
+                         'unrecoverable_tombstoned_legacy_bridge_alias', 'pending')",
+                [],
+            )
+            .unwrap();
+
+        let incoming = make_commitment_with_identity(
+            original_title,
+            None,
+            Some("2030-03-01"),
+            Some("Alex Chen"),
+            Some("meeting"),
+        );
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[incoming]).expect("sync");
+
+        assert_eq!(summary.created, 0);
+        assert_eq!(summary.skipped_tombstoned, 1);
+        assert_eq!(action_count(&db), 1);
+
+        let original_alias_count: i64 = db
+            .conn_ref()
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                rusqlite::params![original_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            original_alias_count, 0,
+            "pending remediation must block derived-id creation until manual review"
+        );
     }
 
     #[test]
