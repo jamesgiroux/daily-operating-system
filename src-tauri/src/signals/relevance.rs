@@ -3,7 +3,7 @@
 //! Ranks signals by cosine similarity to a meeting context string using
 //! the local embedding model.
 
-use crate::embeddings::EmbeddingModel;
+use crate::embeddings::{cosine_similarity, EmbeddingModel};
 
 use super::bus::SignalEvent;
 
@@ -43,7 +43,7 @@ pub fn rank_signals_by_relevance(
                     let doc_text = format!("{}{} {}", DOCUMENT_PREFIX, signal.signal_type, v);
                     model.embed(&doc_text).ok()
                 })
-                .map(|doc_vec| cosine_similarity(&query_vec, &doc_vec))
+                .map(|doc_vec| cosine_similarity(&query_vec, &doc_vec) as f64)
                 .unwrap_or(0.0);
             (signal.clone(), score)
         })
@@ -51,23 +51,6 @@ pub fn rank_signals_by_relevance(
 
     scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
     scored
-}
-
-/// Cosine similarity between two vectors.
-fn cosine_similarity(a: &[f32], b: &[f32]) -> f64 {
-    if a.len() != b.len() || a.is_empty() {
-        return 0.0;
-    }
-
-    let dot: f32 = a.iter().zip(b.iter()).map(|(x, y)| x * y).sum();
-    let norm_a: f32 = a.iter().map(|x| x * x).sum::<f32>().sqrt();
-    let norm_b: f32 = b.iter().map(|x| x * x).sum::<f32>().sqrt();
-
-    if norm_a == 0.0 || norm_b == 0.0 {
-        return 0.0;
-    }
-
-    (dot / (norm_a * norm_b)) as f64
 }
 
 #[cfg(test)]
