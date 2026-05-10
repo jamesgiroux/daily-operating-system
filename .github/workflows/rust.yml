@@ -1,0 +1,89 @@
+# Rust CI - macOS only because Tauri externalBin validation + macOS keychain
+# integration paths require it. Triggers are deliberately narrow:
+#
+# - Pushes/PRs to trunk: always run (release branch -- full safety).
+# - PRs to dev: only when src-tauri/**, Cargo.*, or workflow files change.
+#   Frontend-only PRs to dev skip this job entirely (the cost saving).
+#
+# DOS-534 rationale: .githooks/pre-commit catches clippy + cargo test --lib
+# + tsc locally on every commit post-DOS-534-hook-wiring. L2 review catches
+# anything the local gate misses before merge. CI-on-every-dev-PR was
+# redundant + expensive (10x Linux cost on macos-latest).
+name: Rust
+
+on:
+  push:
+    branches:
+      - trunk
+    paths:
+      - 'src-tauri/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/rust.yml'
+      - '.github/workflows/test.yml'
+  pull_request:
+    branches:
+      - dev
+      - trunk
+    paths:
+      - 'src-tauri/**'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - '.github/workflows/rust.yml'
+      - '.github/workflows/test.yml'
+
+concurrency:
+  group: rust-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rust:
+    runs-on: macos-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+
+      - name: Install ripgrep
+        run: brew install ripgrep
+
+      - name: Cache Rust dependencies
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
+        with:
+          path: |
+            ~/.cargo/bin
+            ~/.cargo/registry
+            ~/.cargo/git
+            src-tauri/target
+          key: macos-cargo-v2-${{ hashFiles('src-tauri/Cargo.lock') }}
+          restore-keys: |
+            macos-cargo-v2-
+
+      - name: Create sidecar stub for Tauri externalBin validation
+        run: |
+          mkdir -p src-tauri/binaries
+          TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
+          touch "src-tauri/binaries/dailyos-mcp-$TARGET"
+          touch src-tauri/build.rs
+
+      - name: Run DOS-301 claim projection roundtrip regression
+        run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --test dos301_claim_projection_roundtrip_test
+
+      - name: Run Rust clippy (production targets)
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
+
+      - name: Run hermetic harness tests
+        working-directory: src-tauri
+        run: |
+          cargo test --features harness-hermetic --test harness
+          cargo test --features harness-hermetic --test dos216_hermetic_feature_test
+
+      - name: Run Rust tests
+        working-directory: src-tauri
+        run: cargo test --workspace
+
+      - name: Run MCP dynamic reader harness test
+        working-directory: src-tauri
+        run: cargo test --features test-harness --test w05_a_mcp_dynamic_tool_readers_test

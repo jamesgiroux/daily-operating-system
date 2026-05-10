@@ -58,11 +58,15 @@ Required status checks added: `L2 / config-fence`, `L2 / validate-pr-template`, 
 
 ### 2. Install hooks locally
 
+Hooks are installed automatically via `pnpm install` (postinstall step calls `scripts/install-hooks.sh`). To install manually:
+
 ```bash
 ./scripts/install-hooks.sh
 ```
 
-This wires `core.hooksPath` to `.githooks/`. Required for the commit-msg L2 acknowledgment gate.
+This wires `core.hooksPath` to `.githooks/`. Required for the commit-msg L2 acknowledgment gate, the pre-commit clippy + tsc + lint-staged gates, and the pre-push PII scan + preflight.
+
+**CI environments skip this** — `install-hooks.sh` exits cleanly when `CI=true` or `GITHUB_ACTIONS` is set.
 
 ## Bypass
 

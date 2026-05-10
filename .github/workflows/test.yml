@@ -1,3 +1,15 @@
+# CI strategy (DOS-534):
+# - lint-and-checks + frontend: every PR/push to dev/trunk on Linux (fast, cheap).
+# - rust:                       moved to .github/workflows/rust.yml on macOS,
+#                               triggered only when src-tauri/** or Cargo.* change,
+#                               OR for any push/PR to trunk.
+# - cargo-audit:                moved to .github/workflows/security-audit.yml,
+#                               weekly + path-triggered on Cargo.lock.
+#
+# Rationale: the .githooks/pre-commit gate runs clippy + cargo test --lib + tsc
+# locally on every commit (post-DOS-534), and L2 review is required before
+# merge. Re-running clippy/cargo-test on every dev PR is redundant and burns
+# macOS minutes (10x Linux cost).
 name: Test
 
 on:
@@ -7,14 +19,47 @@ on:
       - trunk
     tags-ignore:
       - 'v*'
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'eslint.config.js'
+      - 'stylelint.config.js'
+      - 'tsconfig*.json'
+      - 'vite.config.*'
+      - 'vitest.config.*'
+      - '.github/workflows/test.yml'
   pull_request:
     branches:
       - dev
       - trunk
+    paths:
+      - 'src/**'
+      - 'src-tauri/**'
+      - 'scripts/**'
+      - 'package.json'
+      - 'pnpm-lock.yaml'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'eslint.config.js'
+      - 'stylelint.config.js'
+      - 'tsconfig*.json'
+      - 'vite.config.*'
+      - 'vitest.config.*'
+      - '.github/workflows/test.yml'
+
+# Cancel superseded PR runs (force-push); never cancel main-branch landings.
+concurrency:
+  group: test-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
-  test:
-    runs-on: macos-latest
+  lint-and-checks:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
@@ -28,26 +73,11 @@ jobs:
           node-version: "22"
           cache: "pnpm"
 
-      - name: Setup Rust
-        uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-
-      - name: Install ripgrep (rg)
-        run: brew install ripgrep
-
-      - name: Cache Rust dependencies
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
-        with:
-          path: |
-            ~/.cargo/bin
-            ~/.cargo/registry
-            ~/.cargo/git
-            src-tauri/target
-          key: macos-cargo-v2-${{ hashFiles('src-tauri/Cargo.lock') }}
-          restore-keys: |
-            macos-cargo-v2-
+      - name: Install ripgrep
+        run: sudo apt-get install -y ripgrep
 
       - name: Install frontend dependencies
-        run: pnpm install
+        run: pnpm install --ignore-scripts && bash src-tauri/scripts/build-mcp.sh --stub
 
       - name: Fail on committed OAuth secrets
         run: |
@@ -55,14 +85,6 @@ jobs:
             echo "Committed Google OAuth secret pattern detected."
             exit 1
           fi
-
-      - name: Create sidecar stub for Tauri externalBin validation
-        run: |
-          mkdir -p src-tauri/binaries
-          TARGET=$(rustc -vV | awk '/^host:/ { print $2 }')
-          touch "src-tauri/binaries/dailyos-mcp-$TARGET"
-          # Force Cargo to re-run build.rs so it sees the stub binary
-          touch src-tauri/build.rs
 
       - name: Enforce service-layer mutation boundary
         run: ./scripts/check_service_layer_boundary.sh
@@ -91,34 +113,32 @@ jobs:
         continue-on-error: true
         run: src-tauri/scripts/check_dos301_legacy_projection_writers.sh
 
-      - name: Run DOS-301 claim projection roundtrip regression
-        run: cargo test --manifest-path src-tauri/Cargo.toml -p dailyos --test dos301_claim_projection_roundtrip_test
+      - name: TypeScript type-check
+        run: pnpm tsc --noEmit
 
-      - name: Run Rust clippy (production targets)
-        run: cargo clippy --manifest-path src-tauri/Cargo.toml --workspace --all-features --lib --bins -- -D warnings
+      - name: Lint (ESLint + Stylelint)
+        run: pnpm lint
 
-      - name: Run hermetic harness tests
-        working-directory: src-tauri
-        run: |
-          cargo test --features harness-hermetic --test harness
-          cargo test --features harness-hermetic --test dos216_hermetic_feature_test
+      - name: Reference fidelity audit
+        run: python3 .docs/design/_audits/audit-reference.py --enforce-baseline
 
-      - name: Run Rust tests
-        working-directory: src-tauri
-        run: cargo test --workspace
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
-      - name: Run MCP dynamic reader harness test
-        working-directory: src-tauri
-        run: cargo test --features test-harness --test w05_a_mcp_dynamic_tool_readers_test
+      - name: Setup pnpm
+        uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4.3.0
 
-      - name: Install cargo-audit
-        run: which cargo-audit || cargo install cargo-audit --locked
+      - name: Setup Node.js
+        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: "pnpm"
 
-      - name: Run Rust dependency audit (high+)
-        run: cargo audit --file audit.toml
+      - name: Install frontend dependencies
+        run: pnpm install --ignore-scripts && bash src-tauri/scripts/build-mcp.sh --stub
 
       - name: Run frontend tests
         run: pnpm test
-
-      - name: Run frontend dependency audit (high+)
-        run: pnpm audit --audit-level high
