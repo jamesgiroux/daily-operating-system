@@ -59,6 +59,20 @@ struct BridgeRow {
     tombstoned: bool,
 }
 
+struct PendingAliasRemediationRow {
+    id: String,
+    legacy_bridge_id: String,
+    source_commitment_id: Option<String>,
+    source_type: Option<String>,
+    source_id: Option<String>,
+}
+
+struct PendingAliasRemediationBlock {
+    id: String,
+    legacy_bridge_id: String,
+    match_reason: &'static str,
+}
+
 /// Synchronize AI-inferred commitments from `IntelligenceJson` into the
 /// Actions entity via the `ai_commitment_bridge` table.
 ///
@@ -100,10 +114,26 @@ pub fn sync_ai_commitments(
         if read_bridge_row(db, &derived_id)
             .map_err(|e| e.to_string())?
             .is_none()
-            && pending_alias_remediation_blocks_claim(db, entity_type, entity_id)?
         {
-            summary.skipped_tombstoned += 1;
-            continue;
+            if let Some(block) = pending_alias_remediation_blocks_claim(
+                db,
+                entity_type,
+                entity_id,
+                commitment,
+                &derived_id,
+            )? {
+                log::warn!(
+                    "commitment_bridge: quarantining commitment due to pending alias remediation {} for {}:{} (legacy_bridge_id={}, match={}, derived_id={})",
+                    block.id,
+                    entity_type,
+                    entity_id,
+                    block.legacy_bridge_id,
+                    block.match_reason,
+                    derived_id
+                );
+                summary.skipped_tombstoned += 1;
+                continue;
+            }
         }
         if legacy_bridge_tombstone_blocks_claim(
             ctx,
@@ -168,28 +198,113 @@ fn pending_alias_remediation_blocks_claim(
     db: &ActionDb,
     entity_type: &str,
     entity_id: &str,
-) -> Result<bool, String> {
+    commitment: &OpenCommitment,
+    derived_id: &str,
+) -> Result<Option<PendingAliasRemediationBlock>, String> {
     if !table_exists(db, "action_commitment_alias_remediation").map_err(|e| e.to_string())? {
-        return Ok(false);
+        return Ok(None);
     }
 
-    db.conn_ref()
-        .query_row(
-            "SELECT 1
+    let mut stmt = db
+        .conn_ref()
+        .prepare(
+            "SELECT id, legacy_bridge_id, source_commitment_id, source_type, source_id
              FROM action_commitment_alias_remediation
              WHERE remediation_status = 'pending'
                AND entity_type = ?1
-               AND entity_id = ?2
-             LIMIT 1",
-            rusqlite::params![entity_type, entity_id],
-            |_| Ok(()),
+               AND entity_id = ?2",
         )
-        .map(|()| true)
-        .or_else(|err| match err {
-            rusqlite::Error::QueryReturnedNoRows => Ok(false),
-            other => Err(other),
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map(rusqlite::params![entity_type, entity_id], |row| {
+            Ok(PendingAliasRemediationRow {
+                id: row.get(0)?,
+                legacy_bridge_id: row.get(1)?,
+                source_commitment_id: row.get(2)?,
+                source_type: row.get(3)?,
+                source_id: row.get(4)?,
+            })
         })
-        .map_err(|e| e.to_string())
+        .map_err(|e| e.to_string())?;
+
+    let incoming_id = trimmed_non_empty(commitment.commitment_id.as_deref());
+    for row in rows {
+        let row = row.map_err(|e| e.to_string())?;
+        if let Some(match_reason) =
+            pending_alias_remediation_match_reason(&row, incoming_id, derived_id)
+        {
+            return Ok(Some(PendingAliasRemediationBlock {
+                id: row.id,
+                legacy_bridge_id: row.legacy_bridge_id,
+                match_reason,
+            }));
+        }
+    }
+
+    Ok(None)
+}
+
+fn pending_alias_remediation_match_reason(
+    row: &PendingAliasRemediationRow,
+    incoming_id: Option<&str>,
+    derived_id: &str,
+) -> Option<&'static str> {
+    if let Some(incoming_id) = incoming_id {
+        if ids_match(incoming_id, Some(row.legacy_bridge_id.as_str())) {
+            return Some("legacy_bridge_id");
+        }
+        if ids_match(incoming_id, row.source_commitment_id.as_deref()) {
+            return Some("source_commitment_id");
+        }
+        if ids_match(incoming_id, row.source_id.as_deref()) {
+            return Some("source_id");
+        }
+        if incoming_id_matches_source_parts(
+            incoming_id,
+            row.source_type.as_deref(),
+            row.source_id.as_deref(),
+        ) {
+            return Some("source_parts");
+        }
+    }
+
+    if ids_match(derived_id, row.source_commitment_id.as_deref()) {
+        return Some("derived_source_commitment_id");
+    }
+    if ids_match(derived_id, row.source_id.as_deref()) {
+        return Some("derived_source_id");
+    }
+
+    None
+}
+
+fn ids_match(left: &str, right: Option<&str>) -> bool {
+    trimmed_non_empty(right).is_some_and(|right| left == right)
+}
+
+fn incoming_id_matches_source_parts(
+    incoming_id: &str,
+    source_type: Option<&str>,
+    source_id: Option<&str>,
+) -> bool {
+    let Some(source_type) = trimmed_non_empty(source_type) else {
+        return false;
+    };
+    let Some(source_id) = trimmed_non_empty(source_id) else {
+        return false;
+    };
+    let Some((incoming_source_type, rest)) = incoming_id.split_once(':') else {
+        return false;
+    };
+    let Some((incoming_source_id, _ordinal)) = rest.rsplit_once(':') else {
+        return false;
+    };
+
+    incoming_source_type == source_type && incoming_source_id == source_id
+}
+
+fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
+    value.map(str::trim).filter(|value| !value.is_empty())
 }
 
 fn legacy_bridge_tombstone_blocks_claim(
@@ -1422,11 +1537,13 @@ mod tests {
     }
 
     #[test]
-    fn pending_alias_remediation_blocks_original_source_sighting() {
+    fn pending_alias_remediation_only_blocks_matching_legacy_claim() {
         let db = test_db();
         make_ctx!(ctx);
         let original_title = "Send original renewal plan";
         let original_id = derived_id_with(original_title, Some("2030-03-01"), Some("Alex Chen"));
+        let unrelated_title = "Send unrelated pricing followup";
+        let unrelated_id = derived_id(unrelated_title);
 
         db.conn_ref()
             .execute(
@@ -1463,19 +1580,20 @@ mod tests {
             )
             .unwrap();
 
-        let incoming = make_commitment_with_identity(
+        let related = make_commitment_with_identity(
             original_title,
-            None,
+            Some("legacy:original"),
             Some("2030-03-01"),
             Some("Alex Chen"),
             Some("meeting"),
         );
-        let summary =
-            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[incoming]).expect("sync");
+        let unrelated = make_commitment(unrelated_title);
+        let summary = sync_ai_commitments(&ctx, &db, "account", "acct-1", &[related, unrelated])
+            .expect("sync");
 
-        assert_eq!(summary.created, 0);
+        assert_eq!(summary.created, 1);
         assert_eq!(summary.skipped_tombstoned, 1);
-        assert_eq!(action_count(&db), 1);
+        assert_eq!(action_count(&db), 2);
 
         let original_alias_count: i64 = db
             .conn_ref()
@@ -1489,6 +1607,8 @@ mod tests {
             original_alias_count, 0,
             "pending remediation must block derived-id creation until manual review"
         );
+        let unrelated_action_id = bridge_action_id(&db, &unrelated_id);
+        assert_ne!(unrelated_action_id, "done-edited-a1");
     }
 
     #[test]

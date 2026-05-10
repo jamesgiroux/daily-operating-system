@@ -846,7 +846,6 @@ struct CommitmentBridgeAliasRemediationRow {
 
 struct CommitmentBridgeMutableAliasRemediation {
     remediation: CommitmentBridgeAliasRemediationRow,
-    mutable_derived_commitment_id: Option<String>,
     source_derived_commitment_ids: HashSet<String>,
 }
 
@@ -1146,18 +1145,17 @@ fn remediate_tombstoned_commitment_bridge_mutable_aliases(
     ensure_commitment_alias_remediation_table(conn)?;
 
     for candidate in collect_commitment_bridge_alias_remediation_rows(conn)? {
-        if !candidate.source_derived_commitment_ids.is_empty() {
-            continue;
-        }
-
         let tombstoned_action_id = candidate.remediation.tombstoned_action_id.clone();
-        insert_commitment_alias_remediation(conn, candidate.remediation)?;
-        if let Some(derived_id) = candidate.mutable_derived_commitment_id.as_deref() {
-            remove_tombstoned_mutable_commitment_bridge_alias(
-                conn,
-                derived_id,
-                tombstoned_action_id.as_deref(),
-            )?;
+        remove_tombstoned_mutable_commitment_bridge_aliases(
+            conn,
+            tombstoned_action_id.as_deref(),
+            &candidate.remediation.entity_type,
+            &candidate.remediation.entity_id,
+            &candidate.source_derived_commitment_ids,
+        )?;
+
+        if candidate.source_derived_commitment_ids.is_empty() {
+            insert_commitment_alias_remediation(conn, candidate.remediation)?;
         }
     }
 
@@ -1194,10 +1192,6 @@ fn collect_commitment_bridge_alias_remediation_rows(
     } else {
         ""
     };
-    let title_expr = action_subquery_expr(&action_columns, "title");
-    let due_date_expr = action_subquery_expr(&action_columns, "due_date");
-    let owner_raw_expr = action_subquery_expr(&action_columns, "owner_raw");
-    let context_expr = action_subquery_expr(&action_columns, "context");
     let action_commitment_expr = action_subquery_expr(&action_columns, "commitment_id");
     let action_source_id_expr = action_subquery_expr(&action_columns, "source_id");
     let source_commitment_expr =
@@ -1222,10 +1216,6 @@ fn collect_commitment_bridge_alias_remediation_rows(
             b.entity_type,
             b.entity_id,
             b.action_id,
-            {title_expr},
-            {due_date_expr},
-            {owner_raw_expr},
-            {context_expr},
             {action_commitment_expr},
             {action_source_id_expr},
             {source_commitment_expr},
@@ -1247,28 +1237,13 @@ fn collect_commitment_bridge_alias_remediation_rows(
             let entity_type: String = row.get(1)?;
             let entity_id: String = row.get(2)?;
             let tombstoned_action_id: Option<String> = row.get(3)?;
-            let title: Option<String> = row.get(4)?;
-            let due_date: Option<String> = row.get(5)?;
-            let owner_raw: Option<String> = row.get(6)?;
-            let context: Option<String> = row.get(7)?;
-            let action_commitment_id: Option<String> = row.get(8)?;
-            let action_source_id: Option<String> = row.get(9)?;
-            let source_commitment_id: Option<String> = row.get(10)?;
-            let source_type: Option<String> = row.get(11)?;
-            let source_id: Option<String> = row.get(12)?;
-            let source_label: Option<String> = row.get(13)?;
-            let observed_at: String = row.get(14)?;
-
-            let context_owner = legacy_owner_from_context(context.as_deref());
-            let owner_for_identity = owner_raw.as_deref().or(context_owner.as_deref());
-            let mutable_derived_commitment_id = title.as_deref().map(|title| {
-                crate::abilities::extractors::commitment::derive_commitment_id(
-                    title,
-                    &entity_id,
-                    due_date.as_deref(),
-                    owner_for_identity,
-                )
-            });
+            let action_commitment_id: Option<String> = row.get(4)?;
+            let action_source_id: Option<String> = row.get(5)?;
+            let source_commitment_id: Option<String> = row.get(6)?;
+            let source_type: Option<String> = row.get(7)?;
+            let source_id: Option<String> = row.get(8)?;
+            let source_label: Option<String> = row.get(9)?;
+            let observed_at: String = row.get(10)?;
 
             Ok(CommitmentBridgeAliasRemediationRow {
                 legacy_bridge_id,
@@ -1281,20 +1256,13 @@ fn collect_commitment_bridge_alias_remediation_rows(
                 source_label,
                 observed_at,
             })
-            .map(|remediation| {
-                (
-                    remediation,
-                    mutable_derived_commitment_id,
-                    action_commitment_id,
-                    action_source_id,
-                )
-            })
+            .map(|remediation| (remediation, action_commitment_id, action_source_id))
         })
         .map_err(|e| format!("commitment bridge remediation row map failed: {e}"))?;
 
     let mut out = Vec::new();
     for row in rows {
-        let (remediation, mutable_derived_commitment_id, action_commitment_id, action_source_id) =
+        let (remediation, action_commitment_id, action_source_id) =
             row.map_err(|e| format!("commitment bridge remediation row read failed: {e}"))?;
         if is_derived_commitment_id(&remediation.legacy_bridge_id) {
             continue;
@@ -1325,7 +1293,6 @@ fn collect_commitment_bridge_alias_remediation_rows(
 
         out.push(CommitmentBridgeMutableAliasRemediation {
             remediation,
-            mutable_derived_commitment_id,
             source_derived_commitment_ids,
         });
     }
@@ -1419,22 +1386,50 @@ fn insert_derived_commitment_id(out: &mut HashSet<String>, value: Option<&str>) 
     }
 }
 
-fn remove_tombstoned_mutable_commitment_bridge_alias(
+fn remove_tombstoned_mutable_commitment_bridge_aliases(
     conn: &Connection,
-    derived_id: &str,
     action_id: Option<&str>,
+    entity_type: &str,
+    entity_id: &str,
+    preserved_derived_ids: &HashSet<String>,
 ) -> Result<(), MigrationError> {
-    conn.execute(
-        "DELETE FROM ai_commitment_bridge
-         WHERE commitment_id = ?1
+    let mut stmt = conn
+        .prepare(
+            "SELECT commitment_id
+         FROM ai_commitment_bridge
+         WHERE entity_type = ?1
+           AND entity_id = ?2
            AND tombstoned != 0
+           AND commitment_id LIKE 'commitment:%'
            AND (
-               (?2 IS NULL AND action_id IS NULL)
-               OR (?2 IS NOT NULL AND action_id = ?2)
+               (?3 IS NULL AND action_id IS NULL)
+               OR (?3 IS NOT NULL AND action_id = ?3)
            )",
-        rusqlite::params![derived_id, action_id],
-    )
-    .map_err(|e| format!("mutable commitment bridge alias removal failed: {e}"))?;
+        )
+        .map_err(|e| format!("mutable commitment bridge alias scan failed: {e}"))?;
+    let rows = stmt
+        .query_map(
+            rusqlite::params![entity_type, entity_id, action_id],
+            |row| row.get::<_, String>(0),
+        )
+        .map_err(|e| format!("mutable commitment bridge alias row map failed: {e}"))?;
+
+    let mut stale_ids = Vec::new();
+    for row in rows {
+        let commitment_id =
+            row.map_err(|e| format!("mutable commitment bridge alias row read failed: {e}"))?;
+        if !preserved_derived_ids.contains(&commitment_id) {
+            stale_ids.push(commitment_id);
+        }
+    }
+
+    for commitment_id in stale_ids {
+        conn.execute(
+            "DELETE FROM ai_commitment_bridge WHERE commitment_id = ?1",
+            [commitment_id.as_str()],
+        )
+        .map_err(|e| format!("mutable commitment bridge alias removal failed: {e}"))?;
+    }
     Ok(())
 }
 
@@ -2787,6 +2782,106 @@ mod tests {
             )
             .expect("remediation count");
         assert_eq!(remediation_count, 1);
+    }
+
+    #[test]
+    fn migration_159_removes_stale_mutable_alias_after_action_identity_edit() {
+        let conn = mem_db();
+        reset_migrated_db_to_version_156(&conn);
+        let source_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Original sourced wording",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+        let stale_mutable_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Mutable c3 wording",
+            "acct-1",
+            Some("2026-05-15"),
+            Some("Alex Chen"),
+        );
+        conn.execute_batch(
+            "INSERT INTO accounts (id, name, updated_at)
+             VALUES ('acct-1', 'Acme', '2026-01-01');
+             INSERT INTO actions
+                (id, title, priority, status, created_at, updated_at, due_date,
+                 account_id, source_type, source_id, source_label, action_kind,
+                 commitment_id, owner_raw)
+             VALUES
+                ('done-a1', 'User edited wording', 3, 'completed',
+                 '2026-01-01', '2026-01-04', '2026-06-01',
+                 'acct-1', 'commitment', 'legacy:done', 'Customer call',
+                 'commitment', 'legacy:done', 'Jamie Lee');
+             INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES
+                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);
+             INSERT INTO action_commitment_sources
+                (id, commitment_id, action_id, source_type, source_id, source_label, observed_at)
+             VALUES
+                ('src-derived', 'placeholder', 'done-a1', 'meeting', 'meeting:abc:1',
+                 'Customer call', '2026-01-01');",
+        )
+        .expect("seed partial c3 schema");
+        conn.execute(
+            "UPDATE action_commitment_sources SET commitment_id = ?1 WHERE id = 'src-derived'",
+            [source_derived.as_str()],
+        )
+        .expect("seed source-derived id");
+        conn.execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES (?1, 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1)",
+            [source_derived.as_str()],
+        )
+        .expect("seed source-derived bridge alias");
+        conn.execute(
+            "INSERT INTO ai_commitment_bridge
+             (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+             VALUES (?1, 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1)",
+            [stale_mutable_derived.as_str()],
+        )
+        .expect("seed stale mutable alias");
+
+        let applied = run_migrations(&conn).expect("apply v157-v159");
+        assert_eq!(applied, 3);
+
+        let source_alias_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [source_derived.as_str()],
+                |row| row.get(0),
+            )
+            .expect("source alias count");
+        assert_eq!(
+            source_alias_count, 1,
+            "v159 preserves source-derived aliases"
+        );
+
+        let stale_alias_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [stale_mutable_derived.as_str()],
+                |row| row.get(0),
+            )
+            .expect("stale alias count");
+        assert_eq!(
+            stale_alias_count, 0,
+            "v159 removes stale mutable aliases even after action fields change"
+        );
+
+        let remediation_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM action_commitment_alias_remediation
+                 WHERE legacy_bridge_id = 'legacy:done'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("remediation count");
+        assert_eq!(
+            remediation_count, 0,
+            "source-derived tombstones do not need manual remediation"
+        );
     }
 
     #[test]
