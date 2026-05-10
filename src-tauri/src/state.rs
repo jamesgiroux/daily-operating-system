@@ -449,7 +449,6 @@ pub const BASE_EMAIL_SIGNAL_TYPES: &[&str] = &[
     "engagement_warning",
     "escalation",
     "expansion_opportunity",
-    "cadence_anomaly",
     "email_cadence_drop",
     "project_health_warning",
 ];
