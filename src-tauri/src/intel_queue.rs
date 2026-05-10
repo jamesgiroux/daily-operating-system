@@ -1992,6 +1992,35 @@ fn run_background_enrichment(
         .spawn_claude(&input.workspace, &input.prompt)
         .map_err(|e| format!("Claude Code error: {}", e))?;
 
+    // Extract and persist keywords from the raw AI response so background-tier
+    // enrichment (ProactiveHygiene, CalendarChange) keeps entity keywords
+    // current for transcript routing and entity resolution.
+    if let Some(keywords_json) = crate::intelligence::extract_keywords_from_response(&output.stdout)
+    {
+        if let Ok(db) =
+            crate::db::ActionDb::open(std::sync::Arc::new(crate::db::LocalKeychain::new()))
+        {
+            let clock = crate::services::context::SystemClock;
+            let rng = crate::services::context::SystemRng;
+            let ext = crate::services::context::ExternalClients::default();
+            let ctx = crate::services::context::ServiceContext::new_live(&clock, &rng, &ext);
+            if let Err(err) = crate::services::intelligence::persist_entity_keywords(
+                &ctx,
+                &db,
+                &input.entity_type,
+                &input.entity_id,
+                &keywords_json,
+            ) {
+                log::warn!(
+                    "intel_queue: keyword persistence failed for {} {}: {}",
+                    input.entity_type,
+                    input.entity_id,
+                    err
+                );
+            }
+        }
+    }
+
     let inferred_relationships = extract_inferred_relationships(&output.stdout);
     let intel = parse_intelligence_response(
         &output.stdout,
