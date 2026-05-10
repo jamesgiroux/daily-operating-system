@@ -134,7 +134,7 @@ const HEALTH_CHAPTER = {
 };
 
 export function buildChapters(isParent: boolean, hasHealth: boolean) {
-  let chapters = [...BASE_CHAPTERS];
+  const chapters = [...BASE_CHAPTERS];
   if (isParent) {
     chapters.splice(2, 0, PORTFOLIO_CHAPTER);
   }

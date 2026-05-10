@@ -2199,7 +2199,7 @@ function UnifiedPlanEditor({
       }),
     ...userItems
       .map((raw, i) => ({ ...parseUserItem(raw), isUser: true as const, userIndex: i }))
-      .filter((item) => !overriddenUserIndices.has(item.userIndex!)),
+      .filter((item) => !overriddenUserIndices.has(item.userIndex)),
   ];
 
   async function saveLayer(updatedItems: string[], updatedDismissed?: Set<string>) {
@@ -2301,7 +2301,7 @@ function UnifiedPlanEditor({
                     className={styles.planEditWrap}
                     onBlur={(e) => {
                       // Only commit if focus leaves both inputs (not moving between them)
-                      if (!e.currentTarget.contains(e.relatedTarget as Node)) {
+                      if (!e.currentTarget.contains(e.relatedTarget)) {
                         commitEdit();
                       }
                     }}
@@ -2827,7 +2827,7 @@ function splitInlineSourceTail(value: string): { text: string; source?: string }
 
 function cleanPrepLine(value: string): string {
   const { text } = splitInlineSourceTail(value);
-  let raw = text.trim();
+  const raw = text.trim();
 
   return sanitizeInlineText(raw)
     .replace(/^recent\s+win:\s*/i, "")

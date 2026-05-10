@@ -131,7 +131,7 @@ export function FilterTabs<T extends string>({
   );
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
+ 
 export function EntityListEndMark(_props?: { text?: string }) {
   return <FinisMarker />;
 }

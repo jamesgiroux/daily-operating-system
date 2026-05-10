@@ -168,7 +168,9 @@ export default function LinearConnection() {
           setStatus(refreshed);
           loadRecentIssues();
           loadEntityLinks();
-        } catch {}
+        } catch (err) {
+          console.error("post-sync refresh failed:", err);
+        }
         setSyncing(false);
       }, 3000);
     } catch (err) {

@@ -38,9 +38,7 @@ function priorityAccent(priority: number | string): string {
 // =============================================================================
 
 export default function ActionDetailPage() {
-  const { actionId } = useParams({ strict: false }) as {
-    actionId?: string;
-  };
+  const { actionId } = useParams({ strict: false });
   const navigate = useNavigate();
   const [detail, setDetail] = useState<ActionDetail | null>(null);
   const [loading, setLoading] = useState(true);

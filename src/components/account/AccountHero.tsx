@@ -81,7 +81,7 @@ export function AccountHero({
         })()}
         {onSaveField && (
           <AccountTypeBadge
-            value={detail.accountType as "customer" | "internal" | "partner"}
+            value={detail.accountType}
             onChange={(v) => onSaveField("account_type", v)}
           />
         )}

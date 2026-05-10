@@ -5,6 +5,7 @@ import { toast } from "sonner";
 import { formatShortDate } from "@/lib/utils";
 import type { VitalDisplay } from "@/lib/entity-types";
 import { usePersonDetail } from "@/hooks/usePersonDetail";
+import type { PersonRelationshipEdge } from "@/types";
 import { useActivePreset } from "@/hooks/useActivePreset";
 import { useIntelligenceFieldUpdate } from "@/hooks/useIntelligenceFieldUpdate";
 import { useRevealObserver } from "@/hooks/useRevealObserver";
@@ -184,10 +185,10 @@ export default function PersonDetailEditorial() {
   useRegisterMagazineShell(shellConfig);
 
   // Person relationships
-  const [relationships, setRelationships] = useState<import("@/types").PersonRelationshipEdge[]>([]);
+  const [relationships, setRelationships] = useState<PersonRelationshipEdge[]>([]);
   const loadRelationships = useCallback(() => {
     if (!personId) return;
-    invoke<import("@/types").PersonRelationshipEdge[]>("get_person_relationships", { personId })
+    invoke<PersonRelationshipEdge[]>("get_person_relationships", { personId })
       .then(setRelationships)
       .catch(() => setRelationships([]));
   }, [personId]);

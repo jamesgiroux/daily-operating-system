@@ -175,8 +175,8 @@ export function NextStepsSlide({ content, onUpdate }: NextStepsSlideProps) {
             padding: "12px 0 4px",
             color: "var(--color-text-secondary)",
           }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.8")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.5")}
+          onMouseEnter={(e) => ((e.currentTarget).style.opacity = "0.8")}
+          onMouseLeave={(e) => ((e.currentTarget).style.opacity = "0.5")}
         >
           + Add step
         </button>
