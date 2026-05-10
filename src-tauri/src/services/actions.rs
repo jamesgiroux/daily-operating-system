@@ -475,6 +475,14 @@ pub async fn create_action(
         source_id: None,
         source_label,
         action_kind,
+        commitment_id: None,
+        owner_raw: None,
+        owner_entity_id: None,
+        owner_confidence: None,
+        owner_source: None,
+        trust_score: None,
+        trust_band: None,
+        commitment_source_count: None,
         context,
         waiting_on: None,
         updated_at: now,
@@ -611,6 +619,8 @@ pub async fn update_action(
         clear_due_date,
         context,
         clear_context,
+        owner_raw,
+        clear_owner,
         source_label,
         clear_source_label,
         account_id,
@@ -637,6 +647,9 @@ pub async fn update_action(
     }
     if let Some(ref c) = context {
         crate::util::validate_bounded_string(c, "context", 1, 2000)?;
+    }
+    if let Some(ref owner) = owner_raw {
+        crate::util::validate_bounded_string(owner, "owner_raw", 1, 200)?;
     }
     if let Some(ref s) = source_label {
         crate::util::validate_bounded_string(s, "source_label", 1, 200)?;
@@ -675,6 +688,31 @@ pub async fn update_action(
                 action.context = None;
             } else if let Some(c) = context {
                 action.context = Some(c);
+            }
+            if clear_owner == Some(true) {
+                action.owner_raw = None;
+                action.owner_entity_id = None;
+                action.owner_confidence = None;
+                action.owner_source = Some("user_reassigned".to_string());
+            } else if let Some(owner) = owner_raw {
+                let commitment_id = action
+                    .commitment_id
+                    .clone()
+                    .unwrap_or_else(|| action.id.clone());
+                let account_id_for_resolution = action.account_id.as_deref().unwrap_or("");
+                let resolved = crate::abilities::read::resolve_owner::resolve_owner(
+                    db,
+                    account_id_for_resolution,
+                    &commitment_id,
+                    Some(&owner),
+                )?;
+                action.owner_raw = Some(owner);
+                action.owner_entity_id = resolved.owner_entity_id;
+                action.owner_confidence = resolved.owner_confidence.or(Some(1.0));
+                action.owner_source = Some("user_reassigned".to_string());
+                action.context = crate::services::commitment_bridge::strip_owner_context_for_action(
+                    action.context.as_deref(),
+                );
             }
             if clear_source_label == Some(true) {
                 action.source_label = None;

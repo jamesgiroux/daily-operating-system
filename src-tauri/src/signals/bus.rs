@@ -1181,7 +1181,9 @@ mod tests {
             ])
         );
         assert_eq!(
-            payload.get("signalType").and_then(serde_json::Value::as_str),
+            payload
+                .get("signalType")
+                .and_then(serde_json::Value::as_str),
             Some(signal_type.as_str())
         );
         assert_eq!(

@@ -154,6 +154,7 @@ pub enum ClaimType {
     StakeholderEngagement,
     StakeholderAssessment,
     ValueDelivered,
+    Commitment,
     MeetingReadiness,
     CompanyContext,
     OpenLoop,
@@ -249,6 +250,7 @@ pub const fn metadata_for_claim_type(kind: ClaimType) -> &'static ClaimTypeMetad
         ClaimType::StakeholderEngagement => &STAKEHOLDER_ENGAGEMENT_META,
         ClaimType::StakeholderAssessment => &STAKEHOLDER_ASSESSMENT_META,
         ClaimType::ValueDelivered => &VALUE_DELIVERED_META,
+        ClaimType::Commitment => &COMMITMENT_META,
         ClaimType::MeetingReadiness => &MEETING_READINESS_META,
         ClaimType::CompanyContext => &COMPANY_CONTEXT_META,
         ClaimType::OpenLoop => &OPEN_LOOP_META,
@@ -568,6 +570,17 @@ claim_meta!(
     ACTORS_AGENT
 );
 claim_meta!(
+    COMMITMENT_META,
+    Commitment,
+    "commitment",
+    State,
+    Internal,
+    Medium,
+    Reinforce,
+    SUBJECTS_ACCOUNT,
+    ACTORS_AGENT
+);
+claim_meta!(
     MEETING_READINESS_META,
     MeetingReadiness,
     "meeting_readiness",
@@ -692,6 +705,7 @@ pub const CLAIM_TYPE_REGISTRY: &[&ClaimTypeMetadata] = &[
     &STAKEHOLDER_ENGAGEMENT_META,
     &STAKEHOLDER_ASSESSMENT_META,
     &VALUE_DELIVERED_META,
+    &COMMITMENT_META,
     &MEETING_READINESS_META,
     &COMPANY_CONTEXT_META,
     &OPEN_LOOP_META,
@@ -748,6 +762,7 @@ mod tests {
             | ClaimType::EntityRisk
             | ClaimType::StakeholderEngagement
             | ClaimType::StakeholderAssessment
+            | ClaimType::Commitment
             | ClaimType::OpenLoop => FreshnessDecayClass::Medium,
             ClaimType::MeetingReadiness => FreshnessDecayClass::Fast,
             ClaimType::TriageSnooze
@@ -783,6 +798,7 @@ mod tests {
             | ClaimType::StakeholderEngagement
             | ClaimType::StakeholderAssessment
             | ClaimType::ValueDelivered
+            | ClaimType::Commitment
             | ClaimType::CompanyContext
             | ClaimType::OpenLoop
             | ClaimType::MeetingTopic
@@ -848,6 +864,7 @@ mod tests {
             (ClaimType::StakeholderEngagement, "stakeholder_engagement"),
             (ClaimType::StakeholderAssessment, "stakeholder_assessment"),
             (ClaimType::ValueDelivered, "value_delivered"),
+            (ClaimType::Commitment, "commitment"),
             (ClaimType::MeetingReadiness, "meeting_readiness"),
             (ClaimType::CompanyContext, "company_context"),
             (ClaimType::OpenLoop, "open_loop"),
@@ -963,6 +980,7 @@ mod tests {
             ClaimType::StakeholderEngagement,
             ClaimType::StakeholderAssessment,
             ClaimType::ValueDelivered,
+            ClaimType::Commitment,
             ClaimType::MeetingReadiness,
             ClaimType::CompanyContext,
             ClaimType::OpenLoop,

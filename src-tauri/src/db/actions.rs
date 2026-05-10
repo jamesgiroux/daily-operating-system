@@ -140,7 +140,13 @@ impl ActionDb {
                     account_id, project_id, source_type, source_id, source_label,
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
                     actions.action_kind,
-                    all_links.linear_identifier, all_links.linear_url
+                    all_links.linear_identifier, all_links.linear_url,
+                    actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
+                    actions.owner_confidence, actions.owner_source,
+                    actions.trust_score, actions.trust_band,
+                    (SELECT COUNT(*)
+                     FROM action_commitment_sources acs
+                     WHERE acs.commitment_id = actions.commitment_id)
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
@@ -160,6 +166,7 @@ impl ActionDb {
             let mut action = Self::map_action_row(row)?;
             action.linear_identifier = row.get(18)?;
             action.linear_url = row.get(19)?;
+            Self::map_commitment_claim_columns(&mut action, row, 20)?;
             Ok(action)
         })?;
 
@@ -376,7 +383,13 @@ impl ActionDb {
                     context, waiting_on, actions.updated_at, person_id, acc.name AS account_name,
                     actions.action_kind,
                     actions.needs_decision, actions.decision_owner, actions.decision_stakes,
-                    all_links.linear_identifier, all_links.linear_url
+                    all_links.linear_identifier, all_links.linear_url,
+                    actions.commitment_id, actions.owner_raw, actions.owner_entity_id,
+                    actions.owner_confidence, actions.owner_source,
+                    actions.trust_score, actions.trust_band,
+                    (SELECT COUNT(*)
+                     FROM action_commitment_sources acs
+                     WHERE acs.commitment_id = actions.commitment_id)
              FROM actions
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              LEFT JOIN action_linear_links all_links ON actions.id = all_links.action_id
@@ -391,6 +404,7 @@ impl ActionDb {
             action.decision_stakes = row.get(20)?;
             action.linear_identifier = row.get(21)?;
             action.linear_url = row.get(22)?;
+            Self::map_commitment_claim_columns(&mut action, row, 23)?;
             Ok(action)
         })?;
 
@@ -562,8 +576,10 @@ impl ActionDb {
             "INSERT INTO actions (
                 id, title, priority, status, created_at, due_date, completed_at,
                 account_id, project_id, source_type, source_id, source_label,
-                context, waiting_on, updated_at, person_id, action_kind
-             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17)
+                context, waiting_on, updated_at, person_id, action_kind,
+                commitment_id, owner_raw, owner_entity_id, owner_confidence,
+                owner_source, trust_score, trust_band
+             ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21, ?22, ?23, ?24)
              ON CONFLICT(id) DO UPDATE SET
                 title = excluded.title,
                 priority = excluded.priority,
@@ -579,7 +595,14 @@ impl ActionDb {
                 waiting_on = excluded.waiting_on,
                 updated_at = excluded.updated_at,
                 person_id = excluded.person_id,
-                action_kind = excluded.action_kind",
+                action_kind = excluded.action_kind,
+                commitment_id = excluded.commitment_id,
+                owner_raw = excluded.owner_raw,
+                owner_entity_id = excluded.owner_entity_id,
+                owner_confidence = excluded.owner_confidence,
+                owner_source = excluded.owner_source,
+                trust_score = excluded.trust_score,
+                trust_band = excluded.trust_band",
             params![
                 action.id,
                 action.title,
@@ -598,6 +621,13 @@ impl ActionDb {
                 action.updated_at,
                 action.person_id,
                 action.action_kind,
+                action.commitment_id,
+                action.owner_raw,
+                action.owner_entity_id,
+                action.owner_confidence,
+                action.owner_source,
+                action.trust_score,
+                action.trust_band,
             ],
         )?;
         Ok(())
@@ -740,10 +770,11 @@ impl ActionDb {
             return self.get_suggested_actions();
         };
 
-        // LIKE pattern: match "owner: <name>" prefix, case-insensitive via LOWER().
-        // Unassigned rows (context NULL / empty / no owner prefix) are included
-        // so the user doesn't miss ambiguous work that still needs triage.
+        // Match structural owner first; legacy owner prefixes remain as a
+        // migration-window fallback. Ambiguous/unassigned rows stay visible
+        // so the user can triage them.
         let owner_prefix = format!("owner: {}", name.to_lowercase());
+        let owner_name = name.to_lowercase();
         let mut stmt = self.conn.prepare(
             "SELECT actions.id, title, priority, status, created_at, due_date, completed_at,
                     account_id, project_id, source_type, source_id, source_label,
@@ -753,15 +784,26 @@ impl ActionDb {
              LEFT JOIN accounts acc ON actions.account_id = acc.id
              WHERE status = 'backlog'
                AND (
-                     context IS NULL
-                  OR context = ''
-                  OR LOWER(context) NOT LIKE 'owner:%'
-                  OR LOWER(context) LIKE ?1 || '%'
+                     owner_source = 'unassigned'
+                  OR owner_source = 'ambiguous'
+                  OR (owner_raw IS NOT NULL AND LOWER(owner_raw) = ?2)
+                  OR (
+                       owner_source IS NULL
+                       AND (
+                            context IS NULL
+                         OR context = ''
+                         OR LOWER(context) NOT LIKE 'owner:%'
+                         OR LOWER(context) LIKE ?1 || '%'
+                       )
+                     )
                )
              ORDER BY priority, created_at DESC",
         )?;
 
-        let rows = stmt.query_map([owner_prefix.as_str()], Self::map_action_row)?;
+        let rows = stmt.query_map(
+            params![owner_prefix.as_str(), owner_name.as_str()],
+            Self::map_action_row,
+        )?;
 
         let mut actions = Vec::new();
         for row in rows {
@@ -1163,6 +1205,14 @@ impl ActionDb {
             person_id: row.get(15)?,
             account_name: row.get(16)?,
             action_kind: row.get(17)?,
+            commitment_id: None,
+            owner_raw: None,
+            owner_entity_id: None,
+            owner_confidence: None,
+            owner_source: None,
+            trust_score: None,
+            trust_band: None,
+            commitment_source_count: None,
             next_meeting_title: None,
             next_meeting_start: None,
             needs_decision: false,
@@ -1171,6 +1221,22 @@ impl ActionDb {
             linear_identifier: None,
             linear_url: None,
         })
+    }
+
+    pub(crate) fn map_commitment_claim_columns(
+        action: &mut DbAction,
+        row: &rusqlite::Row<'_>,
+        start: usize,
+    ) -> rusqlite::Result<()> {
+        action.commitment_id = row.get(start)?;
+        action.owner_raw = row.get(start + 1)?;
+        action.owner_entity_id = row.get(start + 2)?;
+        action.owner_confidence = row.get(start + 3)?;
+        action.owner_source = row.get(start + 4)?;
+        action.trust_score = row.get(start + 5)?;
+        action.trust_band = row.get(start + 6)?;
+        action.commitment_source_count = row.get(start + 7)?;
+        Ok(())
     }
 
     // =========================================================================
@@ -1550,6 +1616,14 @@ mod tests {
             source_id: None,
             source_label: None,
             action_kind: crate::action_status::KIND_TASK.to_string(),
+            commitment_id: None,
+            owner_raw: None,
+            owner_entity_id: None,
+            owner_confidence: None,
+            owner_source: None,
+            trust_score: None,
+            trust_band: None,
+            commitment_source_count: None,
             context: None,
             waiting_on: None,
             updated_at: Utc::now().to_rfc3339(),

@@ -784,6 +784,13 @@ const MIGRATIONS: &[Migration] = &[
         version: 154,
         sql: include_str!("migrations/154_claim_surface_dismissals.sql"),
     },
+    // Typed CommitmentClaim identity: actions.commitment_id, structural owner
+    // fields, per-sighting action_commitment_sources, and the exact-title
+    // backlog duplicate guard for DOS-276 W4-A.
+    Migration::Sql {
+        version: 155,
+        sql: include_str!("migrations/155_dos_276_commitment_claim_identity.sql"),
+    },
 ];
 
 /// Create the `schema_version` table if it doesn't exist.
