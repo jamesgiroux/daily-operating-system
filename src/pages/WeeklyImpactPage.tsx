@@ -22,8 +22,7 @@ import { PrioritiesMovedSlide } from "@/components/weekly-impact/PrioritiesMoved
 import { TheWorkSlide } from "@/components/weekly-impact/TheWorkSlide";
 import { WatchSlide } from "@/components/weekly-impact/WatchSlide";
 import { IntoNextWeekSlide } from "@/components/weekly-impact/IntoNextWeekSlide";
-import type { WeeklyImpactContent, WeeklyImpactMove, WeeklyImpactItem } from "@/types/reports";
-import type { ReportRow } from "@/types/reports";
+import type { WeeklyImpactContent, WeeklyImpactMove, WeeklyImpactItem , ReportRow } from "@/types/reports";
 import slides from "./report-slides.module.css";
 
 // =============================================================================

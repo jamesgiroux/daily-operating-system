@@ -1,13 +1,16 @@
 #!/usr/bin/env bash
-# .githooks/pre-push — full battery before push.
+# .githooks/pre-push — path-aware safety net before push.
 #
-# Runs the heavy checks unconditionally, catching anything that incremental
-# pre-commit skipped via WIP=1 or path-aware skipping.
+# Mirrors pre-commit's HAS_RUST / HAS_FRONTEND classification: only runs the
+# heavy Rust gauntlet when the push actually touches Rust files. Frontend-only
+# pushes (YAML, scripts, docs, .ts/.tsx) skip clippy + cargo test --lib and
+# go straight to tsc.
 #
-# This is the safety net. By the time code leaves your machine, it has
-# faced the full clippy + cargo test --lib + tsc gauntlet.
+# This is the safety net for things WIP=1 commits skipped at pre-commit time.
+# By the time code leaves your machine, it has faced the full clippy + cargo
+# test --lib + tsc gauntlet IF it touches the relevant tier.
 #
-# Bypass: git push --no-verify (use sparingly, surface to user)
+# Bypass: git push --no-verify (use sparingly; surface to user).
 
 set -euo pipefail
 
@@ -15,6 +18,7 @@ CWD="$(git rev-parse --show-toplevel 2>/dev/null || pwd)"
 cd "$CWD"
 
 BACKEND_DIR="${CWD}/src-tauri"
+ZERO_SHA="0000000000000000000000000000000000000000"
 ERRORS=""
 
 append_error() {
@@ -25,14 +29,57 @@ append_error() {
   fi
 }
 
-# Same Tauri sidecar stub setup the pre-commit does.
-if [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scripts/build-mcp.sh" ]; then
+# Aggregate the set of files changed across all refs being pushed.
+# Per githooks(5), pre-push receives `<local_ref> <local_sha> <remote_ref> <remote_sha>` on stdin.
+# Avoid mapfile / readarray: macOS ships bash 3.2 by default and git invokes hooks
+# under /bin/sh PATH where bash may resolve to that 3.2 binary.
+CHANGED_FILES=""
+while read -r local_ref local_sha remote_ref remote_sha; do
+  # Ref deletion: nothing to inspect.
+  if [ "$local_sha" = "$ZERO_SHA" ]; then
+    continue
+  fi
+
+  if [ "$remote_sha" = "$ZERO_SHA" ]; then
+    # New ref on the remote. Compute changed files vs the merge-base with any
+    # other remote-tracking ref (typically dev or trunk).
+    BASE=$(git rev-list --max-parents=0 "$local_sha" 2>/dev/null | head -1)
+    for r in $(git for-each-ref --format='%(refname)' refs/remotes/ 2>/dev/null); do
+      mb=$(git merge-base "$local_sha" "$r" 2>/dev/null || true)
+      if [ -n "$mb" ] && [ "$mb" != "$BASE" ]; then
+        # Prefer the most recent merge-base.
+        if git merge-base --is-ancestor "$BASE" "$mb" 2>/dev/null; then
+          BASE="$mb"
+        fi
+      fi
+    done
+    REF_FILES=$(git diff --name-only "$BASE..$local_sha" 2>/dev/null || true)
+  else
+    # Existing ref: scan commits being added on top of remote_sha.
+    REF_FILES=$(git diff --name-only "$remote_sha..$local_sha" 2>/dev/null || true)
+  fi
+
+  CHANGED_FILES="${CHANGED_FILES}"$'\n'"${REF_FILES}"
+done
+
+# Path-classify the aggregate diff.
+HAS_RUST=false
+HAS_FRONTEND=false
+if echo "$CHANGED_FILES" | grep -qE '\.rs$|^src-tauri/Cargo\.(toml|lock)$|^Cargo\.(toml|lock)$'; then
+  HAS_RUST=true
+fi
+if echo "$CHANGED_FILES" | grep -qE '\.(ts|tsx|js|jsx)$|^package\.json$|^pnpm-lock\.yaml$|^tsconfig.*\.json$|^eslint\.config\.|^stylelint\.config\.'; then
+  HAS_FRONTEND=true
+fi
+
+# Tauri externalBin sidecar stub — required for clippy/test even when running clippy alone.
+if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ] && [ -f "${BACKEND_DIR}/scripts/build-mcp.sh" ]; then
   if ! ls "${BACKEND_DIR}/binaries/"dailyos-mcp-* >/dev/null 2>&1; then
     bash "${BACKEND_DIR}/scripts/build-mcp.sh" --stub >/dev/null 2>&1 || true
   fi
 fi
 
-if [ -d "$BACKEND_DIR" ]; then
+if [ "$HAS_RUST" = true ] && [ -d "$BACKEND_DIR" ]; then
   echo "pre-push: cargo clippy -- -D warnings" >&2
   if ! cargo clippy --manifest-path "$BACKEND_DIR/Cargo.toml" -- -D warnings; then
     append_error "❌ cargo clippy -- -D warnings FAILED"
@@ -44,11 +91,16 @@ if [ -d "$BACKEND_DIR" ]; then
   fi
 fi
 
-if [ -f "${CWD}/package.json" ]; then
+if [ "$HAS_FRONTEND" = true ] && [ -f "${CWD}/package.json" ]; then
   echo "pre-push: pnpm tsc --noEmit" >&2
   if ! pnpm tsc --noEmit; then
     append_error "❌ pnpm tsc --noEmit FAILED"
   fi
+fi
+
+# When neither tier is touched, the push is metadata-only (docs, hooks, etc.) — no gauntlet.
+if [ "$HAS_RUST" = false ] && [ "$HAS_FRONTEND" = false ]; then
+  echo "pre-push: no Rust or frontend files in push diff — skipping gauntlet" >&2
 fi
 
 if [ -n "$ERRORS" ]; then

@@ -162,8 +162,8 @@ export function ValueDeliveredEbrSlide({ content, onUpdate }: ValueDeliveredEbrS
             color: "var(--color-text-secondary)",
             marginLeft: 24,
           }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.8")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.5")}
+          onMouseEnter={(e) => ((e.currentTarget).style.opacity = "0.8")}
+          onMouseLeave={(e) => ((e.currentTarget).style.opacity = "0.5")}
         >
           + Add outcome
         </button>
@@ -231,8 +231,8 @@ export function ValueDeliveredEbrSlide({ content, onUpdate }: ValueDeliveredEbrS
               fontSize: 14,
               color: "var(--color-text-tertiary)",
             }}
-            onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.7")}
-            onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.4")}
+            onMouseEnter={(e) => ((e.currentTarget).style.opacity = "0.7")}
+            onMouseLeave={(e) => ((e.currentTarget).style.opacity = "0.4")}
             aria-label="Remove quote"
           >
             ✕
@@ -251,8 +251,8 @@ export function ValueDeliveredEbrSlide({ content, onUpdate }: ValueDeliveredEbrS
             padding: "4px 0",
             color: "var(--color-text-secondary)",
           }}
-          onMouseEnter={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.8")}
-          onMouseLeave={(e) => ((e.currentTarget as HTMLButtonElement).style.opacity = "0.5")}
+          onMouseEnter={(e) => ((e.currentTarget).style.opacity = "0.8")}
+          onMouseLeave={(e) => ((e.currentTarget).style.opacity = "0.5")}
         >
           + Add customer quote
         </button>

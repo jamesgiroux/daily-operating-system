@@ -21,7 +21,7 @@ class MockIntersectionObserver {
   trigger(target: Element) {
     this.callback(
       [{ isIntersecting: true, target } as IntersectionObserverEntry],
-      this as unknown as IntersectionObserver,
+      this,
     );
   }
 }
