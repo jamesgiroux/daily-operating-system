@@ -115,13 +115,9 @@ pub fn sync_ai_commitments(
             .map_err(|e| e.to_string())?
             .is_none()
         {
-            if let Some(block) = pending_alias_remediation_blocks_claim(
-                db,
-                entity_type,
-                entity_id,
-                commitment,
-                &derived_id,
-            )? {
+            if let Some(block) =
+                pending_alias_remediation_blocks_claim(db, entity_type, entity_id, commitment)?
+            {
                 log::warn!(
                     "commitment_bridge: quarantining commitment due to pending alias remediation {} for {}:{} (legacy_bridge_id={}, match={}, derived_id={})",
                     block.id,
@@ -199,7 +195,6 @@ fn pending_alias_remediation_blocks_claim(
     entity_type: &str,
     entity_id: &str,
     commitment: &OpenCommitment,
-    derived_id: &str,
 ) -> Result<Option<PendingAliasRemediationBlock>, String> {
     if !table_exists(db, "action_commitment_alias_remediation").map_err(|e| e.to_string())? {
         return Ok(None);
@@ -230,9 +225,7 @@ fn pending_alias_remediation_blocks_claim(
     let incoming_id = trimmed_non_empty(commitment.commitment_id.as_deref());
     for row in rows {
         let row = row.map_err(|e| e.to_string())?;
-        if let Some(match_reason) =
-            pending_alias_remediation_match_reason(&row, incoming_id, derived_id)
-        {
+        if let Some(match_reason) = pending_alias_remediation_match_reason(&row, incoming_id) {
             return Ok(Some(PendingAliasRemediationBlock {
                 id: row.id,
                 legacy_bridge_id: row.legacy_bridge_id,
@@ -247,28 +240,14 @@ fn pending_alias_remediation_blocks_claim(
 fn pending_alias_remediation_match_reason(
     row: &PendingAliasRemediationRow,
     incoming_id: Option<&str>,
-    derived_id: &str,
 ) -> Option<&'static str> {
     if let Some(incoming_id) = incoming_id {
         if ids_match(incoming_id, Some(row.legacy_bridge_id.as_str())) {
             return Some("legacy_bridge_id");
         }
-        if ids_match(incoming_id, row.source_commitment_id.as_deref()) {
-            return Some("source_commitment_id");
-        }
-        if ids_match(incoming_id, row.source_id.as_deref()) {
-            return Some("source_id");
-        }
         if incoming_id_matches_source_parts_with_ordinal(incoming_id, row) {
             return Some("source_parts_ordinal");
         }
-    }
-
-    if ids_match(derived_id, row.source_commitment_id.as_deref()) {
-        return Some("derived_source_commitment_id");
-    }
-    if ids_match(derived_id, row.source_id.as_deref()) {
-        return Some("derived_source_id");
     }
 
     None
@@ -1681,6 +1660,75 @@ mod tests {
         assert_eq!(summary.skipped_tombstoned, 0);
         assert_eq!(action_count(&db), 1);
         assert!(!bridge_action_id(&db, &second_id).is_empty());
+    }
+
+    #[test]
+    fn pending_alias_remediation_allows_bare_source_id_without_ordinal() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let source_id_title = "Send source-id-only remediation followup";
+        let source_id_derived = derived_id(source_id_title);
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO action_commitment_alias_remediation
+                 (id, legacy_bridge_id, tombstoned_action_id, entity_type,
+                  entity_id, source_commitment_id, source_type, source_id,
+                  observed_at, reason, remediation_status)
+                 VALUES ('remediation-bare-source', 'legacy:reviewed', 'done-edited-a1',
+                         'account', 'acct-1', 'meeting:abc:1', 'meeting', 'abc',
+                         '2026-01-02',
+                         'unrecoverable_tombstoned_legacy_bridge_alias', 'pending')",
+                [],
+            )
+            .unwrap();
+
+        let incoming = make_commitment_with_identity(
+            source_id_title,
+            Some("abc"),
+            None,
+            None,
+            Some("meeting"),
+        );
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[incoming]).expect("sync");
+
+        assert_eq!(summary.created, 1);
+        assert_eq!(summary.skipped_tombstoned, 0);
+        assert_eq!(action_count(&db), 1);
+        assert!(!bridge_action_id(&db, &source_id_derived).is_empty());
+    }
+
+    #[test]
+    fn pending_alias_remediation_allows_derived_only_claim_without_incoming_id() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let derived_only_title = "Send derived-only remediation followup";
+        let derived_only_id = derived_id(derived_only_title);
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO action_commitment_alias_remediation
+                 (id, legacy_bridge_id, tombstoned_action_id, entity_type,
+                  entity_id, source_commitment_id, source_type, source_id,
+                  observed_at, reason, remediation_status)
+                 VALUES ('remediation-derived-only', 'legacy:reviewed-derived',
+                         'done-edited-a1', 'account', 'acct-1', ?1, 'commitment', ?1,
+                         '2026-01-02',
+                         'unrecoverable_tombstoned_legacy_bridge_alias', 'pending')",
+                rusqlite::params![derived_only_id.as_str()],
+            )
+            .unwrap();
+
+        let incoming =
+            make_commitment_with_identity(derived_only_title, None, None, None, Some("meeting"));
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[incoming]).expect("sync");
+
+        assert_eq!(summary.created, 1);
+        assert_eq!(summary.skipped_tombstoned, 0);
+        assert_eq!(action_count(&db), 1);
+        assert!(!bridge_action_id(&db, &derived_only_id).is_empty());
     }
 
     #[test]
