@@ -734,6 +734,8 @@ struct SemanticSignature {
 
 const SEMANTIC_QUALIFIERS_METADATA_KEY: &str = "semantic_qualifiers";
 const NON_SEMANTIC_MERGEABLE_METADATA_KEY: &str = "non_semantic_mergeable";
+const LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: &str = "dos280_semantic_qualifiers";
+const LEGACY_NON_SEMANTIC_MERGEABLE_METADATA_KEY: &str = "dos280_non_semantic_mergeable";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SemanticAssertionStatus {
@@ -1039,15 +1041,24 @@ fn metadata_with_semantic_qualifiers(
 fn semantic_qualifiers_from_metadata(metadata_json: Option<&str>) -> Option<HashSet<String>> {
     let metadata = serde_json::from_str::<serde_json::Value>(metadata_json?).ok()?;
     let metadata = metadata.as_object()?;
-    if metadata
-        .get(NON_SEMANTIC_MERGEABLE_METADATA_KEY)
-        .and_then(serde_json::Value::as_bool)
-        .unwrap_or(false)
-    {
+    if [
+        NON_SEMANTIC_MERGEABLE_METADATA_KEY,
+        LEGACY_NON_SEMANTIC_MERGEABLE_METADATA_KEY,
+    ]
+    .iter()
+    .any(|key| {
+        metadata
+            .get(*key)
+            .and_then(serde_json::Value::as_bool)
+            .unwrap_or(false)
+    }) {
         return None;
     }
 
-    let raw_qualifiers = metadata.get(SEMANTIC_QUALIFIERS_METADATA_KEY)?.as_array()?;
+    let raw_qualifiers = metadata
+        .get(SEMANTIC_QUALIFIERS_METADATA_KEY)
+        .or_else(|| metadata.get(LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY))?
+        .as_array()?;
     let mut qualifiers = HashSet::new();
     for value in raw_qualifiers {
         let qualifier = value.as_str()?;
@@ -1207,13 +1218,23 @@ fn semantic_trust_band_allows_canonicalization(band: factors::TrustBand) -> bool
     )
 }
 
+fn claim_sensitivity_restriction_rank(sensitivity: &ClaimSensitivity) -> u8 {
+    match sensitivity {
+        ClaimSensitivity::Public => 0,
+        ClaimSensitivity::Internal => 1,
+        ClaimSensitivity::Confidential => 2,
+        ClaimSensitivity::UserOnly => 3,
+    }
+}
+
 fn claim_merge_tiers_compatible(
     existing: &IntelligenceClaim,
     proposal_temporal_scope: &TemporalScope,
     proposal_sensitivity: &ClaimSensitivity,
 ) -> bool {
     existing.temporal_scope == *proposal_temporal_scope
-        && existing.sensitivity == *proposal_sensitivity
+        && claim_sensitivity_restriction_rank(proposal_sensitivity)
+            <= claim_sensitivity_restriction_rank(&existing.sensitivity)
 }
 
 fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> {
@@ -8861,6 +8882,26 @@ mod tests {
     }
 
     #[test]
+    fn semantic_qualifiers_from_metadata_accepts_legacy_sidecar_key() {
+        let metadata = serde_json::json!({
+            LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: ["region:US"],
+        })
+        .to_string();
+        let qualifiers =
+            semantic_qualifiers_from_metadata(Some(&metadata)).expect("legacy qualifiers parse");
+
+        assert_eq!(qualifiers.len(), 1);
+        assert!(qualifiers.contains("region:US"));
+
+        let non_mergeable = serde_json::json!({
+            LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: ["region:US"],
+            LEGACY_NON_SEMANTIC_MERGEABLE_METADATA_KEY: true,
+        })
+        .to_string();
+        assert!(semantic_qualifiers_from_metadata(Some(&non_mergeable)).is_none());
+    }
+
+    #[test]
     fn semantic_near_duplicate_is_tightly_scoped() {
         assert!(semantic_near_duplicate(
             "Phase 2 budget approval is pending with finance",
@@ -9218,6 +9259,37 @@ mod tests {
     }
 
     #[test]
+    fn commit_claim_internal_variant_can_collapse_into_confidential_canonical() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let mut canonical = proposal("Phase 2 budget approval is pending with finance");
+        canonical.sensitivity = Some(ClaimSensitivity::Confidential);
+        let first_id = inserted_claim_id(commit_claim(&ctx, &db, canonical).unwrap());
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("Finance has not approved the Phase 2 budget yet"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Reinforced { claim, .. } => assert_eq!(claim.id, first_id),
+            other => {
+                panic!("internal variant should reinforce confidential canonical, got {other:?}")
+            }
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(read_claim_sensitivity(&db, &first_id), "confidential");
+    }
+
+    #[test]
     fn commit_claim_point_in_time_variant_does_not_collapse_into_state_canonical() {
         let db = test_db();
         seed_account(&db);
@@ -9243,6 +9315,40 @@ mod tests {
             CommittedClaim::Forked { new_claim_id, .. } => assert_ne!(new_claim_id, first_id),
             CommittedClaim::Reinforced { claim, .. } => {
                 panic!("point-in-time variant collapsed into {}", claim.id)
+            }
+            CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_closed_variant_does_not_collapse_into_state_canonical() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("Phase 2 budget approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let mut closed = proposal("Finance has not approved the Phase 2 budget yet");
+        closed.temporal_scope = Some(TemporalScope::Closed);
+        let result = commit_claim(&ctx, &db, closed).unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
+            CommittedClaim::Forked { new_claim_id, .. } => assert_ne!(new_claim_id, first_id),
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!("closed variant collapsed into {}", claim.id)
             }
             CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
         }

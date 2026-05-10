@@ -10,6 +10,8 @@ use super::MigrationError;
 const CLAIMS_TABLE: &str = "intelligence_claims";
 const SEMANTIC_QUALIFIERS_METADATA_KEY: &str = "semantic_qualifiers";
 const NON_SEMANTIC_MERGEABLE_METADATA_KEY: &str = "non_semantic_mergeable";
+const LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: &str = "dos280_semantic_qualifiers";
+const LEGACY_NON_SEMANTIC_MERGEABLE_METADATA_KEY: &str = "dos280_non_semantic_mergeable";
 const ORIGINAL_TEXT_KEYS: &[&str] = &[
     "original_text",
     "originalText",
@@ -107,11 +109,18 @@ fn migrated_metadata_json(
         None => Map::new(),
     };
 
-    if metadata.contains_key(SEMANTIC_QUALIFIERS_METADATA_KEY)
-        || metadata
-            .get(NON_SEMANTIC_MERGEABLE_METADATA_KEY)
-            .and_then(Value::as_bool)
-            .unwrap_or(false)
+    if [
+        SEMANTIC_QUALIFIERS_METADATA_KEY,
+        LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY,
+    ]
+    .iter()
+    .any(|key| metadata.contains_key(*key))
+        || [
+            NON_SEMANTIC_MERGEABLE_METADATA_KEY,
+            LEGACY_NON_SEMANTIC_MERGEABLE_METADATA_KEY,
+        ]
+        .iter()
+        .any(|key| metadata.get(*key).and_then(Value::as_bool).unwrap_or(false))
     {
         return Ok(None);
     }
@@ -249,6 +258,19 @@ mod tests {
             ],
         )
         .expect("seed already-known claim");
+        conn.execute(
+            "INSERT INTO intelligence_claims
+             (id, metadata_json, provenance_json, claim_state, surfacing_state)
+             VALUES (?1, ?2, '{}', 'active', 'active')",
+            params![
+                "legacy-known",
+                serde_json::json!({
+                    LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY: ["region:US"]
+                })
+                .to_string(),
+            ],
+        )
+        .expect("seed legacy-known claim");
 
         migrate_v156_semantic_merge_safety(&conn).expect("migration succeeds");
 
@@ -273,6 +295,16 @@ mod tests {
             serde_json::json!([])
         );
         assert!(known.get(NON_SEMANTIC_MERGEABLE_METADATA_KEY).is_none());
+
+        let legacy_known = metadata_for(&conn, "legacy-known");
+        assert_eq!(
+            legacy_known[LEGACY_SEMANTIC_QUALIFIERS_METADATA_KEY],
+            serde_json::json!(["region:US"])
+        );
+        assert!(legacy_known.get(SEMANTIC_QUALIFIERS_METADATA_KEY).is_none());
+        assert!(legacy_known
+            .get(NON_SEMANTIC_MERGEABLE_METADATA_KEY)
+            .is_none());
     }
 
     fn metadata_for(conn: &Connection, id: &str) -> Value {
