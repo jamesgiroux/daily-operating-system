@@ -1,6 +1,25 @@
 use schemars::JsonSchema;
 use serde::{Deserialize, Serialize};
 
+pub const FACTOR_MIN: f64 = 0.0;
+pub const FACTOR_MAX: f64 = 1.0;
+pub(crate) const FACTOR_AVERAGE_DENOMINATOR: f64 = 2.0;
+pub(crate) const DEFAULT_CLAMP_FLOOR: f64 = 0.05;
+pub(crate) const DEFAULT_LIKELY_CURRENT_MIN: f64 = 0.75;
+pub(crate) const DEFAULT_USE_WITH_CAUTION_MIN: f64 = 0.50;
+pub(crate) const DEFAULT_FRESHNESS_HALF_LIFE_DAYS: f64 = 90.0;
+pub(crate) const DEFAULT_UNKNOWN_TIMESTAMP_PENALTY: f64 = 0.8;
+pub(crate) const DEFAULT_CONTRADICTION_MULTIPLIER: f64 = 0.35;
+pub(crate) const DEFAULT_FEEDBACK_BOOST: f64 = 1.2;
+pub(crate) const DEFAULT_FEEDBACK_PENALTY: f64 = 0.25;
+pub(crate) const DEFAULT_CROSS_ENTITY_HIT_PENALTY: f64 = 0.55;
+pub(crate) const FRESHNESS_FLOOR: f64 = DEFAULT_CLAMP_FLOOR;
+pub(crate) const FRESHNESS_EXPONENTIAL_BASE: f64 = 2.0;
+pub(crate) const SECONDS_PER_DAY: f64 = 86_400.0;
+pub(crate) const SALESFORCE_FIELD_UPDATE_STALE_WEIGHT: f64 = 0.3;
+pub(crate) const AUTHORITATIVE_CONTRADICTION_MIN_WEIGHT: f64 = 0.8;
+pub(crate) const AUTHORITATIVE_CONFIRMING_RATIO: f64 = 0.5;
+
 /// Tunable Trust Compiler configuration.
 ///
 /// The compiler validates this shape before scoring. Defaults are intentionally
@@ -24,15 +43,15 @@ impl Default for TrustConfig {
     fn default() -> Self {
         Self {
             weights: TrustFactorWeights::default(),
-            clamp_floor: 0.05,
-            likely_current_min: 0.75,
-            use_with_caution_min: 0.50,
-            freshness_half_life_days: 90.0,
-            unknown_timestamp_penalty: 0.8,
-            contradiction_multiplier: 0.35,
-            feedback_boost: 1.2,
-            feedback_penalty: 0.25,
-            cross_entity_hit_penalty: 0.55,
+            clamp_floor: DEFAULT_CLAMP_FLOOR,
+            likely_current_min: DEFAULT_LIKELY_CURRENT_MIN,
+            use_with_caution_min: DEFAULT_USE_WITH_CAUTION_MIN,
+            freshness_half_life_days: DEFAULT_FRESHNESS_HALF_LIFE_DAYS,
+            unknown_timestamp_penalty: DEFAULT_UNKNOWN_TIMESTAMP_PENALTY,
+            contradiction_multiplier: DEFAULT_CONTRADICTION_MULTIPLIER,
+            feedback_boost: DEFAULT_FEEDBACK_BOOST,
+            feedback_penalty: DEFAULT_FEEDBACK_PENALTY,
+            cross_entity_hit_penalty: DEFAULT_CROSS_ENTITY_HIT_PENALTY,
         }
     }
 }
@@ -54,16 +73,16 @@ pub struct TrustFactorWeights {
 impl Default for TrustFactorWeights {
     fn default() -> Self {
         Self {
-            source_reliability: 1.0,
-            source_lifecycle_weight: 1.0,
-            freshness_weight: 1.0,
-            corroboration_weight: 1.0,
-            contradiction_penalty: 1.0,
-            user_feedback_weight: 1.0,
-            subject_fit_confidence: 1.0,
-            internal_consistency: 1.0,
-            cross_entity_coherence: 1.0,
-            sensitivity_aware_filtering: 1.0,
+            source_reliability: FACTOR_MAX,
+            source_lifecycle_weight: FACTOR_MAX,
+            freshness_weight: FACTOR_MAX,
+            corroboration_weight: FACTOR_MAX,
+            contradiction_penalty: FACTOR_MAX,
+            user_feedback_weight: FACTOR_MAX,
+            subject_fit_confidence: FACTOR_MAX,
+            internal_consistency: FACTOR_MAX,
+            cross_entity_coherence: FACTOR_MAX,
+            sensitivity_aware_filtering: FACTOR_MAX,
         }
     }
 }

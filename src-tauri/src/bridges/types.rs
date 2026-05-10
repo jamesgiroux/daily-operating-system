@@ -368,6 +368,7 @@ pub(crate) fn is_tauri_claim_dismissal_surface(surface: ClaimDismissalSurface) -
             | ClaimDismissalSurface::Briefing
             | ClaimDismissalSurface::TauriMeetingDetail
             | ClaimDismissalSurface::TauriEmailSummary
+            | ClaimDismissalSurface::Action
             | ClaimDismissalSurface::TauriProvenance
             | ClaimDismissalSurface::TauriReport
             | ClaimDismissalSurface::TauriChat

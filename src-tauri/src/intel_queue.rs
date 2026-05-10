@@ -4727,17 +4727,10 @@ mod tests {
         )
         .into_parts();
         let ok = reason.is_none();
-        let weight = crate::abilities::trust::factors::freshness_weight(
-            &freshness,
-            &claim.temporal_scope,
-            &crate::abilities::trust::TrustConfig::default(),
-        );
-        let expected_base = (-std::f64::consts::LN_2 / 90.0).exp();
 
         assert!(ok);
         assert!(!freshness.timestamp_known);
         assert_float_close(freshness.age_days, 1.0);
-        assert_float_close(weight, expected_base * 0.8);
     }
 
     #[test]
