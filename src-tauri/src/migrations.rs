@@ -1433,11 +1433,9 @@ fn verify_no_live_shadow_trust_v157(conn: &Connection, context: &str) -> Result<
         .query_row(
             "SELECT COUNT(*)
                FROM intelligence_claims
-              WHERE shadow_trust_version IS NOT NULL
-                AND trust_version IN (?1, 0)
+              WHERE trust_version IN (?1, 0)
                 AND (trust_score IS NOT NULL
-                     OR trust_computed_at IS NOT NULL
-                     OR trust_version IS NOT NULL)",
+                     OR trust_computed_at IS NOT NULL)",
             [V155_SHADOW_TRUST_VERSION],
             |row| row.get(0),
         )
@@ -2593,6 +2591,41 @@ mod tests {
 
         verify_no_live_shadow_trust_v157(&conn, "v157 verifier")
             .expect("non-violating rows should pass");
+    }
+
+    #[test]
+    fn verify_required_schema_rejects_legacy_live_shadow_trust_without_shadow_version() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: regression seeds legacy live shadow trust score */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version, shadow_trust_version)
+             VALUES (
+                 'claim-shadow-live-legacy-null-shadow-version',
+                 '{\"kind\":\"account\",\"id\":\"acct-shadow-live-legacy\"}',
+                 'summary',
+                 'legacy live shadow trust score without shadow version',
+                 'claim-shadow-live-legacy-null-shadow-version-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-08T10:00:00Z',
+                 '{}',
+                 0.62,
+                 NULL,
+                 ?1,
+                 NULL
+             )",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed legacy live shadow trust row");
+
+        let err = verify_required_schema(&conn)
+            .expect_err("legacy live shadow trust must fail startup schema verifier");
+        assert!(
+            err.contains("legacy shadow trust row"),
+            "error should report legacy shadow trust violation: {err}"
+        );
     }
 
     #[test]
