@@ -18,7 +18,7 @@ use crate::db::ActionDb;
 use crate::intelligence::canonicalization::item_hash;
 use crate::intelligence::io::{read_intelligence_json, IntelligenceJson};
 use crate::services::claims::{
-    canonicalize_for_dos280, compute_dedup_key, item_kind_for_claim_type,
+    canonicalize_semantic_text, compute_dedup_key, item_kind_for_claim_type,
 };
 use crate::services::context::ServiceContext;
 
@@ -222,7 +222,7 @@ fn runtime_identity_for_rekey(row: &RekeyRow) -> Result<(String, String, String)
                 "subject cannot be canonicalized for dedup_key (likely Multi/Global per ADR-0125): {e}"
             )
         })?;
-    let canonical_text = canonicalize_for_dos280(&row.text);
+    let canonical_text = canonicalize_semantic_text(&row.text);
     let next_hash = item_hash(item_kind_for_claim_type(&row.claim_type), &canonical_text);
     let next_dedup_key = compute_dedup_key(
         &next_hash,
@@ -1116,7 +1116,7 @@ mod tests {
         let subject_value = serde_json::from_str::<serde_json::Value>(subject_ref).unwrap();
         let subject = crate::services::claims::subject_ref_from_json(&subject_value).unwrap();
         let compact_subject_ref = crate::services::claims::canonical_subject_ref(&subject).unwrap();
-        let canonical_text = crate::services::claims::canonicalize_for_dos280(text);
+        let canonical_text = crate::services::claims::canonicalize_semantic_text(text);
         let hash = crate::intelligence::canonicalization::item_hash(
             crate::services::claims::item_kind_for_claim_type(claim_type),
             &canonical_text,
@@ -1214,7 +1214,7 @@ mod tests {
 
     /// L2 cycle-4 fix #1: backfilled m3 email rows store the legacy
     /// `email_dismissals.item_text` verbatim (with whatever whitespace
-    /// anomalies the user typed). Runtime canonicalize_for_dos280
+    /// anomalies the user typed). Runtime canonicalize_semantic_text
     /// trims + collapses whitespace + lowercases. The rekey pass
     /// rewrites `item_hash` to the runtime-canonical hash so PRE-GATE
     /// hash tier matches a runtime commit_claim with the canonical

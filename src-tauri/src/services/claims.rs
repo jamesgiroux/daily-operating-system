@@ -718,7 +718,7 @@ fn timestamp_millis_key(value: &str) -> String {
 /// only needs enough canonicalization to make `same-meaning merge`
 /// (commit_claim's de-dupe-via-corroboration branch) catch the obvious
 /// repeats that legacy data and AI re-runs produce in practice.
-pub(crate) fn canonicalize_for_dos280(text: &str) -> String {
+pub(crate) fn canonicalize_semantic_text(text: &str) -> String {
     let trimmed = text.trim();
     let collapsed: String = trimmed.split_whitespace().collect::<Vec<_>>().join(" ");
     collapsed.to_lowercase()
@@ -732,7 +732,8 @@ struct SemanticSignature {
     status: SemanticAssertionStatus,
 }
 
-const DOS280_SEMANTIC_QUALIFIERS_METADATA_KEY: &str = "dos280_semantic_qualifiers";
+const SEMANTIC_QUALIFIERS_METADATA_KEY: &str = "semantic_qualifiers";
+const NON_SEMANTIC_MERGEABLE_METADATA_KEY: &str = "non_semantic_mergeable";
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum SemanticAssertionStatus {
@@ -752,21 +753,31 @@ struct SemanticDuplicateMatch {
     action: SemanticDuplicateAction,
 }
 
-/// DOS-280 semantic signature. This is deliberately conservative:
+struct SemanticDuplicateLookup<'a> {
+    subject: &'a SubjectRef,
+    claim_type: &'a str,
+    field_path: Option<&'a str>,
+    canonical_text: &'a str,
+    proposal_qualifiers: &'a HashSet<String>,
+    proposal_temporal_scope: &'a TemporalScope,
+    proposal_sensitivity: &'a ClaimSensitivity,
+}
+
+/// Builds a semantic near-duplicate signature. This is deliberately conservative:
 /// it only compares claims that already share subject, claim_type,
 /// and field family, then requires strong overlap on normalized
 /// domain terms plus compatible assertion status.
-fn semantic_signature_for_dos280(text: &str) -> SemanticSignature {
-    semantic_signature_for_dos280_with_qualifiers(text, None)
+fn compute_semantic_signature(text: &str) -> SemanticSignature {
+    compute_semantic_signature_with_qualifiers(text, None)
 }
 
-fn semantic_signature_for_dos280_with_qualifiers(
+fn compute_semantic_signature_with_qualifiers(
     text: &str,
     qualifiers: Option<&HashSet<String>>,
 ) -> SemanticSignature {
     let qualifiers = qualifiers
         .cloned()
-        .unwrap_or_else(|| semantic_high_salience_qualifiers_for_dos280(text));
+        .unwrap_or_else(|| semantic_high_salience_qualifiers(text));
     let mut normalized = String::with_capacity(text.len());
     for ch in text.chars() {
         if ch.is_ascii_alphanumeric() {
@@ -790,7 +801,7 @@ fn semantic_signature_for_dos280_with_qualifiers(
             i += 1;
         }
 
-        if semantic_negator_for_dos280(raw) {
+        if is_semantic_negator(raw) {
             negate_window = 3;
             i += 1;
             continue;
@@ -805,9 +816,9 @@ fn semantic_signature_for_dos280_with_qualifiers(
             continue;
         }
 
-        if let Some((term, term_status)) = semantic_term_for_dos280(raw, negated) {
+        if let Some((term, term_status)) = lookup_semantic_term(raw, negated) {
             terms.insert(term);
-            status = combine_semantic_status_for_dos280(status, term_status);
+            status = combine_semantic_status(status, term_status);
         }
 
         i += 1;
@@ -821,11 +832,11 @@ fn semantic_signature_for_dos280_with_qualifiers(
     }
 }
 
-fn semantic_negator_for_dos280(token: &str) -> bool {
+fn is_semantic_negator(token: &str) -> bool {
     matches!(token, "not" | "no" | "never" | "without")
 }
 
-fn semantic_stopword_for_dos280(token: &str) -> bool {
+fn is_semantic_stopword(token: &str) -> bool {
     matches!(
         token,
         "a" | "an"
@@ -865,11 +876,8 @@ fn semantic_stopword_for_dos280(token: &str) -> bool {
     )
 }
 
-fn semantic_term_for_dos280(
-    token: &str,
-    negated: bool,
-) -> Option<(String, SemanticAssertionStatus)> {
-    if semantic_stopword_for_dos280(token) {
+fn lookup_semantic_term(token: &str, negated: bool) -> Option<(String, SemanticAssertionStatus)> {
+    if is_semantic_stopword(token) {
         return None;
     }
 
@@ -895,7 +903,7 @@ fn semantic_term_for_dos280(
         "finance" | "financial" | "cfo" => ("finance", SemanticAssertionStatus::Unknown),
         "phase" | "phases" => ("phase", SemanticAssertionStatus::Unknown),
         _ => {
-            let stemmed = semantic_stem_for_dos280(token);
+            let stemmed = semantic_stem(token);
             return if stemmed.is_empty() {
                 None
             } else {
@@ -907,7 +915,7 @@ fn semantic_term_for_dos280(
     Some((term.to_string(), status))
 }
 
-fn semantic_stem_for_dos280(token: &str) -> String {
+fn semantic_stem(token: &str) -> String {
     let mut stem = token.to_string();
     for suffix in ["ing", "ed", "es", "s"] {
         if stem.len() > suffix.len() + 3 && stem.ends_with(suffix) {
@@ -918,7 +926,7 @@ fn semantic_stem_for_dos280(token: &str) -> String {
     stem
 }
 
-fn combine_semantic_status_for_dos280(
+fn combine_semantic_status(
     current: SemanticAssertionStatus,
     next: SemanticAssertionStatus,
 ) -> SemanticAssertionStatus {
@@ -931,7 +939,7 @@ fn combine_semantic_status_for_dos280(
     }
 }
 
-fn semantic_status_compatible_for_dos280(
+fn semantic_status_compatible(
     left: SemanticAssertionStatus,
     right: SemanticAssertionStatus,
 ) -> bool {
@@ -950,7 +958,7 @@ fn semantic_status_compatible_for_dos280(
     )
 }
 
-fn semantic_high_salience_qualifiers_for_dos280(text: &str) -> HashSet<String> {
+pub(crate) fn semantic_high_salience_qualifiers(text: &str) -> HashSet<String> {
     let mut qualifiers = HashSet::new();
     let mut token = String::new();
 
@@ -972,7 +980,7 @@ fn semantic_high_salience_qualifiers_for_dos280(text: &str) -> HashSet<String> {
             qualifiers.insert(format!("region:{upper}"));
         } else if matches!(lower.parse::<i32>(), Ok(2024..=2030)) {
             qualifiers.insert(format!("year:{lower}"));
-        } else if semantic_named_entity_qualifier_for_dos280(&token) {
+        } else if is_semantic_named_entity(&token) {
             qualifiers.insert(format!("entity:{lower}"));
         }
 
@@ -982,13 +990,13 @@ fn semantic_high_salience_qualifiers_for_dos280(text: &str) -> HashSet<String> {
     qualifiers
 }
 
-fn semantic_named_entity_qualifier_for_dos280(token: &str) -> bool {
+fn is_semantic_named_entity(token: &str) -> bool {
     if token.len() < 3 || token.chars().any(|ch| ch.is_ascii_digit()) {
         return false;
     }
 
     let lower = token.to_ascii_lowercase();
-    if semantic_low_salience_entity_token_for_dos280(&lower) {
+    if is_semantic_low_salience_token(&lower) {
         return false;
     }
 
@@ -1004,14 +1012,10 @@ fn semantic_named_entity_qualifier_for_dos280(token: &str) -> bool {
     has_later_upper || all_upper || title_case
 }
 
-fn metadata_with_dos280_semantic_qualifiers(
+fn metadata_with_semantic_qualifiers(
     metadata_json: Option<String>,
     qualifiers: &HashSet<String>,
 ) -> Option<String> {
-    if qualifiers.is_empty() {
-        return metadata_json;
-    }
-
     let mut sorted = qualifiers.iter().cloned().collect::<Vec<_>>();
     sorted.sort();
     let qualifier_value =
@@ -1026,34 +1030,37 @@ fn metadata_with_dos280_semantic_qualifiers(
     };
 
     root.insert(
-        DOS280_SEMANTIC_QUALIFIERS_METADATA_KEY.to_string(),
+        SEMANTIC_QUALIFIERS_METADATA_KEY.to_string(),
         qualifier_value,
     );
     Some(serde_json::Value::Object(root).to_string())
 }
 
-fn semantic_qualifiers_from_metadata_for_dos280(
-    metadata_json: Option<&str>,
-) -> Option<HashSet<String>> {
+fn semantic_qualifiers_from_metadata(metadata_json: Option<&str>) -> Option<HashSet<String>> {
     let metadata = serde_json::from_str::<serde_json::Value>(metadata_json?).ok()?;
-    let qualifiers = metadata
-        .as_object()?
-        .get(DOS280_SEMANTIC_QUALIFIERS_METADATA_KEY)?
-        .as_array()?
-        .iter()
-        .filter_map(|value| value.as_str())
-        .filter(|qualifier| semantic_metadata_qualifier_for_dos280(qualifier))
-        .map(ToOwned::to_owned)
-        .collect::<HashSet<_>>();
-
-    if qualifiers.is_empty() {
-        None
-    } else {
-        Some(qualifiers)
+    let metadata = metadata.as_object()?;
+    if metadata
+        .get(NON_SEMANTIC_MERGEABLE_METADATA_KEY)
+        .and_then(serde_json::Value::as_bool)
+        .unwrap_or(false)
+    {
+        return None;
     }
+
+    let raw_qualifiers = metadata.get(SEMANTIC_QUALIFIERS_METADATA_KEY)?.as_array()?;
+    let mut qualifiers = HashSet::new();
+    for value in raw_qualifiers {
+        let qualifier = value.as_str()?;
+        if !is_semantic_metadata_qualifier(qualifier) {
+            return None;
+        }
+        qualifiers.insert(qualifier.to_string());
+    }
+
+    Some(qualifiers)
 }
 
-fn semantic_metadata_qualifier_for_dos280(qualifier: &str) -> bool {
+fn is_semantic_metadata_qualifier(qualifier: &str) -> bool {
     let Some((kind, value)) = qualifier.split_once(':') else {
         return false;
     };
@@ -1061,14 +1068,13 @@ fn semantic_metadata_qualifier_for_dos280(qualifier: &str) -> bool {
     !value.is_empty() && matches!(kind, "quarter" | "region" | "year" | "entity")
 }
 
-fn semantic_claim_qualifiers_for_dos280(claim: &IntelligenceClaim) -> HashSet<String> {
-    semantic_qualifiers_from_metadata_for_dos280(claim.metadata_json.as_deref())
-        .unwrap_or_else(|| semantic_high_salience_qualifiers_for_dos280(&claim.text))
+fn semantic_claim_qualifiers(claim: &IntelligenceClaim) -> Option<HashSet<String>> {
+    semantic_qualifiers_from_metadata(claim.metadata_json.as_deref())
 }
 
-fn semantic_low_salience_entity_token_for_dos280(token: &str) -> bool {
-    semantic_stopword_for_dos280(token)
-        || semantic_negator_for_dos280(token)
+fn is_semantic_low_salience_token(token: &str) -> bool {
+    is_semantic_stopword(token)
+        || is_semantic_negator(token)
         || matches!(
             token,
             "approval"
@@ -1105,30 +1111,32 @@ fn semantic_low_salience_entity_token_for_dos280(token: &str) -> bool {
         )
 }
 
-fn semantic_near_duplicate_for_dos280(left: &str, right: &str) -> bool {
-    let left = semantic_signature_for_dos280(left);
-    let right = semantic_signature_for_dos280(right);
-    semantic_signatures_near_duplicate_for_dos280(&left, &right)
+fn semantic_near_duplicate(left: &str, right: &str) -> bool {
+    let left = compute_semantic_signature(left);
+    let right = compute_semantic_signature(right);
+    semantic_signatures_near_duplicate(&left, &right)
 }
 
-fn semantic_near_duplicate_for_dos280_with_qualifiers(
+fn semantic_near_duplicate_with_qualifiers(
     left_text: &str,
     left_qualifiers: &HashSet<String>,
     right_text: &str,
     right_qualifiers: &HashSet<String>,
 ) -> bool {
-    let left = semantic_signature_for_dos280_with_qualifiers(left_text, Some(left_qualifiers));
-    let right = semantic_signature_for_dos280_with_qualifiers(right_text, Some(right_qualifiers));
-    semantic_signatures_near_duplicate_for_dos280(&left, &right)
+    let left = compute_semantic_signature_with_qualifiers(left_text, Some(left_qualifiers));
+    let right = compute_semantic_signature_with_qualifiers(right_text, Some(right_qualifiers));
+    semantic_signatures_near_duplicate(&left, &right)
 }
 
-fn semantic_claim_near_duplicate_for_dos280(
+fn semantic_claim_near_duplicate(
     claim: &IntelligenceClaim,
     canonical_text: &str,
     proposal_qualifiers: &HashSet<String>,
 ) -> bool {
-    let claim_qualifiers = semantic_claim_qualifiers_for_dos280(claim);
-    semantic_near_duplicate_for_dos280_with_qualifiers(
+    let Some(claim_qualifiers) = semantic_claim_qualifiers(claim) else {
+        return false;
+    };
+    semantic_near_duplicate_with_qualifiers(
         &claim.text,
         &claim_qualifiers,
         canonical_text,
@@ -1136,17 +1144,14 @@ fn semantic_claim_near_duplicate_for_dos280(
     )
 }
 
-fn semantic_signatures_near_duplicate_for_dos280(
-    left: &SemanticSignature,
-    right: &SemanticSignature,
-) -> bool {
+fn semantic_signatures_near_duplicate(left: &SemanticSignature, right: &SemanticSignature) -> bool {
     if matches!(left.status, SemanticAssertionStatus::Unknown)
         || matches!(right.status, SemanticAssertionStatus::Unknown)
     {
         return false;
     }
 
-    if !semantic_status_compatible_for_dos280(left.status, right.status) {
+    if !semantic_status_compatible(left.status, right.status) {
         return false;
     }
 
@@ -1174,7 +1179,7 @@ fn semantic_signatures_near_duplicate_for_dos280(
     jaccard >= 0.58 && coverage >= 0.67
 }
 
-fn trust_band_for_dos280(trust_score: Option<f64>) -> factors::TrustBand {
+fn trust_band_for_score(trust_score: Option<f64>) -> factors::TrustBand {
     let Some(score) = trust_score.filter(|score| score.is_finite()) else {
         return factors::TrustBand::Unscored;
     };
@@ -1188,18 +1193,27 @@ fn trust_band_for_dos280(trust_score: Option<f64>) -> factors::TrustBand {
     }
 }
 
-fn needs_verification_score_for_dos280() -> f64 {
+fn needs_verification_score() -> f64 {
     let config = TrustConfig::default();
     (config.use_with_caution_min - config.clamp_floor)
         .max(TrustScore::MIN)
         .min(config.use_with_caution_min)
 }
 
-fn semantic_trust_band_allows_canonicalize_for_dos280(band: factors::TrustBand) -> bool {
+fn semantic_trust_band_allows_canonicalization(band: factors::TrustBand) -> bool {
     matches!(
         band,
         factors::TrustBand::LikelyCurrent | factors::TrustBand::UseWithCaution
     )
+}
+
+fn claim_merge_tiers_compatible(
+    existing: &IntelligenceClaim,
+    proposal_temporal_scope: &TemporalScope,
+    proposal_sensitivity: &ClaimSensitivity,
+) -> bool {
+    existing.temporal_scope == *proposal_temporal_scope
+        && existing.sensitivity == *proposal_sensitivity
 }
 
 fn compact_subject_ref(value: &serde_json::Value) -> Result<String, ClaimError> {
@@ -1354,7 +1368,7 @@ fn pre_gate_blocking_tombstone_exists(
 
     // Exact text tier — NOCASE so backfilled tombstones with the
     // legacy mixed-case `text` column still match runtime
-    // canonical_text (which is lowercased by canonicalize_for_dos280).
+    // canonical_text (which is lowercased by canonicalize_semantic_text).
     if !canonical_text.is_empty()
         && hit(
             "text = ?6 COLLATE NOCASE",
@@ -1783,21 +1797,17 @@ fn load_active_claim_by_dedup_key(
     }
 }
 
-/// DOS-280 semantic near-duplicate lookup. Exact `dedup_key` equality is
+/// Looks up semantic near-duplicates. Exact `dedup_key` equality is
 /// handled first; this scans the same entity + claim family for a tightly
 /// scoped semantic signature match before the contradiction fork path runs.
 fn load_active_semantic_duplicate_claim(
     conn: &rusqlite::Connection,
-    subject: &SubjectRef,
-    claim_type: &str,
-    field_path: Option<&str>,
-    canonical_text: &str,
-    proposal_qualifiers: &HashSet<String>,
+    lookup: SemanticDuplicateLookup<'_>,
 ) -> Result<Option<SemanticDuplicateMatch>, ClaimError> {
-    let Some(kind) = subject_kind_label(subject) else {
+    let Some(kind) = subject_kind_label(lookup.subject) else {
         return Ok(None);
     };
-    let Some(id) = subject_id_for_lookup(subject) else {
+    let Some(id) = subject_id_for_lookup(lookup.subject) else {
         return Ok(None);
     };
     let sql = format!(
@@ -1817,17 +1827,25 @@ fn load_active_semantic_duplicate_claim(
          ORDER BY active.created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
-    let mut rows = stmt.query(params![kind, id, claim_type, field_path])?;
+    let mut rows = stmt.query(params![kind, id, lookup.claim_type, lookup.field_path])?;
     let mut needs_verification_match = None;
 
     while let Some(row) = rows.next()? {
         let claim = read_claim_row(row)?;
-        if !semantic_claim_near_duplicate_for_dos280(&claim, canonical_text, proposal_qualifiers) {
+        if !claim_merge_tiers_compatible(
+            &claim,
+            lookup.proposal_temporal_scope,
+            lookup.proposal_sensitivity,
+        ) {
+            continue;
+        }
+        if !semantic_claim_near_duplicate(&claim, lookup.canonical_text, lookup.proposal_qualifiers)
+        {
             continue;
         }
 
-        let trust_band = trust_band_for_dos280(claim.trust_score);
-        if semantic_trust_band_allows_canonicalize_for_dos280(trust_band) {
+        let trust_band = trust_band_for_score(claim.trust_score);
+        if semantic_trust_band_allows_canonicalization(trust_band) {
             return Ok(Some(SemanticDuplicateMatch {
                 claim,
                 action: SemanticDuplicateAction::Canonicalize,
@@ -1899,7 +1917,7 @@ fn load_active_contradicting_claim(
     let mut rows = stmt.query(params![kind, id, claim_type, field_path, canonical_text])?;
     while let Some(row) = rows.next()? {
         let claim = read_claim_row(row)?;
-        if semantic_claim_near_duplicate_for_dos280(&claim, canonical_text, proposal_qualifiers) {
+        if semantic_claim_near_duplicate(&claim, canonical_text, proposal_qualifiers) {
             continue;
         }
         return Ok(Some(claim));
@@ -2421,13 +2439,13 @@ pub fn commit_claim(
     let semantic_qualifiers = if matches!(kind, ClaimType::UserNote) {
         HashSet::new()
     } else {
-        semantic_high_salience_qualifiers_for_dos280(&proposal.text)
+        semantic_high_salience_qualifiers(&proposal.text)
     };
 
     let canonical_text = if matches!(kind, ClaimType::UserNote) {
         proposal.text.clone()
     } else {
-        canonicalize_for_dos280(&proposal.text)
+        canonicalize_semantic_text(&proposal.text)
     };
     let computed_hash = item_hash(
         item_kind_for_claim_type(&proposal.claim_type),
@@ -2458,7 +2476,7 @@ pub fn commit_claim(
 
     with_claim_transaction(db, |tx| {
         let now = ctx.clock.now().to_rfc3339();
-        let claim_metadata_json = metadata_with_dos280_semantic_qualifiers(
+        let claim_metadata_json = metadata_with_semantic_qualifiers(
             link_map::metadata_with_structured_field(
                 proposal.metadata_json.as_deref(),
                 proposal.field_path.as_deref(),
@@ -2612,35 +2630,45 @@ pub fn commit_claim(
         {
             let mut semantic_duplicate_needs_verification = false;
             if let Some(existing) = load_active_claim_by_dedup_key(tx.conn_ref(), &dedup_key)? {
-                let corroboration_id = corroborate_in_tx(
-                    tx,
-                    &existing.id,
-                    &proposal.data_source,
-                    proposal.source_asof.as_deref(),
-                    Some("same_meaning_merge"),
-                    &now,
-                )?;
-                let mut edge_claim = existing.clone();
-                edge_claim.metadata_json = link_map::metadata_with_structured_field(
-                    edge_claim.metadata_json.as_deref(),
-                    proposal.field_path.as_deref(),
-                    &proposal.text,
-                );
-                insert_claim_edges(tx, &edge_claim)?;
-                tx.bump_for_subject(&subject)?;
-                return Ok(CommittedClaim::Reinforced {
-                    claim: existing,
-                    corroboration_id,
-                });
+                if claim_merge_tiers_compatible(
+                    &existing,
+                    &effective_temporal_scope,
+                    &effective_sensitivity,
+                ) {
+                    let corroboration_id = corroborate_in_tx(
+                        tx,
+                        &existing.id,
+                        &proposal.data_source,
+                        proposal.source_asof.as_deref(),
+                        Some("same_meaning_merge"),
+                        &now,
+                    )?;
+                    let mut edge_claim = existing.clone();
+                    edge_claim.metadata_json = link_map::metadata_with_structured_field(
+                        edge_claim.metadata_json.as_deref(),
+                        proposal.field_path.as_deref(),
+                        &proposal.text,
+                    );
+                    insert_claim_edges(tx, &edge_claim)?;
+                    tx.bump_for_subject(&subject)?;
+                    return Ok(CommittedClaim::Reinforced {
+                        claim: existing,
+                        corroboration_id,
+                    });
+                }
             }
 
             if let Some(semantic_match) = load_active_semantic_duplicate_claim(
                 tx.conn_ref(),
-                &subject,
-                &proposal.claim_type,
-                proposal.field_path.as_deref(),
-                &canonical_text,
-                &semantic_qualifiers,
+                SemanticDuplicateLookup {
+                    subject: &subject,
+                    claim_type: &proposal.claim_type,
+                    field_path: proposal.field_path.as_deref(),
+                    canonical_text: &canonical_text,
+                    proposal_qualifiers: &semantic_qualifiers,
+                    proposal_temporal_scope: &effective_temporal_scope,
+                    proposal_sensitivity: &effective_sensitivity,
+                },
             )? {
                 match semantic_match.action {
                     SemanticDuplicateAction::Canonicalize => {
@@ -2758,7 +2786,7 @@ pub fn commit_claim(
                     .id
                     .clone()
                     .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-                let trust_score = Some(needs_verification_score_for_dos280());
+                let trust_score = Some(needs_verification_score());
                 let claim = IntelligenceClaim {
                     id,
                     subject_ref: subject_ref_compact,
@@ -6772,7 +6800,7 @@ mod tests {
         let (clock, rng, external) = ctx_parts();
         let ctx = live_ctx(&clock, &rng, &external);
         let raw_targets = r#"["Person-MixedCase"]"#;
-        let canonical_text = canonicalize_for_dos280(raw_targets);
+        let canonical_text = canonicalize_semantic_text(raw_targets);
         let subject_ref = compact_subject_ref_str(SUBJECT).expect("compact subject");
         let hash = item_hash(item_kind_for_claim_type("risk"), &canonical_text);
         let dedup_key = compute_dedup_key(&hash, &subject_ref, "risk", Some("stakeholders"));
@@ -7126,7 +7154,7 @@ mod tests {
         // Pre-compute the runtime hash for the proposal text and seed a
         // backfill-shaped tombstone with that hash + a different
         // (mechanism-1-style) dedup_key. The PRE-GATE must still block.
-        let canonical = canonicalize_for_dos280("Procurement blocked renewal");
+        let canonical = canonicalize_semantic_text("Procurement blocked renewal");
         let hash = item_hash(ItemKind::Risk, &canonical);
         seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
 
@@ -7174,7 +7202,7 @@ mod tests {
         let db = test_db();
         seed_account(&db);
         // Seed a tombstone for acct-1.
-        let canonical = canonicalize_for_dos280("Procurement blocked renewal");
+        let canonical = canonicalize_semantic_text("Procurement blocked renewal");
         let hash = item_hash(ItemKind::Risk, &canonical);
         seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
 
@@ -7201,7 +7229,7 @@ mod tests {
         let db = test_db();
         seed_account(&db);
         // Seed a 'risk' tombstone.
-        let canonical = canonicalize_for_dos280("Procurement blocked renewal");
+        let canonical = canonicalize_semantic_text("Procurement blocked renewal");
         let hash = item_hash(ItemKind::Risk, &canonical);
         seed_backfill_shaped_tombstone(&db, &hash, "Procurement blocked renewal");
 
@@ -8814,71 +8842,71 @@ mod tests {
         assert_eq!(read_account_claim_version(&db), before + 1);
     }
 
-    /// L2 cycle-1 fix #6: canonicalize_for_dos280 lowercases, trims,
+    /// L2 cycle-1 fix #6: canonicalize_semantic_text lowercases, trims,
     /// and collapses internal whitespace runs.
     #[test]
-    fn canonicalize_for_dos280_lowercases_trims_collapses_whitespace() {
+    fn canonicalize_semantic_text_lowercases_trims_collapses_whitespace() {
         assert_eq!(
-            canonicalize_for_dos280("  ARR Risk\trenewal "),
+            canonicalize_semantic_text("  ARR Risk\trenewal "),
             "arr risk renewal"
         );
         assert_eq!(
-            canonicalize_for_dos280("Procurement   Blocked\n\nRenewal"),
+            canonicalize_semantic_text("Procurement   Blocked\n\nRenewal"),
             "procurement blocked renewal"
         );
         assert_eq!(
-            canonicalize_for_dos280("already canonical"),
+            canonicalize_semantic_text("already canonical"),
             "already canonical"
         );
     }
 
     #[test]
-    fn semantic_near_duplicate_for_dos280_is_tightly_scoped() {
-        assert!(semantic_near_duplicate_for_dos280(
+    fn semantic_near_duplicate_is_tightly_scoped() {
+        assert!(semantic_near_duplicate(
             "Phase 2 budget approval is pending with finance",
             "Finance has not approved the Phase 2 budget yet"
         ));
-        assert!(semantic_near_duplicate_for_dos280(
+        assert!(semantic_near_duplicate(
             "Phase 2 funding is awaiting finance signoff",
             "Budget sign-off for Phase 2 remains blocked by Finance"
         ));
         assert!(
-            !semantic_near_duplicate_for_dos280(
+            !semantic_near_duplicate(
                 "Finance has not approved the Phase 2 budget yet",
                 "Legal has not approved the Phase 2 contract terms yet"
             ),
             "shared wording on phase approval must not collapse different owners/objects"
         );
         assert!(
-            !semantic_near_duplicate_for_dos280(
+            !semantic_near_duplicate(
                 "Phase 2 budget approval is pending with finance",
                 "Finance approved the Phase 2 budget"
             ),
             "opposite assertion status must remain separate"
         );
         assert!(
-            !semantic_near_duplicate_for_dos280(
+            !semantic_near_duplicate(
                 "Target Example public source_ref claim is allowed.",
                 "Target Example internal source_ref claim is allowed."
             ),
             "generic lexical overlap without an explicit assertion status must not collapse"
         );
         assert!(
-            !semantic_near_duplicate_for_dos280(
+            !semantic_near_duplicate(
                 "Q3 Phase 2 budget approval is pending with finance",
                 "Phase 2 budget approval is pending with finance"
             ),
             "quarter-scoped claims must not collapse into unscoped claims"
         );
         assert!(
-            !semantic_near_duplicate_for_dos280(
+            !semantic_near_duplicate(
                 "US Phase 2 budget approval is pending with finance",
                 "EU Phase 2 budget approval is pending with finance"
             ),
             "region variants must not collapse across scopes"
         );
         assert!(
-            !semantic_near_duplicate_for_dos280(
+            !semantic_near_duplicate(
                 "Acme Phase 2 budget approval is pending with finance",
                 "Globex Phase 2 budget approval is pending with finance"
             ),
@@ -8903,7 +8931,7 @@ mod tests {
             update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
 
             let (_, stored_text) = read_subject_ref_and_text(&db, &first_id);
-            assert_eq!(stored_text, canonicalize_for_dos280(&first_text));
+            assert_eq!(stored_text, canonicalize_semantic_text(&first_text));
             assert_eq!(stored_text, first_text.to_ascii_lowercase());
 
             let result = commit_claim(&ctx, &db, proposal(&second_text)).unwrap();
@@ -8936,7 +8964,7 @@ mod tests {
         update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
 
         let (_, stored_text) = read_subject_ref_and_text(&db, &first_id);
-        assert_eq!(stored_text, canonicalize_for_dos280(first_text));
+        assert_eq!(stored_text, canonicalize_semantic_text(first_text));
         assert_eq!(stored_text, first_text.to_ascii_lowercase());
 
         let same_entity = commit_claim(
@@ -8973,6 +9001,48 @@ mod tests {
     }
 
     #[test]
+    fn commit_claim_does_not_merge_legacy_lowercased_scoped_claim_without_sidecar() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let legacy_text =
+            canonicalize_semantic_text("US Phase 2 budget approval is pending with finance");
+        insert_fixture_claim(
+            &db,
+            "legacy-lowercase-us",
+            SUBJECT,
+            "risk",
+            &legacy_text,
+            ClaimState::Active,
+            SurfacingState::Active,
+        );
+        update_claim_trust(&db, "legacy-lowercase-us", TrustScore(0.85), 1, &ctx).unwrap();
+
+        let result = commit_claim(
+            &ctx,
+            &db,
+            proposal("Phase 2 budget approval is pending with finance"),
+        )
+        .unwrap();
+
+        match result {
+            CommittedClaim::Forked {
+                primary_claim,
+                new_claim_id,
+                ..
+            } => {
+                assert_eq!(primary_claim.id, "legacy-lowercase-us");
+                assert_ne!(new_claim_id, "legacy-lowercase-us");
+            }
+            other => panic!("legacy qualifierless scoped claim must not collapse, got {other:?}"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
     fn commit_claim_semantic_variants_collapse_to_one_entity_detail_claim() {
         let db = test_db();
         seed_account(&db);
@@ -8990,11 +9060,11 @@ mod tests {
 
         for (index, text) in variants.iter().enumerate() {
             let mut p = proposal(text);
-            p.data_source = format!("dos280_source_{}", index + 1);
-            p.source_ref = Some(format!("fixture://dos280/source-{}", index + 1));
-            p.actor = format!("agent:dos280:{}", index + 1);
+            p.data_source = format!("semantic_source_{}", index + 1);
+            p.source_ref = Some(format!("fixture://semantic/source-{}", index + 1));
+            p.actor = format!("agent:semantic:{}", index + 1);
             p.observed_at = format!("2026-05-02T12:0{}:00+00:00", index + 1);
-            p.thread_id = Some(format!("thread-dos280-{}", index + 1));
+            p.thread_id = Some(format!("thread-semantic-{}", index + 1));
             p.provenance_json = serde_json::json!({
                 "variant": index + 1,
                 "source_ref": p.source_ref.as_deref(),
@@ -9055,12 +9125,12 @@ mod tests {
             .collect::<Result<Vec<_>, _>>()
             .unwrap();
 
-        assert_eq!(primary_source, "dos280_source_1");
+        assert_eq!(primary_source, "semantic_source_1");
         assert_eq!(corroborations.len(), 5);
         for (idx, (data_source, source_asof, source_mechanism, count)) in
             corroborations.iter().enumerate()
         {
-            assert_eq!(data_source, &format!("dos280_source_{}", idx + 2));
+            assert_eq!(data_source, &format!("semantic_source_{}", idx + 2));
             assert_eq!(source_asof.as_deref(), Some(TS));
             assert_eq!(
                 source_mechanism.as_deref(),
@@ -9075,7 +9145,7 @@ mod tests {
                 "SELECT data_source, provenance_json, original_text, observed_at, thread_id
                  FROM claim_semantic_evidence
                  WHERE canonical_claim_id = ?1
-                   AND source_ref = 'fixture://dos280/source-4'",
+                   AND source_ref = 'fixture://semantic/source-4'",
                 params![&first_id],
                 |row| {
                     Ok((
@@ -9088,29 +9158,97 @@ mod tests {
                 },
             )
             .expect("semantic variant evidence recoverable by source_ref");
-        assert_eq!(recovered.0, "dos280_source_4");
+        assert_eq!(recovered.0, "semantic_source_4");
         assert!(recovered.1.contains("\"variant\":4"));
         assert_eq!(recovered.2, variants[3]);
         assert_eq!(recovered.3, "2026-05-02T12:04:00+00:00");
-        assert_eq!(recovered.4.as_deref(), Some("thread-dos280-4"));
+        assert_eq!(recovered.4.as_deref(), Some("thread-semantic-4"));
 
         let recovered_by_source_ref =
-            load_claims_active_by_source_ref(&db, "fixture://dos280/source-4").unwrap();
+            load_claims_active_by_source_ref(&db, "fixture://semantic/source-4").unwrap();
         assert_eq!(recovered_by_source_ref.len(), 1);
         assert_eq!(recovered_by_source_ref[0].id, first_id);
         assert_eq!(
             recovered_by_source_ref[0].source_ref.as_deref(),
-            Some("fixture://dos280/source-1")
+            Some("fixture://semantic/source-1")
         );
 
         let recovered_for_surface = load_claims_active_by_source_ref_for_surface(
             &db,
-            "fixture://dos280/source-4",
+            "fixture://semantic/source-4",
             ClaimDismissalSurface::TauriEntityDetail.as_str(),
         )
         .unwrap();
         assert_eq!(recovered_for_surface.len(), 1);
         assert_eq!(recovered_for_surface[0].id, first_id);
+    }
+
+    #[test]
+    fn commit_claim_confidential_variant_does_not_collapse_into_internal_canonical() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("Phase 2 budget approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let mut confidential = proposal("Finance has not approved the Phase 2 budget yet");
+        confidential.sensitivity = Some(ClaimSensitivity::Confidential);
+        let result = commit_claim(&ctx, &db, confidential).unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
+            CommittedClaim::Forked { new_claim_id, .. } => assert_ne!(new_claim_id, first_id),
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!("confidential variant collapsed into {}", claim.id)
+            }
+            CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_point_in_time_variant_does_not_collapse_into_state_canonical() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+
+        let first_id = inserted_claim_id(
+            commit_claim(
+                &ctx,
+                &db,
+                proposal("Phase 2 budget approval is pending with finance"),
+            )
+            .unwrap(),
+        );
+        update_claim_trust(&db, &first_id, TrustScore(0.85), 1, &ctx).unwrap();
+
+        let mut point_in_time = proposal("Finance has not approved the Phase 2 budget yet");
+        point_in_time.temporal_scope = Some(TemporalScope::PointInTime);
+        let result = commit_claim(&ctx, &db, point_in_time).unwrap();
+
+        match result {
+            CommittedClaim::Inserted { claim } => assert_ne!(claim.id, first_id),
+            CommittedClaim::Forked { new_claim_id, .. } => assert_ne!(new_claim_id, first_id),
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!("point-in-time variant collapsed into {}", claim.id)
+            }
+            CommittedClaim::Tombstoned { .. } => panic!("unexpected tombstone"),
+        }
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 2);
     }
 
     #[test]
@@ -9180,7 +9318,7 @@ mod tests {
             other => panic!("low-trust duplicate should not auto-canonicalize, got {other:?}"),
         };
         assert_eq!(
-            trust_band_for_dos280(inserted.trust_score),
+            trust_band_for_score(inserted.trust_score),
             factors::TrustBand::NeedsVerification
         );
         assert_eq!(
@@ -9231,7 +9369,7 @@ mod tests {
         };
         assert_ne!(inserted.id, first_id);
         assert_eq!(
-            trust_band_for_dos280(inserted.trust_score),
+            trust_band_for_score(inserted.trust_score),
             factors::TrustBand::NeedsVerification
         );
         assert_eq!(

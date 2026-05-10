@@ -16,6 +16,7 @@ use chrono::Utc;
 use rusqlite::{Connection, Error as SqliteError, ErrorCode};
 
 mod v144_audit_action_token;
+mod v156_semantic_merge_safety;
 
 type MigrationError = String;
 
@@ -784,10 +785,15 @@ const MIGRATIONS: &[Migration] = &[
         version: 154,
         sql: include_str!("migrations/154_claim_surface_dismissals.sql"),
     },
-    // Full per-variant provenance for DOS-280 semantic claim merges.
+    // Full per-variant provenance for semantic claim merges.
     Migration::Sql {
         version: 155,
-        sql: include_str!("migrations/155_dos_280_semantic_evidence.sql"),
+        sql: include_str!("migrations/155_semantic_evidence.sql"),
+    },
+    // Fail closed for legacy semantic claims without a safe qualifier sidecar.
+    Migration::Fn {
+        version: 156,
+        apply: v156_semantic_merge_safety::migrate_v156_semantic_merge_safety,
     },
 ];
 
