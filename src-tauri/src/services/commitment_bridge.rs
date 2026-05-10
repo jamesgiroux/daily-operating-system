@@ -259,12 +259,8 @@ fn pending_alias_remediation_match_reason(
         if ids_match(incoming_id, row.source_id.as_deref()) {
             return Some("source_id");
         }
-        if incoming_id_matches_source_parts(
-            incoming_id,
-            row.source_type.as_deref(),
-            row.source_id.as_deref(),
-        ) {
-            return Some("source_parts");
+        if incoming_id_matches_source_parts_with_ordinal(incoming_id, row) {
+            return Some("source_parts_ordinal");
         }
     }
 
@@ -282,25 +278,64 @@ fn ids_match(left: &str, right: Option<&str>) -> bool {
     trimmed_non_empty(right).is_some_and(|right| left == right)
 }
 
-fn incoming_id_matches_source_parts(
+fn incoming_id_matches_source_parts_with_ordinal(
     incoming_id: &str,
-    source_type: Option<&str>,
-    source_id: Option<&str>,
+    row: &PendingAliasRemediationRow,
 ) -> bool {
-    let Some(source_type) = trimmed_non_empty(source_type) else {
+    let Some(source_type) = trimmed_non_empty(row.source_type.as_deref()) else {
         return false;
     };
-    let Some(source_id) = trimmed_non_empty(source_id) else {
+    let Some(source_id) = trimmed_non_empty(row.source_id.as_deref()) else {
         return false;
     };
-    let Some((incoming_source_type, rest)) = incoming_id.split_once(':') else {
-        return false;
-    };
-    let Some((incoming_source_id, _ordinal)) = rest.rsplit_once(':') else {
+    let Some((incoming_source_type, incoming_source_id, incoming_source_ordinal)) =
+        source_commitment_id_parts(incoming_id)
+    else {
         return false;
     };
 
-    incoming_source_type == source_type && incoming_source_id == source_id
+    if incoming_source_type != source_type || incoming_source_id != source_id {
+        return false;
+    }
+
+    remediation_source_ordinal(row, source_type, source_id)
+        .is_some_and(|source_ordinal| source_ordinal == incoming_source_ordinal)
+}
+
+fn remediation_source_ordinal<'a>(
+    row: &'a PendingAliasRemediationRow,
+    source_type: &str,
+    source_id: &str,
+) -> Option<&'a str> {
+    row.source_commitment_id
+        .as_deref()
+        .and_then(|commitment_id| source_ordinal_for_parts(commitment_id, source_type, source_id))
+        .or_else(|| source_ordinal_for_parts(&row.legacy_bridge_id, source_type, source_id))
+}
+
+fn source_ordinal_for_parts<'a>(
+    commitment_id: &'a str,
+    source_type: &str,
+    source_id: &str,
+) -> Option<&'a str> {
+    let (candidate_source_type, candidate_source_id, candidate_source_ordinal) =
+        source_commitment_id_parts(commitment_id)?;
+    if candidate_source_type == source_type && candidate_source_id == source_id {
+        Some(candidate_source_ordinal)
+    } else {
+        None
+    }
+}
+
+fn source_commitment_id_parts(value: &str) -> Option<(&str, &str, &str)> {
+    let value = trimmed_non_empty(Some(value))?;
+    let (source_type, rest) = value.split_once(':')?;
+    let (source_id, source_ordinal) = rest.rsplit_once(':')?;
+    Some((
+        trimmed_non_empty(Some(source_type))?,
+        trimmed_non_empty(Some(source_id))?,
+        trimmed_non_empty(Some(source_ordinal))?,
+    ))
 }
 
 fn trimmed_non_empty(value: Option<&str>) -> Option<&str> {
@@ -1609,6 +1644,43 @@ mod tests {
         );
         let unrelated_action_id = bridge_action_id(&db, &unrelated_id);
         assert_ne!(unrelated_action_id, "done-edited-a1");
+    }
+
+    #[test]
+    fn pending_alias_remediation_allows_same_source_different_ordinal() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let second_title = "Send second renewal followup";
+        let second_id = derived_id(second_title);
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO action_commitment_alias_remediation
+                 (id, legacy_bridge_id, tombstoned_action_id, entity_type,
+                  entity_id, source_commitment_id, source_type, source_id,
+                  observed_at, reason, remediation_status)
+                 VALUES ('remediation-1', 'meeting:abc:1', 'done-edited-a1',
+                         'account', 'acct-1', 'meeting:abc:1', 'meeting', 'abc',
+                         '2026-01-02',
+                         'unrecoverable_tombstoned_legacy_bridge_alias', 'pending')",
+                [],
+            )
+            .unwrap();
+
+        let incoming = make_commitment_with_identity(
+            second_title,
+            Some("meeting:abc:2"),
+            None,
+            None,
+            Some("meeting"),
+        );
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[incoming]).expect("sync");
+
+        assert_eq!(summary.created, 1);
+        assert_eq!(summary.skipped_tombstoned, 0);
+        assert_eq!(action_count(&db), 1);
+        assert!(!bridge_action_id(&db, &second_id).is_empty());
     }
 
     #[test]
