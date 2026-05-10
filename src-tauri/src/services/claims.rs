@@ -1977,16 +1977,30 @@ pub fn commit_claim(
             project_legacy_state_for_claim(ctx, tx, &claim)?;
             insert_claim_edges(tx, &claim)?;
 
-            execute_claims_update(
-                tx.conn_ref(),
-                "UPDATE intelligence_claims
-                 SET claim_state = 'dormant',
-                     surfacing_state = 'dormant',
-                     demotion_reason = 'superseded',
-                     superseded_by = ?1
-                 WHERE id = ?2",
-                params![&new_id, superseded_id],
-            )?;
+            if matches!(
+                superseded.claim_state,
+                ClaimState::Tombstoned | ClaimState::Withdrawn
+            ) {
+                execute_claims_update(
+                    tx.conn_ref(),
+                    "UPDATE intelligence_claims
+                     SET surfacing_state = 'dormant',
+                         superseded_by = ?1
+                     WHERE id = ?2",
+                    params![&new_id, superseded_id],
+                )?;
+            } else {
+                execute_claims_update(
+                    tx.conn_ref(),
+                    "UPDATE intelligence_claims
+                     SET claim_state = 'dormant',
+                         surfacing_state = 'dormant',
+                         demotion_reason = 'superseded',
+                         superseded_by = ?1
+                     WHERE id = ?2",
+                    params![&new_id, superseded_id],
+                )?;
+            }
             mark_claim_edges_superseded_by_claim(tx, superseded_id, &new_id)?;
 
             let contradiction_id = uuid::Uuid::new_v4().to_string();
@@ -3694,16 +3708,30 @@ fn targeted_repair_apply_freshness_refresh(
 
     let mut delta = TargetedRepairClaimDelta::default();
     if let Some(fresher_claim_id) = fresher_claim_id {
-        execute_claims_update(
-            tx.conn_ref(),
-            "UPDATE intelligence_claims
-             SET claim_state = 'dormant',
-                 surfacing_state = 'dormant',
-                 demotion_reason = 'targeted_repair_freshness_refresh',
-                 superseded_by = ?2
-             WHERE id = ?1",
-            params![&claim.id, &fresher_claim_id],
-        )?;
+        if matches!(
+            claim.claim_state,
+            ClaimState::Tombstoned | ClaimState::Withdrawn
+        ) {
+            execute_claims_update(
+                tx.conn_ref(),
+                "UPDATE intelligence_claims
+                 SET surfacing_state = 'dormant',
+                     superseded_by = ?2
+                 WHERE id = ?1",
+                params![&claim.id, &fresher_claim_id],
+            )?;
+        } else {
+            execute_claims_update(
+                tx.conn_ref(),
+                "UPDATE intelligence_claims
+                 SET claim_state = 'dormant',
+                     surfacing_state = 'dormant',
+                     demotion_reason = 'targeted_repair_freshness_refresh',
+                     superseded_by = ?2
+                 WHERE id = ?1",
+                params![&claim.id, &fresher_claim_id],
+            )?;
+        }
         delta.changed_claim_ids.push(fresher_claim_id);
     } else {
         execute_claims_update(
@@ -4040,15 +4068,28 @@ fn targeted_repair_reconcile_user_backed_contradictions(
         if loser.claim_state == ClaimState::Active
             || loser.surfacing_state == SurfacingState::Active
         {
-            execute_claims_update(
-                tx.conn_ref(),
-                "UPDATE intelligence_claims
-                 SET claim_state = 'dormant',
-                     surfacing_state = 'dormant',
-                     demotion_reason = 'targeted_repair_contradiction'
-                 WHERE id = ?1",
-                params![&loser_id],
-            )?;
+            if matches!(
+                loser.claim_state,
+                ClaimState::Tombstoned | ClaimState::Withdrawn
+            ) {
+                execute_claims_update(
+                    tx.conn_ref(),
+                    "UPDATE intelligence_claims
+                     SET surfacing_state = 'dormant'
+                     WHERE id = ?1",
+                    params![&loser_id],
+                )?;
+            } else {
+                execute_claims_update(
+                    tx.conn_ref(),
+                    "UPDATE intelligence_claims
+                     SET claim_state = 'dormant',
+                         surfacing_state = 'dormant',
+                         demotion_reason = 'targeted_repair_contradiction'
+                     WHERE id = ?1",
+                    params![&loser_id],
+                )?;
+            }
             bump_invalidation_for_claim_id(tx, &loser_id)?;
             delta.claims_changed += 1;
             delta.changed_claim_ids.push(loser_id.clone());
