@@ -175,15 +175,27 @@ pub(crate) fn freshness_weight_at(
         return 1.0;
     }
 
-    let Some(timestamp) = freshness_timestamp_for_claim(claim) else {
-        return 1.0;
-    };
-    let age_seconds = now.signed_duration_since(timestamp.at).num_seconds();
-    if age_seconds <= 0 {
-        return 1.0;
-    }
+    let (age_days, timestamp_known) = match freshness_timestamp_for_claim(claim) {
+        Some(timestamp) => {
+            let age_seconds = now.signed_duration_since(timestamp.at).num_seconds();
+            if age_seconds <= 0 {
+                return 1.0;
+            }
 
-    let age_days = age_seconds as f64 / SECONDS_PER_DAY;
+            let timestamp_known = freshness_context
+                .map(|freshness| freshness.timestamp_known)
+                .unwrap_or(timestamp.timestamp_known);
+            (age_seconds as f64 / SECONDS_PER_DAY, timestamp_known)
+        }
+        None => {
+            let Some(freshness) = freshness_context else {
+                return 1.0;
+            };
+
+            (freshness.age_days.max(0.0), freshness.timestamp_known)
+        }
+    };
+
     let rule = rule_for_claim_at(claim, now, renewal_context);
     let policy = freshness_config().policy;
     let base = match rule {
@@ -199,9 +211,6 @@ pub(crate) fn freshness_weight_at(
             }
         }
     };
-    let timestamp_known = freshness_context
-        .map(|freshness| freshness.timestamp_known)
-        .unwrap_or(timestamp.timestamp_known);
     if timestamp_known {
         base
     } else {
@@ -411,10 +420,6 @@ fn rule_for_claim_at(
     now: DateTime<Utc>,
     renewal_context: Option<&RenewalContext>,
 ) -> HalfLifeRule {
-    if is_renewal_note(claim) {
-        return renewal_notes_rule(Some(now), renewal_context);
-    }
-
     let source_key = normalize_key(&claim.data_source);
     if let Some(rule) = rule_for_named_source(&source_key, Some(now), renewal_context) {
         return refine_rule_for_claim(rule, &source_key, claim);
@@ -457,8 +462,9 @@ fn rule_for_claim_at(
         DataSource::User => configured_rule(USER_CORRECTION),
         DataSource::Other(name) => {
             let key = normalize_key(name.as_str());
-            rule_for_named_source(&key, Some(now), renewal_context)
-                .unwrap_or_else(|| default_rule_for_unmapped(&format!("claim:{}", claim.data_source)))
+            rule_for_named_source(&key, Some(now), renewal_context).unwrap_or_else(|| {
+                default_rule_for_unmapped(&format!("claim:{}", claim.data_source))
+            })
         }
         DataSource::Glean { .. }
         | DataSource::Ai
@@ -612,9 +618,7 @@ fn freshness_timestamp_for_claim(claim: &Claim) -> Option<FreshnessTimestamp> {
 
 fn data_source_for_claim(source_key: &str) -> DataSource {
     match source_key {
-        "user" | "manual" | "user_input" | "user_correction" | "user_feedback" => {
-            DataSource::User
-        }
+        "user" | "manual" | "user_input" | "user_correction" | "user_feedback" => DataSource::User,
         "google" | "gmail" | "email" | "email_thread" | "email_enrichment" => DataSource::Google,
         "zendesk" | "glean_zendesk" | "glean_support" => DataSource::Glean {
             downstream: GleanDownstream::Zendesk,
@@ -646,12 +650,6 @@ fn data_source_for_claim(source_key: &str) -> DataSource {
         "ai" | "agent" | "intel_queue" => DataSource::Ai,
         other => DataSource::Other(SourceName::new(other)),
     }
-}
-
-fn is_renewal_note(claim: &Claim) -> bool {
-    claim_haystack(claim).contains("renewal")
-        || claim_haystack(claim).contains("contract_end")
-        || claim_haystack(claim).contains("contract end")
 }
 
 fn is_zendesk_escalation(claim: &Claim) -> bool {
@@ -687,7 +685,10 @@ fn is_salesforce_field_update(claim: &Claim) -> bool {
     }
 
     claim.field_path.is_some()
-        || contains_any(&haystack, &["field_update", "field update", "field_changed"])
+        || contains_any(
+            &haystack,
+            &["field_update", "field update", "field_changed"],
+        )
 }
 
 fn is_gong_sentiment(claim: &Claim) -> bool {
@@ -882,7 +883,10 @@ mod tests {
 
         let imminent = ctx_with_renewal(&clock, Some(30));
         assert_days(
-            half_life_for(&DataSource::Other(SourceName::new("renewal_notes")), &imminent),
+            half_life_for(
+                &DataSource::Other(SourceName::new("renewal_notes")),
+                &imminent,
+            ),
             400,
         );
     }
@@ -984,7 +988,7 @@ mod tests {
     #[test]
     fn renewal_window_branch_extends_renewal_note_freshness() {
         let clock = FixedClock::new(at());
-        let mut claim = claim_with_source("manual", at() - Duration::days(330));
+        let mut claim = claim_with_source("renewal_notes", at() - Duration::days(330));
         claim.claim_type = "renewal_note".to_string();
         claim.field_path = Some("renewal.notes".to_string());
         claim.text = "Renewal note says the buyer is aligned.".to_string();
@@ -994,6 +998,39 @@ mod tests {
 
         assert!(freshness_weight(&claim, &imminent) > 0.5);
         assert!(freshness_weight(&claim, &no_renewal) < 0.1);
+    }
+
+    #[test]
+    fn renewal_mentions_do_not_override_source_specific_decay() {
+        let cases = [
+            ("email", "Customer asked about renewal timing.", None, 14.0),
+            (
+                "zendesk",
+                "Urgent escalation: renewal blockers are growing.",
+                None,
+                7.0,
+            ),
+            (
+                "salesforce",
+                "Renewal forecast field changed.",
+                Some("account.health"),
+                30.0,
+            ),
+            (
+                "gong",
+                "Discussed renewal planning on the call.",
+                None,
+                30.0,
+            ),
+        ];
+
+        for (source, text, field_path, expected_days) in cases {
+            let mut claim = claim_with_source(source, at());
+            claim.text = text.to_string();
+            claim.field_path = field_path.map(str::to_string);
+
+            assert_eq!(freshness_threshold_days(&claim, at(), None), expected_days);
+        }
     }
 
     #[test]
@@ -1037,7 +1074,10 @@ mod tests {
         let ctx = ctx(&clock);
         let claim = claim_with_source("email", at() - Duration::days(20_000));
 
-        assert_eq!(freshness_weight(&claim, &ctx), freshness_config().policy.floor);
+        assert_eq!(
+            freshness_weight(&claim, &ctx),
+            freshness_config().policy.floor
+        );
     }
 
     #[test]
@@ -1059,6 +1099,30 @@ mod tests {
         claim.source_asof = None;
         claim.observed_at = (at() - Duration::days(14)).to_rfc3339();
         claim.created_at = at().to_rfc3339();
+        let freshness_context = FreshnessContext {
+            timestamp_known: false,
+            age_days: 14.0,
+        };
+
+        assert_float_close(
+            freshness_weight_at(
+                &claim,
+                clock.now(),
+                None,
+                Some(&freshness_context),
+                &TrustConfig::default(),
+            ),
+            0.5 * TrustConfig::default().unknown_timestamp_penalty,
+        );
+    }
+
+    #[test]
+    fn all_three_timestamps_malformed_applies_unknown_timestamp_penalty() {
+        let clock = FixedClock::new(at());
+        let mut claim = claim_with_source("email", at());
+        claim.source_asof = Some("not-a-timestamp".to_string());
+        claim.observed_at = "also-not-a-timestamp".to_string();
+        claim.created_at = "still-not-a-timestamp".to_string();
         let freshness_context = FreshnessContext {
             timestamp_known: false,
             age_days: 14.0,
