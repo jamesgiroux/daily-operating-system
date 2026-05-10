@@ -2967,8 +2967,9 @@ fn build_trust_context_for_claim(
         source_reliability_for_claim(db, input, claim),
         &mut indeterminate_reasons,
     );
+    let now = ctx.clock.now();
     let freshness = collect_trust_input(
-        freshness_context_for_claim(ctx.clock.now(), claim),
+        freshness_context_for_claim(now, claim),
         &mut indeterminate_reasons,
     );
     let source_lifecycle = collect_trust_input(
@@ -2988,7 +2989,8 @@ fn build_trust_context_for_claim(
         );
     }
     let trust_ctx = crate::abilities::trust::TrustContext {
-        now: ctx.clock.now(),
+        now,
+        renewal_context: renewal_context_for_claim(now, db, input),
         config: crate::abilities::trust::TrustConfig::default(),
         factor_inputs: crate::abilities::trust::TrustFactorInputs {
             source_reliability,
@@ -3011,6 +3013,29 @@ fn build_trust_context_for_claim(
         target_surface: None,
     };
     (trust_ctx, indeterminate_reasons)
+}
+
+fn renewal_context_for_claim(
+    now: chrono::DateTime<Utc>,
+    db: &crate::db::ActionDb,
+    input: &EnrichmentInput,
+) -> Option<crate::abilities::trust::RenewalContext> {
+    if input.entity_type != "account" {
+        return None;
+    }
+
+    let account = db.get_account(&input.entity_id).ok().flatten()?;
+    let contract_end = account.contract_end.as_deref()?;
+    let renewal_date = chrono::NaiveDate::parse_from_str(contract_end, "%Y-%m-%d").ok()?;
+    let renewal_at = renewal_date.and_hms_opt(0, 0, 0)?.and_utc();
+    let days_to_renewal = renewal_date
+        .signed_duration_since(now.date_naive())
+        .num_days();
+
+    Some(crate::abilities::trust::RenewalContext {
+        renewal_at: Some(renewal_at),
+        days_to_renewal: Some(days_to_renewal),
+    })
 }
 
 fn claim_subject_ref_json_for_entity(entity_type: &str, entity_id: &str) -> Option<String> {

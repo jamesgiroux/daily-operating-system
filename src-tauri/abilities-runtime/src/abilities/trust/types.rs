@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use crate::abilities::provenance::SubjectRef;
 
 use super::config::TrustConfig;
+use super::freshness_decay::RenewalContext;
 
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd, Serialize, Deserialize, JsonSchema)]
 #[serde(transparent)]
@@ -95,6 +96,8 @@ pub enum TrustGateKind {
 pub struct TrustContext {
     #[schemars(with = "String")]
     pub now: DateTime<Utc>,
+    #[serde(default)]
+    pub renewal_context: Option<RenewalContext>,
     pub config: TrustConfig,
     pub factor_inputs: TrustFactorInputs,
     pub cross_entity: CrossEntityCoherenceInput,

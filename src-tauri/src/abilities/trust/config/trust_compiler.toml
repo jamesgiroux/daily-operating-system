@@ -1,0 +1,15 @@
+[half_life_days]
+zendesk_escalation = 7
+zendesk_general = 30
+salesforce_field_update = "step_30d_threshold"
+salesforce_opp_notes = 60
+gong_transcript = 30
+gong_sentiment = 21
+email = 14
+slack = 14
+linear_issue = 45
+clay_enrichment = 90
+user_correction = 365
+renewal_notes_with_imminent_renewal = 400
+renewal_notes_no_renewal_context = 90
+default = 21
