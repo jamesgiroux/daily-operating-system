@@ -37,26 +37,20 @@ pub struct BridgeSyncSummary {
     pub skipped_tombstoned: usize,
     pub skipped_missing_id: usize,
     /// bridge_id was new but mapped to an existing action via
-    /// normalized-title match (alias). No new action row was created;
+    /// derived identity match (alias). No new action row was created;
     /// the bridge row was inserted pointing at the existing action.
     pub aliased_to_existing: usize,
 }
 
-/// Normalize a commitment title for cross-source dedup.
-///
-/// The AI emits stable commitment_ids per source — but re-enrichment hits
-/// different sources (Gong call, meeting transcript, CRM, Glean) for the
-/// same commitment text, producing distinct commitment_ids that the bridge
-/// can't unify. Normalizing the title gives us a stable secondary key:
-/// (entity_id, normalized_title) → canonical action.
-///
-/// Lowercases and trims surrounding whitespace. Internal whitespace and
-/// punctuation are kept verbatim — the observed duplicates from real
-/// production data are character-for-character identical, so tighter
-/// normalization risks false-positive merges of similarly-worded but
-/// distinct commitments.
+/// Normalize a commitment title with the same title rule used by
+/// `derive_commitment_id`.
 pub fn normalize_commitment_title(title: &str) -> String {
-    title.trim().to_lowercase()
+    title
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
+        .trim()
+        .to_ascii_lowercase()
 }
 
 /// A single bridge row read from `ai_commitment_bridge`.
@@ -109,6 +103,17 @@ pub fn sync_ai_commitments(
             entity_type,
             entity_id,
             commitment,
+            &derived_id,
+            &now,
+        )? {
+            summary.skipped_tombstoned += 1;
+            continue;
+        }
+        if source_sighting_tombstone_blocks_claim(
+            ctx,
+            db,
+            entity_type,
+            entity_id,
             &derived_id,
             &now,
         )? {
@@ -190,6 +195,60 @@ fn legacy_bridge_tombstone_blocks_claim(
     Ok(true)
 }
 
+fn source_sighting_tombstone_blocks_claim(
+    ctx: &crate::services::context::ServiceContext<'_>,
+    db: &ActionDb,
+    entity_type: &str,
+    entity_id: &str,
+    derived_id: &str,
+    now: &str,
+) -> Result<bool, String> {
+    if read_bridge_row(db, derived_id)
+        .map_err(|e| e.to_string())?
+        .is_some()
+    {
+        return Ok(false);
+    }
+
+    let action_id = db
+        .conn_ref()
+        .query_row(
+            "SELECT b.action_id
+             FROM ai_commitment_bridge b
+             JOIN action_commitment_sources acs
+               ON acs.action_id = b.action_id
+             WHERE b.entity_type = ?1
+               AND b.entity_id = ?2
+               AND b.tombstoned != 0
+               AND acs.commitment_id = ?3
+             ORDER BY b.last_seen_at DESC
+             LIMIT 1",
+            rusqlite::params![entity_type, entity_id, derived_id],
+            |row| row.get::<_, Option<String>>(0),
+        )
+        .map(Some)
+        .or_else(|err| match err {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
+        .map_err(|e| e.to_string())?;
+
+    let Some(action_id) = action_id else {
+        return Ok(false);
+    };
+
+    insert_tombstoned_bridge_alias(
+        ctx,
+        db,
+        derived_id,
+        entity_type,
+        entity_id,
+        action_id.as_deref(),
+        now,
+    )?;
+    Ok(true)
+}
+
 #[allow(clippy::too_many_arguments)]
 pub fn upsert_commitment_claim(
     ctx: &crate::services::context::ServiceContext<'_>,
@@ -230,10 +289,13 @@ pub fn upsert_commitment_claim(
             action
         }
         None => {
-            let normalized = normalize_commitment_title(&claim.title);
-            if let Some(existing_action_id) =
-                find_existing_open_commitment_by_title(db, entity_type, entity_id, &normalized)
-                    .map_err(|e| e.to_string())?
+            if let Some(existing_action_id) = find_existing_open_commitment_by_identity(
+                db,
+                entity_type,
+                entity_id,
+                &claim.commitment_id,
+            )
+            .map_err(|e| e.to_string())?
             {
                 let action = db
                     .get_action_by_id(&existing_action_id)
@@ -671,20 +733,20 @@ fn trust_band_label(band: TrustBand) -> &'static str {
     }
 }
 
-/// Look up an existing non-terminal commitment-typed action with
-/// the same normalized title under the given entity. Used by
-/// `sync_ai_commitments` to alias a new commitment_id onto an existing
-/// action instead of creating a duplicate row.
+/// Look up an existing non-terminal commitment-typed action with the same
+/// derived identity tuple under the given entity. Used by `sync_ai_commitments`
+/// to alias a new commitment_id onto an existing action instead of creating a
+/// duplicate row.
 ///
 /// Returns the action_id of the oldest matching action so re-aliasing
 /// is stable across runs (deterministic on `created_at ASC`).
-fn find_existing_open_commitment_by_title(
+fn find_existing_open_commitment_by_identity(
     db: &ActionDb,
     entity_type: &str,
     entity_id: &str,
-    normalized_title: &str,
+    commitment_id: &str,
 ) -> Result<Option<String>, rusqlite::Error> {
-    if normalized_title.is_empty() {
+    if commitment_id.is_empty() {
         return Ok(None);
     }
     let entity_col = match entity_type {
@@ -693,25 +755,49 @@ fn find_existing_open_commitment_by_title(
         _ => return Ok(None),
     };
     let sql = format!(
-        "SELECT id FROM actions
+        "SELECT id, title, due_date, owner_raw, context FROM actions
          WHERE {entity_col} = ?1
            AND action_kind = ?2
            AND status NOT IN ('completed', 'cancelled', 'rejected', 'archived')
-           AND lower(trim(title)) = ?3
-         ORDER BY created_at ASC
-         LIMIT 1"
+         ORDER BY created_at ASC"
     );
-    db.conn_ref()
-        .query_row(
-            &sql,
-            rusqlite::params![entity_id, KIND_COMMITMENT, normalized_title],
-            |row| row.get::<_, String>(0),
-        )
-        .map(Some)
-        .or_else(|err| match err {
-            rusqlite::Error::QueryReturnedNoRows => Ok(None),
-            other => Err(other),
-        })
+    let mut stmt = db.conn_ref().prepare(&sql)?;
+    let rows = stmt.query_map(rusqlite::params![entity_id, KIND_COMMITMENT], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, Option<String>>(3)?,
+            row.get::<_, Option<String>>(4)?,
+        ))
+    })?;
+
+    for row in rows {
+        let (action_id, title, due_date, owner_raw, context) = row?;
+        let context_owner = legacy_owner_from_context(context.as_deref());
+        let owner_for_identity = owner_raw.as_deref().or(context_owner.as_deref());
+        let candidate_id =
+            derive_commitment_id(&title, entity_id, due_date.as_deref(), owner_for_identity);
+        if candidate_id == commitment_id {
+            return Ok(Some(action_id));
+        }
+    }
+
+    Ok(None)
+}
+
+fn legacy_owner_from_context(context: Option<&str>) -> Option<String> {
+    let value = context?.trim();
+    let prefix_len = value
+        .get(..6)
+        .filter(|prefix| prefix.eq_ignore_ascii_case("owner:"))?
+        .len();
+    let owner = value[prefix_len..].trim();
+    if owner.is_empty() {
+        None
+    } else {
+        Some(owner.to_string())
+    }
 }
 
 /// Mark a commitment's bridge row tombstoned so re-enrichment can't
@@ -888,11 +974,35 @@ mod tests {
         legacy_id: &str,
         source: Option<&str>,
     ) -> OpenCommitment {
+        make_commitment_with_identity(description, Some(legacy_id), None, None, source)
+    }
+
+    fn make_commitment_with_due_owner(
+        description: &str,
+        due_date: Option<&str>,
+        owner: Option<&str>,
+    ) -> OpenCommitment {
+        make_commitment_with_identity(
+            description,
+            Some("legacy-llm-id-is-ignored"),
+            due_date,
+            owner,
+            None,
+        )
+    }
+
+    fn make_commitment_with_identity(
+        description: &str,
+        legacy_id: Option<&str>,
+        due_date: Option<&str>,
+        owner: Option<&str>,
+        source: Option<&str>,
+    ) -> OpenCommitment {
         OpenCommitment {
-            commitment_id: Some(legacy_id.to_string()),
+            commitment_id: legacy_id.map(ToString::to_string),
             description: description.to_string(),
-            owner: None,
-            due_date: None,
+            owner: owner.map(ToString::to_string),
+            due_date: due_date.map(ToString::to_string),
             source: source.map(ToString::to_string),
             status: None,
             item_source: None,
@@ -902,6 +1012,10 @@ mod tests {
 
     fn derived_id(description: &str) -> String {
         derive_commitment_id(description, "acct-1", None, None)
+    }
+
+    fn derived_id_with(description: &str, due_date: Option<&str>, owner: Option<&str>) -> String {
+        derive_commitment_id(description, "acct-1", due_date, owner)
     }
 
     fn bridge_action_id(db: &ActionDb, commitment_id: &str) -> String {
@@ -1170,6 +1284,96 @@ mod tests {
     }
 
     #[test]
+    fn same_title_with_different_owner_and_due_creates_distinct_actions() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let title = "Send implementation plan";
+        let commitments = vec![
+            make_commitment_with_due_owner(title, Some("2030-01-01"), Some("Alex Chen")),
+            make_commitment_with_due_owner(title, Some("2030-02-01"), Some("Jamie Lee")),
+        ];
+
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &commitments).expect("sync");
+
+        assert_eq!(summary.created, 2);
+        assert_eq!(summary.aliased_to_existing, 0);
+        assert_eq!(action_count(&db), 2);
+
+        let alex_id = derived_id_with(title, Some("2030-01-01"), Some("Alex Chen"));
+        let jamie_id = derived_id_with(title, Some("2030-02-01"), Some("Jamie Lee"));
+        assert_ne!(alex_id, jamie_id);
+        assert_ne!(
+            bridge_action_id(&db, &alex_id),
+            bridge_action_id(&db, &jamie_id)
+        );
+    }
+
+    #[test]
+    fn tombstoned_source_sighting_blocks_user_edited_legacy_title_variant() {
+        let db = test_db();
+        make_ctx!(ctx);
+        let original_title = "Send original renewal plan";
+        let original_id = derived_id_with(original_title, Some("2030-03-01"), Some("Alex Chen"));
+
+        db.conn_ref()
+            .execute(
+                "INSERT INTO actions
+                 (id, title, priority, status, created_at, updated_at, due_date,
+                  account_id, source_type, source_id, action_kind, commitment_id,
+                  owner_raw)
+                 VALUES ('done-edited-a1', 'User edited renewal wording', 3,
+                         'completed', '2026-01-01', '2026-01-02', '2030-03-01',
+                         'acct-1', 'commitment', 'legacy:original', 'commitment',
+                         'legacy:original', 'Alex Chen')",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO ai_commitment_bridge
+                 (commitment_id, entity_type, entity_id, action_id,
+                  first_seen_at, last_seen_at, tombstoned)
+                 VALUES ('legacy:original', 'account', 'acct-1', 'done-edited-a1',
+                         '2026-01-01', '2026-01-02', 1)",
+                [],
+            )
+            .unwrap();
+        db.conn_ref()
+            .execute(
+                "INSERT INTO action_commitment_sources
+                 (id, commitment_id, action_id, observed_at)
+                 VALUES ('src-original', ?1, 'done-edited-a1', '2026-01-01')",
+                rusqlite::params![original_id.clone()],
+            )
+            .unwrap();
+
+        let incoming = make_commitment_with_identity(
+            original_title,
+            None,
+            Some("2030-03-01"),
+            Some("Alex Chen"),
+            None,
+        );
+        let summary =
+            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[incoming]).expect("sync");
+
+        assert_eq!(summary.created, 0);
+        assert_eq!(summary.skipped_tombstoned, 1);
+        assert_eq!(action_count(&db), 1);
+
+        let tombstoned: i32 = db
+            .conn_ref()
+            .query_row(
+                "SELECT tombstoned FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                rusqlite::params![original_id],
+                |row| row.get(0),
+            )
+            .unwrap();
+        assert_eq!(tombstoned, 1);
+    }
+
+    #[test]
     fn backlog_source_metadata_updates_before_acceptance() {
         let db = test_db();
         make_ctx!(ctx);
@@ -1242,7 +1446,7 @@ mod tests {
         let db = test_db();
         make_ctx!(ctx);
         let title = "Accepted exact title";
-        let derived_commitment_id = derived_id(title);
+        let derived_commitment_id = derived_id_with(title, Some("2030-01-01"), Some("Alex Chen"));
 
         db.conn_ref()
             .execute(
@@ -1260,9 +1464,18 @@ mod tests {
             )
             .unwrap();
 
-        let summary =
-            sync_ai_commitments(&ctx, &db, "account", "acct-1", &[make_commitment(title)])
-                .expect("sync");
+        let summary = sync_ai_commitments(
+            &ctx,
+            &db,
+            "account",
+            "acct-1",
+            &[make_commitment_with_due_owner(
+                title,
+                Some("2030-01-01"),
+                Some("Alex Chen"),
+            )],
+        )
+        .expect("sync");
 
         assert_eq!(summary.created, 0);
         assert_eq!(summary.aliased_to_existing, 1);
@@ -1429,7 +1642,7 @@ mod tests {
     }
 
     #[test]
-    fn dos321_normalize_commitment_title_strips_case_and_outer_whitespace() {
+    fn dos321_normalize_commitment_title_matches_derived_identity_title() {
         assert_eq!(
             normalize_commitment_title("  Send Renewal Deck  "),
             "send renewal deck"
@@ -1438,12 +1651,9 @@ mod tests {
             normalize_commitment_title("Send Renewal Deck"),
             "send renewal deck"
         );
-        // Internal whitespace + punctuation are preserved verbatim — the
-        // observed dupes are character-for-character identical, so loose
-        // matching would risk merging similarly-worded but distinct items.
         assert_eq!(
             normalize_commitment_title("Send  Renewal  Deck."),
-            "send  renewal  deck."
+            "send renewal deck."
         );
     }
 

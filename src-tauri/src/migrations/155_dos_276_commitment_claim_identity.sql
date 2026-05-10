@@ -3,7 +3,7 @@
 -- Existing Work-tab commitment rows used ai_commitment_bridge.commitment_id
 -- plus actions.context = 'owner: ...'. This migration moves commitment
 -- identity onto actions, records owner resolution state structurally, preserves
--- old bridge rows for tombstone compatibility, and installs the exact-title
+-- old bridge rows for tombstone compatibility, and installs the identity-tuple
 -- backlog duplicate guard used by the production audit query.
 
 BEGIN;
@@ -135,20 +135,28 @@ FROM ai_commitment_bridge b
 JOIN actions a ON a.id = b.action_id
 WHERE a.action_kind = 'commitment';
 
--- Collapse exact-title duplicate backlog commitments within account_id before
+-- Collapse exact identity duplicate backlog commitments within account_id before
 -- adding the partial unique index that enforces the audit query going forward.
 CREATE TEMP TABLE _dos276_backlog_canonical AS
 SELECT
     canonical_id,
     account_id,
-    title
+    title_key,
+    due_date_key,
+    owner_key
 FROM (
     SELECT
         id AS canonical_id,
         account_id,
-        title,
+        lower(trim(title)) AS title_key,
+        COALESCE(due_date, '') AS due_date_key,
+        COALESCE(owner_raw, '') AS owner_key,
         ROW_NUMBER() OVER (
-            PARTITION BY account_id, title
+            PARTITION BY
+                account_id,
+                lower(trim(title)),
+                COALESCE(due_date, ''),
+                COALESCE(owner_raw, '')
             ORDER BY created_at ASC, id ASC
         ) AS rn
     FROM actions
@@ -159,7 +167,7 @@ FROM (
 WHERE rn = 1;
 
 CREATE INDEX _dos276_backlog_canonical_idx
-    ON _dos276_backlog_canonical(account_id, title);
+    ON _dos276_backlog_canonical(account_id, title_key, due_date_key, owner_key);
 
 UPDATE ai_commitment_bridge
 SET action_id = (
@@ -167,7 +175,9 @@ SET action_id = (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title = a.title
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
     WHERE a.id = ai_commitment_bridge.action_id
     LIMIT 1
 )
@@ -176,7 +186,9 @@ WHERE action_id IN (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title = a.title
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -188,7 +200,9 @@ SET action_id = (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title = a.title
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
     WHERE a.id = action_commitment_sources.action_id
     LIMIT 1
 )
@@ -197,7 +211,9 @@ WHERE action_id IN (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title = a.title
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -209,7 +225,9 @@ WHERE id IN (
     FROM actions a
     JOIN _dos276_backlog_canonical c
       ON c.account_id = a.account_id
-     AND c.title = a.title
+     AND c.title_key = lower(trim(a.title))
+     AND c.due_date_key = COALESCE(a.due_date, '')
+     AND c.owner_key = COALESCE(a.owner_raw, '')
     WHERE a.action_kind = 'commitment'
       AND a.status = 'backlog'
       AND a.id != c.canonical_id
@@ -218,10 +236,16 @@ WHERE id IN (
 DROP INDEX _dos276_backlog_canonical_idx;
 DROP TABLE _dos276_backlog_canonical;
 
-CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_title_account_unique
-    ON actions(title, account_id)
+CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_account_unique
+    ON actions(account_id, lower(trim(title)), COALESCE(due_date, ''), COALESCE(owner_raw, ''))
     WHERE action_kind = 'commitment'
       AND status = 'backlog'
       AND account_id IS NOT NULL;
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_actions_backlog_commitment_identity_project_unique
+    ON actions(project_id, lower(trim(title)), COALESCE(due_date, ''), COALESCE(owner_raw, ''))
+    WHERE action_kind = 'commitment'
+      AND status = 'backlog'
+      AND project_id IS NOT NULL;
 
 COMMIT;

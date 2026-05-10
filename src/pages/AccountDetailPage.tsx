@@ -72,6 +72,7 @@ import {
 import { getAccountReports } from "@/lib/report-config";
 import { buildAccountVitals } from "@/components/account/account-detail-utils";
 import { formatShortDate } from "@/lib/utils";
+import { workCommitmentOwnerPatch } from "@/lib/workCommitmentPatch";
 
 import shared from "@/styles/entity-detail.module.css";
 import pageStyles from "./AccountDetailPage.module.css";
@@ -627,10 +628,7 @@ export default function AccountDetailPage() {
           stillActiveNote={stillActiveNote}
           onEditHeadline={(title) => work.handleUpdateCommitment(c.id, { title })}
           onEditOwner={(owner) =>
-            work.handleUpdateCommitment(c.id, {
-              ownerRaw: owner.trim(),
-              clearOwner: owner.trim().length === 0,
-            })
+            work.handleUpdateCommitment(c.id, workCommitmentOwnerPatch(owner))
           }
           onEditDueDate={(dueDate) => work.handleUpdateCommitment(c.id, { dueDate })}
           actions={

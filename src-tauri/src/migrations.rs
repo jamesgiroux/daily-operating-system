@@ -785,7 +785,7 @@ const MIGRATIONS: &[Migration] = &[
         sql: include_str!("migrations/154_claim_surface_dismissals.sql"),
     },
     // Typed CommitmentClaim identity: actions.commitment_id, structural owner
-    // fields, per-sighting action_commitment_sources, and the exact-title
+    // fields, per-sighting action_commitment_sources, and the identity-tuple
     // backlog duplicate guard for DOS-276 W4-A.
     Migration::Sql {
         version: 155,
@@ -797,8 +797,16 @@ const MIGRATIONS: &[Migration] = &[
         version: 156,
         apply: backfill_commitment_bridge_derived_aliases,
     },
+    // Replace the title-only backlog commitment guard with an identity-tuple
+    // guard so same-title commitments with different due dates or owners can
+    // coexist.
+    Migration::Sql {
+        version: 157,
+        sql: include_str!("migrations/157_dos_276_commitment_identity_backlog_index.sql"),
+    },
 ];
 
+#[derive(Clone)]
 struct CommitmentBridgeAliasBackfillRow {
     legacy_commitment_id: String,
     derived_commitment_id: String,
@@ -849,6 +857,169 @@ fn backfill_commitment_bridge_derived_aliases(conn: &Connection) -> Result<(), M
 
 fn collect_commitment_bridge_alias_rows(
     conn: &Connection,
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
+    let mut rows = Vec::new();
+    let mut source_alias_action_ids = HashSet::new();
+
+    if table_exists(conn, "action_commitment_sources")? {
+        for row in collect_commitment_bridge_source_alias_rows(conn)? {
+            if let Some(action_id) = row.action_id.as_ref() {
+                source_alias_action_ids.insert(action_id.clone());
+            }
+            rows.push(row);
+        }
+    }
+
+    for row in collect_commitment_bridge_action_provenance_alias_rows(conn)? {
+        if let Some(action_id) = row.action_id.as_ref() {
+            source_alias_action_ids.insert(action_id.clone());
+        }
+        rows.push(row);
+    }
+
+    rows.extend(collect_commitment_bridge_action_alias_rows(
+        conn,
+        &source_alias_action_ids,
+    )?);
+    Ok(rows)
+}
+
+fn collect_commitment_bridge_source_alias_rows(
+    conn: &Connection,
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT
+                b.commitment_id,
+                b.entity_type,
+                b.entity_id,
+                b.action_id,
+                b.first_seen_at,
+                b.last_seen_at,
+                b.tombstoned,
+                acs.commitment_id
+             FROM ai_commitment_bridge b
+             JOIN actions a ON a.id = b.action_id
+             JOIN action_commitment_sources acs ON acs.action_id = b.action_id
+             WHERE a.action_kind = 'commitment'
+               AND b.tombstoned != 0
+               AND acs.commitment_id IS NOT NULL",
+        )
+        .map_err(|e| format!("commitment bridge source alias query failed: {e}"))?;
+
+    let rows = stmt
+        .query_map([], commitment_bridge_alias_row_from_stored_id)
+        .map_err(|e| format!("commitment bridge source alias row map failed: {e}"))?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let row =
+            row.map_err(|e| format!("commitment bridge source alias row read failed: {e}"))?;
+        if is_derived_commitment_id(&row.derived_commitment_id) {
+            out.push(row);
+        }
+    }
+    Ok(out)
+}
+
+fn collect_commitment_bridge_action_provenance_alias_rows(
+    conn: &Connection,
+) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
+    let action_columns = table_columns(conn, "actions")?;
+    let action_commitment_expr = if action_columns.contains("commitment_id") {
+        "a.commitment_id"
+    } else {
+        "NULL"
+    };
+    let source_id_expr = if action_columns.contains("source_id") {
+        "a.source_id"
+    } else {
+        "NULL"
+    };
+    let sql = format!(
+        "SELECT
+            b.commitment_id,
+            b.entity_type,
+            b.entity_id,
+            b.action_id,
+            b.first_seen_at,
+            b.last_seen_at,
+            b.tombstoned,
+            {action_commitment_expr},
+            {source_id_expr}
+         FROM ai_commitment_bridge b
+         JOIN actions a ON a.id = b.action_id
+         WHERE a.action_kind = 'commitment'
+           AND b.tombstoned != 0"
+    );
+    let mut stmt = conn
+        .prepare(&sql)
+        .map_err(|e| format!("commitment bridge provenance alias query failed: {e}"))?;
+
+    let rows = stmt
+        .query_map([], |row| {
+            let legacy_commitment_id: String = row.get(0)?;
+            let entity_type: String = row.get(1)?;
+            let entity_id: String = row.get(2)?;
+            let action_id: Option<String> = row.get(3)?;
+            let first_seen_at: String = row.get(4)?;
+            let last_seen_at: String = row.get(5)?;
+            let tombstoned: i32 = row.get(6)?;
+            let action_commitment_id: Option<String> = row.get(7)?;
+            let source_id: Option<String> = row.get(8)?;
+            Ok((
+                legacy_commitment_id,
+                entity_type,
+                entity_id,
+                action_id,
+                first_seen_at,
+                last_seen_at,
+                tombstoned,
+                action_commitment_id,
+                source_id,
+            ))
+        })
+        .map_err(|e| format!("commitment bridge provenance alias row map failed: {e}"))?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        let (
+            legacy_commitment_id,
+            entity_type,
+            entity_id,
+            action_id,
+            first_seen_at,
+            last_seen_at,
+            tombstoned,
+            action_commitment_id,
+            source_id,
+        ) = row.map_err(|e| format!("commitment bridge provenance alias row read failed: {e}"))?;
+
+        for candidate in [action_commitment_id.as_deref(), source_id.as_deref()]
+            .into_iter()
+            .flatten()
+        {
+            if !is_derived_commitment_id(candidate) {
+                continue;
+            }
+            out.push(CommitmentBridgeAliasBackfillRow {
+                legacy_commitment_id: legacy_commitment_id.clone(),
+                derived_commitment_id: candidate.to_string(),
+                entity_type: entity_type.clone(),
+                entity_id: entity_id.clone(),
+                action_id: action_id.clone(),
+                first_seen_at: first_seen_at.clone(),
+                last_seen_at: last_seen_at.clone(),
+                tombstoned,
+            });
+        }
+    }
+    Ok(out)
+}
+
+fn collect_commitment_bridge_action_alias_rows(
+    conn: &Connection,
+    source_alias_action_ids: &HashSet<String>,
 ) -> Result<Vec<CommitmentBridgeAliasBackfillRow>, MigrationError> {
     let mut stmt = conn
         .prepare(
@@ -906,8 +1077,42 @@ fn collect_commitment_bridge_alias_rows(
         })
         .map_err(|e| format!("commitment bridge alias row map failed: {e}"))?;
 
-    rows.collect::<Result<Vec<_>, _>>()
-        .map_err(|e| format!("commitment bridge alias row read failed: {e}"))
+    let mut out = Vec::new();
+    for row in rows {
+        let row = row.map_err(|e| format!("commitment bridge alias row read failed: {e}"))?;
+        if row.tombstoned != 0
+            && row
+                .action_id
+                .as_ref()
+                .is_some_and(|action_id| source_alias_action_ids.contains(action_id))
+        {
+            continue;
+        }
+        out.push(row);
+    }
+    Ok(out)
+}
+
+fn commitment_bridge_alias_row_from_stored_id(
+    row: &rusqlite::Row<'_>,
+) -> rusqlite::Result<CommitmentBridgeAliasBackfillRow> {
+    Ok(CommitmentBridgeAliasBackfillRow {
+        legacy_commitment_id: row.get(0)?,
+        entity_type: row.get(1)?,
+        entity_id: row.get(2)?,
+        action_id: row.get(3)?,
+        first_seen_at: row.get(4)?,
+        last_seen_at: row.get(5)?,
+        tombstoned: row.get(6)?,
+        derived_commitment_id: row.get(7)?,
+    })
+}
+
+fn is_derived_commitment_id(value: &str) -> bool {
+    let Some(hex) = value.strip_prefix("commitment:") else {
+        return false;
+    };
+    hex.len() == 64 && hex.bytes().all(|b| b.is_ascii_hexdigit())
 }
 
 fn legacy_owner_from_context(context: Option<&str>) -> Option<String> {
@@ -2015,6 +2220,95 @@ mod tests {
             .expect("done alias");
         assert_eq!(done_action_id, "done-a1");
         assert_eq!(done_tombstoned, 1);
+    }
+
+    #[test]
+    fn commitment_bridge_alias_backfill_uses_source_sighting_for_tombstoned_edited_title() {
+        let conn = mem_db();
+        let original_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "Original customer wording",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+        conn.execute_batch(
+            "CREATE TABLE actions (
+                id TEXT PRIMARY KEY,
+                title TEXT,
+                due_date TEXT,
+                owner_raw TEXT,
+                context TEXT,
+                account_id TEXT,
+                project_id TEXT,
+                source_id TEXT,
+                commitment_id TEXT,
+                action_kind TEXT
+            );
+            CREATE TABLE ai_commitment_bridge (
+                commitment_id TEXT PRIMARY KEY,
+                entity_type TEXT NOT NULL,
+                entity_id TEXT NOT NULL,
+                action_id TEXT,
+                first_seen_at TEXT NOT NULL,
+                last_seen_at TEXT NOT NULL,
+                tombstoned INTEGER NOT NULL DEFAULT 0
+            );
+            CREATE TABLE action_commitment_sources (
+                id TEXT PRIMARY KEY,
+                commitment_id TEXT NOT NULL,
+                action_id TEXT NOT NULL,
+                observed_at TEXT NOT NULL
+            );
+            INSERT INTO actions
+                (id, title, due_date, owner_raw, context, account_id, source_id, commitment_id, action_kind)
+            VALUES
+                ('done-a1', 'User edited wording', '2026-05-01', 'Alex Chen', NULL,
+                 'acct-1', 'legacy:done', 'legacy:done', 'commitment');
+            INSERT INTO ai_commitment_bridge
+                (commitment_id, entity_type, entity_id, action_id, first_seen_at, last_seen_at, tombstoned)
+            VALUES
+                ('legacy:done', 'account', 'acct-1', 'done-a1', '2026-01-01', '2026-01-03', 1);",
+        )
+        .expect("seed pre-156 schema");
+        conn.execute(
+            "INSERT INTO action_commitment_sources
+             (id, commitment_id, action_id, observed_at)
+             VALUES ('src-original', ?1, 'done-a1', '2026-01-01')",
+            [original_derived.as_str()],
+        )
+        .expect("seed source sighting");
+
+        backfill_commitment_bridge_derived_aliases(&conn).expect("backfill aliases");
+
+        let (done_action_id, done_tombstoned): (String, i32) = conn
+            .query_row(
+                "SELECT action_id, tombstoned
+                 FROM ai_commitment_bridge
+                 WHERE commitment_id = ?1",
+                [original_derived.as_str()],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("source-derived tombstone alias");
+        assert_eq!(done_action_id, "done-a1");
+        assert_eq!(done_tombstoned, 1);
+
+        let edited_derived = crate::abilities::extractors::commitment::derive_commitment_id(
+            "User edited wording",
+            "acct-1",
+            Some("2026-05-01"),
+            Some("Alex Chen"),
+        );
+        let edited_alias_count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM ai_commitment_bridge WHERE commitment_id = ?1",
+                [edited_derived],
+                |row| row.get(0),
+            )
+            .expect("edited alias count");
+        assert_eq!(
+            edited_alias_count, 0,
+            "source-backed tombstones should not alias the user-edited title"
+        );
     }
 
     #[test]
