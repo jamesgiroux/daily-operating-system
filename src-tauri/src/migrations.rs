@@ -1680,14 +1680,13 @@ fn migrate_v156_reconcile_claim_shadow_trust_columns(
 
         conn.execute(
             "UPDATE intelligence_claims
-                SET shadow_trust_score = trust_score,
-                    shadow_trust_computed_at = trust_computed_at,
-                    shadow_trust_version = trust_version,
+                SET shadow_trust_score = COALESCE(shadow_trust_score, trust_score),
+                    shadow_trust_computed_at = COALESCE(shadow_trust_computed_at, trust_computed_at),
+                    shadow_trust_version = COALESCE(shadow_trust_version, trust_version),
                     trust_score = NULL,
                     trust_computed_at = NULL,
                     trust_version = 0
-              WHERE trust_version = ?1
-                AND shadow_trust_version IS NULL",
+              WHERE trust_version = ?1",
             [V155_SHADOW_TRUST_VERSION],
         )
         .map_err(|e| format!("reconcile shadow trust columns: {e}"))?;
@@ -2404,6 +2403,77 @@ mod tests {
             .expect("read repaired row");
         assert_eq!((live_score, live_at, live_version), (None, None, Some(0)));
         assert_eq!(shadow_score, Some(0.73));
+        assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
+        assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
+    }
+
+    #[test]
+    fn migration_156_clears_live_scores_when_shadow_values_already_exist() {
+        let conn = mem_db();
+        run_migrations(&conn).expect("build current schema");
+        conn.execute("DELETE FROM schema_version WHERE version >= 156", [])
+            .expect("roll recorded version back to v155");
+        assert_eq!(current_version(&conn).expect("current version"), 155);
+
+        conn.execute(
+            "INSERT INTO intelligence_claims /* dos7-allowed: v156 migration fixture seeds c3 partial shadow repair state */ \
+             (id, subject_ref, claim_type, text, dedup_key, actor, data_source, observed_at,
+              provenance_json, trust_score, trust_computed_at, trust_version,
+              shadow_trust_score, shadow_trust_computed_at, shadow_trust_version)
+             VALUES (
+                 'claim-v156-partial-repair',
+                 '{\"kind\":\"account\",\"id\":\"acct-v156-partial\"}',
+                 'summary',
+                 'partial shadow trust repair',
+                 'claim-v156-partial-repair-dedup',
+                 'system',
+                 'manual',
+                 '2026-05-07T10:00:00Z',
+                 '{}',
+                 0.88,
+                 '2026-05-07T10:00:00Z',
+                 ?1,
+                 0.51,
+                 '2026-05-06T10:00:00Z',
+                 ?1
+             )",
+            [V155_SHADOW_TRUST_VERSION],
+        )
+        .expect("seed c3 partial repair row");
+
+        let applied = run_migrations(&conn).expect("v156 migration should succeed");
+        assert_eq!(applied, 1, "only v156 should be pending");
+        assert_eq!(current_version(&conn).expect("current version"), 156);
+        verify_required_schema(&conn).expect("v156 invariant should pass");
+
+        let (live_score, live_at, live_version, shadow_score, shadow_at, shadow_version): (
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+            Option<f64>,
+            Option<String>,
+            Option<i64>,
+        ) = conn
+            .query_row(
+                "SELECT trust_score, trust_computed_at, trust_version,
+                        shadow_trust_score, shadow_trust_computed_at, shadow_trust_version
+                   FROM intelligence_claims
+                  WHERE id = 'claim-v156-partial-repair'",
+                [],
+                |row| {
+                    Ok((
+                        row.get(0)?,
+                        row.get(1)?,
+                        row.get(2)?,
+                        row.get(3)?,
+                        row.get(4)?,
+                        row.get(5)?,
+                    ))
+                },
+            )
+            .expect("read repaired row");
+        assert_eq!((live_score, live_at, live_version), (None, None, Some(0)));
+        assert_eq!(shadow_score, Some(0.51));
         assert_eq!(shadow_at.as_deref(), Some("2026-05-06T10:00:00Z"));
         assert_eq!(shadow_version, Some(V155_SHADOW_TRUST_VERSION));
     }
