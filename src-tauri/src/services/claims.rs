@@ -1128,13 +1128,39 @@ fn semantic_region_token_alias(token: &str) -> Option<&'static str> {
     let all_upper = !alnum.is_empty() && alnum == alnum.to_ascii_uppercase();
 
     match key.as_str() {
-        "us" if has_period || all_upper => Some("US"),
+        "us" if alnum == "US" || semantic_region_dotted_acronym(token, "US") => Some("US"),
         "usa" if all_upper => Some("US"),
         "uk" if has_period || all_upper => Some("UK"),
         "eu" if has_period || all_upper => Some("EU"),
         "apac" if has_period || all_upper => Some("APAC"),
         "emea" if has_period || all_upper => Some("EMEA"),
         _ => None,
+    }
+}
+
+fn semantic_region_dotted_acronym(token: &str, expected: &str) -> bool {
+    if !token.contains('.') {
+        return false;
+    }
+
+    let mut token_chars = token.chars();
+    let mut expected_chars = expected.chars().peekable();
+    while let Some(expected_ch) = expected_chars.next() {
+        let Some(token_ch) = token_chars.next() else {
+            return false;
+        };
+        if !token_ch.eq_ignore_ascii_case(&expected_ch) {
+            return false;
+        }
+        if expected_chars.peek().is_some() && token_chars.next() != Some('.') {
+            return false;
+        }
+    }
+
+    match token_chars.next() {
+        None => true,
+        Some('.') => token_chars.next().is_none(),
+        Some(_) => false,
     }
 }
 
@@ -2031,7 +2057,7 @@ fn load_active_claim_by_dedup_key(
 ) -> Result<Option<IntelligenceClaim>, ClaimError> {
     let sql = format!(
         "SELECT {CLAIM_COLUMNS} FROM intelligence_claims \
-         WHERE dedup_key = ?1 AND claim_state = 'active' \
+         WHERE dedup_key = ?1 AND claim_state = 'active' AND surfacing_state = 'active' \
          ORDER BY created_at DESC"
     );
     let mut stmt = conn.prepare(&sql)?;
@@ -9328,6 +9354,26 @@ mod tests {
     }
 
     #[test]
+    fn semantic_us_region_alias_requires_uppercase_or_dotted_acronym() {
+        let dotted = semantic_high_salience_qualifiers(
+            "U.S Phase 2 budget approval is pending with finance",
+        );
+        assert!(dotted.contains("region:US"));
+
+        for text in [
+            "Finance asked us.",
+            "us",
+            "Finance asked us. Phase 2 budget approval is pending",
+        ] {
+            let qualifiers = semantic_high_salience_qualifiers(text);
+            assert!(
+                !qualifiers.contains("region:US"),
+                "{text:?} must not produce a US region qualifier: {qualifiers:?}"
+            );
+        }
+    }
+
+    #[test]
     fn semantic_near_duplicate_is_tightly_scoped() {
         assert!(semantic_near_duplicate(
             "Phase 2 budget approval is pending with finance",
@@ -10081,6 +10127,49 @@ mod tests {
         );
         let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
         assert_eq!(active.len(), 2);
+    }
+
+    #[test]
+    fn commit_claim_exact_dedup_ignores_active_dormant_surface() {
+        let db = test_db();
+        seed_account(&db);
+        let (clock, rng, external) = ctx_parts();
+        let ctx = live_ctx(&clock, &rng, &external);
+        let text = "procurement blocked renewal";
+
+        insert_fixture_claim(
+            &db,
+            "hidden-dormant-exact-dedup",
+            SUBJECT,
+            "risk",
+            text,
+            ClaimState::Active,
+            SurfacingState::Dormant,
+        );
+        let hidden_dedup_key = read_claim_dedup_key(&db, "hidden-dormant-exact-dedup");
+
+        let result = commit_claim(&ctx, &db, proposal(text)).unwrap();
+        let inserted_id = match result {
+            CommittedClaim::Inserted { claim } => {
+                assert_ne!(claim.id, "hidden-dormant-exact-dedup");
+                assert_eq!(claim.surfacing_state, SurfacingState::Active);
+                claim.id
+            }
+            CommittedClaim::Reinforced { claim, .. } => {
+                panic!("hidden dormant exact-dedup row reinforced {}", claim.id)
+            }
+            other => panic!("expected visible insert beside hidden dormant row, got {other:?}"),
+        };
+
+        assert_eq!(read_claim_dedup_key(&db, &inserted_id), hidden_dedup_key);
+        let (claim_state, surfacing_state, _, _) =
+            read_lifecycle_columns(&db, "hidden-dormant-exact-dedup");
+        assert_eq!(claim_state, "active");
+        assert_eq!(surfacing_state, "dormant");
+
+        let active = load_claims_active(&db, SUBJECT, Some("risk")).unwrap();
+        assert_eq!(active.len(), 1);
+        assert_eq!(active[0].id, inserted_id);
     }
 
     #[test]
