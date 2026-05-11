@@ -15,6 +15,7 @@ use std::sync::Arc;
 
 use rusqlite::params;
 use serde_json::json;
+use sha2::{Digest, Sha256};
 
 use abilities_runtime::structured_claim::{Polarity, StructuredClaim};
 
@@ -56,6 +57,7 @@ struct StructuralBackfillFields {
     object_value: String,
     qualifiers: String,
     content_hash: String,
+    structural_canonical_id: String,
 }
 
 pub fn run_structured_claim_backfill(
@@ -159,17 +161,19 @@ pub fn run_structured_claim_backfill(
                          polarity = ?2,
                          object_value = ?3,
                          qualifiers = ?4,
-                         structural_field_content_hash = ?5,
-                         structured_claim_json = ?6,
+                         structural_canonical_id = ?5,
+                         structural_field_content_hash = ?6,
+                         structured_claim_json = ?7,
                          canonical_status = 'live',
                          non_semantic_mergeable = FALSE,
                          backfill_epoch = backfill_epoch + 1
-                     WHERE id = ?7 AND canonical_status = 'pending_backfill'",
+                     WHERE id = ?8 AND canonical_status = 'pending_backfill'",
                     params![
                         &structural.predicate_ref,
                         structural.polarity,
                         &structural.object_value,
                         &structural.qualifiers,
+                        &structural.structural_canonical_id,
                         &structural.content_hash,
                         &structural.structured_claim_json,
                         &row.id,
@@ -185,7 +189,13 @@ pub fn run_structured_claim_backfill(
                 "structural_backfill_changed",
                 json!({
                     "claim_id": row.id,
-                    "field_set": ["predicate_ref", "polarity", "object_value", "qualifiers"],
+                    "field_set": [
+                        "predicate_ref",
+                        "polarity",
+                        "object_value",
+                        "qualifiers",
+                        "structural_canonical_id"
+                    ],
                     "canonical_status": "live",
                 }),
             )?;
@@ -240,6 +250,8 @@ fn structural_backfill_fields(
         .map_err(|e| format!("serialize structured object {}: {e}", row.id))?;
     let qualifiers = serde_json::to_string(&structured.qualifiers)
         .map_err(|e| format!("serialize structured qualifiers {}: {e}", row.id))?;
+    let structural_canonical_id =
+        structural_canonical_id(&predicate_ref, polarity, &object_value, &qualifiers);
     let content_hash = structural_field_content_hash(
         Some(&predicate_ref),
         Some(polarity),
@@ -255,7 +267,22 @@ fn structural_backfill_fields(
         object_value,
         qualifiers,
         content_hash,
+        structural_canonical_id,
     }))
+}
+
+fn structural_canonical_id(
+    predicate_ref: &str,
+    polarity: &str,
+    object_value: &str,
+    qualifiers: &str,
+) -> String {
+    let mut hasher = Sha256::new();
+    for value in [predicate_ref, polarity, object_value, qualifiers] {
+        hasher.update((value.len() as u64).to_be_bytes());
+        hasher.update(value.as_bytes());
+    }
+    hex::encode(hasher.finalize())
 }
 
 fn pending_structural_backfill_rows(db: &ActionDb) -> Result<Vec<StructuralBackfillRow>, String> {
@@ -1708,6 +1735,10 @@ enum CutoverClaimDecision {
     InFlightElsewhere { started_ts: i64 },
     Claimed,
 }
+
+#[cfg(test)]
+#[path = "claims_backfill/structural_canonical_id_tests.rs"]
+mod structural_canonical_id_tests;
 
 #[cfg(test)]
 #[allow(clippy::needless_borrow)]
